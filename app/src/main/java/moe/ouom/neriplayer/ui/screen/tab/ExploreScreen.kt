@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.ui.screen.tab
  */
 
 import android.app.Application
+import android.content.ClipData
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -65,15 +66,20 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
+import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Checkbox
@@ -115,6 +121,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
@@ -136,6 +144,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeFeatureGate
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryRecordKeyword
@@ -161,6 +170,7 @@ import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedRes
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreSearchResult
 import moe.ouom.neriplayer.ui.viewmodel.tab.ExploreUiState
@@ -175,6 +185,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.shouldLoadExploreSearchMore
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
+import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
+import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -891,6 +903,7 @@ fun ExploreScreen(
                                                 isFavorite = isFavoriteSong,
                                                 favoriteActionEnabled = localPlaylistsReady,
                                                 offlineMode = offlineMode,
+                                                snackbarHostState = snackbarHostState,
                                                 onClick = {
                                                     if (shouldShowBiliPartsPicker(song)) {
                                                         scope.launch {
@@ -914,6 +927,17 @@ fun ExploreScreen(
                                                 onPlayNow = { onSongPlayPreservingQueue(song) },
                                                 onPlayNext = { onSongPlayNext(song) },
                                                 onAddToQueueEnd = { onSongAddToQueueEnd(song) },
+                                                onDownload = {
+                                                    GlobalDownloadManager.startDownload(context, song)
+                                                    scope.launch {
+                                                        snackbarHostState.showNeriSnackbar(
+                                                            composeResources.getString(
+                                                                R.string.download_starting,
+                                                                song.displayName()
+                                                            )
+                                                        )
+                                                    }
+                                                },
                                                 onToggleFavorite = {
                                                     if (localPlaylistsReady) {
                                                         scope.launchLocalPlaylistMutation(
@@ -1846,19 +1870,24 @@ private fun SearchLoadMoreErrorRow(
 }
 
 @Composable
-private fun SongRow(
+internal fun SongRow(
     index: Int,
     song: SongItem,
     isFavorite: Boolean,
     favoriteActionEnabled: Boolean,
     offlineMode: Boolean,
+    snackbarHostState: SnackbarHostState,
     onClick: () -> Unit,
     onPlayNow: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueueEnd: () -> Unit,
+    onDownload: () -> Unit,
     onToggleFavorite: () -> Unit
 ) {
     val context = LocalContext.current
+    val composeResources = LocalResources.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val coverUrl = rememberSongDisplayCoverUrl(song)
     var showMoreMenu by remember { mutableStateOf(false) }
     Row(
@@ -1943,6 +1972,12 @@ private fun SongRow(
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.search_result_play_keep_queue)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.PlayCircle,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         context.performHapticFeedback()
                         onPlayNow()
@@ -1951,6 +1986,12 @@ private fun SongRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.local_playlist_play_next)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         context.performHapticFeedback()
                         onPlayNext()
@@ -1959,6 +2000,12 @@ private fun SongRow(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.search_result_add_to_current_queue)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                            contentDescription = null
+                        )
+                    },
                     onClick = {
                         context.performHapticFeedback()
                         onAddToQueueEnd()
@@ -1975,6 +2022,16 @@ private fun SongRow(
                             }
                         )
                     },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFavorite) {
+                                Icons.Filled.Favorite
+                            } else {
+                                Icons.Outlined.FavoriteBorder
+                            },
+                            contentDescription = null
+                        )
+                    },
                     enabled = favoriteActionEnabled,
                     onClick = {
                         context.performHapticFeedback()
@@ -1982,9 +2039,57 @@ private fun SongRow(
                         showMoreMenu = false
                     }
                 )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.download_to_local)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Download,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        context.performHapticFeedback()
+                        onDownload()
+                        showMoreMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.action_copy_song_info)) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.ContentCopy,
+                            contentDescription = null
+                        )
+                    },
+                    onClick = {
+                        scope.launch {
+                            val messageRes = when (
+                                val result = clipboard.copyPlainTextSafely(
+                                    label = "text",
+                                    text = buildExploreSongInfo(song)
+                                )
+                            ) {
+                                is ClipboardCopyResult.Copied -> if (result.wasTruncated) {
+                                    R.string.toast_copy_truncated
+                                } else {
+                                    R.string.toast_copied
+                                }
+                                ClipboardCopyResult.TransactionTooLarge -> R.string.toast_copy_failed
+                            }
+                            snackbarHostState.showNeriSnackbar(
+                                composeResources.getString(messageRes)
+                            )
+                        }
+                        showMoreMenu = false
+                    }
+                )
             }
         }
     }
+}
+
+internal fun buildExploreSongInfo(song: SongItem): String {
+    return "${song.displayName()}-${song.displayArtist()}"
 }
 
 @Composable
