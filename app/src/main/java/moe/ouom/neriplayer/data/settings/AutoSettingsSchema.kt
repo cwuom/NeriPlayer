@@ -157,7 +157,7 @@ object AutoSettingsSchema {
             defaultValue = false,
             titleRes = R.string.settings_always_record_logs,
             descriptionRes = R.string.settings_always_record_logs_desc,
-            icon = AutoSettingIcon.Info
+            icon = AutoSettingIcon.Storage
         )
 
         @AutoSetting(

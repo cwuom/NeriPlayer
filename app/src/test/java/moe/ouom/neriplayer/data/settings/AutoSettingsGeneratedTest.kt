@@ -396,6 +396,15 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun alwaysRecordLogsUsesStorageIcon() {
+        val alwaysRecordLogs = AutoSettingsSchema.general.alwaysRecordLogsEnabled
+        val metadata = AutoSettingsMetadata.setting(alwaysRecordLogs.key)
+
+        assertEquals(AutoSettingIcon.Storage, alwaysRecordLogs.icon)
+        assertEquals(AutoSettingIcon.Storage, metadata?.icon)
+    }
+
+    @Test
     fun splitLyricFontScaleSettingsUseCustomDisplayRows() {
         val expectedIcons = mapOf(
             "nowplaying_cover_lyric_font_scale" to AutoSettingIcon.FormatSize,
