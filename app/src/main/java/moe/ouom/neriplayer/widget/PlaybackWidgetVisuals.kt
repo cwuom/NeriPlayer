@@ -76,7 +76,7 @@ internal fun buildPlaybackWidgetVisuals(artwork: Bitmap?): PlaybackWidgetVisuals
             heightPx = COMPACT_THEME_BACKGROUND_SIZE_PX,
             cornerRadiusFraction = 0.22f,
         ),
-        primaryControl = createPrimaryControl(colors.primaryControl),
+        primaryControl = createPrimaryControl(),
     )
 }
 
@@ -213,7 +213,7 @@ private fun createWidgetThemeBackground(
     return output
 }
 
-private fun createPrimaryControl(color: Int): Bitmap {
+private fun createPrimaryControl(): Bitmap {
     val output = createBitmap(PRIMARY_CONTROL_SIZE_PX, PRIMARY_CONTROL_SIZE_PX)
     val center = PRIMARY_CONTROL_SIZE_PX / 2f
     val radius = center - 4f
@@ -221,7 +221,7 @@ private fun createPrimaryControl(color: Int): Bitmap {
         center,
         center,
         radius,
-        Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color },
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(242, 255, 255, 255) },
     )
     Canvas(output).drawCircle(
         center,
@@ -230,7 +230,7 @@ private fun createPrimaryControl(color: Int): Bitmap {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 2f
-            this.color = Color.argb(55, 255, 255, 255)
+            this.color = Color.argb(36, 0, 0, 0)
         },
     )
     return output

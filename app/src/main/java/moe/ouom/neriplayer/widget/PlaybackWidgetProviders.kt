@@ -62,6 +62,7 @@ abstract class NeriPlayerBaseWidgetProvider(
             appWidgetManager = appWidgetManager,
             appWidgetIds = intArrayOf(appWidgetId),
             reason = "app_widget_resize",
+            widgetOptions = newOptions,
         )
     }
 
@@ -70,6 +71,7 @@ abstract class NeriPlayerBaseWidgetProvider(
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
         reason: String,
+        widgetOptions: android.os.Bundle? = null,
     ) {
         if (AudioPlayerService.refreshPlaybackWidgetsFromActiveService(reason)) {
             return
@@ -79,6 +81,7 @@ abstract class NeriPlayerBaseWidgetProvider(
             appWidgetManager = appWidgetManager,
             appWidgetIds = appWidgetIds,
             layoutRes = layoutRes,
+            widgetOptions = widgetOptions,
         )
     }
 }

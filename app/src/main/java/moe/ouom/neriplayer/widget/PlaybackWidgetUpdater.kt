@@ -9,9 +9,13 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
+import android.util.SizeF
+import android.util.TypedValue
 import android.widget.RemoteViews
 import androidx.annotation.LayoutRes
+import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
@@ -43,6 +47,8 @@ internal object PlaybackWidgetUpdater {
     private const val REQUEST_NEXT = 6103
     private const val REQUEST_FAVORITE = 6104
     private const val REQUEST_FLOATING_LYRICS = 6105
+    private const val COMPACT_WIDGET_BASE_HORIZONTAL_PADDING_DP = 9
+    private const val COMPACT_WIDGET_BASE_INFO_TOP_PADDING_DP = 7
 
     private var lastArtworkInput: Bitmap? = null
     private var lastWidgetVisuals: PlaybackWidgetVisuals? = null
@@ -71,14 +77,14 @@ internal object PlaybackWidgetUpdater {
         if (appWidgetIds.isEmpty()) {
             return
         }
-        val views = RemoteViews(context.packageName, R.layout.widget_playback_4x2)
-        views.setProgressBar(
-            R.id.widget_progress,
-            PLAYBACK_WIDGET_PROGRESS_MAX,
-            state.progress,
-            false,
-        )
         try {
+            val views = RemoteViews(context.packageName, R.layout.widget_playback_4x2)
+            views.setProgressBar(
+                R.id.widget_progress,
+                PLAYBACK_WIDGET_PROGRESS_MAX,
+                state.progress,
+                false,
+            )
             appWidgetManager.partiallyUpdateAppWidget(appWidgetIds, views)
         } catch (error: RuntimeException) {
             NPLogger.w("NERI-Widget", "Widget progress update failed", error)
@@ -90,6 +96,7 @@ internal object PlaybackWidgetUpdater {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
         @LayoutRes layoutRes: Int,
+        widgetOptions: Bundle? = null,
     ) {
         val state = readState(context)
         updateWidgets(
@@ -99,6 +106,7 @@ internal object PlaybackWidgetUpdater {
             layoutRes = layoutRes,
             state = state,
             visuals = buildPlaybackWidgetVisuals(readCachedArtwork(context, state)),
+            widgetOptions = widgetOptions,
         )
     }
 
@@ -161,11 +169,41 @@ internal object PlaybackWidgetUpdater {
         @LayoutRes layoutRes: Int,
         state: PlaybackWidgetState,
         visuals: PlaybackWidgetVisuals,
+        widgetOptions: Bundle? = null,
     ) {
         if (appWidgetIds.isEmpty()) {
             return
         }
-        val views = buildRemoteViews(context, layoutRes, state, visuals)
+        val hasProgress = isPlaybackWidgetWithProgress(layoutRes)
+        val sizeVariantsByWidgetId = appWidgetIds.asList().associateWith { appWidgetId ->
+            playbackWidgetSizeVariantsFromOptions(
+                options = widgetOptions ?: appWidgetManager.getAppWidgetOptions(appWidgetId),
+                hasProgress = hasProgress,
+            )
+        }
+        sizeVariantsByWidgetId.entries.groupBy { it.value }.forEach { (sizes, entries) ->
+            updateWidgetGroup(
+                context = context,
+                appWidgetManager = appWidgetManager,
+                appWidgetIds = entries.map { it.key }.toIntArray(),
+                layoutRes = layoutRes,
+                state = state,
+                visuals = visuals,
+                sizes = sizes,
+            )
+        }
+    }
+
+    private fun updateWidgetGroup(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray,
+        @LayoutRes layoutRes: Int,
+        state: PlaybackWidgetState,
+        visuals: PlaybackWidgetVisuals,
+        sizes: List<PlaybackWidgetSize>,
+    ) {
+        val views = buildRemoteViewsForSizes(context, layoutRes, state, visuals, sizes)
         try {
             appWidgetManager.updateAppWidget(appWidgetIds, views)
         } catch (error: RuntimeException) {
@@ -174,7 +212,7 @@ internal object PlaybackWidgetUpdater {
                 "Widget update failed with artwork; retrying without bitmap payload",
                 error,
             )
-            val fallbackViews = buildRemoteViews(
+            val fallbackViews = buildRemoteViewsForSizes(
                 context = context,
                 layoutRes = layoutRes,
                 state = state,
@@ -187,6 +225,7 @@ internal object PlaybackWidgetUpdater {
                     legacyCompactThemeBackground = null,
                     primaryControl = null,
                 ),
+                sizes = sizes,
             )
             try {
                 appWidgetManager.updateAppWidget(appWidgetIds, fallbackViews)
@@ -200,14 +239,20 @@ internal object PlaybackWidgetUpdater {
         }
     }
 
-    private fun buildRemoteViews(
+    internal fun buildRemoteViews(
         context: Context,
         @LayoutRes layoutRes: Int,
         state: PlaybackWidgetState,
         visuals: PlaybackWidgetVisuals,
+        size: PlaybackWidgetSize,
     ): RemoteViews {
         val views = RemoteViews(context.packageName, layoutRes)
-        val hasProgress = layoutRes == R.layout.widget_playback_4x2
+        val hasProgress = isPlaybackWidgetWithProgress(layoutRes)
+        applyPlaybackWidgetLayout(
+            views = views,
+            size = size,
+            hasProgress = hasProgress,
+        )
         val controlReceiver = if (hasProgress) {
             NeriPlayerPlaybackWidgetProvider::class.java
         } else {
@@ -392,6 +437,241 @@ internal object PlaybackWidgetUpdater {
             )
         }
         return views
+    }
+
+    private fun buildRemoteViewsForSizes(
+        context: Context,
+        @LayoutRes layoutRes: Int,
+        state: PlaybackWidgetState,
+        visuals: PlaybackWidgetVisuals,
+        sizes: List<PlaybackWidgetSize>,
+    ): RemoteViews {
+        val normalizedSizes = sizes.ifEmpty {
+            listOf(
+                PlaybackWidgetSize(
+                    widthDp = if (isPlaybackWidgetWithProgress(layoutRes)) {
+                        PLAYBACK_WIDGET_DEFAULT_FULL_WIDTH_DP
+                    } else {
+                        PLAYBACK_WIDGET_DEFAULT_COMPACT_WIDTH_DP
+                    },
+                    heightDp = PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP,
+                ),
+            )
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || normalizedSizes.size == 1) {
+            return buildRemoteViews(
+                context = context,
+                layoutRes = layoutRes,
+                state = state,
+                visuals = visuals,
+                size = normalizedSizes.first(),
+            )
+        }
+        val viewsBySize = LinkedHashMap<SizeF, RemoteViews>(normalizedSizes.size)
+        normalizedSizes.forEach { size ->
+            viewsBySize[SizeF(size.widthDp.toFloat(), size.heightDp.toFloat())] = buildRemoteViews(
+                context = context,
+                layoutRes = layoutRes,
+                state = state,
+                visuals = visuals,
+                size = size,
+            )
+        }
+        return RemoteViews(viewsBySize)
+    }
+
+    private fun applyPlaybackWidgetLayout(
+        views: RemoteViews,
+        size: PlaybackWidgetSize,
+        hasProgress: Boolean,
+    ) {
+        val spec = playbackWidgetLayoutSpec(size, hasProgress)
+        views.setTextViewTextSize(
+            R.id.widget_status,
+            TypedValue.COMPLEX_UNIT_SP,
+            spec.statusTextSizeSp,
+        )
+        views.setTextViewTextSize(
+            R.id.widget_title,
+            TypedValue.COMPLEX_UNIT_SP,
+            spec.titleTextSizeSp,
+        )
+        views.setTextViewTextSize(
+            R.id.widget_subtitle,
+            TypedValue.COMPLEX_UNIT_SP,
+            spec.subtitleTextSizeSp,
+        )
+        if (hasProgress) {
+            applyViewSize(
+                views = views,
+                viewId = R.id.widget_card,
+                widthDp = null,
+                heightDp = spec.cardHeightDp,
+            )
+            views.setTextViewTextSize(
+                R.id.widget_elapsed,
+                TypedValue.COMPLEX_UNIT_SP,
+                spec.statusTextSizeSp,
+            )
+            views.setTextViewTextSize(
+                R.id.widget_duration,
+                TypedValue.COMPLEX_UNIT_SP,
+                spec.statusTextSizeSp,
+            )
+            applyWidgetControlSizes(views, spec, hasProgress = true)
+        } else {
+            val horizontalMarginDp = extraMarginDp(
+                targetDp = spec.horizontalPaddingDp,
+                baseDp = COMPACT_WIDGET_BASE_HORIZONTAL_PADDING_DP,
+            )
+            val infoTopMarginDp = extraMarginDp(
+                targetDp = spec.compactInfoTopPaddingDp,
+                baseDp = COMPACT_WIDGET_BASE_INFO_TOP_PADDING_DP,
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                applyCompactWidgetMarginsApi31(
+                    views = views,
+                    spec = spec,
+                    horizontalMarginDp = horizontalMarginDp,
+                    infoTopMarginDp = infoTopMarginDp,
+                )
+            }
+            applyViewSize(
+                views = views,
+                viewId = R.id.widget_controls,
+                widthDp = null,
+                heightDp = spec.controlsHeightDp,
+            )
+            applyWidgetControlSizes(views, spec, hasProgress = false)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun applyCompactWidgetMarginsApi31(
+        views: RemoteViews,
+        spec: PlaybackWidgetLayoutSpec,
+        horizontalMarginDp: Int,
+        infoTopMarginDp: Int,
+    ) {
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_compact_song_info,
+            marginType = RemoteViews.MARGIN_START,
+            marginDp = horizontalMarginDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_compact_song_info,
+            marginType = RemoteViews.MARGIN_TOP,
+            marginDp = infoTopMarginDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_compact_song_info,
+            marginType = RemoteViews.MARGIN_END,
+            marginDp = horizontalMarginDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_compact_song_info,
+            marginType = RemoteViews.MARGIN_BOTTOM,
+            marginDp = spec.compactInfoBottomPaddingDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_controls,
+            marginType = RemoteViews.MARGIN_START,
+            marginDp = horizontalMarginDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_controls,
+            marginType = RemoteViews.MARGIN_END,
+            marginDp = horizontalMarginDp,
+        )
+        applyViewMargin(
+            views = views,
+            viewId = R.id.widget_controls,
+            marginType = RemoteViews.MARGIN_BOTTOM,
+            marginDp = spec.compactControlBottomMarginDp,
+        )
+    }
+
+    private fun isPlaybackWidgetWithProgress(@LayoutRes layoutRes: Int): Boolean {
+        return layoutRes == R.layout.widget_playback_4x2
+    }
+
+    private fun applyWidgetControlSizes(
+        views: RemoteViews,
+        spec: PlaybackWidgetLayoutSpec,
+        hasProgress: Boolean,
+    ) {
+        val regularControls = buildList {
+            if (hasProgress) {
+                add(R.id.widget_favorite)
+            }
+            add(R.id.widget_previous)
+            add(R.id.widget_next)
+            if (hasProgress) {
+                add(R.id.widget_floating_lyrics)
+            }
+        }
+        regularControls.forEach { viewId ->
+            applyViewSize(
+                views = views,
+                viewId = viewId,
+                widthDp = spec.controlSizeDp,
+                heightDp = spec.controlSizeDp,
+            )
+        }
+        applyViewSize(
+            views = views,
+            viewId = R.id.widget_play_pause_background,
+            widthDp = spec.primaryControlSizeDp,
+            heightDp = spec.primaryControlSizeDp,
+        )
+        applyViewSize(
+            views = views,
+            viewId = R.id.widget_play_pause,
+            widthDp = spec.primaryControlSizeDp,
+            heightDp = spec.primaryControlSizeDp,
+        )
+    }
+
+    private fun extraMarginDp(targetDp: Int, baseDp: Int): Int {
+        return (targetDp - baseDp).coerceAtLeast(0)
+    }
+
+    private fun applyViewSize(
+        views: RemoteViews,
+        viewId: Int,
+        widthDp: Int?,
+        heightDp: Int?,
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return
+        }
+        widthDp?.let {
+            views.setViewLayoutWidth(viewId, it.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+        }
+        heightDp?.let {
+            views.setViewLayoutHeight(viewId, it.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun applyViewMargin(
+        views: RemoteViews,
+        viewId: Int,
+        marginType: Int,
+        marginDp: Int,
+    ) {
+        views.setViewLayoutMargin(
+            viewId,
+            marginType,
+            marginDp.toFloat(),
+            TypedValue.COMPLEX_UNIT_DIP,
+        )
     }
 
     private fun openAppPendingIntent(context: Context): PendingIntent {

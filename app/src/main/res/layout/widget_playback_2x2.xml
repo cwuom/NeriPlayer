@@ -48,11 +48,11 @@
             android:layout_height="match_parent"
             android:layout_above="@id/widget_controls"
             android:layout_alignParentTop="true"
-            android:layout_marginLeft="9dp"
-            android:layout_marginTop="7dp"
-            android:layout_marginRight="9dp"
             android:gravity="center_vertical"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingLeft="9dp"
+            android:paddingTop="7dp"
+            android:paddingRight="9dp">
 
             <TextView
                 android:id="@+id/widget_status"
