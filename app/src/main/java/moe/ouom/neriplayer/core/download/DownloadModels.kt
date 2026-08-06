@@ -162,8 +162,17 @@ internal fun DownloadedSong.toPlaybackSongItem(
         ?.trim()
         ?.takeIf(String::isNotBlank)
         ?: legacyBiliCid
+    val resolvedSongId = remoteSourceIdentity
+        ?.takeIf { identity ->
+            resolvedSourceChannel.equals("netease", ignoreCase = true) &&
+                identity.album.equals("netease", ignoreCase = true) &&
+                identity.mediaUri == null &&
+                identity.id > 0L
+        }
+        ?.id
+        ?: id
     return SongItem(
-        id = id,
+        id = resolvedSongId,
         name = name,
         artist = artist,
         album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,

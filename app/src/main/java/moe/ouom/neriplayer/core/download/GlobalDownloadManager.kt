@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
@@ -3599,6 +3600,22 @@ object GlobalDownloadManager {
         storedAudio: ManagedDownloadStorage.StoredEntry,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
     ): DownloadedSong {
+        val remoteSource = song.remoteSourceIdentityOrNull()
+            ?: song.takeUnless { LocalSongSupport.isLocalSong(it, null) }?.identity()
+        val rawSourceChannel = song.channelId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+        val sourceChannel = rawSourceChannel ?: remoteSource?.album
+        val sourceAudioId = song.audioId
+            ?.trim()
+            ?.takeIf { rawSourceChannel != null && it.isNotBlank() }
+            ?: remoteSource
+                ?.takeIf { sourceChannel.equals("netease", ignoreCase = true) }
+                ?.id
+                ?.toString()
+        val sourceSubAudioId = song.subAudioId
+            ?.trim()
+            ?.takeIf { rawSourceChannel != null && it.isNotBlank() }
         val previousSong = _downloadedSongs.value.firstOrNull { downloadedSong ->
             downloadedSong.filePath == storedAudio.reference || matchesDownloadedSong(song, downloadedSong)
         }
@@ -3631,7 +3648,13 @@ object GlobalDownloadManager {
             originalTranslatedLyric = song.originalTranslatedLyric,
             mediaUri = storedAudio.mediaUri,
             durationMs = song.durationMs.coerceAtLeast(0L),
-            stableKey = song.stableKey()
+            stableKey = remoteSource?.stableKey() ?: song.stableKey(),
+            sourceIdentityAlbum = remoteSource?.album,
+            sourceMediaUri = remoteSource?.mediaUri,
+            sourceChannelId = sourceChannel,
+            sourceAudioId = sourceAudioId,
+            sourceSubAudioId = sourceSubAudioId,
+            sourcePlaylistContextId = song.playlistContextId?.takeIf { remoteSource != null }
         )
     }
 

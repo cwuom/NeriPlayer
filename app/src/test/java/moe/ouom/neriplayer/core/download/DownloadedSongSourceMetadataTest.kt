@@ -154,4 +154,39 @@ class DownloadedSongSourceMetadataTest {
         assertEquals("123", syncSong?.audioId)
         assertEquals("456", syncSong?.subAudioId)
     }
+
+    @Test
+    fun `downloaded Netease playback restores the remote id from its stable source`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "NeteaseAlbum",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val downloadedSong = DownloadedSong(
+            id = 9_999L,
+            name = remoteSong.name,
+            artist = remoteSong.artist,
+            album = "Local Files",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L,
+            stableKey = remoteSong.stableKey(),
+            sourceIdentityAlbum = remoteSong.identity().album,
+            sourceChannelId = remoteSong.channelId,
+            sourceAudioId = remoteSong.audioId
+        )
+
+        val playbackSong = downloadedSong.toPlaybackSongItem()
+        val syncSong = SyncSong.fromSongItemOrNull(playbackSong)
+
+        assertEquals(remoteSong.id, playbackSong.id)
+        assertEquals(remoteSong.id, syncSong?.id)
+        assertEquals(remoteSong.identity(), syncSong?.identity())
+    }
 }

@@ -89,9 +89,18 @@ internal fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): Song
         ?.trim()
         ?.takeIf { rawSourceChannel != null && it.isNotBlank() }
     val retainsSourceAddress = rawSourceChannel != null && sourceAudioId != null
+    val sourceIsNetease = sourceChannel.equals("netease", ignoreCase = true) &&
+        sourceIdentity.album.equals("netease", ignoreCase = true) &&
+        sourceIdentity.mediaUri == null
 
     return copy(
-        id = if (retainsSourceAddress) id else sourceIdentity.id,
+        id = if (sourceIsNetease) {
+            sourceIdentity.id
+        } else if (retainsSourceAddress) {
+            id
+        } else {
+            sourceIdentity.id
+        },
         album = sourceIdentity.album,
         albumId = 0L,
         mediaUri = sourceIdentity.mediaUri,

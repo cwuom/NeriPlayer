@@ -2270,7 +2270,14 @@ class LocalPlaylistRepository private constructor(
     }
 
     private fun resolveNeteaseSongId(song: SongItem): Long? {
+        if (song.channelId.equals("netease", ignoreCase = true)) {
+            song.audioId
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?.let { return it }
+        }
         val songId = song.id.takeIf { it > 0 } ?: return null
+        if (song.channelId.equals("netease", ignoreCase = true)) return songId
         if (song.album.startsWith(NETEASE_ALBUM_PREFIX)) {
             return songId
         }
