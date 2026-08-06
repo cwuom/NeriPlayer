@@ -37,8 +37,16 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import moe.ouom.neriplayer.core.logging.NPLogger
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -242,6 +250,12 @@ internal const val YOUTUBE_EJS_ISOLATE_MAX_HEAP_SIZE_BYTES = 0L
 // the on-disk store keeps the longer rollback history; memory only needs the active pair
 internal const val YOUTUBE_EJS_PLAYER_SCRIPT_MEMORY_CACHE_CAPACITY = 2
 internal const val YOUTUBE_EJS_SESSION_GLOBAL = "__neriPlayerEjsChallengeSession"
+// start the local fallback when the complete Sandbox session misses the warmup budget
+internal const val YOUTUBE_EJS_WEBVIEW_WARMUP_HEDGE_DELAY_MS = 500L
+
+internal fun shouldStartYouTubeEjsWebViewWarmup(
+    sandboxSessionReadyWithinGracePeriod: Boolean
+): Boolean = !sandboxSessionReadyWithinGracePeriod
 
 internal fun youtubeEjsIsolateMaxHeapSizeBytes(
     supportsExplicitHeapLimit: Boolean
@@ -412,6 +426,7 @@ internal class YouTubeEjsChallengeSolver(
     private val okHttpClient: OkHttpClient
 ) {
     companion object {
+        private const val TAG = "YouTubeEjsChallengeSolver"
         private const val LIB_ASSET_PATH = "youtube/yt.solver.lib.min.js"
         private const val CORE_ASSET_PATH = "youtube/yt.solver.core.min.js"
         // a provider that cannot bind is not a 45-second playback prerequisite
@@ -443,6 +458,7 @@ internal class YouTubeEjsChallengeSolver(
 
     private val appContext = context.applicationContext
     private val solverLock = sharedSolverLock
+    private val warmupLock = Mutex()
     private val playerScriptCacheLock = Any()
     private val challengeCacheLock = Any()
     private val playerScriptCache = linkedMapOf<String, String>()
@@ -736,13 +752,96 @@ internal class YouTubeEjsChallengeSolver(
         if (resolvedPlayerJsUrl.isBlank()) {
             return false
         }
-        return runCatching {
-            solverLock.withNewestFirstCancellable {
-                warmPlayerSession(resolvedPlayerJsUrl)
+        return warmupLock.withLock {
+            val startedAtMs = System.currentTimeMillis()
+            if (webViewFallbackPlayerJsUrl == resolvedPlayerJsUrl) {
+                val warmed = warmWebViewFallbackPlayerSession(resolvedPlayerJsUrl)
+                if (warmed) {
+                    NPLogger.d(
+                        TAG,
+                        "Warm EJS player session ready: engine=WEBVIEW_FALLBACK, " +
+                            "reused=true, elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                    )
+                } else {
+                    webViewFallbackPlayerJsUrl = null
+                }
+                return@withLock warmed
             }
-        }.getOrElse { error ->
-            propagateYouTubeJsChallengeCancellation(error)
-            false
+
+            coroutineScope {
+                val fallbackWarmup = async(start = CoroutineStart.LAZY) {
+                    warmWebViewFallbackPlayerSession(resolvedPlayerJsUrl)
+                }
+                val sandboxWarmup = async(Dispatchers.IO) {
+                    runCatching {
+                        solverLock.withNewestFirstCancellable {
+                            warmPlayerSession(resolvedPlayerJsUrl)
+                        }
+                    }.getOrElse { error ->
+                        propagateYouTubeJsChallengeCancellation(error)
+                        false
+                    }
+                }
+                val fallbackHedge = async {
+                    val sandboxSessionReadyWithinGracePeriod = withTimeoutOrNull(
+                        YOUTUBE_EJS_WEBVIEW_WARMUP_HEDGE_DELAY_MS
+                    ) {
+                        sandboxWarmup.await()
+                    } == true
+                    if (
+                        shouldStartYouTubeEjsWebViewWarmup(
+                            sandboxSessionReadyWithinGracePeriod
+                        )
+                    ) {
+                        fallbackWarmup.start()
+                        if (fallbackWarmup.await() && !sandboxWarmup.isCompleted) {
+                            // a ready fallback must be visible before a stalled Sandbox gives up
+                            webViewFallbackPlayerJsUrl = resolvedPlayerJsUrl
+                            NPLogger.d(
+                                TAG,
+                                "Warm EJS player session ready: engine=WEBVIEW_FALLBACK, " +
+                                    "sandboxStillWarming=true, " +
+                                    "elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                            )
+                        }
+                    }
+                }
+                val sandboxWarmed = sandboxWarmup.await()
+
+                if (sandboxWarmed) {
+                    val fallbackWon = webViewFallbackPlayerJsUrl == resolvedPlayerJsUrl
+                    if (!fallbackWon) {
+                        fallbackHedge.cancelAndJoin()
+                        fallbackWarmup.cancelAndJoin()
+                        webViewFallbackSolver.discardSessionForPlayerJsUrl(resolvedPlayerJsUrl)
+                        NPLogger.d(
+                            TAG,
+                            "Warm EJS player session ready: engine=JAVASCRIPT_SANDBOX, " +
+                                "elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                        )
+                    }
+                    return@coroutineScope true
+                }
+
+                fallbackWarmup.start()
+                val webViewWarmed = fallbackWarmup.await()
+                fallbackHedge.cancelAndJoin()
+                if (webViewWarmed) {
+                    webViewFallbackPlayerJsUrl = resolvedPlayerJsUrl
+                    NPLogger.d(
+                        TAG,
+                        "Warm EJS player session ready: engine=WEBVIEW_FALLBACK, " +
+                            "elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                    )
+                } else {
+                    NPLogger.w(
+                        TAG,
+                        "Warm EJS player session unavailable: sandboxReady=false, " +
+                            "webViewReady=false, elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                    )
+                }
+                webViewWarmed
+            }
         }
     }
 
@@ -811,6 +910,27 @@ internal class YouTubeEjsChallengeSolver(
                 detail = "playerJsUrl=$playerJsUrl",
                 cause = error
             )
+            false
+        }
+    }
+
+    private suspend fun warmWebViewFallbackPlayerSession(playerJsUrl: String): Boolean {
+        val playerScript = try {
+            withContext(Dispatchers.IO) { getPlayerScript(playerJsUrl) }
+        } catch (error: Throwable) {
+            propagateYouTubeJsChallengeCancellation(error)
+            NPLogger.w(TAG, "Warm EJS WebView player script failed", error)
+            return false
+        }
+        return try {
+            webViewFallbackSolver.warm(
+                playerJsUrl = playerJsUrl,
+                playerScript = playerScript
+            )
+            true
+        } catch (error: Throwable) {
+            propagateYouTubeJsChallengeCancellation(error)
+            NPLogger.w(TAG, "Warm EJS WebView session failed", error)
             false
         }
     }

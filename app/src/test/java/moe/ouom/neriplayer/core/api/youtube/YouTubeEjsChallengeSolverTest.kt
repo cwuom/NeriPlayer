@@ -91,6 +91,21 @@ class YouTubeEjsChallengeSolverTest {
     }
 
     @Test
+    fun webViewWarmupHedgesWhenTheCompleteSandboxSessionMissesTheGracePeriod() {
+        assertFalse(
+            shouldStartYouTubeEjsWebViewWarmup(
+                sandboxSessionReadyWithinGracePeriod = true
+            )
+        )
+        assertTrue(
+            shouldStartYouTubeEjsWebViewWarmup(
+                sandboxSessionReadyWithinGracePeriod = false
+            )
+        )
+        assertTrue(YOUTUBE_EJS_WEBVIEW_WARMUP_HEDGE_DELAY_MS > 0L)
+    }
+
+    @Test
     fun terminalEjsSandboxFailuresInvalidateTheSharedSandbox() {
         assertTrue(
             shouldInvalidateYouTubeEjsSandbox(

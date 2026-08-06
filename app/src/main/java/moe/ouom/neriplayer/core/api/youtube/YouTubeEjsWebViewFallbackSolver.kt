@@ -121,6 +121,20 @@ internal class YouTubeEjsWebViewFallbackSolver(context: Context) {
         .build()
     private var session: Session? = null
 
+    suspend fun warm(playerJsUrl: String, playerScript: String) {
+        sessionLock.withLock {
+            obtainSession(playerJsUrl, playerScript)
+        }
+    }
+
+    suspend fun discardSessionForPlayerJsUrl(playerJsUrl: String) {
+        sessionLock.withLock {
+            if (session?.playerJsUrl == playerJsUrl) {
+                discardSession()
+            }
+        }
+    }
+
     suspend fun solve(
         playerJsUrl: String,
         playerScript: String,
