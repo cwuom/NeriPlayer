@@ -83,4 +83,52 @@ class ExploreSearchHistoryDisplayTest {
             )
         )
     }
+
+    @Test
+    fun `platform changes retain one search type bar target for an interruptible swap`() {
+        val targets = listOf(
+            SearchSource.NETEASE,
+            SearchSource.YOUTUBE_MUSIC,
+            SearchSource.NETEASE,
+            SearchSource.YOUTUBE_MUSIC
+        ).map { source ->
+            exploreSearchTypeBarSource(
+                selectedSearchSource = source,
+                contentScrolled = false
+            )
+        }
+
+        assertEquals(
+            listOf(
+                SearchSource.NETEASE,
+                SearchSource.YOUTUBE_MUSIC,
+                SearchSource.NETEASE,
+                SearchSource.YOUTUBE_MUSIC
+            ),
+            targets
+        )
+        assertTrue(isExploreSearchTypeBarSourceSwap(targets[0], targets[1]))
+        assertTrue(isExploreSearchTypeBarSourceSwap(targets[1], targets[2]))
+        assertTrue(isExploreSearchTypeBarSourceSwap(targets[2], targets[3]))
+    }
+
+    @Test
+    fun `search type bar only expands or collapses when a visible source changes`() {
+        assertFalse(isExploreSearchTypeBarSourceSwap(SearchSource.NETEASE, null))
+        assertFalse(isExploreSearchTypeBarSourceSwap(null, SearchSource.YOUTUBE_MUSIC))
+        assertEquals(
+            null,
+            exploreSearchTypeBarSource(
+                selectedSearchSource = SearchSource.BILIBILI,
+                contentScrolled = false
+            )
+        )
+        assertEquals(
+            null,
+            exploreSearchTypeBarSource(
+                selectedSearchSource = SearchSource.NETEASE,
+                contentScrolled = true
+            )
+        )
+    }
 }
