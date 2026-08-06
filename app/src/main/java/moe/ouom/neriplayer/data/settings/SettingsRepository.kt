@@ -268,6 +268,8 @@ class SettingsRepository(private val context: Context) {
             FloatingLyricsPreferences(
                 enabled = prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] ?: false,
                 hideInApp = prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] ?: false,
+                longPressDragEnabled =
+                    prefs[SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED] ?: true,
                 textColorHex = prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] ?: "FFFFFF",
                 renderStyle = prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE]
                     ?: FLOATING_LYRICS_RENDER_STYLE_SHADOW,
@@ -287,6 +289,12 @@ class SettingsRepository(private val context: Context) {
                 maxWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] ?: 280f,
                 positionX = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] ?: 0.1f,
                 positionY = prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] ?: 0.7f,
+                landscapePositionX = prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X]
+                    ?: prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X]
+                    ?: 0.1f,
+                landscapePositionY = prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y]
+                    ?: prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y]
+                    ?: 0.7f,
                 alignment = prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT]
                     ?: FLOATING_LYRICS_ALIGNMENT_CENTER,
                 showTranslation = prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] ?: true,
@@ -830,6 +838,8 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] = normalized.enabled
             prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] = normalized.hideInApp
+            prefs[SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED] =
+                normalized.longPressDragEnabled
             prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] = normalized.textColorHex
             prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE] = normalized.renderStyle
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
@@ -843,6 +853,8 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP] = normalized.maxWidthDp
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] = normalized.positionX
             prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalized.positionY
+            prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X] = normalized.landscapePositionX
+            prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y] = normalized.landscapePositionY
             prefs[SettingsKeys.FLOATING_LYRICS_ALIGNMENT] = normalized.alignment
             prefs[SettingsKeys.FLOATING_LYRICS_SHOW_TRANSLATION] = normalized.showTranslation
             prefs[SettingsKeys.FLOATING_LYRICS_REVEAL_ANIMATION_ENABLED] =
@@ -853,6 +865,24 @@ class SettingsRepository(private val context: Context) {
     suspend fun setFloatingLyricsEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[SettingsKeys.FLOATING_LYRICS_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setFloatingLyricsPosition(
+        positionX: Float,
+        positionY: Float,
+        isLandscape: Boolean
+    ) {
+        val normalizedX = normalizeFloatingLyricsPosition(positionX)
+        val normalizedY = normalizeFloatingLyricsPosition(positionY)
+        context.dataStore.edit { prefs ->
+            if (isLandscape) {
+                prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X] = normalizedX
+                prefs[SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y] = normalizedY
+            } else {
+                prefs[SettingsKeys.FLOATING_LYRICS_POSITION_X] = normalizedX
+                prefs[SettingsKeys.FLOATING_LYRICS_POSITION_Y] = normalizedY
+            }
         }
     }
 

@@ -767,6 +767,11 @@ internal fun PlayerManager.initializeImpl(
                     biliSkipSegmentPromptEnabled = enabled
                 }
         }
+        FloatingLyricsOverlayManager.setPositionChangeListener { positionX, positionY, isLandscape ->
+            ioScope.launch {
+                settingsRepo.setFloatingLyricsPosition(positionX, positionY, isLandscape)
+            }
+        }
         ioScope.launch {
             settingsRepo.floatingLyricsPreferencesFlow.collect { preferences ->
                 val normalized = preferences.normalized()
@@ -779,6 +784,11 @@ internal fun PlayerManager.initializeImpl(
                     floatingLyricsEnabledChanged -> syncExternalBluetoothLyrics(_currentSongFlow.value)
                     showTranslationChanged -> syncExternalTranslatedLyrics(_currentSongFlow.value)
                 }
+            }
+        }
+        mainScope.launch {
+            _isPlayingFlow.collect { isPlaying ->
+                FloatingLyricsOverlayManager.updatePlaybackState(isPlaying)
             }
         }
         mainScope.launch {

@@ -1532,6 +1532,8 @@
     <string name="settings_floating_lyrics_permission_required">Needs permission to display over other apps. Enabling opens the system permission page.</string>
     <string name="settings_floating_lyrics_hide_in_app">Hide inside app</string>
     <string name="settings_floating_lyrics_hide_in_app_desc">Hide floating lyrics while NeriPlayer is open to avoid covering the UI</string>
+    <string name="settings_floating_lyrics_long_press_drag">Allow long-press drag</string>
+    <string name="settings_floating_lyrics_long_press_drag_desc">Long-press to reposition floating lyrics</string>
     <string name="settings_floating_lyrics_text_color">Lyrics Color</string>
     <string name="settings_floating_lyrics_render_style">Rendering style</string>
     <string name="settings_floating_lyrics_render_shadow">Shadow</string>
@@ -1564,6 +1566,9 @@
     <string name="settings_floating_lyrics_position_x">Horizontal position</string>
     <string name="settings_floating_lyrics_position_y">Vertical position</string>
     <string name="settings_floating_lyrics_position_value">%1$.1f%%</string>
+    <string name="settings_floating_lyrics_orientation">Position orientation</string>
+    <string name="settings_floating_lyrics_orientation_portrait">Portrait</string>
+    <string name="settings_floating_lyrics_orientation_landscape">Landscape</string>
     <string name="settings_floating_lyrics_alignment">Alignment</string>
     <string name="settings_floating_lyrics_align_left">Left</string>
     <string name="settings_floating_lyrics_align_center">Center</string>

@@ -114,6 +114,19 @@ class AutoSettingsGeneratedTest {
             "floating_lyrics_render_style" in stringKeyNames
         )
         assertTrue(
+            "floating lyrics long-press drag switch should be exportable",
+            "floating_lyrics_long_press_drag_enabled" in booleanKeyNames
+        )
+        listOf(
+            "floating_lyrics_landscape_position_x",
+            "floating_lyrics_landscape_position_y"
+        ).forEach { keyName ->
+            assertTrue(
+                "landscape floating lyrics position should be exportable: $keyName",
+                keyName in floatKeyNames
+            )
+        }
+        assertTrue(
             "download string should be exportable",
             "download_directory_uri" in stringKeyNames
         )

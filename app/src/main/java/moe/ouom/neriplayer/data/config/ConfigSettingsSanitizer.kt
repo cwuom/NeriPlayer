@@ -103,7 +103,10 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                     normalizeFloatingLyricsAlpha(value)
                 SettingsKeys.FLOATING_LYRICS_MAX_WIDTH_DP.name -> normalizeFloatingLyricsMaxWidthDp(value)
                 SettingsKeys.FLOATING_LYRICS_POSITION_X.name,
-                SettingsKeys.FLOATING_LYRICS_POSITION_Y.name -> normalizeFloatingLyricsPosition(value)
+                SettingsKeys.FLOATING_LYRICS_POSITION_Y.name,
+                SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_X.name,
+                SettingsKeys.FLOATING_LYRICS_LANDSCAPE_POSITION_Y.name ->
+                    normalizeFloatingLyricsPosition(value)
                 SettingsKeys.UI_DENSITY_SCALE.name -> value.coerceIn(UI_DENSITY_SCALE_RANGE)
                 SettingsKeys.BACKGROUND_IMAGE_BLUR.name -> value.coerceIn(BACKGROUND_IMAGE_BLUR_RANGE)
                 SettingsKeys.BACKGROUND_IMAGE_ALPHA.name -> value.coerceIn(BACKGROUND_IMAGE_ALPHA_RANGE)

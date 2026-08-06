@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,9 +16,11 @@ import androidx.compose.material.icons.outlined.FormatColorFill
 import androidx.compose.material.icons.outlined.FormatColorText
 import androidx.compose.material.icons.outlined.LineWeight
 import androidx.compose.material.icons.outlined.Opacity
+import androidx.compose.material.icons.outlined.OpenWith
 import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -40,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -50,6 +54,8 @@ import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_CENTER
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
+import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ORIENTATION_LANDSCAPE
+import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ORIENTATION_PORTRAIT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_SHADOW
@@ -95,6 +101,33 @@ internal fun SettingsFloatingLyricsSection(
     var pendingMaxWidthDp by remember { mutableFloatStateOf(normalizedPreferences.maxWidthDp) }
     var pendingPositionX by remember { mutableFloatStateOf(normalizedPreferences.positionX) }
     var pendingPositionY by remember { mutableFloatStateOf(normalizedPreferences.positionY) }
+    var pendingLandscapePositionX by remember {
+        mutableFloatStateOf(normalizedPreferences.landscapePositionX)
+    }
+    var pendingLandscapePositionY by remember {
+        mutableFloatStateOf(normalizedPreferences.landscapePositionY)
+    }
+    val configuration = LocalConfiguration.current
+    var positionOrientation by remember {
+        mutableStateOf(
+            if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                FLOATING_LYRICS_ORIENTATION_LANDSCAPE
+            } else {
+                FLOATING_LYRICS_ORIENTATION_PORTRAIT
+            }
+        )
+    }
+    val editingLandscape = positionOrientation == FLOATING_LYRICS_ORIENTATION_LANDSCAPE
+    val displayedPositionX = if (editingLandscape) {
+        pendingLandscapePositionX
+    } else {
+        pendingPositionX
+    }
+    val displayedPositionY = if (editingLandscape) {
+        pendingLandscapePositionY
+    } else {
+        pendingPositionY
+    }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var overlayPermissionGranted by remember {
@@ -133,6 +166,19 @@ internal fun SettingsFloatingLyricsSection(
     LaunchedEffect(normalizedPreferences.positionY) {
         pendingPositionY = normalizedPreferences.positionY
     }
+    LaunchedEffect(normalizedPreferences.landscapePositionX) {
+        pendingLandscapePositionX = normalizedPreferences.landscapePositionX
+    }
+    LaunchedEffect(normalizedPreferences.landscapePositionY) {
+        pendingLandscapePositionY = normalizedPreferences.landscapePositionY
+    }
+    LaunchedEffect(configuration.orientation) {
+        positionOrientation = if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            FLOATING_LYRICS_ORIENTATION_LANDSCAPE
+        } else {
+            FLOATING_LYRICS_ORIENTATION_PORTRAIT
+        }
+    }
     fun updatePreferences(transform: (FloatingLyricsPreferences) -> FloatingLyricsPreferences) {
         onPreferencesChange(transform(normalizedPreferences).normalized())
     }
@@ -144,7 +190,9 @@ internal fun SettingsFloatingLyricsSection(
         translationAlpha: Float = pendingTranslationAlpha,
         maxWidthDp: Float = pendingMaxWidthDp,
         positionX: Float = pendingPositionX,
-        positionY: Float = pendingPositionY
+        positionY: Float = pendingPositionY,
+        landscapePositionX: Float = pendingLandscapePositionX,
+        landscapePositionY: Float = pendingLandscapePositionY
     ): FloatingLyricsPreferences {
         return normalizedPreferences.copy(
             fontSizeSp = fontSizeSp,
@@ -154,7 +202,9 @@ internal fun SettingsFloatingLyricsSection(
             translationAlpha = translationAlpha,
             maxWidthDp = maxWidthDp,
             positionX = positionX,
-            positionY = positionY
+            positionY = positionY,
+            landscapePositionX = landscapePositionX,
+            landscapePositionY = landscapePositionY
         ).normalized()
     }
     fun previewOverlay(preferences: FloatingLyricsPreferences) {
@@ -168,14 +218,19 @@ internal fun SettingsFloatingLyricsSection(
         translationAlpha = pendingTranslationAlpha,
         maxWidthDp = pendingMaxWidthDp,
         positionX = pendingPositionX,
-        positionY = pendingPositionY
+        positionY = pendingPositionY,
+        landscapePositionX = pendingLandscapePositionX,
+        landscapePositionY = pendingLandscapePositionY
     )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        FloatingLyricsPreview(preferences = previewPreferences)
+        FloatingLyricsPreview(
+            preferences = previewPreferences,
+            isLandscape = editingLandscape
+        )
         FloatingLyricsSwitchListItem(
             title = stringResource(R.string.settings_floating_lyrics_enable),
             description = if (overlayPermissionGranted) {
@@ -203,6 +258,15 @@ internal fun SettingsFloatingLyricsSection(
             checked = normalizedPreferences.hideInApp,
             onCheckedChange = { hideInApp ->
                 updatePreferences { it.copy(hideInApp = hideInApp) }
+            }
+        )
+        FloatingLyricsSwitchListItem(
+            title = stringResource(R.string.settings_floating_lyrics_long_press_drag),
+            description = stringResource(R.string.settings_floating_lyrics_long_press_drag_desc),
+            icon = Icons.Outlined.OpenWith,
+            checked = normalizedPreferences.longPressDragEnabled,
+            onCheckedChange = { enabled ->
+                updatePreferences { it.copy(longPressDragEnabled = enabled) }
             }
         )
         FloatingLyricsColorPicker(
@@ -368,42 +432,76 @@ internal fun SettingsFloatingLyricsSection(
                 updatePreferences { it.copy(maxWidthDp = pendingMaxWidthDp) }
             }
         )
+        FloatingLyricsOrientationSelector(
+            orientation = positionOrientation,
+            onOrientationChange = { positionOrientation = it }
+        )
         FloatingLyricsSliderListItem(
             title = stringResource(R.string.settings_floating_lyrics_position_x),
             valueText = stringResource(
                 R.string.settings_floating_lyrics_position_value,
-                pendingPositionX * 100f
+                displayedPositionX * 100f
             ),
             icon = Icons.Outlined.SwapHoriz,
-            value = pendingPositionX,
+            value = displayedPositionX,
             valueRange = 0f..1f,
             steps = 0,
             onValueChange = { value ->
                 val nextValue = normalizeFloatingLyricsPosition(value)
-                pendingPositionX = nextValue
-                previewOverlay(buildPendingPreferences(positionX = nextValue))
+                if (editingLandscape) {
+                    pendingLandscapePositionX = nextValue
+                } else {
+                    pendingPositionX = nextValue
+                }
+                previewOverlay(
+                    buildPendingPreferences(
+                        positionX = if (editingLandscape) pendingPositionX else nextValue,
+                        landscapePositionX = if (editingLandscape) nextValue else pendingLandscapePositionX
+                    )
+                )
             },
             onValueChangeFinished = {
-                updatePreferences { it.copy(positionX = pendingPositionX) }
+                updatePreferences {
+                    if (editingLandscape) {
+                        it.copy(landscapePositionX = pendingLandscapePositionX)
+                    } else {
+                        it.copy(positionX = pendingPositionX)
+                    }
+                }
             }
         )
         FloatingLyricsSliderListItem(
             title = stringResource(R.string.settings_floating_lyrics_position_y),
             valueText = stringResource(
                 R.string.settings_floating_lyrics_position_value,
-                pendingPositionY * 100f
+                displayedPositionY * 100f
             ),
             icon = Icons.Outlined.SwapVert,
-            value = pendingPositionY,
+            value = displayedPositionY,
             valueRange = 0f..1f,
             steps = 0,
             onValueChange = { value ->
                 val nextValue = normalizeFloatingLyricsPosition(value)
-                pendingPositionY = nextValue
-                previewOverlay(buildPendingPreferences(positionY = nextValue))
+                if (editingLandscape) {
+                    pendingLandscapePositionY = nextValue
+                } else {
+                    pendingPositionY = nextValue
+                }
+                previewOverlay(
+                    buildPendingPreferences(
+                        positionY = if (editingLandscape) pendingPositionY else nextValue,
+                        landscapePositionY = if (editingLandscape) nextValue else pendingLandscapePositionY
+                    )
+                )
             },
             onValueChangeFinished = {
-                updatePreferences { it.copy(positionY = pendingPositionY) }
+                updatePreferences {
+                    if (editingLandscape) {
+                        it.copy(landscapePositionY = pendingLandscapePositionY)
+                    } else {
+                        it.copy(positionY = pendingPositionY)
+                    }
+                }
             }
         )
         FloatingLyricsAlignmentSelector(
@@ -549,6 +647,46 @@ private fun FloatingLyricsRenderStyleSelector(
                 ),
                 selectedIndex = selectedIndex,
                 onSelectedIndexChange = { index -> onRenderStyleChange(renderStyles[index]) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .padding(top = 8.dp)
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@Composable
+private fun FloatingLyricsOrientationSelector(
+    orientation: String,
+    onOrientationChange: (String) -> Unit
+) {
+    val orientations = listOf(
+        FLOATING_LYRICS_ORIENTATION_PORTRAIT,
+        FLOATING_LYRICS_ORIENTATION_LANDSCAPE
+    )
+    val selectedIndex = orientations.indexOf(orientation).takeIf { it >= 0 } ?: 0
+
+    ListItem(
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Outlined.ScreenRotation,
+                contentDescription = stringResource(R.string.settings_floating_lyrics_orientation),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        headlineContent = {
+            Text(stringResource(R.string.settings_floating_lyrics_orientation))
+        },
+        supportingContent = {
+            MiuixSettingsSegmentedTabs(
+                labels = listOf(
+                    stringResource(R.string.settings_floating_lyrics_orientation_portrait),
+                    stringResource(R.string.settings_floating_lyrics_orientation_landscape)
+                ),
+                selectedIndex = selectedIndex,
+                onSelectedIndexChange = { index -> onOrientationChange(orientations[index]) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)

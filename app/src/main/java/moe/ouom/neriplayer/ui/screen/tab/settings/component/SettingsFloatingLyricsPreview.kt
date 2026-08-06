@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.toColorInt
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.player.lyrics.resolveFloatingLyricsEffectAlpha
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_LEFT
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_ALIGNMENT_RIGHT
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
@@ -44,13 +45,18 @@ import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_RENDER_STYLE_OUTLINE
 import moe.ouom.neriplayer.data.settings.FLOATING_LYRICS_TRANSLATION_STYLE_SCALE
 import moe.ouom.neriplayer.data.settings.MIN_FLOATING_LYRICS_MAX_WIDTH_DP
 import moe.ouom.neriplayer.data.settings.normalizeFloatingLyricsColorHex
+import moe.ouom.neriplayer.data.settings.resolveFloatingLyricsPositionX
+import moe.ouom.neriplayer.data.settings.resolveFloatingLyricsPositionY
 
 private val FloatingLyricsPreviewShape = RoundedCornerShape(22.dp)
 private val FloatingLyricsStageShape = RoundedCornerShape(18.dp)
 private val FloatingLyricsWidthShape = RoundedCornerShape(14.dp)
 
 @Composable
-internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
+internal fun FloatingLyricsPreview(
+    preferences: FloatingLyricsPreferences,
+    isLandscape: Boolean = false
+) {
     val textColor = Color(
         ("#${normalizeFloatingLyricsColorHex(preferences.textColorHex)}").toColorInt()
     )
@@ -111,12 +117,12 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
             } + 2.dp
             val verticalTravel = (maxHeight - lineBlockHeight - 12.dp).coerceAtLeast(0.dp)
             val offsetX by animateDpAsState(
-                targetValue = horizontalTravel * preferences.positionX,
+                targetValue = horizontalTravel * resolveFloatingLyricsPositionX(preferences, isLandscape),
                 animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
                 label = "floating_lyrics_preview_x"
             )
             val offsetY by animateDpAsState(
-                targetValue = verticalTravel * preferences.positionY,
+                targetValue = verticalTravel * resolveFloatingLyricsPositionY(preferences, isLandscape),
                 animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
                 label = "floating_lyrics_preview_y"
             )
@@ -148,7 +154,9 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                     FloatingPreviewText(
                         text = stringResource(R.string.settings_floating_lyrics_preview_line),
                         textColor = textColor.copy(alpha = preferences.lyricAlpha),
-                        effectColor = effectColor.copy(alpha = preferences.lyricAlpha),
+                        effectColor = effectColor.copy(
+                            alpha = resolveFloatingLyricsEffectAlpha(preferences.lyricAlpha)
+                        ),
                         fontSizeSp = preferences.fontSizeSp,
                         effectWidthDp = preferences.outlineWidthDp,
                         usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,
@@ -159,7 +167,11 @@ internal fun FloatingLyricsPreview(preferences: FloatingLyricsPreferences) {
                         FloatingPreviewText(
                             text = stringResource(R.string.settings_floating_lyrics_preview_translation),
                             textColor = textColor.copy(alpha = preferences.translationAlpha),
-                            effectColor = effectColor.copy(alpha = preferences.translationAlpha),
+                            effectColor = effectColor.copy(
+                                alpha = resolveFloatingLyricsEffectAlpha(
+                                    preferences.translationAlpha
+                                )
+                            ),
                             fontSizeSp = translationFontSizeSp,
                             effectWidthDp = preferences.translationOutlineWidthDp,
                             usesOutline = preferences.renderStyle == FLOATING_LYRICS_RENDER_STYLE_OUTLINE,

@@ -1017,6 +1017,16 @@ object AutoSettingsSchema {
         val floatingLyricsHideInApp = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_long_press_drag_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 16,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLongPressDragEnabled = Unit
+
+        @AutoSetting(
             key = "floating_lyrics_text_color",
             type = SettingValueType.String,
             defaultString = "FFFFFF",
@@ -1125,6 +1135,26 @@ object AutoSettingsSchema {
             access = SettingAccessMode.KeyOnly
         )
         val floatingLyricsPositionY = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_landscape_position_x",
+            type = SettingValueType.Float,
+            defaultFloat = 0.1f,
+            order = 23,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLandscapePositionX = Unit
+
+        @AutoSetting(
+            key = "floating_lyrics_landscape_position_y",
+            type = SettingValueType.Float,
+            defaultFloat = 0.7f,
+            order = 24,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsLandscapePositionY = Unit
 
         @AutoSetting(
             key = "floating_lyrics_alignment",

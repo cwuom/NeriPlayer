@@ -5,6 +5,8 @@ import java.util.Locale
 const val FLOATING_LYRICS_ALIGNMENT_LEFT = "left"
 const val FLOATING_LYRICS_ALIGNMENT_CENTER = "center"
 const val FLOATING_LYRICS_ALIGNMENT_RIGHT = "right"
+const val FLOATING_LYRICS_ORIENTATION_PORTRAIT = "portrait"
+const val FLOATING_LYRICS_ORIENTATION_LANDSCAPE = "landscape"
 const val FLOATING_LYRICS_RENDER_STYLE_SHADOW = "shadow"
 const val FLOATING_LYRICS_RENDER_STYLE_OUTLINE = "outline"
 const val FLOATING_LYRICS_TRANSLATION_STYLE_SCALE = 0.72f
@@ -37,6 +39,7 @@ private val HEX_COLOR_REGEX = Regex("^[0-9A-F]{6}$")
 data class FloatingLyricsPreferences(
     val enabled: Boolean = false,
     val hideInApp: Boolean = false,
+    val longPressDragEnabled: Boolean = true,
     val textColorHex: String = DEFAULT_FLOATING_LYRICS_TEXT_COLOR,
     val renderStyle: String = FLOATING_LYRICS_RENDER_STYLE_SHADOW,
     val outlineColorHex: String = DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR,
@@ -46,8 +49,11 @@ data class FloatingLyricsPreferences(
     val translationOutlineWidthDp: Float = defaultFloatingLyricsTranslationOutlineWidthDp(),
     val translationAlpha: Float = DEFAULT_FLOATING_LYRICS_TRANSLATION_ALPHA,
     val maxWidthDp: Float = DEFAULT_FLOATING_LYRICS_MAX_WIDTH_DP,
+    // legacy position fields are retained as the portrait configuration
     val positionX: Float = DEFAULT_FLOATING_LYRICS_POSITION_X,
     val positionY: Float = DEFAULT_FLOATING_LYRICS_POSITION_Y,
+    val landscapePositionX: Float = positionX,
+    val landscapePositionY: Float = positionY,
     val alignment: String = FLOATING_LYRICS_ALIGNMENT_CENTER,
     val showTranslation: Boolean = true,
     val revealAnimationEnabled: Boolean = true
@@ -67,6 +73,8 @@ data class FloatingLyricsPreferences(
             maxWidthDp = normalizeFloatingLyricsMaxWidthDp(maxWidthDp),
             positionX = normalizeFloatingLyricsPosition(positionX),
             positionY = normalizeFloatingLyricsPosition(positionY),
+            landscapePositionX = normalizeFloatingLyricsPosition(landscapePositionX),
+            landscapePositionY = normalizeFloatingLyricsPosition(landscapePositionY),
             alignment = normalizeFloatingLyricsAlignment(alignment),
             renderStyle = normalizeFloatingLyricsRenderStyle(renderStyle)
         )
@@ -122,6 +130,16 @@ fun normalizeFloatingLyricsMaxWidthDp(value: Float): Float =
 
 fun normalizeFloatingLyricsPosition(value: Float): Float =
     value.coerceIn(0f, 1f)
+
+fun resolveFloatingLyricsPositionX(
+    preferences: FloatingLyricsPreferences,
+    isLandscape: Boolean
+): Float = if (isLandscape) preferences.landscapePositionX else preferences.positionX
+
+fun resolveFloatingLyricsPositionY(
+    preferences: FloatingLyricsPreferences,
+    isLandscape: Boolean
+): Float = if (isLandscape) preferences.landscapePositionY else preferences.positionY
 
 fun normalizeFloatingLyricsAlignment(value: String?): String {
     return when (value?.trim()?.lowercase(Locale.ROOT)) {
