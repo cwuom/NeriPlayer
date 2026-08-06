@@ -29,6 +29,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.toSyncableRemoteSongOrNull
 
 internal object PlayerFavoritesController {
 
@@ -49,6 +50,9 @@ internal object PlayerFavoritesController {
         application: Application,
         favoritePlaylistName: String
     ): List<LocalPlaylist> {
+        val favoriteSong = song
+            ?.toSyncableRemoteSongOrNull(application)
+            ?: song
         val favoriteIndex = playlists.indexOfFirst {
             FavoritesPlaylist.isSystemPlaylist(it, application)
         }
@@ -66,18 +70,20 @@ internal object PlayerFavoritesController {
         if (favoriteIndex >= 0) {
             val favorites = copiedPlaylists[favoriteIndex]
             when {
-                add && song != null && favorites.songs.none { it.sameIdentityAs(song) } -> {
-                    favorites.songs.add(0, song)
+                add && favoriteSong != null && favorites.songs.none {
+                    it.sameIdentityAs(favoriteSong)
+                } -> {
+                    favorites.songs.add(0, favoriteSong)
                 }
                 !add && song != null -> {
                     favorites.songs.removeAll { it.sameIdentityAs(song) }
                 }
             }
-        } else if (add && song != null) {
+        } else if (add && favoriteSong != null) {
             copiedPlaylists += LocalPlaylist(
                 id = FavoritesPlaylist.SYSTEM_ID,
                 name = favoritePlaylistName,
-                songs = mutableListOf(song),
+                songs = mutableListOf(favoriteSong),
                 songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
             )
         }

@@ -72,24 +72,45 @@ private fun parseBiliPartMetadata(part: String, fallbackArtist: String): Pair<St
 }
 
 suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSong? {
-    if (!song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)) return null
+    val resolutionSong = song.toBiliResolutionSongOrNull() ?: return null
 
-    val parts = song.album.split('|')
+    val parts = resolutionSong.album.split('|')
     val storedCid = parts.getOrNull(1)?.toLongOrNull()
 
     if (storedCid != null) {
         val resolved = resolveByCandidates(
-            song = song,
+            song = resolutionSong,
             client = client,
             preferredCid = storedCid
         )
         if (resolved != null) return resolved
     }
 
-    val direct = resolveDirect(song, client)
-    val legacy = resolveLegacy(song, client)
+    val direct = resolveDirect(resolutionSong, client)
+    val legacy = resolveLegacy(resolutionSong, client)
 
     return legacy ?: direct
+}
+
+internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
+    if (album.startsWith(PlayerManager.BILI_SOURCE_TAG)) {
+        return this
+    }
+    if (!channelId.equals("bilibili", ignoreCase = true)) {
+        return null
+    }
+    val avid = audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+    val cid = subAudioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+    return copy(
+        id = avid,
+        album = buildString {
+            append(PlayerManager.BILI_SOURCE_TAG)
+            cid?.let {
+                append('|')
+                append(it)
+            }
+        }
+    )
 }
 
 private suspend fun resolveByCandidates(

@@ -42,9 +42,10 @@
     <string name="local_song_metadata_write_confirm_write">回写</string>
     <string name="local_song_metadata_write_confirm_app_only">仅应用内保存</string>
     <string name="local_song_metadata_write_success">已回写本地音频标签</string>
-    <string name="local_song_metadata_write_not_writable">无法写入本地音频标签，已仅保存到应用内</string>
-    <string name="local_song_metadata_write_unsupported">此音频无法读取标签或不支持回写，已仅保存到应用内</string>
-    <string name="local_song_metadata_write_failed">回写本地音频标签失败，已仅保存到应用内</string>
+    <string name="local_song_metadata_write_catalog_sync_failed">已回写本地音频标签，但下载列表同步失败</string>
+    <string name="local_song_metadata_write_not_writable">无法写入本地音频标签，未保存本次修改</string>
+    <string name="local_song_metadata_write_unsupported">此音频无法读取标签或不支持回写，未保存本次修改</string>
+    <string name="local_song_metadata_write_failed">回写本地音频标签失败，未保存本次修改</string>
     <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
     <string name="local_song_sync_confirm_message">本地歌曲不会参与同步，确认%1$s吗？</string>
     <string name="local_song_share_failed">无法分享本地歌曲文件</string>

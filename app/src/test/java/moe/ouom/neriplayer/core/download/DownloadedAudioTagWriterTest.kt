@@ -1,6 +1,10 @@
 package moe.ouom.neriplayer.core.download
 
+import com.kyant.taglib.Picture
+import com.kyant.taglib.PropertyMap
+import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as MetadataDownloadedAudioTagWriter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -84,6 +88,42 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `embedded translation is exposed through standard and app lyric fields`() {
+        val propertyMap: PropertyMap = hashMapOf()
+
+        MetadataDownloadedAudioTagWriter.applyEmbeddedLyricValues(
+            propertyMap = propertyMap,
+            audioExtension = "mp3",
+            lyrics = "[00:01.00]hello",
+            translatedLyrics = "[00:01.00]你好"
+        )
+
+        val externalLyrics = "[00:01.00]hello\n[00:01.00]你好"
+        assertArrayEquals(arrayOf(externalLyrics), propertyMap["LYRICS"])
+        assertArrayEquals(arrayOf(externalLyrics), propertyMap["UNSYNCEDLYRICS"])
+        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS:TRANSLATION"])
+        assertArrayEquals(arrayOf("[00:01.00]hello"), propertyMap["NERI_LYRICS_ORIGINAL"])
+        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["NERI_LYRICS_TRANSLATED"])
+    }
+
+    @Test
+    fun `m4a lyric embedding mirrors bilingual content into description`() {
+        val propertyMap: PropertyMap = hashMapOf()
+
+        MetadataDownloadedAudioTagWriter.applyEmbeddedLyricValues(
+            propertyMap = propertyMap,
+            audioExtension = "m4a",
+            lyrics = "[00:01.00]hello",
+            translatedLyrics = "[00:01.00]你好"
+        )
+
+        val externalLyrics = "[00:01.00]hello\n[00:01.00]你好"
+        assertArrayEquals(arrayOf(externalLyrics), propertyMap["LYRICS"])
+        assertArrayEquals(arrayOf(externalLyrics), propertyMap["DESCRIPTION"])
+        assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS:TRANSLATION"])
+    }
+
+    @Test
     fun `required embedded metadata accepts matching title and artist`() {
         val song = testSong(name = "Song", artist = "Artist")
         val propertyMap = hashMapOf(
@@ -145,6 +185,86 @@ class DownloadedAudioTagWriterTest {
     @Test
     fun `extensionless file is not treated as taggable`() {
         assertFalse(DownloadedAudioTagWriter.supportsEmbeddedTags("youtubeMusic - Artist - Song"))
+    }
+
+    @Test
+    fun `downloaded m4a cover replacement keeps exactly one covr picture`() {
+        val replacement = Picture(
+            data = byteArrayOf(9),
+            description = "",
+            pictureType = "Front Cover",
+            mimeType = "image/jpeg"
+        )
+
+        val updated = MetadataDownloadedAudioTagWriter.replaceCoverPictures(
+            existingPictures = arrayOf(
+                Picture(byteArrayOf(1), "", "", "image/jpeg"),
+                Picture(byteArrayOf(2), "", "", "image/png")
+            ),
+            replacementPicture = replacement,
+            audioExtension = "m4a"
+        )
+
+        assertEquals(1, updated.size)
+        assertArrayEquals(replacement.data, updated.single().data)
+    }
+
+    @Test
+    fun `downloaded typed cover replacement retains back cover`() {
+        val backCover = Picture(
+            data = byteArrayOf(1),
+            description = "back",
+            pictureType = "Back Cover",
+            mimeType = "image/png"
+        )
+        val replacement = Picture(
+            data = byteArrayOf(2),
+            description = "",
+            pictureType = "Front Cover",
+            mimeType = "image/jpeg"
+        )
+
+        val updated = MetadataDownloadedAudioTagWriter.replaceCoverPictures(
+            existingPictures = arrayOf(
+                backCover,
+                Picture(byteArrayOf(3), "", "Front Cover", "image/jpeg")
+            ),
+            replacementPicture = replacement,
+            audioExtension = "flac"
+        )
+
+        assertEquals(2, updated.size)
+        assertArrayEquals(backCover.data, updated[0].data)
+        assertArrayEquals(replacement.data, updated[1].data)
+    }
+
+    @Test
+    fun `downloaded m4a recognizes roleless covr semantics`() {
+        assertTrue(MetadataDownloadedAudioTagWriter.usesRolelessCoverPictures("m4a"))
+        assertTrue(MetadataDownloadedAudioTagWriter.usesRolelessCoverPictures("M4B"))
+        assertFalse(MetadataDownloadedAudioTagWriter.usesRolelessCoverPictures("mp3"))
+    }
+
+    @Test
+    fun `m4a cover write restores properties after replacing covr`() {
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldRestorePropertyMapAfterCoverWrite(
+                audioExtension = "m4a",
+                writesCover = true
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldRestorePropertyMapAfterCoverWrite(
+                audioExtension = "mp3",
+                writesCover = true
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldRestorePropertyMapAfterCoverWrite(
+                audioExtension = "m4a",
+                writesCover = false
+            )
+        )
     }
 
     private fun testSong(

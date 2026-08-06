@@ -6,6 +6,7 @@ import kotlin.LazyThreadSafetyMode
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
@@ -52,7 +53,11 @@ internal class DownloadedSongBuilder(
             metadata?.coverUrl,
             metadata?.originalCoverUrl
         )
-            ?: ManagedDownloadArtifactPlanner.indexedCoverReference(storedAudio, effectiveSnapshot)
+        val indexedCoverReference = if (shouldUseIndexedDownloadedCoverFallback(metadata)) {
+            ManagedDownloadArtifactPlanner.indexedCoverReference(storedAudio, effectiveSnapshot)
+        } else {
+            null
+        }
         val lyricContent = resolveLyricContent(
             context = context,
             storedAudio = storedAudio,
@@ -71,7 +76,7 @@ internal class DownloadedSongBuilder(
                 shouldInspectDownloadedAudioDetails(
                     allowSlowLocalInspection = allowSlowLocalInspection,
                     metadata = metadata,
-                    coverReference = cachedCoverReference,
+                    coverReference = cachedCoverReference ?: indexedCoverReference,
                     needsLocalLyricFallback = needsLocalLyricFallback
                 )
             ) {
@@ -80,7 +85,7 @@ internal class DownloadedSongBuilder(
                 null
             }
         }
-        val coverReference = cachedCoverReference ?: localDetails?.coverUri
+        val coverReference = cachedCoverReference ?: indexedCoverReference ?: localDetails?.coverUri
         val matchedLyric = if (loadLyricContents) {
             resolveDownloadedLyricOverride(
                 fileLyric = lyricContent.fileLyric,
@@ -138,8 +143,14 @@ internal class DownloadedSongBuilder(
             originalTranslatedLyric = metadata?.originalTranslatedLyric,
             mediaUri = storedAudio.playbackUri,
             durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L,
-            stableKey = metadata?.stableKey
-        )
+            stableKey = metadata?.stableKey ?: localDetails?.sourceStableKey,
+            sourceIdentityAlbum = metadata?.identityAlbum,
+            sourceMediaUri = metadata?.mediaUri,
+            sourceChannelId = metadata?.channelId,
+            sourceAudioId = metadata?.audioId,
+            sourceSubAudioId = metadata?.subAudioId,
+            sourcePlaylistContextId = metadata?.playlistContextId
+        ).withRecoveredRemoteSourceStableKey()
     }
 
     fun inspectAudioDetails(
@@ -324,4 +335,15 @@ internal class DownloadedSongBuilder(
         val resolvedReference: String?,
         val indexedReference: String?
     )
+}
+
+internal fun shouldUseIndexedDownloadedCoverFallback(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): Boolean {
+    if (metadata == null) return true
+    val restoredBaseCover = metadata.customCoverUrl.isNullOrBlank() &&
+        metadata.coverPath.isNullOrBlank() &&
+        !metadata.originalCoverUrl.isNullOrBlank() &&
+        metadata.coverUrl == metadata.originalCoverUrl
+    return !restoredBaseCover
 }

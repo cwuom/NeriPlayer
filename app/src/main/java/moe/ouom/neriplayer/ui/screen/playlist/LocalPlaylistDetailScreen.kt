@@ -181,6 +181,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
@@ -805,7 +806,7 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun launchWithLocalSyncWarning(songs: List<SongItem>, actionLabel: String, action: () -> Unit) {
-                if (songs.any { it.isLocalSong() }) {
+                if (songs.any { !it.isSyncableRemoteSong(context) }) {
                     pendingSyncConfirmLabel = actionLabel
                     pendingSyncConfirmAction = action
                 } else {

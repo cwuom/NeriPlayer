@@ -40,6 +40,64 @@ internal fun normalizeCustomMetadataValue(
     return normalizedDesired.takeIf { it != baseValue }
 }
 
+internal fun shouldWriteLocalCoverMetadata(
+    restoreBaseCover: Boolean,
+    nextCustomCover: String?,
+    previousCustomCover: String?
+): Boolean {
+    return restoreBaseCover ||
+        nextCustomCover != previousCustomCover ||
+        !nextCustomCover.isNullOrBlank()
+}
+
+internal fun resolveLocalCoverWriteReference(
+    restoreBaseCover: Boolean,
+    requestedCoverReference: String?,
+    restoredBaseCoverReference: String?
+): String? {
+    val reference = if (restoreBaseCover) {
+        restoredBaseCoverReference
+    } else {
+        requestedCoverReference
+    }
+    return reference?.trim()?.takeIf(String::isNotBlank)
+}
+
+internal fun resolveRestoredBaseCoverUrl(
+    originalCoverUrl: String?,
+    baseCoverUrl: String?,
+    currentCustomCoverUrl: String?
+): String? {
+    val customCover = currentCustomCoverUrl?.trim()?.takeIf { it.isNotBlank() }
+    return originalCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != customCover }
+        ?: baseCoverUrl
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it != customCover }
+}
+
+internal enum class LocalMetadataWritePlaybackAction {
+    NONE,
+    RELEASE_ONLY,
+    RELEASE_AND_RESUME
+}
+
+internal fun resolveLocalMetadataWritePlaybackAction(
+    isTargetCurrentSong: Boolean,
+    hasLoadedMedia: Boolean,
+    shouldResumePlayback: Boolean
+): LocalMetadataWritePlaybackAction {
+    if (!isTargetCurrentSong || !hasLoadedMedia) {
+        return LocalMetadataWritePlaybackAction.NONE
+    }
+    return if (shouldResumePlayback) {
+        LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME
+    } else {
+        LocalMetadataWritePlaybackAction.RELEASE_ONLY
+    }
+}
+
 internal fun SongSearchInfo.toBasicSongDetails(): SongDetails {
     return SongDetails(
         id = id,

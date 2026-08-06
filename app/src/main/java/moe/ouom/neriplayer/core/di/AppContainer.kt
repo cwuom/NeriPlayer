@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliArchiveCacheRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliFavoriteFolderCacheRepository
+import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRepository
 import moe.ouom.neriplayer.data.platform.netease.NeteasePlaylistCacheRepository
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
@@ -349,6 +350,7 @@ object AppContainer {
 
     val biliClient by lazy { BiliClient(biliCookieRepo, client = sharedOkHttpClient) }
     internal val biliSponsorBlockRepository by lazy { BiliSponsorBlockRepository(sharedOkHttpClient) }
+    internal val biliVideoSkipRepository by lazy { BiliVideoSkipRepository.getInstance(application) }
     private val youtubeMusicClientDelegate = lazy {
         YouTubeMusicClient(
             authRepo = youtubeAuthRepo,

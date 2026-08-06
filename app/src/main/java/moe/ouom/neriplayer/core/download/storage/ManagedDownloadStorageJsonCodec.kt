@@ -192,6 +192,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("channelId", channelId)
             put("audioId", audioId)
             put("subAudioId", subAudioId)
+            put("playlistContextId", playlistContextId)
             put("coverPath", coverPath)
             put("lyricPath", lyricPath)
             put("translatedLyricPath", translatedLyricPath)
@@ -366,6 +367,7 @@ internal object ManagedDownloadStorageJsonCodec {
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),
             subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
+            playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
             coverPath = optString("coverPath").takeIf(String::isNotBlank),
             lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),

@@ -431,6 +431,7 @@ internal object ManagedDownloadStorage {
         val channelId: String? = null,
         val audioId: String? = null,
         val subAudioId: String? = null,
+        val playlistContextId: String? = null,
         val coverPath: String? = null,
         val lyricPath: String? = null,
         val translatedLyricPath: String? = null,

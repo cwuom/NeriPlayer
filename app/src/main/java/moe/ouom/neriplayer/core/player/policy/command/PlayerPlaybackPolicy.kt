@@ -74,6 +74,13 @@ internal fun resolvePlaybackStartPlan(
     )
 }
 
+internal fun resolveNoFadePlaybackStartPlan(): PlaybackStartPlan {
+    return resolvePlaybackStartPlan(
+        shouldFadeIn = false,
+        fadeDurationMs = 0L
+    )
+}
+
 internal fun resolveManagedPlaybackStartPlan(
     playbackFadeInEnabled: Boolean,
     playbackFadeInDurationMs: Long,

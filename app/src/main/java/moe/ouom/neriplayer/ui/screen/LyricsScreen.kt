@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.lyrics.AdvancedLyricsView
@@ -297,7 +298,7 @@ fun LyricsScreen(
         warnForLocalSync: Boolean = true,
         action: () -> Unit
     ) {
-        if (warnForLocalSync && song?.isLocalSong() == true) {
+        if (warnForLocalSync && song?.isSyncableRemoteSong(context) == false) {
             pendingSyncConfirmLabel = actionLabel
             pendingSyncConfirmAction = action
         } else {

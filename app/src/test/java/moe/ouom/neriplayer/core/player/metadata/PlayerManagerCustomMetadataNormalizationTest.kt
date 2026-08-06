@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerManagerCustomMetadataNormalizationTest {
@@ -26,5 +28,164 @@ class PlayerManagerCustomMetadataNormalizationTest {
         )
 
         assertNull(normalized)
+    }
+
+    @Test
+    fun `writing an unchanged base cover keeps its selected cover reference`() {
+        val baseCover = "file:///cache/embedded-cover.jpg"
+        val normalizedCustomCover = normalizeCustomMetadataValue(
+            desiredValue = baseCover,
+            baseValue = baseCover
+        )
+
+        assertNull(normalizedCustomCover)
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = false,
+                nextCustomCover = baseCover,
+                previousCustomCover = null
+            )
+        )
+        assertEquals(
+            baseCover,
+            resolveLocalCoverWriteReference(
+                restoreBaseCover = false,
+                requestedCoverReference = baseCover,
+                restoredBaseCoverReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `restoring or replacing a custom cover requests cover write-back`() {
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = true,
+                nextCustomCover = null,
+                previousCustomCover = "file:///cache/custom-cover.jpg"
+            )
+        )
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = false,
+                nextCustomCover = "file:///cache/new-cover.jpg",
+                previousCustomCover = "file:///cache/old-cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `second metadata write preserves an unchanged custom cover`() {
+        val customCover = "file:///cache/custom-cover.jpg"
+
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = false,
+                nextCustomCover = customCover,
+                previousCustomCover = customCover
+            )
+        )
+        assertEquals(
+            customCover,
+            resolveLocalCoverWriteReference(
+                restoreBaseCover = false,
+                requestedCoverReference = customCover,
+                restoredBaseCoverReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `returning a custom cover to the displayed base keeps a replacement reference`() {
+        val baseCover = "file:///cache/original-cover.jpg"
+        val customCover = "file:///cache/custom-cover.jpg"
+        val nextCustomCover = normalizeCustomMetadataValue(
+            desiredValue = baseCover,
+            baseValue = baseCover
+        )
+
+        assertNull(nextCustomCover)
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = false,
+                nextCustomCover = nextCustomCover,
+                previousCustomCover = customCover
+            )
+        )
+        assertEquals(
+            baseCover,
+            resolveLocalCoverWriteReference(
+                restoreBaseCover = false,
+                requestedCoverReference = baseCover,
+                restoredBaseCoverReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `restoring a custom cover uses the preserved original cover`() {
+        assertEquals(
+            "file:///cache/original-cover.jpg",
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "file:///cache/original-cover.jpg",
+                baseCoverUrl = "file:///cache/current-base.jpg",
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `restoring a custom cover never promotes the custom image to base`() {
+        assertNull(
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "file:///cache/custom-cover.jpg",
+                baseCoverUrl = "file:///cache/custom-cover.jpg",
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `restoring a remote base cover keeps it for display`() {
+        assertEquals(
+            "https://example.com/original-cover.jpg",
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = null,
+                baseCoverUrl = "https://example.com/original-cover.jpg",
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `current loaded song is released and resumed for metadata writes`() {
+        assertEquals(
+            LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME,
+            resolveLocalMetadataWritePlaybackAction(
+                isTargetCurrentSong = true,
+                hasLoadedMedia = true,
+                shouldResumePlayback = true
+            )
+        )
+    }
+
+    @Test
+    fun `paused or unrelated metadata writes do not resume playback`() {
+        assertEquals(
+            LocalMetadataWritePlaybackAction.RELEASE_ONLY,
+            resolveLocalMetadataWritePlaybackAction(
+                isTargetCurrentSong = true,
+                hasLoadedMedia = true,
+                shouldResumePlayback = false
+            )
+        )
+        assertEquals(
+            LocalMetadataWritePlaybackAction.NONE,
+            resolveLocalMetadataWritePlaybackAction(
+                isTargetCurrentSong = false,
+                hasLoadedMedia = true,
+                shouldResumePlayback = true
+            )
+        )
     }
 }

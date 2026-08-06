@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Tune
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
@@ -101,6 +102,7 @@ internal fun MoreOptionsMainContent(
     onOpenPlaybackSound: () -> Unit,
     onOpenLyricBehavior: () -> Unit,
     onOpenFontSize: () -> Unit,
+    onOpenBiliVideoSkip: () -> Unit,
     onOpenListenTogether: () -> Unit,
     onShowSongDetails: () -> Unit,
     onShowQualitySwitch: () -> Unit,
@@ -137,6 +139,13 @@ internal fun MoreOptionsMainContent(
             onEnterAlbum = onEnterAlbum,
             snackbarHostState = snackbarHostState
         )
+        if (PlayerManager.isBiliTrack(originalSong)) {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.bili_video_skip_manage)) },
+                leadingContent = { Icon(Icons.Outlined.SkipNext, null) },
+                modifier = Modifier.clickable(onClick = onOpenBiliVideoSkip)
+            )
+        }
         ShareSongAction(
             song = originalSong,
             queue = queue,

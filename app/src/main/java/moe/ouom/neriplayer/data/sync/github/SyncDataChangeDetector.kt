@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
@@ -49,6 +50,11 @@ internal object SyncDataChangeDetector {
         if (recentPlaysChanged(remote.recentPlays, merged.recentPlays)) return true
         if (recentPlayDeletionsChanged(remote.recentPlayDeletions, merged.recentPlayDeletions)) return true
         if (playlistSongDeletionsChanged(remote.playlistSongDeletions, merged.playlistSongDeletions)) return true
+        if (!SyncBiliVideoSkipMergePolicy.same(
+                remote.biliVideoSkipRules,
+                merged.biliVideoSkipRules
+            )
+        ) return true
 
         val remoteStats = remote.playbackStats.associateBy { it.identityKey }
         val mergedStats = merged.playbackStats.associateBy { it.identityKey }

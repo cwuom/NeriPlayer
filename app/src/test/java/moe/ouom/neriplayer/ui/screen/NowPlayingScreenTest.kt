@@ -150,6 +150,21 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `local song outer cover only previews on long press`() {
+        val remoteSong = testSong(id = 1L, name = "Remote")
+        val localSong = remoteSong.copy(
+            mediaUri = "content://media/external/audio/media/1"
+        )
+
+        assertTrue(shouldOpenNowPlayingCoverPreviewOnTap(remoteSong))
+        assertFalse(shouldOpenNowPlayingCoverPreviewOnTap(localSong))
+        assertFalse(shouldOpenNowPlayingCoverPreviewOnTap(null))
+        assertTrue(shouldOpenNowPlayingCoverPreviewOnLongPress(remoteSong))
+        assertTrue(shouldOpenNowPlayingCoverPreviewOnLongPress(localSong))
+        assertFalse(shouldOpenNowPlayingCoverPreviewOnLongPress(null))
+    }
+
+    @Test
     fun `bottom playback layouts temporarily disable the dock`() {
         listOf(
             NowPlayingControlPlacement.BOTTOM,

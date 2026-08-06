@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -83,6 +84,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
+import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -91,6 +93,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.screen.BiliVideoSkipIntervalsSheet
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
@@ -1264,6 +1267,7 @@ private fun VideoRow(
         // 更多操作菜单
         if (!selectionMode) {
             var showMoreMenu by remember { mutableStateOf(false) }
+            var showVideoSkipSheet by remember(video.bvid) { mutableStateOf(false) }
             Box {
                 IconButton(
                     onClick = { showMoreMenu = true }
@@ -1333,6 +1337,19 @@ private fun VideoRow(
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.bili_video_skip_manage)) },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.SkipNext,
+                                contentDescription = null
+                            )
+                        },
+                        onClick = {
+                            showMoreMenu = false
+                            showVideoSkipSheet = true
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.action_copy_song_info)) },
                         leadingIcon = {
                             Icon(
@@ -1359,6 +1376,19 @@ private fun VideoRow(
                         }
                     )
                 }
+            }
+            if (showVideoSkipSheet) {
+                BiliVideoSkipIntervalsSheet(
+                    title = stringResource(R.string.bili_video_skip_title),
+                    targetResolverKey = video.bvid,
+                    loadTargetOptions = {
+                        resolveBiliVideoSkipTargetOptions(
+                            bvid = video.bvid,
+                            client = AppContainer.biliClient
+                        )
+                    },
+                    onDismiss = { showVideoSkipSheet = false }
+                )
             }
         }
     }

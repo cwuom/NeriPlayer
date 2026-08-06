@@ -287,6 +287,42 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `catalog upsert immediately replaces a custom cover with the restored cover`() {
+        val customCoverSong = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/song.m4a",
+            fileSize = 2048L,
+            downloadTime = 123456L,
+            coverPath = "file:///data/user/0/app/files/original-cover.jpg",
+            customCoverUrl = "file:///data/user/0/app/files/custom-cover.jpg",
+            originalCoverUrl = "file:///data/user/0/app/files/original-cover.jpg",
+            mediaUri = "content://downloads/song.m4a",
+            stableKey = "42|netease|"
+        )
+        val restoredCoverSong = customCoverSong.copy(
+            customCoverUrl = null,
+            coverPath = "file:///data/user/0/app/files/original-cover.jpg"
+        )
+
+        assertTrue(
+            shouldPublishDownloadedSongCatalogUpdate(
+                currentSong = customCoverSong,
+                updatedSong = restoredCoverSong
+            )
+        )
+        assertEquals(
+            listOf(restoredCoverSong),
+            upsertDownloadedSongCatalog(
+                currentSongs = listOf(customCoverSong),
+                updatedSong = restoredCoverSong
+            )
+        )
+    }
+
+    @Test
     fun `resolveDownloadedLyricContent keeps embedded and local fallbacks compatible`() {
         assertEquals(
             "embedded lyric",

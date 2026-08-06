@@ -483,7 +483,7 @@ class NowPlayingViewModel : ViewModel() {
         }
     }
 
-    fun updateSongInfo(
+    suspend fun updateSongInfo(
         originalSong: SongItem,
         newCoverUrl: String?,
         newName: String,
@@ -492,7 +492,8 @@ class NowPlayingViewModel : ViewModel() {
         restoreBaseName: Boolean = false,
         restoreBaseArtist: Boolean = false,
         clearMatchedMetadata: Boolean = false,
-        writeLocalMetadata: Boolean = false
+        writeLocalMetadata: Boolean = false,
+        writeLyrics: Boolean = false
     ) {
         PlayerManager.updateSongCustomInfo(
             originalSong = originalSong,
@@ -503,7 +504,8 @@ class NowPlayingViewModel : ViewModel() {
             restoreBaseName = restoreBaseName,
             restoreBaseArtist = restoreBaseArtist,
             clearMatchedMetadata = clearMatchedMetadata,
-            writeLocalMetadata = writeLocalMetadata
+            writeLocalMetadata = writeLocalMetadata,
+            writeLyrics = writeLyrics
         )
     }
 

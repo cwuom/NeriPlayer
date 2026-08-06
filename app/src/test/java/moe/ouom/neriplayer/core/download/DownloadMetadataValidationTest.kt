@@ -81,6 +81,26 @@ class DownloadMetadataValidationTest {
     }
 
     @Test
+    fun `downloaded metadata retains source playback context`() {
+        val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
+            """
+                {
+                  "stableKey": "42|netease|",
+                  "songId": 42,
+                  "identityAlbum": "netease",
+                  "channelId": "netease",
+                  "audioId": "42",
+                  "playlistContextId": "playlist-123"
+                }
+            """.trimIndent()
+        )
+
+        assertEquals("netease", metadata?.channelId)
+        assertEquals("42", metadata?.audioId)
+        assertEquals("playlist-123", metadata?.playlistContextId)
+    }
+
+    @Test
     fun `metadata write verification rejects stale finalized flag`() {
         val expected = ManagedDownloadStorage.DownloadedAudioMetadata(
             stableKey = "1|netease|",

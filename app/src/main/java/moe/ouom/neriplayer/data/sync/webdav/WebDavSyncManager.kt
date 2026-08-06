@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VE
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.identity
@@ -58,6 +59,7 @@ import moe.ouom.neriplayer.data.sync.model.ConflictType
 import moe.ouom.neriplayer.data.sync.model.CURRENT_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncConflict
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
@@ -70,6 +72,8 @@ import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.model.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.sync.model.hasResolvableSyncIdentity
 import moe.ouom.neriplayer.data.sync.model.mergePositiveTimestamp
+import moe.ouom.neriplayer.data.sync.model.toBiliVideoSkipRuleOrNull
+import moe.ouom.neriplayer.data.sync.model.toSyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
 import moe.ouom.neriplayer.data.sync.SyncCoordinator
 import moe.ouom.neriplayer.util.platform.LanguageManager
@@ -87,6 +91,7 @@ class WebDavSyncManager private constructor(context: Context) {
     private val playlistUsageRepo = PlaylistUsageRepository.getInstance(appContext)
     private val localPlaylistPlaybackStatsRepo =
         LocalPlaylistPlaybackStatsRepository.getInstance(appContext)
+    private val biliVideoSkipRepo = BiliVideoSkipRepository.getInstance(appContext)
 
     companion object {
         private const val TAG = "WebDavSyncManager"
@@ -367,6 +372,9 @@ class WebDavSyncManager private constructor(context: Context) {
             }
         val syncPlaylistUsageStats = playlistUsageRepo.syncStats()
         val localPlaylistPlaybackSnapshot = localPlaylistPlaybackStatsRepo.syncSnapshot()
+        val syncBiliVideoSkipRules = SyncBiliVideoSkipMergePolicy.sanitize(
+            biliVideoSkipRepo.snapshot().map { rule -> rule.toSyncBiliVideoSkipRule() }
+        )
 
         return SyncData(
             deviceId = getDeviceId(),
@@ -383,7 +391,8 @@ class WebDavSyncManager private constructor(context: Context) {
             playlistSongDeletions = syncPlaylistSongDeletions,
             playlistUsageStats = syncPlaylistUsageStats,
             localPlaylistPlaybackStats = localPlaylistPlaybackSnapshot.stats,
-            localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets
+            localPlaylistPlaybackBuckets = localPlaylistPlaybackSnapshot.buckets,
+            biliVideoSkipRules = syncBiliVideoSkipRules
         )
     }
 
@@ -537,6 +546,10 @@ class WebDavSyncManager private constructor(context: Context) {
                     remote = remote.localPlaylistPlaybackBuckets
                 )
             )
+        val mergedBiliVideoSkipRules = SyncBiliVideoSkipMergePolicy.merge(
+            local = local.biliVideoSkipRules,
+            remote = remote.biliVideoSkipRules
+        )
 
         val mergedData = SyncData(
             deviceId = local.deviceId,
@@ -556,7 +569,8 @@ class WebDavSyncManager private constructor(context: Context) {
             playlistSongDeletions = prunedPlaylistSongDeletions,
             playlistUsageStats = mergedPlaylistUsageStats,
             localPlaylistPlaybackStats = finalizedLocalPlaylistPlaybackStats.stats,
-            localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets
+            localPlaylistPlaybackBuckets = finalizedLocalPlaylistPlaybackStats.buckets,
+            biliVideoSkipRules = mergedBiliVideoSkipRules
         )
 
         return MergeResult(
@@ -925,6 +939,16 @@ class WebDavSyncManager private constructor(context: Context) {
             stats = sanitizedMergedData.localPlaylistPlaybackStats,
             buckets = sanitizedMergedData.localPlaylistPlaybackBuckets
         )
+        val videoSkipRulesApplied = biliVideoSkipRepo.replaceFromSyncIfUnchanged(
+            rules = sanitizedMergedData.biliVideoSkipRules.mapNotNull { rule ->
+                rule.toBiliVideoSkipRuleOrNull()
+            },
+            expectedMutationVersion = expectedMutationVersion
+        )
+        if (!videoSkipRulesApplied) {
+            NPLogger.w(TAG, "Skip applying Bili video skip rules because local state changed")
+            return false
+        }
         return true
     }
 
@@ -976,7 +1000,8 @@ class WebDavSyncManager private constructor(context: Context) {
             },
             localPlaylistPlaybackBuckets = data.localPlaylistPlaybackBuckets.mapNotNull { bucket ->
                 SyncPlaylistUsageStatsMergePolicy.sanitize(bucket)
-            }
+            },
+            biliVideoSkipRules = SyncBiliVideoSkipMergePolicy.sanitize(data.biliVideoSkipRules)
         )
     }
 

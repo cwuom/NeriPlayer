@@ -339,4 +339,48 @@ class LocalAudioImportManagerTest {
         assertEquals("Detailed Title", merged.name)
         assertEquals("Detailed Artist", merged.artist)
     }
+
+    @Test
+    fun `mergeImportedSongMetadata keeps quick original metadata snapshots`() {
+        val importedFile = tempFolder.newFile("snapshot_demo.mp3")
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = "Current Title",
+                artist = "Current Artist",
+                album = "Current Album",
+                durationMs = 120_000L,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        ).copy(
+            originalName = "Original Title",
+            originalArtist = "Original Artist",
+            originalCoverUrl = "file:///private/original-cover.jpg",
+            originalLyric = "[00:01.00]original",
+            originalTranslatedLyric = "[00:01.00]原文"
+        )
+        val detailedSong = quickSong.copy(
+            name = "Scanned Title",
+            artist = "Scanned Artist",
+            coverUrl = "file:///cache/new-cover.jpg",
+            originalName = "Scanned Original Title",
+            originalArtist = "Scanned Original Artist",
+            originalCoverUrl = "file:///cache/new-cover.jpg",
+            originalLyric = "[00:01.00]scanned",
+            originalTranslatedLyric = "[00:01.00]扫描"
+        )
+
+        val merged = LocalAudioImportManager.mergeImportedSongMetadata(
+            quickSong = quickSong,
+            detailedSong = detailedSong
+        )
+
+        assertEquals("Original Title", merged.originalName)
+        assertEquals("Original Artist", merged.originalArtist)
+        assertEquals("file:///private/original-cover.jpg", merged.originalCoverUrl)
+        assertEquals("[00:01.00]original", merged.originalLyric)
+        assertEquals("[00:01.00]原文", merged.originalTranslatedLyric)
+    }
 }

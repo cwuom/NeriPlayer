@@ -389,6 +389,11 @@ For release build and signing details, see
   skipped locally. No account data, playback history, or segment submissions are
   uploaded, and the feature remains disabled during Listen Together to prevent room
   state drift.
+- ⏭️ **Custom Bilibili skip intervals**: manage multiple intervals for a video part
+  from Now Playing's More Options or a Bilibili favorite/collection entry. Rules are
+  persisted by `BVID + CID` and sync through GitHub/WebDAV. The Now Playing editor
+  provides set-start/set-end, 5-second seek, and play/pause controls; local auto-skip
+  remains off during Listen Together to avoid room-state drift.
 - 🔁 **NetEase auto source switch**:
   when a NetEase song is unavailable, has no playable URL, or only returns a
   preview clip, the player first tries lower quality and can then match a

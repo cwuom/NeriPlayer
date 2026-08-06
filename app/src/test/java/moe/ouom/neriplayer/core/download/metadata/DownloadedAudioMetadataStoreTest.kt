@@ -1,0 +1,57 @@
+package moe.ouom.neriplayer.core.download.metadata
+
+import moe.ouom.neriplayer.data.model.SongItem
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class DownloadedAudioMetadataStoreTest {
+
+    @Test
+    fun `restoring a custom cover clears the stale downloaded sidecar path`() {
+        val customCover = "file:///data/user/0/app/files/custom_song_covers/custom.jpg"
+        val staleDownloadedCover = "content://downloads/Covers/song-custom.jpg"
+        val restoredSong = testSong().copy(
+            coverUrl = "https://example.com/original.jpg",
+            originalCoverUrl = "https://example.com/original.jpg"
+        )
+
+        assertNull(
+            resolveDownloadedMetadataCoverReference(
+                existingCoverReference = staleDownloadedCover,
+                song = restoredSong,
+                previousCustomCoverReference = customCover
+            )
+        )
+    }
+
+    @Test
+    fun `restoring keeps a locally preserved original cover ahead of stale metadata`() {
+        val originalCover = "file:///data/user/0/app/files/original_song_covers/original.jpg"
+        val restoredSong = testSong().copy(
+            coverUrl = originalCover,
+            originalCoverUrl = originalCover
+        )
+
+        assertEquals(
+            originalCover,
+            resolveDownloadedMetadataCoverReference(
+                existingCoverReference = "file:///data/user/0/app/files/custom_song_covers/custom.jpg",
+                song = restoredSong,
+                previousCustomCoverReference = "file:///data/user/0/app/files/custom_song_covers/custom.jpg"
+            )
+        )
+    }
+
+    private fun testSong(): SongItem {
+        return SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+    }
+}

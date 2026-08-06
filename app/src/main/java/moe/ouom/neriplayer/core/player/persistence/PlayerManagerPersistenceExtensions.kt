@@ -27,7 +27,12 @@ import moe.ouom.neriplayer.core.player.metadata.normalizeCustomMetadataValue
 import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.metadata.SongMetadataRequestCoordinator
 import moe.ouom.neriplayer.core.player.metadata.hasUsableLyrics
+import moe.ouom.neriplayer.core.player.metadata.LocalMetadataWritePlaybackAction
+import moe.ouom.neriplayer.core.player.metadata.resolveLocalCoverWriteReference
+import moe.ouom.neriplayer.core.player.metadata.resolveLocalMetadataWritePlaybackAction
+import moe.ouom.neriplayer.core.player.metadata.resolveRestoredBaseCoverUrl
 import moe.ouom.neriplayer.core.player.metadata.shouldAutoMatchExternalLyrics
+import moe.ouom.neriplayer.core.player.metadata.shouldWriteLocalCoverMetadata
 import moe.ouom.neriplayer.core.player.metadata.toBasicSongDetails
 import moe.ouom.neriplayer.core.player.metadata.withUpdatedLyricsPreservingOriginal
 import moe.ouom.neriplayer.core.player.model.PersistedPlaybackState
@@ -43,6 +48,7 @@ import moe.ouom.neriplayer.core.player.source.toSongItem
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
@@ -78,6 +84,13 @@ internal data class RestoredPlayerStateSnapshot(
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
 private val songMetadataMutationMutex = Mutex()
 private val favoriteMutationMutex = Mutex()
+
+private data class LocalMetadataWritePlaybackSnapshot(
+    val song: SongItem,
+    val index: Int,
+    val positionMs: Long,
+    val commandSource: PlaybackCommandSource
+)
 
 private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) {
@@ -1319,13 +1332,100 @@ private fun PlayerManager.shouldApplySearchMetadataAsCustomOverride(song: SongIt
     return isLocalSong(song) || AudioDownloadManager.getLocalPlaybackUri(application, song) != null
 }
 
-private suspend fun PlayerManager.writeLocalEditableMetadata(song: SongItem) {
-    if (!LocalSongSupport.isLocalSong(song, application)) {
-        return
+private suspend fun PlayerManager.parkCurrentPlaybackForLocalMetadataWrite(
+    targetSong: SongItem
+): LocalMetadataWritePlaybackSnapshot? = withContext(Dispatchers.Main.immediate) {
+    if (!isPlayerInitialized() || currentIndex !in currentPlaylist.indices) {
+        return@withContext null
     }
-    val outcome = LocalMediaSupport.writeEditableMetadata(application, song)
+    val action = resolveLocalMetadataWritePlaybackAction(
+        isTargetCurrentSong = isCurrentSong(targetSong),
+        hasLoadedMedia = player.currentMediaItem != null,
+        shouldResumePlayback = player.isPlaying || player.playWhenReady
+    )
+    if (action == LocalMetadataWritePlaybackAction.NONE) {
+        return@withContext null
+    }
+
+    val snapshot = if (action == LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME) {
+        LocalMetadataWritePlaybackSnapshot(
+            song = _currentSongFlow.value ?: targetSong,
+            index = currentIndex,
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            commandSource = activePlaybackCommandSource
+        )
+    } else {
+        null
+    }
+    stopPlaybackPreservingQueue(clearMediaUrl = true)
+    snapshot
+}
+
+private suspend fun PlayerManager.resumePlaybackAfterLocalMetadataWrite(
+    snapshot: LocalMetadataWritePlaybackSnapshot?
+) {
+    if (snapshot == null) return
+    withContext(Dispatchers.Main.immediate) {
+        val resumeIndex = currentPlaylist.indexOfFirst { it.sameIdentityAs(snapshot.song) }
+        if (
+            !isPlayerInitialized() ||
+                resumeIndex != currentIndex ||
+                !isCurrentSong(snapshot.song)
+        ) {
+            return@withContext
+        }
+        playAtIndex(
+            index = resumeIndex,
+            resumePositionMs = snapshot.positionMs,
+            commandSource = snapshot.commandSource,
+            allowRememberedLongFormPosition = false
+        )
+    }
+}
+
+private suspend fun PlayerManager.writeLocalEditableMetadata(
+    song: SongItem,
+    coverReference: String? = song.customCoverUrl,
+    writeCover: Boolean = coverReference != null,
+    writeLyrics: Boolean = false
+): LocalMediaMetadataWriteOutcome {
+    val downloadedPlaybackUri = AudioDownloadManager.getLocalPlaybackUri(application, song)
+    val writableSong = downloadedPlaybackUri?.let { playbackUri ->
+        song.copy(
+            mediaUri = playbackUri,
+            localFilePath = playbackUri.takeIf { it.startsWith('/') },
+            localFileName = song.localFileName
+                ?: playbackUri.substringAfterLast('/').takeIf(String::isNotBlank)
+        )
+    } ?: song
+    if (!LocalSongSupport.isLocalSong(writableSong, application)) {
+        return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+    }
+    val playbackSnapshot = parkCurrentPlaybackForLocalMetadataWrite(song)
+    return try {
+        LocalMediaSupport.writeEditableMetadata(
+            context = application,
+            song = writableSong,
+            coverReference = coverReference,
+            writeCover = writeCover,
+            writeLyrics = writeLyrics
+        )
+    } finally {
+        resumePlaybackAfterLocalMetadataWrite(playbackSnapshot)
+    }
+}
+
+private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
+    outcome: LocalMediaMetadataWriteOutcome,
+    downloadSyncOutcome: GlobalDownloadManager.DownloadedSongMetadataSyncOutcome
+) {
     val messageResId = when (outcome) {
-        LocalMediaMetadataWriteOutcome.SUCCESS -> R.string.local_song_metadata_write_success
+        LocalMediaMetadataWriteOutcome.SUCCESS -> when (downloadSyncOutcome) {
+            GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.FAILED -> {
+                R.string.local_song_metadata_write_catalog_sync_failed
+            }
+            else -> R.string.local_song_metadata_write_success
+        }
         LocalMediaMetadataWriteOutcome.NOT_WRITABLE -> R.string.local_song_metadata_write_not_writable
         LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
             R.string.local_song_metadata_write_unsupported
@@ -1340,7 +1440,7 @@ private suspend fun PlayerManager.writeLocalEditableMetadata(song: SongItem) {
     }
 }
 
-internal fun PlayerManager.updateSongCustomInfoImpl(
+internal suspend fun PlayerManager.updateSongCustomInfoImpl(
     originalSong: SongItem,
     customCoverUrl: String?,
     customName: String?,
@@ -1349,10 +1449,9 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
     restoreBaseName: Boolean = false,
     restoreBaseArtist: Boolean = false,
     clearMatchedMetadata: Boolean = false,
-    writeLocalMetadata: Boolean = false
-) {
-    ioScope.launch {
-        runSongMetadataMutation {
+    writeLocalMetadata: Boolean = false,
+    writeLyrics: Boolean = false
+) = runSongMetadataMutation {
             NPLogger.d(
                 "PlayerManager",
                 "updateSongCustomInfo: id=${originalSong.id}, album='${originalSong.album}', customName=${customName?.take(32)}, customArtist=${customArtist?.take(32)}, customCoverUrl=${customCoverUrl?.take(64)}, restoreBase=[$restoreBaseName,$restoreBaseArtist,$restoreBaseCover], clearMatched=$clearMatchedMetadata, stack=[${debugStackHint()}]"
@@ -1365,21 +1464,66 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
             val baseName = currentSong.name
             val baseArtist = currentSong.artist
             val baseCoverUrl = currentSong.coverUrl
+            val requestedCoverReference = customCoverUrl.normalizedManualMetadataValue()
+            val coverChanged = writeLocalMetadata && shouldWriteLocalCoverMetadata(
+                restoreBaseCover = restoreBaseCover,
+                nextCustomCover = requestedCoverReference?.takeIf { !restoreBaseCover },
+                previousCustomCover = currentSong.customCoverUrl
+            )
+            val originalCoverReference = if (
+                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
+            ) {
+                currentSong.originalCoverUrl
+                    ?.takeIf { reference ->
+                        LocalSongSupport.isLocalMediaUri(reference) &&
+                            reference != currentSong.customCoverUrl
+                    }
+                    ?: LocalMediaSupport.resolveCoverUri(application, currentSong)
+                    ?: currentSong.originalCoverUrl?.takeIf { it != currentSong.customCoverUrl }
+                    ?: currentSong.coverUrl?.takeIf { it != currentSong.customCoverUrl }
+            } else {
+                null
+            }
+            val preservedOriginalCoverUrl = if (
+                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
+            ) {
+                CustomSongCoverStorage.persistOriginalCover(
+                    context = application,
+                    song = currentSong,
+                    reference = originalCoverReference
+                ) ?: currentSong.originalCoverUrl
+            } else {
+                currentSong.originalCoverUrl
+            }
             val restoredBaseName = customName.normalizedManualMetadataValue()
                 ?: currentSong.originalName
                 ?: baseName
             val restoredBaseArtist = customArtist.normalizedManualMetadataValue()
                 ?: currentSong.originalArtist
                 ?: baseArtist
-            val restoredBaseCoverUrl = customCoverUrl.normalizedManualMetadataValue()
-                ?: currentSong.originalCoverUrl
+            val restoredBaseCoverUrl = if (restoreBaseCover) {
+                resolveRestoredBaseCoverUrl(
+                    originalCoverUrl = preservedOriginalCoverUrl ?: currentSong.originalCoverUrl,
+                    baseCoverUrl = baseCoverUrl,
+                    currentCustomCoverUrl = currentSong.customCoverUrl
+                        ?: customCoverUrl.normalizedManualMetadataValue()
+                )
+            } else {
+                customCoverUrl.normalizedManualMetadataValue()
+                    ?: preservedOriginalCoverUrl
+            }
+            val coverWriteReference = resolveLocalCoverWriteReference(
+                restoreBaseCover = restoreBaseCover,
+                requestedCoverReference = requestedCoverReference,
+                restoredBaseCoverReference = restoredBaseCoverUrl
+            )
 
             val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
             val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
             val nextBaseCoverUrl = if (restoreBaseCover) restoredBaseCoverUrl else baseCoverUrl
             val originalName = currentSong.originalName ?: nextBaseName
             val originalArtist = currentSong.originalArtist ?: nextBaseArtist
-            val originalCoverUrl = currentSong.originalCoverUrl ?: nextBaseCoverUrl
+            val originalCoverUrl = preservedOriginalCoverUrl ?: nextBaseCoverUrl
 
             val normalizedCustomName = if (restoreBaseName) {
                 null
@@ -1420,18 +1564,44 @@ internal fun PlayerManager.updateSongCustomInfoImpl(
                 matchedSongId = if (clearMatchedMetadata) null else currentSong.matchedSongId
             )
 
+            val localMetadataOutcome = if (writeLocalMetadata) {
+                writeLocalEditableMetadata(
+                    song = updatedSong,
+                    coverReference = coverWriteReference,
+                    writeCover = coverChanged,
+                    writeLyrics = writeLyrics
+                )
+            } else {
+                null
+            }
+            if (
+                localMetadataOutcome != null &&
+                    localMetadataOutcome != LocalMediaMetadataWriteOutcome.SUCCESS
+            ) {
+                showLocalEditableMetadataWriteFeedback(
+                    outcome = localMetadataOutcome,
+                    downloadSyncOutcome = GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+                )
+                return@runSongMetadataMutation
+            }
+
             updateSongInAllPlaces(
                 originalSong = originalSong,
                 updatedSong = updatedSong,
-                triggerSync = true
+                triggerSync = true,
+                syncDownloadedMetadata = !writeLocalMetadata
             )
 
             if (writeLocalMetadata) {
-                writeLocalEditableMetadata(updatedSong)
+                val downloadSyncOutcome = GlobalDownloadManager.syncDownloadedSongMetadataNow(
+                    updatedSong
+                )
+                showLocalEditableMetadataWriteFeedback(
+                    outcome = LocalMediaMetadataWriteOutcome.SUCCESS,
+                    downloadSyncOutcome = downloadSyncOutcome
+                )
             }
         }
-    }
-}
 
 private fun String?.normalizedManualMetadataValue(): String? {
     return this?.trim()?.takeIf { it.isNotBlank() }
@@ -1606,7 +1776,7 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
                 )
             }
         }
-        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
         AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
     }
@@ -1652,7 +1822,7 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
                 )
             }
         }
-        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
         AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
     }
@@ -1713,15 +1883,27 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
                 )
             }
         }
-        GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+        val localMetadataOutcome = if (writeLocalMetadata) {
+            writeLocalEditableMetadata(
+                song = latestSong,
+                writeCover = false,
+                writeLyrics = true
+            )
+        } else {
+            null
+        }
+        val downloadSyncOutcome = GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
         AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
         NPLogger.d(
             "PlayerManager",
             "歌词更新已同步到本地仓库: id=${latestSong.id}, lyric=${latestSong.matchedLyric?.take(32)}, translated=${latestSong.matchedTranslatedLyric?.take(32)}"
         )
-        if (writeLocalMetadata) {
-            writeLocalEditableMetadata(latestSong)
+        if (localMetadataOutcome != null) {
+            showLocalEditableMetadataWriteFeedback(
+                outcome = localMetadataOutcome,
+                downloadSyncOutcome = downloadSyncOutcome
+            )
         }
     } else {
         NPLogger.e("PlayerManager", "歌词更新后未找到最新歌曲副本，跳过本地仓库同步")
@@ -1734,7 +1916,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
 private suspend fun PlayerManager.updateSongInAllPlaces(
     originalSong: SongItem,
     updatedSong: SongItem,
-    triggerSync: Boolean
+    triggerSync: Boolean,
+    syncDownloadedMetadata: Boolean = true
 ) {
     NPLogger.d(
         "NERI-PlayerManager",
@@ -1761,7 +1944,9 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
             )
         }
     }
-    GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
+    if (syncDownloadedMetadata) {
+        GlobalDownloadManager.syncDownloadedSongMetadataNow(updatedSong)
+    }
     AppContainer.playHistoryRepo.updateSongMetadata(
         originalSong = originalSong,
         updatedSong = updatedSong,

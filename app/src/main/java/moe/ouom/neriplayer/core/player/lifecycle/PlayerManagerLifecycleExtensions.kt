@@ -128,6 +128,7 @@ import moe.ouom.neriplayer.core.player.watchdog.clearActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
@@ -758,6 +759,13 @@ internal fun PlayerManager.initializeImpl(
                 externalBluetoothTranslationEnabled = enabled
                 syncExternalTranslatedLyrics(_currentSongFlow.value)
             }
+        }
+        ioScope.launch {
+            settingsRepo
+                .settingFlow(AutoSettingsSchema.general.biliSkipSegmentPromptEnabled)
+                .collect { enabled ->
+                    biliSkipSegmentPromptEnabled = enabled
+                }
         }
         ioScope.launch {
             settingsRepo.floatingLyricsPreferencesFlow.collect { preferences ->

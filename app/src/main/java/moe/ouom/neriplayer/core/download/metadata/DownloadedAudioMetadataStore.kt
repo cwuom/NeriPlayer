@@ -95,13 +95,19 @@ internal class DownloadedAudioMetadataStore(
         }
 
         val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
+        val existingMetadata = read(context, audio)
+        val discoveredCoverReference = ManagedDownloadStorage.findCoverReference(context, audio)
+            ?: ManagedDownloadStorage.findReusableCoverReference(
+                context = context,
+                song = song,
+                excludedAudioName = audio.name
+            )
         return DownloadedMetadataSidecarReferences(
             coverReference = sidecarReferences?.coverReference
-                ?: ManagedDownloadStorage.findCoverReference(context, audio)
-                ?: ManagedDownloadStorage.findReusableCoverReference(
-                    context = context,
+                ?: resolveDownloadedMetadataCoverReference(
+                    existingCoverReference = discoveredCoverReference,
                     song = song,
-                    excludedAudioName = audio.name
+                    previousCustomCoverReference = existingMetadata?.customCoverUrl
                 ),
             lyricReference = sidecarReferences?.lyricReference
                 ?: ManagedDownloadStorage.findLyricLocation(
@@ -166,4 +172,45 @@ internal class DownloadedAudioMetadataStore(
         val lyricReference: String?,
         val translatedLyricReference: String?
     )
+}
+
+internal fun resolveDownloadedMetadataCoverReference(
+    existingCoverReference: String?,
+    song: SongItem,
+    previousCustomCoverReference: String? = null
+): String? {
+    val customCover = song.customCoverUrl.normalizedCoverReference()
+    val baseCandidates = if (customCover == null) {
+        listOf(song.coverUrl, song.originalCoverUrl)
+    } else {
+        listOf(song.originalCoverUrl, song.coverUrl)
+    }
+    val restoredLocalCover = baseCandidates
+        .asSequence()
+        .mapNotNull(String?::normalizedCoverReference)
+        .firstOrNull { reference ->
+            reference != customCover && reference.isLocalCoverReference()
+        }
+    if (restoredLocalCover != null) {
+        return restoredLocalCover
+    }
+    if (customCover == null && previousCustomCoverReference.normalizedCoverReference() != null) {
+        return null
+    }
+    return existingCoverReference
+        .normalizedCoverReference()
+        ?.takeUnless { reference ->
+            customCover == null &&
+                reference == previousCustomCoverReference.normalizedCoverReference()
+        }
+}
+
+private fun String?.normalizedCoverReference(): String? {
+    return this?.trim()?.takeIf(String::isNotBlank)
+}
+
+private fun String.isLocalCoverReference(): Boolean {
+    return startsWith("/") ||
+        startsWith("file://", ignoreCase = true) ||
+        startsWith("content://", ignoreCase = true)
 }

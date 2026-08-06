@@ -541,12 +541,18 @@ object LocalAudioImportManager {
             coverUrl = resolvedCoverUrl,
             matchedLyric = detailedSong.matchedLyric ?: quickSong.matchedLyric,
             matchedTranslatedLyric = detailedSong.matchedTranslatedLyric ?: quickSong.matchedTranslatedLyric,
-            originalName = detailedSong.originalName?.takeIf { it.isNotBlank() } ?: resolvedName,
-            originalArtist = detailedSong.originalArtist?.takeIf { it.isNotBlank() } ?: resolvedArtist,
-            originalCoverUrl = detailedSong.originalCoverUrl ?: quickSong.originalCoverUrl ?: resolvedCoverUrl,
-            originalLyric = detailedSong.originalLyric ?: quickSong.originalLyric,
-            originalTranslatedLyric = detailedSong.originalTranslatedLyric
-                ?: quickSong.originalTranslatedLyric,
+            originalName = quickSong.originalName?.takeIf { it.isNotBlank() }
+                ?: detailedSong.originalName?.takeIf { it.isNotBlank() }
+                ?: resolvedName,
+            originalArtist = quickSong.originalArtist?.takeIf { it.isNotBlank() }
+                ?: detailedSong.originalArtist?.takeIf { it.isNotBlank() }
+                ?: resolvedArtist,
+            originalCoverUrl = quickSong.originalCoverUrl
+                ?: detailedSong.originalCoverUrl
+                ?: resolvedCoverUrl,
+            originalLyric = quickSong.originalLyric ?: detailedSong.originalLyric,
+            originalTranslatedLyric = quickSong.originalTranslatedLyric
+                ?: detailedSong.originalTranslatedLyric,
             mediaUri = resolvedMediaUri,
             localFileName = quickSong.localFileName ?: detailedSong.localFileName,
             localFilePath = resolvedLocalPath,

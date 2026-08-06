@@ -32,6 +32,28 @@ class PlayerManagerPlaybackStartPlanTest {
     }
 
     @Test
+    fun `skip interval editor playback plan never fades in`() {
+        val plan = resolveNoFadePlaybackStartPlan()
+
+        assertFalse(plan.useFadeIn)
+        assertEquals(0L, plan.fadeDurationMs)
+        assertEquals(1f, plan.initialVolume, 0.0001f)
+    }
+
+    @Test
+    fun `skip interval editor pause plan never fades out`() {
+        val plan = resolvePauseVolumePlan(
+            allowFadeOut = false,
+            preserveMutedVolume = false,
+            playbackFadeInEnabled = true,
+            playbackFadeOutDurationMs = 500L,
+            isPlayerInitialized = true
+        )
+
+        assertFalse(plan.shouldFadeOut)
+    }
+
+    @Test
     fun `non positive duration disables fade in`() {
         val plan = resolvePlaybackStartPlan(
             shouldFadeIn = true,

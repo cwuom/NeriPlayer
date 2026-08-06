@@ -367,6 +367,19 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun standardizedLyricEmbeddingDefaultsToDisabled() {
+        val setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled
+        val metadata = AutoSettingsMetadata.setting(setting.key)
+
+        assertEquals("standardized_lyric_embedding_enabled", setting.preferencesKey.name)
+        assertEquals(false, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Switch, metadata?.ui)
+        assertEquals(AutoSettingsSections.download, metadata?.section)
+        assertEquals(AutoSettingIcon.LibraryMusic, metadata?.icon)
+    }
+
+    @Test
     fun alwaysUseNewTabStyleDefaultsOnAndUsesDisplaySwitch() {
         val setting = AutoSettingsSchema.display.alwaysUseNewTabStyle
         val metadata = AutoSettingsMetadata.setting("always_use_new_tab_style")

@@ -201,6 +201,15 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_youtube_enabled_desc,
             iconRes = R.drawable.ic_youtube
         )
+
+        @AutoSetting(order = 110)
+        val biliSkipSegmentPromptEnabled = autoSwitchSetting(
+            key = "bili_skip_segment_prompt_enabled",
+            defaultValue = false,
+            titleRes = R.string.settings_bili_skip_segment_prompt,
+            descriptionRes = R.string.settings_bili_skip_segment_prompt_desc,
+            icon = AutoSettingIcon.Info
+        )
     }
 
     /*
@@ -1258,7 +1267,7 @@ object AutoSettingsSchema {
         @AutoSetting(order = 50)
         val standardizedLyricEmbeddingEnabled = autoSwitchSetting(
             key = "standardized_lyric_embedding_enabled",
-            defaultValue = true,
+            defaultValue = false,
             titleRes = R.string.settings_standardized_lyric_embedding,
             descriptionRes = R.string.settings_standardized_lyric_embedding_desc,
             icon = AutoSettingIcon.LibraryMusic

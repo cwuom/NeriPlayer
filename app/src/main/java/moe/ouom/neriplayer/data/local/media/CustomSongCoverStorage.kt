@@ -23,16 +23,21 @@ package moe.ouom.neriplayer.data.local.media
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import java.io.File
+import java.security.MessageDigest
 import java.net.URLConnection
+import java.util.Locale
 import java.util.UUID
 
 object CustomSongCoverStorage {
     private const val DIRECTORY_NAME = "custom_song_covers"
+    private const val ORIGINAL_DIRECTORY_NAME = "original_song_covers"
     private const val MAX_COVER_BYTES = 8L * 1024L * 1024L
 
     suspend fun importFromUri(
@@ -64,6 +69,191 @@ object CustomSongCoverStorage {
             target.outputStream().use { output -> output.write(bytes) }
         }.getOrNull() ?: return@withContext null
         Uri.fromFile(target)
+    }
+
+    /**
+     * keeps the cover that was present before a local tag is replaced
+     * app-private copies survive embedded-cover cache invalidation and rescans
+     */
+    suspend fun persistOriginalCover(
+        context: Context,
+        song: SongItem,
+        reference: String?
+    ): String? = withContext(Dispatchers.IO) {
+        val normalizedReference = reference
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext null
+        if (isRemoteReference(normalizedReference)) {
+            return@withContext normalizedReference
+        }
+
+        val sourceUri = runCatching { normalizedReference.toUri() }.getOrNull()
+        val sourceFile = resolveLocalFileReference(normalizedReference, sourceUri)
+        val directory = File(context.filesDir, ORIGINAL_DIRECTORY_NAME)
+        val persistentDirectory = runCatching { directory.canonicalFile }.getOrNull()
+        if (sourceFile?.isFile == true && persistentDirectory != null &&
+            isInsideDirectory(sourceFile, persistentDirectory)
+        ) {
+            return@withContext sourceFile.toURI().toString()
+        }
+
+        val declaredMimeType = sourceUri
+            ?.takeIf { it.scheme.equals("content", ignoreCase = true) }
+            ?.let { uri -> runCatching { context.contentResolver.getType(uri) }.getOrNull() }
+        if (declaredMimeType != null &&
+            !declaredMimeType.startsWith("image/", ignoreCase = true)
+        ) {
+            return@withContext normalizedReference
+        }
+
+        val contentUri = sourceUri?.takeIf {
+            it.scheme.equals("content", ignoreCase = true)
+        }
+        val bytes = runCatching {
+            when {
+                sourceFile?.isFile == true -> sourceFile.inputStream().use { input ->
+                    input.readBytesLimited(MAX_COVER_BYTES)
+                }
+
+                contentUri != null -> {
+                    context.contentResolver.openInputStream(contentUri)?.use { input ->
+                        input.readBytesLimited(MAX_COVER_BYTES)
+                    }
+                }
+
+                else -> null
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+            ?: return@withContext normalizedReference
+
+        if (!directory.exists() && !directory.mkdirs()) {
+            return@withContext normalizedReference
+        }
+
+        val extension = resolveExtension(
+            context = context,
+            uri = sourceUri,
+            fallbackName = sourceFile?.name ?: normalizedReference
+        )
+        val target = File(directory, originalCoverFileName(song, extension))
+        if (target.isFile && target.length() > 0L) {
+            return@withContext target.toURI().toString()
+        }
+
+        val temporary = File(
+            directory,
+            ".${target.name}.${UUID.randomUUID()}.tmp"
+        )
+        try {
+            temporary.outputStream().use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
+            if (!temporary.renameTo(target) && !target.isFile) {
+                return@withContext normalizedReference
+            }
+            if (target.isFile && target.length() > 0L) {
+                target.toURI().toString()
+            } else {
+                normalizedReference
+            }
+        } catch (_: Exception) {
+            normalizedReference
+        } finally {
+            if (temporary.exists()) {
+                temporary.delete()
+            }
+        }
+    }
+
+    internal fun originalCoverFileName(song: SongItem, extension: String): String {
+        val normalizedExtension = extension
+            .trim()
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .ifBlank { "jpg" }
+        return "${sha256(song.stableKey())}.$normalizedExtension"
+    }
+
+    internal fun isRemoteReference(reference: String): Boolean {
+        return reference.startsWith("http://", ignoreCase = true) ||
+            reference.startsWith("https://", ignoreCase = true)
+    }
+
+    private fun resolveLocalFileReference(reference: String, uri: Uri?): File? {
+        return when {
+            reference.startsWith("/", ignoreCase = false) -> File(reference)
+            uri != null && uri.scheme.equals("file", ignoreCase = true) -> {
+                uri.path?.let(::File)
+            }
+            else -> null
+        }
+    }
+
+    private fun isInsideDirectory(file: File, directory: File): Boolean {
+        val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return false
+        val directoryPath = runCatching { directory.canonicalPath }.getOrNull() ?: return false
+        return filePath == directoryPath || filePath.startsWith("$directoryPath${File.separator}")
+    }
+
+    private fun resolveExtension(
+        context: Context,
+        uri: Uri?,
+        fallbackName: String
+    ): String {
+        val displayName = uri?.let { sourceUri ->
+            runCatching {
+                context.contentResolver.query(
+                    sourceUri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+                }
+            }.getOrNull()
+        }
+        val fileName = displayName
+            ?: uri?.lastPathSegment
+            ?: fallbackName
+        val fromName = fileName.substringAfterLast('.', "")
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .takeIf { it.isNotBlank() }
+        if (fromName != null) {
+            return fromName
+        }
+
+        val fromMimeType = uri?.let { sourceUri ->
+            runCatching { context.contentResolver.getType(sourceUri) }.getOrNull()
+        }?.substringAfter('/', "")
+            ?.substringAfter('+', "")
+            ?.lowercase(Locale.ROOT)
+            ?.filter { it.isLetterOrDigit() }
+            ?.take(8)
+            ?.takeIf { it.isNotBlank() }
+        if (fromMimeType != null) {
+            return fromMimeType
+        }
+
+        return URLConnection.guessContentTypeFromName(fileName)
+            ?.substringAfter('/', "")
+            ?.lowercase(Locale.ROOT)
+            ?.filter { it.isLetterOrDigit() }
+            ?.take(8)
+            ?.takeIf { it.isNotBlank() }
+            ?: "jpg"
+    }
+
+    private fun sha256(value: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     private fun resolveExtension(context: Context, uri: Uri): String {

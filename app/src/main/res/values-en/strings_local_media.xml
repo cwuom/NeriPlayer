@@ -42,9 +42,10 @@
     <string name="local_song_metadata_write_confirm_write">Write Back</string>
     <string name="local_song_metadata_write_confirm_app_only">Save in App Only</string>
     <string name="local_song_metadata_write_success">Local audio tags updated</string>
-    <string name="local_song_metadata_write_not_writable">Could not write local audio tags. Changes were saved in the app only.</string>
-    <string name="local_song_metadata_write_unsupported">This audio cannot be read for tag write-back or its format is unsupported. Changes were saved in the app only.</string>
-    <string name="local_song_metadata_write_failed">Failed to write local audio tags. Changes were saved in the app only.</string>
+    <string name="local_song_metadata_write_catalog_sync_failed">Local audio tags updated, but the downloaded list could not be refreshed</string>
+    <string name="local_song_metadata_write_not_writable">Could not write local audio tags. The changes were not saved.</string>
+    <string name="local_song_metadata_write_unsupported">This audio cannot be read for tag write-back or its format is unsupported. The changes were not saved.</string>
+    <string name="local_song_metadata_write_failed">Failed to write local audio tags. The changes were not saved.</string>
     <string name="local_song_sync_confirm_title">Local Song Won\'t Sync</string>
     <string name="local_song_sync_confirm_message">Local songs are not synced. Confirm %1$s?</string>
     <string name="local_song_share_failed">Unable to share the local song file</string>

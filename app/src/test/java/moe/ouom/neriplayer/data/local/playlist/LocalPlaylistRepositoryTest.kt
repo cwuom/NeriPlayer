@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -190,6 +191,138 @@ class LocalPlaylistRepositoryTest {
         assertEquals(1, favorites.songs.size)
         assertEquals(remoteSong, favorites.songs.single())
         assertEquals(11L, favorites.songs.single().addedAt)
+    }
+
+    @Test
+    fun `downloaded favorite removal and readd retain the remote source`() = runTest {
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "downloaded_favorite_sync.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        val remoteSong = remoteNeteaseSong(id = 45L)
+        val downloadedCopy = downloadedLocalCopy(remoteSong)
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = FavoritesPlaylist.SYSTEM_ID,
+                    name = "我喜欢的音乐"
+                )
+            )
+        )
+
+        repository.addToFavorites(downloadedCopy)
+        val firstFavorite = repository.playlists.value.single().songs.single()
+        assertEquals(remoteSong.identity(), firstFavorite.identity())
+        assertEquals("netease", firstFavorite.channelId)
+        assertNull(firstFavorite.mediaUri)
+        assertNull(firstFavorite.localFilePath)
+        assertFalse(LocalSongSupport.isLocalSong(firstFavorite, null))
+
+        repository.removeFromFavorites(downloadedCopy)
+
+        val deletion = syncStore.applied
+            .flatMap(LocalPlaylistSyncMutation::addedSongDeletions)
+            .single()
+        assertEquals(remoteSong.identity(), deletion.identity())
+
+        repository.addToFavorites(downloadedCopy)
+        val readdedFavorite = repository.playlists.value.single().songs.single()
+        assertEquals(remoteSong.identity(), readdedFavorite.identity())
+        assertEquals("netease", readdedFavorite.channelId)
+        assertNull(readdedFavorite.mediaUri)
+        assertNull(readdedFavorite.localFilePath)
+        assertFalse(LocalSongSupport.isLocalSong(readdedFavorite, null))
+
+        val removal = syncStore.applied
+            .flatMap(LocalPlaylistSyncMutation::removedSongDeletions)
+            .last()
+        assertEquals(listOf(remoteSong.identity()), removal.identities)
+    }
+
+    @Test
+    fun `adding downloaded copy to regular playlist retains remote source and sync identity`() = runTest {
+        val playlistId = 46L
+        val syncStore = RecordingSyncMutationStore()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "downloaded_regular_playlist_source.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            syncMutationStore = syncStore
+        )
+        val remoteSong = remoteNeteaseSong(id = 47L)
+        val downloadedCopy = downloadedLocalCopy(remoteSong)
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "普通歌单"))
+        )
+
+        val addedCount = repository.addPreparedSongsToPlaylistAndCount(
+            playlistId = playlistId,
+            songs = listOf(downloadedCopy)
+        )
+
+        val playlistSong = repository.playlists.value.single().songs.single()
+        assertEquals(1, addedCount)
+        assertEquals(remoteSong.identity(), playlistSong.identity())
+        assertEquals("netease", playlistSong.channelId)
+        assertNull(playlistSong.mediaUri)
+        assertNull(playlistSong.localFilePath)
+        assertFalse(LocalSongSupport.isLocalSong(playlistSong, null))
+        val removal = syncStore.applied
+            .flatMap(LocalPlaylistSyncMutation::removedSongDeletions)
+            .single()
+        assertEquals(listOf(remoteSong.identity()), removal.identities)
+    }
+
+    @Test
+    fun `metadata update from downloaded copy keeps favorite remote playback source`() = runTest {
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "downloaded_metadata_source.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        val remoteSong = remoteNeteaseSong().copy(
+            coverUrl = "https://example.com/original-cover.jpg"
+        )
+        val downloadedCopy = downloadedLocalCopy(remoteSong).copy(
+            coverUrl = "content://downloads/covers/downloaded-cover.jpg",
+            customCoverUrl = "file:///cache/custom-cover.jpg",
+            customName = "Edited title",
+            matchedLyric = "[00:01.00]lyrics"
+        )
+        repository.updatePlaylists(
+            listOf(
+                LocalPlaylist(
+                    id = FavoritesPlaylist.SYSTEM_ID,
+                    name = "我喜欢的音乐",
+                    songs = mutableListOf(remoteSong)
+                )
+            )
+        )
+
+        repository.updateSongMetadata(
+            originalSong = downloadedCopy,
+            newSongInfo = downloadedCopy,
+            triggerSync = true
+        )
+
+        val updatedFavorite = repository.playlists.value.single().songs.single()
+        assertEquals(remoteSong.id, updatedFavorite.id)
+        assertEquals(remoteSong.album, updatedFavorite.album)
+        assertEquals(remoteSong.coverUrl, updatedFavorite.coverUrl)
+        assertNull(updatedFavorite.mediaUri)
+        assertNull(updatedFavorite.localFilePath)
+        assertEquals(remoteSong.channelId, updatedFavorite.channelId)
+        assertEquals(remoteSong.audioId, updatedFavorite.audioId)
+        assertEquals("file:///cache/custom-cover.jpg", updatedFavorite.customCoverUrl)
+        assertEquals("Edited title", updatedFavorite.customName)
+        assertEquals("[00:01.00]lyrics", updatedFavorite.matchedLyric)
+        assertFalse(LocalSongSupport.isLocalSong(updatedFavorite, null))
     }
 
     @Test

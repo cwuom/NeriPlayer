@@ -56,6 +56,8 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
+import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
+import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -75,7 +77,7 @@ import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 object GlobalDownloadManager {
     private const val TAG = "GlobalDownloadManager"
     private const val INITIAL_SCAN_DELAY_MS = 1_500L
-    private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v3.json"
+    private const val DOWNLOAD_CATALOG_CACHE_FILE_NAME = "downloaded_song_catalog_v4.json"
     private const val DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS = 1_200L
     private const val DOWNLOAD_TASK_COMPLETED_RETENTION_MS = 800L
     private const val DOWNLOAD_CATALOG_RECONCILE_DELAY_MS = 1_200L
@@ -95,6 +97,12 @@ object GlobalDownloadManager {
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    internal enum class DownloadedSongMetadataSyncOutcome {
+        SUCCESS,
+        NOT_DOWNLOADED,
+        FAILED
+    }
 
     data class TrafficRiskDownloadRequest(
         val id: Long,
@@ -160,6 +168,8 @@ object GlobalDownloadManager {
 
     private val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
     private val catalogPersistenceLock = Any()
+    private val downloadedSongMetadataSyncMutex = Mutex()
+    private val downloadedSongMetadataRevision = AtomicLong(0L)
     private val cancelledArtifactRecoveryLock = Any()
     private var refreshJob: Job? = null
     private var catalogPersistJob: Job? = null
@@ -1358,6 +1368,7 @@ object GlobalDownloadManager {
     private suspend fun reloadDownloadedSongs(context: Context, forceRefresh: Boolean = false) {
         _isRefreshing.value = true
         try {
+            val metadataRevisionAtScanStart = downloadedSongMetadataRevision.get()
             var snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                 context = context,
                 forceRefresh = forceRefresh
@@ -1395,52 +1406,59 @@ object GlobalDownloadManager {
                     }.getOrNull()
                 }
                 .sortedByDescending { it.downloadTime }
-            val existingSongs = _downloadedSongs.value
-            // 本次扫描所针对的存储 root 标识, 用于与既有 catalog 所属 root 比对
-            val scanRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
-            // 可疑空结果保护 (#168 疑似根因) : SAF DocumentsProvider 可能瞬时返回空/失败游标
-            // ManagedDownloadTreeChildQuery 列举失败时静默兜底为空列表, 导致一次瞬时失败被当成
-            // 权威的"空目录"; 若直接持久化空目录, 下次启动会 restore 出空目录并把 catalogReady
-            // 标为就绪, 从而跳过启动重扫, 使已下载歌曲彻底"看不见" (文件本身仍在磁盘)
-            //
-            // 判定条件 (isSuspiciousEmptyDownloadScan, 四者同时成立才视为可疑, 避免误伤正常清空) :
-            // 1) 本次扫描结果为空; 2) 既有内存目录非空; 3) 存储 root 仍可解析
-            // 4) 本次扫描 root 与既有 catalog 所属 root 一致 (scanMatchesCatalogRoot)
-            // 反面: 应用内逐首删除走增量发布路径, 删空后既有目录已为空, 不触发本保护
-            // 切换/重置下载目录后扫描的是新 root, 与旧 catalog root 不一致, genuine-empty 放行清空
-            // 权衡: 同目录下外部文件管理器批量删空且 SAF 树仍可解析的极端场景下, 会保留旧条目直到下一次
-            // 能成功列举或目录发生变化; 相比"瞬时失败即清空导致数据不可见", 保守保留是更安全的失败方向
-            if (songs.isEmpty() && existingSongs.isNotEmpty()) {
-                val storageRootResolvable = ManagedDownloadStorage.isStorageRootResolvable(context)
-                val scanMatchesCatalogRoot = downloadedSongCatalogRootKey == scanRootKey
-                if (
-                    isSuspiciousEmptyDownloadScan(
-                        scannedSongCount = songs.size,
-                        existingSongCount = existingSongs.size,
-                        storageRootResolvable = storageRootResolvable,
-                        scanMatchesCatalogRoot = scanMatchesCatalogRoot
-                    )
-                ) {
-                    NPLogger.w(
-                        TAG,
-                        "扫描结果为空但既有目录非空、存储根可解析且同 root，判定为可疑空结果，保留既有目录: " +
-                            "existing=${existingSongs.size}, forceRefresh=$forceRefresh"
-                    )
-                    // 仅在本次使用了缓存 (非强制刷新) 时安排一次强制重扫尝试恢复
-                    // 若本次已是强制刷新仍为空, 则不再重排, 避免瞬时失败演化成无限重扫循环
-                    if (!forceRefresh) {
-                        scheduleCatalogReconcile(context, forceRefresh = true)
-                    }
-                    return
+            downloadedSongMetadataSyncMutex.withLock {
+                if (metadataRevisionAtScanStart != downloadedSongMetadataRevision.get()) {
+                    NPLogger.d(TAG, "跳过过期下载目录扫描结果: metadata changed during scan")
+                    return@withLock
                 }
-            }
-            if (existingSongs != songs) {
-                publishDownloadedSongs(context, songs, persistCatalog = true)
-                downloadedSongCatalogRootKey = scanRootKey
-            } else if (!downloadedSongCatalogReady) {
-                downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
-                downloadedSongCatalogReady = true
-                downloadedSongCatalogRootKey = scanRootKey
+
+                val existingSongs = _downloadedSongs.value
+                // 本次扫描所针对的存储 root 标识, 用于与既有 catalog 所属 root 比对
+                val scanRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+                // 可疑空结果保护 (#168 疑似根因) : SAF DocumentsProvider 可能瞬时返回空/失败游标
+                // ManagedDownloadTreeChildQuery 列举失败时静默兜底为空列表, 导致一次瞬时失败被当成
+                // 权威的"空目录"; 若直接持久化空目录, 下次启动会 restore 出空目录并把 catalogReady
+                // 标为就绪, 从而跳过启动重扫, 使已下载歌曲彻底"看不见" (文件本身仍在磁盘)
+                //
+                // 判定条件 (isSuspiciousEmptyDownloadScan, 四者同时成立才视为可疑, 避免误伤正常清空) :
+                // 1) 本次扫描结果为空; 2) 既有内存目录非空; 3) 存储 root 仍可解析
+                // 4) 本次扫描 root 与既有 catalog 所属 root 一致 (scanMatchesCatalogRoot)
+                // 反面: 应用内逐首删除走增量发布路径, 删空后既有目录已为空, 不触发本保护
+                // 切换/重置下载目录后扫描的是新 root, 与旧 catalog root 不一致, genuine-empty 放行清空
+                // 权衡: 同目录下外部文件管理器批量删空且 SAF 树仍可解析的极端场景下, 会保留旧条目直到下一次
+                // 能成功列举或目录发生变化; 相比"瞬时失败即清空导致数据不可见", 保守保留是更安全的失败方向
+                if (songs.isEmpty() && existingSongs.isNotEmpty()) {
+                    val storageRootResolvable = ManagedDownloadStorage.isStorageRootResolvable(context)
+                    val scanMatchesCatalogRoot = downloadedSongCatalogRootKey == scanRootKey
+                    if (
+                        isSuspiciousEmptyDownloadScan(
+                            scannedSongCount = songs.size,
+                            existingSongCount = existingSongs.size,
+                            storageRootResolvable = storageRootResolvable,
+                            scanMatchesCatalogRoot = scanMatchesCatalogRoot
+                        )
+                    ) {
+                        NPLogger.w(
+                            TAG,
+                            "扫描结果为空但既有目录非空、存储根可解析且同 root，判定为可疑空结果，保留既有目录: " +
+                                "existing=${existingSongs.size}, forceRefresh=$forceRefresh"
+                        )
+                        // 仅在本次使用了缓存 (非强制刷新) 时安排一次强制重扫尝试恢复
+                        // 若本次已是强制刷新仍为空, 则不再重排, 避免瞬时失败演化成无限重扫循环
+                        if (!forceRefresh) {
+                            scheduleCatalogReconcile(context, forceRefresh = true)
+                        }
+                        return@withLock
+                    }
+                }
+                if (existingSongs != songs) {
+                    publishDownloadedSongs(context, songs, persistCatalog = true)
+                    downloadedSongCatalogRootKey = scanRootKey
+                } else if (!downloadedSongCatalogReady) {
+                    downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
+                    downloadedSongCatalogReady = true
+                    downloadedSongCatalogRootKey = scanRootKey
+                }
             }
         } catch (error: Exception) {
             NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
@@ -1489,42 +1507,178 @@ object GlobalDownloadManager {
 
     fun syncDownloadedSongMetadata(song: SongItem) {
         scope.launch {
-            val context = AppContainer.applicationContext
-            val storedAudio = resolveStoredAudio(context, song) ?: return@launch
-
-            persistDownloadedMetadata(context, storedAudio, song)
-
-            val currentSongs = _downloadedSongs.value
-            var updated = false
-            var shouldPublishCatalog = false
-            val refreshedSongs = currentSongs.map { downloaded ->
-                if (downloaded.filePath == storedAudio.reference) {
-                    updated = true
-                    buildDownloadedSong(
-                        context = context,
-                        storedAudio = storedAudio,
-                        existingDownloadTime = downloaded.downloadTime,
-                        allowSlowLocalInspection = false
-                    ).also { refreshed ->
-                        shouldPublishCatalog = shouldPublishDownloadedSongCatalogUpdate(
-                            currentSong = downloaded,
-                            updatedSong = refreshed
-                        )
-                    }
-                } else {
-                    downloaded
-                }
-            }
-
-            if (updated) {
-                scheduleDownloadedSongsCatalogPersist(context, refreshedSongs)
-                if (shouldPublishCatalog) {
-                    publishDownloadedSongs(context, refreshedSongs, persistCatalog = false)
-                }
-            } else {
-                reloadDownloadedSongs(context)
-            }
+            syncDownloadedSongMetadataNow(song)
         }
+    }
+
+    internal suspend fun syncDownloadedSongMetadataNow(
+        song: SongItem
+    ): DownloadedSongMetadataSyncOutcome = withContext(Dispatchers.IO) {
+        downloadedSongMetadataSyncMutex.withLock {
+            val context = AppContainer.applicationContext
+            val currentSongs = _downloadedSongs.value
+            val catalogSong = findDownloadedSongCatalogMatch(song, currentSongs)
+            val metadataSong = catalogSong
+                ?.let { existing -> projectDownloadedSongMetadata(existing, song) }
+                ?.toMetadataPersistenceSong(song)
+                ?: song
+            val storedAudio = resolveStoredAudio(context, song)
+                ?: catalogSong?.let { downloaded ->
+                    resolveStoredAudio(context, downloaded.filePath)
+                        ?: resolveStoredAudio(context, downloaded.mediaUri)
+                }
+            if (storedAudio == null) {
+                if (publishDownloadedSongMetadataFallback(
+                        context = context,
+                        currentSongs = currentSongs,
+                        catalogSong = catalogSong,
+                        storedAudio = null,
+                        song = metadataSong,
+                        reason = "storage entry unavailable"
+                    )
+                ) {
+                    return@withLock DownloadedSongMetadataSyncOutcome.SUCCESS
+                }
+                NPLogger.w(
+                    TAG,
+                    "同步下载歌曲元数据失败: file unavailable, song=${song.name}"
+                )
+                return@withLock DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+            }
+
+            if (!persistDownloadedMetadata(context, storedAudio, metadataSong)) {
+                NPLogger.e(TAG, "同步下载歌曲元数据失败: metadata persist failed, file=${storedAudio.name}")
+                if (publishDownloadedSongMetadataFallback(
+                        context = context,
+                        currentSongs = currentSongs,
+                        catalogSong = catalogSong,
+                        storedAudio = storedAudio,
+                        song = metadataSong,
+                        reason = "metadata sidecar persist deferred"
+                    )
+                ) {
+                    return@withLock DownloadedSongMetadataSyncOutcome.SUCCESS
+                }
+                return@withLock DownloadedSongMetadataSyncOutcome.FAILED
+            }
+
+            downloadedSongMetadataRevision.incrementAndGet()
+            val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                context = context,
+                restoreFromDisk = false
+            )?.takeIf { cachedSnapshot ->
+                cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.reference) ||
+                    cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.mediaUri)
+            } ?: runCatching {
+                ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                    context = context,
+                    forceRefresh = true
+                )
+            }.getOrElse { error ->
+                NPLogger.e(TAG, "同步下载歌曲元数据失败: refresh failed, file=${storedAudio.name}", error)
+                if (publishDownloadedSongMetadataFallback(
+                        context = context,
+                        currentSongs = currentSongs,
+                        catalogSong = catalogSong,
+                        storedAudio = storedAudio,
+                        song = metadataSong,
+                        reason = "snapshot refresh failed"
+                    )
+                ) {
+                    scheduleCatalogReconcile(context, forceRefresh = true)
+                    return@withLock DownloadedSongMetadataSyncOutcome.SUCCESS
+                }
+                return@withLock DownloadedSongMetadataSyncOutcome.FAILED
+            }
+            val refreshedStoredAudio = snapshot.audioEntriesByLookupKey[storedAudio.reference]
+                ?: snapshot.audioEntriesByLookupKey[storedAudio.mediaUri]
+                ?: storedAudio
+            val refreshedSong = runCatching {
+                buildDownloadedSong(
+                    context = context,
+                    storedAudio = refreshedStoredAudio,
+                    snapshot = snapshot,
+                    existingDownloadTime = catalogSong?.downloadTime,
+                    allowSlowLocalInspection = false
+                )
+            }.getOrElse { error ->
+                NPLogger.e(TAG, "同步下载歌曲元数据失败: rebuild failed, file=${storedAudio.name}", error)
+                if (publishDownloadedSongMetadataFallback(
+                        context = context,
+                        currentSongs = currentSongs,
+                        catalogSong = catalogSong,
+                        storedAudio = storedAudio,
+                        song = metadataSong,
+                        reason = "catalog rebuild failed"
+                    )
+                ) {
+                    scheduleCatalogReconcile(context, forceRefresh = true)
+                    return@withLock DownloadedSongMetadataSyncOutcome.SUCCESS
+                }
+                return@withLock DownloadedSongMetadataSyncOutcome.FAILED
+            }
+            if (!hasExpectedDownloadedSongMetadata(refreshedSong, metadataSong)) {
+                NPLogger.w(TAG, "下载目录快照未反映最新标签，使用已验证结果: file=${storedAudio.name}")
+                publishDownloadedSongMetadataFallback(
+                    context = context,
+                    currentSongs = currentSongs,
+                    catalogSong = catalogSong,
+                    storedAudio = storedAudio,
+                    song = metadataSong,
+                    reason = "catalog metadata stale"
+                )
+                scheduleCatalogReconcile(context, forceRefresh = true)
+                return@withLock DownloadedSongMetadataSyncOutcome.SUCCESS
+            }
+            val refreshedSongs = upsertDownloadedSongCatalog(currentSongs, refreshedSong)
+            publishDownloadedSongs(context, refreshedSongs, persistCatalog = true)
+            downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+            NPLogger.d(
+                TAG,
+                "已同步下载歌曲元数据并发布目录: file=${storedAudio.name}, " +
+                    "customCover=${refreshedSong.customCoverUrl != null}"
+            )
+            DownloadedSongMetadataSyncOutcome.SUCCESS
+        }
+    }
+
+    private suspend fun publishDownloadedSongMetadataFallback(
+        context: Context,
+        currentSongs: List<DownloadedSong>,
+        catalogSong: DownloadedSong?,
+        storedAudio: ManagedDownloadStorage.StoredEntry?,
+        song: SongItem,
+        reason: String
+    ): Boolean {
+        val projectedSong = catalogSong
+            ?.let { existing -> projectDownloadedSongMetadata(existing, song) }
+            ?: storedAudio?.let { audio -> buildOptimisticDownloadedSong(song, audio) }
+            ?: return false
+        val refreshedSongs = upsertDownloadedSongCatalog(currentSongs, projectedSong)
+        publishDownloadedSongs(context, refreshedSongs, persistCatalog = true)
+        downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+        NPLogger.w(
+            TAG,
+            "下载元数据目录使用已验证标签更新: file=${projectedSong.filePath}, reason=$reason"
+        )
+        return true
+    }
+
+    private fun hasExpectedDownloadedSongMetadata(
+        downloadedSong: DownloadedSong,
+        song: SongItem
+    ): Boolean {
+        return downloadedSong.name == song.name &&
+            downloadedSong.artist == song.artist &&
+            downloadedSong.coverUrl == song.coverUrl &&
+            downloadedSong.customCoverUrl == song.customCoverUrl &&
+            downloadedSong.customName == song.customName &&
+            downloadedSong.customArtist == song.customArtist &&
+            downloadedSong.originalCoverUrl == song.originalCoverUrl &&
+            (
+                song.sourceStableKey.isNullOrBlank() ||
+                    downloadedSong.remoteSourceStableKeyOrNull() == song.sourceStableKey
+            )
     }
 
     private suspend fun buildDownloadedSong(

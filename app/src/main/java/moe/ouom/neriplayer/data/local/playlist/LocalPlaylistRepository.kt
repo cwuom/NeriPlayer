@@ -54,7 +54,9 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.model.sameIdentityAs
+import moe.ouom.neriplayer.data.model.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
@@ -371,11 +373,32 @@ class LocalPlaylistRepository private constructor(
     }
 
     private fun normalizePlaylistOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
-        val normalizedMemberships = normalizeSongMembershipTokens(playlists)
+        val normalizedRemoteSources = normalizeRemoteSourcePlaylistEntries(playlists)
+        val normalizedMemberships = normalizeSongMembershipTokens(normalizedRemoteSources)
         val migrated = migratePlaylistSongOrder(normalizedMemberships)
         return migratePlaylistSongOrder(
             normalizeSongMembershipTokens(normalizePlaylists(migrated))
         )
+    }
+
+    private fun normalizeRemoteSourcePlaylistEntries(
+        playlists: List<LocalPlaylist>
+    ): List<LocalPlaylist> {
+        var changed = false
+        val normalized = playlists.map { playlist ->
+            if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
+                playlist
+            } else {
+                val projectedSongs = projectRemoteSourcePlaylistEntries(playlist.songs)
+                if (projectedSongs == playlist.songs) {
+                    playlist
+                } else {
+                    changed = true
+                    playlist.copy(songs = projectedSongs)
+                }
+            }
+        }
+        return if (changed) normalized else playlists
     }
 
     private fun normalizeSongMembershipTokens(
@@ -660,6 +683,14 @@ class LocalPlaylistRepository private constructor(
 
     private fun songSet(songs: List<SongItem>): Set<SongIdentity> = songs.map { it.identity() }.toSet()
 
+    private fun projectRemoteSourcePlaylistEntries(
+        songs: List<SongItem>
+    ): MutableList<SongItem> {
+        return songs.mapTo(mutableListOf()) { song ->
+            song.toSyncableRemoteSongOrNull(context) ?: song
+        }
+    }
+
     private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
         if (songs.isEmpty()) return emptyList()
 
@@ -723,7 +754,7 @@ class LocalPlaylistRepository private constructor(
     ): LocalPlaylistSyncMutation {
         val remoteIdentities = songs
             .asSequence()
-            .filterNot { LocalSongSupport.isLocalSong(it, context) }
+            .filter { it.isSyncableRemoteSong(context) }
             .map { it.identity() }
             .toList()
         if (remoteIdentities.isEmpty()) return LocalPlaylistSyncMutation()
@@ -749,7 +780,7 @@ class LocalPlaylistRepository private constructor(
         val deviceId = syncMutationStore.getOrCreateDeviceId()
         return songs
             .asSequence()
-            .filterNot { LocalSongSupport.isLocalSong(it, context) }
+            .filter { it.isSyncableRemoteSong(context) }
             .map { song ->
                 val identity = song.identity()
                 SyncPlaylistSongDeletion(
@@ -1771,7 +1802,7 @@ class LocalPlaylistRepository private constructor(
         currentSong: SongItem,
         newSongInfo: SongItem
     ): SongItem {
-        return newSongInfo.copy(
+        val mergedSong = newSongInfo.copy(
             addedAt = currentSong.addedAt,
             coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
                 ?: currentSong.coverUrl,
@@ -1780,6 +1811,49 @@ class LocalPlaylistRepository private constructor(
                 ?: currentSong.coverUrl,
             syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
         )
+        if (!shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
+            return mergedSong
+        }
+
+        // 下载副本可共享远端身份，但文件引用只能由下载副本持有
+        return mergedSong.copy(
+            id = currentSong.id,
+            name = currentSong.name,
+            artist = currentSong.artist,
+            album = currentSong.album,
+            albumId = currentSong.albumId,
+            durationMs = currentSong.durationMs,
+            coverUrl = currentSong.coverUrl,
+            originalName = currentSong.originalName,
+            originalArtist = currentSong.originalArtist,
+            originalCoverUrl = currentSong.originalCoverUrl ?: currentSong.coverUrl,
+            mediaUri = currentSong.mediaUri,
+            localFileName = currentSong.localFileName,
+            localFilePath = currentSong.localFilePath,
+            channelId = currentSong.channelId,
+            audioId = currentSong.audioId,
+            subAudioId = currentSong.subAudioId,
+            playlistContextId = currentSong.playlistContextId,
+            sourceStableKey = currentSong.sourceStableKey,
+            streamUrl = currentSong.streamUrl,
+            neteaseArtists = currentSong.neteaseArtists
+        )
+    }
+
+    private fun shouldPreserveEntryPlaybackSource(
+        currentSong: SongItem,
+        newSongInfo: SongItem
+    ): Boolean {
+        val currentIsLocal = LocalSongSupport.isLocalSong(currentSong, null)
+        val updatedIsLocal = LocalSongSupport.isLocalSong(newSongInfo, null)
+        if (currentIsLocal != updatedIsLocal) {
+            return true
+        }
+        if (!currentIsLocal) {
+            return false
+        }
+        return LocalSongSupport.identityMediaReference(currentSong) !=
+            LocalSongSupport.identityMediaReference(newSongInfo)
     }
 
     suspend fun rebaseLyricOffsetsForSource(

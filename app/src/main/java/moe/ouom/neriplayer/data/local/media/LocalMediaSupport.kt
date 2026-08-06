@@ -26,6 +26,8 @@ package moe.ouom.neriplayer.data.local.media
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
@@ -43,13 +45,20 @@ import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.stableKey as songStableKey
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
+import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
+import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
+import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
 import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -59,8 +68,10 @@ import java.nio.charset.StandardCharsets
 import java.net.URLConnection
 import java.security.MessageDigest
 import java.util.LinkedHashMap
+import java.util.Locale
 import kotlin.math.max
 import androidx.core.net.toUri
+import okhttp3.Request
 
 private const val LOCAL_MEDIA_SHARE_TAG = "LocalMediaSupport"
 private const val MAX_CONTAINER_METADATA_BYTES = 4L * 1024L * 1024L
@@ -74,6 +85,18 @@ private const val NEARBY_COVER_LOOKUP_CACHE_LIMIT = 2048
 private const val DIRECTORY_COVER_LOOKUP_CACHE_LIMIT = 256
 private const val MAX_EDITABLE_COVER_BYTES = 8L * 1024L * 1024L
 private const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
+private val ROLELESS_COVER_PICTURE_EXTENSIONS = setOf(
+    "3g2", "m4a", "m4b", "m4p", "m4r", "m4v", "mp4"
+)
+private val MP4_SUPPORTED_COVER_MIME_TYPES = setOf(
+    "image/jpeg", "image/png"
+)
+private val EDITABLE_COVER_JPEG_QUALITIES = intArrayOf(95, 90, 85, 80, 75, 70, 65, 60)
+private const val STAGED_METADATA_WRITE_DIRECTORY = "staged_metadata_writes"
+private val STAGED_CONTENT_REWRITE_EXTENSIONS = setOf(
+    "aac", "aif", "aiff", "ape", "flac", "m4a", "m4b", "mp3", "mp4",
+    "ogg", "opus", "tta", "wav", "wv"
+)
 
 data class LocalMediaDetails(
     val sourceUri: Uri,
@@ -110,6 +133,12 @@ data class LocalMediaDetails(
     val sourceStableKey: String? = null,
     val translatedLyricContent: String? = null
 )
+
+internal enum class EditableCoverMutation {
+    UNCHANGED,
+    CLEAR,
+    REPLACE
+}
 
 internal enum class LocalMediaMetadataWriteOutcome {
     SUCCESS,
@@ -461,9 +490,122 @@ object LocalMediaSupport {
 
     internal suspend fun writeEditableMetadata(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        coverReference: String? = song.customCoverUrl,
+        writeCover: Boolean = coverReference != null,
+        writeLyrics: Boolean = false
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
-        val sourceUri = song.localMediaUri() ?: return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        val candidates = song.localMediaUriCandidates()
+        if (candidates.isEmpty()) {
+            return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        }
+
+        var fallbackOutcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        candidates.forEach { sourceUri ->
+            val directOutcome = writeEditableMetadataDirect(
+                context = context,
+                song = song,
+                sourceUri = sourceUri,
+                coverReference = coverReference,
+                writeCover = writeCover,
+                writeLyrics = writeLyrics
+            )
+            val outcome = if (shouldAttemptStagedContentMetadataWrite(sourceUri, song, directOutcome)) {
+                writeEditableMetadataThroughStagedContentCopy(
+                    context = context,
+                    song = song,
+                    sourceUri = sourceUri,
+                    coverReference = coverReference,
+                    writeCover = writeCover,
+                    writeLyrics = writeLyrics,
+                    directOutcome = directOutcome
+                )
+            } else {
+                directOutcome
+            }
+            if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                return@withContext outcome
+            }
+            fallbackOutcome = selectEditableMetadataWriteFallback(
+                current = fallbackOutcome,
+                candidate = outcome
+            )
+        }
+        fallbackOutcome
+    }
+
+    private fun selectEditableMetadataWriteFallback(
+        current: LocalMediaMetadataWriteOutcome,
+        candidate: LocalMediaMetadataWriteOutcome
+    ): LocalMediaMetadataWriteOutcome {
+        return when {
+            current == LocalMediaMetadataWriteOutcome.FAILED ||
+                candidate == LocalMediaMetadataWriteOutcome.FAILED -> LocalMediaMetadataWriteOutcome.FAILED
+            current == LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE ||
+                candidate == LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE -> {
+                LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+            }
+            else -> LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+        }
+    }
+
+    internal fun shouldAttemptStagedContentMetadataWrite(
+        sourceUri: Uri,
+        song: SongItem,
+        directOutcome: LocalMediaMetadataWriteOutcome
+    ): Boolean = shouldAttemptStagedContentMetadataWrite(
+        sourceScheme = sourceUri.scheme,
+        sourcePathSegment = sourceUri.lastPathSegment,
+        song = song,
+        directOutcome = directOutcome
+    )
+
+    internal fun shouldAttemptStagedContentMetadataWrite(
+        sourceScheme: String?,
+        sourcePathSegment: String?,
+        song: SongItem,
+        directOutcome: LocalMediaMetadataWriteOutcome
+    ): Boolean {
+        if (directOutcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+            return false
+        }
+        if (!sourceScheme.equals("content", ignoreCase = true)) {
+            return false
+        }
+        return resolveEditableMediaExtension(song, sourcePathSegment) in
+            STAGED_CONTENT_REWRITE_EXTENSIONS
+    }
+
+    internal fun resolveEditableMediaExtension(song: SongItem, sourceUri: Uri): String =
+        resolveEditableMediaExtension(song, sourceUri.lastPathSegment)
+
+    private fun resolveEditableMediaExtension(song: SongItem, sourcePathSegment: String?): String {
+        return listOf(
+            song.localFileName,
+            song.localFilePath,
+            sourcePathSegment,
+            song.mediaUri
+        ).asSequence()
+            .mapNotNull { reference ->
+                reference
+                    ?.substringBefore('?')
+                    ?.substringBefore('#')
+                    ?.substringAfterLast('.', "")
+                    ?.lowercase(Locale.ROOT)
+                    ?.takeIf(String::isNotBlank)
+            }
+            .firstOrNull()
+            ?: "bin"
+    }
+
+    private fun writeEditableMetadataDirect(
+        context: Context,
+        song: SongItem,
+        sourceUri: Uri,
+        coverReference: String?,
+        writeCover: Boolean,
+        writeLyrics: Boolean
+    ): LocalMediaMetadataWriteOutcome {
         val resolved = runCatching {
             resolveInspectableLocalMedia(
                 context = context,
@@ -472,76 +614,397 @@ object LocalMediaSupport {
             )
         }.getOrElse { error ->
             NPLogger.w(TAG, "resolve writable local metadata failed for $sourceUri: ${error.message}")
-            return@withContext LocalMediaMetadataWriteOutcome.FAILED
+            return LocalMediaMetadataWriteOutcome.FAILED
         }
-        val descriptor = openWritableTagLibDescriptor(
+        val metadataSnapshot = openTagLibDescriptor(
             context = context,
             uri = sourceUri,
             file = resolved.file
-        ) ?: return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
-
-        descriptor.use { target ->
+        )?.use { target ->
             val existing = loadTagLibPropertyMap(target)
-                ?: return@use LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+                ?: return@use null
+            val lyrics = if (writeLyrics) {
+                song.matchedLyric ?: song.originalLyric
+            } else {
+                null
+            }
+            val translatedLyrics = if (writeLyrics) {
+                song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+            } else {
+                null
+            }
             val updated = applyEditableMetadata(
                 propertyMap = existing,
                 title = song.displayName(),
                 artist = song.displayArtist(),
-                lyrics = song.matchedLyric ?: song.originalLyric,
-                translatedLyrics = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
-                audioExtension = resolved.fileExtension
+                lyrics = lyrics,
+                translatedLyrics = translatedLyrics,
+                audioExtension = resolved.fileExtension,
+                writeLyrics = writeLyrics,
+                sourceStableKey = editableMetadataSourceStableKey(song)
             )
             val picturePlan = buildEditableCoverWritePlan(
                 context = context,
                 descriptor = target,
-                coverReference = song.customCoverUrl
+                coverReference = coverReference,
+                writeCover = writeCover,
+                audioExtension = resolved.fileExtension
             )
-            if (picturePlan == EditableCoverWritePlan.Unreadable) {
-                return@use LocalMediaMetadataWriteOutcome.FAILED
-            }
+            EditableMetadataSnapshot(
+                existingProperties = existing,
+                updatedProperties = updated,
+                picturePlan = picturePlan,
+                expectedStandardLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics),
+                sourceStableKey = editableMetadataSourceStableKey(song),
+                writesLyrics = writeLyrics,
+                clearsMissingLyrics = writeLyrics
+            )
+        } ?: return LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
 
-            val propertySaved = if (propertyMapsEquivalent(existing, updated)) {
-                true
-            } else {
+        if (metadataSnapshot.picturePlan == EditableCoverWritePlan.Unreadable) {
+            return LocalMediaMetadataWriteOutcome.FAILED
+        }
+
+        val propertyMapChanged = !propertyMapsEquivalent(
+            metadataSnapshot.existingProperties,
+            metadataSnapshot.updatedProperties
+        )
+        val restorePropertiesAfterCover = shouldRestoreEditablePropertiesAfterCoverWrite(
+            audioExtension = resolved.fileExtension,
+            writesCover = metadataSnapshot.picturePlan is EditableCoverWritePlan.Update
+        )
+        fun saveProperties(): Boolean {
+            return openWritableTagLibDescriptor(
+                context = context,
+                uri = sourceUri,
+                file = resolved.file
+            )?.use { target ->
                 runCatching {
-                    TagLib.savePropertyMap(target.dup().detachFd(), updated)
+                    TagLib.savePropertyMap(target.dup().detachFd(), metadataSnapshot.updatedProperties)
                 }.getOrElse { error ->
                     NPLogger.w(TAG, "write local metadata failed for $sourceUri: ${error.message}")
                     false
                 }
-            }
-            if (!propertySaved) {
-                return@use LocalMediaMetadataWriteOutcome.FAILED
-            }
+            } ?: false
+        }
+        if (!restorePropertiesAfterCover && propertyMapChanged && !saveProperties()) {
+            return LocalMediaMetadataWriteOutcome.FAILED
+        }
 
-            val coverSaved = when (picturePlan) {
+        val coverSaved = when (val picturePlan = metadataSnapshot.picturePlan) {
+            EditableCoverWritePlan.Unchanged -> true
+            EditableCoverWritePlan.Unreadable -> false
+            is EditableCoverWritePlan.Update -> {
+                openWritableTagLibDescriptor(
+                    context = context,
+                    uri = sourceUri,
+                    file = resolved.file
+                )?.use { target ->
+                    runCatching {
+                        TagLib.savePictures(target.dup().detachFd(), picturePlan.pictures)
+                    }.getOrElse { error ->
+                        NPLogger.w(TAG, "write local cover failed for $sourceUri: ${error.message}")
+                        false
+                    }
+                } ?: false
+            }
+        }
+        if (!coverSaved) {
+            return LocalMediaMetadataWriteOutcome.FAILED
+        }
+        if (restorePropertiesAfterCover && !saveProperties()) {
+            return LocalMediaMetadataWriteOutcome.FAILED
+        }
+
+        val verified = openTagLibDescriptor(
+            context = context,
+            uri = sourceUri,
+            file = resolved.file
+        )?.use { target ->
+            val propertyMap = loadTagLibPropertyMap(target) ?: return@use false
+            val propertiesMatch = hasExpectedEditableMetadata(
+                propertyMap = propertyMap,
+                title = song.displayName(),
+                artist = song.displayArtist(),
+                lyrics = if (metadataSnapshot.writesLyrics) {
+                    song.matchedLyric ?: song.originalLyric
+                } else {
+                    null
+                },
+                translatedLyrics = if (metadataSnapshot.writesLyrics) {
+                    song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+                } else {
+                    null
+                },
+                audioExtension = resolved.fileExtension,
+                expectedStandardLyrics = metadataSnapshot.expectedStandardLyrics,
+                verifyStandardLyrics = metadataSnapshot.writesLyrics,
+                verifyMissingLyrics = metadataSnapshot.clearsMissingLyrics,
+                sourceStableKey = metadataSnapshot.sourceStableKey
+            )
+            val coverMatch = when (val picturePlan = metadataSnapshot.picturePlan) {
                 EditableCoverWritePlan.Unchanged -> true
                 EditableCoverWritePlan.Unreadable -> false
-                is EditableCoverWritePlan.Update -> runCatching {
-                    TagLib.savePictures(target.dup().detachFd(), picturePlan.pictures)
-                }.getOrElse { error ->
-                    NPLogger.w(TAG, "write local cover failed for $sourceUri: ${error.message}")
-                    false
+                is EditableCoverWritePlan.Update -> {
+                    val pictures = runCatching {
+                        TagLib.getPictures(target.dup().detachFd())
+                    }.getOrElse { error ->
+                        NPLogger.w(TAG, "verify local cover failed for $sourceUri: ${error.message}")
+                        return@use false
+                    }
+                    hasExpectedEditableCover(
+                        actualPictures = pictures,
+                        expectedPictures = picturePlan.pictures,
+                        audioExtension = resolved.fileExtension
+                    )
                 }
             }
-            if (!coverSaved) {
-                return@use LocalMediaMetadataWriteOutcome.FAILED
-            }
+            propertiesMatch && coverMatch
+        } == true
+        if (!verified) {
+            return LocalMediaMetadataWriteOutcome.FAILED
+        }
 
-            val verified = loadTagLibPropertyMap(target)?.let { propertyMap ->
-                hasExpectedEditableMetadata(
-                    propertyMap = propertyMap,
-                    title = song.displayName(),
-                    artist = song.displayArtist(),
-                    lyrics = song.matchedLyric ?: song.originalLyric,
-                    translatedLyrics = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
-                    audioExtension = resolved.fileExtension
+        if (metadataSnapshot.picturePlan !is EditableCoverWritePlan.Unchanged) {
+            invalidateLocalCoverLookupCache(context, sourceUri, resolved)
+        }
+        return LocalMediaMetadataWriteOutcome.SUCCESS
+    }
+
+    private fun writeEditableMetadataThroughStagedContentCopy(
+        context: Context,
+        song: SongItem,
+        sourceUri: Uri,
+        coverReference: String?,
+        writeCover: Boolean,
+        writeLyrics: Boolean,
+        directOutcome: LocalMediaMetadataWriteOutcome
+    ): LocalMediaMetadataWriteOutcome {
+        val stagingDirectory = File(context.cacheDir, STAGED_METADATA_WRITE_DIRECTORY)
+        if (!stagingDirectory.exists() && !stagingDirectory.mkdirs()) {
+            NPLogger.w(TAG, "create staged metadata directory failed")
+            return directOutcome
+        }
+        val extension = resolveEditableMediaExtension(song, sourceUri)
+        val backup = runCatching {
+            File.createTempFile("metadata-source-", ".${extension}", stagingDirectory)
+        }.getOrNull() ?: return directOutcome
+        val updated = runCatching {
+            File.createTempFile("metadata-updated-", ".${extension}", stagingDirectory)
+        }.getOrNull()
+        if (updated == null) {
+            backup.delete()
+            return directOutcome
+        }
+        try {
+            val copied = context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                backup.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+                backup.length() > 0L
+            } ?: false
+            if (!copied) {
+                return directOutcome
+            }
+            backup.copyTo(updated, overwrite = true)
+            val stagedSong = song.copy(
+                mediaUri = Uri.fromFile(updated).toString(),
+                localFilePath = updated.absolutePath,
+                localFileName = updated.name
+            )
+            val stagedOutcome = writeEditableMetadataDirect(
+                context = context,
+                song = stagedSong,
+                sourceUri = Uri.fromFile(updated),
+                coverReference = coverReference,
+                writeCover = writeCover,
+                writeLyrics = writeLyrics
+            )
+            if (stagedOutcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
+                return directOutcome
+            }
+            if (!replaceContentUriWithFile(context, sourceUri, updated)) {
+                restoreContentUriFromFile(context, sourceUri, backup)
+                return directOutcome
+            }
+            if (contentUriByteCount(context, sourceUri) != updated.length()) {
+                NPLogger.w(TAG, "staged metadata write verification failed for $sourceUri")
+                restoreContentUriFromFile(context, sourceUri, backup)
+                return LocalMediaMetadataWriteOutcome.FAILED
+            }
+            if (
+                !verifyEditableMetadataAtSource(
+                    context = context,
+                    song = song,
+                    sourceUri = sourceUri,
+                    coverReference = coverReference,
+                    writeCover = writeCover,
+                    writeLyrics = writeLyrics
                 )
-            } == true
-            if (verified) {
-                LocalMediaMetadataWriteOutcome.SUCCESS
+            ) {
+                NPLogger.w(TAG, "staged metadata tag verification failed for $sourceUri")
+                restoreContentUriFromFile(context, sourceUri, backup)
+                return LocalMediaMetadataWriteOutcome.FAILED
+            }
+            if (writeCover) {
+                val resolvedSource = runCatching {
+                    resolveInspectableLocalMedia(
+                        context = context,
+                        uri = sourceUri,
+                        allowDescriptorFallback = true
+                    )
+                }.getOrNull()
+                invalidateLocalCoverLookupCache(
+                    context = context,
+                    uri = sourceUri,
+                    resolved = resolvedSource
+                )
+            }
+            NPLogger.d(TAG, "staged metadata write completed for $sourceUri")
+            return LocalMediaMetadataWriteOutcome.SUCCESS
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "staged metadata write failed for $sourceUri: ${error.message}")
+            return directOutcome
+        } finally {
+            if (backup.exists() && !backup.delete()) {
+                NPLogger.w(TAG, "delete staged metadata backup failed: ${backup.name}")
+            }
+            if (updated.exists() && !updated.delete()) {
+                NPLogger.w(TAG, "delete staged metadata update failed: ${updated.name}")
+            }
+        }
+    }
+
+    private fun replaceContentUriWithFile(context: Context, uri: Uri, source: File): Boolean {
+        val output = runCatching {
+            context.contentResolver.openOutputStream(uri, "rwt")
+        }.getOrNull() ?: runCatching {
+            context.contentResolver.openOutputStream(uri, "wt")
+        }.getOrNull() ?: return false
+        return runCatching {
+            output.use { target ->
+                source.inputStream().use { input ->
+                    input.copyTo(target)
+                }
+                target.flush()
+            }
+            true
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "replace content metadata source failed for $uri: ${error.message}")
+            false
+        }
+    }
+
+    private fun restoreContentUriFromFile(context: Context, uri: Uri, backup: File) {
+        if (!backup.isFile || !replaceContentUriWithFile(context, uri, backup)) {
+            NPLogger.e(TAG, "restore content metadata source failed for $uri")
+        }
+    }
+
+    private fun contentUriByteCount(context: Context, uri: Uri): Long {
+        return context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                total += count
+            }
+            total
+        } ?: -1L
+    }
+
+    private fun verifyEditableMetadataAtSource(
+        context: Context,
+        song: SongItem,
+        sourceUri: Uri,
+        coverReference: String?,
+        writeCover: Boolean,
+        writeLyrics: Boolean
+    ): Boolean {
+        return openTagLibDescriptor(context, sourceUri, file = null)?.use { descriptor ->
+            val propertyMap = loadTagLibPropertyMap(descriptor) ?: return@use false
+            val lyrics = if (writeLyrics) {
+                song.matchedLyric ?: song.originalLyric
             } else {
-                LocalMediaMetadataWriteOutcome.FAILED
+                null
+            }
+            val translatedLyrics = if (writeLyrics) {
+                song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+            } else {
+                null
+            }
+            val propertiesMatch = hasExpectedEditableMetadata(
+                propertyMap = propertyMap,
+                title = song.displayName(),
+                artist = song.displayArtist(),
+                lyrics = lyrics,
+                translatedLyrics = translatedLyrics,
+                audioExtension = resolveEditableMediaExtension(song, sourceUri),
+                expectedStandardLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics),
+                verifyStandardLyrics = writeLyrics,
+                verifyMissingLyrics = writeLyrics,
+                sourceStableKey = editableMetadataSourceStableKey(song)
+            )
+            propertiesMatch && hasExpectedEditableCoverAtSource(
+                context = context,
+                descriptor = descriptor,
+                coverReference = coverReference,
+                writeCover = writeCover,
+                audioExtension = resolveEditableMediaExtension(song, sourceUri)
+            )
+        } == true
+    }
+
+    private fun hasExpectedEditableCoverAtSource(
+        context: Context,
+        descriptor: ParcelFileDescriptor,
+        coverReference: String?,
+        writeCover: Boolean,
+        audioExtension: String?
+    ): Boolean {
+        if (!writeCover) {
+            return true
+        }
+        val pictures = runCatching {
+            TagLib.getPictures(descriptor.dup().detachFd())
+        }.getOrElse { error ->
+            NPLogger.w(TAG, "verify staged local cover failed: ${error.message}")
+            return false
+        }
+        val rolelessPictureContainer = usesRolelessEditableCoverPictures(audioExtension)
+        val actualCover = if (rolelessPictureContainer) {
+            pictures.singleOrNull()
+        } else {
+            pictures.firstOrNull(::isFrontCoverPicture)
+        }
+        val reference = coverReference?.trim()?.takeIf(String::isNotBlank)
+        return when (resolveEditableCoverMutation(writeCover, reference)) {
+            EditableCoverMutation.UNCHANGED -> true
+            EditableCoverMutation.CLEAR -> {
+                if (rolelessPictureContainer) pictures.isEmpty() else actualCover == null
+            }
+            EditableCoverMutation.REPLACE -> {
+                val replacementReference = reference ?: return false
+                if (replacementReference.isRemoteCoverReference()) {
+                    if (rolelessPictureContainer) {
+                        pictures.size == 1 && actualCover?.data?.isNotEmpty() == true
+                    } else {
+                        actualCover?.data?.isNotEmpty() == true
+                    }
+                } else {
+                    val expectedCover = createEditableCoverPicture(
+                        context = context,
+                        reference = replacementReference,
+                        audioExtension = audioExtension
+                    ) ?: return false
+                    if (rolelessPictureContainer) {
+                        pictures.size == 1 &&
+                            actualCover?.data?.contentEquals(expectedCover.data) == true
+                    } else {
+                        actualCover?.data?.contentEquals(expectedCover.data) == true
+                    }
+                }
             }
         }
     }
@@ -1574,6 +2037,7 @@ object LocalMediaSupport {
                 channelCount = audioProperties?.channels?.takeIf { it > 0 },
                 lyrics = if (includeEmbeddedAssets) {
                     propertyMap.readFirstValue(
+                        NERI_ORIGINAL_LYRICS_METADATA_KEY,
                         "LYRICS",
                         "UNSYNCEDLYRICS",
                         "DESCRIPTION"
@@ -1582,10 +2046,7 @@ object LocalMediaSupport {
                     null
                 },
                 translatedLyrics = if (includeEmbeddedAssets) {
-                    propertyMap.readFirstValue(
-                        "LYRICS_TRANSLATED",
-                        "NERI_LYRICS_TRANSLATED"
-                    )
+                    propertyMap.readFirstValue(*translatedLyricsMetadataKeys.toTypedArray())
                 } else {
                     null
                 },
@@ -1618,6 +2079,15 @@ object LocalMediaSupport {
         uri: Uri,
         file: File?
     ): ParcelFileDescriptor? {
+        val fileDescriptor = file?.let { localFile ->
+            runCatching {
+                ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_WRITE)
+            }.getOrNull()
+        }
+        if (fileDescriptor != null) {
+            return fileDescriptor
+        }
+
         val contentDescriptor = if (uri.scheme.equals("content", ignoreCase = true)) {
             runCatching {
                 context.contentResolver.openFileDescriptor(uri, "rw")
@@ -1627,15 +2097,6 @@ object LocalMediaSupport {
         }
         if (contentDescriptor != null) {
             return contentDescriptor
-        }
-
-        val fileDescriptor = file?.let { localFile ->
-            runCatching {
-                ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_WRITE)
-            }.getOrNull()
-        }
-        if (fileDescriptor != null) {
-            return fileDescriptor
         }
 
         val fallbackDescriptor = if (!uri.scheme.equals("content", ignoreCase = true)) {
@@ -1663,7 +2124,9 @@ object LocalMediaSupport {
         artist: String,
         lyrics: String?,
         translatedLyrics: String?,
-        audioExtension: String?
+        audioExtension: String?,
+        writeLyrics: Boolean = false,
+        sourceStableKey: String? = null
     ): PropertyMap {
         val updated: PropertyMap = hashMapOf()
         propertyMap.forEach { (key, values) ->
@@ -1671,13 +2134,17 @@ object LocalMediaSupport {
         }
         putTagValue(updated, "TITLE", title)
         putTagValue(updated, "ARTIST", artist)
-        if (lyrics != null) {
-            lyricMetadataKeys(audioExtension).forEach { key ->
-                putTagValue(updated, key, lyrics)
+        sourceStableKey
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { key -> putTagValue(updated, "NERI_STABLE_KEY", key) }
+        if (writeLyrics) {
+            val externalLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics)
+            standardLyricsMetadataKeys(audioExtension).forEach { key ->
+                putTagValue(updated, key, externalLyrics.orEmpty())
             }
-        }
-        if (translatedLyrics != null) {
-            translatedLyricMetadataKeys.forEach { key ->
+            putTagValue(updated, NERI_ORIGINAL_LYRICS_METADATA_KEY, lyrics)
+            translatedLyricsMetadataKeys.forEach { key ->
                 putTagValue(updated, key, translatedLyrics)
             }
         }
@@ -1690,24 +2157,43 @@ object LocalMediaSupport {
         artist: String,
         lyrics: String?,
         translatedLyrics: String?,
-        audioExtension: String?
+        audioExtension: String?,
+        expectedStandardLyrics: String? = mergeLyricsForExternalPlayers(lyrics, translatedLyrics),
+        verifyStandardLyrics: Boolean = lyrics != null || translatedLyrics != null,
+        verifyMissingLyrics: Boolean = false,
+        sourceStableKey: String? = null
     ): Boolean {
         return hasExpectedTagValue(propertyMap, "TITLE", title) &&
             hasExpectedTagValue(propertyMap, "ARTIST", artist) &&
+            (!verifyStandardLyrics || hasExpectedStandardLyrics(
+                propertyMap = propertyMap,
+                audioExtension = audioExtension,
+                expectedLyrics = expectedStandardLyrics
+            )) &&
             hasExpectedOneOfTagValues(
                 propertyMap = propertyMap,
-                keys = lyricMetadataKeys(audioExtension),
-                expectedValue = lyrics
+                keys = listOf(NERI_ORIGINAL_LYRICS_METADATA_KEY),
+                expectedValue = lyrics,
+                verifyMissing = verifyMissingLyrics
             ) &&
             hasExpectedOneOfTagValues(
                 propertyMap = propertyMap,
-                keys = translatedLyricMetadataKeys,
-                expectedValue = translatedLyrics
-            )
+                keys = translatedLyricsMetadataKeys,
+                expectedValue = translatedLyrics,
+                verifyMissing = verifyMissingLyrics
+            ) &&
+            (
+                sourceStableKey.isNullOrBlank() ||
+                    hasExpectedOneOfTagValues(
+                        propertyMap = propertyMap,
+                        keys = listOf("NERI_STABLE_KEY", "NERI STABLE KEY"),
+                        expectedValue = sourceStableKey
+                    )
+                )
     }
 
-    private fun putTagValue(propertyMap: PropertyMap, key: String, value: String) {
-        val normalized = value.trim()
+    private fun putTagValue(propertyMap: PropertyMap, key: String, value: String?) {
+        val normalized = value?.trim().orEmpty()
         if (normalized.isBlank()) {
             propertyMap.remove(key)
         } else {
@@ -1730,10 +2216,13 @@ object LocalMediaSupport {
     private fun hasExpectedOneOfTagValues(
         propertyMap: PropertyMap,
         keys: List<String>,
-        expectedValue: String?
+        expectedValue: String?,
+        verifyMissing: Boolean = false
     ): Boolean {
         if (expectedValue == null) {
-            return true
+            return !verifyMissing || keys.all { key ->
+                key !in propertyMap || propertyMap[key].isNullOrEmpty()
+            }
         }
         val normalized = expectedValue.trim()
         if (normalized.isBlank()) {
@@ -1744,20 +2233,19 @@ object LocalMediaSupport {
         return keys.any { key -> hasExpectedTagValue(propertyMap, key, normalized) }
     }
 
-    private fun lyricMetadataKeys(audioExtension: String?): List<String> {
-        return buildList {
-            add("LYRICS")
-            when (audioExtension?.lowercase()) {
-                "mp3" -> add("UNSYNCEDLYRICS")
-                "m4a", "mp4", "aac" -> add("DESCRIPTION")
+    private fun hasExpectedStandardLyrics(
+        propertyMap: PropertyMap,
+        audioExtension: String?,
+        expectedLyrics: String?
+    ): Boolean {
+        val keys = standardLyricsMetadataKeys(audioExtension)
+        if (expectedLyrics.isNullOrBlank()) {
+            return keys.all { key ->
+                key !in propertyMap || propertyMap[key].isNullOrEmpty()
             }
         }
+        return hasExpectedOneOfTagValues(propertyMap, keys, expectedLyrics)
     }
-
-    private val translatedLyricMetadataKeys = listOf(
-        "LYRICS_TRANSLATED",
-        "NERI_LYRICS_TRANSLATED"
-    )
 
     private sealed class EditableCoverWritePlan {
         data object Unchanged : EditableCoverWritePlan()
@@ -1765,54 +2253,178 @@ object LocalMediaSupport {
         data class Update(val pictures: Array<Picture>) : EditableCoverWritePlan()
     }
 
+    private data class EditableMetadataSnapshot(
+        val existingProperties: PropertyMap,
+        val updatedProperties: PropertyMap,
+        val picturePlan: EditableCoverWritePlan,
+        val expectedStandardLyrics: String?,
+        val sourceStableKey: String,
+        val writesLyrics: Boolean,
+        val clearsMissingLyrics: Boolean
+    )
+
+    private fun editableMetadataSourceStableKey(song: SongItem): String {
+        return song.sourceStableKey
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: song.songStableKey()
+    }
+
+    internal fun hasExpectedEditableCover(
+        actualPictures: Array<Picture>,
+        expectedPictures: Array<Picture>,
+        audioExtension: String? = null
+    ): Boolean {
+        if (usesRolelessEditableCoverPictures(audioExtension)) {
+            return editableCoverPictureListsEquivalent(
+                left = actualPictures,
+                right = expectedPictures,
+                audioExtension = audioExtension
+            )
+        }
+        val actualFrontCover = actualPictures.firstOrNull(::isFrontCoverPicture)
+        val expectedFrontCover = expectedPictures.firstOrNull(::isFrontCoverPicture)
+        return when {
+            expectedFrontCover == null -> actualFrontCover == null
+            actualFrontCover == null -> false
+            else -> actualFrontCover.data.contentEquals(expectedFrontCover.data)
+        }
+    }
+
     private fun buildEditableCoverWritePlan(
         context: Context,
         descriptor: ParcelFileDescriptor,
-        coverReference: String?
+        coverReference: String?,
+        writeCover: Boolean,
+        audioExtension: String?
     ): EditableCoverWritePlan {
         val reference = coverReference?.trim()?.takeIf(String::isNotBlank)
-            ?: return EditableCoverWritePlan.Unchanged
-        if (!reference.isLocalCoverReference()) {
-            return EditableCoverWritePlan.Unchanged
-        }
-        val coverBytes = readEditableCoverBytes(context, reference)
-            ?: return EditableCoverWritePlan.Unreadable
+        val mutation = resolveEditableCoverMutation(writeCover, reference)
+        if (mutation == EditableCoverMutation.UNCHANGED) return EditableCoverWritePlan.Unchanged
         val existingPictures = runCatching {
             TagLib.getPictures(descriptor.dup().detachFd())
         }.getOrElse { error ->
-            NPLogger.w(TAG, "read local cover failed for $reference: ${error.message}")
+            NPLogger.w(TAG, "read local cover failed: ${error.message}")
             return EditableCoverWritePlan.Unreadable
         }
-        val existingFrontCover = existingPictures.firstOrNull { picture ->
-            picture.pictureType.equals(FRONT_COVER_PICTURE_TYPE, ignoreCase = true)
+        if (mutation == EditableCoverMutation.CLEAR) {
+            val updatedPictures = replaceEditableCoverPictures(
+                existingPictures = existingPictures,
+                replacementPicture = null,
+                audioExtension = audioExtension
+            )
+            return if (
+                editableCoverPictureListsEquivalent(
+                    left = existingPictures,
+                    right = updatedPictures,
+                    audioExtension = audioExtension
+                )
+            ) {
+                EditableCoverWritePlan.Unchanged
+            } else {
+                EditableCoverWritePlan.Update(updatedPictures)
+            }
         }
-        if (existingFrontCover?.data?.contentEquals(coverBytes) == true) {
+        require(mutation == EditableCoverMutation.REPLACE)
+        val replacementReference = requireNotNull(reference)
+        val replacementPicture = createEditableCoverPicture(
+            context = context,
+            reference = replacementReference,
+            audioExtension = audioExtension
+        )
+            ?: return EditableCoverWritePlan.Unreadable
+        val updatedPictures = replaceEditableCoverPictures(
+            existingPictures = existingPictures,
+            replacementPicture = replacementPicture,
+            audioExtension = audioExtension
+        )
+        if (
+            editableCoverPictureListsEquivalent(
+                left = existingPictures,
+                right = updatedPictures,
+                audioExtension = audioExtension
+            )
+        ) {
             return EditableCoverWritePlan.Unchanged
         }
-        val updatedPictures = existingPictures
-            .filterNot { picture ->
-                picture.pictureType.equals(FRONT_COVER_PICTURE_TYPE, ignoreCase = true)
-            }
-            .plus(
-                Picture(
-                    data = coverBytes,
-                    description = "",
-                    pictureType = FRONT_COVER_PICTURE_TYPE,
-                    mimeType = resolveEditableCoverMimeType(context, reference, coverBytes)
-                )
-            )
-            .toTypedArray()
         return EditableCoverWritePlan.Update(updatedPictures)
     }
 
-    private fun String.isLocalCoverReference(): Boolean {
-        return startsWith("/") ||
-            startsWith("file:", ignoreCase = true) ||
-            startsWith("content:", ignoreCase = true)
+    internal fun usesRolelessEditableCoverPictures(audioExtension: String?): Boolean {
+        return audioExtension
+            ?.trim()
+            ?.lowercase(Locale.ROOT) in ROLELESS_COVER_PICTURE_EXTENSIONS
     }
 
-    private fun readEditableCoverBytes(context: Context, reference: String): ByteArray? {
+    internal fun shouldRestoreEditablePropertiesAfterCoverWrite(
+        audioExtension: String?,
+        writesCover: Boolean
+    ): Boolean {
+        return writesCover &&
+            usesRolelessEditableCoverPictures(audioExtension)
+    }
+
+    internal fun replaceEditableCoverPictures(
+        existingPictures: Array<Picture>,
+        replacementPicture: Picture?,
+        audioExtension: String?
+    ): Array<Picture> {
+        if (usesRolelessEditableCoverPictures(audioExtension)) {
+            return replacementPicture?.let(::arrayOf) ?: emptyArray()
+        }
+        val retainedPictures = existingPictures.filterNot(::isFrontCoverPicture)
+        return if (replacementPicture == null) {
+            retainedPictures.toTypedArray()
+        } else {
+            (retainedPictures + replacementPicture).toTypedArray()
+        }
+    }
+
+    private fun isFrontCoverPicture(picture: Picture): Boolean {
+        return picture.pictureType.equals(FRONT_COVER_PICTURE_TYPE, ignoreCase = true)
+    }
+
+    private fun editableCoverPictureListsEquivalent(
+        left: Array<Picture>,
+        right: Array<Picture>,
+        audioExtension: String?
+    ): Boolean {
+        if (left.size != right.size) return false
+        val rolelessPictureContainer = usesRolelessEditableCoverPictures(audioExtension)
+        return left.indices.all { index ->
+            val actual = left[index]
+            val expected = right[index]
+            actual.data.contentEquals(expected.data) && (
+                rolelessPictureContainer ||
+                    actual.description == expected.description &&
+                    actual.pictureType.equals(expected.pictureType, ignoreCase = true) &&
+                    actual.mimeType.equals(expected.mimeType, ignoreCase = true)
+                )
+        }
+    }
+
+    internal fun resolveEditableCoverMutation(
+        writeCover: Boolean,
+        coverReference: String?
+    ): EditableCoverMutation {
+        if (!writeCover) return EditableCoverMutation.UNCHANGED
+        return if (coverReference.isNullOrBlank()) {
+            EditableCoverMutation.CLEAR
+        } else {
+            EditableCoverMutation.REPLACE
+        }
+    }
+
+    private fun String.isRemoteCoverReference(): Boolean {
+        return startsWith("http://", ignoreCase = true) ||
+            startsWith("https://", ignoreCase = true)
+    }
+
+    internal fun readEditableCoverBytes(context: Context, reference: String): ByteArray? {
         val uri = runCatching { reference.toUri() }.getOrNull()
+        if (reference.isRemoteCoverReference()) {
+            return readRemoteEditableCoverBytes(reference)
+        }
         val localFile = when {
             reference.startsWith("/") -> File(reference)
             else -> uri
@@ -1836,6 +2448,89 @@ object LocalMediaSupport {
         }
     }
 
+    private fun readRemoteEditableCoverBytes(reference: String): ByteArray? {
+        return runCatching {
+            val request = Request.Builder()
+                .url(reference)
+                .header("Accept", "image/*")
+                .build()
+            AppContainer.sharedOkHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    NPLogger.w(TAG, "download editable cover failed: HTTP ${response.code}")
+                    return@use null
+                }
+                val body = response.body
+                if (body.contentLength() > MAX_EDITABLE_COVER_BYTES) {
+                    NPLogger.w(TAG, "download editable cover exceeds size limit")
+                    return@use null
+                }
+                body.byteStream().use { input ->
+                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
+                }.takeIf(ByteArray::isNotEmpty)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "download editable cover failed: ${error.message}")
+        }.getOrNull()
+    }
+
+    private fun createEditableCoverPicture(
+        context: Context,
+        reference: String,
+        audioExtension: String?
+    ): Picture? {
+        val sourceBytes = readEditableCoverBytes(context, reference) ?: return null
+        val sourceMimeType = resolveEditableCoverMimeType(context, reference, sourceBytes)
+        val encodedCover = normalizeEmbeddedCoverForContainer(
+            sourceBytes = sourceBytes,
+            sourceMimeType = sourceMimeType,
+            audioExtension = audioExtension
+        )
+        val finalCover = encodedCover ?: return null
+        return Picture(
+            data = finalCover.first,
+            description = "",
+            pictureType = FRONT_COVER_PICTURE_TYPE,
+            mimeType = finalCover.second
+        )
+    }
+
+    internal fun normalizeEmbeddedCoverForContainer(
+        sourceBytes: ByteArray,
+        sourceMimeType: String?,
+        audioExtension: String?
+    ): Pair<ByteArray, String>? {
+        val normalizedMimeType = sourceMimeType?.let(::normalizeEditableCoverMimeType)
+        if (
+            !usesRolelessEditableCoverPictures(audioExtension) ||
+                normalizedMimeType in MP4_SUPPORTED_COVER_MIME_TYPES
+        ) {
+            return sourceBytes to (normalizedMimeType ?: "image/jpeg")
+        }
+        return encodeEditableCoverAsJpeg(sourceBytes)?.let { bytes ->
+            bytes to "image/jpeg"
+        }
+    }
+
+    private fun encodeEditableCoverAsJpeg(sourceBytes: ByteArray): ByteArray? {
+        val bitmap = BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size) ?: return null
+        return try {
+            ByteArrayOutputStream().use { output ->
+                EDITABLE_COVER_JPEG_QUALITIES.forEach { quality ->
+                    output.reset()
+                    if (bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                        val encoded = output.toByteArray()
+                        if (encoded.isNotEmpty() && encoded.size <= MAX_EDITABLE_COVER_BYTES) {
+                            return@use encoded
+                        }
+                    }
+                }
+                null
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun resolveEditableCoverMimeType(
         context: Context,
         reference: String,
@@ -1845,16 +2540,23 @@ object LocalMediaSupport {
         val declaredMimeType = uri?.let { coverUri ->
             runCatching { context.contentResolver.getType(coverUri) }.getOrNull()
         }?.substringBefore(';')?.trim()?.takeIf { it.startsWith("image/", ignoreCase = true) }
-        if (declaredMimeType != null) {
-            return declaredMimeType
-        }
         val guessedMimeType = URLConnection.guessContentTypeFromName(
             uri?.lastPathSegment ?: reference
         )?.takeIf { it.startsWith("image/", ignoreCase = true) }
-        return guessedMimeType ?: detectEditableCoverMimeType(bytes)
+        return normalizeEditableCoverMimeType(
+            detectEditableCoverMimeType(bytes) ?: declaredMimeType ?: guessedMimeType ?: "image/jpeg"
+        )
     }
 
-    private fun detectEditableCoverMimeType(bytes: ByteArray): String {
+    private fun normalizeEditableCoverMimeType(mimeType: String): String {
+        return when (mimeType.lowercase(Locale.ROOT)) {
+            "image/jpg", "image/pjpeg" -> "image/jpeg"
+            "image/x-ms-bmp" -> "image/bmp"
+            else -> mimeType.lowercase(Locale.ROOT)
+        }
+    }
+
+    private fun detectEditableCoverMimeType(bytes: ByteArray): String? {
         if (bytes.size >= 3 &&
             bytes[0] == 0xFF.toByte() &&
             bytes[1] == 0xD8.toByte() &&
@@ -1870,6 +2572,22 @@ object LocalMediaSupport {
         ) {
             return "image/png"
         }
+        if (bytes.size >= 6 &&
+            bytes[0] == 'G'.code.toByte() &&
+            bytes[1] == 'I'.code.toByte() &&
+            bytes[2] == 'F'.code.toByte() &&
+            bytes[3] == '8'.code.toByte() &&
+            (bytes[4] == '7'.code.toByte() || bytes[4] == '9'.code.toByte()) &&
+            bytes[5] == 'a'.code.toByte()
+        ) {
+            return "image/gif"
+        }
+        if (bytes.size >= 2 &&
+            bytes[0] == 'B'.code.toByte() &&
+            bytes[1] == 'M'.code.toByte()
+        ) {
+            return "image/bmp"
+        }
         if (bytes.size >= 12 &&
             bytes[0] == 0x52.toByte() &&
             bytes[1] == 0x49.toByte() &&
@@ -1882,7 +2600,7 @@ object LocalMediaSupport {
         ) {
             return "image/webp"
         }
-        return "image/jpeg"
+        return null
     }
 
     private fun propertyMapsEquivalent(left: PropertyMap, right: PropertyMap): Boolean {
@@ -2190,6 +2908,45 @@ object LocalMediaSupport {
             localCoverLookupCache[cacheKey] = coverUri
         }
     }
+
+    private fun invalidateLocalCoverLookupCache(
+        context: Context,
+        uri: Uri,
+        resolved: ResolvedInspectableLocalMedia?
+    ) {
+        val prefixes = buildList {
+            resolved?.file?.absolutePath?.let { add("$it|") }
+            add("${uri}|")
+        }
+        synchronized(localCoverLookupCache) {
+            val iterator = localCoverLookupCache.keys.iterator()
+            while (iterator.hasNext()) {
+                val key = iterator.next()
+                if (prefixes.any(key::startsWith)) {
+                    iterator.remove()
+                }
+            }
+        }
+        embeddedCoverCacheKeys(uri.toString(), resolved?.resolvedPath).forEach { cacheKey ->
+            val cacheFile = embeddedCoverFile(context, cacheKey)
+            if (cacheFile.isFile && !cacheFile.delete()) {
+                NPLogger.w(TAG, "clear stale embedded cover cache failed: ${cacheFile.name}")
+            }
+        }
+    }
+
+    internal fun embeddedCoverCacheKeys(
+        uri: String,
+        resolvedPath: String?
+    ): List<String> {
+        val baseKey = resolvedPath ?: uri
+        return listOf(baseKey, "$baseKey#taglib")
+    }
+
+    private fun embeddedCoverCacheKeys(
+        uri: Uri,
+        resolved: ResolvedInspectableLocalMedia
+    ): List<String> = embeddedCoverCacheKeys(uri.toString(), resolved.resolvedPath)
 
     private fun extractEmbeddedCoverWithRetriever(
         context: Context,

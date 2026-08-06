@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.toSyncableRemoteSongOrNull
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 
 internal const val LEGACY_SYNC_METADATA_VERSION = 0
@@ -73,7 +74,8 @@ data class SyncData(
     @ProtoNumber(13) val playlistSongDeletions: List<SyncPlaylistSongDeletion> = emptyList(),
     @ProtoNumber(14) val playlistUsageStats: List<SyncPlaylistUsageStat> = emptyList(),
     @ProtoNumber(15) val localPlaylistPlaybackStats: List<SyncLocalPlaylistPlaybackStat> = emptyList(),
-    @ProtoNumber(16) val localPlaylistPlaybackBuckets: List<SyncLocalPlaylistPlaybackBucket> = emptyList()
+    @ProtoNumber(16) val localPlaylistPlaybackBuckets: List<SyncLocalPlaylistPlaybackBucket> = emptyList(),
+    @ProtoNumber(17) val biliVideoSkipRules: List<SyncBiliVideoSkipRule> = emptyList()
 )
 
 /**
@@ -212,10 +214,9 @@ data class SyncSong(
 ) {
     companion object {
         fun fromSongItemOrNull(song: SongItem, context: Context? = null): SyncSong? {
-            if (LocalSongSupport.isLocalSong(song, context)) {
-                return null
-            }
-            return fromSongItem(song, context)
+            return song
+                .toSyncableRemoteSongOrNull(context)
+                ?.let { syncableSong -> fromSongItem(syncableSong, context) }
         }
 
         fun fromSongItem(song: SongItem, context: Context? = null): SyncSong {

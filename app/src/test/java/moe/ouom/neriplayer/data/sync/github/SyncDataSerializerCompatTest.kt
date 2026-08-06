@@ -16,6 +16,8 @@ import moe.ouom.neriplayer.data.sync.model.LEGACY_SYNC_METADATA_VERSION
 import moe.ouom.neriplayer.data.sync.model.SyncAction
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipInterval
+import moe.ouom.neriplayer.data.sync.model.SyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
@@ -34,6 +36,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncDataSerializerCompatTest {
+    @Test
+    fun `bili video skip rules survive json and protobuf sync serialization`() {
+        val rule = SyncBiliVideoSkipRule(
+            bvid = "BV1test",
+            cid = 42L,
+            intervals = listOf(SyncBiliVideoSkipInterval(10_000L, 20_000L)),
+            modifiedAt = 100L
+        )
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "Device",
+            biliVideoSkipRules = listOf(rule)
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            val decoded = SyncDataSerializer.deserialize(
+                SyncDataSerializer.serialize(data, useDataSaver)
+            )
+
+            assertEquals(listOf(rule), decoded.biliVideoSkipRules)
+        }
+    }
+
     @Test
     fun `protobuf desktop playlist with omitted default fields decodes`() {
         val desktopData = DefaultOmittingSyncData(

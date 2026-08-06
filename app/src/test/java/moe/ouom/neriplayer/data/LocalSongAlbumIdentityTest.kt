@@ -3,13 +3,17 @@ package moe.ouom.neriplayer.data
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.recoverNeteaseRemoteSourceFromStaleLocalCopy
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -103,6 +107,87 @@ class LocalSongAlbumIdentityTest {
 
         assertTrue(downloadedLocalSong.sameIdentityAs(remoteSong))
         assertEquals(remoteSong.identity(), downloadedLocalSong.identity())
+    }
+
+    @Test
+    fun `downloaded remote copy serializes with its remote source identity`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val downloadedLocalSong = remoteSong.copy(
+            id = 99L,
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            mediaUri = "content://downloads/audio/song.flac",
+            localFilePath = "/storage/emulated/0/Download/song.flac",
+            sourceStableKey = remoteSong.stableKey()
+        )
+
+        val syncSong = SyncSong.fromSongItemOrNull(downloadedLocalSong)
+
+        assertNotNull(syncSong)
+        assertEquals(remoteSong.identity(), syncSong!!.identity())
+        assertNull(syncSong.mediaUri)
+        assertEquals("netease", syncSong.channelId)
+        assertEquals("42", syncSong.audioId)
+        assertFalse(LocalSongSupport.isLocalSong(syncSong.toSongItem(), null))
+    }
+
+    @Test
+    fun `pure local song remains excluded from sync`() {
+        val localSong = SongItem(
+            id = 99L,
+            name = "song",
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/song.flac",
+            localFilePath = "/storage/emulated/0/Download/song.flac"
+        )
+
+        assertNull(SyncSong.fromSongItemOrNull(localSong))
+    }
+
+    @Test
+    fun `stale downloaded netease copy recovers its remote playback source`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val staleLocalCopy = SongItem(
+            id = 99L,
+            name = "song",
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/deleted.flac",
+            localFileName = "deleted.flac",
+            sourceStableKey = remoteSong.stableKey()
+        )
+
+        val recovered = staleLocalCopy.recoverNeteaseRemoteSourceFromStaleLocalCopy()
+
+        assertEquals(remoteSong, recovered)
+        assertFalse(LocalSongSupport.isLocalSong(recovered!!, null))
+        assertTrue(recovered.sameIdentityAs(remoteSong))
     }
 
     @Test

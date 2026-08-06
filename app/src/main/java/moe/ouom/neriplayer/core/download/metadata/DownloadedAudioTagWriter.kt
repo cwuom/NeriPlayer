@@ -11,11 +11,16 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
+import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
+import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
+import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
@@ -37,6 +42,9 @@ internal object DownloadedAudioTagWriter {
     private const val TAG = "DownloadedAudioTagWriter"
     private const val FRONT_COVER_TYPE = "Front Cover"
     private const val MAX_EMBEDDED_COVER_BYTES = 8L * 1024L * 1024L
+    private val ROLELESS_COVER_PICTURE_EXTENSIONS = setOf(
+        "3g2", "m4a", "m4b", "m4p", "m4r", "m4v", "mp4"
+    )
 
     /**
      * TagLib 无法承载标签的容器; YouTube 的 opus 音频落盘为 .webm
@@ -82,20 +90,12 @@ internal object DownloadedAudioTagWriter {
             val coverPictures = buildPicturesWithFrontCover(
                 context = context,
                 descriptor = target,
-                sidecarReferences = sidecarReferences
+                sidecarReferences = sidecarReferences,
+                audioExtension = audio.name.substringAfterLast('.', "")
             )
 
             val propertyChanged = !propertyMapsEquivalent(existingPropertyMap, propertyMap)
-            val propertySaved = if (propertyChanged) {
-                runCatching {
-                    TagLib.savePropertyMap(target.dup().detachFd(), propertyMap)
-                }.getOrElse {
-                    NPLogger.w(TAG, "写入标签属性失败: ${audio.name}, ${it.message}")
-                    false
-                }
-            } else {
-                true
-            }
+            val audioExtension = audio.name.substringAfterLast('.', "")
             val coverSaved = coverPictures?.let { pictures ->
                 runCatching {
                     TagLib.savePictures(target.dup().detachFd(), pictures)
@@ -104,6 +104,20 @@ internal object DownloadedAudioTagWriter {
                     false
                 }
             } ?: true
+            val shouldSaveProperties = propertyChanged || shouldRestorePropertyMapAfterCoverWrite(
+                audioExtension = audioExtension,
+                writesCover = coverPictures != null
+            )
+            val propertySaved = if (coverSaved && shouldSaveProperties) {
+                runCatching {
+                    TagLib.savePropertyMap(target.dup().detachFd(), propertyMap)
+                }.getOrElse {
+                    NPLogger.w(TAG, "写入标签属性失败: ${audio.name}, ${it.message}")
+                    false
+                }
+            } else {
+                coverSaved
+            }
 
             val metadataVerified = if (propertySaved) {
                 verifyRequiredEmbeddedMetadata(target, song)
@@ -168,8 +182,12 @@ internal object DownloadedAudioTagWriter {
         putSingleValue(propertyMap, "ALBUM", normalizeEmbeddedAlbumName(song.album))
         putSingleValue(propertyMap, "ALBUMARTIST", song.artist)
         putSingleValue(propertyMap, "TRACKNUMBER", song.id.takeIf { it > 0L }?.toString())
-        putPrimaryLyricValues(propertyMap, audioExtension, embeddedLyric)
-        putTranslatedLyricValues(propertyMap, embeddedTranslatedLyric)
+        applyEmbeddedLyricValues(
+            propertyMap = propertyMap,
+            audioExtension = audioExtension,
+            lyrics = embeddedLyric,
+            translatedLyrics = embeddedTranslatedLyric
+        )
         putSingleValue(propertyMap, "NERI_STABLE_KEY", song.stableKey())
         putSingleValue(propertyMap, "NERI_MEDIA_URI", song.mediaUri)
         putSingleValue(propertyMap, "NERI_SOURCE", song.matchedLyricSource?.name)
@@ -306,24 +324,20 @@ internal object DownloadedAudioTagWriter {
         return target
     }
 
-    private fun putPrimaryLyricValues(
+    internal fun applyEmbeddedLyricValues(
         propertyMap: PropertyMap,
         audioExtension: String,
-        lyric: String?
+        lyrics: String?,
+        translatedLyrics: String?
     ) {
-        putSingleValue(propertyMap, "LYRICS", lyric)
-        when (audioExtension) {
-            "mp3" -> putSingleValue(propertyMap, "UNSYNCEDLYRICS", lyric)
-            "m4a", "mp4", "aac" -> putSingleValue(propertyMap, "DESCRIPTION", lyric)
+        val externalLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics)
+        standardLyricsMetadataKeys(audioExtension).forEach { key ->
+            putSingleValue(propertyMap, key, externalLyrics)
         }
-    }
-
-    private fun putTranslatedLyricValues(
-        propertyMap: PropertyMap,
-        translatedLyric: String?
-    ) {
-        putSingleValue(propertyMap, "LYRICS_TRANSLATED", translatedLyric)
-        putSingleValue(propertyMap, "NERI_LYRICS_TRANSLATED", translatedLyric)
+        putSingleValue(propertyMap, NERI_ORIGINAL_LYRICS_METADATA_KEY, lyrics)
+        translatedLyricsMetadataKeys.forEach { key ->
+            putSingleValue(propertyMap, key, translatedLyrics)
+        }
     }
 
     private fun propertyMapsEquivalent(
@@ -374,25 +388,79 @@ internal object DownloadedAudioTagWriter {
     private fun buildPicturesWithFrontCover(
         context: Context,
         descriptor: ParcelFileDescriptor,
-        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        audioExtension: String
     ): Array<Picture>? {
         val coverReference = sidecarReferences?.coverReference ?: return null
         val coverBytes = readReferenceBytes(context, coverReference) ?: return null
-        val mimeType = detectPictureMimeType(coverBytes)
-        val existingPictures = runCatching {
+        val normalizedCover = LocalMediaSupport.normalizeEmbeddedCoverForContainer(
+            sourceBytes = coverBytes,
+            sourceMimeType = detectPictureMimeType(coverBytes),
+            audioExtension = audioExtension
+        ) ?: return null
+        val existingPictures: Array<Picture> = runCatching {
             TagLib.getPictures(descriptor.dup().detachFd())
-        }.getOrNull().orEmpty()
-        if (existingPictures.any { it.pictureType == FRONT_COVER_TYPE && it.data.contentEquals(coverBytes) }) {
-            return null
-        }
-        val remainingPictures = existingPictures.filterNot { it.pictureType == FRONT_COVER_TYPE }
-        val frontCover = Picture(
-            data = coverBytes,
+        }.getOrNull() ?: emptyArray()
+        val replacementPicture = Picture(
+            data = normalizedCover.first,
             description = "",
             pictureType = FRONT_COVER_TYPE,
-            mimeType = mimeType
+            mimeType = normalizedCover.second
         )
-        return (remainingPictures + frontCover).toTypedArray()
+        val updatedPictures = replaceCoverPictures(
+            existingPictures = existingPictures,
+            replacementPicture = replacementPicture,
+            audioExtension = audioExtension
+        )
+        return updatedPictures.takeUnless {
+            coverPictureListsEquivalent(
+                left = existingPictures,
+                right = updatedPictures,
+                audioExtension = audioExtension
+            )
+        }
+    }
+
+    internal fun usesRolelessCoverPictures(audioExtension: String): Boolean {
+        return audioExtension.trim().lowercase(Locale.ROOT) in ROLELESS_COVER_PICTURE_EXTENSIONS
+    }
+
+    internal fun shouldRestorePropertyMapAfterCoverWrite(
+        audioExtension: String,
+        writesCover: Boolean
+    ): Boolean {
+        return writesCover && usesRolelessCoverPictures(audioExtension)
+    }
+
+    internal fun replaceCoverPictures(
+        existingPictures: Array<Picture>,
+        replacementPicture: Picture,
+        audioExtension: String
+    ): Array<Picture> {
+        if (usesRolelessCoverPictures(audioExtension)) {
+            return arrayOf(replacementPicture)
+        }
+        val remainingPictures = existingPictures.filterNot { it.pictureType == FRONT_COVER_TYPE }
+        return (remainingPictures + replacementPicture).toTypedArray()
+    }
+
+    private fun coverPictureListsEquivalent(
+        left: Array<Picture>,
+        right: Array<Picture>,
+        audioExtension: String
+    ): Boolean {
+        if (left.size != right.size) return false
+        val rolelessPictureContainer = usesRolelessCoverPictures(audioExtension)
+        return left.indices.all { index ->
+            val actual = left[index]
+            val expected = right[index]
+            actual.data.contentEquals(expected.data) && (
+                rolelessPictureContainer ||
+                    actual.description == expected.description &&
+                    actual.pictureType == expected.pictureType &&
+                    actual.mimeType == expected.mimeType
+                )
+        }
     }
 
     private fun putSingleValue(
@@ -449,7 +517,7 @@ internal object DownloadedAudioTagWriter {
         }.getOrNull()
     }
 
-    private fun detectPictureMimeType(bytes: ByteArray): String {
+    private fun detectPictureMimeType(bytes: ByteArray): String? {
         if (bytes.size >= 3 &&
             bytes[0] == 0xFF.toByte() &&
             bytes[1] == 0xD8.toByte() &&
@@ -477,6 +545,22 @@ internal object DownloadedAudioTagWriter {
         ) {
             return "image/webp"
         }
-        return "image/jpeg"
+        if (bytes.size >= 6 &&
+            bytes[0] == 'G'.code.toByte() &&
+            bytes[1] == 'I'.code.toByte() &&
+            bytes[2] == 'F'.code.toByte() &&
+            bytes[3] == '8'.code.toByte() &&
+            (bytes[4] == '7'.code.toByte() || bytes[4] == '9'.code.toByte()) &&
+            bytes[5] == 'a'.code.toByte()
+        ) {
+            return "image/gif"
+        }
+        if (bytes.size >= 2 &&
+            bytes[0] == 'B'.code.toByte() &&
+            bytes[1] == 'M'.code.toByte()
+        ) {
+            return "image/bmp"
+        }
+        return null
     }
 }
