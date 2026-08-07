@@ -6,6 +6,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockSegment
 import moe.ouom.neriplayer.core.api.bili.BiliSponsorBlockTarget
+import moe.ouom.neriplayer.core.api.bili.biliBvidOrNull
+import moe.ouom.neriplayer.core.api.bili.biliCidOrNull
 import moe.ouom.neriplayer.core.api.bili.resolveBiliSong
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -39,8 +41,9 @@ internal object BiliSponsorBlockPlaybackController {
         scope: CoroutineScope
     ) {
         ensureSettingsObserver(scope)
-        val shouldLoadTarget = synchronized(lock) {
+        val loadAction = synchronized(lock) {
             val current = activeTrack
+            val explicitTarget = song.explicitBiliSponsorBlockTargetOrNull()
             val track = if (
                 current?.requestToken == requestToken &&
                     current.song.sameIdentityAs(song)
@@ -48,12 +51,33 @@ internal object BiliSponsorBlockPlaybackController {
                 current
             } else {
                 clearActiveTrackLocked()
-                ActiveTrack(song = song, requestToken = requestToken).also { activeTrack = it }
+                ActiveTrack(
+                    song = song,
+                    requestToken = requestToken,
+                    target = explicitTarget
+                ).also { activeTrack = it }
             }
-            enabled && track.target == null && targetLoadJob?.isActive != true
+            if (explicitTarget != null && track.target != explicitTarget) {
+                targetLoadJob?.cancel()
+                targetLoadJob = null
+                segmentLoadJob?.cancel()
+                segmentLoadJob = null
+                track.target = explicitTarget
+                track.segments = emptyList()
+                track.loaded = false
+                track.skipTracker.reset()
+            }
+            when {
+                !enabled -> LoadAction.NONE
+                track.target == null && targetLoadJob?.isActive != true -> LoadAction.TARGET
+                !track.loaded && segmentLoadJob?.isActive != true -> LoadAction.SEGMENTS
+                else -> LoadAction.NONE
+            }
         }
-        if (shouldLoadTarget) {
-            loadTargetForActiveTrack(scope)
+        when (loadAction) {
+            LoadAction.TARGET -> loadTargetForActiveTrack(scope)
+            LoadAction.SEGMENTS -> loadSegmentsForActiveTrack(scope)
+            LoadAction.NONE -> Unit
         }
     }
 
@@ -265,4 +289,14 @@ internal object BiliSponsorBlockPlaybackController {
         TARGET,
         SEGMENTS
     }
+}
+
+internal fun SongItem.explicitBiliSponsorBlockTargetOrNull(): BiliSponsorBlockTarget? {
+    val bvid = biliBvidOrNull() ?: return null
+    val cid = biliCidOrNull() ?: return null
+    return BiliSponsorBlockTarget(
+        bvid = bvid,
+        cid = cid,
+        durationMs = durationMs.coerceAtLeast(0L)
+    )
 }

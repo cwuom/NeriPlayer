@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliPartSong
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchFilter
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicSearchResult
@@ -1385,7 +1386,7 @@ private fun BiliClient.SearchVideoItem.toSongItem(): SongItem {
         id = this.aid, // 使用 avid 作为唯一ID
         name = this.titlePlain,
         artist = this.author,
-        album = PlayerManager.BILI_SOURCE_TAG, // 标记来源
+        album = buildBiliSongAlbum(bvid = this.bvid), // 标记来源
         albumId = 0L,
         durationMs = this.durationSec * 1000L,
         coverUrl = this.coverUrl,
@@ -1399,7 +1400,7 @@ private fun BiliClient.VideoBasicInfo.toSongItem(): SongItem {
         id = aid,
         name = title,
         artist = ownerName,
-        album = PlayerManager.BILI_SOURCE_TAG,
+        album = buildBiliSongAlbum(bvid = bvid),
         albumId = 0L,
         durationMs = durationSec * 1000L,
         coverUrl = coverUrl,
@@ -1418,7 +1419,7 @@ internal fun BiliClient.VideoBasicInfo.toExploreLinkSong(
         }
     return selectedPage?.let { page ->
         toSongItem().copy(
-            album = "${PlayerManager.BILI_SOURCE_TAG}|${page.cid}",
+            album = buildBiliSongAlbum(cid = page.cid, bvid = bvid),
             durationMs = page.durationSec * 1_000L,
             subAudioId = page.cid.toString()
         )

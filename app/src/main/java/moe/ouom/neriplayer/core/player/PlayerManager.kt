@@ -2276,7 +2276,10 @@ object PlayerManager {
                 )
             }
             isBiliTrack(song) -> {
-                val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
+                val cidPart = song.subAudioId ?: song.album
+                    .substringAfter('|', "")
+                    .substringBefore('|')
+                    .takeIf { it.isNotBlank() }
                 val biliSongId = song.audioId ?: song.id.toString()
                 if (cidPart != null) {
                     "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"

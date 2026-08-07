@@ -23,7 +23,7 @@ package moe.ouom.neriplayer.core.player.source
  * Updated: 2026/3/23
  */
 
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -32,9 +32,11 @@ internal fun BiliVideoItem.toSongItem(): SongItem {
         id = id,
         name = title,
         artist = uploader,
-        album = PlayerManager.BILI_SOURCE_TAG,
+        album = buildBiliSongAlbum(bvid = bvid),
         albumId = 0,
         durationMs = durationSec * 1000L,
-        coverUrl = coverUrl
+        coverUrl = coverUrl,
+        channelId = "bilibili",
+        audioId = id.toString()
     )
 }

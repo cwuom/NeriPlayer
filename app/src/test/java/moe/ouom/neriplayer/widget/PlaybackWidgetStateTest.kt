@@ -62,6 +62,19 @@ class PlaybackWidgetStateTest {
     }
 
     @Test
+    fun `auto skip within one refresh bucket remains eligible for an immediate progress update`() {
+        val beforeSkip = playbackWidgetState(positionMs = 5_000L)
+        val afterSkip = playbackWidgetState(positionMs = 12_000L)
+
+        assertEquals(
+            playbackWidgetProgressRefreshBucket(beforeSkip.positionMs),
+            playbackWidgetProgressRefreshBucket(afterSkip.positionMs),
+        )
+        assertNotEquals(beforeSkip.progress, afterSkip.progress)
+        assertTrue(shouldPartiallyUpdatePlaybackWidgetProgress(beforeSkip, afterSkip))
+    }
+
+    @Test
     fun `visible widget state changes require a full update`() {
         val rendered = playbackWidgetState(positionMs = 30_000L)
 

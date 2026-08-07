@@ -40,6 +40,7 @@ import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.model.toPlaybackState
 import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
@@ -1933,6 +1934,13 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
 
     if (isCurrentSong(originalSong)) {
         setCurrentSongForPlayback(updatedSong)
+        if (isBiliTrack(updatedSong) && !isListenTogetherActive()) {
+            BiliVideoSkipPlaybackController.prepareActiveBiliTrackTarget(
+                song = updatedSong,
+                requestToken = playbackRequestToken,
+                scope = ioScope
+            )
+        }
     }
 
     runLocalPlaylistMutationSafely("updateSongInAllPlaces") {

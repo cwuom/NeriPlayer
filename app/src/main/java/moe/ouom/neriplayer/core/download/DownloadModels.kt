@@ -139,6 +139,7 @@ internal fun DownloadedSong.toPlaybackSongItem(
     )
     val legacyBiliCid = album
         .substringAfter('|', "")
+        .substringBefore('|')
         .trim()
         .takeIf { hasLegacyBiliSource && it.isNotBlank() }
     val remoteSourceChannel = sourceChannelId

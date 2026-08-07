@@ -12,12 +12,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class PlaybackWidgetProviderInfoTest {
     @Test
     @SdkSuppress(minSdkVersion = 31)
-    fun fullWidgetDisablesVerticalResizing() {
+    fun fullWidgetDefaultsToTwoRowsAndAllowsVerticalResizing() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val appWidgetManager = AppWidgetManager.getInstance(context)
         val provider = ComponentName(context, NeriPlayerPlaybackWidgetProvider::class.java)
@@ -32,16 +33,17 @@ class PlaybackWidgetProviderInfoTest {
             providerInfo.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0,
         )
         assertEquals(
-            0,
+            AppWidgetProviderInfo.RESIZE_VERTICAL,
             providerInfo.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL,
         )
         assertEquals(
             TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP,
-                PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP.toFloat(),
+                PLAYBACK_WIDGET_DEFAULT_HEIGHT_DP.toFloat(),
                 context.resources.displayMetrics,
-            ).toInt(),
+            ).roundToInt(),
             providerInfo.minHeight,
         )
+        assertEquals(2, providerInfo.targetCellHeight)
     }
 }

@@ -26,100 +26,105 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:paddingStart="14dp"
-        android:paddingTop="11dp"
+        android:paddingTop="6dp"
         android:paddingEnd="14dp"
-        android:paddingBottom="11dp">
-
-        <FrameLayout
-            android:id="@+id/widget_album_shell"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:layout_alignParentStart="true"
-            android:layout_alignParentTop="true"
-            android:layout_marginEnd="12dp"
-            android:background="@drawable/widget_album_background"
-            android:padding="1dp">
-
-            <ImageView
-                android:id="@+id/widget_album_art"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:contentDescription="@string/widget_album_art"
-                android:scaleType="centerCrop"
-                android:src="@drawable/ic_neriplayer_round" />
-        </FrameLayout>
+        android:paddingBottom="6dp">
 
         <RelativeLayout
-            android:id="@+id/widget_content"
+            android:id="@+id/widget_info_area"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_above="@id/widget_controls"
-            android:layout_alignParentEnd="true"
-            android:layout_alignParentTop="true"
-            android:layout_toEndOf="@id/widget_album_shell">
+            android:layout_alignParentTop="true">
 
-            <LinearLayout
-                android:id="@+id/widget_song_info"
+            <RelativeLayout
+                android:id="@+id/widget_content"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_above="@id/widget_progress_row"
-                android:layout_alignParentTop="true"
-                android:gravity="center_vertical"
-                android:orientation="vertical">
+                android:layout_alignParentTop="true">
 
-                <TextView
-                    android:id="@+id/widget_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:ellipsize="end"
-                    android:includeFontPadding="false"
-                    android:maxLines="1"
-                    android:text="@string/widget_playback_ready"
-                    android:textColor="@color/widget_text_secondary"
-                    android:textSize="11sp" />
+                <FrameLayout
+                    android:id="@+id/widget_album_shell"
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:layout_marginEnd="12dp"
+                    android:background="@drawable/widget_album_background"
+                    android:padding="1dp">
 
-                <TextView
-                    android:id="@+id/widget_title"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="1dp"
-                    android:ellipsize="end"
-                    android:includeFontPadding="false"
-                    android:maxLines="1"
-                    android:text="@string/app_name"
-                    android:textColor="@color/widget_text_primary"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    <ImageView
+                        android:id="@+id/widget_album_art"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="@string/widget_album_art"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_neriplayer_round" />
+                </FrameLayout>
 
-                <TextView
-                    android:id="@+id/widget_subtitle"
+                <LinearLayout
+                    android:id="@+id/widget_song_info"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="1dp"
-                    android:ellipsize="end"
-                    android:includeFontPadding="false"
-                    android:maxLines="1"
-                    android:text="@string/widget_playback_idle_subtitle"
-                    android:textColor="@color/widget_text_secondary"
-                    android:textSize="11sp" />
-            </LinearLayout>
+                    android:layout_height="match_parent"
+                    android:layout_alignParentEnd="true"
+                    android:layout_toEndOf="@id/widget_album_shell"
+                    android:gravity="center_vertical"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/widget_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_playback_ready"
+                        android:textColor="@color/widget_text_secondary"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/widget_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/app_name"
+                        android:textColor="@color/widget_text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/widget_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_playback_idle_subtitle"
+                        android:textColor="@color/widget_text_secondary"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </RelativeLayout>
 
             <RelativeLayout
                 android:id="@+id/widget_progress_row"
                 android:layout_width="match_parent"
-                android:layout_height="14dp"
-                android:layout_alignParentBottom="true">
+                android:layout_height="12dp"
+                android:layout_alignParentBottom="true"
+                android:layout_marginBottom="10dp">
 
                 <Chronometer
                     android:id="@+id/widget_elapsed"
-                    android:layout_width="31dp"
+                    android:layout_width="29dp"
                     android:layout_height="match_parent"
                     android:layout_alignParentStart="true"
                     android:gravity="center_vertical|start"
                     android:includeFontPadding="false"
                     android:text="@string/widget_playback_zero_time"
                     android:textColor="@color/widget_text_muted"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
 
                 <ProgressBar
                     android:id="@+id/widget_progress"
@@ -138,14 +143,14 @@
 
                 <TextView
                     android:id="@+id/widget_duration"
-                    android:layout_width="31dp"
+                    android:layout_width="29dp"
                     android:layout_height="match_parent"
                     android:layout_alignParentEnd="true"
                     android:gravity="center_vertical|end"
                     android:includeFontPadding="false"
                     android:text="@string/widget_playback_zero_time"
                     android:textColor="@color/widget_text_muted"
-                    android:textSize="11sp" />
+                    android:textSize="10sp" />
             </RelativeLayout>
 
         </RelativeLayout>
@@ -153,7 +158,7 @@
         <LinearLayout
             android:id="@+id/widget_controls"
             android:layout_width="match_parent"
-            android:layout_height="36dp"
+            android:layout_height="34dp"
             android:layout_alignParentBottom="true"
             android:baselineAligned="false"
             android:gravity="center"
@@ -206,8 +211,8 @@
 
                 <ImageView
                     android:id="@+id/widget_play_pause_background"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
                     android:scaleType="fitCenter"
@@ -215,11 +220,11 @@
 
                 <ImageView
                     android:id="@+id/widget_play_pause"
-                    android:layout_width="34dp"
-                    android:layout_height="34dp"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
                     android:layout_gravity="center"
                     android:contentDescription="@null"
-                    android:padding="7dp"
+                    android:padding="6dp"
                     android:scaleType="center"
                     android:src="@drawable/round_play_arrow_24" />
             </FrameLayout>

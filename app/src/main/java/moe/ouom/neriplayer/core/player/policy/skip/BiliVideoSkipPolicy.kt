@@ -7,10 +7,12 @@ private const val BILI_VIDEO_SKIP_REWIND_TOLERANCE_MS = 1_000L
 internal class BiliVideoSkipTracker {
     private val skippedIntervals = mutableSetOf<BiliVideoSkipInterval>()
     private var lastPositionMs: Long? = null
+    private var lastIntervals: List<BiliVideoSkipInterval>? = null
 
     fun reset() {
         skippedIntervals.clear()
         lastPositionMs = null
+        lastIntervals = null
     }
 
     fun nextSkipPosition(
@@ -18,6 +20,11 @@ internal class BiliVideoSkipTracker {
         currentPositionMs: Long,
         durationMs: Long
     ): Long? {
+        if (lastIntervals != intervals) {
+            skippedIntervals.clear()
+            lastPositionMs = null
+            lastIntervals = intervals.toList()
+        }
         val positionMs = currentPositionMs.coerceAtLeast(0L)
         val lastPosition = lastPositionMs
         if (lastPosition != null && positionMs + BILI_VIDEO_SKIP_REWIND_TOLERANCE_MS < lastPosition) {
