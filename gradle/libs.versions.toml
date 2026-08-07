@@ -36,6 +36,7 @@ okhttp = "5.4.0"
 newpipeExtractor = "v0.26.4"
 paletteKtx = "1.0.0"
 reorderable = "0.9.6"
+room = "2.8.4"
 foundationLayout = "1.11.4"
 securityCrypto = "1.1.0"
 superlyricapi = "3.4"
@@ -63,6 +64,10 @@ androidx-media3-datasource = { module = "androidx.media3:media3-datasource", ver
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3Exoplayer" }
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3ExoplayerHls" }
 androidx-palette-ktx = { module = "androidx.palette:palette-ktx", version.ref = "paletteKtx" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 taglib = { module = "io.github.kyant0:taglib", version.ref = "taglib" }
