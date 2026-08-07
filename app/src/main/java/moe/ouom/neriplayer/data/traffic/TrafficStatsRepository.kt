@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
@@ -25,9 +28,20 @@ class TrafficStatsRepository private constructor(
     private val gson = Gson()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val statsMutex = Mutex()
+    private val persistenceMutex = Mutex()
+    private val legacyProjectionMutex = Mutex()
+    private var legacyProjectionGeneration = 0L
     private val dailyFile: File by lazy { File(app.filesDir, "traffic_stats_daily.json") }
-    private val _dailyStats = MutableStateFlow(loadDailyStatsFromDisk())
+    private val roomStore = TrafficStatsRoomStore(
+        NeriUserDataDatabase.getInstance(app.applicationContext)
+    )
+    @Volatile
+    private var roomStorageEnabled = true
+    private val initialStats = loadInitialStats()
+    private val _dailyStats = MutableStateFlow(initialStats)
+    private var persistedStats = initialStats
     private var persistJob: Job? = null
+    private var persistGeneration = 0L
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
 
@@ -84,7 +98,8 @@ class TrafficStatsRepository private constructor(
                 persistJob?.cancel()
                 persistJob = null
                 _dailyStats.value = emptyList()
-                runCatching { dailyFile.delete() }
+                persistGeneration += 1L
+                persistSnapshot(emptyList())
             }
         }
     }
@@ -110,30 +125,109 @@ class TrafficStatsRepository private constructor(
     }
 
     private fun schedulePersistLocked(snapshot: List<TrafficStatsBucket>) {
+        persistGeneration += 1L
+        val generation = persistGeneration
         persistJob?.cancel()
         persistJob = scope.launch {
             delay(PERSIST_DEBOUNCE_MS)
-            persistDailyStatsToDisk(snapshot)
+            persistSnapshot(snapshot, generation)
         }
     }
 
-    private fun loadDailyStatsFromDisk(): List<TrafficStatsBucket> {
-        return runCatching {
-            if (!dailyFile.exists()) return emptyList()
-            val type = object : TypeToken<List<TrafficStatsBucket>>() {}.type
-            gson.fromJson<List<TrafficStatsBucket>>(dailyFile.readText(), type).orEmpty()
-                .filter { it.dayStartAt > 0L }
-                .sortedBy { it.dayStartAt }
+    private fun loadInitialStats(): List<TrafficStatsBucket> {
+        val roomStats = runCatching {
+            runBlocking { roomStore.readIfRoomPrimary() }
+        }.onFailure {
+            roomStorageEnabled = false
+            NPLogger.e(TAG, "Failed to read Room traffic stats", it)
+        }.getOrNull()
+        if (roomStats != null) return roomStats
+
+        val legacyStats = runCatching {
+            if (!dailyFile.exists()) {
+                emptyList()
+            } else {
+                val type = object : TypeToken<List<TrafficStatsBucket>>() {}.type
+                gson.fromJson<List<TrafficStatsBucket>>(dailyFile.readText(), type).orEmpty()
+                    .filter { it.dayStartAt > 0L }
+                    .sortedBy { it.dayStartAt }
+            }
         }.onFailure {
             NPLogger.e(TAG, "Failed to load traffic stats", it)
         }.getOrDefault(emptyList())
+        runCatching {
+            runBlocking { roomStore.importLegacyAndPromote(legacyStats) }
+            roomStorageEnabled = true
+        }.onFailure {
+            roomStorageEnabled = false
+            NPLogger.e(TAG, "Failed to promote traffic stats JSON to Room", it)
+        }
+        return legacyStats
     }
 
-    private fun persistDailyStatsToDisk(list: List<TrafficStatsBucket>) {
-        runCatching {
+    private suspend fun persistSnapshot(
+        snapshot: List<TrafficStatsBucket>,
+        expectedGeneration: Long? = null
+    ) {
+        persistenceMutex.withLock {
+            if (roomStorageEnabled) {
+                val roomSucceeded = runCatching {
+                    roomStore.writeIncremental(
+                        previous = persistedStats,
+                        next = snapshot
+                    )
+                }.onFailure {
+                    roomStorageEnabled = false
+                    NPLogger.e(TAG, "Failed to write Room traffic stats", it)
+                }.isSuccess
+                if (roomSucceeded) {
+                    persistedStats = snapshot
+                    enqueueLegacyProjection(snapshot)
+                    markPersistenceClean(expectedGeneration)
+                    return@withLock
+                }
+            }
+
+            val legacySucceeded = persistDailyStatsToDisk(snapshot)
+            if (legacySucceeded) {
+                runCatching { roomStore.markLegacyJsonPrimary() }
+                    .onFailure {
+                        NPLogger.e(TAG, "Failed to mark traffic stats JSON fallback state", it)
+                    }
+                persistedStats = snapshot
+                markPersistenceClean(expectedGeneration)
+            }
+        }
+    }
+
+    private fun persistDailyStatsToDisk(list: List<TrafficStatsBucket>): Boolean {
+        return runCatching {
             dailyFile.writeTextAtomically(gson.toJson(list))
+            true
         }.onFailure {
             NPLogger.e(TAG, "Failed to persist traffic stats", it)
+        }.getOrDefault(false)
+    }
+
+    private fun markPersistenceClean(expectedGeneration: Long?) {
+        if (expectedGeneration == null || expectedGeneration == persistGeneration) {
+            persistJob = null
+        }
+    }
+
+    private fun enqueueLegacyProjection(snapshot: List<TrafficStatsBucket>) {
+        val generation = synchronized(this) {
+            legacyProjectionGeneration += 1L
+            legacyProjectionGeneration
+        }
+        scope.launch {
+            legacyProjectionMutex.withLock {
+                val isLatest = synchronized(this@TrafficStatsRepository) {
+                    generation == legacyProjectionGeneration
+                }
+                if (!isLatest) return@withLock
+                persistDailyStatsToDisk(snapshot)
+            }
         }
     }
 

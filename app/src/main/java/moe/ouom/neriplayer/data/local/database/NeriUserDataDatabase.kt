@@ -13,9 +13,11 @@ import moe.ouom.neriplayer.data.local.database.dao.PlaylistUsageDao
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistPlaybackDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
+import moe.ouom.neriplayer.data.local.database.dao.TrafficStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
+import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
@@ -54,9 +56,10 @@ import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
         PlaybackStatCounterShardEntity::class,
         PlaybackStatDailyCounterShardEntity::class,
         FavoritePlaylistEntity::class,
-        FavoritePlaylistSongEntity::class
+        FavoritePlaylistSongEntity::class,
+        TrafficStatsBucketEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -71,6 +74,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun playbackStatsDao(): PlaybackStatsDao
 
     abstract fun favoritePlaylistDao(): FavoritePlaylistDao
+
+    abstract fun trafficStatsDao(): TrafficStatsDao
 
     abstract fun syncMetadataDao(): SyncMetadataDao
 
@@ -99,7 +104,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_2_3,
                 MIGRATION_3_4,
                 MIGRATION_4_5,
-                MIGRATION_5_6
+                MIGRATION_5_6,
+                MIGRATION_6_7
             ).build()
         }
 
@@ -515,6 +521,34 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `index_favorite_playlist_song_order`
                     ON `favorite_playlist_song`
                     (`playlist_id` ASC, `source` ASC, `display_position` ASC)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `traffic_stats_bucket` (
+                        `day_start_at` INTEGER NOT NULL,
+                        `wifi_bytes` INTEGER NOT NULL,
+                        `mobile_bytes` INTEGER NOT NULL,
+                        `roaming_bytes` INTEGER NOT NULL,
+                        `playback_network_bytes` INTEGER NOT NULL,
+                        `download_network_bytes` INTEGER NOT NULL,
+                        `cache_hit_bytes` INTEGER NOT NULL,
+                        `request_count` INTEGER NOT NULL,
+                        `cache_hit_count` INTEGER NOT NULL,
+                        PRIMARY KEY(`day_start_at`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_traffic_stats_bucket_day`
+                    ON `traffic_stats_bucket` (`day_start_at` DESC)
                     """.trimIndent()
                 )
             }
