@@ -33,6 +33,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -138,7 +144,10 @@ private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
     )
 }
 
-class PlaylistUsageRepository(private val app: Context) {
+class PlaylistUsageRepository internal constructor(
+    private val app: Context,
+    private val roomStore: PlaylistUsageRoomStore? = null
+) {
     companion object {
         const val SOURCE_LOCAL = "local"
         const val SOURCE_LOCAL_ARTIST = "localArtist"
@@ -148,7 +157,13 @@ class PlaylistUsageRepository(private val app: Context) {
 
         fun getInstance(context: Context): PlaylistUsageRepository {
             return instance ?: synchronized(this) {
-                instance ?: PlaylistUsageRepository(context.applicationContext).also {
+                val appContext = context.applicationContext
+                instance ?: PlaylistUsageRepository(
+                    app = appContext,
+                    roomStore = PlaylistUsageRoomStore(
+                        database = NeriUserDataDatabase.getInstance(appContext)
+                    )
+                ).also {
                     instance = it
                 }
             }
@@ -161,10 +176,31 @@ class PlaylistUsageRepository(private val app: Context) {
     private val syncStorage by lazy { SecureTokenStorage(app) }
     private val fallbackCounterDeviceId = "playlist-usage-${UUID.randomUUID()}"
     private val mutationLock = Any()
+    private val persistenceMutex = Mutex()
+    private var persistenceGeneration = 0L
+    @Volatile
+    private var roomStorageEnabled = roomStore != null
     private val _flow = MutableStateFlow(load())
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
     private fun load(): List<UsageEntry> {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomEntries = runCatching {
+                runBlocking { activeRoomStore.readIfRoomPrimary() }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "PlaylistUsageRepo",
+                    "Failed to read Room playlist usage; falling back to JSON",
+                    error
+                )
+            }.getOrNull()
+            if (roomEntries != null) {
+                return normalizeUsageEntries(roomEntries)
+            }
+        }
+
         val list: List<UsageEntry> = try {
             if (!file.exists()) {
                 emptyList()
@@ -178,11 +214,68 @@ class PlaylistUsageRepository(private val app: Context) {
             emptyList()
         }
 
-        return normalizeUsageEntries(list)
+        val normalized = normalizeUsageEntries(list)
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            runCatching {
+                runBlocking { activeRoomStore.importLegacyAndPromote(normalized) }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "PlaylistUsageRepo",
+                    "Failed to promote playlist usage JSON to Room",
+                    error
+                )
+            }
+        }
+        return normalized
     }
 
     private fun saveAsync(list: List<UsageEntry>) {
-        scope.launch { runCatching { file.writeTextAtomically(gson.toJson(list)) } }
+        val generation = synchronized(mutationLock) {
+            persistenceGeneration += 1L
+            persistenceGeneration
+        }
+        scope.launch {
+            persistenceMutex.withLock {
+                val isLatest = synchronized(mutationLock) {
+                    generation == persistenceGeneration
+                }
+                if (!isLatest) return@withLock
+
+                if (roomStorageEnabled && roomStore != null) {
+                    val activeRoomStore = roomStore
+                    val roomWriteSucceeded = runCatching {
+                        activeRoomStore.replaceAll(list)
+                    }.onFailure { error ->
+                        roomStorageEnabled = false
+                        NPLogger.e(
+                            "PlaylistUsageRepo",
+                            "Failed to write Room playlist usage; falling back to JSON",
+                            error
+                        )
+                    }.isSuccess
+                    if (roomWriteSucceeded) {
+                        return@withLock
+                    }
+                }
+
+                runCatching { file.writeTextAtomically(gson.toJson(list)) }
+                    .onFailure { error ->
+                        NPLogger.e("PlaylistUsageRepo", "Failed to persist playlist usage", error)
+                    }
+                roomStore?.let { fallbackStore ->
+                    runCatching { fallbackStore.markLegacyJsonPrimary() }
+                        .onFailure { error ->
+                            NPLogger.e(
+                                "PlaylistUsageRepo",
+                                "Failed to mark playlist usage JSON fallback state",
+                                error
+                            )
+                        }
+                }
+            }
+        }
     }
 
     fun recordOpen(
