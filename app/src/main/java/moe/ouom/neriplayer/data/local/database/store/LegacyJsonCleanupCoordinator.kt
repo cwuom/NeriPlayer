@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.database.store
 
 import android.content.Context
 import java.io.File
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 
@@ -204,6 +205,14 @@ internal class LegacyJsonCleanupCoordinator(
             TargetDefinition(
                 "bili_video_skip_drafts.json",
                 "bili_video_skip_cutover_state"
+            ),
+            TargetDefinition(
+                "pending_download_queue_v1.json",
+                DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY
+            ),
+            TargetDefinition(
+                "cancelled_download_keys_v1.json",
+                DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY
             )
         )
     }

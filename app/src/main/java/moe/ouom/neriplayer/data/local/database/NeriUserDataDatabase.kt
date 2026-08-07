@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.local.database.dao.TrafficStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
+import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
@@ -42,6 +43,8 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadCancelledKeyEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
 
 @Database(
     entities = [
@@ -69,9 +72,11 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
         PlaybackQueueSongEntity::class,
         BiliVideoSkipRuleEntity::class,
         BiliVideoSkipIntervalEntity::class,
-        BiliVideoSkipDraftEntity::class
+        BiliVideoSkipDraftEntity::class,
+        DownloadPendingQueueEntity::class,
+        DownloadCancelledKeyEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -94,6 +99,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun playbackQueueDao(): PlaybackQueueDao
 
     abstract fun biliVideoSkipDao(): BiliVideoSkipDao
+
+    abstract fun downloadRecoveryDao(): DownloadRecoveryDao
 
     companion object {
         const val DATABASE_NAME = "neri_user_data.db"
@@ -123,7 +130,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
-                MIGRATION_8_9
+                MIGRATION_8_9,
+                MIGRATION_9_10
             ).build()
         }
 
@@ -675,6 +683,67 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                         `end_text` TEXT NOT NULL,
                         `modified_at` INTEGER NOT NULL,
                         PRIMARY KEY(`target_key`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_9_10: Migration = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `download_pending_queue` (
+                        `stable_key` TEXT NOT NULL,
+                        `queue_order` INTEGER NOT NULL,
+                        `queued_at_ms` INTEGER NOT NULL,
+                        `id` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `album_id` INTEGER NOT NULL,
+                        `duration_ms` INTEGER NOT NULL,
+                        `cover_url` TEXT,
+                        `media_uri` TEXT,
+                        `matched_lyric` TEXT,
+                        `matched_translated_lyric` TEXT,
+                        `matched_lyric_source` TEXT,
+                        `matched_song_id` TEXT,
+                        `user_lyric_offset_ms` INTEGER NOT NULL,
+                        `custom_cover_url` TEXT,
+                        `custom_name` TEXT,
+                        `custom_artist` TEXT,
+                        `original_name` TEXT,
+                        `original_artist` TEXT,
+                        `original_cover_url` TEXT,
+                        `original_lyric` TEXT,
+                        `original_translated_lyric` TEXT,
+                        `local_file_name` TEXT,
+                        `local_file_path` TEXT,
+                        `channel_id` TEXT,
+                        `audio_id` TEXT,
+                        `sub_audio_id` TEXT,
+                        `playlist_context_id` TEXT,
+                        `source_stable_key` TEXT,
+                        `stream_url` TEXT,
+                        PRIMARY KEY(`stable_key`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_download_pending_queue_order`
+                    ON `download_pending_queue`
+                    (`queue_order` ASC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `download_cancelled_key` (
+                        `stable_key` TEXT NOT NULL,
+                        `cancelled_at_ms` INTEGER NOT NULL,
+                        PRIMARY KEY(`stable_key`)
                     )
                     """.trimIndent()
                 )
