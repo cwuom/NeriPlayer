@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -351,10 +352,35 @@ private fun loadRestoredStateSnapshot(
     keepPlaybackModeStateEnabled: Boolean
 ): RestoredPlayerStateSnapshot? {
     return runCatching {
-        val data = loadPersistedStateFromLegacy(
-            stateFile = stateFile,
-            playbackStateFile = playbackStateFile
-        ) ?: return@runCatching null
+        val data = runBlocking(Dispatchers.IO) {
+            val database = NeriUserDataDatabase.getInstance(app.applicationContext)
+            val roomStore = PlaybackQueueRoomStore(database)
+            val roomPrimary = runCatching { roomStore.isRoomPrimary() }
+                .onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "restoreState: Room marker read failed: ${error.message}"
+                    )
+                }
+                .getOrDefault(false)
+            if (roomPrimary) {
+                roomStore.readIfRoomPrimary()
+            } else {
+                loadPersistedStateFromLegacy(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile
+                )?.also { legacyData ->
+                    runCatching {
+                        roomStore.replaceSnapshot(legacyData)
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            "NERI-PlayerManager",
+                            "restoreState: failed to import legacy playback state: ${error.message}"
+                        )
+                    }
+                }
+            }
+        } ?: return@runCatching null
         buildRestoredStateSnapshot(
             app = app,
             data = data,
