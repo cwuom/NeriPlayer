@@ -8,6 +8,7 @@ import android.os.LocaleList
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
@@ -276,6 +277,30 @@ class PlaylistUsageRepositoryTest {
         )
 
         assertEquals(embeddedCoverUrl, refreshedPicUrl)
+    }
+
+    @Test
+    fun `sync local entries keeps favorites cover when newest song is local`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val localCoverUrl = "file:///covers/favorite-local.jpg"
+        val favorites = LocalPlaylist(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "我喜欢的音乐",
+            songs = mutableListOf(localSong(coverUrl = localCoverUrl))
+        )
+
+        repo.recordOpen(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "我喜欢的音乐",
+            picUrl = null,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(playlists = listOf(favorites))
+
+        assertEquals(localCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
     }
 
     @Test
