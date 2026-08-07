@@ -1225,7 +1225,7 @@ object AutoSettingsSchema {
             defaultValue = true,
             titleRes = R.string.settings_dynamic_island_lyrics_enabled,
             descriptionRes = R.string.settings_dynamic_island_lyrics_enabled_desc,
-            icon = AutoSettingIcon.Subtitles
+            icon = AutoSettingIcon.AutoAwesome
         )
 
         @AutoSetting(

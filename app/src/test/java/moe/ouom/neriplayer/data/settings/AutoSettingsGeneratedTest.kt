@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.ksp.annotations.SettingAccessMode
 import moe.ouom.neriplayer.ksp.annotations.SettingUiType
 import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -407,7 +408,11 @@ class AutoSettingsGeneratedTest {
         assertEquals(SettingValueType.Boolean, metadata?.valueType)
         assertEquals(SettingUiType.Custom, metadata?.ui)
         assertEquals(AutoSettingsSections.lyrics, metadata?.section)
-        assertEquals(AutoSettingIcon.Subtitles, metadata?.icon)
+        assertEquals(AutoSettingIcon.AutoAwesome, metadata?.icon)
+        assertNotEquals(
+            AutoSettingsSchema.lyrics.amllLyricsEnabled.icon,
+            metadata?.icon
+        )
     }
 
     @Test
@@ -607,7 +612,7 @@ class AutoSettingsGeneratedTest {
             AutoSettingsSchema.lyrics.externalBluetoothTranslationEnabled.icon
         )
         assertEquals(
-            AutoSettingIcon.Subtitles,
+            AutoSettingIcon.AutoAwesome,
             AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled.icon
         )
         assertEquals(
