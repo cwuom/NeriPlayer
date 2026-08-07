@@ -177,7 +177,9 @@ class PlaylistUsageRepository internal constructor(
     private val fallbackCounterDeviceId = "playlist-usage-${UUID.randomUUID()}"
     private val mutationLock = Any()
     private val persistenceMutex = Mutex()
+    private val legacyProjectionMutex = Mutex()
     private var persistenceGeneration = 0L
+    private var legacyProjectionGeneration = 0L
     @Volatile
     private var roomStorageEnabled = roomStore != null
     private val _flow = MutableStateFlow(load())
@@ -256,6 +258,7 @@ class PlaylistUsageRepository internal constructor(
                         )
                     }.isSuccess
                     if (roomWriteSucceeded) {
+                        enqueueLegacyProjection(list, generation)
                         return@withLock
                     }
                 }
@@ -274,6 +277,35 @@ class PlaylistUsageRepository internal constructor(
                             )
                         }
                 }
+            }
+        }
+    }
+
+    private fun enqueueLegacyProjection(
+        list: List<UsageEntry>,
+        generation: Long
+    ) {
+        synchronized(mutationLock) {
+            legacyProjectionGeneration += 1L
+        }
+        val projectionGeneration = synchronized(mutationLock) {
+            legacyProjectionGeneration
+        }
+        scope.launch {
+            legacyProjectionMutex.withLock {
+                val isLatest = synchronized(mutationLock) {
+                    generation == persistenceGeneration &&
+                        projectionGeneration == legacyProjectionGeneration
+                }
+                if (!isLatest) return@withLock
+                runCatching { file.writeTextAtomically(gson.toJson(list)) }
+                    .onFailure { error ->
+                        NPLogger.e(
+                            "PlaylistUsageRepo",
+                            "Failed to update legacy playlist usage projection",
+                            error
+                        )
+                    }
             }
         }
     }

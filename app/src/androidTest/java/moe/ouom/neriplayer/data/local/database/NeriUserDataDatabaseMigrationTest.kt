@@ -19,15 +19,16 @@ class NeriUserDataDatabaseMigrationTest {
     )
 
     @Test
-    fun migrateFromVersion1ToVersion3() {
+    fun migrateFromVersion1ToVersion4() {
         helper.createDatabase(TEST_DATABASE_NAME, 1).close()
 
         helper.runMigrationsAndValidate(
             TEST_DATABASE_NAME,
-            3,
+            4,
             true,
             NeriUserDataDatabase.MIGRATION_1_2,
-            NeriUserDataDatabase.MIGRATION_2_3
+            NeriUserDataDatabase.MIGRATION_2_3,
+            NeriUserDataDatabase.MIGRATION_3_4
         ).close()
     }
 

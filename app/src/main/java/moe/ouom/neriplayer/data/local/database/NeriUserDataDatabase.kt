@@ -10,12 +10,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaylistUsageDao
+import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistPlaybackDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistUsageCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistUsageEntity
+import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackBucketEntity
+import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackCounterShardEntity
+import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.SyncOutboxEntity
@@ -33,9 +37,12 @@ import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
         MigrationMetadataEntity::class,
         PlayHistoryEntity::class,
         PlaylistUsageEntity::class,
-        PlaylistUsageCounterShardEntity::class
+        PlaylistUsageCounterShardEntity::class,
+        LocalPlaylistPlaybackStatEntity::class,
+        LocalPlaylistPlaybackBucketEntity::class,
+        LocalPlaylistPlaybackCounterShardEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -44,6 +51,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun playHistoryDao(): PlayHistoryDao
 
     abstract fun playlistUsageDao(): PlaylistUsageDao
+
+    abstract fun localPlaylistPlaybackDao(): LocalPlaylistPlaybackDao
 
     abstract fun syncMetadataDao(): SyncMetadataDao
 
@@ -67,7 +76,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 context.applicationContext,
                 NeriUserDataDatabase::class.java,
                 DATABASE_NAME
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build()
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
         }
 
         private fun checkMainProcess(context: Context) {
@@ -195,6 +204,84 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     CREATE INDEX IF NOT EXISTS
                     `index_playlist_usage_counter_usage_key`
                     ON `playlist_usage_counter_shard` (`usage_key`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `local_playlist_playback_stat` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `total_play_count` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        `counter_base_play_count` INTEGER NOT NULL,
+                        PRIMARY KEY(`playlist_id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_local_playlist_playback_stat_last_played`
+                    ON `local_playlist_playback_stat` (`last_played_at` DESC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `local_playlist_playback_bucket` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `day_start_at` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        `counter_base_play_count` INTEGER NOT NULL,
+                        PRIMARY KEY(`playlist_id`, `day_start_at`),
+                        FOREIGN KEY(`playlist_id`) REFERENCES
+                            `local_playlist_playback_stat`(`playlist_id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_local_playlist_playback_bucket_day`
+                    ON `local_playlist_playback_bucket`
+                    (`playlist_id` ASC, `day_start_at` ASC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `local_playlist_playback_counter_shard` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `day_start_at` INTEGER NOT NULL,
+                        `device_id` TEXT NOT NULL,
+                        `epoch_started_at` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        PRIMARY KEY(
+                            `playlist_id`,
+                            `day_start_at`,
+                            `device_id`,
+                            `epoch_started_at`
+                        ),
+                        FOREIGN KEY(`playlist_id`) REFERENCES
+                            `local_playlist_playback_stat`(`playlist_id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_local_playlist_playback_counter_scope`
+                    ON `local_playlist_playback_counter_shard`
+                    (`playlist_id`, `day_start_at`)
                     """.trimIndent()
                 )
             }
