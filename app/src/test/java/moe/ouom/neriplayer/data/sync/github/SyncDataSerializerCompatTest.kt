@@ -33,9 +33,66 @@ import moe.ouom.neriplayer.data.sync.model.normalizedSyncCausalTokens
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SyncDataSerializerCompatTest {
+    @Test
+    fun `serialization removes local cover references from every sync payload`() {
+        val localCover = "file:/data/user/0/moe.ouom.neriplayer/files/local_audio_covers/cover.jpg"
+        val song = SyncSong(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "netease",
+            coverUrl = localCover,
+            customCoverUrl = "content://media/external/images/media/1",
+            originalCoverUrl = "/storage/emulated/0/Download/original.jpg"
+        )
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "Device",
+            playlists = listOf(SyncPlaylist(id = 1L, name = "playlist", songs = listOf(song))),
+            favoritePlaylists = listOf(
+                moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist(
+                    id = 2L,
+                    name = "favorite",
+                    coverUrl = localCover,
+                    songs = listOf(song)
+                )
+            ),
+            playbackStats = listOf(
+                SyncTrackStat(identityKey = "42|netease|", coverUrl = localCover)
+            ),
+            playbackStatBuckets = listOf(
+                SyncPlaybackStatBucket(
+                    dayStartAt = 1L,
+                    identityKey = "42|netease|",
+                    coverUrl = localCover
+                )
+            ),
+            playlistUsageStats = listOf(
+                SyncPlaylistUsageStat(playlistKey = "netease:2", coverUrl = localCover)
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            val decoded = SyncDataSerializer.deserialize(
+                SyncDataSerializer.serialize(data, useDataSaver)
+            )
+            val decodedSong = decoded.playlists.single().songs.single()
+
+            assertNull(decodedSong.coverUrl)
+            assertNull(decodedSong.customCoverUrl)
+            assertNull(decodedSong.originalCoverUrl)
+            assertNull(decoded.favoritePlaylists.single().coverUrl)
+            assertNull(decoded.favoritePlaylists.single().songs.single().coverUrl)
+            assertNull(decoded.playbackStats.single().coverUrl)
+            assertNull(decoded.playbackStatBuckets.single().coverUrl)
+            assertNull(decoded.playlistUsageStats.single().coverUrl)
+        }
+    }
+
     @Test
     fun `bili video skip rules survive json and protobuf sync serialization`() {
         val rule = SyncBiliVideoSkipRule(

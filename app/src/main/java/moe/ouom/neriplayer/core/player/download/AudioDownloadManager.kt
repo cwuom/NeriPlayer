@@ -418,7 +418,17 @@ object AudioDownloadManager {
             add(song.coverUrl)
             add(song.originalCoverUrl)
             add(song.customCoverUrl)
-        }.mapNotNull { it?.takeIf(String::isNotBlank) }
+        }.mapNotNull { candidate ->
+            candidate
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.takeIf(::isNetworkCoverUrl)
+        }
+    }
+
+    private fun isNetworkCoverUrl(url: String): Boolean {
+        return url.startsWith("http://", ignoreCase = true) ||
+            url.startsWith("https://", ignoreCase = true)
     }
 
     internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean {

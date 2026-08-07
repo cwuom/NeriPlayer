@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 
 private const val LOCAL_PLAYLIST_BUCKET_RETENTION_DAYS = 400L
 private const val MAX_LOCAL_PLAYLIST_PLAYBACK_BUCKETS = 8_000
@@ -205,6 +206,7 @@ internal object SyncPlaylistUsageStatsMergePolicy {
         return stat.copy(
             playlistKey = playlistKey,
             source = stat.source.trim().ifBlank { playlistKey.substringBefore(':') },
+            coverUrl = sanitizeCoverUrlForSync(stat.coverUrl),
             trackCount = stat.trackCount.coerceAtLeast(0),
             openCount = counters.totalCount.toBoundedInt(),
             firstOpenedAt = counters.firstOccurredAt,

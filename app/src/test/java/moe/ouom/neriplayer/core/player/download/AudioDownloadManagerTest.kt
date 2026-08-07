@@ -210,6 +210,26 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `cover download candidates exclude device local references`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = "file:/data/user/0/moe.ouom.neriplayer/files/local_audio_covers/cover.jpg",
+            customCoverUrl = "content://media/external/images/media/1",
+            originalCoverUrl = "https://example.com/original.jpg"
+        )
+
+        assertEquals(
+            listOf("https://example.com/original.jpg"),
+            AudioDownloadManager.buildCoverDownloadCandidateUrls(song)
+        )
+    }
+
+    @Test
     fun `shared cover lookup does not use album key when song has explicit cover url`() {
         val song = SongItem(
             id = 1L,

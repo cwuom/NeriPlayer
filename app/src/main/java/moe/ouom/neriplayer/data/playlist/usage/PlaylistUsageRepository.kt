@@ -45,6 +45,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.util.platform.LanguageManager
@@ -472,7 +473,7 @@ private fun UsageEntry.toSyncPlaylistUsageStat(): SyncPlaylistUsageStat {
         id = id,
         subtype = subtype,
         name = name,
-        coverUrl = picUrl,
+        coverUrl = sanitizeCoverUrlForSync(picUrl),
         trackCount = trackCount,
         lastOpenedAt = lastOpened.coerceAtLeast(0L),
         firstOpenedAt = firstOpened.coerceAtLeast(0L),
@@ -492,7 +493,7 @@ private fun SyncPlaylistUsageStat.toUsageEntry(): UsageEntry {
     return UsageEntry(
         id = id,
         name = name,
-        picUrl = coverUrl,
+        picUrl = sanitizeCoverUrlForSync(coverUrl),
         trackCount = trackCount,
         source = source,
         lastOpened = lastOpenedAt,
