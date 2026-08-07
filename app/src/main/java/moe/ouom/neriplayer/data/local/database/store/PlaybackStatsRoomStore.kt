@@ -108,11 +108,13 @@ internal class PlaybackStatsRoomStore(
                         key
                     ) != dailyCounterKeysForIdentity(counterSnapshot, key)
             }
+            .toSet()
         val changedKeys = (previousByKey.keys + nextByKey.keys +
             previousDailyByKey.keys + nextDailyByKey.keys + counterChangedKeys)
             .filter { key ->
                 previousByKey[key] != nextByKey[key] ||
-                    previousDailyByKey[key] != nextDailyByKey[key]
+                    previousDailyByKey[key] != nextDailyByKey[key] ||
+                    key in counterChangedKeys
             }
             .toSet()
 

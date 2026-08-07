@@ -120,6 +120,69 @@ class PlaybackStatsRoomStoreTest {
         }
     }
 
+    @Test
+    fun incrementalWritePersistsCounterOnlyChanges() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val stat = testTrackStat()
+            val previousCounter = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(
+                    stat.identityKey to listOf(
+                        SyncPlaybackCounterShard(
+                            deviceId = "device-a",
+                            epochStartedAt = 0L,
+                            totalListenMs = 30_000L,
+                            playCount = 1,
+                            firstPlayedAt = 100L,
+                            lastPlayedAt = 100L
+                        )
+                    )
+                )
+            )
+            val nextCounter = PlaybackStatsSyncCounterSnapshot(
+                trackShardsByIdentity = mapOf(
+                    stat.identityKey to listOf(
+                        SyncPlaybackCounterShard(
+                            deviceId = "device-a",
+                            epochStartedAt = 0L,
+                            totalListenMs = 30_000L,
+                            playCount = 2,
+                            firstPlayedAt = 100L,
+                            lastPlayedAt = 200L
+                        )
+                    )
+                )
+            )
+            val store = PlaybackStatsRoomStore(database)
+            store.importLegacyAndPromote(
+                stats = listOf(stat),
+                dailyStats = emptyList(),
+                counterSnapshot = previousCounter,
+                counterEpochStartedAt = 0L,
+                clearedAt = 0L
+            )
+
+            store.writeIncremental(
+                previousStats = listOf(stat),
+                nextStats = listOf(stat),
+                previousDailyStats = emptyList(),
+                nextDailyStats = emptyList(),
+                previousCounterSnapshot = previousCounter,
+                counterSnapshot = nextCounter,
+                counterEpochStartedAt = 0L,
+                clearedAt = 0L
+            )
+
+            assertEquals(nextCounter, store.readIfRoomPrimary()?.counterSnapshot)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun testTrackStat(): TrackStat {
         return TrackStat(
             id = 7L,
