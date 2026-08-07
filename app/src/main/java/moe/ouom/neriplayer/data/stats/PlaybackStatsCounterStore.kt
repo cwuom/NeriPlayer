@@ -9,12 +9,6 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.writeTextAtomically
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.io.File
 
 data class PlaybackStatsSyncCounterSnapshot(
@@ -50,12 +44,8 @@ internal class PlaybackStatsCounterStore(
         File(context.filesDir, "playback_stats_counters.json")
     }
     private val lock = Any()
-    private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val syncStorage by lazy { SecureTokenStorage(context) }
     private var state = load()
-    private var persistJob: Job? = null
-    private var persistGeneration = 0L
-    private var pendingState: PlaybackStatsCounterState? = null
 
     fun snapshot(): PlaybackStatsSyncCounterSnapshot {
         val current = synchronized(lock) { state }
@@ -103,34 +93,31 @@ internal class PlaybackStatsCounterStore(
             playedAt = playedAt
         )
 
-        persist(
+        updateState(
             current.copy(
                 trackShardsByIdentity = updatedTrackShards,
                 dailyShardsByBucketKey = updatedDailyShards
-            ),
-            immediate = false
+            )
         )
     }
 
     fun reset(epochStartedAt: Long) {
-        persist(
-            PlaybackStatsCounterState(epochStartedAt = epochStartedAt.coerceAtLeast(0L)),
-            immediate = true
+        updateState(
+            PlaybackStatsCounterState(epochStartedAt = epochStartedAt.coerceAtLeast(0L))
         )
     }
 
     fun removeTracks(keys: Set<String>) {
         if (keys.isEmpty()) return
         val current = synchronized(lock) { state }
-        persist(
+        updateState(
             current.copy(
                 trackShardsByIdentity = current.trackShardsByIdentity - keys,
                 dailyShardsByBucketKey = current.dailyShardsByBucketKey.filterKeys { key ->
                     val identityKey = key.substringAfter('|', missingDelimiterValue = key)
                     identityKey !in keys
                 }
-            ),
-            immediate = true
+            )
         )
     }
 
@@ -152,25 +139,40 @@ internal class PlaybackStatsCounterStore(
                 ) to SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
             }
             .filterValues { it.isNotEmpty() }
-        persist(
+        updateState(
             PlaybackStatsCounterState(
                 epochStartedAt = epochStartedAt.coerceAtLeast(0L),
                 trackShardsByIdentity = trackShards,
                 dailyShardsByBucketKey = dailyShards
-            ),
-            immediate = true
+            )
         )
     }
 
-    suspend fun flushPendingWrites() {
-        val snapshot = synchronized(lock) {
-            persistGeneration += 1L
-            persistJob?.cancel()
-            persistJob = null
-            pendingState = null
-            state
-        }
-        persistToDisk(snapshot)
+    fun replaceFromRoom(
+        snapshot: PlaybackStatsSyncCounterSnapshot,
+        epochStartedAt: Long
+    ) {
+        val trackShards = snapshot.trackShardsByIdentity
+            .mapValues { (_, shards) -> SyncPlaybackStatMapper.normalizeCounterShards(shards) }
+            .filterValues { it.isNotEmpty() }
+        val dailyShards = snapshot.dailyShardsByBucketKey
+            .mapValues { (_, shards) -> SyncPlaybackStatMapper.normalizeCounterShards(shards) }
+            .filterValues { it.isNotEmpty() }
+        updateState(
+            PlaybackStatsCounterState(
+                epochStartedAt = epochStartedAt.coerceAtLeast(0L),
+                trackShardsByIdentity = trackShards,
+                dailyShardsByBucketKey = dailyShards
+            )
+        )
+    }
+
+    fun epochStartedAt(): Long {
+        return synchronized(lock) { state.epochStartedAt }
+    }
+
+    fun persistLegacyProjection(): Boolean {
+        return persistToDisk(synchronized(lock) { state })
     }
 
     private fun load(): PlaybackStatsCounterState {
@@ -183,53 +185,24 @@ internal class PlaybackStatsCounterStore(
         }
     }
 
-    private fun persist(nextState: PlaybackStatsCounterState, immediate: Boolean) {
+    private fun updateState(nextState: PlaybackStatsCounterState) {
         synchronized(lock) {
             state = nextState
-            pendingState = nextState
-            persistGeneration += 1L
-            persistJob?.cancel()
-            persistJob = null
-            if (immediate) {
-                pendingState = null
-            }
-            if (!immediate) {
-                val generation = persistGeneration
-                persistJob = persistScope.launch {
-                    delay(PERSIST_DEBOUNCE_MS)
-                    val snapshot = synchronized(lock) {
-                        if (generation != persistGeneration) {
-                            null
-                        } else {
-                            pendingState.also {
-                                pendingState = null
-                                persistJob = null
-                            }
-                        }
-                    }
-                    snapshot?.let { persistToDisk(it) }
-                }
-                return
-            }
         }
-        persistToDisk(nextState)
     }
 
-    private fun persistToDisk(nextState: PlaybackStatsCounterState) {
-        synchronized(persistFileLock) {
+    private fun persistToDisk(nextState: PlaybackStatsCounterState): Boolean {
+        return synchronized(persistFileLock) {
             runCatching {
                 counterFile.writeTextAtomically(gson.toJson(nextState))
+                true
             }.onFailure { error ->
                 NPLogger.e("PlaybackStatsRepo", "Failed to persist stats counters", error)
-            }
+            }.getOrDefault(false)
         }
     }
 
     private val persistFileLock = Any()
-
-    private companion object {
-        const val PERSIST_DEBOUNCE_MS = 5_000L
-    }
 
     private fun updateShardList(
         shards: List<SyncPlaybackCounterShard>,

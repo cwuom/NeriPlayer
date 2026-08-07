@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaylistUsageDao
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistPlaybackDao
+import moe.ouom.neriplayer.data.local.database.dao.PlaybackStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -20,6 +21,10 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaylistUsageEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistPlaybackStatEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatBucketEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatCounterShardEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatDailyCounterShardEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.SyncOutboxEntity
@@ -40,9 +45,13 @@ import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
         PlaylistUsageCounterShardEntity::class,
         LocalPlaylistPlaybackStatEntity::class,
         LocalPlaylistPlaybackBucketEntity::class,
-        LocalPlaylistPlaybackCounterShardEntity::class
+        LocalPlaylistPlaybackCounterShardEntity::class,
+        PlaybackStatEntity::class,
+        PlaybackStatBucketEntity::class,
+        PlaybackStatCounterShardEntity::class,
+        PlaybackStatDailyCounterShardEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -53,6 +62,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun playlistUsageDao(): PlaylistUsageDao
 
     abstract fun localPlaylistPlaybackDao(): LocalPlaylistPlaybackDao
+
+    abstract fun playbackStatsDao(): PlaybackStatsDao
 
     abstract fun syncMetadataDao(): SyncMetadataDao
 
@@ -76,7 +87,12 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 context.applicationContext,
                 NeriUserDataDatabase::class.java,
                 DATABASE_NAME
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build()
+            ).addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5
+            ).build()
         }
 
         private fun checkMainProcess(context: Context) {
@@ -282,6 +298,155 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `index_local_playlist_playback_counter_scope`
                     ON `local_playlist_playback_counter_shard`
                     (`playlist_id`, `day_start_at`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playback_stat` (
+                        `identity_key` TEXT NOT NULL,
+                        `id` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `album_id` INTEGER NOT NULL,
+                        `cover_url` TEXT,
+                        `duration_ms` INTEGER NOT NULL,
+                        `total_listen_ms` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `media_uri` TEXT,
+                        `local_file_path` TEXT,
+                        `local_file_name` TEXT,
+                        `custom_name` TEXT,
+                        `custom_artist` TEXT,
+                        `custom_cover_url` TEXT,
+                        PRIMARY KEY(`identity_key`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_last_played`
+                    ON `playback_stat` (`last_played_at` DESC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_media_uri`
+                    ON `playback_stat` (`media_uri`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playback_stat_bucket` (
+                        `day_start_at` INTEGER NOT NULL,
+                        `identity_key` TEXT NOT NULL,
+                        `id` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `album_id` INTEGER NOT NULL,
+                        `cover_url` TEXT,
+                        `duration_ms` INTEGER NOT NULL,
+                        `total_listen_ms` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `media_uri` TEXT,
+                        `local_file_path` TEXT,
+                        `local_file_name` TEXT,
+                        `custom_name` TEXT,
+                        `custom_artist` TEXT,
+                        `custom_cover_url` TEXT,
+                        PRIMARY KEY(`day_start_at`, `identity_key`),
+                        FOREIGN KEY(`identity_key`) REFERENCES
+                            `playback_stat`(`identity_key`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_bucket_day`
+                    ON `playback_stat_bucket`
+                    (`day_start_at` DESC, `identity_key` ASC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_bucket_identity`
+                    ON `playback_stat_bucket` (`identity_key`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playback_stat_counter_shard` (
+                        `identity_key` TEXT NOT NULL,
+                        `device_id` TEXT NOT NULL,
+                        `epoch_started_at` INTEGER NOT NULL,
+                        `total_listen_ms` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        PRIMARY KEY(
+                            `identity_key`,
+                            `device_id`,
+                            `epoch_started_at`
+                        ),
+                        FOREIGN KEY(`identity_key`) REFERENCES
+                            `playback_stat`(`identity_key`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_counter_identity`
+                    ON `playback_stat_counter_shard` (`identity_key`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS
+                    `playback_stat_daily_counter_shard` (
+                        `day_start_at` INTEGER NOT NULL,
+                        `identity_key` TEXT NOT NULL,
+                        `device_id` TEXT NOT NULL,
+                        `epoch_started_at` INTEGER NOT NULL,
+                        `total_listen_ms` INTEGER NOT NULL,
+                        `play_count` INTEGER NOT NULL,
+                        `first_played_at` INTEGER NOT NULL,
+                        `last_played_at` INTEGER NOT NULL,
+                        PRIMARY KEY(
+                            `day_start_at`,
+                            `identity_key`,
+                            `device_id`,
+                            `epoch_started_at`
+                        ),
+                        FOREIGN KEY(`day_start_at`, `identity_key`)
+                            REFERENCES `playback_stat_bucket`
+                            (`day_start_at`, `identity_key`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_playback_stat_daily_counter_scope`
+                    ON `playback_stat_daily_counter_shard`
+                    (`day_start_at`, `identity_key`)
                     """.trimIndent()
                 )
             }
