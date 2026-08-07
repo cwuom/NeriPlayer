@@ -188,6 +188,14 @@ internal class LegacyJsonCleanupCoordinator(
             TargetDefinition(
                 "traffic_stats_daily.json",
                 TrafficStatsRoomStore.CUTOVER_STATE_METADATA_KEY
+            ),
+            TargetDefinition(
+                "last_playlist.json",
+                "playback_queue_cutover_state"
+            ),
+            TargetDefinition(
+                "last_playback_state.json",
+                "playback_queue_cutover_state"
             )
         )
     }
