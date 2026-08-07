@@ -1,0 +1,66 @@
+package moe.ouom.neriplayer.core.startup
+
+import android.content.Context
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.delay
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
+import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupResult
+import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
+
+internal object LegacyJsonCleanupScheduler {
+    private const val TAG = "NERI-LegacyJsonCleanup"
+    private val running = AtomicBoolean(false)
+    private val retryDelaysMs = longArrayOf(
+        0L,
+        1_500L,
+        3_000L,
+        5_000L,
+        8_000L,
+        13_000L
+    )
+
+    fun schedule(context: Context, reason: String) {
+        val appContext = context.applicationContext
+        if (!running.compareAndSet(false, true)) {
+            return
+        }
+
+        AppContainer.launchBackgroundIo {
+            try {
+                val coordinator = LegacyJsonCleanupCoordinator(appContext)
+                var lastResult: LegacyJsonCleanupResult? = null
+                for (attemptIndex in retryDelaysMs.indices) {
+                    if (attemptIndex > 0) {
+                        delay(retryDelaysMs[attemptIndex])
+                    }
+
+                    val plan = coordinator.buildPlan()
+                    if (plan.targets.none { it.exists }) {
+                        return@launchBackgroundIo
+                    }
+
+                    lastResult = coordinator.execute(plan, confirmed = true)
+                    if (lastResult.status == LegacyJsonCleanupStatus.COMPLETED) {
+                        NPLogger.d(
+                            TAG,
+                            "Legacy JSON cleanup completed: reason=$reason, deleted=${lastResult.deletedFiles.size}"
+                        )
+                        return@launchBackgroundIo
+                    }
+                }
+
+                lastResult?.let { result ->
+                    NPLogger.d(
+                        TAG,
+                        "Legacy JSON cleanup pending: reason=$reason, status=${result.status}, " +
+                            "blocked=${result.blockedFiles.size}, failed=${result.failedFiles.size}"
+                    )
+                }
+            } finally {
+                running.set(false)
+            }
+        }
+    }
+}

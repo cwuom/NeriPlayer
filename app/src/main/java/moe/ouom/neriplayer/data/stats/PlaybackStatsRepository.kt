@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
@@ -124,6 +125,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 snapshot = roomSnapshot.counterSnapshot,
                 epochStartedAt = roomSnapshot.counterEpochStartedAt
             )
+            LegacyJsonCleanupScheduler.schedule(app, "playback-stats-room-load")
             return roomSnapshot.toPersistenceSnapshot()
         }
 
@@ -150,6 +152,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     clearedAt = legacyState.clearedAt
                 )
             }
+            LegacyJsonCleanupScheduler.schedule(app, "playback-stats-import")
             roomStorageEnabled = true
         }.onFailure { error ->
             roomStorageEnabled = false

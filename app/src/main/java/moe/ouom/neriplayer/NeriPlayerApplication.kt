@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.startup.app.AppImageLoaderInitializer
 import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
@@ -136,6 +137,7 @@ class NeriPlayerApplication : Application() {
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)
+            LegacyJsonCleanupScheduler.schedule(this, "app-init")
 
             // 初始化 LyriconManager, 如果用户启用了 Lyricon 功能
             if (readPlaybackPreferenceSnapshotSync(this).lyriconEnabled) {

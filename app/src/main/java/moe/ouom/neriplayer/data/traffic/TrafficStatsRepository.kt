@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
@@ -139,7 +140,10 @@ class TrafficStatsRepository private constructor(
             roomStorageEnabled = false
             NPLogger.e(TAG, "Failed to read Room traffic stats", it)
         }.getOrNull()
-        if (roomStats != null) return roomStats
+        if (roomStats != null) {
+            LegacyJsonCleanupScheduler.schedule(app, "traffic-stats-room-load")
+            return roomStats
+        }
 
         val legacyStats = runCatching {
             if (!dailyFile.exists()) {
@@ -155,6 +159,7 @@ class TrafficStatsRepository private constructor(
         }.getOrDefault(emptyList())
         runCatching {
             runBlocking { roomStore.importLegacyAndPromote(legacyStats) }
+            LegacyJsonCleanupScheduler.schedule(app, "traffic-stats-import")
             roomStorageEnabled = true
         }.onFailure {
             roomStorageEnabled = false

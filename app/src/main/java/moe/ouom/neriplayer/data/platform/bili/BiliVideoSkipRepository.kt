@@ -15,9 +15,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomSnapshot
 import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore
@@ -318,11 +318,10 @@ class BiliVideoSkipRepository private constructor(context: Context) {
         mutex.withLock {
             val previous = _rules.value.firstOrNull { it.target == normalizedTarget }
             val deleted = normalizedIntervals.isEmpty()
-            if (
-                previous != null &&
-                    previous.isDeleted == deleted &&
+            val hasSameSnapshot =
+                previous != null && previous.isDeleted == deleted &&
                     previous.intervals == normalizedIntervals
-            ) {
+            if (hasSameSnapshot) {
                 return@withLock false
             }
             if (previous == null && deleted) {
@@ -368,19 +367,20 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             }
             .getOrDefault(false)
         if (roomPrimary) {
+            LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-room-load")
             return roomStore.readIfRoomPrimary()
                 ?: BiliVideoSkipRoomSnapshot(emptyList(), emptyList())
         }
 
         val legacyRules = readLegacyRulesOrNull()
         val legacyDrafts = readLegacyDraftsOrNull()
-        if (
-            legacyRules != null &&
+        val shouldImportLegacyFiles = legacyRules != null &&
             legacyDrafts != null &&
             (rulesFile.exists() || draftsFile.exists())
-        ) {
+        if (shouldImportLegacyFiles) {
             runCatching {
                 roomStore.replaceAll(legacyRules, legacyDrafts)
+                LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-import")
             }.onFailure { error ->
                 NPLogger.w(TAG, "Failed to import Bili skip JSON into Room", error)
             }

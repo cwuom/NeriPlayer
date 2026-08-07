@@ -82,12 +82,24 @@ internal class LegacyJsonCleanupCoordinator(
 
         val freshPlan = buildPlan()
         if (freshPlan.blockedTargets.isNotEmpty()) {
+            val blockedFiles = freshPlan.blockedTargets.map(LegacyJsonCleanupTarget::fileName)
+            database.syncMetadataDao().upsertMigrationMetadata(
+                MigrationMetadataEntity(
+                    key = CLEANUP_AUDIT_METADATA_KEY,
+                    value = buildAuditValue(
+                        status = LegacyJsonCleanupStatus.BLOCKED,
+                        deleted = emptyList(),
+                        failed = emptyList(),
+                        blocked = blockedFiles
+                    ),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
             return LegacyJsonCleanupResult(
                 status = LegacyJsonCleanupStatus.BLOCKED,
                 deletedFiles = emptyList(),
                 failedFiles = emptyList(),
-                blockedFiles = freshPlan.blockedTargets
-                    .map(LegacyJsonCleanupTarget::fileName)
+                blockedFiles = blockedFiles
             )
         }
 
@@ -109,7 +121,7 @@ internal class LegacyJsonCleanupCoordinator(
         database.syncMetadataDao().upsertMigrationMetadata(
             MigrationMetadataEntity(
                 key = CLEANUP_AUDIT_METADATA_KEY,
-                value = buildAuditValue(status, deleted, failed),
+                value = buildAuditValue(status, deleted, failed, emptyList()),
                 updatedAt = System.currentTimeMillis()
             )
         )
@@ -124,12 +136,14 @@ internal class LegacyJsonCleanupCoordinator(
     private fun buildAuditValue(
         status: LegacyJsonCleanupStatus,
         deleted: List<String>,
-        failed: List<String>
+        failed: List<String>,
+        blocked: List<String>
     ): String {
         return buildString {
             append("status=").append(status.name)
             append(";deleted=").append(deleted.joinToString(","))
             append(";failed=").append(failed.joinToString(","))
+            append(";blocked=").append(blocked.joinToString(","))
         }
     }
 

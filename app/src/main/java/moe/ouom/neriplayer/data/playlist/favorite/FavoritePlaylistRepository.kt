@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
 import moe.ouom.neriplayer.data.model.identity
@@ -99,6 +100,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             NPLogger.e(TAG, "读取 Room 收藏歌单失败，回退到 JSON", error)
         }.getOrNull()
         if (roomFavorites != null) {
+            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-load")
             return normalize(roomFavorites)
         }
 
@@ -117,6 +119,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             runBlocking {
                 roomStore.importLegacyAndPromote(normalized)
             }
+            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-import")
             roomStorageEnabled = true
         }.onFailure { error ->
             roomStorageEnabled = false

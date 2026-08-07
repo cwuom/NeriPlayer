@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -226,6 +227,7 @@ class LocalPlaylistRepository private constructor(
     private fun loadFromDisk() {
         val roomPrimary = readRoomPrimary()
         if (roomPrimary != null) {
+            LegacyJsonCleanupScheduler.schedule(context, "local-playlist-room-load")
             recoverPendingSyncMutation(
                 committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
             )
@@ -262,6 +264,8 @@ class LocalPlaylistRepository private constructor(
                     "LocalPlaylistRepo",
                     "Room mapper is not equivalent; keep legacy playlist storage"
                 )
+            } else if (imported?.status == LocalPlaylistRoomShadowImportStatus.IMPORTED) {
+                LegacyJsonCleanupScheduler.schedule(context, "local-playlist-import")
             }
         }
 

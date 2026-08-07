@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
@@ -187,6 +188,7 @@ class PlayHistoryRepository private constructor(
                 )
             }.getOrNull()
             if (roomEntries != null) {
+                LegacyJsonCleanupScheduler.schedule(app, "play-history-room-load")
                 return roomEntries
             }
         }
@@ -212,6 +214,8 @@ class PlayHistoryRepository private constructor(
                     "PlayHistoryRepo",
                     "Room history mapper is not equivalent; keep legacy JSON"
                 )
+            } else if (imported?.status == PlayHistoryRoomImportStatus.IMPORTED) {
+                LegacyJsonCleanupScheduler.schedule(app, "play-history-import")
             }
         }
         return legacyEntries

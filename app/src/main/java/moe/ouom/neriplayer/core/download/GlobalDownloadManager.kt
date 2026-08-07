@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -222,7 +223,12 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
+            runCatching { ManagedDownloadStorage.listCancelledDownloadKeys(appContext) }
+                .onFailure { error ->
+                    NPLogger.w(TAG, "预热已取消下载标记失败: ${error.message}")
+                }
             recoverPendingDownloadsForStartup(appContext)
+            LegacyJsonCleanupScheduler.schedule(appContext, "download-startup")
             if (
                 !shouldRunInitialDownloadScan(
                     catalogReady = restoredCatalog,

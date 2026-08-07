@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -103,6 +104,10 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                 )
             }.getOrNull()
             if (roomStats != null) {
+                LegacyJsonCleanupScheduler.schedule(
+                    app,
+                    "local-playlist-playback-room-load"
+                )
                 return normalizeLocalPlaylistPlaybackStats(roomStats)
             }
         }
@@ -120,6 +125,10 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                     error
                 )
             }
+            LegacyJsonCleanupScheduler.schedule(
+                app,
+                "local-playlist-playback-import"
+            )
         }
         return legacyStats
     }

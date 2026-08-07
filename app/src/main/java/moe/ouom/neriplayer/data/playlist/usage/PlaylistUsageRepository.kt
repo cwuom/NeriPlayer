@@ -54,6 +54,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
@@ -199,6 +200,7 @@ class PlaylistUsageRepository internal constructor(
                 )
             }.getOrNull()
             if (roomEntries != null) {
+                LegacyJsonCleanupScheduler.schedule(app, "playlist-usage-room-load")
                 return normalizeUsageEntries(roomEntries)
             }
         }
@@ -229,6 +231,7 @@ class PlaylistUsageRepository internal constructor(
                     error
                 )
             }
+            LegacyJsonCleanupScheduler.schedule(app, "playlist-usage-import")
         }
         return normalized
     }
