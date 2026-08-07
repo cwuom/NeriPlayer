@@ -180,7 +180,9 @@ class PlaylistUsageRepository internal constructor(
     private var persistenceGeneration = 0L
     @Volatile
     private var roomStorageEnabled = roomStore != null
-    private val _flow = MutableStateFlow(load())
+    private val initialEntries = load()
+    private val _flow = MutableStateFlow(initialEntries)
+    private var persistedEntries = initialEntries
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
     private fun load(): List<UsageEntry> {
@@ -246,7 +248,10 @@ class PlaylistUsageRepository internal constructor(
                 if (roomStorageEnabled && roomStore != null) {
                     val activeRoomStore = roomStore
                     val roomWriteSucceeded = runCatching {
-                        activeRoomStore.replaceAll(list)
+                        activeRoomStore.writeIncremental(
+                            previous = persistedEntries,
+                            next = list
+                        )
                     }.onFailure { error ->
                         roomStorageEnabled = false
                         NPLogger.e(
@@ -256,6 +261,7 @@ class PlaylistUsageRepository internal constructor(
                         )
                     }.isSuccess
                     if (roomWriteSucceeded) {
+                        persistedEntries = list
                         return@withLock
                     }
                 }
@@ -274,6 +280,7 @@ class PlaylistUsageRepository internal constructor(
                             )
                         }
                 }
+                persistedEntries = list
             }
         }
     }
