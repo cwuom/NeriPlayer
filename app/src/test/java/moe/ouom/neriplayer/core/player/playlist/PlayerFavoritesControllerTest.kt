@@ -10,14 +10,21 @@ import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class PlayerFavoritesControllerTest {
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     @Test
     fun `optimistic favorite readd projects downloaded copy to remote source`() {
         val application = mock(Application::class.java)
+        `when`(application.applicationContext).thenReturn(application)
+        `when`(application.filesDir).thenReturn(tempFolder.root)
         val remoteSong = remoteNeteaseSong()
         val downloadedCopy = downloadedLocalCopy(remoteSong)
         val initialPlaylists = listOf(

@@ -413,17 +413,17 @@ object AudioDownloadManager {
     )
 
     internal fun buildCoverDownloadCandidateUrls(song: SongItem): List<String> {
-        return linkedSetOf<String?>().apply {
-            add(song.displayCoverUrl())
-            add(song.coverUrl)
-            add(song.originalCoverUrl)
-            add(song.customCoverUrl)
-        }.mapNotNull { candidate ->
+        return listOf(
+            song.displayCoverUrl(),
+            song.coverUrl,
+            song.originalCoverUrl,
+            song.customCoverUrl
+        ).mapNotNull { candidate ->
             candidate
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
                 ?.takeIf(::isNetworkCoverUrl)
-        }
+        }.distinct()
     }
 
     private fun isNetworkCoverUrl(url: String): Boolean {

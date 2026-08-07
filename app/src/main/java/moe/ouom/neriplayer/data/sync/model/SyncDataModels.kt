@@ -443,11 +443,12 @@ data class SyncFavoritePlaylist(
 ) {
     companion object {
         fun fromFavoritePlaylist(playlist: FavoritePlaylist, context: Context? = null): SyncFavoritePlaylist {
+            val mapper = context?.let { CoverUrlMapper.getInstance(it) }
             if (playlist.isDeleted) {
                 return SyncFavoritePlaylist(
                     id = playlist.id,
                     name = playlist.name,
-                    coverUrl = sanitizeCoverUrlForSync(playlist.coverUrl),
+                    coverUrl = sanitizeCoverUrlForSync(playlist.coverUrl, mapper),
                     trackCount = 0,
                     source = playlist.source,
                     songs = emptyList(),
@@ -462,7 +463,7 @@ data class SyncFavoritePlaylist(
             }
             val syncedSongs = playlist.songs.mapNotNull { SyncSong.fromSongItemOrNull(it, context) }
             val hasFilteredLocalSongs = syncedSongs.size != playlist.songs.size
-            val syncedCoverUrl = sanitizeCoverUrlForSync(playlist.coverUrl)
+            val syncedCoverUrl = sanitizeCoverUrlForSync(playlist.coverUrl, mapper)
                 ?: syncedSongs.firstOrNull()?.coverUrl
             return SyncFavoritePlaylist(
                 id = playlist.id,

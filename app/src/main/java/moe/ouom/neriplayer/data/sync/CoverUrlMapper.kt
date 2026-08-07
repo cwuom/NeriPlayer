@@ -155,7 +155,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
         private var instance: CoverUrlMapper? = null
 
         fun getInstance(context: Context): CoverUrlMapper {
-            val storageDir = context.applicationContext.filesDir
+            val storageDir = context.applicationContext?.filesDir ?: context.filesDir
             return instance ?: synchronized(this) {
                 instance ?: CoverUrlMapper(storageDir).also { instance = it }
             }

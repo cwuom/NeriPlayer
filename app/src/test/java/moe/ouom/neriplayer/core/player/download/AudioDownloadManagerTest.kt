@@ -230,6 +230,29 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `cover download candidates trim before de duplicating urls`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = "https://example.com/cover.jpg",
+            customCoverUrl = " https://example.com/cover.jpg ",
+            originalCoverUrl = "https://example.com/original.jpg"
+        )
+
+        assertEquals(
+            listOf(
+                "https://example.com/cover.jpg",
+                "https://example.com/original.jpg"
+            ),
+            AudioDownloadManager.buildCoverDownloadCandidateUrls(song)
+        )
+    }
+
+    @Test
     fun `shared cover lookup does not use album key when song has explicit cover url`() {
         val song = SongItem(
             id = 1L,
