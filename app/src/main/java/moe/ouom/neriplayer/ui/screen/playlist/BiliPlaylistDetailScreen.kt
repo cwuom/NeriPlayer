@@ -85,6 +85,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.BiliClient
 import moe.ouom.neriplayer.core.api.bili.buildBiliThumbnailUrl
 import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -1147,10 +1148,12 @@ private fun BiliVideoItem.toSongItem(): SongItem {
         id = this.id,
         name = this.title,
         artist = this.uploader,
-        album = PlayerManager.BILI_SOURCE_TAG,
+        album = buildBiliSongAlbum(bvid = bvid),
         albumId = 0L,
         durationMs = this.durationSec * 1000L,
-        coverUrl = this.coverUrl
+        coverUrl = this.coverUrl,
+        channelId = "bilibili",
+        audioId = this.id.toString()
     )
 }
 

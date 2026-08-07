@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.widget
 
+import android.os.Build
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -95,6 +97,34 @@ class PlaybackWidgetSizingTest {
             180,
             fullPlaybackWidgetCardHeightDp(
                 PlaybackWidgetSize(widthDp = 420, heightDp = 1),
+            ),
+        )
+    }
+
+    @Test
+    fun `full widget uses the larger card only after a compatible vertical resize`() {
+        assertFalse(
+            shouldUseExpandedFullPlaybackWidgetLayout(
+                size = PlaybackWidgetSize(widthDp = 250, heightDp = 110),
+                sdkInt = Build.VERSION_CODES.S,
+            ),
+        )
+        assertFalse(
+            shouldUseExpandedFullPlaybackWidgetLayout(
+                size = PlaybackWidgetSize(widthDp = 250, heightDp = 179),
+                sdkInt = Build.VERSION_CODES.R,
+            ),
+        )
+        assertTrue(
+            shouldUseExpandedFullPlaybackWidgetLayout(
+                size = PlaybackWidgetSize(widthDp = 250, heightDp = 180),
+                sdkInt = Build.VERSION_CODES.R,
+            ),
+        )
+        assertTrue(
+            shouldUseExpandedFullPlaybackWidgetLayout(
+                size = PlaybackWidgetSize(widthDp = 250, heightDp = 180),
+                sdkInt = Build.VERSION_CODES.S,
             ),
         )
     }

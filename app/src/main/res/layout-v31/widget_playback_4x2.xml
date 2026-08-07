@@ -116,7 +116,7 @@
             android:layout_above="@id/widget_controls"
             android:layout_alignParentStart="true"
             android:layout_alignParentEnd="true"
-            android:layout_marginBottom="0dp">
+            android:layout_marginBottom="6dp">
 
             <Chronometer
                 android:id="@+id/widget_elapsed"

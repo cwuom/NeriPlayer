@@ -324,7 +324,11 @@ private fun normalizedSubAudioId(
 ): String {
     val explicitSubAudioId = rawSubAudioId?.trim()?.takeIf { it.isNotBlank() }
     if (channel != "bilibili") return ""
-    return explicitSubAudioId ?: album.substringAfter('|', "").takeIf { it.isNotBlank() }.orEmpty()
+    return explicitSubAudioId ?: album
+        .substringAfter('|', "")
+        .substringBefore('|')
+        .takeIf { it.isNotBlank() }
+        .orEmpty()
 }
 
 private fun stableRemoteIdentityId(channel: String, audio: String, subAudio: String): Long {

@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.player.prefetch.clearPlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.prefetch.kickoffYouTubePlaybackIntentWarmup
 import moe.ouom.neriplayer.core.player.prefetch.replacePlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
+import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
@@ -733,6 +734,13 @@ internal fun PlayerManager.playAtIndex(
     val requestToken = playbackRequestToken
     BiliSponsorBlockPlaybackController.onPlaybackRequestStarted(song, requestToken)
     BiliVideoSkipPlaybackController.onPlaybackRequestStarted(song, requestToken)
+    if (isBiliTrack(song) && !isListenTogetherActive()) {
+        BiliVideoSkipPlaybackController.prepareActiveBiliTrackTarget(
+            song = song,
+            requestToken = requestToken,
+            scope = ioScope
+        )
+    }
     PlaybackTransitionWakeLock.acquire(
         context = application,
         requestToken = requestToken,
@@ -752,7 +760,10 @@ internal fun PlayerManager.playAtIndex(
         val result = resolveSongUrlOrWaitForAuthoritativeStream(
             shouldWaitForAuthoritativeStream = shouldAwaitAuthoritativeStream
         ) {
-            resolveSongUrl(song)
+            resolveSongUrl(
+                song = song,
+                playbackRequestTokenOverride = requestToken
+            )
         }
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(
@@ -1861,6 +1872,9 @@ internal fun PlayerManager.startProgressUpdates() {
                         positionMs = userSkipPositionMs,
                         commandSource = PlaybackCommandSource.LOCAL_SAFETY
                     )
+                    AudioPlayerService.refreshPlaybackWidgetAfterSeekFromActiveService(
+                        reason = "bili_video_auto_skip"
+                    )
                     delay(updateIntervalMs)
                     continue
                 }
@@ -1886,6 +1900,9 @@ internal fun PlayerManager.startProgressUpdates() {
                     seekTo(
                         positionMs = skipPositionMs,
                         commandSource = PlaybackCommandSource.LOCAL_SAFETY
+                    )
+                    AudioPlayerService.refreshPlaybackWidgetAfterSeekFromActiveService(
+                        reason = "bili_sponsor_block_auto_skip"
                     )
                     delay(updateIntervalMs)
                     continue
