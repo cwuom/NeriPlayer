@@ -319,10 +319,8 @@ internal fun AdvancedGlassHost(
         ),
         LocalAdvancedGlassDepth provides 0,
         LocalAdvancedGlassActiveNavigationOwners provides activeNavigationOwners,
-        LocalOverscrollFactory provides if (
-            sessionController.isEnabled && disableStretchOverscroll
-        ) {
-            null
+        LocalOverscrollFactory provides if (disableStretchOverscroll) {
+            AdvancedGlassOverscrollFactory
         } else {
             parentOverscrollFactory
         },
