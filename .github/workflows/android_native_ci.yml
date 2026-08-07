@@ -2,6 +2,8 @@ name: NeriPlayer Android Native CI
 
 on:
   push:
+    branches:
+      - master
     paths:
       - '.github/workflows/android_native_ci.yml'
       - 'app/src/main/cpp/**'

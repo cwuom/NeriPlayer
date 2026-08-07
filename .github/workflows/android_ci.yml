@@ -2,6 +2,8 @@ name: NeriPlayer Android CI
 
 on:
   push:
+    branches:
+      - master
     paths-ignore:
       - '**/*.md'
       - '.github/ISSUE_TEMPLATE/**'

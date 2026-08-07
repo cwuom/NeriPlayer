@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: zh-CN
+early_access: false
+tone_instructions: >-
+  Use concise Simplified Chinese. Report only confirmed, actionable defects with
+  a concrete user, security, compatibility, or data-integrity impact.
+
+reviews:
+  # reserve comments for correctness, security, compatibility, data loss, and
+  # observable regressions. Formatting and speculative suggestions are noise.
+  profile: quiet
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_instructions: >-
+    Summarize only the user-visible behavior, compatibility impact, and tests
+    actually changed or added. Do not invent release notes or repeat file names.
+  review_status: false
+  review_details: false
+  review_progress: false
+  commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  in_progress_fortune: false
+  poem: false
+  enable_prompt_for_ai_agents: false
+  slop_detection:
+    enabled: false
+
+  # keep review context to files where a human can act on the feedback
+  path_filters:
+    - "!**/.DS_Store"
+    - "!**/build/**"
+    - "!**/.gradle/**"
+    - "!**/.kotlin/**"
+    - "!**/.idea/**"
+    - "!**/.cxx/**"
+    - "!**/.externalNativeBuild/**"
+    - "!**/node_modules/**"
+    - "!**/output/**"
+    - "!**/.report/**"
+    - "!**/docs-private/**"
+    - "!**/*.aar"
+    - "!**/*.apk"
+    - "!**/*.aab"
+    - "!**/*.jar"
+    - "!**/*.so"
+    - "!**/*.png"
+    - "!**/*.webp"
+    - "!**/package-lock.json"
+    - "!gradle/wrapper/gradle-wrapper.jar"
+    - "!app/src/main/assets/youtube/*.min.js"
+    - "!np-submodule/miuix/**"
+    - "!np-submodule/accompanist-lyrics-core/**"
+    - "!np-submodule/accompanist-lyrics-ui/**"
+    - "!**/*.md"
+    - "!.github/ISSUE_TEMPLATE/**"
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - ".*"
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 2
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "[skip review]"
+    labels:
+      - "!do-not-review"
+    ignore_usernames:
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+
+  path_instructions:
+    - path: "app/src/main/**/*.kt"
+      instructions: |
+        Review only concrete defects with an observable impact.
+        Prioritize coroutine cancellation and lifecycle ownership, null-safety,
+        resource leaks, data loss, thread confinement, accidental public API
+        changes, and Android API compatibility with minSdk 28.
+        Do not comment on style, naming, formatting, optional refactors, or
+        hypothetical edge cases without a reproducible execution path.
+    - path: "app/src/{test,androidTest}/**/*.kt"
+      instructions: |
+        Flag a test only when it can pass despite a user-visible regression,
+        is nondeterministic, leaks shared state or resources, or targets the
+        wrong Android API/lifecycle behavior. Do not request tests for purely
+        mechanical changes or prescribe alternate test styles.
+    - path: "app/src/main/cpp/**"
+      instructions: |
+        Focus on memory safety, ownership, bounds checks, error propagation,
+        thread safety, undefined behavior, JNI lifetime rules, and Android ABI
+        compatibility. Ignore stylistic C/C++ preferences and refactors unless
+        they fix a demonstrated correctness or safety defect.
+    - path: "np-submodule/NeriPlayer-LTW/**"
+      instructions: |
+        Review only protocol compatibility, authorization, input validation,
+        state consistency, cache invalidation, and async error handling.
+        Do not report JavaScript style preferences or request broad rewrites.
+    - path: ".github/workflows/**"
+      instructions: |
+        Flag only trigger gaps, permission escalation, secret exposure,
+        ineffective concurrency, invalid GitHub Actions syntax, or CI commands
+        that cannot run in the declared environment. Preserve intentional
+        branch and path filtering.
+    - path: "**/*.{gradle,kts,toml,properties}"
+      instructions: |
+        Flag only dependency resolution failures, broken task wiring, insecure
+        repositories or credentials, incompatible Android/Gradle settings, or
+        release reproducibility regressions. Do not suggest version upgrades
+        unless the PR itself creates a concrete incompatibility or vulnerability.
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+  tools:
+    # android lint and the existing GitHub Actions jobs are the source of truth
+    # disable generic tools that would duplicate them or add style-only noise
+    detekt:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    github-checks:
+      enabled: false
+    shellcheck:
+      enabled: false
+    actionlint:
+      enabled: false
+    zizmor:
+      enabled: false
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    clang:
+      enabled: false
+    cppcheck:
+      enabled: false
+
+chat:
+  art: false
+  auto_reply: false
+
+knowledge_base:
+  web_search:
+    enabled: false
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+
+issue_enrichment:
+  auto_enrich:
+    enabled: false
+  planning:
+    enabled: false
+    auto_planning:
+      enabled: false
