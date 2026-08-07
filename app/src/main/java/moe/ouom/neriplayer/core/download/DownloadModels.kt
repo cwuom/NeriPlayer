@@ -193,7 +193,8 @@ internal fun DownloadedSong.toPlaybackSongItem(
         customArtist = customArtist,
         originalName = originalName,
         originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl,
+        originalCoverUrl = originalCoverUrl
+            ?: coverUrl?.takeUnless(LocalSongSupport::isLocalMediaUri),
         originalLyric = originalLyric,
         originalTranslatedLyric = originalTranslatedLyric,
         localFileName = localFileName,

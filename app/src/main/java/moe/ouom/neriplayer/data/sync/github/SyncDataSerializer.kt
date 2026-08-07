@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncLogEntry
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.sanitizeLocalCoverUrls
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.Base64
@@ -77,14 +78,15 @@ object SyncDataSerializer {
      * @return useDataSaver=true 时为原始 GZIP(ProtoBuf) 字节; 否则为 UTF-8 JSON 字节
      */
     fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
+        val sanitizedData = data.sanitizeLocalCoverUrls()
         val content = if (useDataSaver) {
-            val protoBytes = protoBuf.encodeToByteArray(data)
+            val protoBytes = protoBuf.encodeToByteArray(sanitizedData)
             require(protoBytes.size <= MAX_DECOMPRESSED_BYTES) {
                 "Sync data is too large to upload"
             }
             compress(protoBytes)
         } else {
-            serializeJson(data).toByteArray(Charsets.UTF_8)
+            serializeJson(sanitizedData).toByteArray(Charsets.UTF_8)
         }
         ensureUploadContentSize(content, useDataSaver)
         return content

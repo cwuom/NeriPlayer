@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.data.sync
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 
@@ -102,12 +103,21 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
         return mapping[url] ?: url
     }
 
+    fun getSyncableNetworkUrl(url: String?): String? {
+        val normalizedUrl = url?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (!LocalSongSupport.isLocalMediaUri(normalizedUrl)) {
+            return normalizedUrl
+        }
+        return mapping[normalizedUrl]
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !LocalSongSupport.isLocalMediaUri(it) }
+    }
+
     /**
      * 判断是否是本地地址
      */
     private fun isLocalUrl(url: String): Boolean {
-        return url.startsWith("/") ||
-               url.startsWith("file://") ||
+        return LocalSongSupport.isLocalMediaUri(url) ||
                url.contains("/data/") ||
                url.contains("/storage/")
     }
@@ -119,8 +129,8 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     fun cleanupInvalidMappings() {
         val toRemove = mutableListOf<String>()
         for ((localUrl, _) in mapping) {
-            val file = File(localUrl.removePrefix("file://"))
-            if (!file.exists()) {
+            val file = localUrl.toLocalFileOrNull()
+            if (file != null && !file.exists()) {
                 toRemove.add(localUrl)
             }
         }
@@ -132,6 +142,12 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
         }
     }
 
+    private fun String.toLocalFileOrNull(): File? {
+        if (startsWith("/")) return File(this)
+        if (!startsWith("file:", ignoreCase = true)) return null
+        return runCatching { File(java.net.URI(this)) }.getOrNull()
+    }
+
     companion object {
         private const val TAG = "CoverUrlMapper"
 
@@ -139,7 +155,7 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
         private var instance: CoverUrlMapper? = null
 
         fun getInstance(context: Context): CoverUrlMapper {
-            val storageDir = context.applicationContext.filesDir
+            val storageDir = context.applicationContext?.filesDir ?: context.filesDir
             return instance ?: synchronized(this) {
                 instance ?: CoverUrlMapper(storageDir).also { instance = it }
             }

@@ -1397,6 +1397,7 @@ class LocalPlaylistRepositoryTest {
     private fun mockContext(): Context {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
+        `when`(context.applicationContext).thenReturn(context)
         `when`(context.getString(R.string.playlist_create)).thenReturn("Playlist")
         `when`(context.getString(R.string.favorite_my_music)).thenReturn("Favorites")
         `when`(context.getString(R.string.local_files)).thenReturn("Local Files")

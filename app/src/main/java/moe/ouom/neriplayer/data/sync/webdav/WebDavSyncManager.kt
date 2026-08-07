@@ -72,6 +72,8 @@ import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.model.copyWithNormalizedMembershipTokens
 import moe.ouom.neriplayer.data.sync.model.hasResolvableSyncIdentity
 import moe.ouom.neriplayer.data.sync.model.mergePositiveTimestamp
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlsForSync
 import moe.ouom.neriplayer.data.sync.model.toBiliVideoSkipRuleOrNull
 import moe.ouom.neriplayer.data.sync.model.toSyncBiliVideoSkipRule
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
@@ -1036,6 +1038,7 @@ class WebDavSyncManager private constructor(context: Context) {
             )
         }
         return playlist.copy(
+            coverUrl = sanitizeCoverUrlForSync(playlist.coverUrl),
             songs = sanitizedSongs,
             trackCount = if (playlist.isDeleted) 0 else maxOf(playlist.trackCount, sanitizedSongs.size)
         )
@@ -1085,7 +1088,7 @@ class WebDavSyncManager private constructor(context: Context) {
         if (LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, localizedContext)) {
             return null
         }
-        return song.copyWithNormalizedMembershipTokens(
+        return song.sanitizeCoverUrlsForSync().copyWithNormalizedMembershipTokens(
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(song.mediaUri)
         )
     }

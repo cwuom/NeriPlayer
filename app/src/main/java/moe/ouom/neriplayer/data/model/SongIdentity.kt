@@ -31,7 +31,9 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import java.util.Locale
 
 @Parcelize
@@ -92,6 +94,11 @@ internal fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): Song
     val sourceIsNetease = sourceChannel.equals("netease", ignoreCase = true) &&
         sourceIdentity.album.equals("netease", ignoreCase = true) &&
         sourceIdentity.mediaUri == null
+    val mapper = context?.let(CoverUrlMapper::getInstance)
+    val syncCoverUrl = sanitizeCoverUrlForSync(coverUrl, mapper)
+        ?: sanitizeCoverUrlForSync(originalCoverUrl, mapper)
+    val syncCustomCoverUrl = sanitizeCoverUrlForSync(customCoverUrl, mapper)
+    val syncOriginalCoverUrl = sanitizeCoverUrlForSync(originalCoverUrl, mapper)
 
     return copy(
         id = if (sourceIsNetease) {
@@ -106,6 +113,9 @@ internal fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): Song
         mediaUri = sourceIdentity.mediaUri,
         localFileName = null,
         localFilePath = null,
+        coverUrl = syncCoverUrl,
+        customCoverUrl = syncCustomCoverUrl,
+        originalCoverUrl = syncOriginalCoverUrl,
         channelId = sourceChannel,
         audioId = sourceAudioId,
         subAudioId = sourceSubAudioId,

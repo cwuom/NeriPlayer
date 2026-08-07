@@ -58,7 +58,7 @@ object LocalSongSupport {
     fun isLocalMediaUri(mediaUri: String?): Boolean {
         if (mediaUri.isNullOrBlank()) return false
         if (mediaUri.startsWith("/")) return true
-        if (mediaUri.startsWith("file://", ignoreCase = true)) return true
+        if (mediaUri.startsWith("file:", ignoreCase = true)) return true
         if (mediaUri.startsWith("content://", ignoreCase = true)) return true
         if (mediaUri.startsWith("android.resource://", ignoreCase = true)) return true
 

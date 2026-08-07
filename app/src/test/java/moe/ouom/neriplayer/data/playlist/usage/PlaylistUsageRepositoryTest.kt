@@ -8,6 +8,7 @@ import android.os.LocaleList
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
@@ -16,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.util.Locale
@@ -103,6 +105,23 @@ class PlaylistUsageRepositoryTest {
             entries.map(UsageEntry::usageKey).toSet(),
             normalized.map(UsageEntry::usageKey).toSet()
         )
+    }
+
+    @Test
+    fun `normalization keeps local display cover when counter shards exist`() {
+        val repo = PlaylistUsageRepository(mockContext())
+        val localCoverUrl = "file:///covers/local.jpg"
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = localCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+
+        assertEquals(localCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
     }
 
     @Test
@@ -260,6 +279,69 @@ class PlaylistUsageRepositoryTest {
         assertEquals(embeddedCoverUrl, refreshedPicUrl)
     }
 
+    @Test
+    fun `sync local entries keeps favorites cover when newest song is local`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val localCoverUrl = "file:///covers/favorite-local.jpg"
+        val favorites = LocalPlaylist(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "我喜欢的音乐",
+            songs = mutableListOf(localSong(coverUrl = localCoverUrl))
+        )
+
+        repo.recordOpen(
+            id = FavoritesPlaylist.SYSTEM_ID,
+            name = "我喜欢的音乐",
+            picUrl = null,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(playlists = listOf(favorites))
+
+        assertEquals(localCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
+    @Test
+    fun `sync local entries uses downloaded song cover for local files card`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val downloadedCoverUrl = "file:///covers/downloaded.jpg"
+        val localFiles = LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf(localSong(coverUrl = null))
+        )
+        val downloadedCoverCandidates = listOf(localSong(coverUrl = downloadedCoverUrl))
+
+        assertEquals(
+            downloadedCoverUrl,
+            localFiles.displayCoverUrl(
+                context = context,
+                additionalCoverCandidates = downloadedCoverCandidates
+            )
+        )
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = null,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(
+            playlists = listOf(localFiles),
+            localFilesCoverCandidates = downloadedCoverCandidates
+        )
+
+        val entry = repo.frequentPlaylistsFlow.value.single()
+        assertEquals(LocalFilesPlaylist.currentName(context), entry.name)
+        assertEquals(downloadedCoverUrl, entry.picUrl)
+        assertEquals(1, entry.trackCount)
+    }
+
     private fun usageEntry(
         id: Long,
         subtype: String?,
@@ -297,6 +379,9 @@ class PlaylistUsageRepositoryTest {
             `when`(locales[0]).thenReturn(Locale.CHINA)
             `when`(getSharedPreferences("language_settings", Context.MODE_PRIVATE)).thenReturn(prefs)
             `when`(prefs.getString("selected_language", "")).thenReturn("")
+            `when`(filesDir).thenReturn(tempFolder.root)
+            `when`(applicationContext).thenReturn(this)
+            `when`(createConfigurationContext(any(Configuration::class.java))).thenReturn(this)
             `when`(this.resources).thenReturn(resources)
             `when`(getString(R.string.local_files)).thenReturn("本地文件")
             `when`(getString(R.string.favorite_my_music)).thenReturn("我喜欢的音乐")
