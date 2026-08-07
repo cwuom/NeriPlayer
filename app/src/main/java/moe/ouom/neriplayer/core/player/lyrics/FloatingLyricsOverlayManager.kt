@@ -89,6 +89,7 @@ object FloatingLyricsOverlayManager {
                 syncOverlay()
             }
 
+            @Deprecated("kept for ActivityLifecycleCallbacks compatibility")
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
             override fun onActivityResumed(activity: Activity) = syncOverlay()
             override fun onActivityPaused(activity: Activity) = Unit
@@ -105,6 +106,7 @@ object FloatingLyricsOverlayManager {
                 }
             }
 
+            @Deprecated("kept for ComponentCallbacks compatibility")
             override fun onLowMemory() = Unit
         }
         configurationCallbacks = appConfigurationCallbacks

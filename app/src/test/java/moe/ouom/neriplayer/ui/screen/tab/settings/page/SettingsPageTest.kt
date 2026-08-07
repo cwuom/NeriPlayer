@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
 import org.mockito.stubbing.Answer
@@ -94,6 +95,17 @@ class SettingsPageTest {
         assertEquals(AutoSettingsSections.theme, dynamicColor.section)
         assertEquals(SettingsPage.Theme, dynamicColor.settingsPage())
         assertEquals("setting:dynamic_color", dynamicColor.searchTargetId())
+    }
+
+    @Test
+    fun dynamicIslandLyricsSettingOpensLyricsPage() {
+        val dynamicIslandLyrics = AutoSettingsMetadata.settings.first {
+            it.keyName == "dynamic_island_lyrics_enabled"
+        }
+
+        assertEquals(AutoSettingsSections.lyrics, dynamicIslandLyrics.section)
+        assertEquals(SettingsPage.Lyrics, dynamicIslandLyrics.settingsPage())
+        assertEquals("setting:dynamic_island_lyrics_enabled", dynamicIslandLyrics.searchTargetId())
     }
 
     @Test
@@ -466,6 +478,17 @@ class SettingsPageTest {
     }
 
     @Test
+    fun dynamicIslandLyricsSettingIsSearchable() {
+        val entries = buildSettingsSearchEntries(settingsStringContext())
+
+        assertTrue(
+            searchSettingsEntries(entries, "dynamic island").any {
+                it.targetId == "setting:dynamic_island_lyrics_enabled"
+            }
+        )
+    }
+
+    @Test
     fun dependentSettingsHighlightTheirPrimaryControls() {
         fun targetId(keyName: String): String {
             return AutoSettingsMetadata.settings.first { it.keyName == keyName }.searchTargetId()
@@ -680,7 +703,9 @@ class SettingsPageTest {
             R.string.settings_export_config to "导出配置文件",
             R.string.settings_import_config to "导入配置文件",
             R.string.settings_export_config_desc to "导出设置、登录信息和同步配置",
-            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置"
+            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置",
+            R.string.settings_dynamic_island_lyrics_enabled to "灵动岛歌词",
+            R.string.settings_dynamic_island_lyrics_enabled_desc to "即使没有连接蓝牙设备，也会上传蓝牙歌词元数据"
         )
     }
 }

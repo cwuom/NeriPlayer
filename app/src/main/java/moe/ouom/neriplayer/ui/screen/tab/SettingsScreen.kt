@@ -1612,6 +1612,7 @@ fun SettingsScreen(
                                 onExpandedChange = {},
                                 showHeader = false,
                                 autoSettingsRepository = autoSettingsRepository,
+                                settingsRepository = AppContainer.settingsRepo,
                                 scope = scope,
                                 floatingLyricsPreferences = floatingLyricsPreferences,
                                 onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,

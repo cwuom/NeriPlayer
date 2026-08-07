@@ -2251,7 +2251,8 @@ class AudioPlayerService : Service() {
         val lyricPayload = PlayerManager.externalBluetoothLyricPayloadFlow.value
         val useBluetoothLyrics = shouldUseExternalBluetoothLyrics(
             audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
-            payload = lyricPayload
+            payload = lyricPayload,
+            forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled
         )
         val metadataText = resolveExternalBluetoothMetadataText(
             normalTitle = normalTitle,

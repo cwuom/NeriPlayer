@@ -1,8 +1,12 @@
 package moe.ouom.neriplayer.data.settings
 
+import android.content.Context
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsBackupKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSections
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingIcon
@@ -12,6 +16,9 @@ import moe.ouom.neriplayer.ksp.annotations.SettingValueType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class AutoSettingsGeneratedTest {
     @Test
@@ -157,6 +164,10 @@ class AutoSettingsGeneratedTest {
         assertTrue(
             "external bluetooth translation switch should be exportable",
             "external_bluetooth_translation_enabled" in booleanKeyNames
+        )
+        assertTrue(
+            "dynamic island lyrics switch should be exportable",
+            "dynamic_island_lyrics_enabled" in booleanKeyNames
         )
     }
 
@@ -309,6 +320,13 @@ class AutoSettingsGeneratedTest {
             }
         )
         assertTrue(
+            "lyrics metadata should include dynamic island lyrics switch",
+            lyricsSettings.any {
+                it.keyName == "dynamic_island_lyrics_enabled" &&
+                    it.ui == SettingUiType.Custom
+            }
+        )
+        assertTrue(
             "lyrics metadata should include source offset sliders",
             lyricsSettings.any { it.keyName == "cloud_music_lyric_default_offset_ms" && it.ui == SettingUiType.Custom }
         )
@@ -377,6 +395,19 @@ class AutoSettingsGeneratedTest {
         assertEquals(SettingUiType.Switch, metadata?.ui)
         assertEquals(AutoSettingsSections.general, metadata?.section)
         assertEquals(AutoSettingIcon.AutoAwesome, metadata?.icon)
+    }
+
+    @Test
+    fun dynamicIslandLyricsDefaultsToEnabledInLyricsSettings() {
+        val setting = AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled
+        val metadata = AutoSettingsMetadata.setting("dynamic_island_lyrics_enabled")
+
+        assertEquals("dynamic_island_lyrics_enabled", setting.preferencesKey.name)
+        assertEquals(true, setting.defaultValue)
+        assertEquals(SettingValueType.Boolean, metadata?.valueType)
+        assertEquals(SettingUiType.Custom, metadata?.ui)
+        assertEquals(AutoSettingsSections.lyrics, metadata?.section)
+        assertEquals(AutoSettingIcon.Subtitles, metadata?.icon)
     }
 
     @Test
@@ -576,6 +607,10 @@ class AutoSettingsGeneratedTest {
             AutoSettingsSchema.lyrics.externalBluetoothTranslationEnabled.icon
         )
         assertEquals(
+            AutoSettingIcon.Subtitles,
+            AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled.icon
+        )
+        assertEquals(
             AutoSettingIcon.Error,
             AutoSettingsSchema.backup.silentGitHubSyncFailure.icon
         )
@@ -599,5 +634,39 @@ class AutoSettingsGeneratedTest {
 
         assertEquals("youtube_enabled", setting.key)
         assertEquals(true, setting.defaultValue)
+    }
+
+    @Test
+    fun externalBluetoothLyricsSwitchesDefaultToEnabled() {
+        val filesDir = File.createTempFile("neriplayer-settings", "").apply {
+            delete()
+            mkdirs()
+            deleteOnExit()
+        }
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(filesDir)
+        `when`(context.applicationContext).thenReturn(context)
+        val repository = AutoSettingsRepository(context)
+
+        runBlocking {
+            assertTrue(repository.externalBluetoothLyricsEnabledFlow.first())
+            assertTrue(repository.externalBluetoothTranslationEnabledFlow.first())
+        }
+        assertEquals(
+            SettingUiType.Switch,
+            AutoSettingsMetadata.setting("external_bluetooth_lyrics_enabled")?.ui
+        )
+        assertEquals(
+            SettingUiType.Switch,
+            AutoSettingsMetadata.setting("external_bluetooth_translation_enabled")?.ui
+        )
+        assertEquals(
+            AutoSettingsSections.lyrics,
+            AutoSettingsMetadata.setting("external_bluetooth_lyrics_enabled")?.section
+        )
+        assertEquals(
+            AutoSettingsSections.lyrics,
+            AutoSettingsMetadata.setting("external_bluetooth_translation_enabled")?.section
+        )
     }
 }
