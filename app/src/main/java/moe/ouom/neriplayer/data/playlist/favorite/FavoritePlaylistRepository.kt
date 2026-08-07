@@ -74,8 +74,6 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
     private val persistenceMutex = Mutex()
-    private val legacyProjectionMutex = Mutex()
-    private var legacyProjectionGeneration = 0L
     private val roomStore = FavoritePlaylistRoomStore(
         NeriUserDataDatabase.getInstance(context.applicationContext)
     )
@@ -196,7 +194,6 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                     NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
                 }.isSuccess
                 if (roomSucceeded) {
-                    enqueueLegacyProjection(favorites)
                     return@withLock true
                 }
             }
@@ -209,24 +206,6 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                     }
             }
             legacySucceeded
-        }
-    }
-
-    private fun enqueueLegacyProjection(
-        favorites: List<FavoritePlaylist>
-    ) {
-        val generation = synchronized(this) {
-            legacyProjectionGeneration += 1L
-            legacyProjectionGeneration
-        }
-        scope.launch {
-            legacyProjectionMutex.withLock {
-                val isLatest = synchronized(this@FavoritePlaylistRepository) {
-                    generation == legacyProjectionGeneration
-                }
-                if (!isLatest) return@withLock
-                saveToDisk(favorites)
-            }
         }
     }
 

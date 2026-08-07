@@ -86,8 +86,6 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     private val mutex = Mutex()
     @Volatile
     private var roomStorageEnabled = roomStore != null
-    private val legacyProjectionMutex = Mutex()
-    private var legacyProjectionGeneration = 0L
     private val _stats = MutableStateFlow(loadInitialStats())
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
 
@@ -234,7 +232,6 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                 )
             }.isSuccess
             if (roomWriteSucceeded) {
-                enqueueLegacyProjection(next)
                 return
             }
         }
@@ -248,24 +245,6 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                         error
                     )
                 }
-        }
-    }
-
-    private fun enqueueLegacyProjection(
-        stats: List<LocalPlaylistPlaybackStat>
-    ) {
-        val generation = synchronized(this) {
-            legacyProjectionGeneration += 1L
-            legacyProjectionGeneration
-        }
-        scope.launch {
-            legacyProjectionMutex.withLock {
-                val isLatest = synchronized(this@LocalPlaylistPlaybackStatsRepository) {
-                    generation == legacyProjectionGeneration
-                }
-                if (!isLatest) return@withLock
-                persist(stats)
-            }
         }
     }
 

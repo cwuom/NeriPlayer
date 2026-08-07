@@ -29,8 +29,6 @@ class TrafficStatsRepository private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val statsMutex = Mutex()
     private val persistenceMutex = Mutex()
-    private val legacyProjectionMutex = Mutex()
-    private var legacyProjectionGeneration = 0L
     private val dailyFile: File by lazy { File(app.filesDir, "traffic_stats_daily.json") }
     private val roomStore = TrafficStatsRoomStore(
         NeriUserDataDatabase.getInstance(app.applicationContext)
@@ -182,7 +180,6 @@ class TrafficStatsRepository private constructor(
                 }.isSuccess
                 if (roomSucceeded) {
                     persistedStats = snapshot
-                    enqueueLegacyProjection(snapshot)
                     markPersistenceClean(expectedGeneration)
                     return@withLock
                 }
@@ -212,22 +209,6 @@ class TrafficStatsRepository private constructor(
     private fun markPersistenceClean(expectedGeneration: Long?) {
         if (expectedGeneration == null || expectedGeneration == persistGeneration) {
             persistJob = null
-        }
-    }
-
-    private fun enqueueLegacyProjection(snapshot: List<TrafficStatsBucket>) {
-        val generation = synchronized(this) {
-            legacyProjectionGeneration += 1L
-            legacyProjectionGeneration
-        }
-        scope.launch {
-            legacyProjectionMutex.withLock {
-                val isLatest = synchronized(this@TrafficStatsRepository) {
-                    generation == legacyProjectionGeneration
-                }
-                if (!isLatest) return@withLock
-                persistDailyStatsToDisk(snapshot)
-            }
         }
     }
 

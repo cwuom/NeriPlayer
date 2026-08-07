@@ -77,7 +77,6 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicLong
 
 data class LocalPlaylistSongAddResult(
     val addedSongs: List<SongItem>
@@ -112,8 +111,6 @@ class LocalPlaylistRepository private constructor(
 ) {
     private val gson = Gson()
     private val playlistCommitMutex = Mutex()
-    private val legacyProjectionMutex = Mutex()
-    private val legacyProjectionGeneration = AtomicLong(0L)
     private val syncStorage by lazy { SecureTokenStorage(context) }
     private val syncMutationStore by lazy {
         providedSyncMutationStore ?: SecureLocalPlaylistSyncMutationStore(syncStorage)
@@ -617,8 +614,6 @@ class LocalPlaylistRepository private constructor(
                     )
                 }
             }
-        } else if (committedToRoom) {
-            enqueueLegacyProjection(normalized)
         }
         if (stateChanged) {
             _playlists.value = normalized
@@ -638,26 +633,6 @@ class LocalPlaylistRepository private constructor(
             if (!settled) return
         } else if (triggerSync && autoSyncEnabled) {
             scheduleAutoSync()
-        }
-    }
-
-    private fun enqueueLegacyProjection(playlists: List<LocalPlaylist>) {
-        val generation = legacyProjectionGeneration.incrementAndGet()
-        initializationScope.launch {
-            legacyProjectionMutex.withLock {
-                if (generation != legacyProjectionGeneration.get()) {
-                    return@withLock
-                }
-                runCatching {
-                    persistToDisk(playlists)
-                }.onFailure { error ->
-                    NPLogger.e(
-                        "LocalPlaylistRepo",
-                        "Room committed but legacy JSON projection failed",
-                        error
-                    )
-                }
-            }
         }
     }
 

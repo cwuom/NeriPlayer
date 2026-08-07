@@ -85,8 +85,6 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val mutex = Mutex()
     private val persistFileMutex = Mutex()
     private val roomPersistenceMutex = Mutex()
-    private val legacyProjectionMutex = Mutex()
-    private var legacyProjectionGeneration = 0L
     private var persistJob: Job? = null
     private var persistGeneration = 0L
     private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
@@ -375,7 +373,6 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 }.isSuccess
                 if (roomSucceeded) {
                     persistedSnapshot = snapshot
-                    enqueueLegacyProjection(snapshot)
                     markPersistenceClean(expectedGeneration)
                     return@withLock
                 }
@@ -412,24 +409,6 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 persistDailyStatsToDisk(snapshot.dailyStats) &&
                 persistMetadata(snapshot.clearedAt) &&
                 counterStore.persistLegacyProjection()
-        }
-    }
-
-    private fun enqueueLegacyProjection(
-        snapshot: PlaybackStatsPersistenceSnapshot
-    ) {
-        val generation = synchronized(this) {
-            legacyProjectionGeneration += 1L
-            legacyProjectionGeneration
-        }
-        scope.launch {
-            legacyProjectionMutex.withLock {
-                val isLatest = synchronized(this@PlaybackStatsRepository) {
-                    generation == legacyProjectionGeneration
-                }
-                if (!isLatest) return@withLock
-                persistLegacySnapshot(snapshot)
-            }
         }
     }
 

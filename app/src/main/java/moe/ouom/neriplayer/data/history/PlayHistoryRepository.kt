@@ -163,8 +163,6 @@ class PlayHistoryRepository private constructor(
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
     @Volatile
     private var roomStorageEnabled = roomStore != null
-    private val legacyProjectionMutex = Mutex()
-    private var legacyProjectionGeneration = 0L
     private val _history = MutableStateFlow(loadInitialHistory())
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
@@ -258,7 +256,6 @@ class PlayHistoryRepository private constructor(
                 )
             }.isSuccess
             if (roomWriteSucceeded) {
-                enqueueLegacyProjection(next)
                 return
             }
         }
@@ -273,22 +270,6 @@ class PlayHistoryRepository private constructor(
                     "Failed to mark legacy history fallback state",
                     error
                 )
-            }
-        }
-    }
-
-    private fun enqueueLegacyProjection(entries: List<PlayedEntry>) {
-        synchronized(this) {
-            legacyProjectionGeneration += 1L
-        }
-        val generation = synchronized(this) { legacyProjectionGeneration }
-        scope.launch {
-            legacyProjectionMutex.withLock {
-                val isLatest = synchronized(this@PlayHistoryRepository) {
-                    generation == legacyProjectionGeneration
-                }
-                if (!isLatest) return@withLock
-                persistToDisk(entries)
             }
         }
     }
@@ -526,7 +507,6 @@ class PlayHistoryRepository private constructor(
                                 error
                             )
                         }
-                        .onSuccess { enqueueLegacyProjection(emptyList()) }
                 }
                 if (!roomStorageEnabled) {
                     persistToDisk(emptyList())
