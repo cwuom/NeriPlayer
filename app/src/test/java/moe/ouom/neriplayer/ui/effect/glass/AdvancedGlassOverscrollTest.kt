@@ -18,20 +18,25 @@ class AdvancedGlassOverscrollTest {
     }
 
     @Test
-    fun dragIsSymmetricAndCappedAtOneThirdOfRange() {
-        val dragRange = 300f
+    fun dragIsSymmetricAndContinuesWithIncreasingResistance() {
+        val resistanceScale = 100f
 
-        assertEquals(100f, dampedAdvancedGlassOverscrollOffset(300f, dragRange), 0.001f)
-        assertEquals(-100f, dampedAdvancedGlassOverscrollOffset(-300f, dragRange), 0.001f)
-        assertEquals(100f, dampedAdvancedGlassOverscrollOffset(600f, dragRange), 0.001f)
+        val first = dampedAdvancedGlassOverscrollOffset(100f, resistanceScale)
+        val second = dampedAdvancedGlassOverscrollOffset(200f, resistanceScale)
+        val third = dampedAdvancedGlassOverscrollOffset(300f, resistanceScale)
+
+        assertEquals(100f * kotlin.math.ln(2f), first, 0.001f)
+        assertEquals(-third, dampedAdvancedGlassOverscrollOffset(-300f, resistanceScale), 0.001f)
+        assertTrue(third > second)
+        assertTrue(third - second < second - first)
     }
 
     @Test
     fun animatedOffsetRestoresEquivalentRawDrag() {
-        val dragRange = 300f
+        val resistanceScale = 100f
         listOf(-300f, -150f, -30f, 30f, 150f, 300f).forEach { rawDrag ->
-            val offset = dampedAdvancedGlassOverscrollOffset(rawDrag, dragRange)
-            val restored = restoredAdvancedGlassOverscrollDrag(offset, dragRange)
+            val offset = dampedAdvancedGlassOverscrollOffset(rawDrag, resistanceScale)
+            val restored = restoredAdvancedGlassOverscrollDrag(offset, resistanceScale)
 
             assertEquals(rawDrag, restored, 0.01f)
         }

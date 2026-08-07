@@ -48,6 +48,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -148,6 +149,7 @@ import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
@@ -254,6 +256,7 @@ private fun MainActivity.setNeriContent(
     setContent {
         CompositionLocalProvider(
             LocalActivityResultRegistryOwner provides this@setNeriContent,
+            LocalOverscrollFactory provides AdvancedGlassOverscrollFactory,
             content = content
         )
     }

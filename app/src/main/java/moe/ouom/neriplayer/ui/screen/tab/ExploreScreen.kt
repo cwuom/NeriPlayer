@@ -148,6 +148,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -664,7 +665,28 @@ fun ExploreScreen(
         queueExploreSearchRecord(normalizedQuery)
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            when {
+                searchQuery.isNotEmpty() -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = searchListState.canScrollForward,
+                    canScrollBackward = searchListState.canScrollBackward
+                )
+                ui.selectedSearchSource == SearchSource.NETEASE ->
+                    shouldAllowCollapsingTopAppBar(
+                        canScrollForward = gridState.canScrollForward,
+                        canScrollBackward = gridState.canScrollBackward
+                    )
+                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC ->
+                    shouldAllowCollapsingTopAppBar(
+                        canScrollForward = youtubeGridState.canScrollForward,
+                        canScrollBackward = youtubeGridState.canScrollBackward
+                    )
+                else -> false
+            }
+        }
+    )
 
     Scaffold(
         modifier = Modifier
@@ -1228,7 +1250,10 @@ fun ExploreScreen(
 @Composable
 private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = { false }
+    )
 
     Scaffold(
         modifier = Modifier

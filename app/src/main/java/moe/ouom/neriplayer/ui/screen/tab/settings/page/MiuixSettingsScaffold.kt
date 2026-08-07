@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdropRegistratio
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixHighlightShape = RoundedCornerShape(18.dp)
@@ -93,7 +94,15 @@ internal fun MiuixSettingsHomeScaffold(
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = listState.canScrollForward,
+                canScrollBackward = listState.canScrollBackward
+            )
+        }
+    )
     val showExpandedTitleMask = scrollBehavior.state.collapsedFraction < 0.5f
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
@@ -349,7 +358,15 @@ internal fun MiuixSettingsDetailScaffold(
     showBackButton: Boolean = true,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = listState.canScrollForward,
+                canScrollBackward = listState.canScrollBackward
+            )
+        }
+    )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
     val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
