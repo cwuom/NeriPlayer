@@ -12,7 +12,10 @@ import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaylistUsageDao
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistPlaybackDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackStatsDao
+import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
+import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
+import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlayHistoryEntity
@@ -49,9 +52,11 @@ import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
         PlaybackStatEntity::class,
         PlaybackStatBucketEntity::class,
         PlaybackStatCounterShardEntity::class,
-        PlaybackStatDailyCounterShardEntity::class
+        PlaybackStatDailyCounterShardEntity::class,
+        FavoritePlaylistEntity::class,
+        FavoritePlaylistSongEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -64,6 +69,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun localPlaylistPlaybackDao(): LocalPlaylistPlaybackDao
 
     abstract fun playbackStatsDao(): PlaybackStatsDao
+
+    abstract fun favoritePlaylistDao(): FavoritePlaylistDao
 
     abstract fun syncMetadataDao(): SyncMetadataDao
 
@@ -91,7 +98,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_1_2,
                 MIGRATION_2_3,
                 MIGRATION_3_4,
-                MIGRATION_4_5
+                MIGRATION_4_5,
+                MIGRATION_5_6
             ).build()
         }
 
@@ -447,6 +455,66 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `index_playback_stat_daily_counter_scope`
                     ON `playback_stat_daily_counter_shard`
                     (`day_start_at`, `identity_key`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `favorite_playlist` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `cover_url` TEXT,
+                        `track_count` INTEGER NOT NULL,
+                        `browse_id` TEXT,
+                        `remote_playlist_id` TEXT,
+                        `subtitle` TEXT,
+                        `added_time` INTEGER NOT NULL,
+                        `sort_order` INTEGER NOT NULL,
+                        `modified_at` INTEGER NOT NULL,
+                        `is_deleted` INTEGER NOT NULL,
+                        PRIMARY KEY(`playlist_id`, `source`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_favorite_playlist_sort`
+                    ON `favorite_playlist` (`sort_order` DESC, `modified_at` DESC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_favorite_playlist_visibility`
+                    ON `favorite_playlist` (`is_deleted` ASC, `sort_order` DESC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `favorite_playlist_song` (
+                        `playlist_id` INTEGER NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `display_position` INTEGER NOT NULL,
+                        `song_payload_json` TEXT NOT NULL,
+                        PRIMARY KEY(`playlist_id`, `source`, `display_position`),
+                        FOREIGN KEY(`playlist_id`, `source`)
+                            REFERENCES `favorite_playlist`(`playlist_id`, `source`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_favorite_playlist_song_order`
+                    ON `favorite_playlist_song`
+                    (`playlist_id` ASC, `source` ASC, `display_position` ASC)
                     """.trimIndent()
                 )
             }
