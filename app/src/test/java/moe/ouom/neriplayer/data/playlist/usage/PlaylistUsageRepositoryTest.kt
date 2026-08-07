@@ -107,6 +107,23 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `normalization keeps local display cover when counter shards exist`() {
+        val repo = PlaylistUsageRepository(mockContext())
+        val localCoverUrl = "file:///covers/local.jpg"
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = localCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+
+        assertEquals(localCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
+    @Test
     fun `legacy usage JSON without counter shards loads without crashing`() {
         tempFolder.newFile("playlist_usage.json").writeText(
             """
@@ -271,6 +288,15 @@ class PlaylistUsageRepositoryTest {
             name = "本地文件",
             songs = mutableListOf(localSong(coverUrl = null))
         )
+        val downloadedCoverCandidates = listOf(localSong(coverUrl = downloadedCoverUrl))
+
+        assertEquals(
+            downloadedCoverUrl,
+            localFiles.displayCoverUrl(
+                context = context,
+                additionalCoverCandidates = downloadedCoverCandidates
+            )
+        )
 
         repo.recordOpen(
             id = LocalFilesPlaylist.SYSTEM_ID,
@@ -282,7 +308,7 @@ class PlaylistUsageRepositoryTest {
         )
         repo.syncLocalEntries(
             playlists = listOf(localFiles),
-            localFilesCoverCandidates = listOf(localSong(coverUrl = downloadedCoverUrl))
+            localFilesCoverCandidates = downloadedCoverCandidates
         )
 
         val entry = repo.frequentPlaylistsFlow.value.single()

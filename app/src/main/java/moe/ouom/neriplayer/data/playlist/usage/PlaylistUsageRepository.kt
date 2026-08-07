@@ -112,10 +112,21 @@ private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
         entry.counterBaseOpenCount <= 0L && entry.counterShards.orEmpty().isEmpty()
     }
     if (!allLegacyCounters) {
-        return SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+        val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
             local = entries.map(UsageEntry::toSyncPlaylistUsageStat),
             remote = emptyList()
         ).single().toUsageEntry()
+        return merged.copy(
+            name = latest.name,
+            picUrl = latest.picUrl,
+            trackCount = latest.trackCount,
+            fid = latest.fid,
+            mid = latest.mid,
+            browseId = latest.browseId,
+            playlistId = latest.playlistId,
+            subtype = latest.subtype,
+            subtitle = latest.subtitle
+        )
     }
     val mergedOpenCount = entries.sumOf(UsageEntry::openCount)
         .coerceAtLeast(latest.openCount)
