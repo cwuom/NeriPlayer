@@ -62,6 +62,27 @@ class MediaModelExtensionsTest {
     }
 
     @Test
+    fun `local playlist cover can use additional downloaded candidate after own songs`() {
+        val playlist = LocalPlaylist(
+            id = 1L,
+            name = "cover",
+            songs = mutableListOf(
+                song(name = "newest", coverUrl = null),
+                song(name = "older", coverUrl = null)
+            )
+        )
+        val downloadedSong = song(
+            name = "downloaded",
+            coverUrl = "file:///covers/downloaded.jpg"
+        )
+
+        assertEquals(
+            "file:///covers/downloaded.jpg",
+            playlist.displayCoverUrl(additionalCoverCandidates = listOf(downloadedSong))
+        )
+    }
+
+    @Test
     fun `local artist cover follows display order and skips songs without cover`() {
         val artist = LocalArtistSummary(
             name = "artist",

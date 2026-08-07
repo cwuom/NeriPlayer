@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -324,7 +325,10 @@ class PlaylistUsageRepository(private val app: Context) {
      * 同步本地歌单卡片信息
      * 已删除的歌单会被移除，名称/封面/歌曲数变化会刷新展示
      */
-    fun syncLocalEntries(playlists: List<LocalPlaylist>) {
+    fun syncLocalEntries(
+        playlists: List<LocalPlaylist>,
+        localFilesCoverCandidates: List<SongItem> = emptyList()
+    ) {
         val current = _flow.value
         if (current.none { it.source == SOURCE_LOCAL }) return
 
@@ -346,7 +350,16 @@ class PlaylistUsageRepository(private val app: Context) {
             )?.currentName ?: playlist.name
             val refreshedPicUrl = playlist.displayCoverUrl(
                 context = localizedContext,
-                resolveLocalMetadataFallback = true
+                resolveLocalMetadataFallback = true,
+                additionalCoverCandidates = if (LocalFilesPlaylist.isSystemPlaylist(
+                        playlist,
+                        localizedContext
+                    )
+                ) {
+                    localFilesCoverCandidates
+                } else {
+                    emptyList()
+                }
             )
             val refreshedTrackCount = playlist.songs.size
             if (

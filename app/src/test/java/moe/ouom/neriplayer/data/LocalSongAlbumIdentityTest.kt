@@ -55,6 +55,14 @@ class LocalSongAlbumIdentityTest {
     }
 
     @Test
+    fun `single slash file uri is local and excluded from sync`() {
+        val reference = "file:/data/user/0/moe.ouom.neriplayer/files/local-cover.jpg"
+
+        assertTrue(LocalSongSupport.isLocalMediaUri(reference))
+        assertEquals(null, LocalSongSupport.sanitizeMediaUriForSync(reference))
+    }
+
+    @Test
     fun `local song identity matches content uri and hydrated file path aliases`() {
         val contentSong = SongItem(
             id = 10L,
