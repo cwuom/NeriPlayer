@@ -1,7 +1,7 @@
 name: Suggestion Submission / 提交建议
 description: 提交对 NeriPlayer 的优化建议，助力产品体验提升 / Submit optimization suggestions for NeriPlayer to enhance user experience
 title: "[Suggestion] "
-labels: ["Suggestion"]
+labels: ["enhancement"]
 
 body:
   - type: markdown
