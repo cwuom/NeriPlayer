@@ -84,6 +84,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val initialSnapshots = load()
     private val _snapshots = MutableStateFlow(initialSnapshots)
     private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
+    private var persistedSnapshots = initialSnapshots
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {
@@ -188,12 +189,16 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         return persistenceMutex.withLock {
             if (roomStorageEnabled) {
                 val roomSucceeded = runCatching {
-                    roomStore.replaceAll(favorites)
+                    roomStore.writeIncremental(
+                        previous = persistedSnapshots,
+                        next = favorites
+                    )
                 }.onFailure { error ->
                     roomStorageEnabled = false
                     NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
                 }.isSuccess
                 if (roomSucceeded) {
+                    persistedSnapshots = favorites
                     return@withLock true
                 }
             }
@@ -205,6 +210,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                         NPLogger.e(TAG, "标记收藏歌单 JSON 回退状态失败", error)
                     }
             }
+            persistedSnapshots = favorites
             legacySucceeded
         }
     }

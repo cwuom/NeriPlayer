@@ -41,6 +41,39 @@ internal class FavoritePlaylistRoomStore(
         }
     }
 
+    suspend fun writeIncremental(
+        previous: List<FavoritePlaylist>,
+        next: List<FavoritePlaylist>,
+        now: Long = System.currentTimeMillis()
+    ) {
+        val previousByKey = previous.associateBy(FavoritePlaylist::storageKey)
+        val nextByKey = next.associateBy(FavoritePlaylist::storageKey)
+        val changedKeys = (previousByKey.keys + nextByKey.keys)
+            .filter { key -> previousByKey[key] != nextByKey[key] }
+            .toSet()
+        if (changedKeys.isEmpty()) {
+            return
+        }
+        val removedKeys = changedKeys.filter { it !in nextByKey }
+        val changedFavorites = next.filter { it.storageKey() in changedKeys }
+        database.withTransaction {
+            val dao = database.favoritePlaylistDao()
+            removedKeys.forEach { key ->
+                dao.deletePlaylist(key.playlistId, key.source)
+            }
+            changedFavorites.forEach { favorite ->
+                dao.deleteSongs(favorite.id, favorite.source)
+            }
+            dao.upsertPlaylists(changedFavorites.map(FavoritePlaylist::toEntity))
+            dao.upsertSongs(
+                changedFavorites.flatMap { favorite ->
+                    favorite.toSongEntities()
+                }
+            )
+            markRoomPrimary(now)
+        }
+    }
+
     suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
@@ -96,16 +129,20 @@ internal class FavoritePlaylistRoomStore(
         )
         database.favoritePlaylistDao().upsertSongs(
             normalized.flatMap { favorite ->
-                favorite.songs.mapIndexed { index, song ->
-                    FavoritePlaylistSongEntity(
-                        playlistId = favorite.id,
-                        source = favorite.source,
-                        displayPosition = index,
-                        songPayloadJson = gson.toJson(song)
-                    )
-                }
+                favorite.toSongEntities()
             }
         )
+    }
+
+    private fun FavoritePlaylist.toSongEntities(): List<FavoritePlaylistSongEntity> {
+        return songs.mapIndexed { index, song ->
+            FavoritePlaylistSongEntity(
+                playlistId = id,
+                source = source,
+                displayPosition = index,
+                songPayloadJson = gson.toJson(song)
+            )
+        }
     }
 
     private suspend fun markRoomPrimary(now: Long) {
@@ -130,6 +167,15 @@ internal class FavoritePlaylistRoomStore(
         const val ROOM_PRIMARY_STATE = "room_primary"
         const val LEGACY_JSON_STATE = "legacy_json"
     }
+}
+
+private data class FavoritePlaylistStorageKey(
+    val playlistId: Long,
+    val source: String
+)
+
+private fun FavoritePlaylist.storageKey(): FavoritePlaylistStorageKey {
+    return FavoritePlaylistStorageKey(playlistId = id, source = source)
 }
 
 private fun FavoritePlaylist.toEntity(): FavoritePlaylistEntity {

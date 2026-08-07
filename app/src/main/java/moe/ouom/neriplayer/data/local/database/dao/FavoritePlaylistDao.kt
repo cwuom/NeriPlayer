@@ -31,4 +31,16 @@ internal interface FavoritePlaylistDao {
 
     @Query("DELETE FROM favorite_playlist")
     suspend fun deleteAllPlaylists()
+
+    @Query(
+        "DELETE FROM favorite_playlist_song " +
+            "WHERE playlist_id = :playlistId AND source = :source"
+    )
+    suspend fun deleteSongs(playlistId: Long, source: String)
+
+    @Query(
+        "DELETE FROM favorite_playlist " +
+            "WHERE playlist_id = :playlistId AND source = :source"
+    )
+    suspend fun deletePlaylist(playlistId: Long, source: String)
 }

@@ -85,6 +85,73 @@ class FavoritePlaylistRoomStoreTest {
         }
     }
 
+    @Test
+    fun incrementalWritePreservesUnchangedFavoritesAndReplacesChangedSongs() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val first = favorite(
+                id = 1L,
+                name = "First",
+                songs = listOf(testSong(1L, "First song"))
+            )
+            val second = favorite(
+                id = 2L,
+                name = "Second",
+                songs = listOf(testSong(2L, "Second song"))
+            )
+            val store = FavoritePlaylistRoomStore(database)
+            store.replaceAll(listOf(first, second))
+
+            val updatedFirst = first.copy(
+                name = "First updated",
+                songs = listOf(testSong(3L, "Replacement song")),
+                modifiedAt = 20L
+            )
+            store.writeIncremental(
+                previous = listOf(first, second),
+                next = listOf(updatedFirst, second)
+            )
+
+            assertEquals(
+                listOf(updatedFirst, second),
+                store.readIfRoomPrimary()
+            )
+            assertEquals(2, database.favoritePlaylistDao().getSongs().size)
+
+            store.writeIncremental(
+                previous = listOf(updatedFirst, second),
+                next = listOf(updatedFirst)
+            )
+
+            assertEquals(listOf(updatedFirst), store.readIfRoomPrimary())
+            assertEquals(1, database.favoritePlaylistDao().getSongs().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun favorite(
+        id: Long,
+        name: String,
+        songs: List<SongItem>
+    ): FavoritePlaylist {
+        return FavoritePlaylist(
+            id = id,
+            name = name,
+            coverUrl = null,
+            trackCount = songs.size,
+            source = "netease",
+            songs = songs,
+            addedTime = id,
+            sortOrder = 100L - id,
+            modifiedAt = id
+        )
+    }
+
     private fun testSong(id: Long, name: String): SongItem {
         return SongItem(
             id = id,
