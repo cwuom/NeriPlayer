@@ -7,10 +7,10 @@ import org.junit.Test
 class AdvancedGlassOverscrollTest {
     @Test
     fun dragGetsProgressivelyMoreResistant() {
-        val dragRange = 300f
-        val first = dampedAdvancedGlassOverscrollOffset(75f, dragRange)
-        val second = dampedAdvancedGlassOverscrollOffset(150f, dragRange)
-        val third = dampedAdvancedGlassOverscrollOffset(225f, dragRange)
+        val resistanceScale = 300f
+        val first = dampedAdvancedGlassOverscrollOffset(75f, resistanceScale)
+        val second = dampedAdvancedGlassOverscrollOffset(150f, resistanceScale)
+        val third = dampedAdvancedGlassOverscrollOffset(225f, resistanceScale)
 
         assertTrue(first > 0f)
         assertTrue(second - first < first)

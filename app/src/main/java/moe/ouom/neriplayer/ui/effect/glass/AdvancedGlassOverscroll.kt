@@ -46,7 +46,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
             }
         }
     private var rawDragY = 0f
-    private var dragRangePx = 0f
+    private var resistanceScalePx = 0f
     private var animationJob: Job? = null
     private var invalidatePlacement: (() -> Unit)? = null
     private var launchAnimation: ((suspend CoroutineScope.() -> Unit) -> Job)? = null
@@ -61,7 +61,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         source: NestedScrollSource,
         performScroll: (Offset) -> Offset
     ): Offset {
-        if (source != NestedScrollSource.UserInput || dragRangePx <= 0f) {
+        if (source != NestedScrollSource.UserInput || resistanceScalePx <= 0f) {
             return performScroll(delta)
         }
 
@@ -124,19 +124,19 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
     }
 
     fun attach(
-        dragRangePx: Float,
+        resistanceScalePx: Float,
         invalidatePlacement: () -> Unit,
         launchAnimation: (suspend CoroutineScope.() -> Unit) -> Job
     ) {
-        this.dragRangePx = dragRangePx
+        this.resistanceScalePx = resistanceScalePx
         this.invalidatePlacement = invalidatePlacement
         this.launchAnimation = launchAnimation
     }
 
-    fun updateDragRange(dragRangePx: Float) {
-        if (this.dragRangePx == dragRangePx) return
-        this.dragRangePx = dragRangePx
-        offsetY = dampedAdvancedGlassOverscrollOffset(rawDragY, resistanceScalePx())
+    fun updateResistanceScale(resistanceScalePx: Float) {
+        if (this.resistanceScalePx == resistanceScalePx) return
+        this.resistanceScalePx = resistanceScalePx
+        offsetY = dampedAdvancedGlassOverscrollOffset(rawDragY, resistanceScalePx)
     }
 
     fun currentOffsetY(): Float = offsetY
@@ -151,7 +151,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
 
     private fun applyDrag(delta: Float) {
         rawDragY += delta
-        offsetY = dampedAdvancedGlassOverscrollOffset(rawDragY, resistanceScalePx())
+        offsetY = dampedAdvancedGlassOverscrollOffset(rawDragY, resistanceScalePx)
     }
 
     private fun startReturnAnimation(initialVelocity: Float = 0f) {
@@ -167,8 +167,8 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
                 initialValue = offsetY,
                 targetValue = 0f,
                 initialVelocity = initialVelocity.coerceIn(
-                    -dragRangePx * MAX_INITIAL_VELOCITY_RANGE_MULTIPLIER,
-                    dragRangePx * MAX_INITIAL_VELOCITY_RANGE_MULTIPLIER
+                    -resistanceScalePx * MAX_INITIAL_VELOCITY_SCALE_MULTIPLIER,
+                    resistanceScalePx * MAX_INITIAL_VELOCITY_SCALE_MULTIPLIER
                 ),
                 animationSpec = spring(
                     dampingRatio = CRITICAL_DAMPING_RATIO,
@@ -177,7 +177,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
                 )
             ) { value, _ ->
                 offsetY = value
-                rawDragY = restoredAdvancedGlassOverscrollDrag(offsetY, resistanceScalePx())
+                rawDragY = restoredAdvancedGlassOverscrollDrag(offsetY, resistanceScalePx)
             }
             resetOffset()
         }
@@ -187,8 +187,6 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         offsetY = 0f
         rawDragY = 0f
     }
-
-    private fun resistanceScalePx(): Float = dragRangePx / INPUT_SCALE_MULTIPLIER
 }
 
 private class AdvancedGlassOverscrollNode(
@@ -200,7 +198,7 @@ private class AdvancedGlassOverscrollNode(
     override fun onAttach() {
         super.onAttach()
         effect.attach(
-            dragRangePx = dragRangePx(),
+            resistanceScalePx = resistanceScalePx(),
             invalidatePlacement = { invalidatePlacement() },
             launchAnimation = { block -> coroutineScope.launch(block = block) }
         )
@@ -215,7 +213,7 @@ private class AdvancedGlassOverscrollNode(
         measurable: Measurable,
         constraints: Constraints
     ): MeasureResult {
-        effect.updateDragRange(dragRangePx())
+        effect.updateResistanceScale(resistanceScalePx())
         val placeable = measurable.measure(constraints)
         return layout(placeable.width, placeable.height) {
             val offsetY = effect.currentOffsetY()
@@ -229,8 +227,8 @@ private class AdvancedGlassOverscrollNode(
         }
     }
 
-    private fun dragRangePx(): Float = with(currentValueOf(LocalDensity)) {
-        (OVERSCROLL_RESISTANCE_SCALE_DP * INPUT_SCALE_MULTIPLIER).dp.toPx()
+    private fun resistanceScalePx(): Float = with(currentValueOf(LocalDensity)) {
+        OVERSCROLL_RESISTANCE_SCALE_DP.dp.toPx()
     }
 }
 
@@ -256,10 +254,9 @@ private fun springStiffness(periodSeconds: Float): Float =
     ((2.0 * PI) / periodSeconds).pow(2.0).toFloat()
 
 private const val OVERSCROLL_RESISTANCE_SCALE_DP = 108f
-private const val INPUT_SCALE_MULTIPLIER = 3f
 private const val OFFSET_THRESHOLD_PX = 1f
 private const val CRITICAL_DAMPING_RATIO = 1f
 private const val STANDARD_SPRING_PERIOD_SECONDS = 0.4f
-private const val MAX_INITIAL_VELOCITY_RANGE_MULTIPLIER = 6f
+private const val MAX_INITIAL_VELOCITY_SCALE_MULTIPLIER = 18f
 private const val REVERSE_FLING_ATTENUATION = 2.13333f
 private const val POST_FLING_ATTENUATION = 1.53333f
