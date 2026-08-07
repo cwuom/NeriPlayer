@@ -2670,7 +2670,7 @@ private fun NeriAppContent(
                         contentTranslationYFraction = contentTranslationYFraction,
                         contentScale = contentScale
                     ),
-                    disableStretchOverscroll = backgroundImageUri != null,
+                    disableStretchOverscroll = true,
                     fixedBackground = fixedBackground,
                     background = {
                         // 场景自绘壁纸背景, 玻璃模糊要采样它
@@ -3319,7 +3319,7 @@ private fun NeriAppContent(
                 backgroundBackdrop = backgroundGlassBackdrop,
                 contentBackdrop = contentGlassBackdrop,
                 activeNavigationOwners = activeAdvancedGlassOwners,
-                disableStretchOverscroll = backgroundImageUri != null
+                disableStretchOverscroll = true
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                 Box(
