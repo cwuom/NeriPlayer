@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.TrafficStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
+import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
@@ -38,6 +39,9 @@ import moe.ouom.neriplayer.data.local.database.entity.SyncReplicaCheckpointEntit
 import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
+import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 
 @Database(
     entities = [
@@ -62,9 +66,12 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
         FavoritePlaylistSongEntity::class,
         TrafficStatsBucketEntity::class,
         PlaybackQueueStateEntity::class,
-        PlaybackQueueSongEntity::class
+        PlaybackQueueSongEntity::class,
+        BiliVideoSkipRuleEntity::class,
+        BiliVideoSkipIntervalEntity::class,
+        BiliVideoSkipDraftEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -85,6 +92,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun syncMetadataDao(): SyncMetadataDao
 
     abstract fun playbackQueueDao(): PlaybackQueueDao
+
+    abstract fun biliVideoSkipDao(): BiliVideoSkipDao
 
     companion object {
         const val DATABASE_NAME = "neri_user_data.db"
@@ -113,7 +122,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
-                MIGRATION_7_8
+                MIGRATION_7_8,
+                MIGRATION_8_9
             ).build()
         }
 
@@ -614,6 +624,57 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                         `playlist_context_id` TEXT,
                         `stream_url` TEXT,
                         PRIMARY KEY(`queue_id`, `position`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `bili_video_skip_rule` (
+                        `bvid` TEXT NOT NULL,
+                        `cid` INTEGER NOT NULL,
+                        `modified_at` INTEGER NOT NULL,
+                        `is_deleted` INTEGER NOT NULL,
+                        PRIMARY KEY(`bvid`, `cid`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_bili_video_skip_rule_modified_at`
+                    ON `bili_video_skip_rule` (`modified_at` DESC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `bili_video_skip_interval` (
+                        `bvid` TEXT NOT NULL,
+                        `cid` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `start_ms` INTEGER NOT NULL,
+                        `end_ms` INTEGER NOT NULL,
+                        PRIMARY KEY(`bvid`, `cid`, `position`),
+                        FOREIGN KEY(`bvid`, `cid`)
+                            REFERENCES `bili_video_skip_rule`(`bvid`, `cid`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `bili_video_skip_draft` (
+                        `target_key` TEXT NOT NULL,
+                        `bvid` TEXT NOT NULL,
+                        `cid` INTEGER NOT NULL,
+                        `start_text` TEXT NOT NULL,
+                        `end_text` TEXT NOT NULL,
+                        `modified_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`target_key`)
                     )
                     """.trimIndent()
                 )

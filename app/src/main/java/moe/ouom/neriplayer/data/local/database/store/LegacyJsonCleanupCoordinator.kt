@@ -196,6 +196,14 @@ internal class LegacyJsonCleanupCoordinator(
             TargetDefinition(
                 "last_playback_state.json",
                 "playback_queue_cutover_state"
+            ),
+            TargetDefinition(
+                "bili_video_skip_rules.json",
+                "bili_video_skip_cutover_state"
+            ),
+            TargetDefinition(
+                "bili_video_skip_drafts.json",
+                "bili_video_skip_cutover_state"
             )
         )
     }
