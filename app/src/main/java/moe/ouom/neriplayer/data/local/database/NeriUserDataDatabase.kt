@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
+import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
@@ -45,6 +46,7 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntit
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancelledKeyEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
 
 @Database(
     entities = [
@@ -74,9 +76,10 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
         BiliVideoSkipIntervalEntity::class,
         BiliVideoSkipDraftEntity::class,
         DownloadPendingQueueEntity::class,
-        DownloadCancelledKeyEntity::class
+        DownloadCancelledKeyEntity::class,
+        DownloadedSongCatalogEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -101,6 +104,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun biliVideoSkipDao(): BiliVideoSkipDao
 
     abstract fun downloadRecoveryDao(): DownloadRecoveryDao
+
+    abstract fun downloadedSongCatalogDao(): DownloadedSongCatalogDao
 
     companion object {
         const val DATABASE_NAME = "neri_user_data.db"
@@ -131,7 +136,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_6_7,
                 MIGRATION_7_8,
                 MIGRATION_8_9,
-                MIGRATION_9_10
+                MIGRATION_9_10,
+                MIGRATION_10_11
             ).build()
         }
 
@@ -745,6 +751,81 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                         `cancelled_at_ms` INTEGER NOT NULL,
                         PRIMARY KEY(`stable_key`)
                     )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `downloaded_song_catalog` (
+                        `catalog_key` TEXT NOT NULL,
+                        `root_key` TEXT NOT NULL,
+                        `display_position` INTEGER NOT NULL,
+                        `id` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `album` TEXT NOT NULL,
+                        `file_path` TEXT NOT NULL,
+                        `file_size` INTEGER NOT NULL,
+                        `download_time` INTEGER NOT NULL,
+                        `cover_path` TEXT,
+                        `cover_url` TEXT,
+                        `matched_lyric` TEXT,
+                        `matched_translated_lyric` TEXT,
+                        `matched_lyric_source` TEXT,
+                        `matched_song_id` TEXT,
+                        `user_lyric_offset_ms` INTEGER NOT NULL,
+                        `custom_cover_url` TEXT,
+                        `custom_name` TEXT,
+                        `custom_artist` TEXT,
+                        `original_name` TEXT,
+                        `original_artist` TEXT,
+                        `original_cover_url` TEXT,
+                        `original_lyric` TEXT,
+                        `original_translated_lyric` TEXT,
+                        `media_uri` TEXT,
+                        `duration_ms` INTEGER NOT NULL,
+                        `stable_key` TEXT,
+                        `source_identity_album` TEXT,
+                        `source_media_uri` TEXT,
+                        `source_channel_id` TEXT,
+                        `source_audio_id` TEXT,
+                        `source_sub_audio_id` TEXT,
+                        `source_playlist_context_id` TEXT,
+                        PRIMARY KEY(`catalog_key`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_downloaded_song_catalog_root_position`
+                    ON `downloaded_song_catalog`
+                    (`root_key` ASC, `display_position` ASC)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_downloaded_song_catalog_file_path`
+                    ON `downloaded_song_catalog` (`file_path`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_downloaded_song_catalog_media_uri`
+                    ON `downloaded_song_catalog` (`media_uri`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_downloaded_song_catalog_stable_key`
+                    ON `downloaded_song_catalog` (`stable_key`)
                     """.trimIndent()
                 )
             }

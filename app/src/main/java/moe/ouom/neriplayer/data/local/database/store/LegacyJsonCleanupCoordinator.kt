@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.database.store
 
 import android.content.Context
 import java.io.File
+import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -213,6 +214,14 @@ internal class LegacyJsonCleanupCoordinator(
             TargetDefinition(
                 "cancelled_download_keys_v1.json",
                 DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY
+            ),
+            TargetDefinition(
+                "downloaded_song_catalog_v4.json",
+                DownloadedSongCatalogRoomStore.CUTOVER_STATE_METADATA_KEY
+            ),
+            TargetDefinition(
+                "downloaded_song_catalog_v3.json",
+                DownloadedSongCatalogRoomStore.CUTOVER_STATE_METADATA_KEY
             )
         )
     }
