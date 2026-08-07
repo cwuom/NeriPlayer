@@ -414,7 +414,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "english",
                 "chinese"
             ),
-            order = SettingsPage.General.ordinal * 100 + 4
+            order = 4
         ),
         entry(
             page = SettingsPage.General,
@@ -432,7 +432,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "gjh",
                 "qiehuanpingtai"
             ),
-            order = SettingsPage.General.ordinal * 100 + 90
+            order = 90
         ),
         entry(
             page = SettingsPage.Accounts,
@@ -842,6 +842,13 @@ private val SettingSearchAliases = mapOf(
     "status_bar_lyrics_enabled" to listOf("status bar", "zhuangtailan", "lyric"),
     "floating_lyrics_enabled" to listOf("floating", "desktop lyrics", "xuanfu"),
     "external_bluetooth_lyrics_enabled" to listOf("bluetooth", "car", "lyric", "lanyageci", "bt"),
+    "dynamic_island_lyrics_enabled" to listOf(
+        "灵动岛",
+        "dynamic island",
+        "live activity",
+        "always send",
+        "bluetooth lyrics"
+    ),
     "cloud_music_lyric_default_offset_ms" to listOf("netease lyrics offset", "wy geci pianyi"),
     "qq_music_lyric_default_offset_ms" to listOf("qq lyrics offset", "qq geci pianyi"),
     "bypass_proxy" to listOf("proxy", "vpn", "direct", "daili"),

@@ -225,6 +225,7 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
+        dynamicIslandLyricsEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
@@ -758,6 +759,12 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.externalBluetoothTranslationEnabledFlow.collect { enabled ->
                 externalBluetoothTranslationEnabled = enabled
                 syncExternalTranslatedLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
+            settingsRepo.dynamicIslandLyricsEnabledFlow.collect { enabled ->
+                dynamicIslandLyricsEnabled = enabled
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
             }
         }
         ioScope.launch {
@@ -3572,6 +3579,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothLyricsSongKey = null
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
+        dynamicIslandLyricsEnabled = false
         floatingLyricsEnabled = false
         floatingLyricsShowTranslation = true
         statusBarLyricsEnable = false

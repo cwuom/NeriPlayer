@@ -421,6 +421,7 @@ object PlayerManager {
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
+    internal var dynamicIslandLyricsEnabled = false
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
