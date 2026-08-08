@@ -99,7 +99,8 @@ internal fun MiuixSettingsHomeScaffold(
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = listState.canScrollForward,
-                canScrollBackward = listState.canScrollBackward
+                canScrollBackward = listState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
             )
         }
     )
@@ -363,7 +364,8 @@ internal fun MiuixSettingsDetailScaffold(
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = listState.canScrollForward,
-                canScrollBackward = listState.canScrollBackward
+                canScrollBackward = listState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
             )
         }
     )

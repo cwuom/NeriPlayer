@@ -671,19 +671,26 @@ fun ExploreScreen(
             when {
                 searchQuery.isNotEmpty() -> shouldAllowCollapsingTopAppBar(
                     canScrollForward = searchListState.canScrollForward,
-                    canScrollBackward = searchListState.canScrollBackward
+                    canScrollBackward = searchListState.canScrollBackward,
+                    collapsedFraction = topAppBarState.collapsedFraction
                 )
                 ui.selectedSearchSource == SearchSource.NETEASE ->
                     shouldAllowCollapsingTopAppBar(
                         canScrollForward = gridState.canScrollForward,
-                        canScrollBackward = gridState.canScrollBackward
+                        canScrollBackward = gridState.canScrollBackward,
+                        collapsedFraction = topAppBarState.collapsedFraction
                     )
                 ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC ->
                     shouldAllowCollapsingTopAppBar(
                         canScrollForward = youtubeGridState.canScrollForward,
-                        canScrollBackward = youtubeGridState.canScrollBackward
+                        canScrollBackward = youtubeGridState.canScrollBackward,
+                        collapsedFraction = topAppBarState.collapsedFraction
                     )
-                else -> false
+                else -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = false,
+                    canScrollBackward = false,
+                    collapsedFraction = topAppBarState.collapsedFraction
+                )
             }
         }
     )
@@ -1252,7 +1259,13 @@ private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
-        canScroll = { false }
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = false,
+                canScrollBackward = false,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
+        }
     )
 
     Scaffold(

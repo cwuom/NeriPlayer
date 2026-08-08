@@ -291,7 +291,8 @@ fun HomeScreen(
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = gridState.canScrollForward,
-                canScrollBackward = gridState.canScrollBackward
+                canScrollBackward = gridState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
             )
         }
     )

@@ -10,7 +10,19 @@ class TopAppBarScrollPolicyTest {
         assertFalse(
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = false,
-                canScrollBackward = false
+                canScrollBackward = false,
+                collapsedFraction = 0f
+            )
+        )
+    }
+
+    @Test
+    fun collapsedBarCanRecoverWhenContentBecomesShort() {
+        assertTrue(
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = false,
+                canScrollBackward = false,
+                collapsedFraction = 0.5f
             )
         )
     }
@@ -20,13 +32,15 @@ class TopAppBarScrollPolicyTest {
         assertTrue(
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = true,
-                canScrollBackward = false
+                canScrollBackward = false,
+                collapsedFraction = 0f
             )
         )
         assertTrue(
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = false,
-                canScrollBackward = true
+                canScrollBackward = true,
+                collapsedFraction = 0f
             )
         )
     }

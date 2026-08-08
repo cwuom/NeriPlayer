@@ -347,11 +347,13 @@ fun LibraryScreen(
             when (orderedTabs.getOrNull(pagerState.currentPage)) {
                 LibraryTab.LOCAL -> shouldAllowCollapsingTopAppBar(
                     localListState.canScrollForward,
-                    localListState.canScrollBackward
+                    localListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
                 )
                 LibraryTab.FAVORITE -> shouldAllowCollapsingTopAppBar(
                     favoriteListState.canScrollForward,
-                    favoriteListState.canScrollBackward
+                    favoriteListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
                 )
                 LibraryTab.NETEASE,
                 LibraryTab.NETEASEALBUM -> {
@@ -364,22 +366,30 @@ fun LibraryScreen(
                     }
                     shouldAllowCollapsingTopAppBar(
                         activeListState.canScrollForward,
-                        activeListState.canScrollBackward
+                        activeListState.canScrollBackward,
+                        topAppBarState.collapsedFraction
                     )
                 }
                 LibraryTab.YTMUSIC -> shouldAllowCollapsingTopAppBar(
                     youtubeMusicListState.canScrollForward,
-                    youtubeMusicListState.canScrollBackward
+                    youtubeMusicListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
                 )
                 LibraryTab.BILI -> shouldAllowCollapsingTopAppBar(
                     biliListState.canScrollForward,
-                    biliListState.canScrollBackward
+                    biliListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
                 )
                 LibraryTab.QQMUSIC -> shouldAllowCollapsingTopAppBar(
                     qqMusicListState.canScrollForward,
-                    qqMusicListState.canScrollBackward
+                    qqMusicListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
                 )
-                null -> false
+                null -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = false,
+                    canScrollBackward = false,
+                    collapsedFraction = topAppBarState.collapsedFraction
+                )
             }
         }
     )
