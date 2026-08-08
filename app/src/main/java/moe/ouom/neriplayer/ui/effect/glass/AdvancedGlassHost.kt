@@ -322,7 +322,7 @@ internal fun AdvancedGlassHost(
         LocalOverscrollFactory provides if (
             sessionController.isEnabled && disableStretchOverscroll
         ) {
-            null
+            AdvancedGlassOverscrollFactory
         } else {
             parentOverscrollFactory
         },

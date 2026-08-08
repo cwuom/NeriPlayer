@@ -5,7 +5,7 @@ import moe.ouom.neriplayer.ui.component.sheet.bottomSheetDragBlocker as newBotto
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard as newBottomSheetScrollGuard
 
 fun Modifier.bottomSheetScrollGuard(
-    allowDownwardToParent: () -> Boolean = { false }
+    allowDownwardToParent: (() -> Boolean)? = null
 ): Modifier =
     newBottomSheetScrollGuard(allowDownwardToParent)
 

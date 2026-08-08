@@ -2153,7 +2153,7 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
-    fun enhancedGlassDisablesStretchOverscrollInsideHost() {
+    fun enhancedGlassUsesDampedOverscrollInsideHost() {
         var observedFactory: androidx.compose.foundation.OverscrollFactory? = null
         composeRule.setContent {
             val backgroundBackdrop = rememberAdvancedGlassBackdrop()
@@ -2169,7 +2169,11 @@ class AdvancedGlassSurfaceRenderTest {
         }
 
         composeRule.runOnIdle {
-            assertNull("进阶模糊下仍启用了拉伸 Overscroll", observedFactory)
+            assertEquals(
+                "进阶模糊下未启用阻尼回弹 Overscroll",
+                AdvancedGlassOverscrollFactory,
+                observedFactory
+            )
         }
     }
 

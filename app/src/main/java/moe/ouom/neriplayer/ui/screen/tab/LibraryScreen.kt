@@ -140,6 +140,7 @@ import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistDeleteResultGlobally
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -317,7 +318,6 @@ fun LibraryScreen(
 ) {
     val vm: LibraryViewModel = viewModel()
     val ui by vm.uiState.collectAsStateWithLifecycle()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
     val context = LocalContext.current
     val defaultPlaylistName = stringResource(R.string.library_create_playlist_default)
     val localPlaylistRepo = remember(context) {
@@ -337,6 +337,61 @@ fun LibraryScreen(
     val pagerState = rememberPagerState(
         initialPage = initialPage,
         pageCount = { orderedTabs.size }
+    )
+    var selectedNeteaseCategory by rememberSaveable {
+        mutableIntStateOf(NETEASE_CATEGORY_PLAYLIST)
+    }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            when (orderedTabs.getOrNull(pagerState.currentPage)) {
+                LibraryTab.LOCAL -> shouldAllowCollapsingTopAppBar(
+                    localListState.canScrollForward,
+                    localListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                LibraryTab.FAVORITE -> shouldAllowCollapsingTopAppBar(
+                    favoriteListState.canScrollForward,
+                    favoriteListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                LibraryTab.NETEASE,
+                LibraryTab.NETEASEALBUM -> {
+                    val activeListState = if (
+                        selectedNeteaseCategory == NETEASE_CATEGORY_ALBUM
+                    ) {
+                        neteaseAlbumState
+                    } else {
+                        neteaseListState
+                    }
+                    shouldAllowCollapsingTopAppBar(
+                        activeListState.canScrollForward,
+                        activeListState.canScrollBackward,
+                        topAppBarState.collapsedFraction
+                    )
+                }
+                LibraryTab.YTMUSIC -> shouldAllowCollapsingTopAppBar(
+                    youtubeMusicListState.canScrollForward,
+                    youtubeMusicListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                LibraryTab.BILI -> shouldAllowCollapsingTopAppBar(
+                    biliListState.canScrollForward,
+                    biliListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                LibraryTab.QQMUSIC -> shouldAllowCollapsingTopAppBar(
+                    qqMusicListState.canScrollForward,
+                    qqMusicListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                null -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = false,
+                    canScrollBackward = false,
+                    collapsedFraction = topAppBarState.collapsedFraction
+                )
+            }
+        }
     )
     val scope = rememberCoroutineScope()
     val windowWidthDp = currentWindowWidthDp()
@@ -472,6 +527,8 @@ fun LibraryScreen(
                             albums = ui.neteaseAlbums,
                             playlistListState = neteaseListState,
                             albumListState = neteaseAlbumState,
+                            selectedCategory = selectedNeteaseCategory,
+                            onCategoryChange = { selectedNeteaseCategory = it },
                             onPlaylistClick = onNeteasePlaylistClick,
                             onAlbumClick = onNeteaseAlbumClick,
                             offlineMode = offlineMode
@@ -2145,13 +2202,12 @@ private fun NeteaseLibraryList(
     albums: List<AlbumSummary>,
     playlistListState: LazyListState,
     albumListState: LazyListState,
+    selectedCategory: Int,
+    onCategoryChange: (Int) -> Unit,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onAlbumClick: (AlbumSummary) -> Unit,
     offlineMode: Boolean
 ) {
-    var selectedCategory by rememberSaveable {
-        mutableIntStateOf(NETEASE_CATEGORY_PLAYLIST)
-    }
     var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
     var albumSearchQuery by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
@@ -2191,7 +2247,7 @@ private fun NeteaseLibraryList(
                 selectedCategory = selectedCategory,
                 onCategoryChange = { category ->
                     if (selectedCategory != category) {
-                        selectedCategory = category
+                        onCategoryChange(category)
                     }
                 }
             )

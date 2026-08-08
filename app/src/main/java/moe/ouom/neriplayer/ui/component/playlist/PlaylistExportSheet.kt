@@ -176,8 +176,7 @@ internal fun PlaylistExportSheet(
 
             LazyColumn(
                 state = playlistListState,
-                modifier = Modifier.playlistExportListHeight(),
-                overscrollEffect = null
+                modifier = Modifier.playlistExportListHeight()
             ) {
                 items(playlists, key = { it.id }) { playlist ->
                     PlaylistExportRow(
