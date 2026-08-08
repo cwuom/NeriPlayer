@@ -12,6 +12,15 @@ internal object StructuredSongRoomMigration : Migration(14, 15) {
     private val gson = Gson()
 
     override fun migrate(db: SupportSQLiteDatabase) {
+        // copy child rows before rebuilding the parent table because Room enforces
+        // the foreign key cascade while the migration transaction is active
+        db.execSQL("DROP TABLE IF EXISTS playlist_member_backup")
+        db.execSQL("CREATE TEMP TABLE playlist_member_backup AS SELECT * FROM playlist_member")
+        db.execSQL("DROP TABLE IF EXISTS favorite_playlist_song_backup")
+        db.execSQL(
+            "CREATE TEMP TABLE favorite_playlist_song_backup AS " +
+                "SELECT * FROM favorite_playlist_song"
+        )
         db.execSQL("PRAGMA foreign_keys=OFF")
         migrateTrackTable(db)
         val trackData = loadTrackData(db)
@@ -206,7 +215,7 @@ internal object StructuredSongRoomMigration : Migration(14, 15) {
             """.trimIndent()
         )
         val artists = ArrayList<ArtistRow>()
-        db.query("SELECT * FROM playlist_member").use { cursor ->
+        db.query("SELECT * FROM playlist_member_backup").use { cursor ->
             while (cursor.moveToNext()) {
                 val identityKey = cursor.string("identity_key").orEmpty()
                 val fallback = trackData[identityKey] ?: StructuredSongData()
@@ -317,7 +326,7 @@ internal object StructuredSongRoomMigration : Migration(14, 15) {
             """.trimIndent()
         )
         val artists = ArrayList<ArtistRow>()
-        db.query("SELECT * FROM favorite_playlist_song").use { cursor ->
+        db.query("SELECT * FROM favorite_playlist_song_backup").use { cursor ->
             while (cursor.moveToNext()) {
                 val song = parseSong(cursor.string("song_payload_json"), StructuredSongData())
                 val playlistId = cursor.long("playlist_id")

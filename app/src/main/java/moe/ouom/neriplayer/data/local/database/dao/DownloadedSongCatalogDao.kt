@@ -18,6 +18,6 @@ internal interface DownloadedSongCatalogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSongs(songs: List<DownloadedSongCatalogEntity>)
 
-    @Query("DELETE FROM downloaded_song_catalog")
-    suspend fun clearSongs()
+    @Query("DELETE FROM downloaded_song_catalog WHERE root_key = :rootKey")
+    suspend fun clearSongs(rootKey: String)
 }

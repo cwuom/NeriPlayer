@@ -222,7 +222,7 @@ class PlayHistoryRepository private constructor(
             }.getOrNull()
             if (imported?.status == PlayHistoryRoomImportStatus.SKIPPED_NOT_EQUIVALENT) {
                 roomStorageEnabled = false
-                needsRoomRecovery = false
+                needsRoomRecovery = true
                 NPLogger.w(
                     "PlayHistoryRepo",
                     "Room history mapper is not equivalent; keep legacy JSON"
@@ -256,6 +256,7 @@ class PlayHistoryRepository private constructor(
     ) {
         val activeRoomStore = roomStore
         if (!roomStorageEnabled || activeRoomStore == null) {
+            persistLegacySnapshot(next)
             NPLogger.w(
                 "PlayHistoryRepo",
                 "Play history update remains in memory until Room is available."
@@ -281,26 +282,30 @@ class PlayHistoryRepository private constructor(
     }
 
     private fun schedulePersistenceRetry() {
-        if (!roomStorageEnabled || retryJob?.isActive == true) return
-        retryJob = scope.launch {
+        synchronized(this) {
+            if (!roomStorageEnabled || retryJob?.isActive == true) return
+            retryJob = scope.launch {
             delay(ROOM_RETRY_DELAY_MS)
             historyMutex.withLock {
-                retryJob = null
+                synchronized(this@PlayHistoryRepository) { retryJob = null }
                 persistSnapshot(_history.value)
             }
+        }
         }
     }
 
     private fun scheduleRoomRecovery() {
-        if (roomStorageEnabled || roomRecoveryBaseline == null || retryJob?.isActive == true) {
-            return
-        }
-        retryJob = scope.launch {
+        synchronized(this) {
+            if (roomStorageEnabled || roomRecoveryBaseline == null || retryJob?.isActive == true) {
+                return
+            }
+            retryJob = scope.launch {
             delay(ROOM_RETRY_DELAY_MS)
             historyMutex.withLock {
-                retryJob = null
+                synchronized(this@PlayHistoryRepository) { retryJob = null }
                 recoverRoomStorage()
             }
+        }
         }
     }
 
@@ -342,7 +347,8 @@ class PlayHistoryRepository private constructor(
             )
         }.getOrNull()
         if (recovered == null) {
-            scheduleRoomRecovery()
+            roomRecoveryBaseline = null
+            NPLogger.e("PlayHistoryRepo", "Room history migration is not equivalent; keeping legacy JSON")
             return
         }
 
@@ -352,6 +358,13 @@ class PlayHistoryRepository private constructor(
         _history.value = recovered
         LegacyJsonCleanupScheduler.schedule(app, "play-history-room-recovery")
         flushPostPersistenceActions(recovered)
+    }
+
+    private fun persistLegacySnapshot(next: List<PlayedEntry>) {
+        runCatching { file.writeText(gson.toJson(next)) }
+            .onFailure { error ->
+                NPLogger.e("PlayHistoryRepo", "Failed to persist legacy play history", error)
+            }
     }
 
     private suspend fun mergeRecoveredRoomHistory(

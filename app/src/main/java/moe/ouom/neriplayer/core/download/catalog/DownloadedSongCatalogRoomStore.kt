@@ -55,7 +55,7 @@ internal class DownloadedSongCatalogRoomStore(
         songs: List<DownloadedSong>
     ) {
         val dao = database.downloadedSongCatalogDao()
-        dao.clearSongs()
+        dao.clearSongs(rootKey)
         dao.upsertSongs(
             songs
                 .distinctBy(::catalogRowKey)

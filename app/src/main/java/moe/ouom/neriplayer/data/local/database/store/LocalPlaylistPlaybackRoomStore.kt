@@ -115,14 +115,14 @@ internal class LocalPlaylistPlaybackRoomStore(
         )
     }
 
-    private suspend fun readStats(): List<LocalPlaylistPlaybackStat> {
+    private suspend fun readStats(): List<LocalPlaylistPlaybackStat> = database.withTransaction {
         val bucketsByPlaylist = database.localPlaylistPlaybackDao()
             .getBuckets()
             .groupBy { it.playlistId }
         val shardsByScope = database.localPlaylistPlaybackDao()
             .getCounterShards()
             .groupBy { it.playlistId to it.dayStartAt }
-        return database.localPlaylistPlaybackDao().getStats().map { stat ->
+        database.localPlaylistPlaybackDao().getStats().map { stat ->
             LocalPlaylistPlaybackStat(
                 playlistId = stat.playlistId,
                 totalPlayCount = stat.totalPlayCount,

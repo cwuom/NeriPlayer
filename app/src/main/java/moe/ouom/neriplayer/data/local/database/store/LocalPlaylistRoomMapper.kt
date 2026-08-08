@@ -328,14 +328,14 @@ internal class LocalPlaylistRoomMapper {
         return buildList {
             add(
                 MigrationMetadataEntity(
-                    key = "local_playlist_import_schema",
+                    key = LocalPlaylistRoomStore.IMPORT_SCHEMA_METADATA_KEY,
                     value = LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION.toString(),
                     updatedAt = now
                 )
             )
             add(
                 MigrationMetadataEntity(
-                    key = "local_playlist_cutover_state",
+                    key = LocalPlaylistRoomStore.CUTOVER_STATE_METADATA_KEY,
                     value = "shadow",
                     updatedAt = now
                 )
@@ -343,7 +343,7 @@ internal class LocalPlaylistRoomMapper {
             sourceDigest?.let { digest ->
                 add(
                     MigrationMetadataEntity(
-                        key = "local_playlist_source_digest",
+                        key = LocalPlaylistRoomStore.SOURCE_DIGEST_METADATA_KEY,
                         value = digest,
                         updatedAt = now
                     )

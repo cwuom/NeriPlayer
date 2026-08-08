@@ -83,15 +83,15 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     )
     private val syncStorage by lazy { SecureTokenStorage(context) }
 
-    private val initialSnapshots = load()
-    private val _snapshots = MutableStateFlow(initialSnapshots)
-    private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
-    private var persistedSnapshots = initialSnapshots
     @Volatile
     private var roomStorageEnabled = true
     private var roomRecoveryBaseline: List<FavoritePlaylist>? = null
     private var retryJob: Job? = null
     private var pendingSyncAfterPersistence = false
+    private val initialSnapshots = load()
+    private val _snapshots = MutableStateFlow(initialSnapshots)
+    private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
+    private var persistedSnapshots = initialSnapshots
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {

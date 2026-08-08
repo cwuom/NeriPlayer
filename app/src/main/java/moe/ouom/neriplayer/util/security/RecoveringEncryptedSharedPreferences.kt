@@ -255,10 +255,7 @@ internal class RecoveringEncryptedSharedPreferences internal constructor(
             val editor = preferences.edit()
             actions.forEach { action -> action.apply(editor) }
             if (commit) {
-                check(editor.commit()) {
-                    "Encrypted preferences commit returned false"
-                }
-                true
+                editor.commit()
             } else {
                 editor.apply()
                 true
@@ -384,10 +381,16 @@ internal class RecoveringEncryptedSharedPreferences internal constructor(
             return this
         }
 
-        override fun commit(): Boolean = preferences.write(actions, commit = true)
+        override fun commit(): Boolean {
+            val pending = actions.toList()
+            actions.clear()
+            return preferences.write(pending, commit = true)
+        }
 
         override fun apply() {
-            preferences.write(actions, commit = false)
+            val pending = actions.toList()
+            actions.clear()
+            preferences.write(pending, commit = false)
         }
     }
 }

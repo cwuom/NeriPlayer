@@ -468,7 +468,7 @@ internal fun PlayerManager.setPlaybackSourceRoute(sourceRoute: String?) {
             runCatching {
                 PlaybackQueueRoomStore(
                     NeriUserDataDatabase.getInstance(application.applicationContext)
-                ).updateSourceRoute(sourceRoute)
+                ).updateSourceRoute(_playbackSourceRouteFlow.value)
             }.onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",

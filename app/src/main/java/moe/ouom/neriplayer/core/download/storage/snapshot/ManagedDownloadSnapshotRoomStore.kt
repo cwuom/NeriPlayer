@@ -39,9 +39,10 @@ internal class ManagedDownloadSnapshotRoomStore(
         return globalMutex.withLock {
             val roomCleared = runCatching {
                 val nowMs = System.currentTimeMillis()
+                val rootKey = readRootKey() ?: CLEARED_ROOT_KEY
                 database.withTransaction {
-                    database.downloadSnapshotDao().clearEntries()
-                    database.downloadSnapshotDao().clearMetadata()
+                    database.downloadSnapshotDao().clearEntries(rootKey)
+                    database.downloadSnapshotDao().clearMetadata(rootKey)
                     database.syncMetadataDao().upsertMigrationMetadata(
                         MigrationMetadataEntity(
                             key = CUTOVER_STATE_METADATA_KEY,
@@ -99,8 +100,8 @@ internal class ManagedDownloadSnapshotRoomStore(
         return runCatching {
             database.withTransaction {
                 val dao = database.downloadSnapshotDao()
-                dao.clearEntries()
-                dao.clearMetadata()
+                dao.clearEntries(cacheKey)
+                dao.clearMetadata(cacheKey)
                 dao.upsertEntries(
                     ManagedDownloadSnapshotRoomMapper.toEntryEntities(cacheKey, snapshot)
                 )

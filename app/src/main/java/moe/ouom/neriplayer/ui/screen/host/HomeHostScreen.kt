@@ -218,11 +218,17 @@ fun HomeHostScreen(
         pendingNeteaseCoverWarmupToken = token
         pendingNeteaseCoverWarmupJob?.cancel()
         pendingNeteaseCoverWarmupJob = scope.launch {
-            CoverArtColorCache.preload(context, coverUrl, offlineMode)
-            if (pendingNeteaseCoverWarmupToken == token) {
-                ensureHomeScrollPositionCaptured()
-                selected = item
-                pendingNeteaseCoverWarmupJob = null
+            try {
+                CoverArtColorCache.preload(context, coverUrl, offlineMode)
+                if (pendingNeteaseCoverWarmupToken == token) {
+                    ensureHomeScrollPositionCaptured()
+                    selected = item
+                    pendingNeteaseCoverWarmupJob = null
+                }
+            } finally {
+                if (selected == null && pendingNeteaseCoverWarmupToken == token) {
+                    homeUsageSnapshotFrozen = false
+                }
             }
         }
     }

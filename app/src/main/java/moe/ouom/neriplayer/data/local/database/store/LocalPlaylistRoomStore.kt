@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import java.security.MessageDigest
 import java.util.UUID
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal enum class LocalPlaylistRoomShadowImportStatus {
     IMPORTED,
@@ -46,7 +47,8 @@ internal class LocalPlaylistRoomStore(
 
     suspend fun replacePlaylists(
         playlists: List<LocalPlaylist>,
-        sourceDigest: String? = null
+        sourceDigest: String? = null,
+        cutoverState: String = ROOM_PRIMARY_STATE
     ) {
         val snapshot = mapper.toSnapshot(
             playlists = playlists,
@@ -63,7 +65,7 @@ internal class LocalPlaylistRoomStore(
             snapshot.migrationMetadata
                 .map { metadata ->
                     if (metadata.key == CUTOVER_STATE_METADATA_KEY) {
-                        metadata.copy(value = ROOM_PRIMARY_STATE)
+                        metadata.copy(value = cutoverState)
                     } else {
                         metadata
                     }
@@ -138,12 +140,10 @@ internal class LocalPlaylistRoomStore(
             changedIds
                 .filter { it in nextById }
                 .forEach { playlistId ->
-                    if (playlistId !in removedIds) {
-                        database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
-                        database.localPlaylistDao()
-                            .deleteMemberNeteaseArtistsForPlaylist(playlistId)
-                        database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
-                    }
+                    database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
+                    database.localPlaylistDao()
+                        .deleteMemberNeteaseArtistsForPlaylist(playlistId)
+                    database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
                 }
             database.localPlaylistDao().insertTracks(tracksByIdentity.values.toList())
             database.localPlaylistDao().insertMembers(changedMembers)
@@ -195,6 +195,8 @@ internal class LocalPlaylistRoomStore(
                         entry.mutationPayloadJson,
                         moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSyncMutation::class.java
                     )
+                }.onFailure { error ->
+                    NPLogger.w("LocalPlaylistRoomStore", "Skipping invalid sync outbox entry", error)
                 }.getOrNull()
             }
         ).takeIf { it.mutations.isNotEmpty() }
@@ -204,6 +206,9 @@ internal class LocalPlaylistRoomStore(
         outbox: LocalPlaylistSyncMutationOutbox,
         now: Long = System.currentTimeMillis()
     ) {
+        require(outbox.mutations.size <= MAX_PENDING_OUTBOX_ENTRIES) {
+            "Pending playlist sync outbox exceeds $MAX_PENDING_OUTBOX_ENTRIES entries"
+        }
         database.withTransaction {
             database.syncMetadataDao().deleteOutboxByStatus(SyncOutboxStatus.PENDING)
             outbox.mutations.forEachIndexed { index, mutation ->
@@ -254,7 +259,7 @@ internal class LocalPlaylistRoomStore(
             )
         }
 
-        replacePlaylists(playlists, sourceDigest)
+        replacePlaylists(playlists, sourceDigest, cutoverState = "shadow")
         return LocalPlaylistRoomShadowImportResult(
             status = LocalPlaylistRoomShadowImportStatus.IMPORTED,
             playlistCount = validation.playlistCount,

@@ -56,9 +56,8 @@ internal class CoverUrlMappingRoomStore(
                     updatedAt = now
                 )
             )
-            val shouldKeepBlocked = currentState == ROOM_PRIMARY_WITH_LEGACY_IMPORT_FAILURE_STATE
             markRoomPrimary(
-                cleanupEligible = cleanupEligible && !shouldKeepBlocked,
+                cleanupEligible = currentState == ROOM_PRIMARY_STATE || cleanupEligible,
                 now = now
             )
         }
@@ -75,10 +74,11 @@ internal class CoverUrlMappingRoomStore(
             val currentState = database.syncMetadataDao()
                 .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
                 ?.value
-            database.coverUrlMappingDao().delete(normalizedUrls)
-            val shouldKeepBlocked = currentState == ROOM_PRIMARY_WITH_LEGACY_IMPORT_FAILURE_STATE
+            normalizedUrls.chunked(500).forEach { chunk ->
+                database.coverUrlMappingDao().delete(chunk)
+            }
             markRoomPrimary(
-                cleanupEligible = cleanupEligible && !shouldKeepBlocked,
+                cleanupEligible = currentState == ROOM_PRIMARY_STATE || cleanupEligible,
                 now = now
             )
         }
@@ -117,8 +117,7 @@ internal class CoverUrlMappingRoomStore(
     }
 
     private fun isReadableRoomState(state: String?): Boolean {
-        return state == ROOM_PRIMARY_STATE ||
-            state == ROOM_PRIMARY_WITH_LEGACY_IMPORT_FAILURE_STATE
+        return state == ROOM_PRIMARY_STATE
     }
 
     companion object {

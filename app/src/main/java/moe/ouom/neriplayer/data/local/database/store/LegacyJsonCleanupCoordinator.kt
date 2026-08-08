@@ -5,6 +5,7 @@ import java.io.File
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
+import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 
@@ -187,19 +188,19 @@ internal class LegacyJsonCleanupCoordinator(
             ),
             TargetDefinition(
                 "last_playlist.json",
-                "playback_queue_cutover_state"
+                PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
             ),
             TargetDefinition(
                 "last_playback_state.json",
-                "playback_queue_cutover_state"
+                PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
             ),
             TargetDefinition(
                 "bili_video_skip_rules.json",
-                "bili_video_skip_cutover_state"
+                BiliVideoSkipRoomStore.CUTOVER_STATE_METADATA_KEY
             ),
             TargetDefinition(
                 "bili_video_skip_drafts.json",
-                "bili_video_skip_cutover_state"
+                BiliVideoSkipRoomStore.CUTOVER_STATE_METADATA_KEY
             ),
             TargetDefinition(
                 "cover_url_mapping.json",

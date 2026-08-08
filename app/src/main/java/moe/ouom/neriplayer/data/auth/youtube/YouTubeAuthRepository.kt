@@ -205,6 +205,7 @@ internal fun parseCookieHeader(raw: String): LinkedHashMap<String, String> {
 class YouTubeAuthRepository(private val context: Context) {
     private var encryptedPrefs: RecoveringEncryptedSharedPreferences
     private var usingRecoveryStorage = false
+    private val recoveryPrefs by lazy { createRecoveryEncryptedPrefs() }
     private val _authFlow: MutableStateFlow<YouTubeAuthBundle>
     private val _authHealthFlow: MutableStateFlow<YouTubeAuthHealth>
     private val authMutationLock = Any()
@@ -297,7 +298,6 @@ class YouTubeAuthRepository(private val context: Context) {
         val raw = encryptedPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null).orEmpty()
         if (raw.isBlank() && !usingRecoveryStorage) {
             // 旧的恢复存储可能是在一次加密异常后写入的, 优先取它以免恢复成功后又显示游客态
-            val recoveryPrefs = createRecoveryEncryptedPrefs()
             val recoveryRaw = recoveryPrefs.getString(KEY_YOUTUBE_AUTH_BUNDLE, null).orEmpty()
             if (recoveryRaw.isNotBlank()) {
                 encryptedPrefs = recoveryPrefs
@@ -320,15 +320,15 @@ class YouTubeAuthRepository(private val context: Context) {
     }
 
     private fun switchToRecoveryStorage() {
-        encryptedPrefs = createRecoveryEncryptedPrefs()
+        encryptedPrefs = recoveryPrefs
         usingRecoveryStorage = true
     }
 
     private fun persistAuthBundle(bundle: YouTubeAuthBundle) {
         val serialized = bundle.toJson()
         if (!usingRecoveryStorage) {
-            commitAuthBundle(encryptedPrefs, serialized)
-            if (encryptedPrefs.isDurable) {
+            val committed = commitAuthBundle(encryptedPrefs, serialized)
+            if (committed && encryptedPrefs.isDurable) {
                 persistRecoveryBackup(serialized)
                 return
             }
@@ -338,7 +338,10 @@ class YouTubeAuthRepository(private val context: Context) {
             )
             switchToRecoveryStorage()
         }
-        commitAuthBundle(encryptedPrefs, serialized)
+        val committed = commitAuthBundle(encryptedPrefs, serialized)
+        if (!committed) {
+            NPLogger.w("NERI-YouTubeAuthRepo", "Failed to persist YouTube auth bundle")
+        }
         if (!encryptedPrefs.isDurable) {
             NPLogger.w(
                 "NERI-YouTubeAuthRepo",
@@ -349,9 +352,11 @@ class YouTubeAuthRepository(private val context: Context) {
 
     private fun persistRecoveryBackup(serialized: String) {
         // 主存储正常时也保留独立加密副本, 主文件损坏后仍能恢复最近一次登录
-        val recoveryPrefs = createRecoveryEncryptedPrefs()
-        commitAuthBundle(recoveryPrefs, serialized)
-        if (!recoveryPrefs.isDurable) {
+        val activeRecoveryPrefs = recoveryPrefs
+        if (!commitAuthBundle(activeRecoveryPrefs, serialized)) {
+            NPLogger.w("NERI-YouTubeAuthRepo", "Failed to persist YouTube recovery backup")
+        }
+        if (!activeRecoveryPrefs.isDurable) {
             NPLogger.w(
                 "NERI-YouTubeAuthRepo",
                 "YouTube recovery backup is memory-only; primary auth remains available."

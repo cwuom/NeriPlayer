@@ -77,7 +77,9 @@ internal class DownloadRecoveryRoomStore(
         }
         globalMigrationMutex.withLock {
             ensurePendingQueueImported()
-            database.downloadRecoveryDao().deletePendingQueue(keys)
+            keys.chunked(500).forEach { chunk ->
+                database.downloadRecoveryDao().deletePendingQueue(chunk)
+            }
         }
     }
 
@@ -125,7 +127,9 @@ internal class DownloadRecoveryRoomStore(
         }
         globalMigrationMutex.withLock {
             ensureCancelledKeysImported()
-            database.downloadRecoveryDao().deleteCancelledKeys(keys)
+            keys.chunked(500).forEach { chunk ->
+                database.downloadRecoveryDao().deleteCancelledKeys(chunk)
+            }
         }
     }
 

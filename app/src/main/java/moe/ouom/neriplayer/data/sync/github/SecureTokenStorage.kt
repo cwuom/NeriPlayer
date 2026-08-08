@@ -113,6 +113,7 @@ class SecureTokenStorage(private val context: Context) {
     /** 保存设备ID */
     fun saveDeviceId(deviceId: String) {
         require(deviceId.isNotBlank()) { "Device ID must not be blank" }
+        check(encryptedPrefs.isDurable) { "Refusing to persist sync device state without durable storage" }
         synchronized(syncCausalTokenLock) {
             val deviceChanged = getDeviceId() != deviceId
             check(
@@ -144,6 +145,9 @@ class SecureTokenStorage(private val context: Context) {
     fun nextSyncCausalTokens(count: Int): List<SyncCausalToken> {
         require(count >= 0) { "Token count must not be negative" }
         if (count == 0) return emptyList()
+        check(encryptedPrefs.isDurable) {
+            "Refusing to allocate sync causal tokens without durable storage"
+        }
 
         return synchronized(syncCausalTokenLock) {
             val deviceId = getOrCreateDeviceId()
@@ -325,6 +329,9 @@ class SecureTokenStorage(private val context: Context) {
         clearedPlaylistDeletionIds: List<Long>,
         restoredPlaylistIds: Set<Long>
     ): Long {
+        check(encryptedPrefs.isDurable) {
+            "Refusing to persist playlist sync mutation without durable storage"
+        }
         synchronized(syncMutationLock) {
             var playlistDeletions = getPlaylistSongDeletions()
             if (addedSongDeletions.isNotEmpty()) {

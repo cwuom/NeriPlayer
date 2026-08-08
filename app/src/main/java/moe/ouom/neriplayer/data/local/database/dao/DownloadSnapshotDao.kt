@@ -29,9 +29,9 @@ internal interface DownloadSnapshotDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMetadata(metadata: List<DownloadSnapshotMetadataEntity>)
 
-    @Query("DELETE FROM download_snapshot_entry")
-    suspend fun clearEntries()
+    @Query("DELETE FROM download_snapshot_entry WHERE root_key = :rootKey")
+    suspend fun clearEntries(rootKey: String)
 
-    @Query("DELETE FROM download_snapshot_metadata")
-    suspend fun clearMetadata()
+    @Query("DELETE FROM download_snapshot_metadata WHERE root_key = :rootKey")
+    suspend fun clearMetadata(rootKey: String)
 }
