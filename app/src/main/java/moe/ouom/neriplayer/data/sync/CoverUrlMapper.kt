@@ -178,7 +178,19 @@ private class RoomCoverUrlMappingStore(
 
     override fun load(): Map<String, String> {
         return runBlocking(Dispatchers.IO) {
-            roomStore.readIfRoomPrimary()?.also {
+            val roomRead = runCatching { roomStore.readIfRoomPrimary() }
+                .onFailure { error ->
+                    cleanupEligible = false
+                    NPLogger.e(
+                        COVER_URL_MAPPER_TAG,
+                        "Failed to read cover URL mappings from Room",
+                        error
+                    )
+                }
+            if (roomRead.isFailure) {
+                return@runBlocking emptyMap()
+            }
+            roomRead.getOrNull()?.also {
                 LegacyJsonCleanupScheduler.schedule(appContext, "cover-url-mapping-room-load")
                 return@runBlocking it
             }
@@ -208,21 +220,29 @@ private class RoomCoverUrlMappingStore(
     }
 
     override fun save(localUrl: String, networkUrl: String) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.upsert(
-                localUrl = localUrl,
-                networkUrl = networkUrl,
-                cleanupEligible = cleanupEligible
-            )
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.upsert(
+                    localUrl = localUrl,
+                    networkUrl = networkUrl,
+                    cleanupEligible = cleanupEligible
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w(COVER_URL_MAPPER_TAG, "Failed to save cover URL mapping", error)
         }
     }
 
     override fun delete(localUrls: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.delete(
-                localUrls = localUrls,
-                cleanupEligible = cleanupEligible
-            )
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.delete(
+                    localUrls = localUrls,
+                    cleanupEligible = cleanupEligible
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w(COVER_URL_MAPPER_TAG, "Failed to delete cover URL mappings", error)
         }
     }
 

@@ -83,6 +83,73 @@ class ManagedDownloadSnapshotRoomStoreTest {
         }
     }
 
+    @Test
+    fun clearDeletesLegacyCacheAndLeavesRoomAsEmptyPrimary() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val cacheFile = ManagedDownloadSnapshotDiskCache.cacheFile(context)
+        cacheFile.delete()
+        cacheFile.writeText(
+            ManagedDownloadSnapshotIndex.serializePayload(
+                cacheKey = "root-a",
+                snapshot = snapshot()
+            ),
+            Charsets.UTF_8
+        )
+
+        try {
+            val store = ManagedDownloadSnapshotRoomStore(context, database)
+
+            assertTrue(store.clear())
+            assertFalse(cacheFile.exists())
+            assertNull(store.restore(expectedKey = "root-a"))
+            assertEquals(
+                ManagedDownloadSnapshotRoomStore.ROOM_PRIMARY_STATE,
+                database.syncMetadataDao()
+                    .getMigrationMetadata(
+                        ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY
+                    )
+                    ?.value
+            )
+        } finally {
+            cacheFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun clearKeepsLegacyCacheWhenRoomClearFails() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val cacheFile = ManagedDownloadSnapshotDiskCache.cacheFile(context)
+        cacheFile.delete()
+        cacheFile.writeText(
+            ManagedDownloadSnapshotIndex.serializePayload(
+                cacheKey = "root-a",
+                snapshot = snapshot()
+            ),
+            Charsets.UTF_8
+        )
+        val store = ManagedDownloadSnapshotRoomStore(context, database)
+        database.openHelper.writableDatabase.execSQL(
+            "DROP TABLE download_snapshot_entry"
+        )
+
+        try {
+            assertFalse(store.clear())
+            assertTrue(cacheFile.exists())
+        } finally {
+            cacheFile.delete()
+            database.close()
+        }
+    }
+
     private fun snapshot(): ManagedDownloadStorage.DownloadLibrarySnapshot {
         val audioEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Snapshot Song.flac",

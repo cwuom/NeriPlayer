@@ -31,14 +31,15 @@ internal object ManagedDownloadSnapshotDiskCache {
         }.getOrNull()
     }
 
-    fun delete(context: Context) {
-        runCatching {
+    fun delete(context: Context): Boolean {
+        return runCatching {
             val cacheFile = cacheFile(context)
             if (cacheFile.exists() && !cacheFile.delete()) {
                 throw IOException("无法删除旧下载索引缓存")
             }
+            true
         }.onFailure {
             NPLogger.w(TAG, "清理下载索引缓存失败: ${it.message}")
-        }
+        }.getOrDefault(false)
     }
 }

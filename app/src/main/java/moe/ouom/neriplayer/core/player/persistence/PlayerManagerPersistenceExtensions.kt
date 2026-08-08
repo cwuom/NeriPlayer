@@ -73,6 +73,7 @@ internal data class RestoredPlayerStateSnapshot(
     val playlist: List<SongItem>,
     val currentIndex: Int,
     val currentMediaUrl: String?,
+    val sourceRoute: String?,
     val repeatMode: Int,
     val shuffleEnabled: Boolean,
     val shuffleRestorePlaylist: List<SongItem>?,
@@ -150,6 +151,7 @@ private fun PlayerManager.buildPersistedPlaylistState(
         shouldResumePlayback = playbackStateSnapshot.shouldResumePlayback,
         repeatMode = playbackStateSnapshot.repeatMode,
         shuffleEnabled = playbackStateSnapshot.shuffleEnabled,
+        sourceRoute = _playbackSourceRouteFlow.value,
         shuffleRestorePlaylist = if (playbackStateSnapshot.shuffleEnabled == true) {
             restorePlaylistReference?.map { song ->
                 song.toPersistedSongItem(
@@ -252,6 +254,7 @@ private fun buildRestoredStateSnapshot(
             playlist = playlist,
             currentIndex = currentIndex,
             currentMediaUrl = currentMediaUrl,
+            sourceRoute = data.sourceRoute,
             repeatMode = repeatMode,
             shuffleEnabled = keepPlaybackModeStateEnabled && (data.shuffleEnabled == true),
             shuffleRestorePlaylist = if (keepPlaybackModeStateEnabled && data.shuffleEnabled == true) {
@@ -294,19 +297,12 @@ internal suspend fun preloadRestoredStateSnapshot(
             .onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
-                    "restoreState: Room read failed, trying legacy JSON: ${error.message}"
+                    "restoreState: Room read failed, refusing stale legacy fallback: " +
+                        error.message
                 )
             }
-            .getOrNull()
-        val roomPrimary = runCatching { roomStore.isRoomPrimary() }
-            .onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "restoreState: Room marker read failed: ${error.message}"
-                )
-            }
-            .getOrDefault(false)
-        val data = if (roomPrimary) {
+            .getOrElse { return@withContext null }
+        val data = if (roomData != null) {
             roomData
         } else {
             runCatching {
@@ -362,7 +358,7 @@ private fun loadRestoredStateSnapshot(
                         "restoreState: Room marker read failed: ${error.message}"
                     )
                 }
-                .getOrDefault(false)
+                .getOrElse { throw it }
             if (roomPrimary) {
                 roomStore.readIfRoomPrimary()
             } else {
@@ -403,6 +399,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
         _currentQueueFlow.value = emptyList()
         setCurrentSongForPlayback(null)
         _currentMediaUrl.value = null
+        _playbackSourceRouteFlow.value = null
         _currentPlaybackAudioInfo.value = null
         _playbackPositionMs.value = 0L
         currentMediaUrlResolvedAtMs = 0L
@@ -418,6 +415,7 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     _currentQueueFlow.value = currentPlaylist
     setCurrentSongForPlayback(currentPlaylist.getOrNull(currentIndex))
     _currentMediaUrl.value = snapshot.currentMediaUrl
+    _playbackSourceRouteFlow.value = snapshot.sourceRoute
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
     _repeatModeFlow.value = repeatModeSetting
@@ -460,6 +458,24 @@ internal fun PlayerManager.scheduleStatePersist(
             positionMs = positionMs,
             shouldResumePlayback = shouldResumePlayback
         )
+    }
+}
+
+internal fun PlayerManager.setPlaybackSourceRoute(sourceRoute: String?) {
+    _playbackSourceRouteFlow.value = sourceRoute
+    ioScope.launch {
+        statePersistMutex.withLock {
+            runCatching {
+                PlaybackQueueRoomStore(
+                    NeriUserDataDatabase.getInstance(application.applicationContext)
+                ).updateSourceRoute(sourceRoute)
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Failed to persist playback source route: ${error.message}"
+                )
+            }
+        }
     }
 }
 
@@ -595,6 +611,7 @@ internal suspend fun PlayerManager.persistStateImpl(
                 if (playlistReference.isEmpty()) {
                     restoredResumePositionMs = 0L
                     restoredShouldResumePlayback = false
+                    _playbackSourceRouteFlow.value = null
                     roomStore.clear()
                     stateFile.delete()
                     playbackStateFile.delete()

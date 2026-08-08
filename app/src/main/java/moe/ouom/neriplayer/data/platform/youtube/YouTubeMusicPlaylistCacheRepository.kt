@@ -81,7 +81,9 @@ class YouTubeMusicPlaylistCacheRepository internal constructor(
     )
 
     fun read(browseId: String): CachedYouTubeMusicPlaylistDetail? {
-        readRoom(browseId)?.let { return it }
+        val roomResult = readRoom(browseId)
+        if (roomResult.isFailure) return null
+        roomResult.getOrNull()?.let { return it }
         val file = cacheFile(browseId)
         if (!file.exists()) return null
         return runCatching {
@@ -116,14 +118,14 @@ class YouTubeMusicPlaylistCacheRepository internal constructor(
         }
     }
 
-    private fun readRoom(browseId: String): CachedYouTubeMusicPlaylistDetail? {
+    private fun readRoom(browseId: String): Result<CachedYouTubeMusicPlaylistDetail?> {
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 roomStore.read(PLATFORM, browseId)
             }?.toYouTubeMusicPlaylistDetail()
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read YouTube Music playlist cache from Room: browseId=$browseId", error)
-        }.getOrNull()
+        }
     }
 
     private fun saveRoom(cache: CachedYouTubeMusicPlaylistDetail): Boolean {

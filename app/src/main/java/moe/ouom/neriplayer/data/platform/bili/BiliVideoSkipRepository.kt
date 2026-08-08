@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -19,6 +20,8 @@ import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.mergeRoomRecoverySnapshot
+import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomSnapshot
 import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
@@ -232,6 +235,11 @@ class BiliVideoSkipRepository private constructor(context: Context) {
     )
     private val rulesFile = File(appContext.filesDir, RULES_FILE_NAME)
     private val draftsFile = File(appContext.filesDir, DRAFTS_FILE_NAME)
+    @Volatile
+    private var roomStorageEnabled = true
+    private var roomRecoveryBaseline: BiliVideoSkipRoomSnapshot? = null
+    private var roomRecoveryJob: Job? = null
+    private var pendingSyncAfterRecovery = false
     private val initialSnapshot = runBlocking(Dispatchers.IO) {
         loadInitialSnapshot()
     }
@@ -242,6 +250,10 @@ class BiliVideoSkipRepository private constructor(context: Context) {
 
     val rules: StateFlow<List<BiliVideoSkipRule>> = _rules.asStateFlow()
     val drafts: StateFlow<List<BiliVideoSkipDraft>> = _drafts.asStateFlow()
+
+    init {
+        scheduleRoomRecovery()
+    }
 
     fun snapshot(): List<BiliVideoSkipRule> = _rules.value
 
@@ -337,9 +349,25 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             val updatedRules = normalizeBiliVideoSkipRules(
                 _rules.value.filterNot { it.target == normalizedTarget } + updatedRule
             )
-            roomStore.replaceRules(updatedRules)
+            val persisted = runCatching {
+                if (!roomStorageEnabled) return@runCatching false
+                roomStore.replaceRules(updatedRules)
+                true
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                roomRecoveryBaseline = roomRecoveryBaseline ?: BiliVideoSkipRoomSnapshot(
+                    rules = _rules.value,
+                    drafts = _drafts.value
+                )
+                NPLogger.w(TAG, "Failed to persist Bili skip rules; keeping memory state", error)
+            }.getOrDefault(false)
             _rules.value = updatedRules
-            markMutationAndScheduleSync()
+            if (persisted) {
+                markMutationAndScheduleSync()
+            } else {
+                pendingSyncAfterRecovery = true
+                scheduleRoomRecovery()
+            }
             true
         }
     }
@@ -354,22 +382,36 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             }
             val normalizedRules = normalizeBiliVideoSkipRules(rules)
             if (_rules.value == normalizedRules) return@withLock true
-            roomStore.replaceRules(normalizedRules)
+            val persisted = runCatching {
+                if (!roomStorageEnabled) return@runCatching false
+                roomStore.replaceRules(normalizedRules)
+                true
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                roomRecoveryBaseline = roomRecoveryBaseline ?: BiliVideoSkipRoomSnapshot(
+                    rules = _rules.value,
+                    drafts = _drafts.value
+                )
+                NPLogger.w(TAG, "Failed to persist synced Bili skip rules", error)
+            }.getOrDefault(false)
             _rules.value = normalizedRules
+            if (!persisted) {
+                scheduleRoomRecovery()
+            }
             true
         }
     }
 
     private suspend fun loadInitialSnapshot(): BiliVideoSkipRoomSnapshot {
-        val roomPrimary = runCatching { roomStore.isRoomPrimary() }
+        val roomSnapshotResult = runCatching { roomStore.readIfRoomPrimary() }
             .onFailure { error ->
+                roomStorageEnabled = false
                 NPLogger.w(TAG, "Failed to read Bili skip Room marker", error)
             }
-            .getOrDefault(false)
-        if (roomPrimary) {
+        val roomSnapshot = roomSnapshotResult.getOrNull()
+        if (roomSnapshot != null) {
             LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-room-load")
-            return roomStore.readIfRoomPrimary()
-                ?: BiliVideoSkipRoomSnapshot(emptyList(), emptyList())
+            return roomSnapshot
         }
 
         val legacyRules = readLegacyRulesOrNull()
@@ -377,18 +419,25 @@ class BiliVideoSkipRepository private constructor(context: Context) {
         val shouldImportLegacyFiles = legacyRules != null &&
             legacyDrafts != null &&
             (rulesFile.exists() || draftsFile.exists())
-        if (shouldImportLegacyFiles) {
+        if (shouldImportLegacyFiles && roomStorageEnabled) {
             runCatching {
-                roomStore.importLegacyAndPromote(legacyRules, legacyDrafts)
-                LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-import")
+                val result = roomStore.importLegacyAndPromote(legacyRules, legacyDrafts)
+                if (result.status == BiliVideoSkipRoomImportStatus.IMPORTED) {
+                    LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-import")
+                }
             }.onFailure { error ->
+                roomStorageEnabled = false
                 NPLogger.w(TAG, "Failed to import Bili skip JSON into Room", error)
             }
         }
-        return BiliVideoSkipRoomSnapshot(
+        val snapshot = BiliVideoSkipRoomSnapshot(
             rules = legacyRules.orEmpty(),
             drafts = legacyDrafts.orEmpty()
         )
+        if (!roomStorageEnabled) {
+            roomRecoveryBaseline = snapshot
+        }
+        return snapshot
     }
 
     private fun readLegacyRulesOrNull(): List<BiliVideoSkipRule>? {
@@ -421,12 +470,92 @@ class BiliVideoSkipRepository private constructor(context: Context) {
                 val snapshot = synchronized(draftsStateLock) {
                     _drafts.value.takeIf { draftsStateVersion == expectedStateVersion }
                 } ?: return@withLock
-                roomStore.replaceDrafts(snapshot)
+                if (!roomStorageEnabled) {
+                    pendingSyncAfterRecovery = true
+                    scheduleRoomRecovery()
+                    return@withLock
+                }
+                runCatching {
+                    roomStore.replaceDrafts(snapshot)
+                }.onFailure { error ->
+                    roomStorageEnabled = false
+                    roomRecoveryBaseline = roomRecoveryBaseline ?: BiliVideoSkipRoomSnapshot(
+                        rules = _rules.value,
+                        drafts = _drafts.value
+                    )
+                    pendingSyncAfterRecovery = true
+                    NPLogger.w(TAG, "Failed to persist Bili skip drafts", error)
+                    scheduleRoomRecovery()
+                }
             }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "Failed to persist Bili video skip drafts", error)
+        }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomRecoveryBaseline == null) return
+        if (roomRecoveryJob?.isActive == true) return
+        roomRecoveryJob = draftsPersistenceScope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            roomRecoveryJob = null
+            recoverRoomStorage()
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val baseline = roomRecoveryBaseline ?: return
+        val recovered = mutex.withLock {
+            runCatching {
+                val current = BiliVideoSkipRoomSnapshot(
+                    rules = _rules.value,
+                    drafts = _drafts.value
+                )
+                val roomSnapshot = roomStore.readIfRoomPrimary()
+                if (roomSnapshot == null) {
+                    val imported = roomStore.importLegacyAndPromote(
+                        rules = current.rules,
+                        drafts = current.drafts
+                    )
+                    if (imported.status == BiliVideoSkipRoomImportStatus.IMPORTED) {
+                        current
+                    } else {
+                        val primary = roomStore.readIfRoomPrimary()
+                            ?: return@runCatching null
+                        mergeBiliVideoSkipRoomRecovery(
+                            roomSnapshot = primary,
+                            recoveryBaseline = baseline,
+                            currentSnapshot = current
+                        )
+                    }
+                } else {
+                    val merged = mergeBiliVideoSkipRoomRecovery(
+                        roomSnapshot = roomSnapshot,
+                        recoveryBaseline = baseline,
+                        currentSnapshot = current
+                    )
+                    roomStore.replaceAll(merged.rules, merged.drafts)
+                    merged
+                }
+            }.onFailure { error ->
+                NPLogger.w(TAG, "Failed to recover Bili skip Room state", error)
+            }.getOrNull()?.also { merged ->
+                roomStorageEnabled = true
+                roomRecoveryBaseline = null
+                _rules.value = merged.rules
+                _drafts.value = merged.drafts
+            }
+        }
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+        LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-room-recovery")
+        if (pendingSyncAfterRecovery) {
+            pendingSyncAfterRecovery = false
+            markMutationAndScheduleSync()
         }
     }
 
@@ -459,6 +588,7 @@ class BiliVideoSkipRepository private constructor(context: Context) {
 
     companion object {
         const val TAG = "BiliVideoSkipRepo"
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
         const val RULES_FILE_NAME = "bili_video_skip_rules.json"
         const val DRAFTS_FILE_NAME = "bili_video_skip_drafts.json"
 
@@ -471,4 +601,26 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             }
         }
     }
+}
+
+internal fun mergeBiliVideoSkipRoomRecovery(
+    roomSnapshot: BiliVideoSkipRoomSnapshot,
+    recoveryBaseline: BiliVideoSkipRoomSnapshot,
+    currentSnapshot: BiliVideoSkipRoomSnapshot
+): BiliVideoSkipRoomSnapshot {
+    val rules = mergeRoomRecoverySnapshot(
+        roomSnapshot = roomSnapshot.rules,
+        recoveryBaseline = recoveryBaseline.rules,
+        currentSnapshot = currentSnapshot.rules,
+        keyOf = { rule -> rule.target.stableKey() },
+        mergeLocalChange = { _, current -> current }
+    )
+    val drafts = mergeRoomRecoverySnapshot(
+        roomSnapshot = roomSnapshot.drafts,
+        recoveryBaseline = recoveryBaseline.drafts,
+        currentSnapshot = currentSnapshot.drafts,
+        keyOf = { draft -> draft.target.stableKey() },
+        mergeLocalChange = { _, current -> current }
+    )
+    return BiliVideoSkipRoomSnapshot(rules = rules, drafts = drafts)
 }

@@ -51,7 +51,7 @@ data class TrackStat(
     val identityKey: String
 )
 
-private data class PlaybackStatsPersistenceSnapshot(
+internal data class PlaybackStatsPersistenceSnapshot(
     val stats: List<TrackStat>,
     val dailyStats: List<PlaybackStatBucket>,
     val counterSnapshot: PlaybackStatsSyncCounterSnapshot,
@@ -73,6 +73,204 @@ private fun PlaybackStatsRoomSnapshot.toPersistenceSnapshot():
 private data class PlaybackStatsMetadata(
     val clearedAt: Long = 0L
 )
+
+internal fun mergePlaybackStatsRoomRecovery(
+    roomSnapshot: PlaybackStatsPersistenceSnapshot,
+    recoveryBaseline: PlaybackStatsPersistenceSnapshot,
+    currentSnapshot: PlaybackStatsPersistenceSnapshot
+): PlaybackStatsPersistenceSnapshot {
+    val effectiveClearedAt = maxOf(roomSnapshot.clearedAt, currentSnapshot.clearedAt)
+    val baselineStatsByKey = recoveryBaseline.stats.associateBy(TrackStat::identityKey)
+    val currentStatsByKey = currentSnapshot.stats.associateBy(TrackStat::identityKey)
+    val baselineDailyByKey = recoveryBaseline.dailyStats.associateBy { bucket ->
+        bucket.dayStartAt to bucket.identityKey
+    }
+    val currentDailyByKey = currentSnapshot.dailyStats.associateBy { bucket ->
+        bucket.dayStartAt to bucket.identityKey
+    }
+    val changedTrackKeys = (
+        baselineStatsByKey.keys + currentStatsByKey.keys +
+            recoveryBaseline.counterSnapshot.trackShardsByIdentity.keys +
+            currentSnapshot.counterSnapshot.trackShardsByIdentity.keys
+        ).filter { key ->
+            baselineStatsByKey[key] != currentStatsByKey[key] ||
+                recoveryBaseline.counterSnapshot.trackShards(key) !=
+                    currentSnapshot.counterSnapshot.trackShards(key)
+        }.toSet()
+    val changedDailyKeys = (
+        baselineDailyByKey.keys + currentDailyByKey.keys +
+            recoveryBaseline.counterSnapshot.dailyShardsByBucketKey.keys.map(
+                ::playbackStatsDailyKey
+            ) +
+            currentSnapshot.counterSnapshot.dailyShardsByBucketKey.keys.map(
+                ::playbackStatsDailyKey
+            )
+        ).filter { key ->
+            baselineDailyByKey[key] != currentDailyByKey[key] ||
+                recoveryBaseline.counterSnapshot.dailyShards(
+                    dayStartAt = key.first,
+                    identityKey = key.second
+                ) != currentSnapshot.counterSnapshot.dailyShards(
+                    dayStartAt = key.first,
+                    identityKey = key.second
+                )
+        }.toSet()
+    val removedTrackKeys = baselineStatsByKey.keys - currentStatsByKey.keys
+    val removedDailyKeys = baselineDailyByKey.keys - currentDailyByKey.keys
+    val roomStatsByKey = roomSnapshot.stats
+        .filter { stat ->
+            stat.identityKey !in removedTrackKeys &&
+                shouldKeepTrackStatAfterClear(stat, effectiveClearedAt)
+        }
+        .associateBy(TrackStat::identityKey)
+    val roomDailyByKey = roomSnapshot.dailyStats
+        .filter { bucket ->
+            bucket.identityKey !in removedTrackKeys &&
+                (bucket.dayStartAt to bucket.identityKey) !in removedDailyKeys &&
+                shouldKeepDailyBucketAfterClear(bucket, effectiveClearedAt)
+        }
+        .associateBy { bucket -> bucket.dayStartAt to bucket.identityKey }
+    val changedCurrentStats = currentSnapshot.stats.filter { stat ->
+        stat.identityKey in changedTrackKeys &&
+            shouldKeepTrackStatAfterClear(stat, effectiveClearedAt)
+    }
+    val changedCurrentDailyStats = currentSnapshot.dailyStats.filter { bucket ->
+        (bucket.dayStartAt to bucket.identityKey) in changedDailyKeys &&
+            bucket.identityKey !in removedTrackKeys &&
+            shouldKeepDailyBucketAfterClear(bucket, effectiveClearedAt)
+    }
+    val mergedStats = SyncPlaybackStatsMergePolicy.merge(
+        local = roomStatsByKey.values.map { stat ->
+            SyncPlaybackStatMapper.fromTrackStat(
+                stat = stat,
+                counterShards = roomSnapshot.counterSnapshot.trackShards(stat.identityKey)
+            )
+        },
+        remote = changedCurrentStats.map { stat ->
+            SyncPlaybackStatMapper.fromTrackStat(
+                stat = stat,
+                counterShards = currentSnapshot.counterSnapshot.trackShards(stat.identityKey)
+            )
+        },
+        playbackStatsClearedAt = effectiveClearedAt
+    )
+    val mergedDailyStats = SyncPlaybackStatsMergePolicy.mergeBuckets(
+        local = roomDailyByKey.values.map { bucket ->
+            SyncPlaybackStatMapper.fromPlaybackStatBucket(
+                bucket = bucket,
+                counterShards = roomSnapshot.counterSnapshot.dailyShards(
+                    dayStartAt = bucket.dayStartAt,
+                    identityKey = bucket.identityKey
+                )
+            )
+        },
+        remote = changedCurrentDailyStats.map { bucket ->
+            SyncPlaybackStatMapper.fromPlaybackStatBucket(
+                bucket = bucket,
+                counterShards = currentSnapshot.counterSnapshot.dailyShards(
+                    dayStartAt = bucket.dayStartAt,
+                    identityKey = bucket.identityKey
+                )
+            )
+        },
+        playbackStatsClearedAt = effectiveClearedAt
+    )
+    val finalized = SyncPlaybackStatsMergePolicy.finalizeMergedStats(
+        mergedStats = mergedStats,
+        mergedBuckets = mergedDailyStats
+    )
+    val recoveredStats = finalized.stats.map { merged ->
+        val source = if (merged.identityKey in changedTrackKeys) {
+            currentStatsByKey[merged.identityKey]
+        } else {
+            roomStatsByKey[merged.identityKey]
+        }
+        source?.applyRecoveredSyncCounters(merged) ?: merged.toRecoveredTrackStat()
+    }
+    val recoveredDailyStats = finalized.buckets.map { merged ->
+        val key = merged.dayStartAt to merged.identityKey
+        val source = if (key in changedDailyKeys) {
+            currentDailyByKey[key]
+        } else {
+            roomDailyByKey[key]
+        }
+        source?.let { bucket -> mergeDailyBucket(bucket, merged) }
+            ?: merged.toPlaybackStatBucket()
+    }
+    val recoveredCounterSnapshot = PlaybackStatsSyncCounterSnapshot(
+        trackShardsByIdentity = finalized.stats.mapNotNull { stat ->
+            val shards = SyncPlaybackStatMapper.normalizeCounterShards(stat.counterShards)
+            stat.identityKey.takeIf { it.isNotBlank() && shards.isNotEmpty() }?.let { key ->
+                key to shards
+            }
+        }.toMap(),
+        dailyShardsByBucketKey = finalized.buckets.mapNotNull { bucket ->
+            val shards = SyncPlaybackStatMapper.normalizeCounterShards(bucket.counterShards)
+            if (bucket.identityKey.isBlank() || shards.isEmpty()) {
+                null
+            } else {
+                PlaybackStatsSyncCounterSnapshot.dailyCounterKey(
+                    dayStartAt = bucket.dayStartAt,
+                    identityKey = bucket.identityKey
+                ) to shards
+            }
+        }.toMap()
+    )
+    val localEpochChanged = currentSnapshot.counterEpochStartedAt !=
+        recoveryBaseline.counterEpochStartedAt
+    return PlaybackStatsPersistenceSnapshot(
+        stats = recoveredStats,
+        dailyStats = recoveredDailyStats,
+        counterSnapshot = recoveredCounterSnapshot,
+        counterEpochStartedAt = maxOf(
+            roomSnapshot.counterEpochStartedAt,
+            if (localEpochChanged) currentSnapshot.counterEpochStartedAt else 0L,
+            effectiveClearedAt
+        ),
+        clearedAt = effectiveClearedAt
+    )
+}
+
+private fun playbackStatsDailyKey(counterKey: String): Pair<Long, String> {
+    val dayStartAt = counterKey.substringBefore('|').toLongOrNull() ?: 0L
+    return dayStartAt to counterKey.substringAfter('|', missingDelimiterValue = counterKey)
+}
+
+private fun SyncTrackStat.toRecoveredTrackStat(): TrackStat {
+    return TrackStat(
+        id = id,
+        name = name,
+        artist = artist,
+        album = album,
+        albumId = albumId,
+        coverUrl = coverUrl,
+        durationMs = durationMs,
+        totalListenMs = totalListenMs,
+        playCount = playCount,
+        lastPlayedAt = lastPlayedAt,
+        firstPlayedAt = firstPlayedAt,
+        mediaUri = mediaUri,
+        localFilePath = null,
+        localFileName = null,
+        customName = null,
+        customArtist = null,
+        customCoverUrl = null,
+        identityKey = identityKey
+    )
+}
+
+private fun TrackStat.applyRecoveredSyncCounters(remote: SyncTrackStat): TrackStat {
+    val useRemoteMetadata = remote.lastPlayedAt > lastPlayedAt
+    return copy(
+        totalListenMs = remote.totalListenMs,
+        playCount = remote.playCount,
+        lastPlayedAt = remote.lastPlayedAt,
+        firstPlayedAt = remote.firstPlayedAt,
+        name = if (useRemoteMetadata) remote.name else name,
+        artist = if (useRemoteMetadata) remote.artist else artist,
+        coverUrl = if (useRemoteMetadata) remote.coverUrl else coverUrl
+    )
+}
 
 private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
 
@@ -96,6 +294,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     )
     @Volatile
     private var roomStorageEnabled = true
+    private var roomRecoveryBaseline: PlaybackStatsPersistenceSnapshot? = null
     private val initialState = loadInitialState()
     private val _stats = MutableStateFlow(initialState.stats)
     private val _statsClearedAt = MutableStateFlow(initialState.clearedAt)
@@ -107,13 +306,16 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     init {
         reconcileLoadedStats()
+        scheduleRoomRecovery()
     }
 
     private fun loadInitialState(): PlaybackStatsPersistenceSnapshot {
+        var needsRoomRecovery = false
         val roomSnapshot = runCatching {
             runBlocking { roomStore.readIfRoomPrimary() }
         }.onFailure { error ->
             roomStorageEnabled = false
+            needsRoomRecovery = true
             NPLogger.e(
                 "PlaybackStatsRepo",
                 "Failed to read Room playback stats",
@@ -142,25 +344,30 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             counterEpochStartedAt = counterStore.epochStartedAt(),
             clearedAt = clearedAt
         )
-        runCatching {
-            runBlocking {
-                roomStore.importLegacyAndPromote(
-                    stats = legacyState.stats,
-                    dailyStats = legacyState.dailyStats,
-                    counterSnapshot = legacyState.counterSnapshot,
-                    counterEpochStartedAt = legacyState.counterEpochStartedAt,
-                    clearedAt = legacyState.clearedAt
+        if (roomStorageEnabled) {
+            runCatching {
+                runBlocking {
+                    roomStore.importLegacyAndPromote(
+                        stats = legacyState.stats,
+                        dailyStats = legacyState.dailyStats,
+                        counterSnapshot = legacyState.counterSnapshot,
+                        counterEpochStartedAt = legacyState.counterEpochStartedAt,
+                        clearedAt = legacyState.clearedAt
+                    )
+                }
+                LegacyJsonCleanupScheduler.schedule(app, "playback-stats-import")
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                needsRoomRecovery = true
+                NPLogger.e(
+                    "PlaybackStatsRepo",
+                    "Failed to promote playback stats JSON to Room",
+                    error
                 )
             }
-            LegacyJsonCleanupScheduler.schedule(app, "playback-stats-import")
-            roomStorageEnabled = true
-        }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(
-                "PlaybackStatsRepo",
-                "Failed to promote playback stats JSON to Room",
-                error
-            )
+        }
+        if (needsRoomRecovery) {
+            roomRecoveryBaseline = legacyState
         }
         return legacyState
     }
@@ -350,7 +557,11 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     return@withLock
                 }
             }
-            scheduleRoomRetry()
+            if (roomStorageEnabled) {
+                scheduleRoomRetry()
+            } else {
+                scheduleRoomRecovery()
+            }
         }
     }
 
@@ -363,6 +574,81 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 persistSnapshot(currentPersistenceSnapshot())
             }
         }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomRecoveryBaseline == null || retryJob?.isActive == true) {
+            return
+        }
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            mutex.withLock {
+                retryJob = null
+                recoverRoomStorage()
+            }
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val baseline = roomRecoveryBaseline ?: return
+        val current = currentPersistenceSnapshot()
+        val recovered = roomPersistenceMutex.withLock {
+            runCatching {
+                if (roomStore.readIfRoomPrimary() == null) {
+                    roomStore.importLegacyAndPromote(
+                        stats = current.stats,
+                        dailyStats = current.dailyStats,
+                        counterSnapshot = current.counterSnapshot,
+                        counterEpochStartedAt = current.counterEpochStartedAt,
+                        clearedAt = current.clearedAt
+                    )
+                }
+                val roomSnapshot = roomStore.readIfRoomPrimary()
+                    ?.toPersistenceSnapshot()
+                    ?: return@runCatching null
+                mergePlaybackStatsRoomRecovery(
+                    roomSnapshot = roomSnapshot,
+                    recoveryBaseline = baseline,
+                    currentSnapshot = current
+                ).also { merged ->
+                    roomStore.writeIncremental(
+                        previousStats = roomSnapshot.stats,
+                        nextStats = merged.stats,
+                        previousDailyStats = roomSnapshot.dailyStats,
+                        nextDailyStats = merged.dailyStats,
+                        previousCounterSnapshot = roomSnapshot.counterSnapshot,
+                        counterSnapshot = merged.counterSnapshot,
+                        counterEpochStartedAt = merged.counterEpochStartedAt,
+                        clearedAt = merged.clearedAt
+                    )
+                }
+            }.onFailure { error ->
+                NPLogger.e(
+                    "PlaybackStatsRepo",
+                    "Failed to recover Room playback stats without replaying JSON",
+                    error
+                )
+            }.getOrNull()
+        }
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+
+        roomStorageEnabled = true
+        roomRecoveryBaseline = null
+        persistedSnapshot = recovered
+        _stats.value = recovered.stats
+        _dailyStats.value = recovered.dailyStats
+        _statsClearedAt.value = recovered.clearedAt
+        counterStore.replaceFromRoom(
+            snapshot = recovered.counterSnapshot,
+            epochStartedAt = recovered.counterEpochStartedAt
+        )
+        persistenceDirty = false
+        markPersistenceClean(expectedGeneration = null)
+        LegacyJsonCleanupScheduler.schedule(app, "playback-stats-room-recovery")
+        triggerPendingSyncAfterPersistence()
     }
 
     private fun markPersistenceClean(expectedGeneration: Long?) {

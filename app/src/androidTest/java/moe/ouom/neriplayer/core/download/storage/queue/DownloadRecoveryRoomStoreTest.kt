@@ -42,7 +42,7 @@ class DownloadRecoveryRoomStoreTest {
             store.markCancelledDownloadKeys(listOf(second.stableKey()), nowMs = 30L)
 
             val queued = store.listPendingQueuedDownloads()
-            assertEquals(listOf("first", "second"), queued.map { it.song.name })
+            assertEquals(listOf("updated", "second"), queued.map { it.song.name })
             assertEquals(10L, queued.first().queuedAtMs)
             assertEquals("updated", queued.first().song.name)
             assertEquals(setOf(second.stableKey()), store.listCancelledDownloadKeys())

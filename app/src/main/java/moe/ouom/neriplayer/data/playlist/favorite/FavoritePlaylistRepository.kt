@@ -42,6 +42,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.mergeRoomRecoverySnapshot
+import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
@@ -85,19 +87,26 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val _snapshots = MutableStateFlow(initialSnapshots)
     private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
     private var persistedSnapshots = initialSnapshots
+    @Volatile
+    private var roomStorageEnabled = true
+    private var roomRecoveryBaseline: List<FavoritePlaylist>? = null
     private var retryJob: Job? = null
     private var pendingSyncAfterPersistence = false
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {
         publishInMemory(initialSnapshots)
+        scheduleRoomRecovery()
     }
 
     private fun load(): List<FavoritePlaylist> {
+        var needsRoomRecovery = false
         val roomFavorites = runCatching {
             runBlocking { roomStore.readIfRoomPrimary() }
         }.onFailure { error ->
-            NPLogger.e(TAG, "读取 Room 收藏歌单失败，保留迁移 JSON", error)
+            roomStorageEnabled = false
+            needsRoomRecovery = true
+            NPLogger.e(TAG, "读取 Room 收藏歌单失败，暂时使用迁移快照", error)
         }.getOrNull()
         if (roomFavorites != null) {
             LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-load")
@@ -107,28 +116,62 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         val legacyFavorites = readLegacyFavorites()
         if (legacyFavorites != null) {
             val normalized = normalize(legacyFavorites)
-            val imported = runCatching {
-                runBlocking {
-                    roomStore.importLegacyAndPromote(normalized)
+            if (roomStorageEnabled) {
+                val imported = runCatching {
+                    runBlocking {
+                        roomStore.importLegacyAndPromote(normalized)
+                    }
+                }.onFailure { error ->
+                    roomStorageEnabled = false
+                    needsRoomRecovery = true
+                    NPLogger.e(TAG, "将收藏歌单迁移到 Room 失败", error)
+                }.getOrNull()
+                when (imported?.status) {
+                    FavoritePlaylistRoomImportStatus.IMPORTED -> {
+                        LegacyJsonCleanupScheduler.schedule(
+                            context,
+                            "favorite-playlist-import"
+                        )
+                    }
+
+                    FavoritePlaylistRoomImportStatus.SKIPPED_ALREADY_PRIMARY -> {
+                        val primary = runCatching {
+                            runBlocking { roomStore.readIfRoomPrimary() }
+                        }.getOrNull()
+                        if (primary != null) {
+                            LegacyJsonCleanupScheduler.schedule(
+                                context,
+                                "favorite-playlist-room-reload"
+                            )
+                            return normalize(primary)
+                        }
+                        roomStorageEnabled = false
+                        needsRoomRecovery = true
+                    }
+
+                    null -> Unit
                 }
-                true
-            }.onFailure { error ->
-                NPLogger.e(TAG, "将收藏歌单 JSON 导入 Room 失败", error)
-            }.getOrDefault(false)
-            if (imported) {
-                LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-import")
+            }
+            if (needsRoomRecovery) {
+                roomRecoveryBaseline = normalized
             }
             return normalized
         }
 
-        return runCatching {
-            runBlocking { roomStore.promoteExistingAndRead() }
-        }.onFailure { error ->
-            NPLogger.e(TAG, "恢复现有 Room 收藏歌单失败", error)
-        }.getOrNull()?.let { favorites ->
-            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-recovery")
-            normalize(favorites)
-        }.orEmpty()
+        if (roomStorageEnabled) {
+            return runCatching {
+                runBlocking { roomStore.promoteExistingAndRead() }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                needsRoomRecovery = true
+                NPLogger.e(TAG, "恢复现有 Room 收藏歌单失败", error)
+            }.getOrNull()?.let { favorites ->
+                LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-recovery")
+                normalize(favorites)
+            }.orEmpty()
+        }
+        roomRecoveryBaseline = emptyList()
+        return emptyList()
     }
 
     private fun readLegacyFavorites(): List<FavoritePlaylist>? {
@@ -197,13 +240,20 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             if (requestAutoSync) {
                 pendingSyncAfterPersistence = true
             }
+            if (!roomStorageEnabled) {
+                scheduleRoomRecovery()
+                return@withLock false
+            }
+            val previous = persistedSnapshots
             val roomSucceeded = runCatching {
                 roomStore.writeIncremental(
-                    previous = persistedSnapshots,
+                    previous = previous,
                     next = favorites
                 )
             }.onFailure { error ->
-                NPLogger.e(TAG, "写入 Room 收藏歌单失败", error)
+                roomStorageEnabled = false
+                roomRecoveryBaseline = previous
+                NPLogger.e(TAG, "写入 Room 收藏歌单失败，等待恢复", error)
             }.isSuccess
             if (roomSucceeded) {
                 persistedSnapshots = favorites
@@ -215,27 +265,75 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
                     triggerAutoSync()
                 }
             } else {
-                schedulePersistenceRetry()
+                scheduleRoomRecovery()
             }
             roomSucceeded
         }
     }
 
-    private fun schedulePersistenceRetry() {
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomRecoveryBaseline == null) return
         if (retryJob?.isActive == true) return
         retryJob = persistenceScope.launch {
             delay(ROOM_RETRY_DELAY_MS)
-            val snapshot = _snapshots.value
-            val shouldRetry = persistenceMutex.withLock {
-                retryJob = null
-                persistedSnapshots != snapshot
+            retryJob = null
+            recoverRoomStorage()
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val baseline = roomRecoveryBaseline ?: return
+        var shouldTriggerSync = false
+        val recovered = mutex.withLock {
+            persistenceMutex.withLock {
+                runCatching {
+                    val current = _snapshots.value
+                    val roomSnapshot = roomStore.readIfRoomPrimary()
+                    if (roomSnapshot == null) {
+                        val imported = roomStore.importLegacyAndPromote(current)
+                        if (imported.status == FavoritePlaylistRoomImportStatus.IMPORTED) {
+                            current
+                        } else {
+                            val primary = roomStore.readIfRoomPrimary()
+                                ?: return@runCatching null
+                            mergeFavoritePlaylistRoomRecovery(
+                                roomSnapshot = primary,
+                                recoveryBaseline = baseline,
+                                currentSnapshot = current
+                            ).let(::normalize)
+                        }
+                    } else {
+                        mergeFavoritePlaylistRoomRecovery(
+                            roomSnapshot = roomSnapshot,
+                            recoveryBaseline = baseline,
+                            currentSnapshot = current
+                        ).let { merged ->
+                            roomStore.writeIncremental(roomSnapshot, merged)
+                            normalize(merged)
+                        }
+                    }
+                }.onFailure { error ->
+                    NPLogger.e(TAG, "恢复 Room 收藏歌单失败，保留内存改动", error)
+                }.getOrNull()?.also { merged ->
+                    roomStorageEnabled = true
+                    roomRecoveryBaseline = null
+                    persistedSnapshots = merged
+                    retryJob?.cancel()
+                    retryJob = null
+                    publishInMemory(merged)
+                    shouldTriggerSync = pendingSyncAfterPersistence
+                    pendingSyncAfterPersistence = false
+                }
             }
-            if (shouldRetry) {
-                persist(
-                    favorites = snapshot,
-                    requestAutoSync = false
-                )
-            }
+        }
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+        LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-recovery")
+        if (shouldTriggerSync) {
+            syncStorage.markSyncMutation()
+            triggerAutoSync()
         }
     }
 
@@ -459,4 +557,18 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             }
         }
     }
+}
+
+internal fun mergeFavoritePlaylistRoomRecovery(
+    roomSnapshot: List<FavoritePlaylist>,
+    recoveryBaseline: List<FavoritePlaylist>,
+    currentSnapshot: List<FavoritePlaylist>
+): List<FavoritePlaylist> {
+    return mergeRoomRecoverySnapshot(
+        roomSnapshot = roomSnapshot,
+        recoveryBaseline = recoveryBaseline,
+        currentSnapshot = currentSnapshot,
+        keyOf = { favorite -> favorite.id to favorite.source },
+        mergeLocalChange = { _, current -> current }
+    )
 }

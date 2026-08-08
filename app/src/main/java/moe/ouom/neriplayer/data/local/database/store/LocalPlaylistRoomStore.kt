@@ -29,7 +29,7 @@ internal class LocalPlaylistRoomStore(
     private val database: NeriUserDataDatabase,
     private val gson: Gson = Gson()
 ) {
-    private val mapper = LocalPlaylistRoomMapper(gson)
+    private val mapper = LocalPlaylistRoomMapper()
 
     suspend fun isRoomPrimary(): Boolean {
         return database.syncMetadataDao()
@@ -57,6 +57,7 @@ internal class LocalPlaylistRoomStore(
                 playlists = snapshot.playlists,
                 tracks = snapshot.tracks,
                 members = snapshot.members,
+                memberNeteaseArtists = snapshot.memberNeteaseArtists,
                 memberTokens = snapshot.memberTokens
             )
             snapshot.migrationMetadata
@@ -114,11 +115,14 @@ internal class LocalPlaylistRoomStore(
         )
         val tracksByIdentity = snapshot.tracks.associateBy { it.identityKey }
         val changedMembers = snapshot.members
+        val changedMemberNeteaseArtists = snapshot.memberNeteaseArtists
         val changedTokens = snapshot.memberTokens
 
         database.withTransaction {
             removedIds.forEach { playlistId ->
                 database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
+                database.localPlaylistDao()
+                    .deleteMemberNeteaseArtistsForPlaylist(playlistId)
                 database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
                 database.localPlaylistDao().deletePlaylist(playlistId)
             }
@@ -136,11 +140,14 @@ internal class LocalPlaylistRoomStore(
                 .forEach { playlistId ->
                     if (playlistId !in removedIds) {
                         database.localPlaylistDao().deleteMemberTokensForPlaylist(playlistId)
+                        database.localPlaylistDao()
+                            .deleteMemberNeteaseArtistsForPlaylist(playlistId)
                         database.localPlaylistDao().deleteMembersForPlaylist(playlistId)
                     }
                 }
             database.localPlaylistDao().insertTracks(tracksByIdentity.values.toList())
             database.localPlaylistDao().insertMembers(changedMembers)
+            database.localPlaylistDao().insertMemberNeteaseArtists(changedMemberNeteaseArtists)
             database.localPlaylistDao().insertMemberTokens(changedTokens)
             database.localPlaylistDao().deleteOrphanTracks()
             database.syncMetadataDao().upsertMigrationMetadata(
@@ -166,6 +173,8 @@ internal class LocalPlaylistRoomStore(
                 playlists = database.localPlaylistDao().getPlaylists(),
                 tracks = database.localPlaylistDao().getTracks(),
                 members = database.localPlaylistDao().getMembers(),
+                memberNeteaseArtists = database.localPlaylistDao()
+                    .getMemberNeteaseArtists(),
                 memberTokens = database.localPlaylistDao().getMemberTokens()
             )
         }

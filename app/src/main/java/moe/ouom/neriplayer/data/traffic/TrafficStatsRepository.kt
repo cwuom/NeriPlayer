@@ -35,6 +35,7 @@ class TrafficStatsRepository private constructor(
     )
     @Volatile
     private var roomStorageEnabled = true
+    private var roomRecoveryBaseline: List<TrafficStatsBucket>? = null
     private val initialStats = loadInitialStats()
     private val _dailyStats = MutableStateFlow(initialStats)
     private var persistedStats = initialStats
@@ -43,6 +44,10 @@ class TrafficStatsRepository private constructor(
     private var persistGeneration = 0L
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
+
+    init {
+        scheduleRoomRecovery()
+    }
 
     fun currentNetworkType(): TrafficNetworkType = app.currentTrafficNetworkType()
 
@@ -134,10 +139,12 @@ class TrafficStatsRepository private constructor(
     }
 
     private fun loadInitialStats(): List<TrafficStatsBucket> {
+        var needsRoomRecovery = false
         val roomStats = runCatching {
             runBlocking { roomStore.readIfRoomPrimary() }
         }.onFailure {
             roomStorageEnabled = false
+            needsRoomRecovery = true
             NPLogger.e(TAG, "Failed to read Room traffic stats", it)
         }.getOrNull()
         if (roomStats != null) {
@@ -157,13 +164,18 @@ class TrafficStatsRepository private constructor(
         }.onFailure {
             NPLogger.e(TAG, "Failed to load traffic stats", it)
         }.getOrDefault(emptyList())
-        runCatching {
-            runBlocking { roomStore.importLegacyAndPromote(legacyStats) }
-            LegacyJsonCleanupScheduler.schedule(app, "traffic-stats-import")
-            roomStorageEnabled = true
-        }.onFailure {
-            roomStorageEnabled = false
-            NPLogger.e(TAG, "Failed to promote traffic stats JSON to Room", it)
+        if (roomStorageEnabled) {
+            runCatching {
+                runBlocking { roomStore.importLegacyAndPromote(legacyStats) }
+                LegacyJsonCleanupScheduler.schedule(app, "traffic-stats-import")
+            }.onFailure {
+                roomStorageEnabled = false
+                needsRoomRecovery = true
+                NPLogger.e(TAG, "Failed to promote traffic stats JSON to Room", it)
+            }
+        }
+        if (needsRoomRecovery) {
+            roomRecoveryBaseline = legacyStats
         }
         return legacyStats
     }
@@ -192,7 +204,11 @@ class TrafficStatsRepository private constructor(
                     return@withLock
                 }
             }
-            scheduleRetry()
+            if (roomStorageEnabled) {
+                scheduleRetry()
+            } else {
+                scheduleRoomRecovery()
+            }
         }
     }
 
@@ -205,6 +221,55 @@ class TrafficStatsRepository private constructor(
                 persistSnapshot(_dailyStats.value)
             }
         }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomRecoveryBaseline == null || retryJob?.isActive == true) {
+            return
+        }
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            statsMutex.withLock {
+                retryJob = null
+                recoverRoomStorage()
+            }
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val baseline = roomRecoveryBaseline ?: return
+        val recovered = persistenceMutex.withLock {
+            runCatching {
+                if (roomStore.readIfRoomPrimary() == null) {
+                    roomStore.importLegacyAndPromote(_dailyStats.value)
+                }
+                val roomSnapshot = roomStore.readIfRoomPrimary()
+                    ?: return@runCatching null
+                mergeTrafficStatsRoomRecovery(
+                    roomSnapshot = roomSnapshot,
+                    recoveryBaseline = baseline,
+                    currentSnapshot = _dailyStats.value
+                ).also { merged ->
+                    roomStore.writeIncremental(roomSnapshot, merged)
+                }
+            }.onFailure { error ->
+                NPLogger.e(
+                    TAG,
+                    "Failed to recover Room traffic stats without replaying JSON",
+                    error
+                )
+            }.getOrNull()
+        }
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+
+        roomStorageEnabled = true
+        roomRecoveryBaseline = null
+        persistedStats = recovered
+        _dailyStats.value = recovered
+        LegacyJsonCleanupScheduler.schedule(app, "traffic-stats-room-recovery")
     }
 
     private fun markPersistenceClean(expectedGeneration: Long?) {
@@ -227,4 +292,84 @@ class TrafficStatsRepository private constructor(
             }
         }
     }
+}
+
+internal fun mergeTrafficStatsRoomRecovery(
+    roomSnapshot: List<TrafficStatsBucket>,
+    recoveryBaseline: List<TrafficStatsBucket>,
+    currentSnapshot: List<TrafficStatsBucket>
+): List<TrafficStatsBucket> {
+    if (currentSnapshot.isEmpty() && recoveryBaseline.isNotEmpty()) {
+        return emptyList()
+    }
+    val recovered = roomSnapshot.associateBy(TrafficStatsBucket::dayStartAt).toMutableMap()
+    val baselineByDay = recoveryBaseline.associateBy(TrafficStatsBucket::dayStartAt)
+    val currentByDay = currentSnapshot.associateBy(TrafficStatsBucket::dayStartAt)
+    (baselineByDay.keys + currentByDay.keys).forEach { dayStartAt ->
+        val baseline = baselineByDay[dayStartAt]
+        val current = currentByDay[dayStartAt]
+        when {
+            current == null && baseline != null -> recovered.remove(dayStartAt)
+            current != null && current != baseline -> {
+                recovered[dayStartAt] = mergeTrafficRecoveryBucket(
+                    room = recovered[dayStartAt],
+                    baseline = baseline,
+                    current = current
+                )
+            }
+        }
+    }
+    return recovered.values.sortedBy(TrafficStatsBucket::dayStartAt)
+}
+
+private fun mergeTrafficRecoveryBucket(
+    room: TrafficStatsBucket?,
+    baseline: TrafficStatsBucket?,
+    current: TrafficStatsBucket
+): TrafficStatsBucket {
+    if (room == null || baseline == null) return current
+    return room.copy(
+        wifiBytes = room.wifiBytes.saturatingAdd(
+            current.wifiBytes.positiveDeltaFrom(baseline.wifiBytes)
+        ),
+        mobileBytes = room.mobileBytes.saturatingAdd(
+            current.mobileBytes.positiveDeltaFrom(baseline.mobileBytes)
+        ),
+        roamingBytes = room.roamingBytes.saturatingAdd(
+            current.roamingBytes.positiveDeltaFrom(baseline.roamingBytes)
+        ),
+        playbackNetworkBytes = room.playbackNetworkBytes.saturatingAdd(
+            current.playbackNetworkBytes.positiveDeltaFrom(baseline.playbackNetworkBytes)
+        ),
+        downloadNetworkBytes = room.downloadNetworkBytes.saturatingAdd(
+            current.downloadNetworkBytes.positiveDeltaFrom(baseline.downloadNetworkBytes)
+        ),
+        cacheHitBytes = room.cacheHitBytes.saturatingAdd(
+            current.cacheHitBytes.positiveDeltaFrom(baseline.cacheHitBytes)
+        ),
+        requestCount = room.requestCount.saturatingAdd(
+            current.requestCount.positiveDeltaFrom(baseline.requestCount)
+        ),
+        cacheHitCount = room.cacheHitCount.saturatingAdd(
+            current.cacheHitCount.positiveDeltaFrom(baseline.cacheHitCount)
+        )
+    )
+}
+
+private fun Long.positiveDeltaFrom(baseline: Long): Long {
+    return coerceAtLeast(0L).minus(baseline.coerceAtLeast(0L)).coerceAtLeast(0L)
+}
+
+private fun Int.positiveDeltaFrom(baseline: Int): Int {
+    return coerceAtLeast(0).minus(baseline.coerceAtLeast(0)).coerceAtLeast(0)
+}
+
+private fun Long.saturatingAdd(delta: Long): Long {
+    val base = coerceAtLeast(0L)
+    return if (delta > Long.MAX_VALUE - base) Long.MAX_VALUE else base + delta
+}
+
+private fun Int.saturatingAdd(delta: Int): Int {
+    val base = coerceAtLeast(0)
+    return if (delta > Int.MAX_VALUE - base) Int.MAX_VALUE else base + delta
 }

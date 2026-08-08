@@ -30,10 +30,12 @@ import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -187,6 +189,9 @@ class LocalPlaylistRepository private constructor(
     }
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    private var roomRecoveryBaseline: List<LocalPlaylist>? = null
+    private var roomRecoveryJob: Job? = null
+    private var roomReadFailed = false
 
     private data class PlaylistLoadResult(
         val playlists: List<LocalPlaylist>,
@@ -250,7 +255,9 @@ class LocalPlaylistRepository private constructor(
         recoverPendingSyncMutation(committedDomainDigest)
 
         var roomPromotedDuringLoad = false
-        if (roomStorageEnabled && roomStore != null) {
+        if (roomReadFailed) {
+            roomRecoveryBaseline = committedPlaylists
+        } else if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val imported = runCatching {
                 runBlocking {
@@ -261,9 +268,10 @@ class LocalPlaylistRepository private constructor(
                 }
             }.onFailure { error ->
                 roomStorageEnabled = false
+                roomRecoveryBaseline = committedPlaylists
                 NPLogger.e(
                     "LocalPlaylistRepo",
-                    "Failed to promote legacy playlists to Room; JSON remains authoritative",
+                    "Failed to promote legacy playlists to Room; waiting for recovery",
                     error
                 )
             }.getOrNull()
@@ -282,7 +290,8 @@ class LocalPlaylistRepository private constructor(
         if (
             shouldRewriteLegacyPlaylistsAfterInitialLoad(
                 migrationRequired = loadResult.migrationRequired,
-                allowMigrationWrite = loadResult.allowMigrationWrite,
+                allowMigrationWrite = loadResult.allowMigrationWrite &&
+                    roomRecoveryBaseline == null,
                 roomPromotedDuringLoad = roomPromotedDuringLoad
             )
         ) {
@@ -294,6 +303,7 @@ class LocalPlaylistRepository private constructor(
         }
         _playlists.value = loadResult.playlists
         _playlistCount.value = loadResult.playlists.size
+        scheduleRoomRecovery()
     }
 
     private fun readRoomPrimary(): List<LocalPlaylist>? {
@@ -306,14 +316,14 @@ class LocalPlaylistRepository private constructor(
                 activeRoomStore.readIfRoomPrimary()
             }
         }.onFailure { error ->
+            roomStorageEnabled = false
+            roomReadFailed = true
             NPLogger.e(
                 "LocalPlaylistRepo",
-                "Failed to read Room playlists; refusing to overwrite Room from legacy JSON",
+                "Failed to read Room playlists; using legacy snapshot until recovery",
                 error
             )
-        }.getOrElse { error ->
-            throw IOException("Failed to read Room playlists", error)
-        }
+        }.getOrNull()
     }
 
     private fun readStoredPlaylists(): PlaylistLoadResult {
@@ -580,7 +590,7 @@ class LocalPlaylistRepository private constructor(
 
         val currentDomainDigest = LocalPlaylistRoomStore.domainDigest(_playlists.value)
         val nextDomainDigest = LocalPlaylistRoomStore.domainDigest(normalized)
-        val legacyPrimaryText = if (!roomStorageEnabled) {
+        val legacyPrimaryText = if (!roomStorageEnabled && roomRecoveryBaseline == null) {
             storage.readPrimary()
         } else {
             null
@@ -610,16 +620,29 @@ class LocalPlaylistRepository private constructor(
             }.onSuccess {
                 committedToRoom = true
             }.onFailure { error ->
+                roomStorageEnabled = false
+                if (roomRecoveryBaseline == null) {
+                    roomRecoveryBaseline = _playlists.value
+                }
+                _playlists.value = normalized
+                _playlistCount.value = normalized.size
+                scheduleRoomRecovery()
                 NPLogger.e(
                     "LocalPlaylistRepo",
-                    "Room playlist commit failed; keeping JSON migration data read-only",
+                    "Room playlist commit failed; keeping mutation in memory until recovery",
                     error
                 )
                 throw IOException("Failed to persist local playlists in Room", error)
             }
         }
         if (stateChanged && !committedToRoom) {
-            persistToDisk(normalized)
+            if (roomRecoveryBaseline == null) {
+                persistToDisk(normalized)
+            } else {
+                _playlists.value = normalized
+                _playlistCount.value = normalized.size
+                scheduleRoomRecovery()
+            }
         }
         if (stateChanged) {
             _playlists.value = normalized
@@ -640,6 +663,87 @@ class LocalPlaylistRepository private constructor(
         } else if (triggerSync && autoSyncEnabled) {
             scheduleAutoSync()
         }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomStore == null || roomRecoveryBaseline == null) {
+            return
+        }
+        if (roomRecoveryJob?.isActive == true) return
+        roomRecoveryJob = initializationScope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            roomRecoveryJob = null
+            recoverRoomStorage()
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val activeRoomStore = roomStore ?: return
+        var mapperNotEquivalent = false
+        val recovered = playlistCommitMutex.withLock {
+            val baseline = roomRecoveryBaseline ?: return@withLock null
+            runCatching {
+                val current = _playlists.value
+                val roomSnapshot = runCatching {
+                    activeRoomStore.readIfRoomPrimary()
+                }.getOrElse { error ->
+                    throw IOException("Failed to read Room playlists during recovery", error)
+                }
+                if (roomSnapshot == null) {
+                    val imported = activeRoomStore.importShadowSnapshotIfChanged(
+                        playlists = current,
+                        sourceDigest = LocalPlaylistRoomStore.domainDigest(current)
+                    )
+                    when (imported.status) {
+                        LocalPlaylistRoomShadowImportStatus.IMPORTED -> current
+                        LocalPlaylistRoomShadowImportStatus.SKIPPED_UNCHANGED -> {
+                            activeRoomStore.readIfRoomPrimary()
+                                ?: throw IOException(
+                                    "Room primary marker disappeared during recovery"
+                                )
+                        }
+
+                        LocalPlaylistRoomShadowImportStatus.SKIPPED_NOT_EQUIVALENT -> {
+                            mapperNotEquivalent = true
+                            null
+                        }
+                    }
+                } else {
+                    val merged = mergeLocalPlaylistRoomRecovery(
+                        roomSnapshot = roomSnapshot,
+                        recoveryBaseline = baseline,
+                        currentSnapshot = current
+                    )
+                    activeRoomStore.writeIncremental(
+                        previous = roomSnapshot,
+                        next = merged,
+                        sourceDigest = LocalPlaylistRoomStore.domainDigest(merged)
+                    )
+                    merged
+                }
+            }.onFailure { error ->
+                NPLogger.e(
+                    "LocalPlaylistRepo",
+                    "Failed to recover Room playlists without replaying JSON",
+                    error
+                )
+            }.getOrNull()?.also { merged ->
+                roomStorageEnabled = true
+                roomRecoveryBaseline = null
+                _playlists.value = merged
+                _playlistCount.value = merged.size
+            }
+        }
+        if (recovered == null) {
+            if (mapperNotEquivalent) {
+                roomRecoveryBaseline = null
+            } else {
+                scheduleRoomRecovery()
+            }
+            return
+        }
+        LegacyJsonCleanupScheduler.schedule(context, "local-playlist-room-recovery")
+        recoverPendingSyncMutation(LocalPlaylistRoomStore.domainDigest(recovered))
     }
 
     private fun recoverPendingSyncMutation(committedDomainDigest: String) {
@@ -3014,6 +3118,7 @@ class LocalPlaylistRepository private constructor(
 
     companion object {
         const val MAX_PLAYLIST_NAME_LENGTH = 10
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
         private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
         private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
         private const val NETEASE_ALBUM_PREFIX = "Netease"
@@ -3061,4 +3166,18 @@ class LocalPlaylistRepository private constructor(
             )
         }
     }
+}
+
+internal fun mergeLocalPlaylistRoomRecovery(
+    roomSnapshot: List<LocalPlaylist>,
+    recoveryBaseline: List<LocalPlaylist>,
+    currentSnapshot: List<LocalPlaylist>
+): List<LocalPlaylist> {
+    return moe.ouom.neriplayer.data.local.database.mergeRoomRecoverySnapshot(
+        roomSnapshot = roomSnapshot,
+        recoveryBaseline = recoveryBaseline,
+        currentSnapshot = currentSnapshot,
+        keyOf = LocalPlaylist::id,
+        mergeLocalChange = { _, current -> current }
+    )
 }

@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.data.local.database.dao.DownloadSnapshotDao
 import moe.ouom.neriplayer.data.local.database.dao.PlatformPlaylistCacheDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
+import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongNeteaseArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -38,6 +39,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatCounterShardEn
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatDailyCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackStatEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberNeteaseArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.SyncOutboxEntity
 import moe.ouom.neriplayer.data.local.database.entity.SyncReplicaCheckpointEntity
@@ -62,6 +64,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         LocalPlaylistEntity::class,
         TrackEntity::class,
         PlaylistMemberEntity::class,
+        PlaylistMemberNeteaseArtistEntity::class,
         PlaylistMemberTokenEntity::class,
         SyncOutboxEntity::class,
         SyncReplicaCheckpointEntity::class,
@@ -78,6 +81,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlaybackStatDailyCounterShardEntity::class,
         FavoritePlaylistEntity::class,
         FavoritePlaylistSongEntity::class,
+        FavoritePlaylistSongNeteaseArtistEntity::class,
         TrafficStatsBucketEntity::class,
         PlaybackQueueStateEntity::class,
         PlaybackQueueSongEntity::class,
@@ -94,7 +98,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -161,7 +165,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_10_11,
                 MIGRATION_11_12,
                 MIGRATION_12_13,
-                MIGRATION_13_14
+                MIGRATION_13_14,
+                MIGRATION_14_15
             ).build()
         }
 
@@ -995,6 +1000,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 createPlatformPlaylistCacheTables(db)
             }
         }
+
+        val MIGRATION_14_15: Migration = StructuredSongRoomMigration
 
         private fun createPlatformPlaylistCacheTables(db: SupportSQLiteDatabase) {
             db.execSQL(

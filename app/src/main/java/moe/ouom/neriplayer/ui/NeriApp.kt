@@ -156,6 +156,7 @@ import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
+import moe.ouom.neriplayer.core.player.persistence.setPlaybackSourceRoute
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -1439,6 +1440,11 @@ private fun NeriAppContent(
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var showNowPlayingLyrics by rememberSaveable { mutableStateOf(false) }
     var currentPlaybackSourceRoute by rememberSaveable { mutableStateOf<String?>(null) }
+    val persistedPlaybackSourceRoute by PlayerManager.playbackSourceRouteFlow
+        .collectAsStateWithLifecycle()
+    LaunchedEffect(persistedPlaybackSourceRoute) {
+        currentPlaybackSourceRoute = persistedPlaybackSourceRoute
+    }
     var restoreLyricsAfterAlbumBack by rememberSaveable { mutableStateOf(false) }
     var lyricsAlbumRouteObserved by rememberSaveable { mutableStateOf(false) }
     val devModeEnabled by repo.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
@@ -2119,6 +2125,7 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = sourceRoute
+        PlayerManager.setPlaybackSourceRoute(sourceRoute)
         PlayerManager.prefetchYouTubePlayableUrlWindow(
             playlist = songs,
             startIndex = index,
@@ -2146,6 +2153,7 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = null
+        PlayerManager.setPlaybackSourceRoute(null)
         PlayerManager.prefetchYouTubePlayableUrlWindow(
             playlist = listOf(song),
             startIndex = 0,
@@ -2185,6 +2193,7 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = sourceRoute
+        PlayerManager.setPlaybackSourceRoute(sourceRoute)
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
@@ -2204,6 +2213,7 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = sourceRoute
+        PlayerManager.setPlaybackSourceRoute(sourceRoute)
         showNowPlaying = true
         NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
         PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)

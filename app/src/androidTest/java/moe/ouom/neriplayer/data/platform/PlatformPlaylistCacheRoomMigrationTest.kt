@@ -187,7 +187,7 @@ class PlatformPlaylistCacheRoomMigrationTest {
     }
 
     @Test
-    fun roomFailuresKeepLegacyCachesReadableAndRetained() = runTest {
+    fun roomFailuresRefuseLegacyFallbackAndRetainCaches() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val root = File(context.cacheDir, "platform-cache-failure-${System.nanoTime()}")
         try {
@@ -218,13 +218,10 @@ class PlatformPlaylistCacheRoomMigrationTest {
             val biliArchiveRepo = BiliArchiveCacheRepository(failingStore, biliArchiveDir)
             val youtubeRepo = YouTubeMusicPlaylistCacheRepository(failingStore, youtubeDir)
 
-            assertEquals(neteaseCache, neteaseRepo.read(neteaseCache.playlistId))
-            assertEquals(biliFavoriteCache, biliFavoriteRepo.read(biliFavoriteCache.mediaId))
-            assertEquals(
-                biliArchiveCache,
-                biliArchiveRepo.read(biliArchiveCache.mediaId, biliArchiveCache.kind)
-            )
-            assertEquals(youtubeCache, youtubeRepo.read(youtubeCache.browseId))
+            assertNull(neteaseRepo.read(neteaseCache.playlistId))
+            assertNull(biliFavoriteRepo.read(biliFavoriteCache.mediaId))
+            assertNull(biliArchiveRepo.read(biliArchiveCache.mediaId, biliArchiveCache.kind))
+            assertNull(youtubeRepo.read(youtubeCache.browseId))
             assertTrue(neteaseFile.exists())
             assertTrue(biliFavoriteFile.exists())
             assertTrue(biliArchiveFile.exists())

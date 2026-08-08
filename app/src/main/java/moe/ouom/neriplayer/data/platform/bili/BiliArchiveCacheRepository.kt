@@ -83,7 +83,9 @@ class BiliArchiveCacheRepository internal constructor(
 
     fun read(mediaId: Long, kind: String): BiliArchiveContentCache? {
         val cacheKey = cacheKey(mediaId, kind)
-        readRoom(cacheKey)?.let { return it }
+        val roomResult = readRoom(cacheKey)
+        if (roomResult.isFailure) return null
+        roomResult.getOrNull()?.let { return it }
         val file = cacheFile(mediaId, kind)
         if (!file.exists()) return null
         return runCatching {
@@ -121,14 +123,14 @@ class BiliArchiveCacheRepository internal constructor(
         }
     }
 
-    private fun readRoom(cacheKey: String): BiliArchiveContentCache? {
+    private fun readRoom(cacheKey: String): Result<BiliArchiveContentCache?> {
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 roomStore.read(PLATFORM, cacheKey)
             }?.toBiliArchiveCache()
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read Bili archive cache from Room: cacheKey=$cacheKey", error)
-        }.getOrNull()
+        }
     }
 
     private fun saveRoom(cache: BiliArchiveContentCache): Boolean {

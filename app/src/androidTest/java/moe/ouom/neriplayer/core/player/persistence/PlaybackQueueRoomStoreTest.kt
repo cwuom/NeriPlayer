@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.player.model.PersistedSongItem
 import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,7 +39,8 @@ class PlaybackQueueRoomStoreTest {
                 repeatMode = 2,
                 shuffleEnabled = true,
                 shuffleRestorePlaylist = listOf(second, first),
-                shuffleRestoreIndex = 0
+                shuffleRestoreIndex = 0,
+                sourceRoute = "local_playlist_detail/42"
             )
             val store = PlaybackQueueRoomStore(database)
 
@@ -108,12 +110,114 @@ class PlaybackQueueRoomStoreTest {
             store.clear()
 
             assertNull(database.playbackQueueDao().getState())
+            assertNull(
+                database.syncMetadataDao().getMigrationMetadata(
+                    PlaybackQueueRoomStore.SOURCE_ROUTE_METADATA_KEY
+                )
+            )
             assertTrue(
                 database.syncMetadataDao().getMigrationMetadata(
                     PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
                 )?.value == PlaybackQueueRoomStore.ROOM_PRIMARY_STATE
             )
             assertNull(store.readIfRoomPrimary())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun sourceRouteSurvivesDatabaseReopen() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val databaseName = "playback_queue_room_store_${System.nanoTime()}.db"
+        val firstDatabase = Room.databaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java,
+            databaseName
+        ).allowMainThreadQueries().build()
+
+        try {
+            PlaybackQueueRoomStore(firstDatabase).replaceSnapshot(
+                PersistedState(
+                    playlist = listOf(song(1L, "first")),
+                    index = 0,
+                    sourceRoute = "local_playlist_detail/42"
+                ),
+                now = 10L
+            )
+        } finally {
+            firstDatabase.close()
+        }
+
+        val reopenedDatabase = Room.databaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java,
+            databaseName
+        ).allowMainThreadQueries().build()
+        try {
+            assertEquals(
+                "local_playlist_detail/42",
+                PlaybackQueueRoomStore(reopenedDatabase)
+                    .readIfRoomPrimary()
+                    ?.sourceRoute
+            )
+        } finally {
+            reopenedDatabase.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun oversizedSourceRouteClearsPreviousValue() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        try {
+            val store = PlaybackQueueRoomStore(database)
+            store.replaceSnapshot(
+                PersistedState(
+                    playlist = listOf(song(1L, "first")),
+                    index = 0,
+                    sourceRoute = "local_playlist_detail/42"
+                ),
+                now = 10L
+            )
+            store.updateSourceRoute("x".repeat(16 * 1024 + 1), now = 20L)
+
+            assertNull(store.readIfRoomPrimary()?.sourceRoute)
+            assertNull(
+                database.syncMetadataDao().getMigrationMetadata(
+                    PlaybackQueueRoomStore.SOURCE_ROUTE_METADATA_KEY
+                )
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun routeOnlyUpdateDoesNotPromoteRoomBeforeQueueCutover() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        try {
+            val store = PlaybackQueueRoomStore(database)
+            store.updateSourceRoute("local_playlist_detail/42", now = 10L)
+
+            assertFalse(store.isRoomPrimary())
+            assertNull(store.readIfRoomPrimary())
+            assertEquals(
+                "local_playlist_detail/42",
+                database.syncMetadataDao().getMigrationMetadata(
+                    PlaybackQueueRoomStore.SOURCE_ROUTE_METADATA_KEY
+                )?.value
+            )
         } finally {
             database.close()
         }

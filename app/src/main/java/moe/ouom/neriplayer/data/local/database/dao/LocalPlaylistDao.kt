@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistSummaryProjection
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberNeteaseArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
 
@@ -52,6 +53,12 @@ internal interface LocalPlaylistDao {
     suspend fun getMembers(): List<PlaylistMemberEntity>
 
     @Query(
+        "SELECT * FROM playlist_member_netease_artist ORDER BY playlist_id ASC, " +
+            "identity_key ASC, artist_position ASC"
+    )
+    suspend fun getMemberNeteaseArtists(): List<PlaylistMemberNeteaseArtistEntity>
+
+    @Query(
         "SELECT * FROM playlist_member_token ORDER BY playlist_id ASC, identity_key ASC, " +
             "token_index ASC, device_id ASC, counter ASC"
     )
@@ -70,6 +77,9 @@ internal interface LocalPlaylistDao {
     suspend fun insertMembers(members: List<PlaylistMemberEntity>)
 
     @Upsert
+    suspend fun insertMemberNeteaseArtists(artists: List<PlaylistMemberNeteaseArtistEntity>)
+
+    @Upsert
     suspend fun insertMemberTokens(tokens: List<PlaylistMemberTokenEntity>)
 
     @Query("DELETE FROM playlist_member_token")
@@ -83,6 +93,14 @@ internal interface LocalPlaylistDao {
 
     @Query("DELETE FROM playlist_member WHERE playlist_id = :playlistId")
     suspend fun deleteMembersForPlaylist(playlistId: Long)
+
+    @Query("DELETE FROM playlist_member_netease_artist")
+    suspend fun deleteMemberNeteaseArtists()
+
+    @Query(
+        "DELETE FROM playlist_member_netease_artist WHERE playlist_id = :playlistId"
+    )
+    suspend fun deleteMemberNeteaseArtistsForPlaylist(playlistId: Long)
 
     @Query("DELETE FROM local_playlist")
     suspend fun deletePlaylists()
@@ -104,15 +122,18 @@ internal interface LocalPlaylistDao {
         playlists: List<LocalPlaylistEntity>,
         tracks: List<TrackEntity>,
         members: List<PlaylistMemberEntity>,
+        memberNeteaseArtists: List<PlaylistMemberNeteaseArtistEntity>,
         memberTokens: List<PlaylistMemberTokenEntity>
     ) {
         deleteMemberTokens()
+        deleteMemberNeteaseArtists()
         deleteMembers()
         deletePlaylists()
         deleteTracks()
         insertTracks(tracks)
         insertPlaylists(playlists)
         insertMembers(members)
+        insertMemberNeteaseArtists(memberNeteaseArtists)
         insertMemberTokens(memberTokens)
     }
 }

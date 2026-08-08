@@ -16,6 +16,17 @@ internal data class BiliVideoSkipRoomSnapshot(
     val drafts: List<BiliVideoSkipDraft>
 )
 
+internal enum class BiliVideoSkipRoomImportStatus {
+    IMPORTED,
+    SKIPPED_ALREADY_PRIMARY
+}
+
+internal data class BiliVideoSkipRoomImportResult(
+    val status: BiliVideoSkipRoomImportStatus,
+    val ruleCount: Int,
+    val draftCount: Int
+)
+
 internal class BiliVideoSkipRoomStore(
     private val database: NeriUserDataDatabase
 ) {
@@ -59,10 +70,14 @@ internal class BiliVideoSkipRoomStore(
         rules: List<BiliVideoSkipRule>,
         drafts: List<BiliVideoSkipDraft>,
         now: Long = System.currentTimeMillis()
-    ) {
-        database.withTransaction {
+    ): BiliVideoSkipRoomImportResult {
+        return database.withTransaction {
             if (isRoomPrimary()) {
-                return@withTransaction
+                return@withTransaction BiliVideoSkipRoomImportResult(
+                    status = BiliVideoSkipRoomImportStatus.SKIPPED_ALREADY_PRIMARY,
+                    ruleCount = rules.size,
+                    draftCount = drafts.size
+                )
             }
             val dao = database.biliVideoSkipDao()
             dao.deleteIntervals()
@@ -78,6 +93,11 @@ internal class BiliVideoSkipRoomStore(
             )
             dao.insertDrafts(drafts.map(BiliVideoSkipDraft::toEntity))
             markRoomPrimary(now)
+            BiliVideoSkipRoomImportResult(
+                status = BiliVideoSkipRoomImportStatus.IMPORTED,
+                ruleCount = rules.size,
+                draftCount = drafts.size
+            )
         }
     }
 

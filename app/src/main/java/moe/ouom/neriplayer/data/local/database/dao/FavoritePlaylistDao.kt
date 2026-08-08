@@ -5,6 +5,7 @@ import androidx.room.Query
 import androidx.room.Upsert
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
+import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongNeteaseArtistEntity
 
 @Dao
 internal interface FavoritePlaylistDao {
@@ -20,14 +21,28 @@ internal interface FavoritePlaylistDao {
     )
     suspend fun getSongs(): List<FavoritePlaylistSongEntity>
 
+    @Query(
+        "SELECT * FROM favorite_playlist_song_netease_artist ORDER BY playlist_id ASC, " +
+            "source ASC, display_position ASC, artist_position ASC"
+    )
+    suspend fun getSongNeteaseArtists(): List<FavoritePlaylistSongNeteaseArtistEntity>
+
     @Upsert
     suspend fun upsertPlaylists(playlists: List<FavoritePlaylistEntity>)
 
     @Upsert
     suspend fun upsertSongs(songs: List<FavoritePlaylistSongEntity>)
 
+    @Upsert
+    suspend fun upsertSongNeteaseArtists(
+        artists: List<FavoritePlaylistSongNeteaseArtistEntity>
+    )
+
     @Query("DELETE FROM favorite_playlist_song")
     suspend fun deleteAllSongs()
+
+    @Query("DELETE FROM favorite_playlist_song_netease_artist")
+    suspend fun deleteAllSongNeteaseArtists()
 
     @Query("DELETE FROM favorite_playlist")
     suspend fun deleteAllPlaylists()
@@ -37,6 +52,12 @@ internal interface FavoritePlaylistDao {
             "WHERE playlist_id = :playlistId AND source = :source"
     )
     suspend fun deleteSongs(playlistId: Long, source: String)
+
+    @Query(
+        "DELETE FROM favorite_playlist_song_netease_artist " +
+            "WHERE playlist_id = :playlistId AND source = :source"
+    )
+    suspend fun deleteSongNeteaseArtists(playlistId: Long, source: String)
 
     @Query(
         "DELETE FROM favorite_playlist " +

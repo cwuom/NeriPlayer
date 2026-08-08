@@ -94,7 +94,9 @@ class NeteasePlaylistCacheRepository internal constructor(
 
     fun read(playlistId: Long): CachedNeteasePlaylistDetail? {
         val cacheKey = playlistId.toString()
-        readRoom(cacheKey)?.let { return it }
+        val roomResult = readRoom(cacheKey)
+        if (roomResult.isFailure) return null
+        roomResult.getOrNull()?.let { return it }
         val file = cacheFile(playlistId)
         if (!file.exists()) return null
         return runCatching {
@@ -129,14 +131,14 @@ class NeteasePlaylistCacheRepository internal constructor(
         }
     }
 
-    private fun readRoom(cacheKey: String): CachedNeteasePlaylistDetail? {
+    private fun readRoom(cacheKey: String): Result<CachedNeteasePlaylistDetail?> {
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 roomStore.read(PLATFORM, cacheKey)
             }?.toNeteasePlaylistDetail()
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read NetEase playlist cache from Room: cacheKey=$cacheKey", error)
-        }.getOrNull()
+        }
     }
 
     private fun saveRoom(cache: CachedNeteasePlaylistDetail): Boolean {

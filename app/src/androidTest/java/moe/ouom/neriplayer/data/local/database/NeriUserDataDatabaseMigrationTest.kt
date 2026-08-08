@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,14 +23,14 @@ class NeriUserDataDatabaseMigrationTest {
     )
 
     @Test
-    fun migrateFromVersion1ToVersion14() {
+    fun migrateFromVersion1ToVersion15() {
         helper.createDatabase(EMPTY_SCHEMA_DATABASE_NAME, 1).close()
 
         migrateToCurrent(EMPTY_SCHEMA_DATABASE_NAME).close()
     }
 
     @Test
-    fun migrateFromVersion1ToVersion14PreservesLocalPlaylistAndSyncRecords() {
+    fun migrateFromVersion1ToVersion15PreservesLocalPlaylistAndSyncRecords() {
         helper.createDatabase(DATA_PRESERVATION_DATABASE_NAME, 1).use { database ->
             insertVersion1Records(database)
         }
@@ -45,17 +46,80 @@ class NeriUserDataDatabaseMigrationTest {
             }
             assertRowCount(database, "track", 1)
             assertRowCount(database, "playlist_member", 1)
+            assertRowCount(database, "playlist_member_netease_artist", 0)
             assertRowCount(database, "playlist_member_token", 1)
             assertRowCount(database, "sync_outbox", 1)
             assertRowCount(database, "sync_replica_checkpoint", 1)
             assertRowCount(database, "migration_metadata", 1)
+            assertFalse(hasColumn(database, "track", "durable_payload_json"))
+            assertFalse(hasColumn(database, "playlist_member", "member_payload_json"))
+            database.query(
+                "SELECT `name`, `song_id` FROM `playlist_member` " +
+                    "WHERE `playlist_id` = 42"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Migration track", cursor.getString(0))
+                assertEquals(42L, cursor.getLong(1))
+            }
+        }
+    }
+
+    @Test
+    fun migrateFromVersion14StructuresFavoriteSongsAndToleratesBadPayload() {
+        helper.createDatabase(FAVORITE_MIGRATION_DATABASE_NAME, 14).use { database ->
+            database.execSQL(
+                """
+                INSERT INTO favorite_playlist (
+                    playlist_id, source, name, cover_url, track_count, browse_id,
+                    remote_playlist_id, subtitle, added_time, sort_order, modified_at,
+                    is_deleted
+                ) VALUES (99, 'netease', 'Migrated favorites', NULL, 2, NULL, NULL,
+                    NULL, 1, 2, 3, 0)
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                INSERT INTO favorite_playlist_song (
+                    playlist_id, source, display_position, song_payload_json
+                ) VALUES (99, 'netease', 0,
+                    '{"id":7,"name":"Structured","artist":"Artist",
+                    "album":"Album","albumId":8,"durationMs":9000,
+                    "neteaseArtists":[{"id":11,"name":"Artist"}]}')
+                """.trimIndent()
+            )
+            database.execSQL(
+                """
+                INSERT INTO favorite_playlist_song (
+                    playlist_id, source, display_position, song_payload_json
+                ) VALUES (99, 'netease', 1, '{bad-json')
+                """.trimIndent()
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            FAVORITE_MIGRATION_DATABASE_NAME,
+            15,
+            true,
+            NeriUserDataDatabase.MIGRATION_14_15
+        ).use { database ->
+            assertFalse(hasColumn(database, "favorite_playlist_song", "song_payload_json"))
+            assertRowCount(database, "favorite_playlist_song", 2)
+            assertRowCount(database, "favorite_playlist_song_netease_artist", 1)
+            database.query(
+                "SELECT `name`, `id` FROM favorite_playlist_song " +
+                    "WHERE playlist_id = 99 AND display_position = 0"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Structured", cursor.getString(0))
+                assertEquals(7L, cursor.getLong(1))
+            }
         }
     }
 
     private fun migrateToCurrent(databaseName: String): SupportSQLiteDatabase {
         return helper.runMigrationsAndValidate(
             databaseName,
-            14,
+            15,
             true,
             NeriUserDataDatabase.MIGRATION_1_2,
             NeriUserDataDatabase.MIGRATION_2_3,
@@ -69,7 +133,8 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_10_11,
             NeriUserDataDatabase.MIGRATION_11_12,
             NeriUserDataDatabase.MIGRATION_12_13,
-            NeriUserDataDatabase.MIGRATION_13_14
+            NeriUserDataDatabase.MIGRATION_13_14,
+            NeriUserDataDatabase.MIGRATION_14_15
         )
     }
 
@@ -144,8 +209,23 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    private fun hasColumn(
+        database: SupportSQLiteDatabase,
+        tableName: String,
+        columnName: String
+    ): Boolean {
+        database.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == columnName) return true
+            }
+        }
+        return false
+    }
+
     private companion object {
         const val EMPTY_SCHEMA_DATABASE_NAME = "neri-user-data-migration-empty-test"
         const val DATA_PRESERVATION_DATABASE_NAME = "neri-user-data-migration-data-test"
+        const val FAVORITE_MIGRATION_DATABASE_NAME = "neri-user-data-migration-favorite-test"
     }
 }

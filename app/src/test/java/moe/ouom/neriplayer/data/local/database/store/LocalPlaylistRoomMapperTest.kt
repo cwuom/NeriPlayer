@@ -6,7 +6,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,6 +56,7 @@ class LocalPlaylistRoomMapperTest {
             playlists = snapshot.playlists,
             tracks = snapshot.tracks,
             members = snapshot.members,
+            memberNeteaseArtists = snapshot.memberNeteaseArtists,
             memberTokens = snapshot.memberTokens
         )
 
@@ -92,8 +92,11 @@ class LocalPlaylistRoomMapperTest {
         assertEquals(listOf("first", "local file"), snapshot.tracks.map { it.name }.sorted())
         assertTrue(snapshot.memberTokens.none { it.deviceId.isBlank() || it.counter <= 0L })
         assertTrue(snapshot.migrationMetadata.any { it.key == "local_playlist_source_digest" })
-        assertFalse(snapshot.tracks.any { it.durablePayloadJson.contains("temporary-stream") })
-        assertFalse(snapshot.members.any { it.memberPayloadJson.contains("temporary-stream") })
+        assertEquals(
+            listOf("first", "local file", "local file"),
+            snapshot.members.map { it.name }.sorted()
+        )
+        assertEquals(1, snapshot.memberNeteaseArtists.size)
         assertEquals("/storage/emulated/0/Music/local.flac", restored[0].songs.single().localFilePath)
     }
 
@@ -111,6 +114,24 @@ class LocalPlaylistRoomMapperTest {
         assertTrue(result.equivalent)
         assertEquals(1, result.playlistCount)
         assertEquals(1, result.memberCount)
+        assertNull(result.firstMismatch)
+    }
+
+    @Test
+    fun `validation accepts legacy null netease artist list`() {
+        val playlist = LocalPlaylist(
+            id = 31L,
+            name = "legacy artists",
+            songs = mutableListOf(
+                remoteSong(id = 311L, name = "legacy song").copy(
+                    neteaseArtists = null
+                )
+            )
+        )
+
+        val result = mapper.validateRoundTrip(listOf(playlist))
+
+        assertTrue(result.equivalent)
         assertNull(result.firstMismatch)
     }
 
@@ -133,6 +154,12 @@ class LocalPlaylistRoomMapperTest {
             channelId = "netease",
             audioId = id.toString(),
             playlistContextId = "playlist-context-$id",
+            neteaseArtists = listOf(
+                moe.ouom.neriplayer.data.model.NeteaseArtistSummary(
+                    id = id + 100L,
+                    name = "artist-$id"
+                )
+            ),
             streamUrl = streamUrl,
             addedAt = addedAt,
             syncMembershipTokens = tokens

@@ -29,4 +29,36 @@ class LocalPlaylistPlaybackStatsRepositoryTest {
         assertTrue(normalized.single().counterShards.isEmpty())
         assertTrue(normalized.single().dailyPlayBuckets.isEmpty())
     }
+
+    @Test
+    fun `room recovery keeps Room-only stats and merges local playback delta once`() {
+        val baseline = recordLocalPlaylistPlay(
+            current = emptyList(),
+            playlistId = 1L,
+            playedAt = 100L,
+            deviceId = "local"
+        )
+        val current = recordLocalPlaylistPlay(
+            current = baseline,
+            playlistId = 1L,
+            playedAt = 200L,
+            deviceId = "local"
+        )
+        val roomSnapshot = baseline + recordLocalPlaylistPlay(
+            current = emptyList(),
+            playlistId = 2L,
+            playedAt = 150L,
+            deviceId = "remote"
+        )
+
+        val recovered = mergeLocalPlaylistPlaybackRoomRecovery(
+            roomSnapshot = roomSnapshot,
+            recoveryBaseline = baseline,
+            currentSnapshot = current
+        )
+
+        assertEquals(2, recovered.size)
+        assertEquals(2L, recovered.first { it.playlistId == 1L }.totalPlayCount)
+        assertEquals(1L, recovered.first { it.playlistId == 2L }.totalPlayCount)
+    }
 }

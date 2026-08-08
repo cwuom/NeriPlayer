@@ -526,6 +526,8 @@ object PlayerManager {
     val currentSongFlow: StateFlow<SongItem?> = _currentSongFlow
     @Volatile
     internal var localPlaylistPlaybackSource: LocalPlaylistPlaybackSource? = null
+    internal val _playbackSourceRouteFlow = MutableStateFlow<String?>(null)
+    val playbackSourceRouteFlow: StateFlow<String?> = _playbackSourceRouteFlow
     internal val playbackDemandArbiter = PlaybackDemandArbiter()
 
     internal val _currentQueueFlow = MutableStateFlow<List<SongItem>>(emptyList())

@@ -35,21 +35,37 @@ internal class ManagedDownloadSnapshotRoomStore(
         }
     }
 
-    suspend fun clear() {
-        globalMutex.withLock {
-            runCatching {
+    suspend fun clear(): Boolean {
+        return globalMutex.withLock {
+            val roomCleared = runCatching {
+                val nowMs = System.currentTimeMillis()
                 database.withTransaction {
                     database.downloadSnapshotDao().clearEntries()
                     database.downloadSnapshotDao().clearMetadata()
-                    database.syncMetadataDao().deleteMigrationMetadata(
-                        listOf(CUTOVER_STATE_METADATA_KEY, ROOT_KEY_METADATA_KEY)
+                    database.syncMetadataDao().upsertMigrationMetadata(
+                        MigrationMetadataEntity(
+                            key = CUTOVER_STATE_METADATA_KEY,
+                            value = ROOM_PRIMARY_STATE,
+                            updatedAt = nowMs
+                        )
+                    )
+                    database.syncMetadataDao().upsertMigrationMetadata(
+                        MigrationMetadataEntity(
+                            key = ROOT_KEY_METADATA_KEY,
+                            value = CLEARED_ROOT_KEY,
+                            updatedAt = nowMs
+                        )
                     )
                 }
+                true
             }.onFailure { error ->
                 NPLogger.w(TAG, "清理下载索引数据库缓存失败: ${error.message}")
+            }.getOrDefault(false)
+            if (!roomCleared) {
+                return@withLock false
             }
+            ManagedDownloadSnapshotDiskCache.delete(context.applicationContext)
         }
-        ManagedDownloadSnapshotDiskCache.delete(context.applicationContext)
     }
 
     private suspend fun restoreLocked(
@@ -57,6 +73,9 @@ internal class ManagedDownloadSnapshotRoomStore(
     ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? {
         if (isRoomPrimary()) {
             val rootKey = readRootKey() ?: return null
+            if (rootKey == CLEARED_ROOT_KEY) {
+                return null
+            }
             if (expectedKey != null && expectedKey != rootKey) {
                 return null
             }
@@ -141,6 +160,7 @@ internal class ManagedDownloadSnapshotRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "managed_download_snapshot_cutover_state"
         const val ROOT_KEY_METADATA_KEY = "managed_download_snapshot_root_key"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        private const val CLEARED_ROOT_KEY = "__cleared__"
         private const val TAG = "ManagedDownloadStorage"
         private val globalMutex = Mutex()
     }

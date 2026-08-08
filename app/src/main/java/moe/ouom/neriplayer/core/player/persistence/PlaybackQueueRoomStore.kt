@@ -44,6 +44,7 @@ internal class PlaybackQueueRoomStore(
                 }
             )
             dao.upsertState(state.toEntity(now))
+            writeSourceRoute(state.sourceRoute, now)
             markRoomPrimary(now)
         }
     }
@@ -66,6 +67,7 @@ internal class PlaybackQueueRoomStore(
                 }
             )
             dao.upsertState(state.toEntity(now))
+            writeSourceRoute(state.sourceRoute, now)
             markRoomPrimary(now)
         }
     }
@@ -88,10 +90,27 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
+    suspend fun updateSourceRoute(
+        sourceRoute: String?,
+        now: Long = System.currentTimeMillis()
+    ) {
+        database.withTransaction {
+            val roomPrimary = isRoomPrimary()
+            val hasPersistedQueue = database.playbackQueueDao().getState() != null
+            writeSourceRoute(sourceRoute, now)
+            if (roomPrimary || hasPersistedQueue) {
+                markRoomPrimary(now)
+            }
+        }
+    }
+
     suspend fun clear(now: Long = System.currentTimeMillis()) {
         database.withTransaction {
             database.playbackQueueDao().deleteState()
             database.playbackQueueDao().deleteSongs()
+            database.syncMetadataDao().deleteMigrationMetadata(
+                listOf(SOURCE_ROUTE_METADATA_KEY)
+            )
             markRoomPrimary(now)
         }
     }
@@ -114,9 +133,28 @@ internal class PlaybackQueueRoomStore(
                 } else {
                     null
                 },
-                shuffleRestoreIndex = state.shuffleRestoreIndex
+                shuffleRestoreIndex = state.shuffleRestoreIndex,
+                sourceRoute = database.syncMetadataDao()
+                    .getMigrationMetadata(SOURCE_ROUTE_METADATA_KEY)
+                    ?.value
+                    ?.takeIf { it.length <= MAX_SOURCE_ROUTE_LENGTH }
             )
         }
+    }
+
+    private suspend fun writeSourceRoute(sourceRoute: String?, now: Long) {
+        val metadataDao = database.syncMetadataDao()
+        if (sourceRoute == null || sourceRoute.length > MAX_SOURCE_ROUTE_LENGTH) {
+            metadataDao.deleteMigrationMetadata(listOf(SOURCE_ROUTE_METADATA_KEY))
+            return
+        }
+        metadataDao.upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = SOURCE_ROUTE_METADATA_KEY,
+                value = sourceRoute,
+                updatedAt = now
+            )
+        )
     }
 
     private suspend fun markRoomPrimary(now: Long) {
@@ -131,7 +169,9 @@ internal class PlaybackQueueRoomStore(
 
     companion object {
         const val CUTOVER_STATE_METADATA_KEY = "playback_queue_cutover_state"
+        const val SOURCE_ROUTE_METADATA_KEY = "playback_queue_source_route"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        private const val MAX_SOURCE_ROUTE_LENGTH = 16 * 1024
     }
 }
 

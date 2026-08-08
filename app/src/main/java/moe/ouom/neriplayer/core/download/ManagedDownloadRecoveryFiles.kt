@@ -4,7 +4,9 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
@@ -120,50 +122,90 @@ internal object ManagedDownloadRecoveryFiles {
     }
 
     fun upsertPendingDownloadQueue(context: Context, songs: List<SongItem>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).upsertPendingDownloadQueue(songs)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).upsertPendingDownloadQueue(songs)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入下载队列失败，等待下次恢复: ${error.message}")
         }
     }
 
     fun listPendingQueuedDownloads(context: Context): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
-        return runBlocking(Dispatchers.IO) {
-            roomStore(context).listPendingQueuedDownloads()
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).listPendingQueuedDownloads()
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "读取下载队列数据库失败，尝试旧恢复文件: ${error.message}")
+        }.getOrElse {
+            listPendingQueuedDownloadsFromFile(
+                File(context.applicationContext.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
+            )
         }
     }
 
     fun removePendingDownloadQueueEntries(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).removePendingDownloadQueueEntries(songKeys)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).removePendingDownloadQueueEntries(songKeys)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "删除下载队列条目失败: ${error.message}")
         }
     }
 
     fun clearPendingDownloadQueue(context: Context) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).clearPendingDownloadQueue()
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).clearPendingDownloadQueue()
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "清空下载队列失败: ${error.message}")
         }
     }
 
     fun markCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).markCancelledDownloadKeys(songKeys)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).markCancelledDownloadKeys(songKeys)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入下载取消标记失败: ${error.message}")
         }
     }
 
     fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return runBlocking(Dispatchers.IO) {
-            roomStore(context).listCancelledDownloadKeys()
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).listCancelledDownloadKeys()
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "读取下载取消标记数据库失败，尝试旧恢复文件: ${error.message}")
+        }.getOrElse {
+            listCancelledDownloadKeysFromFile(
+                File(context.applicationContext.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+            )
         }
     }
 
     fun removeCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).removeCancelledDownloadKeys(songKeys)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).removeCancelledDownloadKeys(songKeys)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "删除下载取消标记失败: ${error.message}")
         }
     }
 
     fun clearCancelledDownloadKeys(context: Context) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).clearCancelledDownloadKeys()
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore(context).clearCancelledDownloadKeys()
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "清空下载取消标记失败: ${error.message}")
         }
     }
 

@@ -77,7 +77,9 @@ class BiliFavoriteFolderCacheRepository internal constructor(
 
     fun read(mediaId: Long): BiliFavoriteFolderContentCache? {
         val cacheKey = mediaId.toString()
-        readRoom(cacheKey)?.let { return it }
+        val roomResult = readRoom(cacheKey)
+        if (roomResult.isFailure) return null
+        roomResult.getOrNull()?.let { return it }
         val file = cacheFile(mediaId)
         if (!file.exists()) return null
         return runCatching {
@@ -112,14 +114,14 @@ class BiliFavoriteFolderCacheRepository internal constructor(
         }
     }
 
-    private fun readRoom(cacheKey: String): BiliFavoriteFolderContentCache? {
+    private fun readRoom(cacheKey: String): Result<BiliFavoriteFolderContentCache?> {
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 roomStore.read(PLATFORM, cacheKey)
             }?.toBiliFavoriteCache()
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read Bili favorite cache from Room: cacheKey=$cacheKey", error)
-        }.getOrNull()
+        }
     }
 
     private fun saveRoom(cache: BiliFavoriteFolderContentCache): Boolean {

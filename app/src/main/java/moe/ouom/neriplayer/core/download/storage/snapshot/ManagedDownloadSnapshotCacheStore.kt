@@ -8,11 +8,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadSnapshotCacheStore(
     private val scope: CoroutineScope,
     private val cacheKeyProvider: (Context) -> String
 ) {
+    private companion object {
+        const val TAG = "ManagedDownloadSnapshot"
+    }
+
     private data class SnapshotCache(
         val key: String,
         val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
@@ -152,8 +157,15 @@ internal class ManagedDownloadSnapshotCacheStore(
             snapshotPersistJob = null
         }
         val appContext = context?.applicationContext ?: return
-        runBlocking {
-            ManagedDownloadSnapshotRoomStore(appContext).clear()
+        runCatching {
+            val cleared = runBlocking {
+                ManagedDownloadSnapshotRoomStore(appContext).clear()
+            }
+            if (!cleared) {
+                NPLogger.w(TAG, "下载索引数据库未清理成功，保留旧恢复缓存")
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "清理下载索引缓存失败: ${error.message}")
         }
     }
 

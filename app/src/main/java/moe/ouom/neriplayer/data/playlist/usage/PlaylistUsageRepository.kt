@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.playlist.usage
  */
 
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -40,6 +41,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.mergeRoomRecoverySnapshot
 import moe.ouom.neriplayer.data.local.database.store.PlaylistUsageRoomStore
 import moe.ouom.neriplayer.data.local.playlist.model.buildLocalArtistSummaries
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -155,6 +157,7 @@ class PlaylistUsageRepository internal constructor(
         const val SOURCE_LOCAL_ARTIST = "localArtist"
         private const val ROOM_RETRY_DELAY_MS = 15_000L
 
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: PlaylistUsageRepository? = null
 
@@ -185,18 +188,37 @@ class PlaylistUsageRepository internal constructor(
     private var pendingSyncAfterPersistence = false
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    private var roomRecoveryBaseline: List<UsageEntry>? = null
     private val initialEntries = load()
     private val _flow = MutableStateFlow(initialEntries)
     private var persistedEntries = initialEntries
     val frequentPlaylistsFlow: StateFlow<List<UsageEntry>> = _flow
 
+    private data class RoomRecoveryState(
+        val baseline: List<UsageEntry>,
+        val current: List<UsageEntry>,
+        val generation: Long
+    )
+
+    private data class RoomRecoveryCompletion(
+        val generation: Long,
+        val entries: List<UsageEntry>,
+        val shouldTriggerSync: Boolean
+    )
+
+    init {
+        scheduleRoomRecovery()
+    }
+
     private fun load(): List<UsageEntry> {
+        var needsRoomRecovery = false
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val roomEntries = runCatching {
                 runBlocking { activeRoomStore.readIfRoomPrimary() }
             }.onFailure { error ->
                 roomStorageEnabled = false
+                needsRoomRecovery = true
                 NPLogger.e(
                     "PlaylistUsageRepo",
                     "Failed to read Room playlist usage; falling back to JSON",
@@ -229,6 +251,7 @@ class PlaylistUsageRepository internal constructor(
                 runBlocking { activeRoomStore.importLegacyAndPromote(normalized) }
             }.onFailure { error ->
                 roomStorageEnabled = false
+                needsRoomRecovery = true
                 NPLogger.e(
                     "PlaylistUsageRepo",
                     "Failed to promote playlist usage JSON to Room",
@@ -236,6 +259,9 @@ class PlaylistUsageRepository internal constructor(
                 )
             }
             LegacyJsonCleanupScheduler.schedule(app, "playlist-usage-import")
+        }
+        if (needsRoomRecovery) {
+            roomRecoveryBaseline = normalized
         }
         return normalized
     }
@@ -288,7 +314,11 @@ class PlaylistUsageRepository internal constructor(
                     "PlaylistUsageRepo",
                     "Playlist usage update remains in memory until Room is available."
                 )
-                schedulePersistenceRetry()
+                if (roomStorageEnabled) {
+                    schedulePersistenceRetry()
+                } else {
+                    scheduleRoomRecovery()
+                }
                 return@withLock
             }
 
@@ -326,6 +356,101 @@ class PlaylistUsageRepository internal constructor(
                 )
             }
         }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomStore == null || roomRecoveryBaseline == null) {
+            return
+        }
+        synchronized(mutationLock) {
+            if (retryJob?.isActive == true) return
+            retryJob = scope.launch {
+                delay(ROOM_RETRY_DELAY_MS)
+                recoverRoomStorage()
+            }
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val activeRoomStore = roomStore ?: return
+        val recoveryState = synchronized(mutationLock) {
+            retryJob = null
+            val baseline = roomRecoveryBaseline ?: return
+            RoomRecoveryState(
+                baseline = baseline,
+                current = _flow.value,
+                generation = persistenceGeneration
+            )
+        }
+        val recovered = persistenceMutex.withLock {
+            runCatching {
+                if (activeRoomStore.readIfRoomPrimary() == null) {
+                    activeRoomStore.importLegacyAndPromote(recoveryState.current)
+                }
+                val roomSnapshot = activeRoomStore.readIfRoomPrimary()
+                    ?: return@runCatching null
+                mergeRoomRecoverySnapshot(
+                    roomSnapshot = roomSnapshot,
+                    recoveryBaseline = recoveryState.baseline,
+                    currentSnapshot = recoveryState.current,
+                    keyOf = UsageEntry::usageKey,
+                    mergeLocalChange = ::mergeRecoveredUsageEntry
+                )
+                    .let(::normalizeUsageEntries)
+                    .also { merged ->
+                        activeRoomStore.writeIncremental(roomSnapshot, merged)
+                    }
+            }.onFailure { error ->
+                NPLogger.e(
+                    "PlaylistUsageRepo",
+                    "Failed to recover Room playlist usage without replaying JSON",
+                    error
+                )
+            }.getOrNull()
+        }
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+
+        val followUp = synchronized(mutationLock) {
+            roomStorageEnabled = true
+            roomRecoveryBaseline = null
+            persistedEntries = recovered
+            retryJob?.cancel()
+            retryJob = null
+            val latestGeneration = persistenceGeneration
+            val latestEntries = _flow.value
+            val shouldTriggerSync = if (latestGeneration == recoveryState.generation) {
+                pendingSyncAfterPersistence.also { pendingSyncAfterPersistence = false }
+            } else {
+                false
+            }
+            RoomRecoveryCompletion(
+                generation = latestGeneration,
+                entries = latestEntries,
+                shouldTriggerSync = shouldTriggerSync
+            )
+        }
+        LegacyJsonCleanupScheduler.schedule(app, "playlist-usage-room-recovery")
+        if (followUp.generation == recoveryState.generation) {
+            if (followUp.shouldTriggerSync) {
+                triggerSync()
+            }
+        } else {
+            persistSnapshot(followUp.generation, followUp.entries)
+        }
+    }
+
+    private fun mergeRecoveredUsageEntry(
+        roomEntry: UsageEntry?,
+        localEntry: UsageEntry
+    ): UsageEntry {
+        if (roomEntry == null) return localEntry
+        return SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+            local = listOf(roomEntry.toSyncPlaylistUsageStat()),
+            remote = listOf(localEntry.toSyncPlaylistUsageStat())
+        ).single().toUsageEntry()
     }
 
     fun recordOpen(

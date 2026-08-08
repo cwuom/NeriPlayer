@@ -39,6 +39,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.mergeRoomRecoverySnapshot
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomImportStatus
 import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -163,6 +164,7 @@ class PlayHistoryRepository private constructor(
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
     @Volatile
     private var roomStorageEnabled = roomStore != null
+    private var roomRecoveryBaseline: List<PlayedEntry>? = null
     private val initialHistory = loadInitialHistory()
     private val _history = MutableStateFlow(initialHistory)
     private var persistedHistory = initialHistory
@@ -175,6 +177,10 @@ class PlayHistoryRepository private constructor(
     private var retryJob: Job? = null
     private var pendingSyncUrgency: PlayHistorySyncUrgency? = null
     private val pendingRecentPlayDeletionRemovals = mutableSetOf<SongIdentity>()
+
+    init {
+        scheduleRoomRecovery()
+    }
 
     private fun loadInitialHistory(): List<PlayedEntry> {
         if (roomStorageEnabled && roomStore != null) {
@@ -198,6 +204,7 @@ class PlayHistoryRepository private constructor(
         }
 
         val legacyEntries = loadLegacyFromDisk()
+        var needsRoomRecovery = !roomStorageEnabled && roomStore != null
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val imported = runCatching {
@@ -206,6 +213,7 @@ class PlayHistoryRepository private constructor(
                 }
             }.onFailure { error ->
                 roomStorageEnabled = false
+                needsRoomRecovery = true
                 NPLogger.e(
                     "PlayHistoryRepo",
                     "Failed to promote legacy history to Room",
@@ -214,6 +222,7 @@ class PlayHistoryRepository private constructor(
             }.getOrNull()
             if (imported?.status == PlayHistoryRoomImportStatus.SKIPPED_NOT_EQUIVALENT) {
                 roomStorageEnabled = false
+                needsRoomRecovery = false
                 NPLogger.w(
                     "PlayHistoryRepo",
                     "Room history mapper is not equivalent; keep legacy JSON"
@@ -221,6 +230,9 @@ class PlayHistoryRepository private constructor(
             } else if (imported?.status == PlayHistoryRoomImportStatus.IMPORTED) {
                 LegacyJsonCleanupScheduler.schedule(app, "play-history-import")
             }
+        }
+        if (needsRoomRecovery) {
+            roomRecoveryBaseline = legacyEntries
         }
         return legacyEntries
     }
@@ -248,6 +260,7 @@ class PlayHistoryRepository private constructor(
                 "PlayHistoryRepo",
                 "Play history update remains in memory until Room is available."
             )
+            scheduleRoomRecovery()
             return
         }
         val roomWriteSucceeded = runCatching {
@@ -276,6 +289,89 @@ class PlayHistoryRepository private constructor(
                 persistSnapshot(_history.value)
             }
         }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomRecoveryBaseline == null || retryJob?.isActive == true) {
+            return
+        }
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            historyMutex.withLock {
+                retryJob = null
+                recoverRoomStorage()
+            }
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val activeRoomStore = roomStore ?: return
+        val baseline = roomRecoveryBaseline ?: return
+        val recovered = runCatching<List<PlayedEntry>?> {
+            val roomSnapshot = activeRoomStore.readIfRoomPrimary()
+            if (roomSnapshot == null) {
+                val imported = activeRoomStore.importLegacyAndPromote(_history.value)
+                when (imported.status) {
+                    PlayHistoryRoomImportStatus.IMPORTED -> _history.value
+                    PlayHistoryRoomImportStatus.SKIPPED_ALREADY_PRIMARY -> {
+                        val primarySnapshot = activeRoomStore.readIfRoomPrimary()
+                            ?: return@runCatching null
+                        mergeRecoveredRoomHistory(
+                            activeRoomStore = activeRoomStore,
+                            baseline = baseline,
+                            roomSnapshot = primarySnapshot,
+                            currentSnapshot = _history.value
+                        )
+                    }
+
+                    PlayHistoryRoomImportStatus.SKIPPED_NOT_EQUIVALENT -> null
+                }
+            } else {
+                mergeRecoveredRoomHistory(
+                    activeRoomStore = activeRoomStore,
+                    baseline = baseline,
+                    roomSnapshot = roomSnapshot,
+                    currentSnapshot = _history.value
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.e(
+                "PlayHistoryRepo",
+                "Failed to recover Room history without replaying legacy JSON",
+                error
+            )
+        }.getOrNull()
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+
+        roomStorageEnabled = true
+        roomRecoveryBaseline = null
+        persistedHistory = recovered
+        _history.value = recovered
+        LegacyJsonCleanupScheduler.schedule(app, "play-history-room-recovery")
+        flushPostPersistenceActions(recovered)
+    }
+
+    private suspend fun mergeRecoveredRoomHistory(
+        activeRoomStore: PlayHistoryRoomStore,
+        baseline: List<PlayedEntry>,
+        roomSnapshot: List<PlayedEntry>,
+        currentSnapshot: List<PlayedEntry>
+    ): List<PlayedEntry> {
+        val merged = mergeRoomRecoverySnapshot(
+            roomSnapshot = roomSnapshot,
+            recoveryBaseline = baseline,
+            currentSnapshot = currentSnapshot,
+            keyOf = { entry -> entry.identityKey() },
+            mergeLocalChange = { _, local -> local }
+        )
+            .sortedByDescending { entry -> entry.playedAt }
+            .distinctBy { entry -> entry.identityKey() }
+            .take(1000)
+        activeRoomStore.writeIncremental(roomSnapshot, merged)
+        return merged
     }
 
     private fun requestSyncAfterPersistence(urgency: PlayHistorySyncUrgency) {

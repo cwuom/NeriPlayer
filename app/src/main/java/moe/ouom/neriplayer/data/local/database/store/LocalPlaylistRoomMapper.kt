@@ -1,13 +1,15 @@
 package moe.ouom.neriplayer.data.local.database.store
 
-import com.google.gson.Gson
+import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.database.entity.LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
 import moe.ouom.neriplayer.data.local.database.entity.LocalPlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberNeteaseArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaylistMemberTokenEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrackEntity
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
@@ -18,6 +20,7 @@ internal data class LocalPlaylistRoomSnapshot(
     val playlists: List<LocalPlaylistEntity>,
     val tracks: List<TrackEntity>,
     val members: List<PlaylistMemberEntity>,
+    val memberNeteaseArtists: List<PlaylistMemberNeteaseArtistEntity>,
     val memberTokens: List<PlaylistMemberTokenEntity>,
     val migrationMetadata: List<MigrationMetadataEntity>
 )
@@ -29,9 +32,7 @@ internal data class LocalPlaylistRoomValidationResult(
     val firstMismatch: String?
 )
 
-internal class LocalPlaylistRoomMapper(
-    private val gson: Gson = Gson()
-) {
+internal class LocalPlaylistRoomMapper {
     fun toSnapshot(
         playlists: List<LocalPlaylist>,
         sourceDigest: String? = null,
@@ -40,6 +41,7 @@ internal class LocalPlaylistRoomMapper(
         val trackMap = LinkedHashMap<String, TrackEntity>()
         val playlistEntities = ArrayList<LocalPlaylistEntity>(playlists.size)
         val memberEntities = ArrayList<PlaylistMemberEntity>()
+        val memberNeteaseArtistEntities = ArrayList<PlaylistMemberNeteaseArtistEntity>()
         val tokenEntities = ArrayList<PlaylistMemberTokenEntity>()
 
         playlists.forEachIndexed { playlistIndex, playlist ->
@@ -53,6 +55,15 @@ internal class LocalPlaylistRoomMapper(
                     identityKey = identityKey,
                     displayPosition = songIndex
                 )
+                song.neteaseArtists.orEmpty().forEachIndexed { artistPosition, artist ->
+                    memberNeteaseArtistEntities += PlaylistMemberNeteaseArtistEntity(
+                        playlistId = playlist.id,
+                        identityKey = identityKey,
+                        artistPosition = artistPosition,
+                        artistId = artist.id,
+                        artistName = artist.name
+                    )
+                }
                 song.syncMembershipTokens
                     .normalizedSyncCausalTokens()
                     .forEachIndexed { tokenIndex, token ->
@@ -71,6 +82,7 @@ internal class LocalPlaylistRoomMapper(
             playlists = playlistEntities,
             tracks = trackMap.values.toList(),
             members = memberEntities,
+            memberNeteaseArtists = memberNeteaseArtistEntities,
             memberTokens = tokenEntities,
             migrationMetadata = buildMigrationMetadata(sourceDigest, now)
         )
@@ -80,12 +92,16 @@ internal class LocalPlaylistRoomMapper(
         playlists: List<LocalPlaylistEntity>,
         tracks: List<TrackEntity>,
         members: List<PlaylistMemberEntity>,
+        memberNeteaseArtists: List<PlaylistMemberNeteaseArtistEntity>,
         memberTokens: List<PlaylistMemberTokenEntity>
     ): List<LocalPlaylist> {
         val tracksByIdentity = tracks.associateBy(TrackEntity::identityKey)
         val membersByPlaylist = members.groupBy(PlaylistMemberEntity::playlistId)
         val tokensByMember = memberTokens.groupBy { token ->
             PlaylistMemberKey(token.playlistId, token.identityKey)
+        }
+        val artistsByMember = memberNeteaseArtists.groupBy { artist ->
+            PlaylistMemberKey(artist.playlistId, artist.identityKey)
         }
 
         return playlists
@@ -104,7 +120,9 @@ internal class LocalPlaylistRoomMapper(
                             "Missing track row for ${member.identityKey}"
                         }
                         member.toSongItem(
-                            track = track,
+                            artists = artistsByMember[
+                                PlaylistMemberKey(member.playlistId, member.identityKey)
+                            ].orEmpty(),
                             tokens = tokensByMember[
                                 PlaylistMemberKey(member.playlistId, member.identityKey)
                             ].orEmpty()
@@ -128,6 +146,7 @@ internal class LocalPlaylistRoomMapper(
             playlists = snapshot.playlists,
             tracks = snapshot.tracks,
             members = snapshot.members,
+            memberNeteaseArtists = snapshot.memberNeteaseArtists,
             memberTokens = snapshot.memberTokens
         )
         val expected = playlists.map { playlist ->
@@ -135,6 +154,7 @@ internal class LocalPlaylistRoomMapper(
                 songs = playlist.songs.mapTo(mutableListOf()) { song ->
                     song.copy(
                         streamUrl = null,
+                        neteaseArtists = song.neteaseArtists.orEmpty(),
                         syncMembershipTokens = song.syncMembershipTokens.normalizedSyncCausalTokens()
                     )
                 }
@@ -175,14 +195,26 @@ internal class LocalPlaylistRoomMapper(
             durationMs = durationMs,
             coverUrl = coverUrl,
             mediaUri = mediaUri,
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
+            matchedLyricSource = matchedLyricSource?.name,
+            matchedSongId = matchedSongId,
+            userLyricOffsetMs = userLyricOffsetMs,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
             channelId = channelId,
             audioId = audioId,
             subAudioId = subAudioId,
             sourceStableKey = sourceStableKey,
             localFileName = localFileName,
             localFilePath = localFilePath,
-            payloadSchemaVersion = LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION,
-            durablePayloadJson = gson.toJson(withoutTransientDatabaseState())
+            structuredSchemaVersion = LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
         )
     }
 
@@ -198,23 +230,81 @@ internal class LocalPlaylistRoomMapper(
             addedAt = addedAt,
             orderTieBreak = displayPosition,
             playlistContextId = playlistContextId,
-            memberPayloadSchemaVersion = LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION,
-            memberPayloadJson = gson.toJson(withoutTransientDatabaseState())
+            songId = id,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            durationMs = durationMs,
+            coverUrl = coverUrl,
+            mediaUri = mediaUri,
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
+            matchedLyricSource = matchedLyricSource?.name,
+            matchedSongId = matchedSongId,
+            userLyricOffsetMs = userLyricOffsetMs,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
+            localFileName = localFileName,
+            localFilePath = localFilePath,
+            channelId = channelId,
+            audioId = audioId,
+            subAudioId = subAudioId,
+            sourceStableKey = sourceStableKey,
+            structuredSchemaVersion = LOCAL_PLAYLIST_PAYLOAD_SCHEMA_VERSION
         )
     }
 
     private fun PlaylistMemberEntity.toSongItem(
-        track: TrackEntity,
+        artists: List<PlaylistMemberNeteaseArtistEntity>,
         tokens: List<PlaylistMemberTokenEntity>
     ): SongItem {
-        val payload = requireNotNull(
-            decodeSong(memberPayloadJson) ?: decodeSong(track.durablePayloadJson)
-        ) {
-            "Song payload is missing for ${track.identityKey}"
-        }
-        return payload.copy(
-            addedAt = addedAt,
+        return SongItem(
+            id = songId,
+            name = name,
+            artist = artist,
+            album = album,
+            albumId = albumId,
+            durationMs = durationMs,
+            coverUrl = coverUrl,
+            mediaUri = mediaUri,
+            matchedLyric = matchedLyric,
+            matchedTranslatedLyric = matchedTranslatedLyric,
+            matchedLyricSource = matchedLyricSource?.let { value ->
+                runCatching { MusicPlatform.valueOf(value) }.getOrNull()
+            },
+            matchedSongId = matchedSongId,
+            userLyricOffsetMs = userLyricOffsetMs,
+            customCoverUrl = customCoverUrl,
+            customName = customName,
+            customArtist = customArtist,
+            originalName = originalName,
+            originalArtist = originalArtist,
+            originalCoverUrl = originalCoverUrl,
+            originalLyric = originalLyric,
+            originalTranslatedLyric = originalTranslatedLyric,
+            localFileName = localFileName,
+            localFilePath = localFilePath,
+            channelId = channelId,
+            audioId = audioId,
+            subAudioId = subAudioId,
             playlistContextId = playlistContextId,
+            sourceStableKey = sourceStableKey,
+            neteaseArtists = artists
+                .sortedBy(PlaylistMemberNeteaseArtistEntity::artistPosition)
+                .map { artist ->
+                    NeteaseArtistSummary(
+                        id = artist.artistId,
+                        name = artist.artistName
+                    )
+                },
+            addedAt = addedAt,
             syncMembershipTokens = tokens
                 .sortedWith(
                     compareBy<PlaylistMemberTokenEntity> { it.tokenIndex }
@@ -229,16 +319,6 @@ internal class LocalPlaylistRoomMapper(
                 },
             streamUrl = null
         )
-    }
-
-    private fun decodeSong(payload: String): SongItem? {
-        return runCatching {
-            gson.fromJson(payload, SongItem::class.java)
-        }.getOrNull()
-    }
-
-    private fun SongItem.withoutTransientDatabaseState(): SongItem {
-        return copy(streamUrl = null)
     }
 
     private fun buildMigrationMetadata(

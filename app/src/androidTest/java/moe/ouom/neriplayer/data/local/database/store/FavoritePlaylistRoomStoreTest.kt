@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
+import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import org.junit.Assert.assertEquals
@@ -177,6 +178,37 @@ class FavoritePlaylistRoomStoreTest {
         }
     }
 
+    @Test
+    fun artistRelationsUsePersistedDisplayPositionAfterSongGap() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val favorite = favorite(
+                id = 42L,
+                name = "Gapped",
+                songs = listOf(
+                    testSong(1L, "First song"),
+                    testSong(2L, "Second song")
+                )
+            )
+            val store = FavoritePlaylistRoomStore(database)
+            store.replaceAll(listOf(favorite))
+            database.openHelper.writableDatabase.execSQL(
+                "DELETE FROM favorite_playlist_song " +
+                    "WHERE playlist_id = 42 AND source = 'netease' " +
+                    "AND display_position = 0"
+            )
+
+            val restored = store.readIfRoomPrimary().orEmpty().single()
+            assertEquals(listOf(testSong(2L, "Second song")), restored.songs)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun favorite(
         id: Long,
         name: String,
@@ -206,7 +238,10 @@ class FavoritePlaylistRoomStoreTest {
             coverUrl = "https://example.invalid/$id.jpg",
             mediaUri = "https://example.invalid/$id.mp3",
             matchedLyric = "lyric",
-            customName = "custom-$name"
+            customName = "custom-$name",
+            neteaseArtists = listOf(
+                NeteaseArtistSummary(id = id + 100L, name = "Artist $id")
+            )
         )
     }
 }
