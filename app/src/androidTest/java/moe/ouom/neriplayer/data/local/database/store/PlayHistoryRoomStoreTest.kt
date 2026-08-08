@@ -39,6 +39,9 @@ class PlayHistoryRoomStoreTest {
             )
             val store = PlayHistoryRoomStore(database)
             store.importLegacyAndPromote(listOf(first, second))
+            store.importLegacyAndPromote(emptyList())
+
+            assertEquals(listOf(first, second), store.readIfRoomPrimary())
 
             val updatedFirst = first.copy(
                 resumePositionMs = 4_000L,

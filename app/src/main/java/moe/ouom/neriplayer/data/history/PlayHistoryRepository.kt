@@ -173,6 +173,8 @@ class PlayHistoryRepository private constructor(
     private val historyMutex = Mutex()
     private var pendingSettledSyncJob: Job? = null
     private var retryJob: Job? = null
+    private var pendingSyncUrgency: PlayHistorySyncUrgency? = null
+    private val pendingRecentPlayDeletionRemovals = mutableSetOf<SongIdentity>()
 
     private fun loadInitialHistory(): List<PlayedEntry> {
         if (roomStorageEnabled && roomStore != null) {
@@ -259,6 +261,7 @@ class PlayHistoryRepository private constructor(
         }.isSuccess
         if (roomWriteSucceeded) {
             persistedHistory = next
+            flushPostPersistenceActions(next)
         } else {
             schedulePersistenceRetry()
         }
@@ -272,6 +275,42 @@ class PlayHistoryRepository private constructor(
                 retryJob = null
                 persistSnapshot(_history.value)
             }
+        }
+    }
+
+    private fun requestSyncAfterPersistence(urgency: PlayHistorySyncUrgency) {
+        pendingSyncUrgency = when {
+            pendingSyncUrgency == PlayHistorySyncUrgency.IMMEDIATE ||
+                urgency == PlayHistorySyncUrgency.IMMEDIATE -> PlayHistorySyncUrgency.IMMEDIATE
+            else -> PlayHistorySyncUrgency.SETTLED
+        }
+    }
+
+    private fun requestRecentPlayDeletionRemoval(song: SongItem) {
+        if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
+            pendingRecentPlayDeletionRemovals += song.identityKey()
+        }
+    }
+
+    private fun flushPostPersistenceActions(persisted: List<PlayedEntry>) {
+        val persistedKeys = persisted.mapTo(mutableSetOf()) { entry -> entry.identityKey() }
+        pendingRecentPlayDeletionRemovals
+            .filter { identityKey -> identityKey in persistedKeys }
+            .also { clearedKeys -> pendingRecentPlayDeletionRemovals.removeAll(clearedKeys) }
+            .forEach { identityKey ->
+                runCatching {
+                    storage.removeRecentPlayDeletion(identityKey)
+                }.onFailure { error ->
+                    NPLogger.e(
+                        "PlayHistoryRepo",
+                        "Failed to clear superseded recent play deletion",
+                        error
+                    )
+                }
+            }
+        pendingSyncUrgency?.let { urgency ->
+            pendingSyncUrgency = null
+            triggerSyncIfNeeded(urgency = urgency, markMutation = false)
         }
     }
 
@@ -325,6 +364,7 @@ class PlayHistoryRepository private constructor(
         try {
             if (!storage.isAutoSyncEnabled()) {
                 NPLogger.d("PlayHistoryRepo", "Auto sync is disabled, skipping sync")
+                return
             }
             GitHubSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
             WebDavSyncWorker.scheduleDelayedSync(app, triggerByUserAction = false)
@@ -364,17 +404,11 @@ class PlayHistoryRepository private constructor(
                     .take(1000)
 
                 markSyncMutation()
+                requestSyncAfterPersistence(PlayHistorySyncUrgency.SETTLED)
+                requestRecentPlayDeletionRemoval(song)
                 NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
                 _history.value = updated
                 persistSnapshot(next = updated)
-
-                if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
-                    storage.removeRecentPlayDeletion(song.identityKey())
-                }
-                triggerSyncIfNeeded(
-                    urgency = PlayHistorySyncUrgency.SETTLED,
-                    markMutation = false
-                )
             }
         }
     }
@@ -428,15 +462,10 @@ class PlayHistoryRepository private constructor(
                     .take(1000)
 
                 markSyncMutation()
+                requestSyncAfterPersistence(PlayHistorySyncUrgency.SETTLED)
+                requestRecentPlayDeletionRemoval(song)
                 _history.value = updated
                 persistSnapshot(next = updated)
-                if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
-                    storage.removeRecentPlayDeletion(song.identityKey())
-                }
-                triggerSyncIfNeeded(
-                    urgency = PlayHistorySyncUrgency.SETTLED,
-                    markMutation = false
-                )
             }
         }
     }
@@ -469,11 +498,12 @@ class PlayHistoryRepository private constructor(
                     .distinctBy { it.identityKey() }
                     .take(1000)
 
+                if (triggerSync) {
+                    markSyncMutation()
+                    requestSyncAfterPersistence(PlayHistorySyncUrgency.SETTLED)
+                }
                 _history.value = updated
                 persistSnapshot(next = updated)
-                if (triggerSync) {
-                    triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
-                }
             }
         }
     }
@@ -497,9 +527,9 @@ class PlayHistoryRepository private constructor(
                     markSyncMutation()
                 }
 
+                requestSyncAfterPersistence(PlayHistorySyncUrgency.IMMEDIATE)
                 _history.value = emptyList()
                 persistSnapshot(next = emptyList())
-                triggerSyncIfNeeded(markMutation = false)
             }
         }
     }
@@ -530,9 +560,9 @@ class PlayHistoryRepository private constructor(
                 }
 
                 val updated = current.filterNot { it.identityKey() in removalKeys }
+                requestSyncAfterPersistence(PlayHistorySyncUrgency.IMMEDIATE)
                 _history.value = updated
                 persistSnapshot(next = updated)
-                triggerSyncIfNeeded(markMutation = false)
             }
         }
     }

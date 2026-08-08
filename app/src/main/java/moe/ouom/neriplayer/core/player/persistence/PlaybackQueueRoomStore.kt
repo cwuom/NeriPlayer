@@ -48,6 +48,28 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
+    suspend fun importLegacyAndPromote(
+        state: PersistedState,
+        now: Long = System.currentTimeMillis()
+    ) {
+        database.withTransaction {
+            if (isRoomPrimary()) {
+                return@withTransaction
+            }
+            val dao = database.playbackQueueDao()
+            dao.deleteSongs()
+            dao.upsertSongs(
+                state.playlist.mapIndexed { position, song ->
+                    song.toEntity(PLAYBACK_QUEUE_MAIN, position)
+                } + state.shuffleRestorePlaylist.orEmpty().mapIndexed { position, song ->
+                    song.toEntity(PLAYBACK_QUEUE_SHUFFLE_RESTORE, position)
+                }
+            )
+            dao.upsertState(state.toEntity(now))
+            markRoomPrimary(now)
+        }
+    }
+
     suspend fun updatePlaybackState(
         state: PersistedPlaybackState,
         now: Long = System.currentTimeMillis()

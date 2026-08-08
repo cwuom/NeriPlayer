@@ -43,12 +43,21 @@ class LocalPlaylistPlaybackRoomStoreTest {
                         dayStartAt = 86_400_000L,
                         playCount = 5L,
                         firstPlayedAt = 100L,
-                        lastPlayedAt = 200L
+                        lastPlayedAt = 200L,
+                        counterShards = listOf(
+                            SyncPlaybackCounterShard(
+                                deviceId = "device-a",
+                                playCount = 4,
+                                firstPlayedAt = 100L,
+                                lastPlayedAt = 200L
+                            )
+                        )
                     )
                 )
             )
             val store = LocalPlaylistPlaybackRoomStore(database)
             store.importLegacyAndPromote(listOf(stat))
+            store.importLegacyAndPromote(emptyList())
 
             assertEquals(listOf(stat), store.readIfRoomPrimary())
             assertEquals(

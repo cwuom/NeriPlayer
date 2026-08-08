@@ -89,6 +89,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private var persistGeneration = 0L
     private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
     private var persistenceDirty = false
+    private var pendingSyncAfterPersistence = false
     private val counterStore = PlaybackStatsCounterStore(app, gson)
     private val roomStore = PlaybackStatsRoomStore(
         NeriUserDataDatabase.getInstance(app.applicationContext)
@@ -344,6 +345,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 if (roomSucceeded) {
                     persistedSnapshot = snapshot
                     markPersistenceClean(expectedGeneration)
+                    cancelPendingRetry()
+                    triggerPendingSyncAfterPersistence()
                     return@withLock
                 }
             }
@@ -370,9 +373,34 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
+    private fun requestSyncAfterPersistence() {
+        synchronized(this) {
+            pendingSyncAfterPersistence = true
+        }
+    }
+
+    private fun triggerPendingSyncAfterPersistence() {
+        val shouldTrigger = synchronized(this) {
+            pendingSyncAfterPersistence.also {
+                pendingSyncAfterPersistence = false
+            }
+        }
+        if (shouldTrigger) {
+            triggerSync()
+        }
+    }
+
+    private fun cancelPendingRetry() {
+        synchronized(this) {
+            retryJob?.cancel()
+            retryJob = null
+        }
+    }
+
     fun hasPendingWrites(): Boolean {
         return synchronized(this) {
             persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
+                || retryJob?.isActive == true
         }
     }
 
@@ -380,6 +408,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         mutex.withLock<Unit> {
             val shouldPersist = synchronized(this@PlaybackStatsRepository) {
                 persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
+                    || retryJob?.isActive == true
             }
             cancelScheduledPersistenceLocked()
             if (shouldPersist) {
@@ -521,7 +550,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             )
             schedulePersistenceLocked()
             if (scheduleSync) {
-                triggerSync()
+                requestSyncAfterPersistence()
             }
         }
     }
@@ -583,8 +612,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 cancelScheduledPersistenceLocked()
                 counterStore.reset(clearedAt)
                 persistenceDirty = true
+                requestSyncAfterPersistence()
                 persistSnapshot(currentPersistenceSnapshot())
-                triggerSync()
             }
         }
     }
@@ -600,8 +629,8 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 cancelScheduledPersistenceLocked()
                 counterStore.removeTracks(keys)
                 persistenceDirty = true
+                requestSyncAfterPersistence()
                 persistSnapshot(currentPersistenceSnapshot())
-                triggerSync()
             }
         }
     }

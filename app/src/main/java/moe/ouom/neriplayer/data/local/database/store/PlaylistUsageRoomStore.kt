@@ -25,7 +25,24 @@ internal class PlaylistUsageRoomStore(
         entries: List<UsageEntry>,
         now: Long = System.currentTimeMillis()
     ) {
-        replaceAll(entries, now)
+        database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction
+            }
+            database.playlistUsageDao().deleteAllCounterShards()
+            database.playlistUsageDao().deleteAllEntries()
+            database.playlistUsageDao().upsertEntries(entries.map(UsageEntry::toEntity))
+            database.playlistUsageDao().upsertCounterShards(
+                entries.flatMap { entry ->
+                    SyncPlaybackStatMapper.normalizeCounterShards(entry.counterShards)
+                        .map { shard -> shard.toEntity(entry.usageKey()) }
+                }
+            )
+            markRoomPrimary(now)
+        }
     }
 
     suspend fun writeIncremental(

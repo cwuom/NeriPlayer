@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 
 internal enum class PlayHistoryRoomImportStatus {
     IMPORTED,
+    SKIPPED_ALREADY_PRIMARY,
     SKIPPED_NOT_EQUIVALENT
 }
 
@@ -37,11 +38,24 @@ internal class PlayHistoryRoomStore(
                 entryCount = entries.size
             )
         }
-        replaceAll(entries, now)
-        return PlayHistoryRoomImportResult(
-            status = PlayHistoryRoomImportStatus.IMPORTED,
-            entryCount = entries.size
-        )
+        return database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction PlayHistoryRoomImportResult(
+                    status = PlayHistoryRoomImportStatus.SKIPPED_ALREADY_PRIMARY,
+                    entryCount = entries.size
+                )
+            }
+            database.playHistoryDao().deleteAll()
+            database.playHistoryDao().upsert(mapper.toEntities(entries))
+            markRoomPrimary(now)
+            PlayHistoryRoomImportResult(
+                status = PlayHistoryRoomImportStatus.IMPORTED,
+                entryCount = entries.size
+            )
+        }
     }
 
     suspend fun writeIncremental(

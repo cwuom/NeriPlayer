@@ -321,7 +321,7 @@ internal suspend fun preloadRestoredStateSnapshot(
                 )
             }.getOrNull()?.also { legacyData ->
                 runCatching {
-                    roomStore.replaceSnapshot(legacyData)
+                    roomStore.importLegacyAndPromote(legacyData)
                 }.onFailure { error ->
                     NPLogger.w(
                         "NERI-PlayerManager",
@@ -371,7 +371,7 @@ private fun loadRestoredStateSnapshot(
                     playbackStateFile = playbackStateFile
                 )?.also { legacyData ->
                     runCatching {
-                        roomStore.replaceSnapshot(legacyData)
+                        roomStore.importLegacyAndPromote(legacyData)
                     }.onFailure { error ->
                         NPLogger.w(
                             "NERI-PlayerManager",

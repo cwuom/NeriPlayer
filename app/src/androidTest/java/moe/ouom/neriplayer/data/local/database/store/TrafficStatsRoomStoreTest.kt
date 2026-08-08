@@ -30,6 +30,7 @@ class TrafficStatsRoomStoreTest {
             )
             val store = TrafficStatsRoomStore(database)
             store.importLegacyAndPromote(listOf(bucket))
+            store.importLegacyAndPromote(emptyList())
             assertNotNull(store.readIfRoomPrimary())
             assertEquals(listOf(bucket), store.readIfRoomPrimary())
 

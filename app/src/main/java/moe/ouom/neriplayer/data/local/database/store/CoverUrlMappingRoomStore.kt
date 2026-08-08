@@ -26,6 +26,12 @@ internal class CoverUrlMappingRoomStore(
         now: Long = System.currentTimeMillis()
     ) {
         database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (isReadableRoomState(cutoverState)) {
+                return@withTransaction
+            }
             val dao = database.coverUrlMappingDao()
             dao.deleteAll()
             dao.upsert(mappings.toEntities(now))

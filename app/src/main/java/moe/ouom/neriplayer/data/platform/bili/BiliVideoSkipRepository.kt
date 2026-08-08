@@ -379,7 +379,7 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             (rulesFile.exists() || draftsFile.exists())
         if (shouldImportLegacyFiles) {
             runCatching {
-                roomStore.replaceAll(legacyRules, legacyDrafts)
+                roomStore.importLegacyAndPromote(legacyRules, legacyDrafts)
                 LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-import")
             }.onFailure { error ->
                 NPLogger.w(TAG, "Failed to import Bili skip JSON into Room", error)

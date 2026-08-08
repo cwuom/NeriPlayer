@@ -43,6 +43,7 @@ class BiliVideoSkipRoomStoreTest {
             val store = BiliVideoSkipRoomStore(database)
 
             store.replaceAll(listOf(rule), listOf(draft), now = 30L)
+            store.importLegacyAndPromote(emptyList(), emptyList(), now = 40L)
 
             assertEquals(
                 BiliVideoSkipRoomSnapshot(listOf(rule), listOf(draft)),

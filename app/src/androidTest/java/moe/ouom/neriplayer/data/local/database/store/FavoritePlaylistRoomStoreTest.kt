@@ -44,6 +44,7 @@ class FavoritePlaylistRoomStoreTest {
             )
             val store = FavoritePlaylistRoomStore(database)
             store.importLegacyAndPromote(listOf(favorite))
+            store.importLegacyAndPromote(emptyList())
 
             val snapshot = store.readIfRoomPrimary()
             assertNotNull(snapshot)

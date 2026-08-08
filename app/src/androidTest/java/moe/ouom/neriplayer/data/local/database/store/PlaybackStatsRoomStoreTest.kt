@@ -72,6 +72,13 @@ class PlaybackStatsRoomStoreTest {
                 counterEpochStartedAt = 10L,
                 clearedAt = 5L
             )
+            store.importLegacyAndPromote(
+                stats = emptyList(),
+                dailyStats = emptyList(),
+                counterSnapshot = PlaybackStatsSyncCounterSnapshot(),
+                counterEpochStartedAt = 0L,
+                clearedAt = 0L
+            )
 
             val snapshot = store.readIfRoomPrimary()
             assertNotNull(snapshot)

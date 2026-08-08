@@ -28,10 +28,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -70,6 +75,7 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
     private val persistenceMutex = Mutex()
+    private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val roomStore = FavoritePlaylistRoomStore(
         NeriUserDataDatabase.getInstance(context.applicationContext)
     )
@@ -79,6 +85,8 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val _snapshots = MutableStateFlow(initialSnapshots)
     private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
     private var persistedSnapshots = initialSnapshots
+    private var retryJob: Job? = null
+    private var pendingSyncAfterPersistence = false
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {
@@ -172,21 +180,23 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         publishInMemory(normalized)
         if (!persist) return
 
-        val persisted = persist(normalized)
-        if (triggerSync) {
-            if (persisted) {
-                syncStorage.markSyncMutation()
-                triggerAutoSync()
-            } else {
-                NPLogger.w(TAG, "收藏歌单未成功落盘，跳过自动同步")
-            }
+        val persisted = persist(
+            favorites = normalized,
+            requestAutoSync = triggerSync
+        )
+        if (!persisted && triggerSync) {
+            NPLogger.w(TAG, "收藏歌单未成功落盘，等待 Room 重试后再同步")
         }
     }
 
     private suspend fun persist(
-        favorites: List<FavoritePlaylist>
+        favorites: List<FavoritePlaylist>,
+        requestAutoSync: Boolean
     ): Boolean {
         return persistenceMutex.withLock {
+            if (requestAutoSync) {
+                pendingSyncAfterPersistence = true
+            }
             val roomSucceeded = runCatching {
                 roomStore.writeIncremental(
                     previous = persistedSnapshots,
@@ -197,8 +207,35 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             }.isSuccess
             if (roomSucceeded) {
                 persistedSnapshots = favorites
+                retryJob?.cancel()
+                retryJob = null
+                if (pendingSyncAfterPersistence) {
+                    pendingSyncAfterPersistence = false
+                    syncStorage.markSyncMutation()
+                    triggerAutoSync()
+                }
+            } else {
+                schedulePersistenceRetry()
             }
             roomSucceeded
+        }
+    }
+
+    private fun schedulePersistenceRetry() {
+        if (retryJob?.isActive == true) return
+        retryJob = persistenceScope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            val snapshot = _snapshots.value
+            val shouldRetry = persistenceMutex.withLock {
+                retryJob = null
+                persistedSnapshots != snapshot
+            }
+            if (shouldRetry) {
+                persist(
+                    favorites = snapshot,
+                    requestAutoSync = false
+                )
+            }
         }
     }
 
@@ -410,6 +447,8 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     }
 
     companion object {
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
+
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: FavoritePlaylistRepository? = null

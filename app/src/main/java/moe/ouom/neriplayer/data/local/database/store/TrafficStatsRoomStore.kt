@@ -24,7 +24,17 @@ internal class TrafficStatsRoomStore(
         buckets: List<TrafficStatsBucket>,
         now: Long = System.currentTimeMillis()
     ) {
-        replaceAll(buckets, now)
+        database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction
+            }
+            database.trafficStatsDao().deleteAll()
+            database.trafficStatsDao().upsert(buckets.map(TrafficStatsBucket::toEntity))
+            markRoomPrimary(now)
+        }
     }
 
     suspend fun replaceAll(

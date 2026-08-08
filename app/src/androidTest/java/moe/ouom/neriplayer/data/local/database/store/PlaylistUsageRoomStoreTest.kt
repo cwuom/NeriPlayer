@@ -48,6 +48,7 @@ class PlaylistUsageRoomStoreTest {
             )
             val store = PlaylistUsageRoomStore(database)
             store.importLegacyAndPromote(listOf(entry))
+            store.importLegacyAndPromote(emptyList())
 
             assertEquals(listOf(entry), store.readIfRoomPrimary())
             assertEquals(

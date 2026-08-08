@@ -29,6 +29,7 @@ class CoverUrlMappingRoomStoreTest {
 
             assertNull(store.readIfRoomPrimary())
             store.importLegacyAndPromote(mappings, cleanupEligible = true, now = 100L)
+            store.importLegacyAndPromote(emptyMap(), cleanupEligible = true, now = 200L)
 
             assertEquals(mappings, store.readIfRoomPrimary())
             val state = database.syncMetadataDao().getMigrationMetadata(

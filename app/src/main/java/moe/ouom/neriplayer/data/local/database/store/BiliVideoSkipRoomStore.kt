@@ -55,6 +55,32 @@ internal class BiliVideoSkipRoomStore(
         }
     }
 
+    suspend fun importLegacyAndPromote(
+        rules: List<BiliVideoSkipRule>,
+        drafts: List<BiliVideoSkipDraft>,
+        now: Long = System.currentTimeMillis()
+    ) {
+        database.withTransaction {
+            if (isRoomPrimary()) {
+                return@withTransaction
+            }
+            val dao = database.biliVideoSkipDao()
+            dao.deleteIntervals()
+            dao.deleteRules()
+            dao.deleteDrafts()
+            dao.insertRules(rules.map(BiliVideoSkipRule::toEntity))
+            dao.insertIntervals(
+                rules.flatMap { rule ->
+                    rule.intervals.mapIndexed { position, interval ->
+                        interval.toEntity(rule.target, position)
+                    }
+                }
+            )
+            dao.insertDrafts(drafts.map(BiliVideoSkipDraft::toEntity))
+            markRoomPrimary(now)
+        }
+    }
+
     suspend fun replaceRules(
         rules: List<BiliVideoSkipRule>,
         now: Long = System.currentTimeMillis()

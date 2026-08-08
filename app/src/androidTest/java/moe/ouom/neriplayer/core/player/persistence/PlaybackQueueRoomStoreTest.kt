@@ -43,6 +43,10 @@ class PlaybackQueueRoomStoreTest {
             val store = PlaybackQueueRoomStore(database)
 
             store.replaceSnapshot(state, now = 10L)
+            store.importLegacyAndPromote(
+                PersistedState(playlist = emptyList(), index = 0),
+                now = 20L
+            )
 
             assertEquals(state, store.readIfRoomPrimary())
         } finally {

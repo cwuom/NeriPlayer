@@ -26,7 +26,18 @@ internal class FavoritePlaylistRoomStore(
         favorites: List<FavoritePlaylist>,
         now: Long = System.currentTimeMillis()
     ) {
-        replaceAll(favorites, now)
+        database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction
+            }
+            database.favoritePlaylistDao().deleteAllSongs()
+            database.favoritePlaylistDao().deleteAllPlaylists()
+            insertAll(favorites)
+            markRoomPrimary(now)
+        }
     }
 
     suspend fun promoteExistingAndRead(

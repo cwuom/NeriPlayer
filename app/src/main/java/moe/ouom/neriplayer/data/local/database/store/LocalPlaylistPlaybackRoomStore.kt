@@ -24,7 +24,19 @@ internal class LocalPlaylistPlaybackRoomStore(
         stats: List<LocalPlaylistPlaybackStat>,
         now: Long = System.currentTimeMillis()
     ) {
-        replaceAll(stats, now)
+        database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction
+            }
+            database.localPlaylistPlaybackDao().deleteAllCounterShards()
+            database.localPlaylistPlaybackDao().deleteAllBuckets()
+            database.localPlaylistPlaybackDao().deleteAllStats()
+            insertStats(stats)
+            markRoomPrimary(now)
+        }
     }
 
     suspend fun replaceAll(

@@ -41,14 +41,29 @@ internal class PlaybackStatsRoomStore(
         clearedAt: Long,
         now: Long = System.currentTimeMillis()
     ) {
-        replaceAll(
-            stats = stats,
-            dailyStats = dailyStats,
-            counterSnapshot = counterSnapshot,
-            counterEpochStartedAt = counterEpochStartedAt,
-            clearedAt = clearedAt,
-            now = now
-        )
+        database.withTransaction {
+            val cutoverState = database.syncMetadataDao()
+                .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
+                ?.value
+            if (cutoverState == ROOM_PRIMARY_STATE) {
+                return@withTransaction
+            }
+            val dao = database.playbackStatsDao()
+            dao.deleteAllDailyCounterShards()
+            dao.deleteAllCounterShards()
+            dao.deleteAllBuckets()
+            dao.deleteAllStats()
+            insertAll(
+                stats = stats,
+                dailyStats = dailyStats,
+                counterSnapshot = counterSnapshot
+            )
+            markRoomPrimary(
+                clearedAt = clearedAt,
+                counterEpochStartedAt = counterEpochStartedAt,
+                now = now
+            )
+        }
     }
 
     suspend fun replaceAll(

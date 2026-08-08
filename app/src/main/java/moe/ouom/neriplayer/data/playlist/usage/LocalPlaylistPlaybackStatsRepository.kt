@@ -5,7 +5,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +65,8 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     private val roomStore: LocalPlaylistPlaybackRoomStore? = null
 ) {
     companion object {
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
+
         @Volatile
         private var instance: LocalPlaylistPlaybackStatsRepository? = null
 
@@ -89,6 +93,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     private val initialStats = loadInitialStats()
     private val _stats = MutableStateFlow(initialStats)
     private var persistedStats = initialStats
+    private var retryJob: Job? = null
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
 
     private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
@@ -235,6 +240,8 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             }.isSuccess
             if (roomWriteSucceeded) {
                 persistedStats = next
+                retryJob?.cancel()
+                retryJob = null
                 return
             }
         }
@@ -242,12 +249,25 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             "LocalPlaylistPlaybackRepo",
             "Local playlist playback update remains in memory until Room is available."
         )
+        schedulePersistenceRetry()
+    }
+
+    private fun schedulePersistenceRetry() {
+        if (!roomStorageEnabled || roomStore == null || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            mutex.withLock {
+                retryJob = null
+                persistSnapshot(_stats.value)
+            }
+        }
     }
 
     private fun syncCounterDeviceId(): String {
         return runCatching { syncStorage.getOrCreateDeviceId() }
             .getOrDefault(fallbackCounterDeviceId)
     }
+
 }
 
 internal fun recordLocalPlaylistPlay(
