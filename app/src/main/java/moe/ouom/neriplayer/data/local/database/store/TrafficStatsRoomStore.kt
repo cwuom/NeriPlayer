@@ -68,12 +68,6 @@ internal class TrafficStatsRoomStore(
         }
     }
 
-    suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
-        database.syncMetadataDao().upsertMigrationMetadata(
-            metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-        )
-    }
-
     private suspend fun markRoomPrimary(now: Long) {
         database.syncMetadataDao().upsertMigrationMetadata(
             metadata(CUTOVER_STATE_METADATA_KEY, ROOM_PRIMARY_STATE, now)
@@ -94,6 +88,5 @@ internal class TrafficStatsRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "traffic_stats_cutover_state"
         const val IMPORT_SCHEMA_METADATA_KEY = "traffic_stats_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }

@@ -306,13 +306,14 @@ class LocalPlaylistRepository private constructor(
                 activeRoomStore.readIfRoomPrimary()
             }
         }.onFailure { error ->
-            roomStorageEnabled = false
             NPLogger.e(
                 "LocalPlaylistRepo",
-                "Failed to read Room playlists; falling back to legacy storage",
+                "Failed to read Room playlists; refusing to overwrite Room from legacy JSON",
                 error
             )
-        }.getOrNull()
+        }.getOrElse { error ->
+            throw IOException("Failed to read Room playlists", error)
+        }
     }
 
     private fun readStoredPlaylists(): PlaylistLoadResult {
@@ -594,12 +595,10 @@ class LocalPlaylistRepository private constructor(
         if (markLocalMutation && syncMutation.isEmpty && pendingOutbox == null) {
             syncMutationStore.markSyncMutation()
         }
-        val roomWasEnabledBeforeOutbox = roomStorageEnabled
         if (pendingOutbox != null || !syncMutation.isEmpty) {
             writePendingSyncMutation(pendingOutbox)
         }
-        var committedToRoom = false
-        var roomFallbackRequired = roomWasEnabledBeforeOutbox && !roomStorageEnabled
+        var committedToRoom = !stateChanged
         if (stateChanged && roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             runCatching {
@@ -611,29 +610,16 @@ class LocalPlaylistRepository private constructor(
             }.onSuccess {
                 committedToRoom = true
             }.onFailure { error ->
-                roomFallbackRequired = true
-                roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistRepo",
-                    "Room playlist commit failed; falling back to legacy JSON",
+                    "Room playlist commit failed; keeping JSON migration data read-only",
                     error
                 )
+                throw IOException("Failed to persist local playlists in Room", error)
             }
         }
         if (stateChanged && !committedToRoom) {
             persistToDisk(normalized)
-            val fallbackRoomStore = roomStore
-            if (roomFallbackRequired && fallbackRoomStore != null) {
-                runCatching {
-                    fallbackRoomStore.markLegacyJsonPrimary(nextDomainDigest)
-                }.onFailure { error ->
-                    NPLogger.e(
-                        "LocalPlaylistRepo",
-                        "Failed to mark legacy JSON fallback state in Room",
-                        error
-                    )
-                }
-            }
         }
         if (stateChanged) {
             _playlists.value = normalized
@@ -752,12 +738,12 @@ class LocalPlaylistRepository private constructor(
             val roomOutbox = runCatching {
                 activeRoomStore.readPendingSyncMutationOutbox()
             }.onFailure { error ->
-                roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistRepo",
-                    "Failed to read Room sync outbox; falling back to legacy outbox",
+                    "Failed to read Room sync outbox",
                     error
                 )
+                throw IOException("Failed to read Room sync outbox", error)
             }.getOrNull()
             if (roomOutbox != null) {
                 return trimCommittedSyncMutationOutbox(
@@ -765,6 +751,15 @@ class LocalPlaylistRepository private constructor(
                     committedDomainDigest = committedDomainDigest,
                     legacyPrimaryText = legacyPrimaryText
                 )
+            }
+            val roomPrimary = runCatching { activeRoomStore.isRoomPrimary() }
+                .onFailure { error ->
+                    NPLogger.e("LocalPlaylistRepo", "Failed to read Room primary marker", error)
+                    throw IOException("Failed to read Room primary marker", error)
+                }
+                .getOrDefault(false)
+            if (roomPrimary) {
+                return null
             }
         }
 
@@ -786,12 +781,12 @@ class LocalPlaylistRepository private constructor(
                     activeRoomStore.writePendingSyncMutationOutbox(outbox)
                 }
             }.onFailure { error ->
-                roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistRepo",
-                    "Failed to write Room sync outbox; falling back to legacy outbox",
+                    "Failed to write Room sync outbox",
                     error
                 )
+                throw IOException("Failed to write Room sync outbox", error)
             }.isSuccess
             if (roomWriteSucceeded) {
                 return
@@ -810,10 +805,10 @@ class LocalPlaylistRepository private constructor(
             try {
                 activeRoomStore.clearPendingSyncMutationOutbox()
             } catch (error: Exception) {
-                roomStorageEnabled = false
                 NPLogger.e("LocalPlaylistRepo", "Failed to clear Room sync outbox", error)
                 throw IOException("Failed to clear Room sync outbox", error)
             }
+            return
         }
         storage.clearPendingSyncMutation()
     }

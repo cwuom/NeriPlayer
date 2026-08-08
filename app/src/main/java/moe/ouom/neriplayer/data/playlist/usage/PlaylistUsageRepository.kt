@@ -55,7 +55,6 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.util.UUID
@@ -236,7 +235,10 @@ class PlaylistUsageRepository internal constructor(
         return normalized
     }
 
-    private fun saveAsync(list: List<UsageEntry>) {
+    private fun saveAsync(
+        list: List<UsageEntry>,
+        triggerSyncOnSuccess: Boolean = false
+    ) {
         val generation = synchronized(mutationLock) {
             persistenceGeneration += 1L
             persistenceGeneration
@@ -256,34 +258,24 @@ class PlaylistUsageRepository internal constructor(
                             next = list
                         )
                     }.onFailure { error ->
-                        roomStorageEnabled = false
                         NPLogger.e(
                             "PlaylistUsageRepo",
-                            "Failed to write Room playlist usage; falling back to JSON",
+                            "Failed to write Room playlist usage; keeping JSON migration data read-only",
                             error
                         )
                     }.isSuccess
                     if (roomWriteSucceeded) {
                         persistedEntries = list
+                        if (triggerSyncOnSuccess) {
+                            triggerSync()
+                        }
                         return@withLock
                     }
                 }
-
-                runCatching { file.writeTextAtomically(gson.toJson(list)) }
-                    .onFailure { error ->
-                        NPLogger.e("PlaylistUsageRepo", "Failed to persist playlist usage", error)
-                    }
-                roomStore?.let { fallbackStore ->
-                    runCatching { fallbackStore.markLegacyJsonPrimary() }
-                        .onFailure { error ->
-                            NPLogger.e(
-                                "PlaylistUsageRepo",
-                                "Failed to mark playlist usage JSON fallback state",
-                                error
-                            )
-                        }
-                }
-                persistedEntries = list
+                NPLogger.w(
+                    "PlaylistUsageRepo",
+                    "Playlist usage update remains in memory until Room is available."
+                )
             }
         }
     }
@@ -350,8 +342,7 @@ class PlaylistUsageRepository internal constructor(
             }
             normalizeUsageEntries(data).also { _flow.value = it }
         }
-        saveAsync(out)
-        triggerSync()
+        saveAsync(out, triggerSyncOnSuccess = true)
     }
 
     fun syncStats(): List<SyncPlaylistUsageStat> {
@@ -431,8 +422,7 @@ class PlaylistUsageRepository internal constructor(
 
             normalizeUsageEntries(data).also { _flow.value = it }
         }
-        saveAsync(out)
-        triggerSync()
+        saveAsync(out, triggerSyncOnSuccess = true)
     }
 
     /**

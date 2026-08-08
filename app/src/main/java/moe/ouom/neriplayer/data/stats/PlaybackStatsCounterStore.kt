@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 data class PlaybackStatsSyncCounterSnapshot(
@@ -171,10 +170,6 @@ internal class PlaybackStatsCounterStore(
         return synchronized(lock) { state.epochStartedAt }
     }
 
-    fun persistLegacyProjection(): Boolean {
-        return persistToDisk(synchronized(lock) { state })
-    }
-
     private fun load(): PlaybackStatsCounterState {
         return try {
             if (!counterFile.exists()) return PlaybackStatsCounterState()
@@ -190,19 +185,6 @@ internal class PlaybackStatsCounterStore(
             state = nextState
         }
     }
-
-    private fun persistToDisk(nextState: PlaybackStatsCounterState): Boolean {
-        return synchronized(persistFileLock) {
-            runCatching {
-                counterFile.writeTextAtomically(gson.toJson(nextState))
-                true
-            }.onFailure { error ->
-                NPLogger.e("PlaybackStatsRepo", "Failed to persist stats counters", error)
-            }.getOrDefault(false)
-        }
-    }
-
-    private val persistFileLock = Any()
 
     private fun updateShardList(
         shards: List<SyncPlaybackCounterShard>,

@@ -44,20 +44,6 @@ internal class LocalPlaylistRoomStore(
         return readPlaylists()
     }
 
-    suspend fun markLegacyJsonPrimary(
-        sourceDigest: String,
-        now: Long = System.currentTimeMillis()
-    ) {
-        database.withTransaction {
-            database.syncMetadataDao().upsertMigrationMetadata(
-                migrationMetadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-            )
-            database.syncMetadataDao().upsertMigrationMetadata(
-                migrationMetadata(SOURCE_DIGEST_METADATA_KEY, sourceDigest, now)
-            )
-        }
-    }
-
     suspend fun replacePlaylists(
         playlists: List<LocalPlaylist>,
         sourceDigest: String? = null
@@ -293,7 +279,6 @@ internal class LocalPlaylistRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "local_playlist_cutover_state"
         const val IMPORT_SCHEMA_METADATA_KEY = "local_playlist_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
         private const val MAX_PENDING_OUTBOX_ENTRIES = 256
 
         fun sourceDigest(playlists: List<LocalPlaylist>): String {

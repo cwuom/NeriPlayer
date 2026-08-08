@@ -40,12 +40,6 @@ internal class LocalPlaylistPlaybackRoomStore(
         }
     }
 
-    suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
-        database.syncMetadataDao().upsertMigrationMetadata(
-            metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-        )
-    }
-
     suspend fun writeIncremental(
         previous: List<LocalPlaylistPlaybackStat>,
         next: List<LocalPlaylistPlaybackStat>,
@@ -177,6 +171,5 @@ internal class LocalPlaylistPlaybackRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "local_playlist_playback_cutover_state"
         const val IMPORT_SCHEMA_METADATA_KEY = "local_playlist_playback_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }

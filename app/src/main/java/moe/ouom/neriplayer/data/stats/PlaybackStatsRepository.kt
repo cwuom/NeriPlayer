@@ -28,7 +28,6 @@ import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 data class TrackStat(
@@ -84,9 +83,9 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val dailyFile: File by lazy { File(app.filesDir, "playback_stats_daily.json") }
     private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
-    private val persistFileMutex = Mutex()
     private val roomPersistenceMutex = Mutex()
     private var persistJob: Job? = null
+    private var retryJob: Job? = null
     private var persistGeneration = 0L
     private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
     private var persistenceDirty = false
@@ -266,14 +265,10 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     ): List<PlaybackStatBucket> {
         return try {
             if (!dailyFile.exists()) {
-                val migrated = buildLegacyDailyStats(
+                return buildLegacyDailyStats(
                     stats = stats,
                     clearedAt = clearedAt
                 )
-                if (migrated.isNotEmpty()) {
-                    persistDailyStatsToDisk(migrated)
-                }
-                return migrated
             }
             val raw = dailyFile.readText()
             val type = object : TypeToken<List<PlaybackStatBucket>>() {}.type
@@ -281,33 +276,6 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         } catch (_: Throwable) {
             emptyList()
         }
-    }
-
-    private fun persistToDisk(list: List<TrackStat>): Boolean {
-        return runCatching {
-            file.writeTextAtomically(gson.toJson(list))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats", error)
-        }.getOrDefault(false)
-    }
-
-    private fun persistDailyStatsToDisk(list: List<PlaybackStatBucket>): Boolean {
-        return runCatching {
-            dailyFile.writeTextAtomically(gson.toJson(list))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist daily stats", error)
-        }.getOrDefault(false)
-    }
-
-    private fun persistMetadata(clearedAt: Long): Boolean {
-        return runCatching {
-            metadataFile.writeTextAtomically(gson.toJson(PlaybackStatsMetadata(clearedAt)))
-            true
-        }.onFailure { error ->
-            NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
-        }.getOrDefault(false)
     }
 
     private fun currentPersistenceSnapshot(): PlaybackStatsPersistenceSnapshot {
@@ -367,10 +335,9 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                         clearedAt = snapshot.clearedAt
                     )
                 }.onFailure { error ->
-                    roomStorageEnabled = false
                     NPLogger.e(
                         "PlaybackStatsRepo",
-                        "Failed to write Room playback stats",
+                        "Failed to write Room playback stats; keeping JSON migration data read-only",
                         error
                     )
                 }.isSuccess
@@ -380,18 +347,17 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                     return@withLock
                 }
             }
-            val legacySucceeded = persistLegacySnapshot(snapshot)
-            if (legacySucceeded) {
-                runCatching { roomStore.markLegacyJsonPrimary() }
-                    .onFailure { error ->
-                        NPLogger.e(
-                            "PlaybackStatsRepo",
-                            "Failed to mark playback stats JSON fallback state",
-                            error
-                        )
-                    }
-                persistedSnapshot = snapshot
-                markPersistenceClean(expectedGeneration)
+            scheduleRoomRetry()
+        }
+    }
+
+    private fun scheduleRoomRetry() {
+        if (!roomStorageEnabled || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            mutex.withLock {
+                retryJob = null
+                persistSnapshot(currentPersistenceSnapshot())
             }
         }
     }
@@ -401,17 +367,6 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             if (expectedGeneration == null || expectedGeneration == persistGeneration) {
                 persistenceDirty = false
             }
-        }
-    }
-
-    private fun persistLegacySnapshot(
-        snapshot: PlaybackStatsPersistenceSnapshot
-    ): Boolean {
-        return synchronized(persistFileMutex) {
-            persistToDisk(snapshot.stats) &&
-                persistDailyStatsToDisk(snapshot.dailyStats) &&
-                persistMetadata(snapshot.clearedAt) &&
-                counterStore.persistLegacyProjection()
         }
     }
 
@@ -744,6 +699,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
 
     companion object {
         private const val PERSIST_DEBOUNCE_MS = 5_000L
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
 
         @SuppressLint("StaticFieldLeak")
         @Volatile

@@ -19,7 +19,6 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.TrafficStatsRoomStore
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import java.io.File
 
@@ -40,6 +39,7 @@ class TrafficStatsRepository private constructor(
     private val _dailyStats = MutableStateFlow(initialStats)
     private var persistedStats = initialStats
     private var persistJob: Job? = null
+    private var retryJob: Job? = null
     private var persistGeneration = 0L
 
     val dailyStatsFlow: StateFlow<List<TrafficStatsBucket>> = _dailyStats
@@ -180,8 +180,11 @@ class TrafficStatsRepository private constructor(
                         next = snapshot
                     )
                 }.onFailure {
-                    roomStorageEnabled = false
-                    NPLogger.e(TAG, "Failed to write Room traffic stats", it)
+                    NPLogger.e(
+                        TAG,
+                        "Failed to write Room traffic stats; keeping JSON migration data read-only",
+                        it
+                    )
                 }.isSuccess
                 if (roomSucceeded) {
                     persistedStats = snapshot
@@ -189,26 +192,19 @@ class TrafficStatsRepository private constructor(
                     return@withLock
                 }
             }
-
-            val legacySucceeded = persistDailyStatsToDisk(snapshot)
-            if (legacySucceeded) {
-                runCatching { roomStore.markLegacyJsonPrimary() }
-                    .onFailure {
-                        NPLogger.e(TAG, "Failed to mark traffic stats JSON fallback state", it)
-                    }
-                persistedStats = snapshot
-                markPersistenceClean(expectedGeneration)
-            }
+            scheduleRetry()
         }
     }
 
-    private fun persistDailyStatsToDisk(list: List<TrafficStatsBucket>): Boolean {
-        return runCatching {
-            dailyFile.writeTextAtomically(gson.toJson(list))
-            true
-        }.onFailure {
-            NPLogger.e(TAG, "Failed to persist traffic stats", it)
-        }.getOrDefault(false)
+    private fun scheduleRetry() {
+        if (!roomStorageEnabled || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            statsMutex.withLock {
+                retryJob = null
+                persistSnapshot(_dailyStats.value)
+            }
+        }
     }
 
     private fun markPersistenceClean(expectedGeneration: Long?) {
@@ -220,6 +216,7 @@ class TrafficStatsRepository private constructor(
     companion object {
         private const val TAG = "TrafficStatsRepo"
         private const val PERSIST_DEBOUNCE_MS = 5_000L
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
 
         @Volatile
         private var instance: TrafficStatsRepository? = null

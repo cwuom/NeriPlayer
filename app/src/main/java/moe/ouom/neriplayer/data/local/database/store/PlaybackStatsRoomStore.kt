@@ -166,12 +166,6 @@ internal class PlaybackStatsRoomStore(
         }
     }
 
-    suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
-        database.syncMetadataDao().upsertMigrationMetadata(
-            metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-        )
-    }
-
     private suspend fun readSnapshot(): PlaybackStatsRoomSnapshot {
         val dao = database.playbackStatsDao()
         val stats = dao.getStats().map(PlaybackStatEntity::toDomain)
@@ -284,7 +278,6 @@ internal class PlaybackStatsRoomStore(
         const val CLEARED_AT_METADATA_KEY = "playback_stats_cleared_at"
         const val COUNTER_EPOCH_METADATA_KEY = "playback_stats_counter_epoch"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }
 

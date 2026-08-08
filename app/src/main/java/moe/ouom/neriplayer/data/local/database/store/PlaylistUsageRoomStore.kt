@@ -77,12 +77,6 @@ internal class PlaylistUsageRoomStore(
         }
     }
 
-    suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
-        database.syncMetadataDao().upsertMigrationMetadata(
-            metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-        )
-    }
-
     private suspend fun readEntries(): List<UsageEntry> {
         val shardsByKey = database.playlistUsageDao()
             .getCounterShards()
@@ -149,6 +143,5 @@ internal class PlaylistUsageRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "playlist_usage_cutover_state"
         const val IMPORT_SCHEMA_METADATA_KEY = "playlist_usage_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }

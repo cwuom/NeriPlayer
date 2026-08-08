@@ -48,7 +48,6 @@ import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
@@ -164,13 +163,16 @@ class PlayHistoryRepository private constructor(
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
     @Volatile
     private var roomStorageEnabled = roomStore != null
-    private val _history = MutableStateFlow(loadInitialHistory())
+    private val initialHistory = loadInitialHistory()
+    private val _history = MutableStateFlow(initialHistory)
+    private var persistedHistory = initialHistory
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
     private val syncPreferences by lazy { SyncPreferences(app) }
     private var lastBatchSyncTime = 0L
     private val historyMutex = Mutex()
     private var pendingSettledSyncJob: Job? = null
+    private var retryJob: Job? = null
 
     private fun loadInitialHistory(): List<PlayedEntry> {
         if (roomStorageEnabled && roomStore != null) {
@@ -235,45 +237,40 @@ class PlayHistoryRepository private constructor(
         }
     }
 
-    private fun persistToDisk(list: List<PlayedEntry>) {
-        runCatching {
-            file.writeTextAtomically(gson.toJson(list))
+    private suspend fun persistSnapshot(
+        next: List<PlayedEntry>
+    ) {
+        val activeRoomStore = roomStore
+        if (!roomStorageEnabled || activeRoomStore == null) {
+            NPLogger.w(
+                "PlayHistoryRepo",
+                "Play history update remains in memory until Room is available."
+            )
+            return
+        }
+        val roomWriteSucceeded = runCatching {
+            activeRoomStore.writeIncremental(previous = persistedHistory, next = next)
         }.onFailure { error ->
-            NPLogger.e("PlayHistoryRepo", "Failed to persist play history", error)
+            NPLogger.e(
+                "PlayHistoryRepo",
+                "Failed to write Room history; keeping JSON migration data read-only",
+                error
+            )
+        }.isSuccess
+        if (roomWriteSucceeded) {
+            persistedHistory = next
+        } else {
+            schedulePersistenceRetry()
         }
     }
 
-    private suspend fun persistSnapshot(
-        previous: List<PlayedEntry>,
-        next: List<PlayedEntry>
-    ) {
-        if (roomStorageEnabled && roomStore != null) {
-            val activeRoomStore = roomStore
-            val roomWriteSucceeded = runCatching {
-                activeRoomStore.writeIncremental(previous = previous, next = next)
-            }.onFailure { error ->
-                roomStorageEnabled = false
-                NPLogger.e(
-                    "PlayHistoryRepo",
-                    "Failed to write Room history; falling back to legacy JSON",
-                    error
-                )
-            }.isSuccess
-            if (roomWriteSucceeded) {
-                return
-            }
-        }
-
-        persistToDisk(next)
-        roomStore?.let { fallbackStore ->
-            runCatching {
-                fallbackStore.markLegacyJsonPrimary()
-            }.onFailure { error ->
-                NPLogger.e(
-                    "PlayHistoryRepo",
-                    "Failed to mark legacy history fallback state",
-                    error
-                )
+    private fun schedulePersistenceRetry() {
+        if (!roomStorageEnabled || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            historyMutex.withLock {
+                retryJob = null
+                persistSnapshot(_history.value)
             }
         }
     }
@@ -369,7 +366,7 @@ class PlayHistoryRepository private constructor(
                 markSyncMutation()
                 NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
                 _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                persistSnapshot(next = updated)
 
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
@@ -432,7 +429,7 @@ class PlayHistoryRepository private constructor(
 
                 markSyncMutation()
                 _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                persistSnapshot(next = updated)
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }
@@ -473,7 +470,7 @@ class PlayHistoryRepository private constructor(
                     .take(1000)
 
                 _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                persistSnapshot(next = updated)
                 if (triggerSync) {
                     triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
                 }
@@ -501,20 +498,7 @@ class PlayHistoryRepository private constructor(
                 }
 
                 _history.value = emptyList()
-                if (roomStorageEnabled && roomStore != null) {
-                    runCatching { roomStore.clear() }
-                        .onFailure { error ->
-                            roomStorageEnabled = false
-                            NPLogger.e(
-                                "PlayHistoryRepo",
-                                "Failed to clear Room history; falling back to legacy JSON",
-                                error
-                            )
-                        }
-                }
-                if (!roomStorageEnabled) {
-                    persistToDisk(emptyList())
-                }
+                persistSnapshot(next = emptyList())
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -547,7 +531,7 @@ class PlayHistoryRepository private constructor(
 
                 val updated = current.filterNot { it.identityKey() in removalKeys }
                 _history.value = updated
-                persistSnapshot(previous = current, next = updated)
+                persistSnapshot(next = updated)
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -561,9 +545,8 @@ class PlayHistoryRepository private constructor(
                 .distinctBy { it.identityKey() }
                 .take(1000)
             NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
-            val previous = _history.value
             _history.value = clipped
-            persistSnapshot(previous = previous, next = clipped)
+            persistSnapshot(next = clipped)
         }
     }
 
@@ -579,9 +562,8 @@ class PlayHistoryRepository private constructor(
                 .sortedByDescending { it.playedAt }
                 .distinctBy { it.identityKey() }
                 .take(1000)
-            val previous = _history.value
             _history.value = clipped
-            persistSnapshot(previous = previous, next = clipped)
+            persistSnapshot(next = clipped)
             true
         }
     }
@@ -637,6 +619,8 @@ class PlayHistoryRepository private constructor(
     }
 
     companion object {
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
+
         @SuppressLint("StaticFieldLeak")
         @Volatile
         private var INSTANCE: PlayHistoryRepository? = null

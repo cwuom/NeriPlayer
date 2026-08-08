@@ -26,7 +26,6 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 import java.util.UUID
 
@@ -87,7 +86,9 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
     private val mutex = Mutex()
     @Volatile
     private var roomStorageEnabled = roomStore != null
-    private val _stats = MutableStateFlow(loadInitialStats())
+    private val initialStats = loadInitialStats()
+    private val _stats = MutableStateFlow(initialStats)
+    private var persistedStats = initialStats
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
 
     private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
@@ -146,7 +147,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
                 deviceId = syncCounterDeviceId()
             )
             _stats.value = updated
-            persistSnapshot(current, updated)
+            persistSnapshot(updated)
         }
     }
 
@@ -186,7 +187,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
             )
             val updated = finalized.toLocalPlaybackStats()
             _stats.value = updated
-            persistSnapshot(currentStats, updated)
+            persistSnapshot(updated)
         }
     }
 
@@ -218,43 +219,29 @@ class LocalPlaylistPlaybackStatsRepository private constructor(
         return normalizeLocalPlaylistPlaybackStats(parsed)
     }
 
-    private fun persist(stats: List<LocalPlaylistPlaybackStat>) {
-        runCatching {
-            file.writeTextAtomically(gson.toJson(stats))
-        }
-    }
-
     private suspend fun persistSnapshot(
-        previous: List<LocalPlaylistPlaybackStat>,
         next: List<LocalPlaylistPlaybackStat>
     ) {
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val roomWriteSucceeded = runCatching {
-                activeRoomStore.writeIncremental(previous, next)
+                activeRoomStore.writeIncremental(persistedStats, next)
             }.onFailure { error ->
-                roomStorageEnabled = false
                 NPLogger.e(
                     "LocalPlaylistPlaybackRepo",
-                    "Failed to write Room local playlist playback stats",
+                    "Failed to write Room local playlist playback stats; keeping JSON migration data read-only",
                     error
                 )
             }.isSuccess
             if (roomWriteSucceeded) {
+                persistedStats = next
                 return
             }
         }
-        persist(next)
-        roomStore?.let { fallbackStore ->
-            runCatching { fallbackStore.markLegacyJsonPrimary() }
-                .onFailure { error ->
-                    NPLogger.e(
-                        "LocalPlaylistPlaybackRepo",
-                        "Failed to mark local playlist playback JSON fallback state",
-                        error
-                    )
-                }
-        }
+        NPLogger.w(
+            "LocalPlaylistPlaybackRepo",
+            "Local playlist playback update remains in memory until Room is available."
+        )
     }
 
     private fun syncCounterDeviceId(): String {
