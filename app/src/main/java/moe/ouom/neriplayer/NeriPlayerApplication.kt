@@ -118,6 +118,12 @@ class NeriPlayerApplication : Application() {
                 AppContainer.playbackStatsRepo
             }
             AppContainer.launchBackgroundIo {
+                AppContainer.neteasePlaylistCacheRepo.importLegacyCaches()
+                AppContainer.biliFavoriteFolderCacheRepo.importLegacyCaches()
+                AppContainer.biliArchiveCacheRepo.importLegacyCaches()
+                AppContainer.youtubeMusicPlaylistCacheRepo.importLegacyCaches()
+            }
+            AppContainer.launchBackgroundIo {
                 AppContainer.settingsRepo.usbDeviceAttachHandlingEnabledFlow.collect { enabled ->
                     UsbDeviceAttachHandling.applyComponentState(
                         this@NeriPlayerApplication,

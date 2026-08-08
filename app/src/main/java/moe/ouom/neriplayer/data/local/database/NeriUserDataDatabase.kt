@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadSnapshotDao
+import moe.ouom.neriplayer.data.local.database.dao.PlatformPlaylistCacheDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.TrafficStatsBucketEntity
@@ -52,6 +53,9 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
+import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
 
 @Database(
     entities = [
@@ -85,9 +89,12 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEn
         DownloadedSongCatalogEntity::class,
         CoverUrlMappingEntity::class,
         DownloadSnapshotEntryEntity::class,
-        DownloadSnapshotMetadataEntity::class
+        DownloadSnapshotMetadataEntity::class,
+        PlatformPlaylistCacheEntity::class,
+        PlatformPlaylistCacheTrackEntity::class,
+        PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -118,6 +125,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun coverUrlMappingDao(): CoverUrlMappingDao
 
     abstract fun downloadSnapshotDao(): DownloadSnapshotDao
+
+    abstract fun platformPlaylistCacheDao(): PlatformPlaylistCacheDao
 
     companion object {
         const val DATABASE_NAME = "neri_user_data.db"
@@ -151,7 +160,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_9_10,
                 MIGRATION_10_11,
                 MIGRATION_11_12,
-                MIGRATION_12_13
+                MIGRATION_12_13,
+                MIGRATION_13_14
             ).build()
         }
 
@@ -978,6 +988,125 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
             }
+        }
+
+        val MIGRATION_13_14: Migration = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                createPlatformPlaylistCacheTables(db)
+            }
+        }
+
+        private fun createPlatformPlaylistCacheTables(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `platform_playlist_cache` (
+                    `platform` TEXT NOT NULL,
+                    `cache_key` TEXT NOT NULL,
+                    `source_id` INTEGER,
+                    `alternate_key` TEXT,
+                    `kind` TEXT,
+                    `title` TEXT,
+                    `subtitle` TEXT,
+                    `creator_name` TEXT,
+                    `cover_url` TEXT,
+                    `play_count` INTEGER,
+                    `track_count` INTEGER NOT NULL,
+                    `total_count` INTEGER NOT NULL,
+                    `signature_primary` TEXT,
+                    `signature_secondary` TEXT,
+                    `has_more` INTEGER,
+                    `saved_at_ms` INTEGER NOT NULL,
+                    PRIMARY KEY(`platform`, `cache_key`)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_platform_playlist_cache_source_id`
+                ON `platform_playlist_cache` (`platform`, `source_id`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_platform_playlist_cache_saved_at`
+                ON `platform_playlist_cache` (`platform`, `saved_at_ms`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `platform_playlist_cache_track` (
+                    `platform` TEXT NOT NULL,
+                    `cache_key` TEXT NOT NULL,
+                    `position` INTEGER NOT NULL,
+                    `item_id` INTEGER,
+                    `item_key` TEXT,
+                    `name` TEXT NOT NULL,
+                    `artist` TEXT NOT NULL,
+                    `album` TEXT NOT NULL,
+                    `album_id` INTEGER,
+                    `duration_ms` INTEGER NOT NULL,
+                    `cover_url` TEXT,
+                    `audio_id` TEXT,
+                    `uploader_mid` INTEGER,
+                    `added_at` INTEGER NOT NULL,
+                    PRIMARY KEY(`platform`, `cache_key`, `position`),
+                    FOREIGN KEY(`platform`, `cache_key`)
+                    REFERENCES `platform_playlist_cache`(`platform`, `cache_key`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_platform_playlist_cache_track_item_id`
+                ON `platform_playlist_cache_track`
+                (`platform`, `cache_key`, `item_id`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_platform_playlist_cache_track_item_key`
+                ON `platform_playlist_cache_track`
+                (`platform`, `cache_key`, `item_key`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `platform_playlist_cache_track_artist` (
+                    `platform` TEXT NOT NULL,
+                    `cache_key` TEXT NOT NULL,
+                    `track_position` INTEGER NOT NULL,
+                    `artist_position` INTEGER NOT NULL,
+                    `artist_id` INTEGER NOT NULL,
+                    `name` TEXT NOT NULL,
+                    PRIMARY KEY(
+                        `platform`,
+                        `cache_key`,
+                        `track_position`,
+                        `artist_position`
+                    ),
+                    FOREIGN KEY(`platform`, `cache_key`, `track_position`)
+                    REFERENCES `platform_playlist_cache_track`(
+                        `platform`,
+                        `cache_key`,
+                        `position`
+                    )
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                `index_platform_playlist_cache_artist_track`
+                ON `platform_playlist_cache_track_artist`
+                (`platform`, `cache_key`, `track_position`)
+                """.trimIndent()
+            )
         }
     }
 }
