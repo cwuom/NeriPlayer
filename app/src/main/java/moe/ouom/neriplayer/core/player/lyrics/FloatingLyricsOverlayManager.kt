@@ -105,6 +105,7 @@ object FloatingLyricsOverlayManager {
                 }
             }
 
+            @Deprecated("Implemented only to satisfy ComponentCallbacks")
             override fun onLowMemory() = Unit
         }
         configurationCallbacks = appConfigurationCallbacks
