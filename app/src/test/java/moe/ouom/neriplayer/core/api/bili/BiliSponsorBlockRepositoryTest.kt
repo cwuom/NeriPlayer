@@ -121,4 +121,45 @@ class BiliSponsorBlockRepositoryTest {
             ).isEmpty()
         )
     }
+
+    @Test
+    fun `parser applies a multi-part submission only to its matching page`() {
+        val response = """
+            [
+              {
+                "videoID": "BV1Ha1cBJExg",
+                "segments": [
+                  {
+                    "cid": "33638122342",
+                    "category": "music_offtopic",
+                    "actionType": "skip",
+                    "segment": [150, 725],
+                    "UUID": "part-one-only",
+                    "videoDuration": 725
+                  }
+                ]
+              }
+            ]
+        """.trimIndent()
+
+        val firstPart = parseBiliSponsorBlockSegments(
+            responseBody = response,
+            target = BiliSponsorBlockTarget(
+                bvid = "BV1Ha1cBJExg",
+                cid = 33_638_122_342L,
+                durationMs = 725_000L
+            )
+        )
+        val secondPart = parseBiliSponsorBlockSegments(
+            responseBody = response,
+            target = BiliSponsorBlockTarget(
+                bvid = "BV1Ha1cBJExg",
+                cid = 33_717_159_668L,
+                durationMs = 57_000L
+            )
+        )
+
+        assertEquals(listOf("part-one-only"), firstPart.map { it.uuid })
+        assertTrue(secondPart.isEmpty())
+    }
 }

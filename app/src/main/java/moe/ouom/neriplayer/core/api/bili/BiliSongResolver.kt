@@ -36,6 +36,26 @@ data class ResolvedBiliSong(
     val pageInfo: BiliClient.VideoPage?
 )
 
+internal fun buildBiliSongAlbum(
+    cid: Long? = null,
+    bvid: String? = null
+): String {
+    val normalizedCid = cid?.takeIf { it > 0L }
+    val normalizedBvid = bvid?.trim()?.takeIf { it.isNotEmpty() }
+    if (normalizedCid == null && normalizedBvid == null) {
+        return PlayerManager.BILI_SOURCE_TAG
+    }
+    return buildString {
+        append(PlayerManager.BILI_SOURCE_TAG)
+        append('|')
+        normalizedCid?.let(::append)
+        normalizedBvid?.let {
+            append('|')
+            append(it)
+        }
+    }
+}
+
 fun buildBiliPartSong(
     page: BiliClient.VideoPage,
     basicInfo: BiliClient.VideoBasicInfo,
@@ -46,7 +66,10 @@ fun buildBiliPartSong(
         id = basicInfo.aid,
         name = title,
         artist = artist,
-        album = "${PlayerManager.BILI_SOURCE_TAG}|${page.cid}",
+        album = buildBiliSongAlbum(
+            cid = page.cid,
+            bvid = basicInfo.bvid
+        ),
         albumId = 0L,
         durationMs = page.durationSec * 1000L,
         coverUrl = coverUrl,
@@ -74,8 +97,18 @@ private fun parseBiliPartMetadata(part: String, fallbackArtist: String): Pair<St
 suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSong? {
     val resolutionSong = song.toBiliResolutionSongOrNull() ?: return null
 
-    val parts = resolutionSong.album.split('|')
-    val storedCid = parts.getOrNull(1)?.toLongOrNull()
+    val storedCid = resolutionSong.biliCidOrNull()
+    val storedBvid = resolutionSong.biliBvidOrNull()
+
+    if (storedBvid != null) {
+        val resolved = resolveByBvid(
+            song = resolutionSong,
+            client = client,
+            bvid = storedBvid,
+            preferredCid = storedCid
+        )
+        if (resolved != null) return resolved
+    }
 
     if (storedCid != null) {
         val resolved = resolveByCandidates(
@@ -100,16 +133,73 @@ internal fun SongItem.toBiliResolutionSongOrNull(): SongItem? {
         return null
     }
     val avid = audioId?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: return null
-    val cid = subAudioId?.trim()?.toLongOrNull()?.takeIf { it > 0L }
+    val cid = biliCidOrNull()
+    val bvid = biliBvidOrNull()
     return copy(
         id = avid,
-        album = buildString {
-            append(PlayerManager.BILI_SOURCE_TAG)
-            cid?.let {
-                append('|')
-                append(it)
-            }
-        }
+        album = buildBiliSongAlbum(cid = cid, bvid = bvid)
+    )
+}
+
+internal fun SongItem.biliCidOrNull(): Long? {
+    val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
+        album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+    if (!isBiliSong) return null
+
+    return subAudioId
+        ?.trim()
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?: album
+            .substringAfter('|', "")
+            .substringBefore('|')
+            .trim()
+            .toLongOrNull()
+            ?.takeIf { it > 0L }
+}
+
+internal fun SongItem.biliBvidOrNull(): String? {
+    val isBiliSong = channelId.equals("bilibili", ignoreCase = true) ||
+        album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true)
+    if (!isBiliSong) return null
+
+    return album
+        .split('|')
+        .getOrNull(2)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+}
+
+internal fun selectBiliPlaybackPage(
+    pages: List<BiliClient.VideoPage>,
+    songName: String,
+    preferredCid: Long? = null
+): BiliClient.VideoPage? {
+    if (preferredCid != null) {
+        return pages.firstOrNull { page -> page.cid == preferredCid }
+    }
+    return pages.firstOrNull { page -> page.part == songName }
+        ?: pages.firstOrNull()
+}
+
+private suspend fun resolveByBvid(
+    song: SongItem,
+    client: BiliClient,
+    bvid: String,
+    preferredCid: Long?
+): ResolvedBiliSong? {
+    val videoInfo = runCatching { client.getVideoBasicInfoByBvid(bvid) }.getOrNull() ?: return null
+    val pageInfo = selectBiliPlaybackPage(
+        pages = videoInfo.pages,
+        songName = song.name,
+        preferredCid = preferredCid
+    )
+    if (preferredCid != null && pageInfo == null) return null
+    return ResolvedBiliSong(
+        avid = videoInfo.aid,
+        cid = pageInfo?.cid ?: 0L,
+        videoInfo = videoInfo,
+        pageInfo = pageInfo
     )
 }
 
@@ -148,20 +238,21 @@ private suspend fun resolveByCandidates(
 
 private suspend fun resolveDirect(song: SongItem, client: BiliClient): ResolvedBiliSong? {
     val videoInfo = runCatching { client.getVideoBasicInfoByAvid(song.id) }.getOrNull() ?: return null
-    val matchedPage = videoInfo.pages.firstOrNull { page ->
-        page.part == song.name
-    }
-    val fallbackPage = matchedPage ?: videoInfo.pages.firstOrNull()
+    val pageInfo = selectBiliPlaybackPage(
+        pages = videoInfo.pages,
+        songName = song.name
+    )
 
-    val looksDirect = matchedPage != null || videoInfo.title == song.name || videoInfo.pages.size == 1
+    val looksDirect = pageInfo?.part == song.name || videoInfo.title == song.name ||
+        videoInfo.pages.size == 1
     if (!looksDirect) return null
 
-    val cid = fallbackPage?.cid ?: 0L
+    val cid = pageInfo?.cid ?: 0L
     return ResolvedBiliSong(
         avid = song.id,
         cid = cid,
         videoInfo = videoInfo,
-        pageInfo = matchedPage
+        pageInfo = pageInfo
     )
 }
 

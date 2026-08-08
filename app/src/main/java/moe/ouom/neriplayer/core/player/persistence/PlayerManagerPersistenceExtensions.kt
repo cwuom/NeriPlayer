@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.applyManualSearchMetadata
@@ -40,6 +41,7 @@ import moe.ouom.neriplayer.core.player.model.PersistedState
 import moe.ouom.neriplayer.core.player.model.toPersistedSongItem
 import moe.ouom.neriplayer.core.player.model.toPlaybackState
 import moe.ouom.neriplayer.core.player.model.withPlaybackState
+import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaUrl
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
@@ -104,6 +106,10 @@ private fun PlayerManager.dispatchMetadataReplacementCompletion(
 ) {
     val callback = onComplete ?: return
     application.mainExecutor.execute { callback(applied) }
+}
+
+private fun downloadedLocalFilesCoverCandidates(): List<SongItem> {
+    return GlobalDownloadManager.downloadedSongs.value.map { it.toPlaybackSongItem() }
 }
 
 private fun buildPersistedPlaybackState(
@@ -1730,7 +1736,10 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
         }
     }
     if (localUpdateSucceeded.isSuccess) {
-        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+        AppContainer.playlistUsageRepo.syncLocalEntries(
+            playlists = localRepo.playlists.value,
+            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+        )
     }
 
     if (queueChanged || rebasedCurrentSong != null) {
@@ -1778,7 +1787,10 @@ internal suspend fun PlayerManager.updateSongLyricsImpl(
         }
         GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
-        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+        AppContainer.playlistUsageRepo.syncLocalEntries(
+            playlists = localRepo.playlists.value,
+            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+        )
     }
 
     persistState()
@@ -1824,7 +1836,10 @@ internal suspend fun PlayerManager.updateSongTranslatedLyricsImpl(
         }
         GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
-        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+        AppContainer.playlistUsageRepo.syncLocalEntries(
+            playlists = localRepo.playlists.value,
+            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+        )
     }
 
     persistState()
@@ -1894,7 +1909,10 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         }
         val downloadSyncOutcome = GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
         AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
-        AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+        AppContainer.playlistUsageRepo.syncLocalEntries(
+            playlists = localRepo.playlists.value,
+            localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+        )
         NPLogger.d(
             "PlayerManager",
             "歌词更新已同步到本地仓库: id=${latestSong.id}, lyric=${latestSong.matchedLyric?.take(32)}, translated=${latestSong.matchedTranslatedLyric?.take(32)}"
@@ -1933,6 +1951,13 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
 
     if (isCurrentSong(originalSong)) {
         setCurrentSongForPlayback(updatedSong)
+        if (isBiliTrack(updatedSong) && !isListenTogetherActive()) {
+            BiliVideoSkipPlaybackController.prepareActiveBiliTrackTarget(
+                song = updatedSong,
+                requestToken = playbackRequestToken,
+                scope = ioScope
+            )
+        }
     }
 
     runLocalPlaylistMutationSafely("updateSongInAllPlaces") {
@@ -1952,7 +1977,10 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
         updatedSong = updatedSong,
         triggerSync = triggerSync
     )
-    AppContainer.playlistUsageRepo.syncLocalEntries(localRepo.playlists.value)
+    AppContainer.playlistUsageRepo.syncLocalEntries(
+        playlists = localRepo.playlists.value,
+        localFilesCoverCandidates = downloadedLocalFilesCoverCandidates()
+    )
 
     persistState()
 }

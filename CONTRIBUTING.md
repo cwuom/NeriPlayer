@@ -73,7 +73,7 @@
 
 这个项目功能面比较宽，提交前请优先保护这些链路：
 
-- **播放链路**：`PlayerManager`、取流策略、缓存、失败刷新、自动换源、
+- **播放链路**：`PlayerManager`、播放解析策略、缓存、失败刷新、播放兜底、
   长音频进度记忆、BilibiliSponsorBlock 跳过策略、状态恢复、响度均衡、
   声道平衡、高解析输出、USB 独占 Native 链路、启动看门狗和前后台健康审计。
 - **下载链路**：`AudioDownloadManager`、`GlobalDownloadManager`、
@@ -91,7 +91,7 @@
   `USB_DEVICE_ATTACHED` 处理开关和播放服务控制入口。
 - **存储与缓存 UI**：`StorageUsageAnalyzer`、缓存清理选项、下载目录索引和 SAF 快照。
 - **一起听**：Android 客户端、Worker 协议字段、角色权限、队列、
-  版本门控更新、直链共享开关和房主离线恢复。
+  版本门控更新、会话候选共享开关和房主离线恢复。
 - **诊断恢复**：安全模式、JVM/Native 崩溃日志、ANR 记录和 Debug 探针。
 - **本地持久化**：播放/流量统计的批量写入、生命周期 flush、原子文件替换和
   SAF/本地歌单初始化就绪状态。
@@ -242,7 +242,7 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`：网易云接口、加密和账号能力。
-  - `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频拉流。
+  - `bili/`：Bilibili 搜索、二维码登录、收藏夹、合集、播放信息和音频播放解析。
     Explore 链接识别会保留 Bilibili 分 P、`cid` 和 `season_id` 上下文；
     改动时同步检查 `ExploreLinkRecognizer` 与 `ExploreViewModel`。
   - `youtube/`：YouTube Music 客户端（NewPipe Extractor）、
@@ -255,7 +255,7 @@
   - `PlayerManager.kt`：Media3 ExoPlayer 的统一管理层，
     负责音源解析、播放队列、缓存、状态恢复、失败重试和播放策略。
   - `service/AudioPlayerService.kt`：前台播放服务、媒体通知、MediaSession 和媒体按钮。
-  - `download/AudioDownloadManager.kt`：下载核心链路；同目录的
+  - `download/AudioDownloadManager.kt`：受管下载核心链路；同目录的
     `DownloadParallelism.kt` 定义并发边界。
   - `effects/PlaybackEffectsController.kt`：倍速、音调、响度增强和均衡器。
   - `engine/`：Media3 音频处理器，包括响度均衡、声道平衡和高解析输出相关处理。
@@ -267,7 +267,7 @@
     `lifecycle/PlayerManagerLifecycleExtensions.kt`：
     播放启动看门狗、前后台健康审计、失败恢复和 USB 独占异常回退。
   - `resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`：网易云无权限、
-    无直链或试听片段时的 Bilibili 自动换源兜底。
+    无可用播放结果或试听片段时的 Bilibili 播放兜底。
   - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`、`YouTubeSeekRefreshPolicy.kt`、
     `prefetch/YouTubePrefetchRunner.kt`：YouTube Music 播放兼容策略。
   - `metadata/`：歌词、元数据、外部蓝牙歌词等播放页数据处理。
@@ -317,7 +317,7 @@
 
 - `app/src/main/java/moe/ouom/neriplayer/listentogether/`
   - `protocol/` 定义房间、事件与传输模型，`network/` 负责 HTTP/WebSocket 与重连，
-    `playback/` 负责队列、权威直链和进度同步，`control/`、`session/`、`invite/`、
+    `playback/` 负责队列、权威播放候选和进度同步，`control/`、`session/`、`invite/`、
     `mapping/`、`validation/` 分别承载控制、会话策略、邀请、模型映射和输入边界。
   - 根目录保留 `ListenTogetherSessionManager.kt` 与少量兼容入口；新增协议逻辑
     不应继续堆入根包。
@@ -352,9 +352,9 @@
   关注状态会保存到本地收藏分类。
 - `Bilibili` 已支持搜索、收藏夹和音频播放/下载，但不是完整视频发现流或评论区。
   链接识别支持选中分 P、合集分享和 `season_id` 上下文，但仍不代表完整 B 站客户端。
-- `YouTube Music` 已支持登录、匿名播放、首页/歌单浏览、详情、搜索、播放与下载；
-  有效身份 Cookie 会保留并支持轮换，取流会复用 bootstrap/player.js/PoToken 与挑战
-  结果缓存，签名或直链失败时可回退 EJS/HLS，
+- `YouTube Music` 已支持登录、匿名播放、首页/歌单浏览、详情、搜索和播放兼容；
+  有效身份 Cookie 会保留并支持轮换，播放解析会复用 bootstrap/player.js/PoToken 与挑战
+  结果缓存，签名或播放候选失败时可回退 EJS/HLS，
   不能把缓存命中或本地单测当作真实账号/网络稳定性证明；长音频大幅 Seek 会走
   更短的启动恢复窗口，仍需验证真实网络下的体验。
 - 状态栏歌词依赖厂商私有能力，当前仅适用于部分支持设备。
@@ -367,7 +367,7 @@
 - Lyricon/SuperLyric 的位置 feed 独立按 200 ms 推送并使用 elapsed realtime 锚点；
   修改播放器进度刷新间隔时，必须同时检查前后台歌词时序和 SuperLyric 对齐。
 - 网易云播放会在当前音质不可用时自动尝试更低音质；
-  无权限、无直链或仅返回试听片段时，可按设置自动匹配 Bilibili 或本地音频兜底。
+  无权限、无可用播放结果或仅返回试听片段时，可按设置自动匹配 Bilibili 或本地音频兜底。
 - 网易云歌单详情缓存只服务歌单详情页快速展示和失败回退；
   专辑详情仍保持实时刷新，避免和歌单缓存混用。
 - 本地「我喜欢的音乐」支持将可识别的网易云歌曲同步到网易云我喜欢的音乐；
@@ -377,8 +377,8 @@
 - 下载任务队列、取消记录和 attemptId 都参与恢复判断；
   修改恢复流程时要避免旧请求把新请求的任务状态清掉。
 - 续传按传输类型分别处理：
-  - 直链下载通过工作文件大小 + `Range` 头续传
-  - `googlevideo` 显式分块下载按字节偏移续传
+  - 直接 HTTP 传输通过工作文件大小 + `Range` 头续传
+  - 需要显式 Range 的平台传输按字节偏移续传
   - HLS 下载通过 `.hls.json` 检查点按 segment 恢复
 - 工作文件位于 `cache/download_staging/`，并额外保存 `.resume.json`
   恢复元数据；应用启动和网络恢复后会尝试自动找回未完成下载。
@@ -437,7 +437,8 @@
 - 本地扫描结果可能先用快速元数据返回，再由后台任务补全歌曲名、歌手、
   专辑和封面；不要假设首次扫描结果已经是最终形态。
 - 一起听在 `shareAudioLinks=false` 时，房间快照和队列不应暴露 `streamUrl`；
-  关闭该开关时还要立即清空已缓存直链，`REQUEST_LINK` 也应直接拒绝。
+  关闭该开关时还要立即清空已缓存会话候选，`REQUEST_LINK` 也应直接拒绝。
+  `streamUrl` 是历史协议字段名，不表示 Worker 可作为媒体代理或公共分发入口。
 - 一起听循环/随机模式通过 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE` 同步；
   成员控制必须校验目标 stable track key，过滤 `clientInstanceId`、`clientSequence`、
   `clientTimeMs` 之前的事件，且 `REQUEST_SET_TRACK` 只能选当前队列曲目。
@@ -468,7 +469,7 @@
 3. 在 `SearchManager` 中增加路由、匹配和降级逻辑。
 4. 视需要补充 `MusicPlatform`、字符串资源和调试探针。
 
-#### 3. 新增取流平台
+#### 3. 新增在线播放平台
 
 1. 参考 `bili/` 或 `youtube/` 设计客户端与播放仓库。
 2. 如需特殊 Header，扩展
@@ -479,12 +480,12 @@
 5. 如需支持同步到网易云我喜欢的音乐，必须提供稳定的网易云歌曲 ID
    或可验证映射，并复用 `LocalPlaylistRepository` 的候选校验逻辑。
 
-#### 4. 修改网易云自动换源
+#### 4. 修改网易云播放兜底
 
 1. 入口在 `core/player/url/PlayerManagerUrlExtensions.kt` 的网易云 URL 解析流程。
 2. 匹配与打分逻辑在
    `core/player/resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`。
-3. 自动换源只处理网易云无权限、无可用直链或试听片段兜底；
+3. 播放兜底只处理网易云无权限、无可用播放结果或试听片段；
    不要把它扩展成跨平台聚合搜索。
 4. 调整匹配策略时要同时考虑歌名、歌手、分 P、时长误差和缓存 key 稳定性。
 
@@ -633,7 +634,7 @@
 3. 协议字段变更必须同时兼容客户端和 Worker，并更新测试。
 4. `shareAudioLinks=false` 时，HTTP/WS 房间快照都不能暴露
    `track.streamUrl` 与 `queue[*].streamUrl`；关闭该开关时要立即清空
-   房间里已缓存的直链。
+   房间里已缓存的会话候选。
 5. `REQUEST_LINK` / `LINK_READY`、成员控制、房主离线恢复和版本门控更新
    要一起看，避免旧状态覆盖新状态。
 6. 循环/随机模式使用 `PLAYBACK_MODE` / `REQUEST_PLAYBACK_MODE`；成员请求与
@@ -720,7 +721,7 @@ adb logcat | grep NeriPlayer
    ```bash
    ./gradlew :app:testDebugUnitTest
    ```
-3. 如修改登录态、取流链路或回归风险较高的集成行为，可按需执行 smoke test：
+3. 如修改登录态、播放解析链路或回归风险较高的集成行为，可按需执行 smoke test：
    ```bash
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
    ./gradlew :app:testDebugUnitTest \
@@ -765,9 +766,9 @@ adb logcat | grep NeriPlayer
 
 当前已有测试覆盖的重点包括：
 
-- YouTube 登录、Cookie 轮换、匿名会话、挑战解析、PoToken、取流、Range/Seek 策略与预取
+- YouTube 登录、Cookie 轮换、匿名会话、挑战解析、PoToken、播放解析、Range/Seek 策略与预取
   （含长音频大幅 Seek 的快速恢复）
-- 网易云歌词、本地 smoke test、自动换源和播放响应解析
+- 网易云歌词、本地 smoke test、播放兜底和播放响应解析
 - USB 独占 keep-alive、启动看门狗、前后台恢复、32-bit/float 输出、
   UAC2 显式反馈、长调度间隙重捕获、协调式重配置、Runtime Report v2、
   背压恢复、延迟 runtime 刷新重试、比特完美音量、USB 插入响应开关和音频焦点策略
@@ -782,7 +783,7 @@ adb logcat | grep NeriPlayer
   原子文件写入和上传重试
 - 长音频进度阈值、显式位置优先、BilibiliSponsorBlock 本地跳转与一起听禁用策略
 - 一起听地址校验、版本门控、循环/随机模式、stable track key 目标校验、
-  播放同步规划、候选直链回退、邀请/成员密钥、显式离开/重连、事件排序、Session 控制/取消与协议兼容
+  播放同步规划、会话候选回退、邀请/成员密钥、显式离开/重连、事件排序、Session 控制/取消与协议兼容
 - 歌词视图、日语假名翻译间距、逐词时间、外部蓝牙歌词、播放音效和播放策略
 - 配置备份、设置生成、安全守卫、崩溃日志文件和安全模式相关逻辑
 

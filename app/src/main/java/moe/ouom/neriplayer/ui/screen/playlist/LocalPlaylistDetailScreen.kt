@@ -366,6 +366,13 @@ fun LocalPlaylistDetailScreen(
     }
     val scanPreviewState by vm.scanPreviewState.collectAsState()
     val metadataProcessingState by vm.metadataProcessingState.collectAsState()
+    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
+    val downloadedPlaybackCoverCandidates = remember(downloadedSongs) {
+        downloadedSongs.map { it.toPlaybackSongItem() }
+    }
+    val latestDownloadedPlaybackCoverCandidates by rememberUpdatedState(
+        downloadedPlaybackCoverCandidates
+    )
     val visibleMetadataProcessingState = metadataProcessingState
         .takeIf { it.playlistId == playlistId }
         ?: LocalMetadataProcessingState()
@@ -387,7 +394,18 @@ fun LocalPlaylistDetailScreen(
                     AppContainer.playlistUsageRepo.updateInfo(
                         id = playlist.id,
                         name = playlist.name,
-                        picUrl = playlist.displayCoverUrl(context),
+                        picUrl = playlist.displayCoverUrl(
+                            context = context,
+                            additionalCoverCandidates = if (LocalFilesPlaylist.isSystemPlaylist(
+                                    playlist,
+                                    context
+                                )
+                            ) {
+                                latestDownloadedPlaybackCoverCandidates
+                            } else {
+                                emptyList()
+                            }
+                        ),
                         trackCount = playlist.songs.size,
                         source = "local"
                     )
@@ -528,7 +546,6 @@ fun LocalPlaylistDetailScreen(
             // 下载进度
             val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
             val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
-            val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsState()
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }

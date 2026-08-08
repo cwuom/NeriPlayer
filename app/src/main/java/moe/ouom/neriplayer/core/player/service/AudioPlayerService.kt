@@ -490,6 +490,16 @@ class AudioPlayerService : Service() {
             return true
         }
 
+        internal fun refreshPlaybackWidgetAfterSeekFromActiveService(reason: String): Boolean {
+            val service = activeServiceInstance ?: return false
+            NPLogger.d(
+                "NERI-APS",
+                "Refreshing playback widget after seek from active service: reason=$reason"
+            )
+            service.updatePlaybackWidget(force = true)
+            return true
+        }
+
         internal fun reassertForegroundForActiveUsbExclusivePlayback(reason: String) {
             activeServiceInstance?.requestUsbExclusiveBackgroundForegroundReassert(reason)
         }
@@ -2241,7 +2251,8 @@ class AudioPlayerService : Service() {
         val lyricPayload = PlayerManager.externalBluetoothLyricPayloadFlow.value
         val useBluetoothLyrics = shouldUseExternalBluetoothLyrics(
             audioDeviceType = PlayerManager.currentAudioDeviceFlow.value?.type,
-            payload = lyricPayload
+            payload = lyricPayload,
+            forceSendLyrics = PlayerManager.dynamicIslandLyricsEnabled
         )
         val metadataText = resolveExternalBluetoothMetadataText(
             normalTitle = normalTitle,

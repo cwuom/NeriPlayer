@@ -49,7 +49,6 @@ internal object PlaybackWidgetUpdater {
     private const val REQUEST_FLOATING_LYRICS = 6105
     private const val COMPACT_WIDGET_BASE_HORIZONTAL_PADDING_DP = 9
     private const val COMPACT_WIDGET_BASE_INFO_TOP_PADDING_DP = 7
-
     private var lastArtworkInput: Bitmap? = null
     private var lastWidgetVisuals: PlaybackWidgetVisuals? = null
 
@@ -78,14 +77,24 @@ internal object PlaybackWidgetUpdater {
             return
         }
         try {
-            val views = RemoteViews(context.packageName, R.layout.widget_playback_4x2)
-            views.setProgressBar(
-                R.id.widget_progress,
-                PLAYBACK_WIDGET_PROGRESS_MAX,
-                state.progress,
-                false,
-            )
-            appWidgetManager.partiallyUpdateAppWidget(appWidgetIds, views)
+            appWidgetIds.asList()
+                .groupBy { appWidgetId ->
+                    resolvePlaybackWidgetLayoutRes(
+                        layoutRes = R.layout.widget_playback_4x2,
+                        size = playbackWidgetSizeFromOptions(
+                            options = appWidgetManager.getAppWidgetOptions(appWidgetId),
+                            hasProgress = true,
+                        ),
+                    )
+                }
+                .forEach { (layoutRes, widgetIds) ->
+                    val views = buildPlaybackWidgetProgressRemoteViews(
+                        context = context,
+                        layoutRes = layoutRes,
+                        state = state,
+                    )
+                    appWidgetManager.partiallyUpdateAppWidget(widgetIds.toIntArray(), views)
+                }
         } catch (error: RuntimeException) {
             NPLogger.w("NERI-Widget", "Widget progress update failed", error)
         }
@@ -246,10 +255,12 @@ internal object PlaybackWidgetUpdater {
         visuals: PlaybackWidgetVisuals,
         size: PlaybackWidgetSize,
     ): RemoteViews {
-        val views = RemoteViews(context.packageName, layoutRes)
-        val hasProgress = isPlaybackWidgetWithProgress(layoutRes)
+        val resolvedLayoutRes = resolvePlaybackWidgetLayoutRes(layoutRes, size)
+        val views = RemoteViews(context.packageName, resolvedLayoutRes)
+        val hasProgress = isPlaybackWidgetWithProgress(resolvedLayoutRes)
         applyPlaybackWidgetLayout(
             views = views,
+            layoutRes = resolvedLayoutRes,
             size = size,
             hasProgress = hasProgress,
         )
@@ -262,20 +273,8 @@ internal object PlaybackWidgetUpdater {
         views.setTextViewText(R.id.widget_subtitle, state.subtitle)
         views.setTextViewText(R.id.widget_status, state.status)
         if (hasProgress) {
-            views.setTextViewText(R.id.widget_elapsed, state.elapsedText)
-            views.setChronometer(
-                R.id.widget_elapsed,
-                SystemClock.elapsedRealtime() - state.positionMs.coerceAtLeast(0L),
-                null,
-                state.hasSong && state.isPlaying,
-            )
+            applyPlaybackWidgetProgress(views, state)
             views.setTextViewText(R.id.widget_duration, state.durationText)
-            views.setProgressBar(
-                R.id.widget_progress,
-                PLAYBACK_WIDGET_PROGRESS_MAX,
-                state.progress,
-                false,
-            )
         }
         views.setImageViewResource(
             R.id.widget_play_pause,
@@ -439,6 +438,36 @@ internal object PlaybackWidgetUpdater {
         return views
     }
 
+    internal fun buildPlaybackWidgetProgressRemoteViews(
+        context: Context,
+        @LayoutRes layoutRes: Int,
+        state: PlaybackWidgetState,
+    ): RemoteViews {
+        return RemoteViews(context.packageName, layoutRes).also { views ->
+            applyPlaybackWidgetProgress(views, state)
+        }
+    }
+
+    private fun applyPlaybackWidgetProgress(
+        views: RemoteViews,
+        state: PlaybackWidgetState,
+    ) {
+        views.setChronometer(
+            R.id.widget_elapsed,
+            SystemClock.elapsedRealtime() - state.positionMs.coerceAtLeast(0L),
+            null,
+            state.hasSong && state.isPlaying,
+        )
+        // reset the base before the text so a seek is visible before the next tick
+        views.setTextViewText(R.id.widget_elapsed, state.elapsedText)
+        views.setProgressBar(
+            R.id.widget_progress,
+            PLAYBACK_WIDGET_PROGRESS_MAX,
+            state.progress,
+            false,
+        )
+    }
+
     private fun buildRemoteViewsForSizes(
         context: Context,
         @LayoutRes layoutRes: Int,
@@ -482,9 +511,13 @@ internal object PlaybackWidgetUpdater {
 
     private fun applyPlaybackWidgetLayout(
         views: RemoteViews,
+        @LayoutRes layoutRes: Int,
         size: PlaybackWidgetSize,
         hasProgress: Boolean,
     ) {
+        if (layoutRes == R.layout.widget_playback_4x2_expanded) {
+            return
+        }
         val spec = playbackWidgetLayoutSpec(size, hasProgress)
         views.setTextViewTextSize(
             R.id.widget_status,
@@ -598,7 +631,23 @@ internal object PlaybackWidgetUpdater {
     }
 
     private fun isPlaybackWidgetWithProgress(@LayoutRes layoutRes: Int): Boolean {
-        return layoutRes == R.layout.widget_playback_4x2
+        return layoutRes == R.layout.widget_playback_4x2 ||
+            layoutRes == R.layout.widget_playback_4x2_expanded
+    }
+
+    @LayoutRes
+    private fun resolvePlaybackWidgetLayoutRes(
+        @LayoutRes layoutRes: Int,
+        size: PlaybackWidgetSize,
+    ): Int {
+        if (layoutRes != R.layout.widget_playback_4x2) {
+            return layoutRes
+        }
+        return if (shouldUseExpandedFullPlaybackWidgetLayout(size, Build.VERSION.SDK_INT)) {
+            R.layout.widget_playback_4x2
+        } else {
+            R.layout.widget_playback_4x2_expanded
+        }
     }
 
     private fun applyWidgetControlSizes(

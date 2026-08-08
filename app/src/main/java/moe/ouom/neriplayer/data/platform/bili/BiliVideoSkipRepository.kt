@@ -145,6 +145,48 @@ internal fun normalizeBiliVideoSkipRules(
         .take(MAX_BILI_VIDEO_SKIP_RULES)
 }
 
+internal fun intervalsForBiliVideoSkipCid(
+    rules: Iterable<BiliVideoSkipRule>,
+    cid: Long
+): List<BiliVideoSkipInterval> {
+    if (cid <= 0L) return emptyList()
+    val matchingRule = rules.asSequence()
+        .filter { rule -> rule.target.cid == cid }
+        .singleOrNull()
+    return matchingRule
+        ?.takeUnless { it.isDeleted }
+        ?.intervals
+        .orEmpty()
+}
+
+internal fun intervalsForBiliVideoSkipPlayback(
+    rules: Iterable<BiliVideoSkipRule>,
+    target: BiliVideoSkipTarget?,
+    fallbackCid: Long?,
+    fallbackBvid: String? = null
+): List<BiliVideoSkipInterval> {
+    val normalizedTarget = target?.normalizedOrNull()
+    if (normalizedTarget != null) {
+        val exactRule = rules.firstOrNull { rule -> rule.target == normalizedTarget }
+        if (exactRule != null) {
+            return if (exactRule.isDeleted) emptyList() else exactRule.intervals
+        }
+        return emptyList()
+    }
+    val cidIntervals = intervalsForBiliVideoSkipCid(rules = rules, cid = fallbackCid ?: 0L)
+    if (cidIntervals.isNotEmpty() || fallbackCid != null) {
+        return cidIntervals
+    }
+    val normalizedBvid = fallbackBvid?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
+    val matchingRule = rules.asSequence()
+        .filter { rule -> rule.target.bvid == normalizedBvid }
+        .singleOrNull()
+    return matchingRule
+        ?.takeUnless { it.isDeleted }
+        ?.intervals
+        .orEmpty()
+}
+
 internal fun normalizeBiliVideoSkipDrafts(
     drafts: Iterable<BiliVideoSkipDraft>
 ): List<BiliVideoSkipDraft> {
@@ -200,6 +242,23 @@ class BiliVideoSkipRepository private constructor(context: Context) {
         return _rules.value.firstOrNull { rule ->
             !rule.isDeleted && rule.target == normalizedTarget
         }?.intervals.orEmpty()
+    }
+
+    fun intervalsForCid(cid: Long): List<BiliVideoSkipInterval> {
+        return intervalsForBiliVideoSkipCid(_rules.value, cid)
+    }
+
+    fun intervalsForPlayback(
+        target: BiliVideoSkipTarget?,
+        fallbackCid: Long?,
+        fallbackBvid: String? = null
+    ): List<BiliVideoSkipInterval> {
+        return intervalsForBiliVideoSkipPlayback(
+            rules = _rules.value,
+            target = target,
+            fallbackCid = fallbackCid,
+            fallbackBvid = fallbackBvid
+        )
     }
 
     fun draftFor(target: BiliVideoSkipTarget): BiliVideoSkipDraft? {

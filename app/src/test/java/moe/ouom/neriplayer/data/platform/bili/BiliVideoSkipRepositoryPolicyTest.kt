@@ -99,4 +99,84 @@ class BiliVideoSkipRepositoryPolicyTest {
             drafts
         )
     }
+
+    @Test
+    fun `playback can use a unique cid before the BVID target is resolved`() {
+        val target = BiliVideoSkipTarget(bvid = "BV1exact", cid = 7L)
+        val interval = BiliVideoSkipInterval(startMs = 10_000L, endMs = 20_000L)
+        val rules = listOf(
+            BiliVideoSkipRule(target = target, intervals = listOf(interval))
+        )
+
+        assertEquals(
+            listOf(interval),
+            intervalsForBiliVideoSkipPlayback(
+                rules = rules,
+                target = null,
+                fallbackCid = 7L
+            )
+        )
+    }
+
+    @Test
+    fun `resolved target does not borrow a same cid rule from another BVID`() {
+        val savedTarget = BiliVideoSkipTarget(bvid = "BV1saved", cid = 7L)
+        val resolvedTarget = BiliVideoSkipTarget(bvid = "BV1resolved", cid = 7L)
+        val interval = BiliVideoSkipInterval(startMs = 10_000L, endMs = 20_000L)
+
+        assertEquals(
+            emptyList<BiliVideoSkipInterval>(),
+            intervalsForBiliVideoSkipPlayback(
+                rules = listOf(BiliVideoSkipRule(savedTarget, listOf(interval))),
+                target = resolvedTarget,
+                fallbackCid = 7L
+            )
+        )
+    }
+
+    @Test
+    fun `deleted cid rule suppresses cid fallback`() {
+        val target = BiliVideoSkipTarget(bvid = "BV1deleted", cid = 7L)
+
+        assertEquals(
+            emptyList<BiliVideoSkipInterval>(),
+            intervalsForBiliVideoSkipPlayback(
+                rules = listOf(BiliVideoSkipRule(target = target, isDeleted = true)),
+                target = null,
+                fallbackCid = 7L
+            )
+        )
+    }
+
+    @Test
+    fun `BVID-only playback uses its unique saved rule before page resolution`() {
+        val target = BiliVideoSkipTarget(bvid = "BV1video", cid = 7L)
+        val interval = BiliVideoSkipInterval(startMs = 10_000L, endMs = 20_000L)
+
+        assertEquals(
+            listOf(interval),
+            intervalsForBiliVideoSkipPlayback(
+                rules = listOf(BiliVideoSkipRule(target, listOf(interval))),
+                target = null,
+                fallbackCid = null,
+                fallbackBvid = "BV1video"
+            )
+        )
+    }
+
+    @Test
+    fun `BVID-only playback does not borrow another video rule`() {
+        val target = BiliVideoSkipTarget(bvid = "BV1saved", cid = 7L)
+        val interval = BiliVideoSkipInterval(startMs = 10_000L, endMs = 20_000L)
+
+        assertEquals(
+            emptyList<BiliVideoSkipInterval>(),
+            intervalsForBiliVideoSkipPlayback(
+                rules = listOf(BiliVideoSkipRule(target, listOf(interval))),
+                target = null,
+                fallbackCid = null,
+                fallbackBvid = "BV1other"
+            )
+        )
+    }
 }

@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,6 +52,60 @@ class DownloadedSongSourceMetadataTest {
         assertTrue(playbackSong.sameIdentityAs(remoteSong))
         assertEquals(remoteSong.identity(), syncSong?.identity())
         assertEquals("playlist-123", syncSong?.playlistContextId)
+    }
+
+    @Test
+    fun `downloaded sidecar cover stays local while sync keeps its remote original`() {
+        val remoteCover = "https://example.com/original.jpg"
+        val downloadedSong = DownloadedSong(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "Local Files",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L,
+            coverPath = "file:/data/user/0/moe.ouom.neriplayer/files/local_audio_covers/cover.jpg",
+            coverUrl = remoteCover,
+            originalCoverUrl = remoteCover,
+            stableKey = "42|netease|",
+            sourceIdentityAlbum = "netease",
+            sourceChannelId = "netease",
+            sourceAudioId = "42"
+        )
+
+        val playbackSong = downloadedSong.toPlaybackSongItem()
+        val syncSong = SyncSong.fromSongItemOrNull(playbackSong)
+
+        assertEquals(downloadedSong.coverPath, playbackSong.coverUrl)
+        assertEquals(remoteCover, playbackSong.originalCoverUrl)
+        assertEquals(remoteCover, syncSong?.coverUrl)
+        assertEquals(remoteCover, syncSong?.originalCoverUrl)
+        assertNull(syncSong?.customCoverUrl)
+    }
+
+    @Test
+    fun `downloaded sidecar cover without remote source is excluded from sync`() {
+        val downloadedSong = DownloadedSong(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "Local Files",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L,
+            coverPath = "file:/data/user/0/moe.ouom.neriplayer/files/local_audio_covers/cover.jpg",
+            stableKey = "42|netease|",
+            sourceIdentityAlbum = "netease",
+            sourceChannelId = "netease",
+            sourceAudioId = "42"
+        )
+
+        val syncSong = SyncSong.fromSongItemOrNull(downloadedSong.toPlaybackSongItem())
+
+        assertNull(syncSong?.coverUrl)
+        assertNull(syncSong?.customCoverUrl)
+        assertNull(syncSong?.originalCoverUrl)
     }
 
     @Test
@@ -153,5 +208,40 @@ class DownloadedSongSourceMetadataTest {
         assertEquals("bilibili", syncSong?.channelId)
         assertEquals("123", syncSong?.audioId)
         assertEquals("456", syncSong?.subAudioId)
+    }
+
+    @Test
+    fun `downloaded Netease playback restores the remote id from its stable source`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "NeteaseAlbum",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val downloadedSong = DownloadedSong(
+            id = 9_999L,
+            name = remoteSong.name,
+            artist = remoteSong.artist,
+            album = "Local Files",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L,
+            stableKey = remoteSong.stableKey(),
+            sourceIdentityAlbum = remoteSong.identity().album,
+            sourceChannelId = remoteSong.channelId,
+            sourceAudioId = remoteSong.audioId
+        )
+
+        val playbackSong = downloadedSong.toPlaybackSongItem()
+        val syncSong = SyncSong.fromSongItemOrNull(playbackSong)
+
+        assertEquals(remoteSong.id, playbackSong.id)
+        assertEquals(remoteSong.id, syncSong?.id)
+        assertEquals(remoteSong.identity(), syncSong?.identity())
     }
 }

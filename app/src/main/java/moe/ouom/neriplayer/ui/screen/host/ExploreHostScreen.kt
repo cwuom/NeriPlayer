@@ -77,6 +77,7 @@ import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
 import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
@@ -533,7 +534,7 @@ private fun BiliVideoItem.toExploreSongItem(): SongItem {
         id = id,
         name = title,
         artist = uploader,
-        album = PlayerManager.BILI_SOURCE_TAG,
+        album = buildBiliSongAlbum(bvid = bvid),
         albumId = 0L,
         durationMs = durationSec * 1000L,
         coverUrl = coverUrl,

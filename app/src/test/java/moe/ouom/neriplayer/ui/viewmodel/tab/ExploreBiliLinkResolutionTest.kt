@@ -16,7 +16,7 @@ class ExploreBiliLinkResolutionTest {
 
         assertEquals("Video title", song.name)
         assertEquals("Uploader", song.artist)
-        assertEquals("${PlayerManager.BILI_SOURCE_TAG}|200", song.album)
+        assertEquals("${PlayerManager.BILI_SOURCE_TAG}|200|BV1rXNY6CE2u", song.album)
         assertEquals("200", song.subAudioId)
         assertEquals(20_000L, song.durationMs)
     }

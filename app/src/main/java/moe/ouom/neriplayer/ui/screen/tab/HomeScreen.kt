@@ -118,6 +118,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -253,6 +255,10 @@ fun HomeScreen(
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
+    val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsStateWithLifecycle()
+    val downloadedPlaybackCoverCandidates = remember(downloadedSongs) {
+        downloadedSongs.map { it.toPlaybackSongItem() }
+    }
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
@@ -269,10 +275,18 @@ fun HomeScreen(
                 it.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
         }
     }
-    LaunchedEffect(hasLocalUsage, localPlaylistsReady, localPlaylists) {
+    LaunchedEffect(
+        hasLocalUsage,
+        localPlaylistsReady,
+        localPlaylists,
+        downloadedPlaybackCoverCandidates
+    ) {
         if (hasLocalUsage && localPlaylistsReady) {
             withContext(Dispatchers.Default) {
-                AppContainer.playlistUsageRepo.syncLocalEntries(localPlaylists)
+                AppContainer.playlistUsageRepo.syncLocalEntries(
+                    playlists = localPlaylists,
+                    localFilesCoverCandidates = downloadedPlaybackCoverCandidates
+                )
                 AppContainer.playlistUsageRepo.syncLocalArtistEntries(localPlaylists)
             }
         }

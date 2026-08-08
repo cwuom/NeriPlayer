@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.stats.TrackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 
 internal object SyncPlaybackStatMapper {
     fun shouldSync(stat: TrackStat, context: Context): Boolean {
@@ -33,7 +34,7 @@ internal object SyncPlaybackStatMapper {
             playCount = stat.playCount,
             lastPlayedAt = stat.lastPlayedAt,
             firstPlayedAt = stat.firstPlayedAt,
-            coverUrl = stat.coverUrl,
+            coverUrl = sanitizeCoverUrlForSync(stat.coverUrl),
             durationMs = stat.durationMs,
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri),
             id = stat.id,
@@ -59,7 +60,7 @@ internal object SyncPlaybackStatMapper {
             playCount = bucket.playCount,
             lastPlayedAt = bucket.lastPlayedAt,
             firstPlayedAt = bucket.firstPlayedAt,
-            coverUrl = bucket.coverUrl,
+            coverUrl = sanitizeCoverUrlForSync(bucket.coverUrl),
             durationMs = bucket.durationMs,
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(bucket.mediaUri),
             id = bucket.id,
@@ -85,6 +86,7 @@ internal object SyncPlaybackStatMapper {
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,
             durationMs = stat.durationMs.coerceAtLeast(0L),
+            coverUrl = sanitizeCoverUrlForSync(stat.coverUrl),
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(stat.mediaUri),
             counterBaseListenMs = stat.counterBaseListenMs.coerceAtLeast(0L),
             counterBasePlayCount = stat.counterBasePlayCount.coerceAtLeast(0),
@@ -108,6 +110,7 @@ internal object SyncPlaybackStatMapper {
             lastPlayedAt = lastPlayedAt,
             firstPlayedAt = firstPlayedAt,
             durationMs = bucket.durationMs.coerceAtLeast(0L),
+            coverUrl = sanitizeCoverUrlForSync(bucket.coverUrl),
             mediaUri = LocalSongSupport.sanitizeMediaUriForSync(bucket.mediaUri),
             counterBaseListenMs = bucket.counterBaseListenMs.coerceAtLeast(0L),
             counterBasePlayCount = bucket.counterBasePlayCount.coerceAtLeast(0),

@@ -205,11 +205,30 @@ class ExternalBluetoothLyricsTest {
     }
 
     @Test
-    fun `shouldUseExternalBluetoothLyrics requires bluetooth device and lyric payload`() {
+    fun `shouldUseExternalBluetoothLyrics requires bluetooth output unless forced`() {
         assertTrue(
             shouldUseExternalBluetoothLyrics(
                 audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
                 payload = ExternalBluetoothLyricPayload(lyric = "current line")
+            )
+        )
+        assertFalse(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+                payload = ExternalBluetoothLyricPayload(lyric = "current line")
+            )
+        )
+        assertFalse(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = null,
+                payload = ExternalBluetoothLyricPayload(translation = "translated line")
+            )
+        )
+        assertTrue(
+            shouldUseExternalBluetoothLyrics(
+                audioDeviceType = null,
+                payload = ExternalBluetoothLyricPayload(lyric = "current line"),
+                forceSendLyrics = true
             )
         )
         assertFalse(
@@ -220,14 +239,9 @@ class ExternalBluetoothLyricsTest {
         )
         assertFalse(
             shouldUseExternalBluetoothLyrics(
-                audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
-                payload = ExternalBluetoothLyricPayload(translation = "translated line")
-            )
-        )
-        assertFalse(
-            shouldUseExternalBluetoothLyrics(
                 audioDeviceType = null,
-                payload = ExternalBluetoothLyricPayload(lyric = "current line")
+                payload = ExternalBluetoothLyricPayload(),
+                forceSendLyrics = true
             )
         )
     }

@@ -421,6 +421,7 @@ object PlayerManager {
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
+    internal var dynamicIslandLyricsEnabled = false
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -2276,7 +2277,10 @@ object PlayerManager {
                 )
             }
             isBiliTrack(song) -> {
-                val cidPart = song.subAudioId ?: song.album.split('|').getOrNull(1)
+                val cidPart = song.subAudioId ?: song.album
+                    .substringAfter('|', "")
+                    .substringBefore('|')
+                    .takeIf { it.isNotBlank() }
                 val biliSongId = song.audioId ?: song.id.toString()
                 if (cidPart != null) {
                     "bili-$biliSongId-$cidPart-${effectiveBiliQuality()}"

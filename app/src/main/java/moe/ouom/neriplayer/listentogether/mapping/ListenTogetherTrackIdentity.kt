@@ -49,7 +49,10 @@ fun SongItem.resolvedSubAudioId(): String? {
     if (resolvedChannelId() != ListenTogetherChannels.BILIBILI) {
         return null
     }
-    return album.substringAfter('|', "").takeIf { it.isNotBlank() }
+    return album
+        .substringAfter('|', "")
+        .substringBefore('|')
+        .takeIf { it.isNotBlank() }
 }
 
 fun SongItem.resolvedPlaylistContextId(): String? {

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.widget
 
 import android.appwidget.AppWidgetManager
+import android.os.Build
 import android.os.Bundle
 import android.util.SizeF
 import kotlin.math.roundToInt
@@ -70,6 +71,9 @@ internal fun playbackWidgetSizeVariantsFromOptions(
     hasProgress: Boolean,
 ): List<PlaybackWidgetSize> {
     val fallback = playbackWidgetSizeFromOptions(options, hasProgress)
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+        return listOf(fallback)
+    }
     @Suppress("DEPRECATION")
     val hostSizes = options?.getParcelableArrayList<SizeF>(
         AppWidgetManager.OPTION_APPWIDGET_SIZES,
@@ -158,6 +162,18 @@ internal fun fullPlaybackWidgetCardHeightDp(size: PlaybackWidgetSize): Int {
             PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP,
             PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP,
         )
+}
+
+internal fun shouldUseExpandedFullPlaybackWidgetLayout(
+    size: PlaybackWidgetSize,
+    sdkInt: Int,
+): Boolean {
+    val minimumHeightDp = if (sdkInt >= Build.VERSION_CODES.S) {
+        PLAYBACK_WIDGET_FULL_CARD_MIN_HEIGHT_DP
+    } else {
+        PLAYBACK_WIDGET_FULL_CARD_MAX_HEIGHT_DP
+    }
+    return size.heightDp >= minimumHeightDp
 }
 
 internal fun resolvePlaybackWidgetDimension(

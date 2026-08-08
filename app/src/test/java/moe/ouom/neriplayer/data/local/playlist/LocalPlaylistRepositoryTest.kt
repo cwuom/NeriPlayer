@@ -7,6 +7,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -204,7 +206,10 @@ class LocalPlaylistRepositoryTest {
             syncMutationStore = syncStore
         )
         val remoteSong = remoteNeteaseSong(id = 45L)
-        val downloadedCopy = downloadedLocalCopy(remoteSong)
+        val downloadedCopy = downloadedPlaybackCopy(
+            source = remoteSong,
+            downloadedId = 9_045L
+        )
         repository.updatePlaylists(
             listOf(
                 LocalPlaylist(
@@ -216,6 +221,7 @@ class LocalPlaylistRepositoryTest {
 
         repository.addToFavorites(downloadedCopy)
         val firstFavorite = repository.playlists.value.single().songs.single()
+        assertEquals(remoteSong.id, firstFavorite.id)
         assertEquals(remoteSong.identity(), firstFavorite.identity())
         assertEquals("netease", firstFavorite.channelId)
         assertNull(firstFavorite.mediaUri)
@@ -231,11 +237,16 @@ class LocalPlaylistRepositoryTest {
 
         repository.addToFavorites(downloadedCopy)
         val readdedFavorite = repository.playlists.value.single().songs.single()
+        assertEquals(remoteSong.id, readdedFavorite.id)
         assertEquals(remoteSong.identity(), readdedFavorite.identity())
         assertEquals("netease", readdedFavorite.channelId)
         assertNull(readdedFavorite.mediaUri)
         assertNull(readdedFavorite.localFilePath)
         assertFalse(LocalSongSupport.isLocalSong(readdedFavorite, null))
+        assertEquals(
+            listOf(remoteSong.id),
+            repository.filterNeteaseLikeSyncCandidates(listOf(readdedFavorite)).map { it.id }
+        )
 
         val removal = syncStore.applied
             .flatMap(LocalPlaylistSyncMutation::removedSongDeletions)
@@ -255,7 +266,10 @@ class LocalPlaylistRepositoryTest {
             syncMutationStore = syncStore
         )
         val remoteSong = remoteNeteaseSong(id = 47L)
-        val downloadedCopy = downloadedLocalCopy(remoteSong)
+        val downloadedCopy = downloadedPlaybackCopy(
+            source = remoteSong,
+            downloadedId = 9_047L
+        )
         repository.updatePlaylists(
             listOf(LocalPlaylist(id = playlistId, name = "普通歌单"))
         )
@@ -267,11 +281,16 @@ class LocalPlaylistRepositoryTest {
 
         val playlistSong = repository.playlists.value.single().songs.single()
         assertEquals(1, addedCount)
+        assertEquals(remoteSong.id, playlistSong.id)
         assertEquals(remoteSong.identity(), playlistSong.identity())
         assertEquals("netease", playlistSong.channelId)
         assertNull(playlistSong.mediaUri)
         assertNull(playlistSong.localFilePath)
         assertFalse(LocalSongSupport.isLocalSong(playlistSong, null))
+        assertEquals(
+            listOf(remoteSong.id),
+            repository.filterNeteaseLikeSyncCandidates(listOf(playlistSong)).map { it.id }
+        )
         val removal = syncStore.applied
             .flatMap(LocalPlaylistSyncMutation::removedSongDeletions)
             .single()
@@ -1378,6 +1397,7 @@ class LocalPlaylistRepositoryTest {
     private fun mockContext(): Context {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
+        `when`(context.applicationContext).thenReturn(context)
         `when`(context.getString(R.string.playlist_create)).thenReturn("Playlist")
         `when`(context.getString(R.string.favorite_my_music)).thenReturn("Favorites")
         `when`(context.getString(R.string.local_files)).thenReturn("Local Files")
@@ -1473,6 +1493,31 @@ class LocalPlaylistRepositoryTest {
             audioId = "99",
             sourceStableKey = source.stableKey()
         )
+    }
+
+    private fun downloadedPlaybackCopy(
+        source: SongItem,
+        downloadedId: Long = source.id
+    ): SongItem {
+        val path = File(tempFolder.root, "downloaded-song.mp3").absolutePath
+        return DownloadedSong(
+            id = downloadedId,
+            name = source.name,
+            artist = source.artist,
+            album = "Local Files",
+            filePath = path,
+            fileSize = 1L,
+            downloadTime = 1L,
+            coverUrl = source.coverUrl,
+            durationMs = source.durationMs,
+            stableKey = source.stableKey(),
+            sourceIdentityAlbum = source.identity().album,
+            sourceMediaUri = source.identity().mediaUri,
+            sourceChannelId = source.channelId,
+            sourceAudioId = source.audioId,
+            sourceSubAudioId = source.subAudioId,
+            sourcePlaylistContextId = source.playlistContextId
+        ).toPlaybackSongItem()
     }
 
     private fun playlistJson(

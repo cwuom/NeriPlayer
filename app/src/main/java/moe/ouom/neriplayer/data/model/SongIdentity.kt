@@ -31,7 +31,9 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import java.util.Locale
 
 @Parcelize
@@ -89,14 +91,31 @@ internal fun SongItem.toSyncableRemoteSongOrNull(context: Context? = null): Song
         ?.trim()
         ?.takeIf { rawSourceChannel != null && it.isNotBlank() }
     val retainsSourceAddress = rawSourceChannel != null && sourceAudioId != null
+    val sourceIsNetease = sourceChannel.equals("netease", ignoreCase = true) &&
+        sourceIdentity.album.equals("netease", ignoreCase = true) &&
+        sourceIdentity.mediaUri == null
+    val mapper = context?.let(CoverUrlMapper::getInstance)
+    val syncCoverUrl = sanitizeCoverUrlForSync(coverUrl, mapper)
+        ?: sanitizeCoverUrlForSync(originalCoverUrl, mapper)
+    val syncCustomCoverUrl = sanitizeCoverUrlForSync(customCoverUrl, mapper)
+    val syncOriginalCoverUrl = sanitizeCoverUrlForSync(originalCoverUrl, mapper)
 
     return copy(
-        id = if (retainsSourceAddress) id else sourceIdentity.id,
+        id = if (sourceIsNetease) {
+            sourceIdentity.id
+        } else if (retainsSourceAddress) {
+            id
+        } else {
+            sourceIdentity.id
+        },
         album = sourceIdentity.album,
         albumId = 0L,
         mediaUri = sourceIdentity.mediaUri,
         localFileName = null,
         localFilePath = null,
+        coverUrl = syncCoverUrl,
+        customCoverUrl = syncCustomCoverUrl,
+        originalCoverUrl = syncOriginalCoverUrl,
         channelId = sourceChannel,
         audioId = sourceAudioId,
         subAudioId = sourceSubAudioId,
@@ -315,7 +334,11 @@ private fun normalizedSubAudioId(
 ): String {
     val explicitSubAudioId = rawSubAudioId?.trim()?.takeIf { it.isNotBlank() }
     if (channel != "bilibili") return ""
-    return explicitSubAudioId ?: album.substringAfter('|', "").takeIf { it.isNotBlank() }.orEmpty()
+    return explicitSubAudioId ?: album
+        .substringAfter('|', "")
+        .substringBefore('|')
+        .takeIf { it.isNotBlank() }
+        .orEmpty()
 }
 
 private fun stableRemoteIdentityId(channel: String, audio: String, subAudio: String): Long {

@@ -1513,6 +1513,10 @@
     <string name="settings_external_bluetooth_lyrics_enabled_desc">When a Bluetooth device is connected, send the current original lyric to its title field</string>
     <string name="settings_external_bluetooth_translation_enabled">Bluetooth Translated Lyrics</string>
     <string name="settings_external_bluetooth_translation_enabled_desc">Send the current translation independently; with original lyrics enabled, title and artist fields carry separate lines</string>
+    <string name="settings_dynamic_island_lyrics_enabled">Dynamic Island Lyrics</string>
+    <string name="settings_dynamic_island_lyrics_enabled_desc">When enabled, Bluetooth lyric metadata is uploaded even without a connected Bluetooth device</string>
+    <string name="settings_dynamic_island_lyrics_dependency_title">Bluetooth lyrics required</string>
+    <string name="settings_dynamic_island_lyrics_dependency_message">Dynamic Island Lyrics requires Bluetooth original lyrics. Turn them on automatically?</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
     <string name="settings_lyrics_offset_expand">External lyrics, Lyricon integration, and default offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>

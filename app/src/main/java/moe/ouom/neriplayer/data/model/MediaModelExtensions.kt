@@ -63,17 +63,22 @@ fun SongItem.displayCoverUrl(
 fun SongItem.displayName(): String = customName ?: name
 fun SongItem.displayArtist(): String = customArtist ?: artist
 
-fun LocalPlaylist.displayCoverUrl(): String? {
-    return customCoverUrl ?: songs.firstNotNullOfOrNull { song ->
+fun LocalPlaylist.displayCoverUrl(
+    additionalCoverCandidates: List<SongItem> = emptyList()
+): String? {
+    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+        .firstNotNullOfOrNull { song ->
         song.displayCoverUrl()?.takeIf { it.isNotBlank() }
     }
 }
 
 fun LocalPlaylist.displayCoverUrl(
     context: Context,
-    resolveLocalMetadataFallback: Boolean = true
+    resolveLocalMetadataFallback: Boolean = true,
+    additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
-    return customCoverUrl ?: songs.firstNotNullOfOrNull { song ->
+    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+        .firstNotNullOfOrNull { song ->
         song.displayCoverUrl(
             context = context,
             resolveLocalMetadataFallback = resolveLocalMetadataFallback

@@ -38,6 +38,7 @@ import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -45,6 +46,7 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
+import moe.ouom.neriplayer.data.sync.model.sanitizeCoverUrlForSync
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.util.platform.LanguageManager
@@ -110,10 +112,21 @@ private fun mergeDuplicateUsageEntries(entries: List<UsageEntry>): UsageEntry {
         entry.counterBaseOpenCount <= 0L && entry.counterShards.orEmpty().isEmpty()
     }
     if (!allLegacyCounters) {
-        return SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
+        val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
             local = entries.map(UsageEntry::toSyncPlaylistUsageStat),
             remote = emptyList()
         ).single().toUsageEntry()
+        return merged.copy(
+            name = latest.name,
+            picUrl = latest.picUrl,
+            trackCount = latest.trackCount,
+            fid = latest.fid,
+            mid = latest.mid,
+            browseId = latest.browseId,
+            playlistId = latest.playlistId,
+            subtype = latest.subtype,
+            subtitle = latest.subtitle
+        )
     }
     val mergedOpenCount = entries.sumOf(UsageEntry::openCount)
         .coerceAtLeast(latest.openCount)
@@ -323,7 +336,10 @@ class PlaylistUsageRepository(private val app: Context) {
      * 同步本地歌单卡片信息
      * 已删除的歌单会被移除，名称/封面/歌曲数变化会刷新展示
      */
-    fun syncLocalEntries(playlists: List<LocalPlaylist>) {
+    fun syncLocalEntries(
+        playlists: List<LocalPlaylist>,
+        localFilesCoverCandidates: List<SongItem> = emptyList()
+    ) {
         val current = _flow.value
         if (current.none { it.source == SOURCE_LOCAL }) return
 
@@ -345,7 +361,16 @@ class PlaylistUsageRepository(private val app: Context) {
             )?.currentName ?: playlist.name
             val refreshedPicUrl = playlist.displayCoverUrl(
                 context = localizedContext,
-                resolveLocalMetadataFallback = true
+                resolveLocalMetadataFallback = true,
+                additionalCoverCandidates = if (LocalFilesPlaylist.isSystemPlaylist(
+                        playlist,
+                        localizedContext
+                    )
+                ) {
+                    localFilesCoverCandidates
+                } else {
+                    emptyList()
+                }
             )
             val refreshedTrackCount = playlist.songs.size
             if (
@@ -472,7 +497,7 @@ private fun UsageEntry.toSyncPlaylistUsageStat(): SyncPlaylistUsageStat {
         id = id,
         subtype = subtype,
         name = name,
-        coverUrl = picUrl,
+        coverUrl = sanitizeCoverUrlForSync(picUrl),
         trackCount = trackCount,
         lastOpenedAt = lastOpened.coerceAtLeast(0L),
         firstOpenedAt = firstOpened.coerceAtLeast(0L),
@@ -492,7 +517,7 @@ private fun SyncPlaylistUsageStat.toUsageEntry(): UsageEntry {
     return UsageEntry(
         id = id,
         name = name,
-        picUrl = coverUrl,
+        picUrl = sanitizeCoverUrlForSync(coverUrl),
         trackCount = trackCount,
         source = source,
         lastOpened = lastOpenedAt,

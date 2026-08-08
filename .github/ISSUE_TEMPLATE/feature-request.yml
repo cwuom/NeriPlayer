@@ -1,7 +1,7 @@
 name: Feature Request / 功能请求
 description: Propose the feature you need / 提出你需要的功能
 title: "[Feature] "
-labels: Feature
+labels: enhancement
 
 body:
   - type: markdown

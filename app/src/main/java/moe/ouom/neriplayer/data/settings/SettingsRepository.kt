@@ -262,6 +262,9 @@ class SettingsRepository(private val context: Context) {
     val externalBluetoothTranslationEnabledFlow: Flow<Boolean> =
         autoSettingsRepository.externalBluetoothTranslationEnabledFlow
 
+    val dynamicIslandLyricsEnabledFlow: Flow<Boolean> =
+        settingFlow(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled)
+
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
         dataStoreSettingFlow { prefs ->
             val outlineWidthDp = prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_WIDTH_DP] ?: 1.6f
@@ -831,6 +834,14 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setExternalBluetoothTranslationEnabled(enabled: Boolean) {
         autoSettingsRepository.setExternalBluetoothTranslationEnabled(enabled)
+    }
+
+    suspend fun setDynamicIslandLyricsEnabled(enabled: Boolean) {
+        if (enabled) {
+            setExternalBluetoothLyricsEnabled(true)
+            setExternalBluetoothTranslationEnabled(true)
+        }
+        setSetting(AutoSettingsSchema.lyrics.dynamicIslandLyricsEnabled, enabled)
     }
 
     suspend fun setFloatingLyricsPreferences(preferences: FloatingLyricsPreferences) {
