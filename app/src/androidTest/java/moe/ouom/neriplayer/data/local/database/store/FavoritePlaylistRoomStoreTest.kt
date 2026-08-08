@@ -6,10 +6,12 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -129,6 +131,46 @@ class FavoritePlaylistRoomStoreTest {
 
             assertEquals(listOf(updatedFirst), store.readIfRoomPrimary())
             assertEquals(1, database.favoritePlaylistDao().getSongs().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun staleLegacyMarkerPromotesExistingRoomDataWithoutReplacingIt() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val favorite = favorite(
+                id = 42L,
+                name = "Existing Room Favorite",
+                songs = listOf(testSong(1L, "Existing song"))
+            )
+            val store = FavoritePlaylistRoomStore(database)
+            store.replaceAll(listOf(favorite), now = 10L)
+            database.syncMetadataDao().upsertMigrationMetadata(
+                MigrationMetadataEntity(
+                    key = FavoritePlaylistRoomStore.CUTOVER_STATE_METADATA_KEY,
+                    value = "legacy_json",
+                    updatedAt = 20L
+                )
+            )
+
+            assertNull(store.readIfRoomPrimary())
+            assertEquals(
+                listOf(favorite),
+                store.promoteExistingAndRead(now = 30L)
+            )
+            assertEquals(listOf(favorite), store.readIfRoomPrimary())
+            assertEquals(
+                FavoritePlaylistRoomStore.ROOM_PRIMARY_STATE,
+                database.syncMetadataDao()
+                    .getMigrationMetadata(FavoritePlaylistRoomStore.CUTOVER_STATE_METADATA_KEY)
+                    ?.value
+            )
         } finally {
             database.close()
         }

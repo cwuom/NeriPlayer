@@ -125,6 +125,11 @@ class WebDavSyncManager private constructor(context: Context) {
         }
 
         try {
+            if (!webDavStorage.isConfigured()) {
+                return@withContext Result.failure(
+                    IllegalStateException(localizedContext.getString(R.string.webdav_not_configured))
+                )
+            }
             val remoteUrl = webDavStorage.getRemoteFileUrl()
             val username = webDavStorage.getUsername()
             val password = webDavStorage.getPassword()

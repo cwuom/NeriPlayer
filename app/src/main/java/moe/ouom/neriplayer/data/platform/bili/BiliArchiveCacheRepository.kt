@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 
 data class CachedBiliArchiveVideo(
@@ -58,8 +59,8 @@ internal fun biliArchiveCacheFileName(mediaId: Long, kind: String): String {
     return "${kind.lowercase(Locale.ROOT)}_$mediaId.json"
 }
 
-class BiliArchiveCacheRepository private constructor(
-    private val roomStore: PlatformPlaylistCacheRoomStore,
+class BiliArchiveCacheRepository internal constructor(
+    private val roomStore: PlatformPlaylistCacheStore,
     private val cacheDir: File
 ) {
     private val gson = Gson()
@@ -82,7 +83,7 @@ class BiliArchiveCacheRepository private constructor(
 
     fun read(mediaId: Long, kind: String): BiliArchiveContentCache? {
         val cacheKey = cacheKey(mediaId, kind)
-        readRoom(cacheKey)?.toBiliArchiveCache()?.let { return it }
+        readRoom(cacheKey)?.let { return it }
         val file = cacheFile(mediaId, kind)
         if (!file.exists()) return null
         return runCatching {
@@ -93,25 +94,14 @@ class BiliArchiveCacheRepository private constructor(
     }
 
     fun save(cache: BiliArchiveContentCache) {
-        runCatching {
-            saveRoom(cache)
+        if (saveRoom(cache)) {
             deleteLegacyFile(cacheFile(cache.mediaId, cache.kind))
-        }.onFailure { error ->
-            NPLogger.w(
-                TAG,
-                "Failed to save Bili archive cache: mediaId=${cache.mediaId}, kind=${cache.kind}",
-                error
-            )
         }
     }
 
     fun clear(mediaId: Long, kind: String) {
-        runCatching {
-            clearRoom(cacheKey(mediaId, kind))
-            cacheFile(mediaId, kind).delete()
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to clear Bili archive cache: mediaId=$mediaId, kind=$kind", error)
-        }
+        clearRoom(cacheKey(mediaId, kind))
+        deleteLegacyFile(cacheFile(mediaId, kind))
     }
 
     fun importLegacyCaches() {
@@ -131,41 +121,69 @@ class BiliArchiveCacheRepository private constructor(
         }
     }
 
-    private fun readRoom(cacheKey: String): PlatformPlaylistCacheRecord? {
-        return runBlocking(Dispatchers.IO) {
-            roomStore.read(PLATFORM, cacheKey)
-        }
+    private fun readRoom(cacheKey: String): BiliArchiveContentCache? {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.read(PLATFORM, cacheKey)
+            }?.toBiliArchiveCache()
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to read Bili archive cache from Room: cacheKey=$cacheKey", error)
+        }.getOrNull()
     }
 
-    private fun saveRoom(cache: BiliArchiveContentCache) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replace(cache.toRecord())
-        }
+    private fun saveRoom(cache: BiliArchiveContentCache): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replace(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to save Bili archive cache to Room: mediaId=${cache.mediaId}, kind=${cache.kind}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
-    private fun saveRoomIfNewer(cache: BiliArchiveContentCache) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replaceIfNewer(cache.toRecord())
-        }
+    private fun saveRoomIfNewer(cache: BiliArchiveContentCache): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replaceIfNewer(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to import Bili archive cache into Room: mediaId=${cache.mediaId}, kind=${cache.kind}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
     private fun clearRoom(cacheKey: String) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.clear(PLATFORM, cacheKey)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.clear(PLATFORM, cacheKey)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to clear Bili archive cache from Room: cacheKey=$cacheKey", error)
         }
     }
 
     private fun saveRoomAndDeleteLegacy(cache: BiliArchiveContentCache) {
-        saveRoom(cache)
-        deleteLegacyFile(cacheFile(cache.mediaId, cache.kind))
+        if (saveRoom(cache)) {
+            deleteLegacyFile(cacheFile(cache.mediaId, cache.kind))
+        }
     }
 
     private fun saveRoomIfNewerAndDeleteLegacy(
         cache: BiliArchiveContentCache,
         file: File
     ) {
-        saveRoomIfNewer(cache)
-        deleteLegacyFile(file)
+        if (saveRoomIfNewer(cache)) {
+            deleteLegacyFile(file)
+        }
     }
 
     private fun readLegacyFile(

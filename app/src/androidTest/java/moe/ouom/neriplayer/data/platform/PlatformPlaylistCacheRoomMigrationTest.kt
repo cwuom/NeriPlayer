@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheArtistRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 import moe.ouom.neriplayer.data.platform.bili.BiliArchiveCacheRepository
 import moe.ouom.neriplayer.data.platform.bili.BiliArchiveContentCache
@@ -32,6 +33,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -184,6 +186,85 @@ class PlatformPlaylistCacheRoomMigrationTest {
         }
     }
 
+    @Test
+    fun roomFailuresKeepLegacyCachesReadableAndRetained() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val root = File(context.cacheDir, "platform-cache-failure-${System.nanoTime()}")
+        try {
+            val neteaseDir = File(root, "netease_playlist_cache").apply { mkdirs() }
+            val biliFavoriteDir = File(root, "bili_favorite_cache").apply { mkdirs() }
+            val biliArchiveDir = File(root, "bili_archive_cache").apply { mkdirs() }
+            val youtubeDir = File(root, "youtube_music_playlist_cache").apply { mkdirs() }
+            val neteaseCache = neteaseCache()
+            val biliFavoriteCache = biliFavoriteCache()
+            val biliArchiveCache = biliArchiveCache()
+            val youtubeCache = youtubeCache()
+            val neteaseFile = File(neteaseDir, "playlist_${neteaseCache.playlistId}.json")
+            val biliFavoriteFile = File(biliFavoriteDir, "media_${biliFavoriteCache.mediaId}.json")
+            val biliArchiveFile = File(
+                biliArchiveDir,
+                biliArchiveCacheFileName(biliArchiveCache.mediaId, biliArchiveCache.kind)
+            )
+            val youtubeFile = File(youtubeDir, "${sha256(youtubeCache.browseId)}.json")
+            val failingStore = FailingPlatformPlaylistCacheStore()
+
+            neteaseFile.writeText(gson.toJson(neteaseCache), Charsets.UTF_8)
+            biliFavoriteFile.writeText(gson.toJson(biliFavoriteCache), Charsets.UTF_8)
+            biliArchiveFile.writeText(gson.toJson(biliArchiveCache), Charsets.UTF_8)
+            youtubeFile.writeText(gson.toJson(youtubeCache), Charsets.UTF_8)
+
+            val neteaseRepo = NeteasePlaylistCacheRepository(failingStore, neteaseDir)
+            val biliFavoriteRepo = BiliFavoriteFolderCacheRepository(failingStore, biliFavoriteDir)
+            val biliArchiveRepo = BiliArchiveCacheRepository(failingStore, biliArchiveDir)
+            val youtubeRepo = YouTubeMusicPlaylistCacheRepository(failingStore, youtubeDir)
+
+            assertEquals(neteaseCache, neteaseRepo.read(neteaseCache.playlistId))
+            assertEquals(biliFavoriteCache, biliFavoriteRepo.read(biliFavoriteCache.mediaId))
+            assertEquals(
+                biliArchiveCache,
+                biliArchiveRepo.read(biliArchiveCache.mediaId, biliArchiveCache.kind)
+            )
+            assertEquals(youtubeCache, youtubeRepo.read(youtubeCache.browseId))
+            assertTrue(neteaseFile.exists())
+            assertTrue(biliFavoriteFile.exists())
+            assertTrue(biliArchiveFile.exists())
+            assertTrue(youtubeFile.exists())
+
+            neteaseRepo.importLegacyCaches()
+            biliFavoriteRepo.importLegacyCaches()
+            biliArchiveRepo.importLegacyCaches()
+            youtubeRepo.importLegacyCaches()
+
+            assertTrue(neteaseFile.exists())
+            assertTrue(biliFavoriteFile.exists())
+            assertTrue(biliArchiveFile.exists())
+            assertTrue(youtubeFile.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun clearDeletesLegacyCacheWhenRoomClearFails() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val root = File(context.cacheDir, "platform-cache-clear-${System.nanoTime()}")
+        try {
+            val cache = neteaseCache()
+            val cacheDir = File(root, "netease_playlist_cache").apply { mkdirs() }
+            val legacyFile = File(cacheDir, "playlist_${cache.playlistId}.json")
+            legacyFile.writeText(gson.toJson(cache), Charsets.UTF_8)
+
+            NeteasePlaylistCacheRepository(
+                FailingPlatformPlaylistCacheStore(failRead = false, failWrite = false),
+                cacheDir
+            ).clear(cache.playlistId)
+
+            assertFalse(legacyFile.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     private fun inMemoryDatabase(context: Context): NeriUserDataDatabase {
         return Room.inMemoryDatabaseBuilder(
             context,
@@ -291,5 +372,36 @@ class PlatformPlaylistCacheRoomMigrationTest {
     private fun sha256(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
+    }
+
+    private class FailingPlatformPlaylistCacheStore(
+        private val failRead: Boolean = true,
+        private val failWrite: Boolean = true
+    ) : PlatformPlaylistCacheStore {
+        override suspend fun read(
+            platform: String,
+            cacheKey: String
+        ): PlatformPlaylistCacheRecord? {
+            if (failRead) {
+                throw IllegalStateException("Room read failure")
+            }
+            return null
+        }
+
+        override suspend fun replace(record: PlatformPlaylistCacheRecord) {
+            if (failWrite) {
+                throw IllegalStateException("Room replace failure")
+            }
+        }
+
+        override suspend fun replaceIfNewer(record: PlatformPlaylistCacheRecord) {
+            if (failWrite) {
+                throw IllegalStateException("Room import failure")
+            }
+        }
+
+        override suspend fun clear(platform: String, cacheKey: String) {
+            throw IllegalStateException("Room clear failure")
+        }
     }
 }

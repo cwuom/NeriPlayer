@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheArtistRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 
 data class CachedNeteasePlaylistHeader(
@@ -69,8 +70,8 @@ data class CachedNeteasePlaylistDetail(
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
-class NeteasePlaylistCacheRepository private constructor(
-    private val roomStore: PlatformPlaylistCacheRoomStore,
+class NeteasePlaylistCacheRepository internal constructor(
+    private val roomStore: PlatformPlaylistCacheStore,
     private val cacheDir: File
 ) {
     private val gson = Gson()
@@ -93,7 +94,7 @@ class NeteasePlaylistCacheRepository private constructor(
 
     fun read(playlistId: Long): CachedNeteasePlaylistDetail? {
         val cacheKey = playlistId.toString()
-        readRoom(cacheKey)?.toNeteasePlaylistDetail()?.let { return it }
+        readRoom(cacheKey)?.let { return it }
         val file = cacheFile(playlistId)
         if (!file.exists()) return null
         return runCatching {
@@ -104,21 +105,14 @@ class NeteasePlaylistCacheRepository private constructor(
     }
 
     fun save(cache: CachedNeteasePlaylistDetail) {
-        runCatching {
-            saveRoom(cache)
+        if (saveRoom(cache)) {
             deleteLegacyFile(cacheFile(cache.playlistId))
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to save NetEase playlist cache: playlistId=${cache.playlistId}", error)
         }
     }
 
     fun clear(playlistId: Long) {
-        runCatching {
-            clearRoom(playlistId.toString())
-            cacheFile(playlistId).delete()
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to clear NetEase playlist cache: playlistId=$playlistId", error)
-        }
+        clearRoom(playlistId.toString())
+        deleteLegacyFile(cacheFile(playlistId))
     }
 
     fun importLegacyCaches() {
@@ -135,41 +129,69 @@ class NeteasePlaylistCacheRepository private constructor(
         }
     }
 
-    private fun readRoom(cacheKey: String): PlatformPlaylistCacheRecord? {
-        return runBlocking(Dispatchers.IO) {
-            roomStore.read(PLATFORM, cacheKey)
-        }
+    private fun readRoom(cacheKey: String): CachedNeteasePlaylistDetail? {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.read(PLATFORM, cacheKey)
+            }?.toNeteasePlaylistDetail()
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to read NetEase playlist cache from Room: cacheKey=$cacheKey", error)
+        }.getOrNull()
     }
 
-    private fun saveRoom(cache: CachedNeteasePlaylistDetail) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replace(cache.toRecord())
-        }
+    private fun saveRoom(cache: CachedNeteasePlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replace(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to save NetEase playlist cache to Room: playlistId=${cache.playlistId}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
-    private fun saveRoomIfNewer(cache: CachedNeteasePlaylistDetail) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replaceIfNewer(cache.toRecord())
-        }
+    private fun saveRoomIfNewer(cache: CachedNeteasePlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replaceIfNewer(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to import NetEase playlist cache into Room: playlistId=${cache.playlistId}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
     private fun clearRoom(cacheKey: String) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.clear(PLATFORM, cacheKey)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.clear(PLATFORM, cacheKey)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to clear NetEase playlist cache from Room: cacheKey=$cacheKey", error)
         }
     }
 
     private fun saveRoomAndDeleteLegacy(cache: CachedNeteasePlaylistDetail) {
-        saveRoom(cache)
-        deleteLegacyFile(cacheFile(cache.playlistId))
+        if (saveRoom(cache)) {
+            deleteLegacyFile(cacheFile(cache.playlistId))
+        }
     }
 
     private fun saveRoomIfNewerAndDeleteLegacy(
         cache: CachedNeteasePlaylistDetail,
         file: File
     ) {
-        saveRoomIfNewer(cache)
-        deleteLegacyFile(file)
+        if (saveRoomIfNewer(cache)) {
+            deleteLegacyFile(file)
+        }
     }
 
     private fun readLegacyFile(

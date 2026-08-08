@@ -31,6 +31,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 import java.io.File
 import java.security.MessageDigest
@@ -57,8 +58,8 @@ data class CachedYouTubeMusicPlaylistDetail(
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
-class YouTubeMusicPlaylistCacheRepository private constructor(
-    private val roomStore: PlatformPlaylistCacheRoomStore,
+class YouTubeMusicPlaylistCacheRepository internal constructor(
+    private val roomStore: PlatformPlaylistCacheStore,
     private val cacheDir: File
 ) {
     private val gson = Gson()
@@ -80,7 +81,7 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     )
 
     fun read(browseId: String): CachedYouTubeMusicPlaylistDetail? {
-        readRoom(browseId)?.toYouTubeMusicPlaylistDetail()?.let { return it }
+        readRoom(browseId)?.let { return it }
         val file = cacheFile(browseId)
         if (!file.exists()) return null
         return runCatching {
@@ -91,21 +92,14 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     }
 
     fun save(cache: CachedYouTubeMusicPlaylistDetail) {
-        runCatching {
-            saveRoom(cache)
+        if (saveRoom(cache)) {
             deleteLegacyFile(cacheFile(cache.browseId))
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to save YouTube Music playlist cache: browseId=${cache.browseId}", error)
         }
     }
 
     fun clear(browseId: String) {
-        runCatching {
-            clearRoom(browseId)
-            cacheFile(browseId).delete()
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to clear YouTube Music playlist cache: browseId=$browseId", error)
-        }
+        clearRoom(browseId)
+        deleteLegacyFile(cacheFile(browseId))
     }
 
     fun importLegacyCaches() {
@@ -122,41 +116,73 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
         }
     }
 
-    private fun readRoom(browseId: String): PlatformPlaylistCacheRecord? {
-        return runBlocking(Dispatchers.IO) {
-            roomStore.read(PLATFORM, browseId)
-        }
+    private fun readRoom(browseId: String): CachedYouTubeMusicPlaylistDetail? {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.read(PLATFORM, browseId)
+            }?.toYouTubeMusicPlaylistDetail()
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to read YouTube Music playlist cache from Room: browseId=$browseId", error)
+        }.getOrNull()
     }
 
-    private fun saveRoom(cache: CachedYouTubeMusicPlaylistDetail) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replace(cache.toRecord())
-        }
+    private fun saveRoom(cache: CachedYouTubeMusicPlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replace(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to save YouTube Music playlist cache to Room: browseId=${cache.browseId}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
-    private fun saveRoomIfNewer(cache: CachedYouTubeMusicPlaylistDetail) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.replaceIfNewer(cache.toRecord())
-        }
+    private fun saveRoomIfNewer(cache: CachedYouTubeMusicPlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replaceIfNewer(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to import YouTube Music playlist cache into Room: browseId=${cache.browseId}",
+                error
+            )
+        }.getOrDefault(false)
     }
 
     private fun clearRoom(cacheKey: String) {
-        runBlocking(Dispatchers.IO) {
-            roomStore.clear(PLATFORM, cacheKey)
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.clear(PLATFORM, cacheKey)
+            }
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to clear YouTube Music playlist cache from Room: browseId=$cacheKey",
+                error
+            )
         }
     }
 
     private fun saveRoomAndDeleteLegacy(cache: CachedYouTubeMusicPlaylistDetail) {
-        saveRoom(cache)
-        deleteLegacyFile(cacheFile(cache.browseId))
+        if (saveRoom(cache)) {
+            deleteLegacyFile(cacheFile(cache.browseId))
+        }
     }
 
     private fun saveRoomIfNewerAndDeleteLegacy(
         cache: CachedYouTubeMusicPlaylistDetail,
         file: File
     ) {
-        saveRoomIfNewer(cache)
-        deleteLegacyFile(file)
+        if (saveRoomIfNewer(cache)) {
+            deleteLegacyFile(file)
+        }
     }
 
     private fun readLegacyFile(

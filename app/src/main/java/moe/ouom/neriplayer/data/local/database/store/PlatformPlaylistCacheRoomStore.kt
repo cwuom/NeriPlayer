@@ -46,10 +46,26 @@ internal data class PlatformPlaylistCacheArtistRecord(
     val name: String
 )
 
+internal interface PlatformPlaylistCacheStore {
+    suspend fun read(
+        platform: String,
+        cacheKey: String
+    ): PlatformPlaylistCacheRecord?
+
+    suspend fun replace(record: PlatformPlaylistCacheRecord)
+
+    suspend fun replaceIfNewer(record: PlatformPlaylistCacheRecord)
+
+    suspend fun clear(
+        platform: String,
+        cacheKey: String
+    )
+}
+
 internal class PlatformPlaylistCacheRoomStore(
     private val database: NeriUserDataDatabase
-) {
-    suspend fun read(
+) : PlatformPlaylistCacheStore {
+    override suspend fun read(
         platform: String,
         cacheKey: String
     ): PlatformPlaylistCacheRecord? {
@@ -71,7 +87,7 @@ internal class PlatformPlaylistCacheRoomStore(
         }
     }
 
-    suspend fun replace(record: PlatformPlaylistCacheRecord) {
+    override suspend fun replace(record: PlatformPlaylistCacheRecord) {
         database.withTransaction {
             val dao = database.platformPlaylistCacheDao()
             dao.deleteArtists(record.platform, record.cacheKey)
@@ -82,7 +98,7 @@ internal class PlatformPlaylistCacheRoomStore(
         }
     }
 
-    suspend fun replaceIfNewer(record: PlatformPlaylistCacheRecord) {
+    override suspend fun replaceIfNewer(record: PlatformPlaylistCacheRecord) {
         database.withTransaction {
             val dao = database.platformPlaylistCacheDao()
             val existing = dao.getCache(record.platform, record.cacheKey)
@@ -97,7 +113,7 @@ internal class PlatformPlaylistCacheRoomStore(
         }
     }
 
-    suspend fun clear(
+    override suspend fun clear(
         platform: String,
         cacheKey: String
     ) {

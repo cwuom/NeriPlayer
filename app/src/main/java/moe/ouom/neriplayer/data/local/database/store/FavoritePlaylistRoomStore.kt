@@ -29,6 +29,16 @@ internal class FavoritePlaylistRoomStore(
         replaceAll(favorites, now)
     }
 
+    suspend fun promoteExistingAndRead(
+        now: Long = System.currentTimeMillis()
+    ): List<FavoritePlaylist> {
+        return database.withTransaction {
+            val favorites = readPlaylists()
+            markRoomPrimary(now)
+            favorites
+        }
+    }
+
     suspend fun replaceAll(
         favorites: List<FavoritePlaylist>,
         now: Long = System.currentTimeMillis()
@@ -72,12 +82,6 @@ internal class FavoritePlaylistRoomStore(
             )
             markRoomPrimary(now)
         }
-    }
-
-    suspend fun markLegacyJsonPrimary(now: Long = System.currentTimeMillis()) {
-        database.syncMetadataDao().upsertMigrationMetadata(
-            metadata(CUTOVER_STATE_METADATA_KEY, LEGACY_JSON_STATE, now)
-        )
     }
 
     private suspend fun readPlaylists(): List<FavoritePlaylist> {
@@ -165,7 +169,6 @@ internal class FavoritePlaylistRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "favorite_playlist_cutover_state"
         const val IMPORT_SCHEMA_METADATA_KEY = "favorite_playlist_import_schema"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }
 

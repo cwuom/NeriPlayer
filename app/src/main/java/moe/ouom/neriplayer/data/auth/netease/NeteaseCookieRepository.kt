@@ -26,13 +26,10 @@ package moe.ouom.neriplayer.data.auth.netease
  */
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +38,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.security.RecoveringEncryptedSharedPreferences
 import org.json.JSONObject
 
 private const val NETEASE_AUTH_PREFS = "netease_auth_secure_prefs"
@@ -183,7 +181,7 @@ internal fun evaluateNeteaseAuthHealth(
 }
 
 class NeteaseCookieRepository(private val context: Context) {
-    private var encryptedPrefs: SharedPreferences
+    private val encryptedPrefs: RecoveringEncryptedSharedPreferences
     private val _authFlow: MutableStateFlow<NeteaseAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
@@ -195,7 +193,11 @@ class NeteaseCookieRepository(private val context: Context) {
         get() = _authHealthFlow.asStateFlow()
 
     init {
-        encryptedPrefs = openEncryptedPrefsWithRecovery()
+        encryptedPrefs = RecoveringEncryptedSharedPreferences(
+            context = context,
+            storageName = NETEASE_AUTH_PREFS,
+            logTag = "NERI-CookieRepo"
+        )
         val initialBundle = loadAuthBundle()
         _authFlow = MutableStateFlow(initialBundle)
         _cookieFlow = MutableStateFlow(initialBundle.cookies)
@@ -264,17 +266,7 @@ class NeteaseCookieRepository(private val context: Context) {
     }
 
     private fun loadAuthBundle(): NeteaseAuthBundle {
-        val raw = runCatching {
-            encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-CookieRepo",
-                "Failed to read NetEase secure prefs, clearing corrupted storage and retrying.",
-                error
-            )
-            rebuildEncryptedStorage()
-            ""
-        }
+        val raw = encryptedPrefs.getString(KEY_NETEASE_AUTH_BUNDLE, null).orEmpty()
         if (raw.isNotBlank()) {
             return NeteaseAuthBundle.fromJson(raw)
         }
@@ -303,12 +295,19 @@ class NeteaseCookieRepository(private val context: Context) {
         encryptedPrefs.edit {
             putString(KEY_NETEASE_AUTH_BUNDLE, migrated.toJson())
         }
-        runCatching {
-            runBlocking {
-                context.cookieDataStore.edit { prefs ->
-                    prefs.remove(CookieKeys.NETEASE_COOKIE_JSON)
+        if (encryptedPrefs.isDurable) {
+            runCatching {
+                runBlocking {
+                    context.cookieDataStore.edit { prefs ->
+                        prefs.remove(CookieKeys.NETEASE_COOKIE_JSON)
+                    }
                 }
             }
+        } else {
+            NPLogger.w(
+                "NERI-CookieRepo",
+                "Kept legacy NetEase credentials because secure storage is not durable yet."
+            )
         }
         return migrated
     }
@@ -324,47 +323,4 @@ class NeteaseCookieRepository(private val context: Context) {
         return result
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-CookieRepo",
-                "Failed to open NetEase secure prefs, clearing storage and recreating.",
-                error
-            )
-            clearEncryptedStorage()
-            createEncryptedPrefs()
-        }
-    }
-
-    private fun rebuildEncryptedStorage() {
-        clearEncryptedStorage()
-        encryptedPrefs = openEncryptedPrefsWithRecovery()
-    }
-
-    private fun clearEncryptedStorage() {
-        runCatching {
-            context.deleteSharedPreferences(NETEASE_AUTH_PREFS)
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-CookieRepo",
-                "Failed to delete corrupted NetEase secure prefs file.",
-                error
-            )
-        }
-    }
-
-    private fun createEncryptedPrefs(): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            NETEASE_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
 }

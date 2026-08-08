@@ -29,18 +29,16 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.annotation.SuppressLint
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import moe.ouom.neriplayer.data.config.GitHubSyncConfigSnapshot
 import moe.ouom.neriplayer.data.model.SongIdentity
-import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
+import moe.ouom.neriplayer.util.security.RecoveringEncryptedSharedPreferences
 import java.util.UUID
 
 /**
@@ -50,7 +48,11 @@ import java.util.UUID
 class SecureTokenStorage(private val context: Context) {
     private val gson = Gson()
 
-    private val encryptedPrefs: SharedPreferences = openEncryptedPrefsWithRecovery()
+    private val encryptedPrefs = RecoveringEncryptedSharedPreferences(
+        context = context,
+        storageName = PREFS_NAME,
+        logTag = "NERI-SecureTokenStorage"
+    )
 
     companion object {
         private const val PREFS_NAME = "github_secure_prefs"
@@ -73,45 +75,6 @@ class SecureTokenStorage(private val context: Context) {
         private const val MAX_RECENT_PLAY_DELETIONS = 500
         private val syncMutationLock = Any()
         private val syncCausalTokenLock = Any()
-    }
-
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-SecureTokenStorage",
-                "Failed to open GitHub secure prefs, clearing storage and recreating.",
-                error
-            )
-            clearEncryptedStorage()
-            createEncryptedPrefs()
-        }
-    }
-
-    private fun createEncryptedPrefs(): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    private fun clearEncryptedStorage() {
-        runCatching {
-            context.deleteSharedPreferences(PREFS_NAME)
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-SecureTokenStorage",
-                "Failed to delete corrupted GitHub secure prefs file.",
-                error
-            )
-        }
     }
 
     /** 保存GitHub Token */
@@ -252,7 +215,8 @@ class SecureTokenStorage(private val context: Context) {
 
     /** 检查是否已配置 */
     fun isConfigured(): Boolean {
-        return !getToken().isNullOrEmpty() &&
+        return encryptedPrefs.isDurable &&
+               !getToken().isNullOrEmpty() &&
                !getRepoOwner().isNullOrEmpty() &&
                !getRepoName().isNullOrEmpty()
     }

@@ -28,10 +28,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,7 +44,6 @@ import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 const val FAVORITE_SOURCE_NETEASE_ARTIST = "neteaseArtist"
@@ -70,7 +66,6 @@ data class FavoritePlaylist(
 )
 
 class FavoritePlaylistRepository private constructor(private val context: Context) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
@@ -78,8 +73,6 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
     private val roomStore = FavoritePlaylistRoomStore(
         NeriUserDataDatabase.getInstance(context.applicationContext)
     )
-    @Volatile
-    private var roomStorageEnabled = true
     private val syncStorage by lazy { SecureTokenStorage(context) }
 
     private val initialSnapshots = load()
@@ -96,44 +89,48 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         val roomFavorites = runCatching {
             runBlocking { roomStore.readIfRoomPrimary() }
         }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(TAG, "读取 Room 收藏歌单失败，回退到 JSON", error)
+            NPLogger.e(TAG, "读取 Room 收藏歌单失败，保留迁移 JSON", error)
         }.getOrNull()
         if (roomFavorites != null) {
             LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-load")
             return normalize(roomFavorites)
         }
 
-        val list = try {
-            if (!file.exists()) {
-                emptyList()
-            } else {
-                val type = object : TypeToken<List<FavoritePlaylist>>() {}.type
-                gson.fromJson<List<FavoritePlaylist>>(file.readText(), type).orEmpty()
+        val legacyFavorites = readLegacyFavorites()
+        if (legacyFavorites != null) {
+            val normalized = normalize(legacyFavorites)
+            val imported = runCatching {
+                runBlocking {
+                    roomStore.importLegacyAndPromote(normalized)
+                }
+                true
+            }.onFailure { error ->
+                NPLogger.e(TAG, "将收藏歌单 JSON 导入 Room 失败", error)
+            }.getOrDefault(false)
+            if (imported) {
+                LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-import")
             }
-        } catch (_: Exception) {
-            emptyList()
+            return normalized
         }
-        val normalized = normalize(list)
-        runCatching {
-            runBlocking {
-                roomStore.importLegacyAndPromote(normalized)
-            }
-            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-import")
-            roomStorageEnabled = true
+
+        return runCatching {
+            runBlocking { roomStore.promoteExistingAndRead() }
         }.onFailure { error ->
-            roomStorageEnabled = false
-            NPLogger.e(TAG, "将收藏歌单 JSON 导入 Room 失败", error)
-        }
-        return normalized
+            NPLogger.e(TAG, "恢复现有 Room 收藏歌单失败", error)
+        }.getOrNull()?.let { favorites ->
+            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-recovery")
+            normalize(favorites)
+        }.orEmpty()
     }
 
-    private fun saveToDisk(favorites: List<FavoritePlaylist>): Boolean {
+    private fun readLegacyFavorites(): List<FavoritePlaylist>? {
+        if (!file.isFile) return null
         return runCatching {
-            file.writeTextAtomically(gson.toJson(favorites))
+            val type = object : TypeToken<List<FavoritePlaylist>>() {}.type
+            gson.fromJson<List<FavoritePlaylist>>(file.readText(), type)
         }.onFailure { error ->
-            NPLogger.e(TAG, "保存收藏歌单失败", error)
-        }.isSuccess
+            NPLogger.e(TAG, "读取收藏歌单迁移 JSON 失败", error)
+        }.getOrNull()
     }
 
     private fun publishInMemory(
@@ -190,31 +187,18 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         favorites: List<FavoritePlaylist>
     ): Boolean {
         return persistenceMutex.withLock {
-            if (roomStorageEnabled) {
-                val roomSucceeded = runCatching {
-                    roomStore.writeIncremental(
-                        previous = persistedSnapshots,
-                        next = favorites
-                    )
-                }.onFailure { error ->
-                    roomStorageEnabled = false
-                    NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
-                }.isSuccess
-                if (roomSucceeded) {
-                    persistedSnapshots = favorites
-                    return@withLock true
-                }
+            val roomSucceeded = runCatching {
+                roomStore.writeIncremental(
+                    previous = persistedSnapshots,
+                    next = favorites
+                )
+            }.onFailure { error ->
+                NPLogger.e(TAG, "写入 Room 收藏歌单失败", error)
+            }.isSuccess
+            if (roomSucceeded) {
+                persistedSnapshots = favorites
             }
-
-            val legacySucceeded = saveToDisk(favorites)
-            if (legacySucceeded) {
-                runCatching { roomStore.markLegacyJsonPrimary() }
-                    .onFailure { error ->
-                        NPLogger.e(TAG, "标记收藏歌单 JSON 回退状态失败", error)
-                    }
-            }
-            persistedSnapshots = favorites
-            legacySucceeded
+            roomSucceeded
         }
     }
 
