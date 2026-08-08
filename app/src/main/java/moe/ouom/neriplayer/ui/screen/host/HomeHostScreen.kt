@@ -117,6 +117,15 @@ class HomeHostRuntimeState {
     var homeScrollAnchorIndexes by mutableStateOf<Map<String, Int>>(emptyMap())
 }
 
+internal fun resolveHomeUsageEntriesForDisplay(
+    currentEntries: List<UsageEntry>,
+    incomingEntries: List<UsageEntry>,
+    detailOpen: Boolean,
+    snapshotFrozen: Boolean
+): List<UsageEntry> {
+    return if (detailOpen || snapshotFrozen) currentEntries else incomingEntries
+}
+
 @Composable
 fun rememberHomeHostRuntimeState(): HomeHostRuntimeState {
     return remember { HomeHostRuntimeState() }
@@ -166,6 +175,8 @@ fun HomeHostScreen(
         mutableStateOf(null)
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
+    var homeUsageSnapshotFrozen by rememberSaveable { mutableStateOf(false) }
+    var displayedHomeUsageEntries by remember { mutableStateOf(homeUsageEntries) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingNeteaseCoverWarmupJob by remember { mutableStateOf<Job?>(null) }
@@ -217,6 +228,7 @@ fun HomeHostScreen(
     }
 
     fun openHomeSelectedItem(item: HomeSelectedItem) {
+        homeUsageSnapshotFrozen = true
         when (item) {
             is HomeSelectedItem.Netease -> {
                 openAfterNeteaseCoverWarmup(item.playlist.picUrl, item)
@@ -235,13 +247,24 @@ fun HomeHostScreen(
     fun closeSelectedDetail() {
         cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
+        homeUsageSnapshotFrozen = false
         selected = null
     }
 
     fun closeDeletedLocalPlaylist() {
         cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = true
+        homeUsageSnapshotFrozen = false
         selected = null
+    }
+
+    LaunchedEffect(homeUsageEntries, selected, homeUsageSnapshotFrozen) {
+        displayedHomeUsageEntries = resolveHomeUsageEntriesForDisplay(
+            currentEntries = displayedHomeUsageEntries,
+            incomingEntries = homeUsageEntries,
+            detailOpen = selected != null,
+            snapshotFrozen = homeUsageSnapshotFrozen
+        )
     }
 
     LaunchedEffect(selected) {
@@ -362,7 +385,7 @@ fun HomeHostScreen(
                                 showTrendingCard = showTrendingCard,
                                 showRadarCard = showRadarCard,
                                 showRecommendedCard = showRecommendedCard,
-                                usageEntries = homeUsageEntries,
+                                usageEntries = displayedHomeUsageEntries,
                                 usageLoaded = homeUsageLoaded,
                                 offlineMode = offlineMode,
                                 gridState = gridState,
@@ -375,6 +398,7 @@ fun HomeHostScreen(
                                 onItemClick = { pl ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.Netease(pl))
                                     AppContainer.launchBackgroundIo {
                                         AppContainer.playlistUsageRepo.recordOpen(
                                             id = pl.id,
@@ -384,11 +408,11 @@ fun HomeHostScreen(
                                             source = "netease"
                                         )
                                     }
-                                    openHomeSelectedItem(HomeSelectedItem.Netease(pl))
                                 },
                                 onYouTubeMusicPlaylistClick = { pl ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
+                                    openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
                                     AppContainer.launchBackgroundIo {
                                         AppContainer.playlistUsageRepo.recordOpen(
                                             id = stableYouTubeMusicId(
@@ -402,11 +426,11 @@ fun HomeHostScreen(
                                             playlistId = pl.playlistId
                                         )
                                     }
-                                    openHomeSelectedItem(HomeSelectedItem.YouTubeMusic(pl))
                                 },
                                 onOpenRecent = { entry ->
                                     skipDetailCloseAnimation = false
                                     captureHomeScrollPosition()
+                                    openRecent(entry, ::openHomeSelectedItem)
                                     AppContainer.launchBackgroundIo {
                                         AppContainer.playlistUsageRepo.recordOpen(
                                             id = entry.id,
@@ -422,7 +446,6 @@ fun HomeHostScreen(
                                             subtitle = entry.subtitle
                                         )
                                     }
-                                    openRecent(entry, ::openHomeSelectedItem)
                                 },
                                 onSongClick = onSongClick
                             )
@@ -432,7 +455,7 @@ fun HomeHostScreen(
                             is HomeSelectedItem.NeteaseAlbumList -> {
                                 NeteaseAlbumDetailScreen(
                                     album = current.album,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onSongClick = { songs, index ->
                                         onSongClickWithSourceRoute(
                                             songs,
@@ -447,7 +470,7 @@ fun HomeHostScreen(
                             is HomeSelectedItem.Netease -> {
                                 NeteasePlaylistDetailScreen(
                                     playlist = current.playlist,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onSongClick = { songs, index ->
                                         onSongClickWithSourceRoute(
                                             songs,
@@ -487,7 +510,7 @@ fun HomeHostScreen(
                             is HomeSelectedItem.Bili -> {
                                 BiliPlaylistDetailScreen(
                                     playlist = current.playlist,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onPlayAudio = { videos, index ->
                                         onPlayBiliAudioWithSourceRoute(
                                             videos,
@@ -510,7 +533,7 @@ fun HomeHostScreen(
                             is HomeSelectedItem.YouTubeMusic -> {
                                 YouTubeMusicPlaylistDetailScreen(
                                     playlist = current.playlist,
-                                    onBack = { selected = null },
+                                    onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode
                                 )
