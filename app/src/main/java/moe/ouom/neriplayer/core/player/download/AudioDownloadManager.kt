@@ -1004,7 +1004,7 @@ object AudioDownloadManager {
         } else {
             ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
                 context = context,
-                restoreFromDisk = false
+                restorePersisted = false
             )
         }
         for (lookupKey in lookupKeys) {
@@ -2432,7 +2432,7 @@ object AudioDownloadManager {
         }
         val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
             ?: if (ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
-                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context, restoreFromDisk = false)
+                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context, restorePersisted = false)
             } else {
                 null
             }

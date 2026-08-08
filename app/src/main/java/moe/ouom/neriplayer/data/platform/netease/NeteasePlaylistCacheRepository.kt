@@ -25,8 +25,16 @@ package moe.ouom.neriplayer.data.platform.netease
 
 import android.content.Context
 import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheArtistRecord
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStore
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
 
 data class CachedNeteasePlaylistHeader(
     val id: Long,
@@ -62,42 +70,150 @@ data class CachedNeteasePlaylistDetail(
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
-class NeteasePlaylistCacheRepository(context: Context) {
-    private val appContext = context.applicationContext
+class NeteasePlaylistCacheRepository internal constructor(
+    private val roomStore: PlatformPlaylistCacheStore,
+    private val cacheDir: File
+) {
     private val gson = Gson()
-    private val cacheDir = File(appContext.filesDir, CACHE_DIR_NAME)
+
+    constructor(context: Context) : this(
+        roomStore = PlatformPlaylistCacheRoomStore(
+            NeriUserDataDatabase.getInstance(context.applicationContext)
+        ),
+        cacheDir = File(context.applicationContext.filesDir, CACHE_DIR_NAME)
+    )
+
+    internal constructor(
+        context: Context,
+        database: NeriUserDataDatabase,
+        cacheDir: File = File(context.applicationContext.filesDir, CACHE_DIR_NAME)
+    ) : this(
+        roomStore = PlatformPlaylistCacheRoomStore(database),
+        cacheDir = cacheDir
+    )
 
     fun read(playlistId: Long): CachedNeteasePlaylistDetail? {
+        val cacheKey = playlistId.toString()
+        val roomResult = readRoom(cacheKey)
+        if (roomResult.isFailure) return null
+        roomResult.getOrNull()?.let { return it }
         val file = cacheFile(playlistId)
         if (!file.exists()) return null
         return runCatching {
-            gson.fromJson(file.readText(Charsets.UTF_8), CachedNeteasePlaylistDetail::class.java)
-                ?.takeIf { it.playlistId == playlistId }
+            readLegacyFile(file, playlistId)?.also(::saveRoomAndDeleteLegacy)
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read NetEase playlist cache: playlistId=$playlistId", error)
         }.getOrNull()
     }
 
     fun save(cache: CachedNeteasePlaylistDetail) {
-        runCatching {
-            cacheDir.mkdirs()
-            val file = cacheFile(cache.playlistId)
-            val tmp = File(cacheDir, "${file.name}.tmp")
-            tmp.writeText(gson.toJson(cache), Charsets.UTF_8)
-            if (!tmp.renameTo(file)) {
-                file.writeText(gson.toJson(cache), Charsets.UTF_8)
-                tmp.delete()
-            }
-        }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to save NetEase playlist cache: playlistId=${cache.playlistId}", error)
+        if (saveRoom(cache)) {
+            deleteLegacyFile(cacheFile(cache.playlistId))
         }
     }
 
     fun clear(playlistId: Long) {
-        runCatching {
-            cacheFile(playlistId).delete()
+        clearRoom(playlistId.toString())
+        deleteLegacyFile(cacheFile(playlistId))
+    }
+
+    fun importLegacyCaches() {
+        val files = cacheDir.listFiles { file ->
+            file.isFile && file.name.endsWith(".json")
+        }.orEmpty()
+        files.forEach { file ->
+            runCatching {
+                readLegacyFile(file, expectedPlaylistId = null)
+                    ?.also { cache -> saveRoomIfNewerAndDeleteLegacy(cache, file) }
+            }.onFailure { error ->
+                NPLogger.w(TAG, "Failed to import NetEase playlist cache: file=${file.name}", error)
+            }
+        }
+    }
+
+    private fun readRoom(cacheKey: String): Result<CachedNeteasePlaylistDetail?> {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.read(PLATFORM, cacheKey)
+            }?.toNeteasePlaylistDetail()
         }.onFailure { error ->
-            NPLogger.w(TAG, "Failed to clear NetEase playlist cache: playlistId=$playlistId", error)
+            NPLogger.w(TAG, "Failed to read NetEase playlist cache from Room: cacheKey=$cacheKey", error)
+        }
+    }
+
+    private fun saveRoom(cache: CachedNeteasePlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replace(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to save NetEase playlist cache to Room: playlistId=${cache.playlistId}",
+                error
+            )
+        }.getOrDefault(false)
+    }
+
+    private fun saveRoomIfNewer(cache: CachedNeteasePlaylistDetail): Boolean {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.replaceIfNewer(cache.toRecord())
+            }
+            true
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "Failed to import NetEase playlist cache into Room: playlistId=${cache.playlistId}",
+                error
+            )
+        }.getOrDefault(false)
+    }
+
+    private fun clearRoom(cacheKey: String) {
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                roomStore.clear(PLATFORM, cacheKey)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to clear NetEase playlist cache from Room: cacheKey=$cacheKey", error)
+        }
+    }
+
+    private fun saveRoomAndDeleteLegacy(cache: CachedNeteasePlaylistDetail) {
+        if (saveRoom(cache)) {
+            deleteLegacyFile(cacheFile(cache.playlistId))
+        }
+    }
+
+    private fun saveRoomIfNewerAndDeleteLegacy(
+        cache: CachedNeteasePlaylistDetail,
+        file: File
+    ) {
+        if (saveRoomIfNewer(cache)) {
+            deleteLegacyFile(file)
+        }
+    }
+
+    private fun readLegacyFile(
+        file: File,
+        expectedPlaylistId: Long?
+    ): CachedNeteasePlaylistDetail? {
+        return gson.fromJson(file.readText(Charsets.UTF_8), CachedNeteasePlaylistDetail::class.java)
+            ?.takeIf { cache -> expectedPlaylistId == null || cache.playlistId == expectedPlaylistId }
+    }
+
+    private fun deleteLegacyFile(file: File) {
+        if (file.exists() && !file.delete()) {
+            NPLogger.w(TAG, "Failed to delete legacy NetEase playlist cache: file=${file.name}")
+        }
+        deleteCacheDirIfEmpty()
+    }
+
+    private fun deleteCacheDirIfEmpty() {
+        if (cacheDir.isDirectory && cacheDir.listFiles().orEmpty().isEmpty()) {
+            cacheDir.delete()
         }
     }
 
@@ -105,7 +221,77 @@ class NeteasePlaylistCacheRepository(context: Context) {
         return File(cacheDir, "playlist_$playlistId.json")
     }
 
+    private fun CachedNeteasePlaylistDetail.toRecord(): PlatformPlaylistCacheRecord {
+        return PlatformPlaylistCacheRecord(
+            platform = PLATFORM,
+            cacheKey = playlistId.toString(),
+            sourceId = playlistId,
+            title = header.name,
+            coverUrl = header.coverUrl,
+            playCount = header.playCount,
+            trackCount = header.trackCount,
+            totalCount = tracks.size,
+            signaturePrimary = recentTrackSignature,
+            savedAtMs = savedAtMs,
+            tracks = tracks.map { track ->
+                PlatformPlaylistCacheTrackRecord(
+                    itemId = track.id,
+                    name = track.name,
+                    artist = track.artist,
+                    album = track.album,
+                    albumId = track.albumId,
+                    durationMs = track.durationMs,
+                    coverUrl = track.coverUrl,
+                    audioId = track.audioId,
+                    addedAt = track.addedAt,
+                    artists = track.artists.map { artist ->
+                        PlatformPlaylistCacheArtistRecord(
+                            id = artist.id,
+                            name = artist.name
+                        )
+                    }
+                )
+            }
+        )
+    }
+
+    private fun PlatformPlaylistCacheRecord.toNeteasePlaylistDetail(): CachedNeteasePlaylistDetail {
+        val playlistId = sourceId ?: cacheKey.toLong()
+        return CachedNeteasePlaylistDetail(
+            playlistId = playlistId,
+            header = CachedNeteasePlaylistHeader(
+                id = playlistId,
+                name = title.orEmpty(),
+                coverUrl = coverUrl.orEmpty(),
+                playCount = playCount ?: 0L,
+                trackCount = trackCount
+            ),
+            recentTrackSignature = signaturePrimary.orEmpty(),
+            tracks = tracks.map { track ->
+                CachedNeteasePlaylistTrack(
+                    id = track.itemId ?: 0L,
+                    name = track.name,
+                    artist = track.artist,
+                    album = track.album,
+                    albumId = track.albumId ?: 0L,
+                    durationMs = track.durationMs,
+                    coverUrl = track.coverUrl,
+                    audioId = track.audioId,
+                    artists = track.artists.map { artist ->
+                        CachedNeteaseArtist(
+                            id = artist.id,
+                            name = artist.name
+                        )
+                    },
+                    addedAt = track.addedAt
+                )
+            },
+            savedAtMs = savedAtMs
+        )
+    }
+
     private companion object {
+        const val PLATFORM = "netease"
         const val TAG = "NeteasePlaylistCache"
         const val CACHE_DIR_NAME = "netease_playlist_cache"
     }

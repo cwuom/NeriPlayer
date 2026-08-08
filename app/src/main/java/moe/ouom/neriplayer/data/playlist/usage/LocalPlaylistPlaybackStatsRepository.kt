@@ -1,12 +1,24 @@
 package moe.ouom.neriplayer.data.playlist.usage
 
+import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.data.stats.resolvePlaybackStatsTimeRange
@@ -17,7 +29,6 @@ import moe.ouom.neriplayer.data.sync.github.SyncPlaylistUsageStatsMergePolicy
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackBucket
 import moe.ouom.neriplayer.data.sync.model.SyncLocalPlaylistPlaybackStat
 import moe.ouom.neriplayer.data.sync.model.SyncPlaybackCounterShard
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 import java.util.UUID
 
@@ -50,41 +61,111 @@ data class LocalPlaylistPlaybackSyncSnapshot(
     val buckets: List<SyncLocalPlaylistPlaybackBucket>
 )
 
-class LocalPlaylistPlaybackStatsRepository private constructor(private val app: Context) {
+class LocalPlaylistPlaybackStatsRepository private constructor(
+    private val app: Context,
+    private val roomStore: LocalPlaylistPlaybackRoomStore? = null
+) {
     companion object {
+        private const val ROOM_RETRY_DELAY_MS = 15_000L
+
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: LocalPlaylistPlaybackStatsRepository? = null
 
         fun getInstance(context: Context): LocalPlaylistPlaybackStatsRepository {
             return instance ?: synchronized(this) {
                 instance ?: LocalPlaylistPlaybackStatsRepository(
-                    context.applicationContext
+                    context.applicationContext,
+                    LocalPlaylistPlaybackRoomStore(
+                        NeriUserDataDatabase.getInstance(context.applicationContext)
+                    )
                 ).also { instance = it }
             }
         }
     }
 
     private val gson = Gson()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val file = File(app.filesDir, "local_playlist_playback_stats.json")
     private val syncStorage by lazy { SecureTokenStorage(app) }
     private val fallbackCounterDeviceId = "local-playlist-playback-${UUID.randomUUID()}"
     private val mutex = Mutex()
-    private val _stats = MutableStateFlow(loadFromDisk())
+    @Volatile
+    private var roomStorageEnabled = roomStore != null
+    private var roomRecoveryBaseline: List<LocalPlaylistPlaybackStat>? = null
+    private val initialStats = loadInitialStats()
+    private val _stats = MutableStateFlow(initialStats)
+    private var persistedStats = initialStats
+    private var retryJob: Job? = null
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
+
+    init {
+        scheduleRoomRecovery()
+    }
+
+    private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
+        var needsRoomRecovery = false
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomStats = runCatching {
+                runBlocking { activeRoomStore.readIfRoomPrimary() }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                needsRoomRecovery = true
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to read Room local playlist playback stats",
+                    error
+                )
+            }.getOrNull()
+            if (roomStats != null) {
+                LegacyJsonCleanupScheduler.schedule(
+                    app,
+                    "local-playlist-playback-room-load"
+                )
+                return normalizeLocalPlaylistPlaybackStats(roomStats)
+            }
+        }
+
+        val legacyStats = loadFromDisk()
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            runCatching {
+                runBlocking { activeRoomStore.importLegacyAndPromote(legacyStats) }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                needsRoomRecovery = true
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to promote local playlist playback JSON to Room",
+                    error
+                )
+            }
+            LegacyJsonCleanupScheduler.schedule(
+                app,
+                "local-playlist-playback-import"
+            )
+        }
+        if (needsRoomRecovery) {
+            roomRecoveryBaseline = legacyStats
+        }
+        return legacyStats
+    }
 
     suspend fun recordPlayNow(
         playlistId: Long,
         playedAt: Long = System.currentTimeMillis()
     ) {
         mutex.withLock {
+            val current = _stats.value
             val updated = recordLocalPlaylistPlay(
-                current = _stats.value,
+                current = current,
                 playlistId = playlistId,
                 playedAt = playedAt,
                 deviceId = syncCounterDeviceId()
             )
             _stats.value = updated
-            persist(updated)
+            persistSnapshot(updated)
         }
     }
 
@@ -124,7 +205,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(private val app: 
             )
             val updated = finalized.toLocalPlaybackStats()
             _stats.value = updated
-            persist(updated)
+            persistSnapshot(updated)
         }
     }
 
@@ -156,16 +237,107 @@ class LocalPlaylistPlaybackStatsRepository private constructor(private val app: 
         return normalizeLocalPlaylistPlaybackStats(parsed)
     }
 
-    private fun persist(stats: List<LocalPlaylistPlaybackStat>) {
-        runCatching {
-            file.writeTextAtomically(gson.toJson(stats))
+    private suspend fun persistSnapshot(
+        next: List<LocalPlaylistPlaybackStat>
+    ) {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomWriteSucceeded = runCatching {
+                activeRoomStore.writeIncremental(persistedStats, next)
+            }.onFailure { error ->
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to write Room local playlist playback stats; keeping JSON migration data read-only",
+                    error
+                )
+            }.isSuccess
+            if (roomWriteSucceeded) {
+                persistedStats = next
+                retryJob?.cancel()
+                retryJob = null
+                return
+            }
         }
+        NPLogger.w(
+            "LocalPlaylistPlaybackRepo",
+            "Local playlist playback update remains in memory until Room is available."
+        )
+        if (roomStorageEnabled) {
+            schedulePersistenceRetry()
+        } else {
+            scheduleRoomRecovery()
+        }
+    }
+
+    private fun schedulePersistenceRetry() {
+        if (!roomStorageEnabled || roomStore == null || retryJob?.isActive == true) return
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            mutex.withLock {
+                retryJob = null
+                persistSnapshot(_stats.value)
+            }
+        }
+    }
+
+    private fun scheduleRoomRecovery() {
+        if (roomStorageEnabled || roomStore == null || roomRecoveryBaseline == null ||
+            retryJob?.isActive == true
+        ) {
+            return
+        }
+        retryJob = scope.launch {
+            delay(ROOM_RETRY_DELAY_MS)
+            mutex.withLock {
+                retryJob = null
+                recoverRoomStorage()
+            }
+        }
+    }
+
+    private suspend fun recoverRoomStorage() {
+        val activeRoomStore = roomStore ?: return
+        val baseline = roomRecoveryBaseline ?: return
+        val recovered = runCatching {
+            if (activeRoomStore.readIfRoomPrimary() == null) {
+                activeRoomStore.importLegacyAndPromote(_stats.value)
+            }
+            val roomSnapshot = activeRoomStore.readIfRoomPrimary()
+                ?: return@runCatching null
+            mergeLocalPlaylistPlaybackRoomRecovery(
+                roomSnapshot = roomSnapshot,
+                recoveryBaseline = baseline,
+                currentSnapshot = _stats.value
+            ).also { merged ->
+                activeRoomStore.writeIncremental(roomSnapshot, merged)
+            }
+        }.onFailure { error ->
+            NPLogger.e(
+                "LocalPlaylistPlaybackRepo",
+                "Failed to recover Room local playlist playback stats",
+                error
+            )
+        }.getOrNull()
+        if (recovered == null) {
+            scheduleRoomRecovery()
+            return
+        }
+
+        roomStorageEnabled = true
+        roomRecoveryBaseline = null
+        persistedStats = recovered
+        _stats.value = recovered
+        LegacyJsonCleanupScheduler.schedule(
+            app,
+            "local-playlist-playback-room-recovery"
+        )
     }
 
     private fun syncCounterDeviceId(): String {
         return runCatching { syncStorage.getOrCreateDeviceId() }
             .getOrDefault(fallbackCounterDeviceId)
     }
+
 }
 
 internal fun recordLocalPlaylistPlay(
@@ -205,6 +377,39 @@ internal fun normalizeLocalPlaylistPlaybackStats(
                 bucket.toSyncBucket(stat.playlistId)
             }
         }
+    )
+    return finalized.toLocalPlaybackStats()
+}
+
+internal fun mergeLocalPlaylistPlaybackRoomRecovery(
+    roomSnapshot: List<LocalPlaylistPlaybackStat>,
+    recoveryBaseline: List<LocalPlaylistPlaybackStat>,
+    currentSnapshot: List<LocalPlaylistPlaybackStat>
+): List<LocalPlaylistPlaybackStat> {
+    val baselineById = recoveryBaseline.associateBy(LocalPlaylistPlaybackStat::playlistId)
+    val currentById = currentSnapshot.associateBy(LocalPlaylistPlaybackStat::playlistId)
+    val removedIds = baselineById.keys - currentById.keys
+    val localChanges = currentSnapshot.filter { current ->
+        current != baselineById[current.playlistId]
+    }
+    val retainedRoomStats = roomSnapshot.filter { stat -> stat.playlistId !in removedIds }
+    val finalized = SyncPlaylistUsageStatsMergePolicy.finalizeLocalPlaylistPlaybackStats(
+        stats = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackStats(
+            local = retainedRoomStats.map(LocalPlaylistPlaybackStat::toSyncStat),
+            remote = localChanges.map(LocalPlaylistPlaybackStat::toSyncStat)
+        ),
+        buckets = SyncPlaylistUsageStatsMergePolicy.mergeLocalPlaylistPlaybackBuckets(
+            local = retainedRoomStats.flatMap { stat ->
+                stat.dailyPlayBuckets.orEmpty().map { bucket ->
+                    bucket.toSyncBucket(stat.playlistId)
+                }
+            },
+            remote = localChanges.flatMap { stat ->
+                stat.dailyPlayBuckets.orEmpty().map { bucket ->
+                    bucket.toSyncBucket(stat.playlistId)
+                }
+            }
+        )
     )
     return finalized.toLocalPlaybackStats()
 }

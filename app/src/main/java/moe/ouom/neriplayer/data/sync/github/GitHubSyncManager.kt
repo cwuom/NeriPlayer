@@ -117,6 +117,11 @@ class GitHubSyncManager private constructor(context: Context) {
         }
 
         try {
+            if (!storage.isConfigured()) {
+                return@withContext Result.failure(
+                    IllegalStateException(localizedContext.getString(R.string.github_not_configured))
+                )
+            }
             val token = storage.getToken()
             val owner = storage.getRepoOwner()
             val repo = storage.getRepoName()

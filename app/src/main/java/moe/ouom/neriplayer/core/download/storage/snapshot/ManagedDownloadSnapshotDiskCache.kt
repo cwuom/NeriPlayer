@@ -14,21 +14,6 @@ internal object ManagedDownloadSnapshotDiskCache {
         return File(context.filesDir, SNAPSHOT_CACHE_FILE_NAME)
     }
 
-    fun persist(
-        context: Context,
-        cacheKey: String,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ) {
-        runCatching {
-            cacheFile(context).writeText(
-                ManagedDownloadSnapshotIndex.serializePayload(cacheKey, snapshot),
-                Charsets.UTF_8
-            )
-        }.onFailure {
-            NPLogger.w(TAG, "写入下载索引缓存失败: ${it.message}")
-        }
-    }
-
     fun restore(
         context: Context,
         expectedKey: String? = null
@@ -46,14 +31,15 @@ internal object ManagedDownloadSnapshotDiskCache {
         }.getOrNull()
     }
 
-    fun delete(context: Context) {
-        runCatching {
+    fun delete(context: Context): Boolean {
+        return runCatching {
             val cacheFile = cacheFile(context)
             if (cacheFile.exists() && !cacheFile.delete()) {
                 throw IOException("无法删除旧下载索引缓存")
             }
+            true
         }.onFailure {
             NPLogger.w(TAG, "清理下载索引缓存失败: ${it.message}")
-        }
+        }.getOrDefault(false)
     }
 }

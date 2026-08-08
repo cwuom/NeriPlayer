@@ -26,13 +26,10 @@ package moe.ouom.neriplayer.data.auth.bili
  */
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.core.content.edit
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +38,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.util.security.RecoveringEncryptedSharedPreferences
 import org.json.JSONObject
 
 private const val BILI_AUTH_PREFS = "bili_auth_secure_prefs"
@@ -139,7 +137,7 @@ internal fun evaluateBiliAuthHealth(
 }
 
 class BiliCookieRepository(private val context: Context) {
-    private var encryptedPrefs: SharedPreferences
+    private val encryptedPrefs: RecoveringEncryptedSharedPreferences
     private val _authFlow: MutableStateFlow<BiliAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
     private val _authHealthFlow: MutableStateFlow<SavedCookieAuthHealth>
@@ -151,7 +149,11 @@ class BiliCookieRepository(private val context: Context) {
         get() = _authHealthFlow.asStateFlow()
 
     init {
-        encryptedPrefs = openEncryptedPrefsWithRecovery()
+        encryptedPrefs = RecoveringEncryptedSharedPreferences(
+            context = context,
+            storageName = BILI_AUTH_PREFS,
+            logTag = "NERI-BiliCookieRepo"
+        )
         val initialBundle = loadAuthBundle()
         _authFlow = MutableStateFlow(initialBundle)
         _cookieFlow = MutableStateFlow(initialBundle.cookies)
@@ -233,12 +235,19 @@ class BiliCookieRepository(private val context: Context) {
         encryptedPrefs.edit {
             putString(KEY_BILI_AUTH_BUNDLE, migrated.toJson())
         }
-        runCatching {
-            runBlocking {
-                context.biliCookieStore.edit { prefs ->
-                    prefs.remove(BiliCookieKeys.COOKIE_JSON)
+        if (encryptedPrefs.isDurable) {
+            runCatching {
+                runBlocking {
+                    context.biliCookieStore.edit { prefs ->
+                        prefs.remove(BiliCookieKeys.COOKIE_JSON)
+                    }
                 }
             }
+        } else {
+            NPLogger.w(
+                "NERI-BiliCookieRepo",
+                "Kept legacy Bili credentials because secure storage is not durable yet."
+            )
         }
         return migrated
     }
@@ -254,42 +263,4 @@ class BiliCookieRepository(private val context: Context) {
         return out
     }
 
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-BiliCookieRepo",
-                "Failed to open Bili secure prefs, clearing storage and recreating.",
-                error
-            )
-            clearEncryptedStorage()
-            createEncryptedPrefs()
-        }
-    }
-
-    private fun createEncryptedPrefs(): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            BILI_AUTH_PREFS,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    private fun clearEncryptedStorage() {
-        runCatching {
-            context.deleteSharedPreferences(BILI_AUTH_PREFS)
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-BiliCookieRepo",
-                "Failed to delete corrupted Bili secure prefs file.",
-                error
-            )
-        }
-    }
 }

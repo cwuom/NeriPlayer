@@ -3,16 +3,17 @@
 package moe.ouom.neriplayer.data.sync.webdav
 
 import android.content.Context
-import android.content.SharedPreferences
 import androidx.core.content.edit
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import moe.ouom.neriplayer.data.config.WebDavSyncConfigSnapshot
-import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.sync.DEFAULT_SYNC_AUTO_ENABLED
+import moe.ouom.neriplayer.util.security.RecoveringEncryptedSharedPreferences
 
 class WebDavStorage(private val context: Context) {
-    private val encryptedPrefs: SharedPreferences = openEncryptedPrefsWithRecovery()
+    private val encryptedPrefs = RecoveringEncryptedSharedPreferences(
+        context = context,
+        storageName = PREFS_NAME,
+        logTag = "NERI-WebDavStorage"
+    )
 
     companion object {
         private const val PREFS_NAME = "webdav_secure_prefs"
@@ -23,45 +24,6 @@ class WebDavStorage(private val context: Context) {
         private const val KEY_LAST_SYNC_TIME = "last_sync_time"
         private const val KEY_AUTO_SYNC_ENABLED = "auto_sync_enabled"
         private const val KEY_LAST_REMOTE_FINGERPRINT = "last_remote_fingerprint"
-    }
-
-    private fun openEncryptedPrefsWithRecovery(): SharedPreferences {
-        return runCatching {
-            createEncryptedPrefs()
-        }.getOrElse { error ->
-            NPLogger.w(
-                "NERI-WebDavStorage",
-                "Failed to open WebDAV secure prefs, clearing storage and recreating.",
-                error
-            )
-            clearEncryptedStorage()
-            createEncryptedPrefs()
-        }
-    }
-
-    private fun createEncryptedPrefs(): SharedPreferences {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        return EncryptedSharedPreferences.create(
-            context,
-            PREFS_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
-
-    private fun clearEncryptedStorage() {
-        runCatching {
-            context.deleteSharedPreferences(PREFS_NAME)
-        }.onFailure { error ->
-            NPLogger.w(
-                "NERI-WebDavStorage",
-                "Failed to delete corrupted WebDAV secure prefs file.",
-                error
-            )
-        }
     }
 
     fun saveConfiguration(
@@ -112,7 +74,8 @@ class WebDavStorage(private val context: Context) {
         encryptedPrefs.getString(KEY_LAST_REMOTE_FINGERPRINT, null)
 
     fun isConfigured(): Boolean {
-        return !getServerUrl().isNullOrBlank() &&
+        return encryptedPrefs.isDurable &&
+            !getServerUrl().isNullOrBlank() &&
             !getUsername().isNullOrBlank() &&
             !getPassword().isNullOrBlank()
     }
