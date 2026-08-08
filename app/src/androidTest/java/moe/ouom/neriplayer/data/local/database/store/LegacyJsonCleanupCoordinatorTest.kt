@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomStore
 import moe.ouom.neriplayer.core.player.persistence.PlaybackQueueRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -35,9 +36,14 @@ class LegacyJsonCleanupCoordinatorTest {
                 database = database,
                 key = PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
             )
+            setRoomPrimary(
+                database = database,
+                key = ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY
+            )
 
             val eligibleStatsFile = writeLegacyFile(context, "playback_stats_counters.json")
             val eligibleQueueFile = writeLegacyFile(context, "last_playlist.json")
+            val eligibleSnapshotFile = writeLegacyFile(context, "managed_download_snapshot_v1.json")
             val unrelatedFile = writeLegacyFile(context, "keep_me.json")
 
             val coordinator = LegacyJsonCleanupCoordinator(context, database)
@@ -47,6 +53,7 @@ class LegacyJsonCleanupCoordinatorTest {
             assertEquals(LegacyJsonCleanupStatus.COMPLETED, result.status)
             assertFalse(eligibleStatsFile.exists())
             assertFalse(eligibleQueueFile.exists())
+            assertFalse(eligibleSnapshotFile.exists())
             assertTrue(unrelatedFile.exists())
 
             val audit = database.syncMetadataDao().getMigrationMetadata(
@@ -62,6 +69,7 @@ class LegacyJsonCleanupCoordinatorTest {
                 context,
                 "playback_stats_counters.json",
                 "last_playlist.json",
+                "managed_download_snapshot_v1.json",
                 "keep_me.json"
             )
         }

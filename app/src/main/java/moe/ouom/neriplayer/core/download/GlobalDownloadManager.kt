@@ -1572,7 +1572,7 @@ object GlobalDownloadManager {
             downloadedSongMetadataRevision.incrementAndGet()
             val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
                 context = context,
-                restoreFromDisk = false
+                restorePersisted = false
             )?.takeIf { cachedSnapshot ->
                 cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.reference) ||
                     cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.mediaUri)
@@ -1957,7 +1957,7 @@ object GlobalDownloadManager {
 
                 val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
                     context = appContext,
-                    restoreFromDisk = false
+                    restorePersisted = false
                 )
                 val storedAudio = snapshot?.audioEntriesByLookupKey?.get(playbackReference)
                 val playbackUri = storedAudio?.playbackUri
@@ -2776,7 +2776,7 @@ object GlobalDownloadManager {
         val reference = resolveDownloadedSongPlaybackReference(downloadedSong) ?: return null
         val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
             context = context,
-            restoreFromDisk = false
+            restorePersisted = false
         )
         if (!shouldTrustFastDownloadedSongCatalogHit(reference, snapshot?.knownReferences)) {
             NPLogger.w(

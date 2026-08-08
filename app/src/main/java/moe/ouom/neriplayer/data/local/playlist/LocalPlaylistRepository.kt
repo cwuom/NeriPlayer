@@ -97,6 +97,14 @@ data class LocalPlaylistDeleteResult(
     val index: Int
 )
 
+internal fun shouldRewriteLegacyPlaylistsAfterInitialLoad(
+    migrationRequired: Boolean,
+    allowMigrationWrite: Boolean,
+    roomPromotedDuringLoad: Boolean
+): Boolean {
+    return migrationRequired && allowMigrationWrite && !roomPromotedDuringLoad
+}
+
 class LocalPlaylistRepository private constructor(
     private val context: Context,
     file: File = File(context.filesDir, "local_playlists.json"),
@@ -241,6 +249,7 @@ class LocalPlaylistRepository private constructor(
         val committedDomainDigest = LocalPlaylistRoomStore.domainDigest(committedPlaylists)
         recoverPendingSyncMutation(committedDomainDigest)
 
+        var roomPromotedDuringLoad = false
         if (roomStorageEnabled && roomStore != null) {
             val activeRoomStore = roomStore
             val imported = runCatching {
@@ -265,11 +274,18 @@ class LocalPlaylistRepository private constructor(
                     "Room mapper is not equivalent; keep legacy playlist storage"
                 )
             } else if (imported?.status == LocalPlaylistRoomShadowImportStatus.IMPORTED) {
+                roomPromotedDuringLoad = true
                 LegacyJsonCleanupScheduler.schedule(context, "local-playlist-import")
             }
         }
 
-        if (loadResult.migrationRequired && loadResult.allowMigrationWrite) {
+        if (
+            shouldRewriteLegacyPlaylistsAfterInitialLoad(
+                migrationRequired = loadResult.migrationRequired,
+                allowMigrationWrite = loadResult.allowMigrationWrite,
+                roomPromotedDuringLoad = roomPromotedDuringLoad
+            )
+        ) {
             runCatching {
                 persistToDisk(loadResult.playlists)
             }.onFailure { error ->

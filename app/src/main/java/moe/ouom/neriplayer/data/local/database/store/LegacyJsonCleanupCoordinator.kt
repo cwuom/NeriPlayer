@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.local.database.store
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogRoomStore
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
@@ -219,6 +220,10 @@ internal class LegacyJsonCleanupCoordinator(
             TargetDefinition(
                 "downloaded_song_catalog_v3.json",
                 DownloadedSongCatalogRoomStore.CUTOVER_STATE_METADATA_KEY
+            ),
+            TargetDefinition(
+                "managed_download_snapshot_v1.json",
+                ManagedDownloadSnapshotRoomStore.CUTOVER_STATE_METADATA_KEY
             )
         )
     }

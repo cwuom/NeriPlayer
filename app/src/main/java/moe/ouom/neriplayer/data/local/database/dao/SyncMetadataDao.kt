@@ -48,4 +48,7 @@ internal interface SyncMetadataDao {
 
     @Query("SELECT * FROM migration_metadata WHERE key = :key")
     suspend fun getMigrationMetadata(key: String): MigrationMetadataEntity?
+
+    @Query("DELETE FROM migration_metadata WHERE key IN (:keys)")
+    suspend fun deleteMigrationMetadata(keys: List<String>)
 }

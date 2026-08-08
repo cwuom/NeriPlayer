@@ -395,6 +395,24 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `room promotion suppresses legacy playlist normalization rewrite`() {
+        assertFalse(
+            shouldRewriteLegacyPlaylistsAfterInitialLoad(
+                migrationRequired = true,
+                allowMigrationWrite = true,
+                roomPromotedDuringLoad = true
+            )
+        )
+        assertTrue(
+            shouldRewriteLegacyPlaylistsAfterInitialLoad(
+                migrationRequired = true,
+                allowMigrationWrite = true,
+                roomPromotedDuringLoad = false
+            )
+        )
+    }
+
+    @Test
     fun `adding songs to regular playlist places newest songs first`() = runTest {
         val playlistId = 45L
         val repository = LocalPlaylistRepository.createForTest(

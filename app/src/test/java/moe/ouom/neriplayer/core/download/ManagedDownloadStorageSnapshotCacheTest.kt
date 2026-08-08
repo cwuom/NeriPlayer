@@ -7,6 +7,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
 
 class ManagedDownloadStorageSnapshotCacheTest {
@@ -111,6 +112,70 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals(metadata, restored?.second?.metadataByAudioName?.get("Artist - Song.mp3"))
         assertEquals(coverEntry, restored?.second?.coverEntriesByName?.get(coverEntry.name))
         assertEquals(lyricEntry, restored?.second?.lyricEntriesByName?.get(lyricEntry.name))
+    }
+
+    @Test
+    fun `room snapshot mapper round trips entries and indexes`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Room Song.flac",
+            reference = "/music/Artist - Room Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Room%20Song.flac",
+            localFilePath = "/music/Artist - Room Song.flac",
+            sizeBytes = 8192L,
+            lastModifiedMs = 123L
+        )
+        val metadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Room Song.flac.npmeta.json",
+            reference = "/music/Artist - Room Song.flac.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Room%20Song.flac.npmeta.json",
+            localFilePath = "/music/Artist - Room Song.flac.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 124L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "room-stable",
+            songId = 44L,
+            identityAlbum = "NeteaseAlbum",
+            name = "Room Song",
+            artist = "Artist",
+            mediaUri = "https://example.com/room.flac",
+            channelId = "netease",
+            audioId = "44",
+            durationMs = 240_000L,
+            downloadFinalized = true
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(audioEntry.reference to audioEntry),
+            metadataEntriesByAudioName = mapOf(audioEntry.name to metadataEntry),
+            metadataByAudioName = mapOf(audioEntry.name to metadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf("room-stable" to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(44L to listOf(audioEntry)),
+            audioEntriesByMediaUri = mapOf("https://example.com/room.flac" to listOf(audioEntry)),
+            audioEntriesByRemoteTrackKey = mapOf("netease|44|" to listOf(audioEntry)),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = setOf(audioEntry.reference, metadataEntry.reference)
+        )
+        val entries = ManagedDownloadSnapshotRoomMapper.toEntryEntities("root", snapshot)
+        val restored = ManagedDownloadSnapshotRoomMapper.toSnapshot(
+            audioEntries = entries.filter {
+                it.bucket == ManagedDownloadSnapshotRoomMapper.BUCKET_AUDIO
+            },
+            metadataEntries = entries.filter {
+                it.bucket == ManagedDownloadSnapshotRoomMapper.BUCKET_METADATA
+            },
+            metadata = ManagedDownloadSnapshotRoomMapper.toMetadataEntities("root", snapshot),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(snapshot.audioEntries, restored.audioEntries)
+        assertEquals(metadata, restored.metadataByAudioName[audioEntry.name])
+        assertEquals(listOf(audioEntry), restored.audioEntriesByStableKey["room-stable"])
+        assertEquals(listOf(audioEntry), restored.audioEntriesByRemoteTrackKey["netease|44|"])
+        assertTrue(restored.knownReferences.contains(metadataEntry.reference))
     }
 
     @Test
