@@ -81,28 +81,7 @@ internal class LegacyJsonCleanupCoordinator(
         }
 
         val freshPlan = buildPlan()
-        if (freshPlan.blockedTargets.isNotEmpty()) {
-            val blockedFiles = freshPlan.blockedTargets.map(LegacyJsonCleanupTarget::fileName)
-            database.syncMetadataDao().upsertMigrationMetadata(
-                MigrationMetadataEntity(
-                    key = CLEANUP_AUDIT_METADATA_KEY,
-                    value = buildAuditValue(
-                        status = LegacyJsonCleanupStatus.BLOCKED,
-                        deleted = emptyList(),
-                        failed = emptyList(),
-                        blocked = blockedFiles
-                    ),
-                    updatedAt = System.currentTimeMillis()
-                )
-            )
-            return LegacyJsonCleanupResult(
-                status = LegacyJsonCleanupStatus.BLOCKED,
-                deletedFiles = emptyList(),
-                failedFiles = emptyList(),
-                blockedFiles = blockedFiles
-            )
-        }
-
+        val blockedFiles = freshPlan.blockedTargets.map(LegacyJsonCleanupTarget::fileName)
         val deleted = mutableListOf<String>()
         val failed = mutableListOf<String>()
         freshPlan.existingEligibleTargets.forEach { target ->
@@ -113,15 +92,15 @@ internal class LegacyJsonCleanupCoordinator(
                 failed += target.fileName
             }
         }
-        val status = if (failed.isEmpty()) {
-            LegacyJsonCleanupStatus.COMPLETED
-        } else {
-            LegacyJsonCleanupStatus.PARTIAL_FAILURE
+        val status = when {
+            failed.isNotEmpty() -> LegacyJsonCleanupStatus.PARTIAL_FAILURE
+            blockedFiles.isNotEmpty() -> LegacyJsonCleanupStatus.BLOCKED
+            else -> LegacyJsonCleanupStatus.COMPLETED
         }
         database.syncMetadataDao().upsertMigrationMetadata(
             MigrationMetadataEntity(
                 key = CLEANUP_AUDIT_METADATA_KEY,
-                value = buildAuditValue(status, deleted, failed, emptyList()),
+                value = buildAuditValue(status, deleted, failed, blockedFiles),
                 updatedAt = System.currentTimeMillis()
             )
         )
@@ -129,7 +108,7 @@ internal class LegacyJsonCleanupCoordinator(
             status = status,
             deletedFiles = deleted,
             failedFiles = failed,
-            blockedFiles = emptyList()
+            blockedFiles = blockedFiles
         )
     }
 

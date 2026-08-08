@@ -445,6 +445,7 @@ object AppContainer {
         initialized = true
         AudioDownloadManager.initialize(app)
         warmLocalPlaylistRepository()
+        warmBiliVideoSkipRepository()
         primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
@@ -461,6 +462,16 @@ object AppContainer {
                 }
             }.onFailure { error ->
                 NPLogger.e("AppContainer", "Failed to preload local playlists", error)
+            }
+        }
+    }
+
+    private fun warmBiliVideoSkipRepository() {
+        scope.launch {
+            runCatching {
+                BiliVideoSkipRepository.getInstance(application)
+            }.onFailure { error ->
+                NPLogger.e("AppContainer", "Failed to preload Bili video skip rules", error)
             }
         }
     }

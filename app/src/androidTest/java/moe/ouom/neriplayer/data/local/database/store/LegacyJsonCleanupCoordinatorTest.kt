@@ -68,7 +68,7 @@ class LegacyJsonCleanupCoordinatorTest {
     }
 
     @Test
-    fun cleanupBlocksWhenATargetHasNotPromotedToRoomYet() = runTest {
+    fun cleanupDeletesEligibleFilesEvenWhenOtherTargetsAreBlocked() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -90,7 +90,7 @@ class LegacyJsonCleanupCoordinatorTest {
 
             assertEquals(LegacyJsonCleanupStatus.BLOCKED, result.status)
             assertTrue(result.blockedFiles.contains("last_playback_state.json"))
-            assertTrue(eligibleStatsFile.exists())
+            assertFalse(eligibleStatsFile.exists())
             assertTrue(blockedQueueFile.exists())
 
             val audit = database.syncMetadataDao().getMigrationMetadata(
@@ -98,6 +98,7 @@ class LegacyJsonCleanupCoordinatorTest {
             )
             assertNotNull(audit)
             assertTrue(audit?.value?.contains("status=BLOCKED") == true)
+            assertTrue(audit?.value?.contains("playback_stats_counters.json") == true)
             assertTrue(audit?.value?.contains("last_playback_state.json") == true)
         } finally {
             database.close()

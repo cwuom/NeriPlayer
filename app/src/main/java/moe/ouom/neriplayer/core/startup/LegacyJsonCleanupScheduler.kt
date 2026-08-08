@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.startup
 
 import android.content.Context
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -12,6 +13,7 @@ import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
 internal object LegacyJsonCleanupScheduler {
     private const val TAG = "NERI-LegacyJsonCleanup"
     private val running = AtomicBoolean(false)
+    private val pendingReason = AtomicReference<String?>(null)
     private val retryDelaysMs = longArrayOf(
         0L,
         1_500L,
@@ -24,6 +26,7 @@ internal object LegacyJsonCleanupScheduler {
     fun schedule(context: Context, reason: String) {
         val appContext = context.applicationContext
         if (!running.compareAndSet(false, true)) {
+            pendingReason.set(reason)
             return
         }
 
@@ -45,7 +48,8 @@ internal object LegacyJsonCleanupScheduler {
                     if (lastResult.status == LegacyJsonCleanupStatus.COMPLETED) {
                         NPLogger.d(
                             TAG,
-                            "Legacy JSON cleanup completed: reason=$reason, deleted=${lastResult.deletedFiles.size}"
+                            "Legacy JSON cleanup completed: reason=$reason, " +
+                                "deleted=${lastResult.deletedFiles.size}"
                         )
                         return@launchBackgroundIo
                     }
@@ -55,11 +59,15 @@ internal object LegacyJsonCleanupScheduler {
                     NPLogger.d(
                         TAG,
                         "Legacy JSON cleanup pending: reason=$reason, status=${result.status}, " +
-                            "blocked=${result.blockedFiles.size}, failed=${result.failedFiles.size}"
+                            "deleted=${result.deletedFiles.size}, " +
+                            "blocked=${result.blockedFiles}, failed=${result.failedFiles}"
                     )
                 }
             } finally {
                 running.set(false)
+                pendingReason.getAndSet(null)?.let { nextReason ->
+                    schedule(appContext, nextReason)
+                }
             }
         }
     }
