@@ -123,6 +123,12 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    sourceSets {
+        getByName("androidTest") {
+            assets.directories.add("schemas")
+        }
+    }
+
     packaging {
         dex {
             // minSdk 28 后 AGP 默认会把 dex 直接存储，恢复 legacy packaging 可显著降低 APK 体积
