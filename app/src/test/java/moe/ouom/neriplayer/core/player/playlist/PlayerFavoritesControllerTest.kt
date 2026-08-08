@@ -7,9 +7,12 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -19,6 +22,16 @@ import org.mockito.Mockito.`when`
 class PlayerFavoritesControllerTest {
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Before
+    fun setUpCoverMapper() {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+    }
+
+    @After
+    fun tearDownCoverMapper() {
+        CoverUrlMapper.installForTest(null)
+    }
 
     @Test
     fun `optimistic favorite readd projects downloaded copy to remote source`() {

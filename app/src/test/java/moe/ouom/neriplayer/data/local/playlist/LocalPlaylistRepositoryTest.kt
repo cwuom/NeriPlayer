@@ -17,14 +17,17 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -40,6 +43,16 @@ class LocalPlaylistRepositoryTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Before
+    fun setUpCoverMapper() {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+    }
+
+    @After
+    fun tearDownCoverMapper() {
+        CoverUrlMapper.installForTest(null)
+    }
 
     @Test
     fun `async initial load does not publish or overwrite before persisted state is ready`() = runTest {

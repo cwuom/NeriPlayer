@@ -201,6 +201,10 @@ internal class LegacyJsonCleanupCoordinator(
                 "bili_video_skip_cutover_state"
             ),
             TargetDefinition(
+                "cover_url_mapping.json",
+                CoverUrlMappingRoomStore.CUTOVER_STATE_METADATA_KEY
+            ),
+            TargetDefinition(
                 "pending_download_queue_v1.json",
                 DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY
             ),

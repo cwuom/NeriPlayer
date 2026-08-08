@@ -66,6 +66,7 @@ import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheReposi
 import moe.ouom.neriplayer.data.playlist.usage.LocalPlaylistPlaybackStatsRepository
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.stats.PlaybackStatsRepository
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.listentogether.network.http.ListenTogetherApi
 import moe.ouom.neriplayer.listentogether.ListenTogetherSessionManager
@@ -446,6 +447,7 @@ object AppContainer {
         AudioDownloadManager.initialize(app)
         warmLocalPlaylistRepository()
         warmBiliVideoSkipRepository()
+        warmCoverUrlMapper()
         primeProxySetting()
         startCookieObserver()
         startYouTubeAuthObserver()
@@ -472,6 +474,16 @@ object AppContainer {
                 BiliVideoSkipRepository.getInstance(application)
             }.onFailure { error ->
                 NPLogger.e("AppContainer", "Failed to preload Bili video skip rules", error)
+            }
+        }
+    }
+
+    private fun warmCoverUrlMapper() {
+        scope.launch {
+            runCatching {
+                CoverUrlMapper.getInstance(application)
+            }.onFailure { error ->
+                NPLogger.e("AppContainer", "Failed to preload cover URL mappings", error)
             }
         }
     }

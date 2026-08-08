@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.local.database.dao.TrafficStatsDao
 import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
+import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
@@ -44,6 +45,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
+import moe.ouom.neriplayer.data.local.database.entity.CoverUrlMappingEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadCancelledKeyEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
@@ -77,9 +79,10 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntit
         BiliVideoSkipDraftEntity::class,
         DownloadPendingQueueEntity::class,
         DownloadCancelledKeyEntity::class,
-        DownloadedSongCatalogEntity::class
+        DownloadedSongCatalogEntity::class,
+        CoverUrlMappingEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -106,6 +109,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun downloadRecoveryDao(): DownloadRecoveryDao
 
     abstract fun downloadedSongCatalogDao(): DownloadedSongCatalogDao
+
+    abstract fun coverUrlMappingDao(): CoverUrlMappingDao
 
     companion object {
         const val DATABASE_NAME = "neri_user_data.db"
@@ -137,7 +142,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_7_8,
                 MIGRATION_8_9,
                 MIGRATION_9_10,
-                MIGRATION_10_11
+                MIGRATION_10_11,
+                MIGRATION_11_12
             ).build()
         }
 
@@ -826,6 +832,28 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     CREATE INDEX IF NOT EXISTS
                     `index_downloaded_song_catalog_stable_key`
                     ON `downloaded_song_catalog` (`stable_key`)
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_11_12: Migration = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `cover_url_mapping` (
+                        `local_url` TEXT NOT NULL,
+                        `network_url` TEXT NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`local_url`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_cover_url_mapping_updated_at`
+                    ON `cover_url_mapping` (`updated_at` DESC)
                     """.trimIndent()
                 )
             }

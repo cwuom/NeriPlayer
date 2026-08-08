@@ -24,8 +24,8 @@ class FloatingLyricsLongPressDragControllerTest {
             touchSlopPx = 12f,
             initialPositionProvider = { Point(0, 0) },
             onDragStarted = { dragStartCount += 1 },
-            onDragPositionChanged = { _, _ -> Unit },
-            onDragEnded = { _, _ -> Unit }
+            onDragPositionChanged = { _, _ -> },
+            onDragEnded = { _, _ -> }
         )
         val down = MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, 16f, 24f, 0)
         val up = MotionEvent.obtain(0L, 8L, MotionEvent.ACTION_UP, 16f, 24f, 0)
