@@ -333,8 +333,9 @@ Current positioning:
    ```bash
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
-5. On first launch, read the disclaimer and complete onboarding. Android 13+
-   devices will request notification permission.
+5. On first launch, read the disclaimer and complete onboarding. The flow explains
+   notification and local-music permissions, and requests them only after you choose
+   to allow them; either can be skipped.
 6. For debugging tools, tap the **version number** 7 times in Settings. A
    standalone `Debug` tab will appear in the bottom bar.
 
@@ -402,9 +403,10 @@ For release build and signing details, see
   remains off during Listen Together to avoid room-state drift.
 - 🔁 **NetEase playback fallback**:
   when a NetEase song is unavailable, has no playable result, or only returns a
-  preview clip, the player first tries lower quality and can then match a
-  Bilibili fallback candidate by title, artist, and duration. When enabled, it can
-  also match a readable local audio file by stable metadata.
+  preview clip, the player first tries lower quality. Bilibili and local-audio
+  fallback are disabled by default and are attempted only after the user enables
+  them; enabling can match a Bilibili candidate by title, artist, and duration or
+  a readable local audio file by stable metadata.
 - 🧯 **Playback failure fallback**:
   playback errors first try refreshing the active playback URL. Bilibili stream
   resolution retries missing DASH audio and can fall back to html5/mp4 progressive

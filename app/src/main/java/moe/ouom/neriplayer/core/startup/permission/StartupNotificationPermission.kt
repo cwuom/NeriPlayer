@@ -6,7 +6,7 @@ internal object StartupNotificationPermission {
     val permission: String
         get() = POST_NOTIFICATIONS_PERMISSION
 
-    fun shouldRequest(sdkInt: Int = Build.VERSION.SDK_INT): Boolean {
+    fun isSupported(sdkInt: Int = Build.VERSION.SDK_INT): Boolean {
         return sdkInt >= Build.VERSION_CODES.TIRAMISU
     }
 

@@ -29,6 +29,14 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+internal fun isAdvancedGlassNavigationOwnerActive(
+    requiresContentBackdrop: Boolean,
+    activeNavigationOwners: Set<Any>?,
+    navigationOwner: Any?
+): Boolean = requiresContentBackdrop ||
+    activeNavigationOwners == null ||
+    navigationOwner in activeNavigationOwners
+
 @Composable
 internal fun AdvancedGlassSurface(
     role: AdvancedGlassRole,
@@ -64,9 +72,11 @@ internal fun AdvancedGlassSurface(
         backdrops.background.positionInWindow.isSpecified &&
             (!requiresContentBackdrop || backdrops.content.positionInWindow.isSpecified)
     } == true
-    val belongsToActiveNavigationScreen = requiresContentBackdrop ||
-        activeNavigationOwners == null ||
-        navigationOwner in activeNavigationOwners
+    val belongsToActiveNavigationScreen = isAdvancedGlassNavigationOwnerActive(
+        requiresContentBackdrop = requiresContentBackdrop,
+        activeNavigationOwners = activeNavigationOwners,
+        navigationOwner = navigationOwner
+    )
     val canRenderGlass = enabled && sceneActive && backdropsReady &&
         canSampleAdvancedGlassBackdrop(controller, glassDepth, role)
     val glassEnabled = canRenderGlass && belongsToActiveNavigationScreen
