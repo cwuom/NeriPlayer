@@ -118,6 +118,49 @@ class LegacyJsonCleanupCoordinatorTest {
         }
     }
 
+    @Test
+    fun cleanupKeepsLegacyJsonFallbackFilesInMixedUpgradeState() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        try {
+            setRoomPrimary(
+                database = database,
+                key = LocalPlaylistRoomStore.CUTOVER_STATE_METADATA_KEY
+            )
+            setLegacyJsonPrimary(
+                database = database,
+                key = PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
+            )
+
+            val promotedPlaylistFile = writeLegacyFile(context, "local_playlists.json")
+            val fallbackQueueFile = writeLegacyFile(context, "last_playlist.json")
+            val missingMarkerHistoryFile = writeLegacyFile(context, "play_history.json")
+
+            val coordinator = LegacyJsonCleanupCoordinator(context, database)
+            val plan = coordinator.buildPlan()
+            val result = coordinator.execute(plan, confirmed = true)
+
+            assertEquals(LegacyJsonCleanupStatus.BLOCKED, result.status)
+            assertFalse(promotedPlaylistFile.exists())
+            assertTrue(fallbackQueueFile.exists())
+            assertTrue(missingMarkerHistoryFile.exists())
+            assertTrue(result.blockedFiles.contains("last_playlist.json"))
+            assertTrue(result.blockedFiles.contains("play_history.json"))
+        } finally {
+            database.close()
+            cleanupFiles(
+                context,
+                "local_playlists.json",
+                "last_playlist.json",
+                "play_history.json"
+            )
+        }
+    }
+
     private suspend fun setRoomPrimary(
         database: NeriUserDataDatabase,
         key: String
@@ -126,6 +169,19 @@ class LegacyJsonCleanupCoordinatorTest {
             MigrationMetadataEntity(
                 key = key,
                 value = LegacyJsonCleanupCoordinator.ROOM_PRIMARY_STATE,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    private suspend fun setLegacyJsonPrimary(
+        database: NeriUserDataDatabase,
+        key: String
+    ) {
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = key,
+                value = PlaybackQueueRoomStore.LEGACY_JSON_STATE,
                 updatedAt = System.currentTimeMillis()
             )
         )

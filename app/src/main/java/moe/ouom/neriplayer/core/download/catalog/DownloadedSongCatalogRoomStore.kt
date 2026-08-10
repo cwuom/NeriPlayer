@@ -11,6 +11,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 
 internal class DownloadedSongCatalogRoomStore(
     private val context: Context,
@@ -18,7 +19,7 @@ internal class DownloadedSongCatalogRoomStore(
     private val cacheFileName: String,
     private val snapshotCacheKeyProvider: (Context) -> String,
     private val loggerTag: String
-) {
+) : DownloadedSongCatalogPersistenceStore {
     suspend fun restore(): List<DownloadedSong>? {
         globalMutex.withLock {
             val rootKey = snapshotCacheKeyProvider(context)
@@ -41,12 +42,24 @@ internal class DownloadedSongCatalogRoomStore(
     }
 
     suspend fun persist(songs: List<DownloadedSong>) {
+        persistCatalog(songs)
+    }
+
+    override suspend fun persistCatalog(songs: List<DownloadedSong>) {
         globalMutex.withLock {
             val rootKey = snapshotCacheKeyProvider(context)
             database.withTransaction {
                 replaceCatalog(rootKey, songs)
                 markRoomPrimary(rootKey)
             }
+        }
+    }
+
+    override suspend fun persistLegacyFallback(songs: List<DownloadedSong>) {
+        globalMutex.withLock {
+            val rootKey = snapshotCacheKeyProvider(context)
+            writeLegacyCatalog(rootKey, songs)
+            markLegacyJsonPrimary(rootKey)
         }
     }
 
@@ -93,6 +106,33 @@ internal class DownloadedSongCatalogRoomStore(
         )
     }
 
+    private suspend fun markLegacyJsonPrimary(rootKey: String) {
+        val nowMs = System.currentTimeMillis()
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = CUTOVER_STATE_METADATA_KEY,
+                value = LEGACY_JSON_STATE,
+                updatedAt = nowMs
+            )
+        )
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = ROOT_KEY_METADATA_KEY,
+                value = rootKey,
+                updatedAt = nowMs
+            )
+        )
+    }
+
+    private fun writeLegacyCatalog(rootKey: String, songs: List<DownloadedSong>) {
+        File(context.filesDir, cacheFileName).writeTextAtomically(
+            serializeDownloadedSongsCatalog(
+                cacheKey = rootKey,
+                songs = songs
+            )
+        )
+    }
+
     private fun readLegacyCatalog(rootKey: String): List<DownloadedSong>? {
         val file = File(context.filesDir, cacheFileName)
         if (!file.exists()) {
@@ -121,6 +161,7 @@ internal class DownloadedSongCatalogRoomStore(
         const val CUTOVER_STATE_METADATA_KEY = "downloaded_song_catalog_cutover_state"
         const val ROOT_KEY_METADATA_KEY = "downloaded_song_catalog_root_key"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        const val LEGACY_JSON_STATE = "legacy_json"
         private val globalMutex = Mutex()
     }
 }

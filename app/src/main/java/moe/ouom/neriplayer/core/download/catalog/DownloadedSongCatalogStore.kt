@@ -22,14 +22,24 @@ internal class DownloadedSongCatalogStore(
         }.getOrNull()
     }
 
-    fun persist(context: Context, songs: List<DownloadedSong>) {
-        runCatching {
+    fun persist(context: Context, songs: List<DownloadedSong>): Boolean {
+        return runCatching {
             runBlocking(Dispatchers.IO) {
-                roomStore(context).persist(songs)
+                persistDownloadedSongCatalogWithFallback(
+                    store = roomStore(context),
+                    songs = songs,
+                    onRoomFailure = { error ->
+                        NPLogger.e(
+                            loggerTag,
+                            "写入 Room 下载歌曲目录失败，降级写旧 JSON",
+                            error
+                        )
+                    }
+                )
             }
         }.onFailure {
             NPLogger.e(loggerTag, "写入下载歌曲目录失败", it)
-        }
+        }.isSuccess
     }
 
     private fun roomStore(context: Context): DownloadedSongCatalogRoomStore {
@@ -41,5 +51,31 @@ internal class DownloadedSongCatalogStore(
             snapshotCacheKeyProvider = snapshotCacheKeyProvider,
             loggerTag = loggerTag
         )
+    }
+}
+
+internal enum class DownloadedSongCatalogPersistTarget {
+    ROOM,
+    LEGACY_JSON
+}
+
+internal interface DownloadedSongCatalogPersistenceStore {
+    suspend fun persistCatalog(songs: List<DownloadedSong>)
+
+    suspend fun persistLegacyFallback(songs: List<DownloadedSong>)
+}
+
+internal suspend fun persistDownloadedSongCatalogWithFallback(
+    store: DownloadedSongCatalogPersistenceStore,
+    songs: List<DownloadedSong>,
+    onRoomFailure: (Throwable) -> Unit = {}
+): DownloadedSongCatalogPersistTarget {
+    return runCatching {
+        store.persistCatalog(songs)
+        DownloadedSongCatalogPersistTarget.ROOM
+    }.getOrElse { error ->
+        onRoomFailure(error)
+        store.persistLegacyFallback(songs)
+        DownloadedSongCatalogPersistTarget.LEGACY_JSON
     }
 }

@@ -152,7 +152,7 @@ internal class ManagedDownloadSnapshotCacheStore(
             snapshotPersistJob = null
         }
         val appContext = context?.applicationContext ?: return
-        runBlocking {
+        scope.launch {
             ManagedDownloadSnapshotRoomStore(appContext).clear()
         }
     }

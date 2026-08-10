@@ -13,9 +13,25 @@ import moe.ouom.neriplayer.data.local.database.entity.PLAYBACK_QUEUE_STATE_ID
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
 
+internal interface PlaybackQueueStateStore {
+    suspend fun replaceSnapshot(
+        state: PersistedState,
+        now: Long
+    )
+
+    suspend fun updatePlaybackState(
+        state: PersistedPlaybackState,
+        now: Long
+    )
+
+    suspend fun clear(now: Long)
+
+    suspend fun markLegacyJsonPrimary(now: Long)
+}
+
 internal class PlaybackQueueRoomStore(
     private val database: NeriUserDataDatabase
-) {
+) : PlaybackQueueStateStore {
     suspend fun isRoomPrimary(): Boolean {
         return database.syncMetadataDao()
             .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
@@ -29,9 +45,13 @@ internal class PlaybackQueueRoomStore(
         return readState()
     }
 
-    suspend fun replaceSnapshot(
+    suspend fun replaceSnapshot(state: PersistedState) {
+        replaceSnapshot(state, System.currentTimeMillis())
+    }
+
+    override suspend fun replaceSnapshot(
         state: PersistedState,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.playbackQueueDao()
@@ -48,9 +68,13 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
-    suspend fun updatePlaybackState(
+    suspend fun updatePlaybackState(state: PersistedPlaybackState) {
+        updatePlaybackState(state, System.currentTimeMillis())
+    }
+
+    override suspend fun updatePlaybackState(
         state: PersistedPlaybackState,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.playbackQueueDao()
@@ -66,12 +90,30 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
-    suspend fun clear(now: Long = System.currentTimeMillis()) {
+    suspend fun clear() {
+        clear(System.currentTimeMillis())
+    }
+
+    override suspend fun clear(now: Long) {
         database.withTransaction {
             database.playbackQueueDao().deleteState()
             database.playbackQueueDao().deleteSongs()
             markRoomPrimary(now)
         }
+    }
+
+    suspend fun markLegacyJsonPrimary() {
+        markLegacyJsonPrimary(System.currentTimeMillis())
+    }
+
+    override suspend fun markLegacyJsonPrimary(now: Long) {
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = CUTOVER_STATE_METADATA_KEY,
+                value = LEGACY_JSON_STATE,
+                updatedAt = now
+            )
+        )
     }
 
     private suspend fun readState(): PersistedState? {
@@ -110,6 +152,7 @@ internal class PlaybackQueueRoomStore(
     companion object {
         const val CUTOVER_STATE_METADATA_KEY = "playback_queue_cutover_state"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }
 
