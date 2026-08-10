@@ -96,7 +96,7 @@ internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
     }
     volumeFadeJob?.cancel()
     volumeFadeJob = null
-    if (resetToFull && isPlayerInitialized()) {
+    if (resetToFull && !isAudioRouteMuteSuppressed() && isPlayerInitialized()) {
         runPlayerActionOnMainThread {
             runCatching { player.volume = 1f }
         }
@@ -113,13 +113,26 @@ internal fun PlayerManager.cancelPendingPauseRequestImpl(resetVolumeToFull: Bool
     }
     pendingPauseJob?.cancel()
     pendingPauseJob = null
-    if (resetVolumeToFull && hadPendingPause && isPlayerInitialized()) {
+    if (
+        resetVolumeToFull &&
+        hadPendingPause &&
+        !isAudioRouteMuteSuppressed() &&
+        isPlayerInitialized()
+    ) {
         runPlayerActionOnMainThread {
             if (isPlayerInitialized()) {
                 player.volume = 1f
             }
         }
     }
+}
+
+private fun PlayerManager.isAudioRouteMuteSuppressed(): Boolean {
+    return audioRouteMuteRestoreVolume != null
+}
+
+private fun PlayerManager.volumeWhileAudioRouteMuted(volume: Float): Float {
+    return if (isAudioRouteMuteSuppressed()) 0f else volume
 }
 
 internal fun PlayerManager.clearAudioRouteMuteSuppression(reason: String) {
@@ -173,9 +186,12 @@ internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: S
 }
 
 internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
-    val useListenTogetherSafetyPause = shouldUseListenTogetherListenerSafetyPause()
-    if (useListenTogetherSafetyPause) {
-        markListenTogetherSafetyPausePendingResume()
+    if (shouldMuteListenTogetherListenerForAudioRouteLoss()) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "pauseForAudioRouteLoss(): keep Listen Together listener playing silently, reason=$reason, currentSong=${_currentSongFlow.value?.name}"
+        )
+        return
     }
     _playWhenReadyFlow.value = false
     _isPlayingFlow.value = false
@@ -185,11 +201,7 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
     syncPlaybackControlPlayingState()
     pauseImpl(
         forcePersist = false,
-        commandSource = if (useListenTogetherSafetyPause) {
-            PlaybackCommandSource.LOCAL_SAFETY
-        } else {
-            PlaybackCommandSource.LOCAL
-        },
+        commandSource = PlaybackCommandSource.LOCAL,
         allowFadeOut = false,
         preserveMutedVolume = true,
         debugReason = "audio_route_loss:$reason"
@@ -208,7 +220,7 @@ internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan)
         "preparePlayerForManagedStart: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
     )
     player.playWhenReady = false
-    player.volume = effectivePlan.initialVolume
+    player.volume = volumeWhileAudioRouteMuted(effectivePlan.initialVolume)
 }
 
 internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
@@ -284,11 +296,11 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
             return@runPlayerActionOnMainThread
         }
         applyAudioFocusPolicyOnMainThread()
-        player.volume = effectivePlan.initialVolume
+        player.volume = volumeWhileAudioRouteMuted(effectivePlan.initialVolume)
         player.playWhenReady = true
         player.play()
     }
-    if (!effectivePlan.useFadeIn) {
+    if (!effectivePlan.useFadeIn || isAudioRouteMuteSuppressed()) {
         return
     }
 
@@ -299,10 +311,12 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
         repeat(steps) { step ->
             delay(stepDelay)
             if (!isPlayerInitialized()) return@launch
-            player.volume = ((step + 1).toFloat() / steps).coerceAtMost(1f)
+            player.volume = volumeWhileAudioRouteMuted(
+                ((step + 1).toFloat() / steps).coerceAtMost(1f)
+            )
         }
         if (isPlayerInitialized()) {
-            player.volume = 1f
+            player.volume = volumeWhileAudioRouteMuted(1f)
         }
         volumeFadeJob = null
     }

@@ -283,6 +283,16 @@ internal fun shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
     }
 }
 
+internal fun shouldResumeSilentlyForListenTogetherNoisyPause(
+    playWhenReady: Boolean,
+    playWhenReadyChangeReason: Int,
+    muteListenTogetherListenerForAudioRouteLoss: Boolean
+): Boolean {
+    return !playWhenReady &&
+        muteListenTogetherListenerForAudioRouteLoss &&
+        playWhenReadyChangeReason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+}
+
 internal fun shouldPausePlaybackWhenToggling(
     resumePlaybackRequested: Boolean,
     pendingPauseJobActive: Boolean,

@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherContro
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
-import moe.ouom.neriplayer.listentogether.playback.shouldUseListenTogetherListenerSafetyPause
+import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -313,23 +313,23 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
-    fun `listener safety pause only applies when member control is disabled`() {
+    fun `listener audio route mute only applies when member control is disabled`() {
         assertTrue(
-            shouldUseListenTogetherListenerSafetyPause(
+            shouldMuteListenTogetherListenerForAudioRouteLoss(
                 listenTogetherActive = true,
                 isCurrentUserController = false,
                 allowMemberControl = false
             )
         )
         assertFalse(
-            shouldUseListenTogetherListenerSafetyPause(
+            shouldMuteListenTogetherListenerForAudioRouteLoss(
                 listenTogetherActive = true,
                 isCurrentUserController = true,
                 allowMemberControl = false
             )
         )
         assertFalse(
-            shouldUseListenTogetherListenerSafetyPause(
+            shouldMuteListenTogetherListenerForAudioRouteLoss(
                 listenTogetherActive = true,
                 isCurrentUserController = false,
                 allowMemberControl = true
