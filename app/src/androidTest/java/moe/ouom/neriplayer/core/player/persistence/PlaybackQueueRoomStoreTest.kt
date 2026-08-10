@@ -216,6 +216,34 @@ class PlaybackQueueRoomStoreTest {
     }
 
     @Test
+    fun restoredPlaybackStatePrefersNewerLegacyJsonWhenRoomMarkerStayedPrimary() {
+        val oldRoomState = PersistedState(
+            playlist = listOf(song(1L, "old-room")),
+            index = 0,
+            positionMs = 1_000L
+        )
+        val newerLegacyState = PersistedState(
+            playlist = listOf(song(2L, "newer-legacy")),
+            index = 0,
+            positionMs = 2_000L
+        )
+
+        val restored = selectRestoredPlaybackState(
+            roomPrimary = true,
+            roomSnapshot = PlaybackQueueRoomSnapshot(
+                state = oldRoomState,
+                updatedAt = 100L
+            ),
+            legacySnapshot = PlaybackQueueLegacySnapshot(
+                state = newerLegacyState,
+                updatedAt = 200L
+            )
+        )
+
+        assertEquals(newerLegacyState, restored)
+    }
+
+    @Test
     fun noOpPersistDoesNotClearNonEmptyQueue() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dir = File(context.cacheDir, "playback-queue-noop-${System.nanoTime()}")

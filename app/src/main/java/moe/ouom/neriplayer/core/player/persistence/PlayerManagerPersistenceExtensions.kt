@@ -207,6 +207,13 @@ internal class PlaybackQueueLegacyStore(
         playbackStateFile.writeTextAtomically(gson.toJson(playbackState))
     }
 
+    fun lastModified(): Long {
+        return maxOf(
+            stateFile.takeIf(File::exists)?.lastModified() ?: 0L,
+            playbackStateFile.takeIf(File::exists)?.lastModified() ?: 0L
+        )
+    }
+
     fun clear() {
         runCatching { stateFile.delete() }
         runCatching { playbackStateFile.delete() }
@@ -239,7 +246,11 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
             PlaybackQueuePersistTarget.ROOM
         }.getOrElse { error ->
             onRoomFailure(error)
-            legacyStore.clear()
+            legacyStore.write(
+                PersistedState(playlist = emptyList(), index = -1)
+                    .withPlaybackState(playbackState),
+                playbackState
+            )
             runCatching { roomStore.markLegacyJsonPrimary(now) }
                 .onFailure { markerError ->
                     onRoomFailure(markerError)
@@ -267,22 +278,46 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
     }
 }
 
-private fun readLegacyPlaybackState(
+internal data class PlaybackQueueLegacySnapshot(
+    val state: PersistedState,
+    val updatedAt: Long
+)
+
+private fun readLegacyPlaybackStateSnapshot(
     stateFile: File,
     playbackStateFile: File
-): PersistedState? {
+): PlaybackQueueLegacySnapshot? {
     return runCatching {
-        PlaybackQueueLegacyStore(
+        val legacyStore = PlaybackQueueLegacyStore(
             stateFile = stateFile,
             playbackStateFile = playbackStateFile,
             gson = PlayerManager.gson
-        ).read()
+        )
+        val state = legacyStore.read() ?: return@runCatching null
+        PlaybackQueueLegacySnapshot(
+            state = state,
+            updatedAt = legacyStore.lastModified()
+        )
     }.onFailure { error ->
         NPLogger.w(
             "NERI-PlayerManager",
             "Failed to read legacy playback state: ${error.message}"
         )
     }.getOrNull()
+}
+
+internal fun selectRestoredPlaybackState(
+    roomPrimary: Boolean,
+    roomSnapshot: PlaybackQueueRoomSnapshot?,
+    legacySnapshot: PlaybackQueueLegacySnapshot?
+): PersistedState? {
+    if (!roomPrimary || roomSnapshot == null) {
+        return legacySnapshot?.state
+    }
+    if (legacySnapshot != null && legacySnapshot.updatedAt >= roomSnapshot.updatedAt) {
+        return legacySnapshot.state
+    }
+    return roomSnapshot.state
 }
 
 private fun buildRestoredStateSnapshot(
@@ -380,7 +415,7 @@ internal suspend fun preloadRestoredStateSnapshot(
         val roomStore = PlaybackQueueRoomStore(
             NeriUserDataDatabase.getInstance(app.applicationContext)
         )
-        val roomRead = runCatching { roomStore.readIfRoomPrimary() }
+        val roomRead = runCatching { roomStore.readSnapshotIfRoomPrimary() }
             .onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
@@ -395,13 +430,30 @@ internal suspend fun preloadRestoredStateSnapshot(
                 )
             }
             .getOrDefault(false)
-        val data = if (roomPrimary && roomRead.getOrNull() != null) {
-            roomRead.getOrNull()
-        } else {
-            readLegacyPlaybackState(
+        val roomSnapshot = roomRead.getOrNull()
+        val legacySnapshot = if (!roomPrimary ||
+            roomSnapshot == null ||
+            PlaybackQueueLegacyStore(
+                stateFile = startupStateFile,
+                playbackStateFile = startupPlaybackStateFile,
+                gson = PlayerManager.gson
+            ).lastModified() >= roomSnapshot.updatedAt
+        ) {
+            readLegacyPlaybackStateSnapshot(
                 stateFile = startupStateFile,
                 playbackStateFile = startupPlaybackStateFile
-            )?.also { legacyData ->
+            )
+        } else {
+            null
+        }
+        val data = selectRestoredPlaybackState(
+            roomPrimary = roomPrimary,
+            roomSnapshot = roomSnapshot,
+            legacySnapshot = legacySnapshot
+        )
+        val selectedLegacySnapshot = legacySnapshot
+        if (data != null && selectedLegacySnapshot != null && data === selectedLegacySnapshot.state) {
+            selectedLegacySnapshot.state.also { legacyData ->
                 runCatching {
                     roomStore.replaceSnapshot(legacyData)
                 }.onFailure { error ->
@@ -446,7 +498,7 @@ private fun loadRestoredStateSnapshot(
                 }
                 .getOrDefault(false)
             val roomRead = if (roomPrimary) {
-                runCatching { roomStore.readIfRoomPrimary() }
+                runCatching { roomStore.readSnapshotIfRoomPrimary() }
                     .onFailure { error ->
                         NPLogger.w(
                             "NERI-PlayerManager",
@@ -456,13 +508,30 @@ private fun loadRestoredStateSnapshot(
             } else {
                 null
             }
-            if (roomPrimary && roomRead?.getOrNull() != null) {
-                roomRead.getOrNull()
-            } else {
-                readLegacyPlaybackState(
+            val roomSnapshot = roomRead?.getOrNull()
+            val legacySnapshot = if (!roomPrimary ||
+                roomSnapshot == null ||
+                PlaybackQueueLegacyStore(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile,
+                    gson = PlayerManager.gson
+                ).lastModified() >= roomSnapshot.updatedAt
+            ) {
+                readLegacyPlaybackStateSnapshot(
                     stateFile = stateFile,
                     playbackStateFile = playbackStateFile
-                )?.also { legacyData ->
+                )
+            } else {
+                null
+            }
+            val selected = selectRestoredPlaybackState(
+                roomPrimary = roomPrimary,
+                roomSnapshot = roomSnapshot,
+                legacySnapshot = legacySnapshot
+            )
+            val selectedLegacySnapshot = legacySnapshot
+            if (selected != null && selectedLegacySnapshot != null && selected === selectedLegacySnapshot.state) {
+                selectedLegacySnapshot.state.also { legacyData ->
                     runCatching {
                         roomStore.replaceSnapshot(legacyData)
                     }.onFailure { error ->
@@ -472,6 +541,8 @@ private fun loadRestoredStateSnapshot(
                         )
                     }
                 }
+            } else {
+                selected
             }
         } ?: return@runCatching null
         buildRestoredStateSnapshot(

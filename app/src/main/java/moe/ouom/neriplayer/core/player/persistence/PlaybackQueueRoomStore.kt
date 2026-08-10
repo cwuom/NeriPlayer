@@ -29,6 +29,11 @@ internal interface PlaybackQueueStateStore {
     suspend fun markLegacyJsonPrimary(now: Long)
 }
 
+internal data class PlaybackQueueRoomSnapshot(
+    val state: PersistedState,
+    val updatedAt: Long
+)
+
 internal class PlaybackQueueRoomStore(
     private val database: NeriUserDataDatabase
 ) : PlaybackQueueStateStore {
@@ -39,10 +44,14 @@ internal class PlaybackQueueRoomStore(
     }
 
     suspend fun readIfRoomPrimary(): PersistedState? {
+        return readSnapshotIfRoomPrimary()?.state
+    }
+
+    suspend fun readSnapshotIfRoomPrimary(): PlaybackQueueRoomSnapshot? {
         if (!isRoomPrimary()) {
             return null
         }
-        return readState()
+        return readSnapshot()
     }
 
     suspend fun replaceSnapshot(state: PersistedState) {
@@ -116,25 +125,29 @@ internal class PlaybackQueueRoomStore(
         )
     }
 
-    private suspend fun readState(): PersistedState? {
+    private suspend fun readSnapshot(): PlaybackQueueRoomSnapshot? {
         return database.withTransaction {
             val dao = database.playbackQueueDao()
             val state = dao.getState() ?: return@withTransaction null
-            PersistedState(
-                playlist = dao.getSongs(PLAYBACK_QUEUE_MAIN).map(PlaybackQueueSongEntity::toPersistedSong),
-                index = state.currentIndex,
-                mediaUrl = state.mediaUrl,
-                positionMs = state.positionMs,
-                shouldResumePlayback = state.shouldResumePlayback,
-                repeatMode = state.repeatMode,
-                shuffleEnabled = state.shuffleEnabled,
-                shuffleRestorePlaylist = if (state.shuffleEnabled == true) {
-                    dao.getSongs(PLAYBACK_QUEUE_SHUFFLE_RESTORE)
-                        .map(PlaybackQueueSongEntity::toPersistedSong)
-                } else {
-                    null
-                },
-                shuffleRestoreIndex = state.shuffleRestoreIndex
+            PlaybackQueueRoomSnapshot(
+                state = PersistedState(
+                    playlist = dao.getSongs(PLAYBACK_QUEUE_MAIN)
+                        .map(PlaybackQueueSongEntity::toPersistedSong),
+                    index = state.currentIndex,
+                    mediaUrl = state.mediaUrl,
+                    positionMs = state.positionMs,
+                    shouldResumePlayback = state.shouldResumePlayback,
+                    repeatMode = state.repeatMode,
+                    shuffleEnabled = state.shuffleEnabled,
+                    shuffleRestorePlaylist = if (state.shuffleEnabled == true) {
+                        dao.getSongs(PLAYBACK_QUEUE_SHUFFLE_RESTORE)
+                            .map(PlaybackQueueSongEntity::toPersistedSong)
+                    } else {
+                        null
+                    },
+                    shuffleRestoreIndex = state.shuffleRestoreIndex
+                ),
+                updatedAt = state.updatedAt
             )
         }
     }
