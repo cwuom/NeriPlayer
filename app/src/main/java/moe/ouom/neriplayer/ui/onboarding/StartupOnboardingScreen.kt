@@ -13,16 +13,9 @@ import android.view.ViewTreeObserver
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
@@ -231,7 +224,9 @@ fun StartupOnboardingScreen(
 
     val steps = remember { StartupStep.entries }
     var stepIndex by rememberSaveable { mutableIntStateOf(0) }
-    var stepTransitionActive by remember { mutableStateOf(false) }
+    val stepTransitionState = rememberStartupOnboardingLayerTransitionState(
+        initialStepIndex = stepIndex
+    )
     var selectedLanguageCode by rememberSaveable {
         mutableStateOf(LanguageManager.getCurrentLanguage(context).code)
     }
@@ -573,10 +568,13 @@ fun StartupOnboardingScreen(
         if (finishing) return
         finishing = true
         scope.launch {
-            runCatching {
-                repo.setUiDensityScale(pendingUiScale)
-                repo.setStartupOnboardingCompleted(true)
-            }.onFailure {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    repo.setUiDensityScale(pendingUiScale)
+                    repo.setStartupOnboardingCompleted(true)
+                }
+            }
+            if (result.isFailure) {
                 finishing = false
             }
         }
@@ -585,7 +583,6 @@ fun StartupOnboardingScreen(
     fun transitionToStep(targetIndex: Int) {
         val nextIndex = targetIndex.coerceIn(0, steps.lastIndex)
         if (nextIndex == stepIndex) return
-        stepTransitionActive = true
         stepIndex = nextIndex
     }
 
@@ -933,14 +930,18 @@ fun StartupOnboardingScreen(
         }
     }
 
-    LaunchedEffect(stepIndex, stepTransitionActive) {
-        if (!stepTransitionActive) return@LaunchedEffect
-        delay(420L)
-        stepTransitionActive = false
+    LaunchedEffect(stepIndex) {
+        stepTransitionState.request(stepIndex)
     }
 
     CompositionLocalProvider(LocalDensity provides previewDensity) {
         val colorScheme = MaterialTheme.colorScheme
+        val visibleStepScenes = stepTransitionState.visibleScenes
+        val activeGlassStepIndex = stepTransitionState.activeGlassStepIndex
+        val activeNavigationOwners = setOf(steps[activeGlassStepIndex])
+        val prewarmedNavigationOwners = visibleStepScenes.mapTo(linkedSetOf()) { scene ->
+            steps[scene.stepIndex]
+        }
         val animatedProgress by animateFloatAsState(
             targetValue = calculateStartupOnboardingProgress(stepIndex, steps.size),
             animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
@@ -950,10 +951,11 @@ fun StartupOnboardingScreen(
             controller = advancedGlassController,
             backgroundBackdrop = backgroundGlassBackdrop,
             contentBackdrop = contentGlassBackdrop,
-            activeNavigationOwners = setOf(steps[stepIndex]),
+            activeNavigationOwners = activeNavigationOwners,
+            prewarmedNavigationOwners = prewarmedNavigationOwners,
             disableStretchOverscroll = backgroundImageUri != null
         ) {
-            AdvancedGlassNavigationHandoff(enabled = stepTransitionActive) {
+            AdvancedGlassNavigationHandoff(enabled = visibleStepScenes.size > 1) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
@@ -1034,37 +1036,14 @@ fun StartupOnboardingScreen(
                                     .weight(1f)
                                     .fillMaxWidth()
                             ) {
-                                AnimatedContent(
-                                    targetState = stepIndex,
+                                StartupOnboardingLayerHost(
+                                    transitionState = stepTransitionState,
                                     modifier = Modifier.fillMaxSize(),
-                                    transitionSpec = {
-                                        val forward = targetState > initialState
-                                        val enter = slideInHorizontally(
-                                            animationSpec = tween(
-                                                360,
-                                                easing = FastOutSlowInEasing
-                                            ),
-                                            initialOffsetX = {
-                                                if (forward) it / 5 else -it / 5
-                                            }
-                                        ) + fadeIn(animationSpec = tween(280))
-                                        val exit = slideOutHorizontally(
-                                            animationSpec = tween(
-                                                300,
-                                                easing = FastOutSlowInEasing
-                                            ),
-                                            targetOffsetX = {
-                                                if (forward) -it / 7 else it / 7
-                                            }
-                                        ) + fadeOut(animationSpec = tween(220))
-                                        enter togetherWith exit using SizeTransform(clip = true)
-                                    },
-                                    label = "startup_step_content"
-                                ) { currentStep ->
-                                    key(currentStep) {
+                                ) { scene ->
+                                    key(scene.stepIndex) {
                                         CompositionLocalProvider(
                                             LocalAdvancedGlassNavigationOwner provides
-                                                steps[currentStep]
+                                                steps[scene.stepIndex]
                                         ) {
                                             AdvancedGlassSceneLayer(
                                                 controller = advancedGlassController,
@@ -1077,7 +1056,9 @@ fun StartupOnboardingScreen(
                                                 },
                                                 content = {
                                                     Box(Modifier.fillMaxSize()) {
-                                                        RenderOnboardingStepContent(currentStep)
+                                                        RenderOnboardingStepContent(
+                                                            scene.stepIndex
+                                                        )
                                                     }
                                                 }
                                             )

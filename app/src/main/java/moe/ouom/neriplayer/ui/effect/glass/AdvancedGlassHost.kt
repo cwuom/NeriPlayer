@@ -48,6 +48,8 @@ internal val LocalAdvancedGlassBackdrops = staticCompositionLocalOf<AdvancedGlas
 internal val LocalAdvancedGlassDepth = staticCompositionLocalOf { 0 }
 internal val LocalAdvancedGlassActiveNavigationOwners =
     staticCompositionLocalOf<Set<Any>?> { null }
+internal val LocalAdvancedGlassPrewarmedNavigationOwners =
+    staticCompositionLocalOf<Set<Any>> { emptySet() }
 internal val LocalAdvancedGlassNavigationOwner =
     staticCompositionLocalOf<Any?> { null }
 internal val LocalAdvancedGlassSceneActive = staticCompositionLocalOf { true }
@@ -94,6 +96,7 @@ internal fun AdvancedGlassHost(
     backgroundBackdrop: AdvancedGlassBackdrop,
     contentBackdrop: AdvancedGlassBackdrop,
     activeNavigationOwners: Set<Any>? = null,
+    prewarmedNavigationOwners: Set<Any> = emptySet(),
     disableStretchOverscroll: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -319,6 +322,7 @@ internal fun AdvancedGlassHost(
         ),
         LocalAdvancedGlassDepth provides 0,
         LocalAdvancedGlassActiveNavigationOwners provides activeNavigationOwners,
+        LocalAdvancedGlassPrewarmedNavigationOwners provides prewarmedNavigationOwners,
         LocalOverscrollFactory provides if (
             sessionController.isEnabled && disableStretchOverscroll
         ) {

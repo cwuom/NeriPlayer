@@ -55,10 +55,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.stringResource
@@ -105,6 +109,7 @@ internal fun OnboardingGlassSurface(
         shape = shape,
         fallbackColor = color,
         tintColor = color,
+        preserveTintForInactiveNavigationOwner = true,
         content = content
     )
 }
@@ -1233,6 +1238,10 @@ private fun PlaybackPreviewLyrics(
         modifier = modifier
             .fillMaxWidth()
             .clipToBounds()
+            .onboardingLyricEdgeFade(
+                topFadeLength = 24.dp,
+                bottomFadeLength = 30.dp
+            )
     ) {
         Layout(
             modifier = Modifier
@@ -1292,39 +1301,29 @@ private fun PlaybackPreviewLyrics(
                 }
             }
         }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .padding(top = 6.dp)
-                .clipToBounds()
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            colors.surface,
-                            colors.surface.copy(alpha = 0.86f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .padding(bottom = 6.dp)
-                .clipToBounds()
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            colors.surface.copy(alpha = 0.86f),
-                            colors.surface
-                        )
-                    )
-                )
+    }
+}
+
+private fun Modifier.onboardingLyricEdgeFade(
+    topFadeLength: Dp,
+    bottomFadeLength: Dp
+): Modifier = graphicsLayer {
+    compositingStrategy = CompositingStrategy.Offscreen
+}.drawWithCache {
+    onDrawWithContent {
+        drawContent()
+        if (size.height <= 0f) return@onDrawWithContent
+        val topFade = (topFadeLength.toPx() / size.height).coerceIn(0f, 0.48f)
+        val bottomFade = (bottomFadeLength.toPx() / size.height).coerceIn(0f, 0.48f)
+        if (topFade <= 0f && bottomFade <= 0f) return@onDrawWithContent
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Transparent,
+                topFade to Color.Black,
+                (1f - bottomFade).coerceIn(0f, 1f) to Color.Black,
+                1f to Color.Transparent
+            ),
+            blendMode = BlendMode.DstIn
         )
     }
 }

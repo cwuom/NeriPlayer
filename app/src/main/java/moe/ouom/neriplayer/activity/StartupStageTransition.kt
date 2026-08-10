@@ -50,8 +50,7 @@ private const val STARTUP_STAGE_CONTENT_FADE_DURATION_MILLIS = 260
 internal fun shouldDeferStartupStageContent(
     stage: StartupStage,
     previousStage: StartupStage? = null
-): Boolean = stage == StartupStage.Onboarding ||
-    (stage == StartupStage.Main && previousStage != null && previousStage != StartupStage.Loading)
+): Boolean = stage == StartupStage.Onboarding && previousStage != StartupStage.Main
 
 @Composable
 internal fun StartupStageContentGate(

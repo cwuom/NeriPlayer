@@ -33,4 +33,68 @@ class AdvancedGlassSurfaceTest {
             )
         )
     }
+
+    @Test
+    fun preparedInactiveNavigationOwnerRegistersForTheNextGlassHandoff() {
+        assertTrue(
+            shouldRegisterAdvancedGlassRegion(
+                sceneActive = true,
+                backdropRegistrationEnabled = true,
+                belongsToActiveNavigationScreen = false,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+        assertFalse(
+            shouldRegisterAdvancedGlassRegion(
+                sceneActive = true,
+                backdropRegistrationEnabled = true,
+                belongsToActiveNavigationScreen = false,
+                belongsToPrewarmedNavigationScreen = false
+            )
+        )
+        assertFalse(
+            shouldRegisterAdvancedGlassRegion(
+                sceneActive = false,
+                backdropRegistrationEnabled = true,
+                belongsToActiveNavigationScreen = true,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+    }
+
+    @Test
+    fun prewarmedInactiveNavigationOwnerCanPreserveGlassTintDuringOnboarding() {
+        assertTrue(
+            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+                preserveTintForInactiveNavigationOwner = true,
+                canRenderGlass = true,
+                belongsToActiveNavigationScreen = false,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+        assertFalse(
+            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+                preserveTintForInactiveNavigationOwner = false,
+                canRenderGlass = true,
+                belongsToActiveNavigationScreen = false,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+        assertFalse(
+            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+                preserveTintForInactiveNavigationOwner = true,
+                canRenderGlass = true,
+                belongsToActiveNavigationScreen = true,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+        assertFalse(
+            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+                preserveTintForInactiveNavigationOwner = true,
+                canRenderGlass = false,
+                belongsToActiveNavigationScreen = false,
+                belongsToPrewarmedNavigationScreen = true
+            )
+        )
+    }
 }

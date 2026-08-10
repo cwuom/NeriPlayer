@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
@@ -73,6 +76,136 @@ class StartupOnboardingProgressTest {
         assertEquals(0f, calculateStartupOnboardingProgress(-4, 6), 0.0001f)
         assertEquals(1f, calculateStartupOnboardingProgress(12, 6), 0.0001f)
         assertEquals(0f, calculateStartupOnboardingProgress(0, 0), 0.0001f)
+    }
+
+    @Test
+    fun onboardingGlassHandoffKeepsExactlyOneSceneActive() {
+        assertEquals(
+            2,
+            resolveStartupOnboardingGlassOwnerStepIndex(
+                fromStepIndex = 2,
+                toStepIndex = 3,
+                enteringAlphaProgress = 0f,
+                running = true,
+                preparingIncomingScene = true
+            )
+        )
+        assertEquals(
+            2,
+            resolveStartupOnboardingGlassOwnerStepIndex(
+                fromStepIndex = 2,
+                toStepIndex = 3,
+                enteringAlphaProgress =
+                    STARTUP_ONBOARDING_GLASS_OWNER_HANDOFF_PROGRESS - 0.01f,
+                running = true,
+                preparingIncomingScene = false
+            )
+        )
+        assertEquals(
+            3,
+            resolveStartupOnboardingGlassOwnerStepIndex(
+                fromStepIndex = 2,
+                toStepIndex = 3,
+                enteringAlphaProgress = STARTUP_ONBOARDING_GLASS_OWNER_HANDOFF_PROGRESS,
+                running = true,
+                preparingIncomingScene = false
+            )
+        )
+        assertEquals(
+            3,
+            resolveStartupOnboardingGlassOwnerStepIndex(
+                fromStepIndex = null,
+                toStepIndex = 3,
+                enteringAlphaProgress = 0f,
+                running = false,
+                preparingIncomingScene = false
+            )
+        )
+    }
+
+    @Test
+    fun onboardingLayerWaitsForTheFirstRenderedFramesBeforeStartingTransition() {
+        val controller = StartupOnboardingLayerTransitionController(
+            scope = CoroutineScope(Job()),
+            initialStepIndex = 0
+        )
+        try {
+            controller.request(1)
+            controller.onContainerWidthChanged(1080)
+
+            assertEquals(1, controller.visibleScenes.size)
+            assertEquals(0, controller.activeGlassStepIndex)
+
+            controller.onInitialSceneFrameRendered()
+
+            assertEquals(2, controller.visibleScenes.size)
+            assertEquals(0, controller.activeGlassStepIndex)
+        } finally {
+            controller.dispose()
+        }
+    }
+
+    @Test
+    fun onboardingStepSceneMotionMatchesTheOriginalSlideDistances() {
+        assertEquals(
+            IntOffset(200, 0),
+            resolveStartupOnboardingLayerSceneMotion(
+                scene = StartupOnboardingLayerScene(
+                    stepIndex = 1,
+                    phase = StartupOnboardingLayerScenePhase.Entering,
+                    direction = 1
+                ),
+                widthPx = 1000,
+                enteringTranslationProgress = 0f,
+                exitingTranslationProgress = 0f,
+                enteringAlphaProgress = 0f,
+                exitingAlphaProgress = 0f
+            ).offset
+        )
+        assertEquals(
+            IntOffset(-200, 0),
+            resolveStartupOnboardingLayerSceneMotion(
+                scene = StartupOnboardingLayerScene(
+                    stepIndex = 1,
+                    phase = StartupOnboardingLayerScenePhase.Entering,
+                    direction = -1
+                ),
+                widthPx = 1000,
+                enteringTranslationProgress = 0f,
+                exitingTranslationProgress = 0f,
+                enteringAlphaProgress = 0f,
+                exitingAlphaProgress = 0f
+            ).offset
+        )
+        assertEquals(
+            IntOffset(-142, 0),
+            resolveStartupOnboardingLayerSceneMotion(
+                scene = StartupOnboardingLayerScene(
+                    stepIndex = 0,
+                    phase = StartupOnboardingLayerScenePhase.Exiting,
+                    direction = 1
+                ),
+                widthPx = 1000,
+                enteringTranslationProgress = 1f,
+                exitingTranslationProgress = 1f,
+                enteringAlphaProgress = 1f,
+                exitingAlphaProgress = 1f
+            ).offset
+        )
+        assertEquals(
+            IntOffset.Zero,
+            resolveStartupOnboardingLayerSceneMotion(
+                scene = StartupOnboardingLayerScene(
+                    stepIndex = 1,
+                    phase = StartupOnboardingLayerScenePhase.Settled
+                ),
+                widthPx = 1000,
+                enteringTranslationProgress = 1f,
+                exitingTranslationProgress = 1f,
+                enteringAlphaProgress = 1f,
+                exitingAlphaProgress = 1f
+            ).offset
+        )
     }
 
     @Test

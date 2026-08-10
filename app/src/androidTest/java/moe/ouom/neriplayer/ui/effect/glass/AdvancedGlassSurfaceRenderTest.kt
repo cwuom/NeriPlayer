@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -577,6 +578,210 @@ class AdvancedGlassSurfaceRenderTest {
 
         assertHandoff(AdvancedBlurQuality.Low)
         assertHandoff(AdvancedBlurQuality.UltraLow)
+    }
+
+    @Test
+    fun prewarmedNavigationOwnerSwitchesWithoutReplayingThePreviousMask() {
+        lateinit var capturedBackdrop: AdvancedGlassBackdrop
+        lateinit var activeOwners: MutableState<Set<Any>>
+        lateinit var incomingSceneLaidOut: MutableState<Boolean>
+        val firstOwner = Any()
+        val secondOwner = Any()
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            capturedBackdrop = backgroundBackdrop
+            activeOwners = remember { mutableStateOf(setOf(firstOwner)) }
+            incomingSceneLaidOut = remember { mutableStateOf(false) }
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController().copy(
+                        advancedBlurQuality = AdvancedBlurQuality.Low
+                    ),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop,
+                    activeNavigationOwners = activeOwners.value,
+                    prewarmedNavigationOwners = setOf(firstOwner, secondOwner)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 100.dp)
+                            .testTag(PrewarmedOwnerHandoffRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            repeat(20) { stripeIndex ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .background(
+                                            if (stripeIndex % 2 == 0) Color.Black else Color.White
+                                        )
+                                )
+                            }
+                        }
+                        AdvancedGlassNavigationHandoff(enabled = true) {
+                            CompositionLocalProvider(
+                                LocalAdvancedGlassNavigationOwner provides firstOwner
+                            ) {
+                                AdvancedGlassSurface(
+                                    role = AdvancedGlassRole.SettingsSection,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .align(Alignment.CenterStart),
+                                    tintColor = Color.Transparent
+                                ) {}
+                            }
+                            AdvancedGlassScene(active = true) {
+                                CompositionLocalProvider(
+                                    LocalAdvancedGlassNavigationOwner provides secondOwner
+                                ) {
+                                    AdvancedGlassSurface(
+                                        role = AdvancedGlassRole.SettingsSection,
+                                        modifier = Modifier
+                                            .size(80.dp)
+                                            .align(Alignment.CenterEnd)
+                                            .onGloballyPositioned {
+                                                incomingSceneLaidOut.value = true
+                                            },
+                                        tintColor = Color.Transparent
+                                    ) {}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            assertTrue(
+                "prewarmed inactive owner did not finish layout before the handoff",
+                incomingSceneLaidOut.value
+            )
+            assertNotNull("prewarmed first owner did not install a blur plan", capturedBackdrop.localBlurPlan)
+            assertTrue(
+                "prewarmed first owner unexpectedly froze the local blur frame",
+                !capturedBackdrop.freezeLocalBlurFrame
+            )
+        }
+        assertSceneMaskState(
+            composeRule.onNodeWithTag(PrewarmedOwnerHandoffRootTag).captureToImage(),
+            leftBlurred = true
+        )
+
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.runOnIdle {
+                activeOwners.value = setOf(secondOwner)
+            }
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.runOnIdle {
+                assertNotNull(
+                    "prewarmed next owner cleared the blur plan in its first frame",
+                    capturedBackdrop.localBlurPlan
+                )
+                assertTrue(
+                    "prewarmed owner switch replayed the previous local blur frame",
+                    !capturedBackdrop.freezeLocalBlurFrame
+                )
+            }
+            assertSceneMaskState(
+                composeRule.onNodeWithTag(PrewarmedOwnerHandoffRootTag).captureToImage(),
+                leftBlurred = false
+            )
+        } finally {
+            composeRule.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    fun prewarmedInactiveNavigationOwnerPreservesTintDuringHandoff() {
+        val activeOwner = Any()
+        val inactiveOwner = Any()
+        composeRule.setContent {
+            val backgroundBackdrop = rememberAdvancedGlassBackdrop()
+            val contentBackdrop = rememberAdvancedGlassBackdrop()
+            MaterialTheme {
+                AdvancedGlassHost(
+                    controller = enabledController(),
+                    backgroundBackdrop = backgroundBackdrop,
+                    contentBackdrop = contentBackdrop,
+                    activeNavigationOwners = setOf(activeOwner),
+                    prewarmedNavigationOwners = setOf(inactiveOwner)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp, 120.dp)
+                            .testTag(PrewarmedInactiveTintRootTag)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .captureAdvancedGlassBackdrop(backgroundBackdrop)
+                        ) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.Black)
+                            )
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(Color.White)
+                            )
+                        }
+                        AdvancedGlassNavigationHandoff(enabled = true) {
+                            CompositionLocalProvider(
+                                LocalAdvancedGlassNavigationOwner provides activeOwner
+                            ) {
+                                AdvancedGlassSurface(
+                                    role = AdvancedGlassRole.SemanticCard,
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .align(Alignment.CenterStart),
+                                    fallbackColor = Color.Transparent,
+                                    tintColor = Color.Black,
+                                    preserveTintForInactiveNavigationOwner = true
+                                ) {}
+                            }
+                            CompositionLocalProvider(
+                                LocalAdvancedGlassNavigationOwner provides inactiveOwner
+                            ) {
+                                AdvancedGlassSurface(
+                                    role = AdvancedGlassRole.SemanticCard,
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .align(Alignment.CenterEnd)
+                                        .testTag(PrewarmedInactiveTintTag),
+                                    fallbackColor = Color.Transparent,
+                                    tintColor = Color.Black,
+                                    preserveTintForInactiveNavigationOwner = true
+                                ) {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        val image = composeRule.onNodeWithTag(PrewarmedInactiveTintTag).captureToImage()
+        val pixel = image.toPixelMap()[image.width / 2, image.height / 2]
+
+        assertTrue(
+            "prewarmed inactive owner fell back to a blank or opaque frame: $pixel",
+            pixel.red in 0.15f..0.85f &&
+                pixel.green in 0.15f..0.85f &&
+                pixel.blue in 0.15f..0.85f
+        )
     }
 
     @Test
@@ -2350,6 +2555,9 @@ class AdvancedGlassSurfaceRenderTest {
         const val BlurRootTag = "blur_root"
         const val LocalBlurRootTag = "local_blur_root"
         const val LocalBlurHandoffRootTag = "local_blur_handoff_root"
+        const val PrewarmedOwnerHandoffRootTag = "prewarmed_owner_handoff_root"
+        const val PrewarmedInactiveTintRootTag = "prewarmed_inactive_tint_root"
+        const val PrewarmedInactiveTintTag = "prewarmed_inactive_tint"
         const val LocalBlurRefreshRootTag = "local_blur_refresh_root"
         const val DirectSelectiveBlurTag = "direct_selective_blur"
         const val TopOnlyCornersTag = "top_only_corners"

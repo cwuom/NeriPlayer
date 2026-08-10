@@ -37,6 +37,24 @@ internal fun isAdvancedGlassNavigationOwnerActive(
     activeNavigationOwners == null ||
     navigationOwner in activeNavigationOwners
 
+internal fun shouldRegisterAdvancedGlassRegion(
+    sceneActive: Boolean,
+    backdropRegistrationEnabled: Boolean,
+    belongsToActiveNavigationScreen: Boolean,
+    belongsToPrewarmedNavigationScreen: Boolean
+): Boolean = sceneActive && backdropRegistrationEnabled &&
+    (belongsToActiveNavigationScreen || belongsToPrewarmedNavigationScreen)
+
+internal fun shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+    preserveTintForInactiveNavigationOwner: Boolean,
+    canRenderGlass: Boolean,
+    belongsToActiveNavigationScreen: Boolean,
+    belongsToPrewarmedNavigationScreen: Boolean
+): Boolean = preserveTintForInactiveNavigationOwner &&
+    canRenderGlass &&
+    !belongsToActiveNavigationScreen &&
+    belongsToPrewarmedNavigationScreen
+
 @Composable
 internal fun AdvancedGlassSurface(
     role: AdvancedGlassRole,
@@ -45,6 +63,7 @@ internal fun AdvancedGlassSurface(
     fallbackColor: Color = Color.Transparent,
     tintColor: Color = Color.Unspecified,
     enabled: Boolean = true,
+    preserveTintForInactiveNavigationOwner: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val controller = LocalAdvancedGlassController.current
@@ -53,6 +72,7 @@ internal fun AdvancedGlassSurface(
     val lifecycleOwner = LocalLifecycleOwner.current
     val navigationOwner = LocalAdvancedGlassNavigationOwner.current ?: lifecycleOwner
     val activeNavigationOwners = LocalAdvancedGlassActiveNavigationOwners.current
+    val prewarmedNavigationOwners = LocalAdvancedGlassPrewarmedNavigationOwners.current
     val sceneActive = LocalAdvancedGlassSceneActive.current
     val backdropRegistrationEnabled = LocalAdvancedGlassBackdropRegistrationEnabled.current
     val density = LocalDensity.current
@@ -77,10 +97,23 @@ internal fun AdvancedGlassSurface(
         activeNavigationOwners = activeNavigationOwners,
         navigationOwner = navigationOwner
     )
+    val belongsToPrewarmedNavigationScreen = navigationOwner in prewarmedNavigationOwners
     val canRenderGlass = enabled && sceneActive && backdropsReady &&
         canSampleAdvancedGlassBackdrop(controller, glassDepth, role)
     val glassEnabled = canRenderGlass && belongsToActiveNavigationScreen
-    val registersBackdrop = canRenderGlass && backdropRegistrationEnabled
+    val preservesInactiveNavigationTint = shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
+        preserveTintForInactiveNavigationOwner = preserveTintForInactiveNavigationOwner,
+        canRenderGlass = canRenderGlass,
+        belongsToActiveNavigationScreen = belongsToActiveNavigationScreen,
+        belongsToPrewarmedNavigationScreen = belongsToPrewarmedNavigationScreen
+    )
+    val drawsGlassTint = glassEnabled || preservesInactiveNavigationTint
+    val registersBackdrop = canRenderGlass && shouldRegisterAdvancedGlassRegion(
+        sceneActive = sceneActive,
+        backdropRegistrationEnabled = backdropRegistrationEnabled,
+        belongsToActiveNavigationScreen = belongsToActiveNavigationScreen,
+        belongsToPrewarmedNavigationScreen = belongsToPrewarmedNavigationScreen
+    )
     val regionKey = remember { Any() }
 
     DisposableEffect(availableBackdrops, regionKey, registersBackdrop) {
@@ -128,7 +161,7 @@ internal fun AdvancedGlassSurface(
             .clip(shape)
             .then(regionRegistrationModifier)
     ) {
-        if (glassEnabled) {
+        if (drawsGlassTint) {
             GlassColorLayer(
                 shape = shape,
                 color = resolvedTintColor.copy(
@@ -145,7 +178,7 @@ internal fun AdvancedGlassSurface(
             content()
         }
 
-        if (glassEnabled && tokens.edgeAlpha > 0f) {
+        if (drawsGlassTint && tokens.edgeAlpha > 0f) {
             GlassEdgeLayer(
                 role = role,
                 shape = shape,

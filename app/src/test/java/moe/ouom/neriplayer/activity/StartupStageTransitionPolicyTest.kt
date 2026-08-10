@@ -7,9 +7,9 @@ import org.junit.Test
 
 class StartupStageTransitionPolicyTest {
     @Test
-    fun heavyStartupStagesAreDeferredUntilTheStageTransitionSettles() {
+    fun onlyOnboardingReceivesADeferredContentFrame() {
         assertTrue(shouldDeferStartupStageContent(StartupStage.Onboarding))
-        assertTrue(
+        assertFalse(
             shouldDeferStartupStageContent(
                 stage = StartupStage.Main,
                 previousStage = StartupStage.Onboarding
