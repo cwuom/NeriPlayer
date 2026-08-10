@@ -36,10 +36,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -257,6 +254,42 @@ private fun isForwardSettingsPageTransition(
     if (targetPage.backTargetPage() == initialPage) return true
     if (initialPage.backTargetPage() == targetPage) return false
     return targetPage.ordinal >= initialPage.ordinal
+}
+
+@Composable
+internal fun SettingsPageHost(
+    activePage: SettingsPage?,
+    splitLayout: Boolean,
+    isolateAdvancedGlassTransitions: Boolean,
+    content: @Composable (SettingsPage?) -> Unit
+) {
+    if (splitLayout) {
+        AdvancedGlassScene(active = true) {
+            content(activePage)
+        }
+        return
+    }
+
+    AnimatedContent(
+        targetState = activePage,
+        modifier = Modifier.fillMaxSize(),
+        label = "settings_page_switch",
+        transitionSpec = {
+            isolatedAdvancedGlassHorizontalTransition(
+                forward = isForwardSettingsPageTransition(initialState, targetState)
+            ).using(SizeTransform(clip = true))
+        }
+    ) { selectedPage ->
+        AdvancedGlassNavigationHandoff(
+            enabled = isolateAdvancedGlassTransitions && transition.isRunning
+        ) {
+            AdvancedGlassScene(
+                active = isolateAdvancedGlassTransitions || selectedPage == activePage
+            ) {
+                content(selectedPage)
+            }
+        }
+    }
 }
 
 private fun Context.neteaseQualityLabel(value: String): String {
@@ -1222,35 +1255,16 @@ fun SettingsScreen(
         }
     }
 
-    AnimatedContent(
-        targetState = activeSettingsPage,
-        modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
-        transitionSpec = {
-            if (isSettingsSplitLayout) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                isolatedAdvancedGlassHorizontalTransition(
-                    forward = isForwardSettingsPageTransition(initialState, targetState)
-                ).using(SizeTransform(clip = true))
-            }
-        }
-    ) { selectedPage ->
-        AdvancedGlassNavigationHandoff(
-            enabled = isolateAdvancedGlassTransitions && transition.isRunning
-        ) {
-            AdvancedGlassScene(
-                active = isolateAdvancedGlassTransitions || selectedPage == activeSettingsPage
-            ) {
-                if (selectedPage == null) {
-                    MiuixSettingsHomeScaffold(
-                        listState = listState,
-                        topAppBarState = homeTopAppBarState,
-                        title = settingsHomeTitle,
-                        content = settingsHomeContent
-                    )
-                } else {
-                    MiuixSettingsResponsiveDetailScaffold(
+    val settingsPageContent: @Composable (SettingsPage?) -> Unit = { selectedPage ->
+        if (selectedPage == null) {
+            MiuixSettingsHomeScaffold(
+                listState = listState,
+                topAppBarState = homeTopAppBarState,
+                title = settingsHomeTitle,
+                content = settingsHomeContent
+            )
+        } else {
+            MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
                 onBack = ::navigateBackFromActiveSettingsPage,
                 listState = detailListStates.getValue(selectedPage),
@@ -1262,7 +1276,7 @@ fun SettingsScreen(
                 homeTopAppBarState = homeTopAppBarState,
                 homeTitle = settingsHomeTitle,
                 homeContent = settingsHomeContent
-                ) {
+            ) {
                 item(key = "${selectedPage.name}:header") {
                     MiuixSettingsHeader(
                         icon = selectedPage.icon,
@@ -2110,12 +2124,17 @@ fun SettingsScreen(
                         )
                     }
                 }
-                    }
                 }
             }
         }
     }
-    }
+
+    SettingsPageHost(
+        activePage = activeSettingsPage,
+        splitLayout = isSettingsSplitLayout,
+        isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+        content = settingsPageContent
+    )
 
     SettingsNeteaseAuthDialogs(
         showSheet = showNeteaseSheet,
