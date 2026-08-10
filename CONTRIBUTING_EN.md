@@ -383,8 +383,9 @@ Security reminders:
 
 - `Explore` is NetEase curated playlists + YouTube Music playlists +
   platform-specific NetEase/Bilibili/YouTube Music search. It is not mixed search.
-- `Home` mainly shows local continue-listening and NetEase recommendations in the
-  default Chinese mode. International mode prioritizes YouTube Music home shelves.
+- `Home` shows local continue-listening, all available NetEase recommendation
+  sources, and Radar playlists in the default Chinese mode. Refreshing updates
+  each section. International mode prioritizes YouTube Music home shelves.
 - The QQ Music entry in `Library` is still a placeholder and does not represent
   full platform integration.
 - Local artist categories are aggregated from imported/saved local songs by

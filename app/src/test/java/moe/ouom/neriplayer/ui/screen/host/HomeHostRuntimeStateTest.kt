@@ -13,6 +13,8 @@ class HomeHostRuntimeStateTest {
 
         assertEquals(0, state.gridState.firstVisibleItemIndex)
         assertEquals(0, state.gridState.firstVisibleItemScrollOffset)
+        assertEquals(0, state.radarPlaylistListState.firstVisibleItemIndex)
+        assertEquals(0, state.radarPlaylistListState.firstVisibleItemScrollOffset)
         assertEquals(0f, state.topAppBarState.heightOffset, 0f)
         assertEquals(0f, state.topAppBarState.contentOffset, 0f)
         assertNull(state.pendingGridRestoreIndex)
@@ -34,5 +36,7 @@ class HomeHostRuntimeStateTest {
         assertNull(nextState.pendingGridRestoreIndex)
         assertEquals(0, nextState.pendingGridRestoreOffset)
         assertFalse(nextState.pendingGridRestoreArmed)
+        assertEquals(0, nextState.radarPlaylistListState.firstVisibleItemIndex)
+        assertEquals(0, nextState.radarPlaylistListState.firstVisibleItemScrollOffset)
     }
 }

@@ -396,6 +396,56 @@ class NeteaseClient {
     }
 
     @Throws(IOException::class)
+    fun getDailyRecommendedPlaylists(): String {
+        return callWeApi("/v1/discovery/recommend/resource", emptyMap(), usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getDailyRecommendedSongs(afresh: Boolean = false): String {
+        return callWeApi(
+            "/v3/discovery/recommend/songs",
+            mapOf("afresh" to afresh.toString()),
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
+    fun getPersonalFmSongs(): String {
+        return callWeApi("/v1/radio/get", emptyMap(), usePersistedCookies = true)
+    }
+
+    @Throws(IOException::class)
+    fun getPersonalizedNewSongs(
+        limit: Int = 30,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val params = mapOf(
+            "type" to "recommend",
+            "limit" to limit.toString(),
+            "areaId" to "0"
+        )
+        return callWeApi("/personalized/newsong", params, usePersistedCookies = usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
+    fun getTopPlaylists(
+        cat: String = "全部",
+        order: String = "hot",
+        limit: Int = 30,
+        offset: Int = 0,
+        usePersistedCookies: Boolean = true
+    ): String {
+        val params = mapOf<String, Any>(
+            "cat" to cat,
+            "order" to order,
+            "limit" to limit.toString(),
+            "offset" to offset.toString(),
+            "total" to "true"
+        )
+        return callWeApi("/playlist/list", params, usePersistedCookies = usePersistedCookies)
+    }
+
+    @Throws(IOException::class)
     fun searchSongs(
         keyword: String,
         limit: Int = 30,
