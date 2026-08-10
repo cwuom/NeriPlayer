@@ -43,6 +43,17 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `preferences preserve explicit playback source fallback choices`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH to true,
+            SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK to true
+        ).toPlaybackPreferenceSnapshot()
+
+        assertTrue(snapshot.neteaseAutoSourceSwitch)
+        assertTrue(snapshot.neteaseLocalSourceFallback)
+    }
+
+    @Test
     fun `sanitized normalizes playback runtime values`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackFadeInDurationMs = -100L,
@@ -99,6 +110,8 @@ class PlaybackPreferenceSnapshotTest {
         assertTrue(snapshot.keepLastPlaybackProgress)
         assertTrue(snapshot.rememberLongFormPlaybackProgress)
         assertTrue(snapshot.keepPlaybackModeState)
+        assertFalse(snapshot.neteaseAutoSourceSwitch)
+        assertFalse(snapshot.neteaseLocalSourceFallback)
         assertFalse(snapshot.allowMixedPlayback)
         assertFalse(snapshot.playbackFadeIn)
         assertFalse(snapshot.sleepTimerFinishCurrentOnExpiry)

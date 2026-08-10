@@ -130,6 +130,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -299,7 +300,16 @@ fun HomeScreen(
     ).distinct()
     val titleSeed = rememberSaveable { (0..Int.MAX_VALUE).random() }
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = gridState.canScrollForward,
+                canScrollBackward = gridState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
+        }
+    )
 
     val snackbarHostState = remember { SnackbarHostState() }
     val guessYouLikeTitle = stringResource(R.string.home_ytmusic_guess_you_like)

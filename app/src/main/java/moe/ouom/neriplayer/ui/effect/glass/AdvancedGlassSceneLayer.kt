@@ -17,7 +17,7 @@ internal fun AdvancedGlassSceneLayer(
     modifier: Modifier = Modifier,
     motion: AdvancedGlassSceneMotion = AdvancedGlassSceneMotion.None,
     disableStretchOverscroll: Boolean = false,
-    // 固定背景场景不画自己的壁纸, 玻璃面直接采样根层静止壁纸, 只用于 tab 根列表
+    // 固定背景场景不画自己的壁纸, 玻璃面直接采样根层静止壁纸
     fixedBackground: Boolean = false,
     background: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit

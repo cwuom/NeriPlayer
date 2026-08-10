@@ -1700,7 +1700,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "netease_auto_source_switch",
             type = SettingValueType.Boolean,
-            defaultBoolean = true,
+            defaultBoolean = false,
             order = 135,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
@@ -1714,7 +1714,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "netease_local_source_fallback",
             type = SettingValueType.Boolean,
-            defaultBoolean = true,
+            defaultBoolean = false,
             order = 136,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly

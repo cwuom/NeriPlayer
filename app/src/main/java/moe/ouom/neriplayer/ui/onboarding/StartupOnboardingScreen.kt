@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.onboarding
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -10,15 +13,9 @@ import android.view.ViewTreeObserver
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
@@ -39,7 +36,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -49,6 +45,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +64,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,29 +72,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -108,12 +100,21 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
-import moe.ouom.neriplayer.data.settings.MAX_LYRIC_FONT_SCALE
-import moe.ouom.neriplayer.data.settings.MIN_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
-import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
-import moe.ouom.neriplayer.ui.BlurTransformation
+import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
+import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
+import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
+import moe.ouom.neriplayer.data.settings.LyricFontScales
+import moe.ouom.neriplayer.data.settings.isCurrentBuildDimensity
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassController
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassHost
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassNavigationOwner
+import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
+import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
+import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
@@ -121,9 +122,12 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncUiState
 import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
+import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncUiState
+import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
@@ -142,30 +146,87 @@ import androidx.core.view.drawToBitmap
 import kotlin.coroutines.resume
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
-import androidx.core.net.toUri
 import androidx.core.graphics.createBitmap
+import androidx.core.content.ContextCompat
+import moe.ouom.neriplayer.core.startup.permission.StartupMediaPermission
+import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
+import moe.ouom.neriplayer.data.settings.PlaybackControlLayoutPreferences
+import moe.ouom.neriplayer.ui.CustomBackground
 
 private enum class StartupStep {
     Language,
     Platforms,
-    GitHubSync,
-    Personalize
+    PlaybackSources,
+    Permissions,
+    PlaybackControls,
+    Lyrics,
+    Personalize,
+    BackupRestore,
+    LearningGuide
 }
 
 private const val STARTUP_THEME_REVEAL_WATCHDOG_DELAY_MILLIS = 900L
 private const val STARTUP_THEME_REVEAL_CAPTURE_TIMEOUT_MILLIS = 500L
 
+internal fun calculateStartupOnboardingProgress(stepIndex: Int, stepCount: Int): Float {
+    if (stepCount <= 0) return 0f
+    return ((stepIndex + 1).toFloat() / stepCount).coerceIn(0f, 1f)
+}
+
+internal fun shouldAdvanceStartupOnboarding(
+    permissionRequestActive: Boolean,
+    permissionNavigationBlocked: Boolean
+): Boolean = !permissionRequestActive && !permissionNavigationBlocked
+
+internal const val STARTUP_NOTIFICATION_PERMISSION_WARNING_ATTEMPTS = 2
+
+internal fun shouldShowStartupNotificationPermissionWarning(
+    permissionSupported: Boolean,
+    permissionGranted: Boolean,
+    attempts: Int
+): Boolean = permissionSupported && !permissionGranted &&
+    attempts < STARTUP_NOTIFICATION_PERMISSION_WARNING_ATTEMPTS
+
+internal fun shouldWarnStartupNoPlatformConnected(
+    biliState: SavedCookieAuthState,
+    neteaseState: SavedCookieAuthState,
+    youTubeState: YouTubeAuthState
+): Boolean = biliState == SavedCookieAuthState.Missing &&
+    neteaseState == SavedCookieAuthState.Missing &&
+    youTubeState == YouTubeAuthState.Missing
+
+internal fun hasFinishedStartupNotificationPermissionWarning(
+    attempts: Int
+): Boolean = attempts >= STARTUP_NOTIFICATION_PERMISSION_WARNING_ATTEMPTS
+
+internal fun shouldPromptStartupEnhancedAdvancedBlur(
+    advancedBlurAvailable: Boolean,
+    enhancedAdvancedBlurEnabled: Boolean,
+    backgroundImageImported: Boolean
+): Boolean = advancedBlurAvailable && backgroundImageImported && !enhancedAdvancedBlurEnabled
+
+private tailrec fun Context.findStartupActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findStartupActivity()
+    else -> null
+}
+
 @Composable
-fun StartupOnboardingScreen() {
+fun StartupOnboardingScreen(
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
+) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
-    val activity = context as? Activity
+    val activity = LocalView.current.context.findStartupActivity()
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val repo = AppContainer.settingsRepo
 
     val steps = remember { StartupStep.entries }
     var stepIndex by rememberSaveable { mutableIntStateOf(0) }
+    val stepTransitionState = rememberStartupOnboardingLayerTransitionState(
+        initialStepIndex = stepIndex
+    )
     var selectedLanguageCode by rememberSaveable {
         mutableStateOf(LanguageManager.getCurrentLanguage(context).code)
     }
@@ -181,17 +242,42 @@ fun StartupOnboardingScreen() {
             pendingUiScale = uiDensityScale
         }
     }
-    val lyricFontScale by repo.lyricFontScaleFlow.collectAsStateWithLifecycle(initialValue = 1.0f)
-    var pendingLyricFontScale by rememberSaveable { mutableFloatStateOf(lyricFontScale) }
-    LaunchedEffect(lyricFontScale) {
-        if ((pendingLyricFontScale - lyricFontScale).absoluteValue > 0.001f) {
-            pendingLyricFontScale = lyricFontScale
-        }
-    }
-
     val backgroundImageUri by repo.backgroundImageUriFlow.collectAsStateWithLifecycle(initialValue = null)
     val backgroundImageBlur by repo.backgroundImageBlurFlow.collectAsStateWithLifecycle(initialValue = 0f)
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsStateWithLifecycle(initialValue = 0.3f)
+    val advancedBlurEnabled by repo.advancedBlurEnabledFlow.collectAsStateWithLifecycle(
+        initialValue = true
+    )
+    val enhancedAdvancedBlurEnabled by repo.enhancedAdvancedBlurEnabledFlow.collectAsStateWithLifecycle(
+        initialValue = false
+    )
+    val enhancedAdvancedBlurRadiusDp by repo.enhancedAdvancedBlurRadiusDpFlow
+        .collectAsStateWithLifecycle(initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP)
+    val initialAdvancedBlurQuality = remember {
+        AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity())
+    }
+    val advancedBlurQuality by repo.advancedBlurQualityFlow.collectAsStateWithLifecycle(
+        initialValue = initialAdvancedBlurQuality
+    )
+    var pendingBackgroundImageBlur by remember { mutableStateOf<Float?>(null) }
+    var pendingBackgroundImageAlpha by remember { mutableStateOf<Float?>(null) }
+    val effectiveBackgroundImageBlur = pendingBackgroundImageBlur ?: backgroundImageBlur
+    val effectiveBackgroundImageAlpha = pendingBackgroundImageAlpha ?: backgroundImageAlpha
+    val playbackControlLayoutPreferences by repo.playbackControlLayoutPreferencesFlow
+        .collectAsStateWithLifecycle(initialValue = PlaybackControlLayoutPreferences())
+    val lyricFontScales by repo.lyricFontScalesFlow.collectAsStateWithLifecycle(
+        initialValue = LyricFontScales(
+            coverLyric = 1.0f,
+            coverTranslation = 1.0f,
+            lyricsPageLyric = 1.0f,
+            lyricsPageTranslation = 1.0f
+        )
+    )
+    val neteaseAutoSourceSwitch by repo.neteaseAutoSourceSwitchFlow.collectAsStateWithLifecycle(
+        initialValue = false
+    )
+    val neteaseLocalSourceFallback by repo.neteaseLocalSourceFallbackFlow
+        .collectAsStateWithLifecycle(initialValue = false)
     val followSystemDark by repo.followSystemDarkFlow.collectAsStateWithLifecycle(initialValue = true)
     val forceDark by repo.forceDarkFlow.collectAsStateWithLifecycle(initialValue = false)
     val systemDark = isSystemInDarkTheme()
@@ -205,6 +291,69 @@ fun StartupOnboardingScreen() {
     )
     val isDarkTheme = effectiveThemeMode.resolveUseDark(systemDark)
     val latestIsDarkTheme = rememberUpdatedState(isDarkTheme)
+    val latestEnhancedAdvancedBlurEnabled = rememberUpdatedState(enhancedAdvancedBlurEnabled)
+
+    LaunchedEffect(backgroundImageBlur, pendingBackgroundImageBlur) {
+        if (
+            pendingBackgroundImageBlur != null &&
+            ((pendingBackgroundImageBlur ?: backgroundImageBlur) - backgroundImageBlur)
+                .absoluteValue < 0.001f
+        ) {
+            pendingBackgroundImageBlur = null
+        }
+    }
+    LaunchedEffect(backgroundImageAlpha, pendingBackgroundImageAlpha) {
+        if (
+            pendingBackgroundImageAlpha != null &&
+            ((pendingBackgroundImageAlpha ?: backgroundImageAlpha) - backgroundImageAlpha)
+                .absoluteValue < 0.001f
+        ) {
+            pendingBackgroundImageAlpha = null
+        }
+    }
+
+    val sdkInt = Build.VERSION.SDK_INT
+    val enhancedAdvancedBlurAvailable = isAdvancedGlassBackendSupported(sdkInt)
+    val advancedGlassController = remember(
+        sdkInt,
+        advancedBlurEnabled,
+        enhancedAdvancedBlurEnabled,
+        enhancedAdvancedBlurRadiusDp,
+        advancedBlurQuality
+    ) {
+        AdvancedGlassController(
+            sdkInt = sdkInt,
+            advancedBlurEnabled = advancedBlurEnabled,
+            enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+            backendReady = enhancedAdvancedBlurAvailable,
+            enhancedAdvancedBlurRadiusDp = enhancedAdvancedBlurRadiusDp,
+            advancedBlurQuality = advancedBlurQuality
+        )
+    }
+    val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
+    val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
+    val notificationPermission = StartupNotificationPermission.permission
+    val localMediaPermission = remember(sdkInt) {
+        StartupMediaPermission.permissionFor(sdkInt)
+    }
+    var notificationPermissionGranted by remember(notificationPermission) {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, notificationPermission) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var localMediaPermissionGranted by remember(localMediaPermission) {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, localMediaPermission) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var permissionRequestActive by remember { mutableStateOf(false) }
+    var permissionNavigationBlocked by remember { mutableStateOf(false) }
+    var notificationPermissionWarningVisible by rememberSaveable { mutableStateOf(false) }
+    var notificationPermissionWarningAttempts by rememberSaveable { mutableIntStateOf(0) }
+    var noPlatformWarningVisible by rememberSaveable { mutableStateOf(false) }
+    var enhancedAdvancedBlurPromptVisible by rememberSaveable { mutableStateOf(false) }
 
     var inlineMessage by remember { mutableStateOf<String?>(null) }
     var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
@@ -233,6 +382,8 @@ fun StartupOnboardingScreen() {
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
+    var showWebDavConfigDialog by remember { mutableStateOf(false) }
+    var showClearWebDavConfigDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(followSystemDark, pendingFollowSystemDark) {
         if (pendingFollowSystemDark != null && pendingFollowSystemDark == followSystemDark) {
@@ -244,7 +395,6 @@ fun StartupOnboardingScreen() {
             pendingForceDark = null
         }
     }
-
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     val neteaseState by neteaseVm.uiState.collectAsStateWithLifecycle()
     val biliVm: BiliAuthViewModel = viewModel()
@@ -253,6 +403,8 @@ fun StartupOnboardingScreen() {
     val youTubeState by youTubeVm.uiState.collectAsStateWithLifecycle()
     val githubVm: GitHubSyncViewModel = viewModel()
     val githubState by githubVm.uiState.collectAsStateWithLifecycle()
+    val webDavVm: WebDavSyncViewModel = viewModel()
+    val webDavState by webDavVm.uiState.collectAsStateWithLifecycle()
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -266,7 +418,55 @@ fun StartupOnboardingScreen() {
             )
             if (imported != null) {
                 repo.setBackgroundImageUri(imported.toString())
+                if (
+                    shouldPromptStartupEnhancedAdvancedBlur(
+                        advancedBlurAvailable = enhancedAdvancedBlurAvailable,
+                        enhancedAdvancedBlurEnabled = latestEnhancedAdvancedBlurEnabled.value,
+                        backgroundImageImported = true
+                    )
+                ) {
+                    enhancedAdvancedBlurPromptVisible = true
+                }
             }
+        }
+    }
+    fun showNotificationPermissionWarning() {
+        if (
+            !shouldShowStartupNotificationPermissionWarning(
+                permissionSupported = StartupNotificationPermission.isSupported(sdkInt),
+                permissionGranted = notificationPermissionGranted,
+                attempts = notificationPermissionWarningAttempts
+            )
+        ) {
+            return
+        }
+        notificationPermissionWarningAttempts += 1
+        notificationPermissionWarningVisible = true
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notificationPermissionGranted = granted
+        permissionRequestActive = false
+        if (granted) {
+            notificationPermissionWarningVisible = false
+            notificationPermissionWarningAttempts = 0
+        } else {
+            showNotificationPermissionWarning()
+        }
+        scope.launch {
+            delay(500L)
+            permissionNavigationBlocked = false
+        }
+    }
+    val localMediaPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        localMediaPermissionGranted = granted
+        permissionRequestActive = false
+        scope.launch {
+            delay(500L)
+            permissionNavigationBlocked = false
         }
     }
 
@@ -285,6 +485,9 @@ fun StartupOnboardingScreen() {
     }
     LaunchedEffect(githubVm, context) {
         githubVm.initialize(context)
+    }
+    LaunchedEffect(webDavVm, context) {
+        webDavVm.initialize(context)
     }
 
     LaunchedEffect(neteaseVm) {
@@ -355,41 +558,84 @@ fun StartupOnboardingScreen() {
     }
 
     fun selectLanguage(language: LanguageManager.Language) {
+        if (selectedLanguage == language) return
         selectedLanguageCode = language.code
+        LanguageManager.setLanguage(context, language)
+        onLanguageChanged(language)
     }
 
     fun finishOnboarding() {
         if (finishing) return
         finishing = true
         scope.launch {
-            runCatching {
-                repo.setUiDensityScale(pendingUiScale)
-                repo.setLyricFontScale(pendingLyricFontScale)
-                repo.setStartupOnboardingCompleted(true)
-            }.onFailure {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    repo.setUiDensityScale(pendingUiScale)
+                    repo.setStartupOnboardingCompleted(true)
+                }
+            }
+            if (result.isFailure) {
                 finishing = false
             }
         }
     }
 
+    fun transitionToStep(targetIndex: Int) {
+        val nextIndex = targetIndex.coerceIn(0, steps.lastIndex)
+        if (nextIndex == stepIndex) return
+        stepIndex = nextIndex
+    }
+
+    fun requestNotificationPermission() {
+        if (!StartupNotificationPermission.isSupported(sdkInt)) {
+            notificationPermissionGranted = true
+            permissionRequestActive = false
+            permissionNavigationBlocked = false
+            return
+        }
+        permissionRequestActive = true
+        permissionNavigationBlocked = true
+        notificationPermissionWarningVisible = false
+        notificationPermissionLauncher.launch(notificationPermission)
+    }
+
     fun goNextStep() {
+        if (
+            !shouldAdvanceStartupOnboarding(
+                permissionRequestActive = permissionRequestActive,
+                permissionNavigationBlocked = permissionNavigationBlocked
+            )
+        ) {
+            return
+        }
+        if (
+            steps[stepIndex] == StartupStep.Permissions &&
+            shouldShowStartupNotificationPermissionWarning(
+                permissionSupported = StartupNotificationPermission.isSupported(sdkInt),
+                permissionGranted = notificationPermissionGranted,
+                attempts = notificationPermissionWarningAttempts
+            )
+        ) {
+            showNotificationPermissionWarning()
+            return
+        }
+        if (
+            steps[stepIndex] == StartupStep.Platforms &&
+            shouldWarnStartupNoPlatformConnected(
+                biliState = biliState.health.state,
+                neteaseState = neteaseState.health.state,
+                youTubeState = youTubeState.health.state
+            )
+        ) {
+            noPlatformWarningVisible = true
+            return
+        }
         if (stepIndex == steps.lastIndex) {
             finishOnboarding()
             return
         }
 
-        val currentStep = steps[stepIndex]
-        if (currentStep == StartupStep.Language) {
-            val currentLanguage = LanguageManager.getCurrentLanguage(context)
-            if (currentLanguage != selectedLanguage) {
-                stepIndex = StartupStep.Platforms.ordinal
-                LanguageManager.setLanguage(context, selectedLanguage)
-                activity?.let(LanguageManager::restartActivity)
-                return
-            }
-        }
-
-        stepIndex = (stepIndex + 1).coerceAtMost(steps.lastIndex)
+        transitionToStep(stepIndex + 1)
     }
 
     fun clearThemeRevealVisualState() {
@@ -501,238 +747,360 @@ fun StartupOnboardingScreen() {
         onDispose { clearThemeRevealState() }
     }
 
+    @Composable
+    fun RenderOnboardingStepContent(currentStep: Int) {
+        StepContainer(stepIndex = currentStep) {
+            when (steps[currentStep]) {
+                StartupStep.Language -> LanguageContent(
+                    selectedLanguage = selectedLanguage,
+                    onSelectLanguage = ::selectLanguage
+                )
+                StartupStep.Platforms -> PlatformContent(
+                    inlineMessage = inlineMessage,
+                    onInlineMessageChange = { inlineMessage = it },
+                    biliState = biliState.health.state,
+                    hasSavedBiliCookies = biliState.hasSavedCookies,
+                    neteaseState = neteaseState.health.state,
+                    hasSavedNeteaseCookies = neteaseState.hasSavedCookies,
+                    youTubeState = youTubeState.health.state,
+                    hasSavedYouTubeAuth = youTubeState.hasSavedAuth,
+                    onOpenBili = {
+                        inlineMessage = null
+                        biliSheetTab = 0
+                        showBiliSheet = true
+                    },
+                    onManageBili = {
+                        inlineMessage = null
+                        showBiliSavedCookieDialog = true
+                    },
+                    onOpenNetease = {
+                        inlineMessage = null
+                        neteaseSheetTab = 0
+                        showNeteaseSheet = true
+                    },
+                    onManageNetease = {
+                        inlineMessage = null
+                        showNeteaseSavedCookieDialog = true
+                    },
+                    onOpenYouTube = {
+                        inlineMessage = null
+                        youTubeSheetTab = 0
+                        showYouTubeSheet = true
+                    },
+                    onManageYouTube = {
+                        inlineMessage = null
+                        showYouTubeSavedCookieDialog = true
+                    }
+                )
+                StartupStep.PlaybackSources -> StartupPlaybackSourceContent(
+                    autoSourceSwitchEnabled = neteaseAutoSourceSwitch,
+                    localSourceFallbackEnabled = neteaseLocalSourceFallback,
+                    onSetFallbackEnabled = { enabled ->
+                        scope.launch {
+                            repo.setNeteasePlaybackSourceFallback(enabled)
+                        }
+                    }
+                )
+                StartupStep.Permissions -> StartupPermissionContent(
+                    notificationPermissionSupported =
+                        StartupNotificationPermission.isSupported(sdkInt),
+                    notificationPermissionGranted = notificationPermissionGranted,
+                    localMediaPermissionGranted = localMediaPermissionGranted,
+                    onRequestNotificationPermission = {
+                        requestNotificationPermission()
+                    },
+                    onRequestLocalMediaPermission = {
+                        permissionRequestActive = true
+                        permissionNavigationBlocked = true
+                        localMediaPermissionLauncher.launch(localMediaPermission)
+                    }
+                )
+                StartupStep.PlaybackControls -> StartupPlaybackControlsContent(
+                    preferences = playbackControlLayoutPreferences,
+                    coverLyricFontScale = lyricFontScales.coverLyric,
+                    onCoverLyricFontScaleChange = { scale ->
+                        scope.launch {
+                            repo.setLyricFontScale(
+                                LyricFontScaleTarget.COVER_LYRIC,
+                                scale
+                            )
+                        }
+                    },
+                    onPreferencesChange = { preferences ->
+                        scope.launch {
+                            repo.setPlaybackControlLayoutPreferences(preferences)
+                        }
+                    }
+                )
+                StartupStep.Lyrics -> StartupLyricsContent(
+                    preferences = playbackControlLayoutPreferences,
+                    lyricFontScale = lyricFontScales.lyricsPageLyric,
+                    onLyricFontScaleChange = { scale ->
+                        scope.launch {
+                            repo.setLyricFontScale(
+                                LyricFontScaleTarget.LYRICS_PAGE_LYRIC,
+                                scale
+                            )
+                        }
+                    },
+                    onPreferencesChange = { preferences ->
+                        scope.launch {
+                            repo.setPlaybackControlLayoutPreferences(preferences)
+                        }
+                    }
+                )
+                StartupStep.BackupRestore -> BackupRestoreContent(
+                    gitHubState = githubState,
+                    webDavState = webDavState,
+                    onDismissGitHubMessage = githubVm::clearMessages,
+                    onDismissWebDavMessage = webDavVm::clearMessages,
+                    onOpenGitHubConfig = {
+                        githubVm.clearMessages()
+                        showGitHubConfigDialog = true
+                    },
+                    onOpenClearGitHubConfig = {
+                        githubVm.clearMessages()
+                        showClearGitHubConfigDialog = true
+                    },
+                    onToggleGitHubAutoSync = { enabled ->
+                        githubVm.toggleAutoSync(context, enabled)
+                    },
+                    onGitHubSyncNow = {
+                        githubVm.performSync(context)
+                    },
+                    onOpenWebDavConfig = {
+                        webDavVm.clearMessages()
+                        showWebDavConfigDialog = true
+                    },
+                    onOpenClearWebDavConfig = {
+                        webDavVm.clearMessages()
+                        showClearWebDavConfigDialog = true
+                    },
+                    onToggleWebDavAutoSync = { enabled ->
+                        webDavVm.toggleAutoSync(context, enabled)
+                    },
+                    onWebDavSyncNow = {
+                        webDavVm.performSync(context)
+                    }
+                )
+                StartupStep.Personalize -> PersonalizeContent(
+                    pendingUiScale = pendingUiScale,
+                    onUiScaleChange = { pendingUiScale = it },
+                    onUiScaleCommit = { scope.launch { repo.setUiDensityScale(pendingUiScale) } },
+                    backgroundImageUri = backgroundImageUri,
+                    backgroundImageBlur = effectiveBackgroundImageBlur,
+                    backgroundImageAlpha = effectiveBackgroundImageAlpha,
+                    enhancedAdvancedBlurAvailable = enhancedAdvancedBlurAvailable,
+                    enhancedAdvancedBlurEnabled = enhancedAdvancedBlurEnabled,
+                    onSelectBackground = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onClearBackground = {
+                        pendingBackgroundImageBlur = null
+                        pendingBackgroundImageAlpha = null
+                        scope.launch {
+                            BackgroundImageStorage.deleteManagedBackground(context, backgroundImageUri)
+                            repo.setBackgroundImageUri(null)
+                        }
+                    },
+                    onBackgroundBlurChange = { blur ->
+                        pendingBackgroundImageBlur = blur
+                    },
+                    onBackgroundBlurCommit = { blur ->
+                        scope.launch { repo.setBackgroundImageBlur(blur) }
+                    },
+                    onBackgroundAlphaChange = { alpha ->
+                        pendingBackgroundImageAlpha = alpha
+                    },
+                    onBackgroundAlphaCommit = { alpha ->
+                        scope.launch { repo.setBackgroundImageAlpha(alpha) }
+                    },
+                    onEnhancedAdvancedBlurChange = { enabled ->
+                        scope.launch {
+                            repo.setEnhancedAdvancedBlurEnabled(enabled)
+                        }
+                    },
+                    isDarkTheme = isDarkTheme,
+                    onThemeToggleRequest = ::requestThemeToggle
+                )
+                StartupStep.LearningGuide -> StartupLearningGuideContent()
+            }
+        }
+    }
+
+    LaunchedEffect(stepIndex) {
+        stepTransitionState.request(stepIndex)
+    }
+
     CompositionLocalProvider(LocalDensity provides previewDensity) {
         val colorScheme = MaterialTheme.colorScheme
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            colorScheme.surfaceVariant.copy(alpha = 0.86f),
-                            colorScheme.surface,
-                            colorScheme.primaryContainer.copy(alpha = 0.66f)
-                        ),
-                        start = Offset.Zero,
-                        end = Offset(1200f, 2400f)
-                    )
-                )
+        val visibleStepScenes = stepTransitionState.visibleScenes
+        val activeGlassStepIndex = stepTransitionState.activeGlassStepIndex
+        val activeNavigationOwners = setOf(steps[activeGlassStepIndex])
+        val prewarmedNavigationOwners = visibleStepScenes.mapTo(linkedSetOf()) { scene ->
+            steps[scene.stepIndex]
+        }
+        val animatedProgress by animateFloatAsState(
+            targetValue = calculateStartupOnboardingProgress(stepIndex, steps.size),
+            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+            label = "startup_onboarding_progress"
+        )
+        AdvancedGlassHost(
+            controller = advancedGlassController,
+            backgroundBackdrop = backgroundGlassBackdrop,
+            contentBackdrop = contentGlassBackdrop,
+            activeNavigationOwners = activeNavigationOwners,
+            prewarmedNavigationOwners = prewarmedNavigationOwners,
+            disableStretchOverscroll = backgroundImageUri != null
         ) {
-            Blob(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 8.dp, top = 40.dp),
-                color = colorScheme.primary.copy(alpha = 0.14f),
-                size = 210.dp
-            )
-            Blob(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 64.dp),
-                color = colorScheme.tertiary.copy(alpha = 0.14f),
-                size = 260.dp
-            )
-
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(34.dp),
-                color = colorScheme.surface.copy(alpha = 0.95f),
-                tonalElevation = 10.dp,
-                shadowElevation = 10.dp
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 22.dp, vertical = 20.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(999.dp),
-                        color = colorScheme.secondaryContainer
+            AdvancedGlassNavigationHandoff(enabled = visibleStepScenes.size > 1) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .captureAdvancedGlassBackdrop(backgroundGlassBackdrop)
+                            .background(colorScheme.background)
                     ) {
-                        Text(
-                            text = stringResource(R.string.onboarding_badge),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colorScheme.onSecondaryContainer
+                        CustomBackground(
+                            imageUri = backgroundImageUri,
+                            blur = effectiveBackgroundImageBlur,
+                            alpha = effectiveBackgroundImageAlpha
                         )
                     }
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        text = stringResource(R.string.onboarding_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.onboarding_subtitle),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    LinearProgressIndicator(
-                        progress = { (stepIndex + 1f) / steps.size },
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(10.dp)
-                            .clip(RoundedCornerShape(999.dp))
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = stringResource(R.string.onboarding_step_counter, stepIndex + 1, steps.size),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(18.dp))
-
-                    AnimatedContent(
-                        targetState = stepIndex,
-                        modifier = Modifier.weight(1f),
-                        transitionSpec = {
-                            val forward = targetState > initialState
-                            val enter = slideInHorizontally(
-                                animationSpec = tween(380, easing = FastOutSlowInEasing),
-                                initialOffsetX = { if (forward) it / 4 else -it / 4 }
-                            ) + fadeIn(animationSpec = tween(280))
-                            val exit = slideOutHorizontally(
-                                animationSpec = tween(280, easing = FastOutSlowInEasing),
-                                targetOffsetX = { if (forward) -it / 5 else it / 5 }
-                            ) + fadeOut(animationSpec = tween(220))
-                            enter togetherWith exit using SizeTransform(clip = false)
-                        },
-                        label = "startup_step"
-                    ) { currentStep ->
-                        StepContainer {
-                            when (steps[currentStep]) {
-                                StartupStep.Language -> LanguageContent(
-                                    selectedLanguage = selectedLanguage,
-                                    onSelectLanguage = ::selectLanguage
-                                )
-                                StartupStep.Platforms -> PlatformContent(
-                                    inlineMessage = inlineMessage,
-                                    onInlineMessageChange = { inlineMessage = it },
-                                    biliState = biliState.health.state,
-                                    hasSavedBiliCookies = biliState.hasSavedCookies,
-                                    neteaseState = neteaseState.health.state,
-                                    hasSavedNeteaseCookies = neteaseState.hasSavedCookies,
-                                    youTubeState = youTubeState.health.state,
-                                    hasSavedYouTubeAuth = youTubeState.hasSavedAuth,
-                                    onOpenBili = {
-                                        inlineMessage = null
-                                        biliSheetTab = 0
-                                        showBiliSheet = true
-                                    },
-                                    onManageBili = {
-                                        inlineMessage = null
-                                        showBiliSavedCookieDialog = true
-                                    },
-                                    onOpenNetease = {
-                                        inlineMessage = null
-                                        neteaseSheetTab = 0
-                                        showNeteaseSheet = true
-                                    },
-                                    onManageNetease = {
-                                        inlineMessage = null
-                                        showNeteaseSavedCookieDialog = true
-                                    },
-                                    onOpenYouTube = {
-                                        inlineMessage = null
-                                        youTubeSheetTab = 0
-                                        showYouTubeSheet = true
-                                    },
-                                    onManageYouTube = {
-                                        inlineMessage = null
-                                        showYouTubeSavedCookieDialog = true
-                                    }
-                                )
-                                StartupStep.GitHubSync -> GitHubSyncContent(
-                                    gitHubState = githubState,
-                                    onDismissGitHubMessage = githubVm::clearMessages,
-                                    onOpenGitHubConfig = {
-                                        githubVm.clearMessages()
-                                        showGitHubConfigDialog = true
-                                    },
-                                    onOpenClearGitHubConfig = {
-                                        githubVm.clearMessages()
-                                        showClearGitHubConfigDialog = true
-                                    },
-                                    onToggleGitHubAutoSync = { enabled ->
-                                        githubVm.toggleAutoSync(context, enabled)
-                                    },
-                                    onGitHubSyncNow = {
-                                        githubVm.performSync(context)
-                                    }
-                                )
-                                StartupStep.Personalize -> PersonalizeContent(
-                                    pendingUiScale = pendingUiScale,
-                                    onUiScaleChange = { pendingUiScale = it },
-                                    onUiScaleCommit = { scope.launch { repo.setUiDensityScale(pendingUiScale) } },
-                                    pendingLyricFontScale = pendingLyricFontScale,
-                                    onLyricFontScaleChange = { pendingLyricFontScale = it },
-                                    onLyricFontScaleCommit = { scope.launch { repo.setLyricFontScale(pendingLyricFontScale) } },
-                                    backgroundImageUri = backgroundImageUri,
-                                    backgroundImageBlur = backgroundImageBlur,
-                                    backgroundImageAlpha = backgroundImageAlpha,
-                                    onSelectBackground = {
-                                        photoPickerLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    },
-                                    onClearBackground = {
-                                        scope.launch {
-                                            BackgroundImageStorage.deleteManagedBackground(context, backgroundImageUri)
-                                            repo.setBackgroundImageUri(null)
-                                        }
-                                    },
-                                    onBackgroundBlurCommit = { blur ->
-                                        scope.launch { repo.setBackgroundImageBlur(blur) }
-                                    },
-                                    onBackgroundAlphaCommit = { alpha ->
-                                        scope.launch { repo.setBackgroundImageAlpha(alpha) }
-                                    },
-                                    previewLyricFontScale = pendingLyricFontScale,
-                                    isDarkTheme = isDarkTheme,
-                                    onThemeToggleRequest = ::requestThemeToggle
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .fillMaxSize()
+                            .captureAdvancedGlassBackdrop(contentGlassBackdrop)
                     ) {
-                        if (stepIndex > 0) {
-                            HapticTextButton(
-                                onClick = { stepIndex = (stepIndex - 1).coerceAtLeast(0) },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(stringResource(R.string.action_back))
-                            }
-                        } else {
-                            Spacer(Modifier.weight(1f))
-                        }
-
-                        HapticButton(
-                            onClick = {
-                                goNextStep()
-                            },
-                            enabled = !finishing,
-                            modifier = Modifier.weight(1.4f),
-                            shape = RoundedCornerShape(20.dp)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .widthIn(max = 680.dp)
+                                .align(Alignment.Center)
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
+                                .padding(horizontal = 24.dp, vertical = 20.dp)
                         ) {
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.onboarding_badge),
+                                    modifier = Modifier.padding(
+                                        horizontal = 12.dp,
+                                        vertical = 6.dp
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Spacer(Modifier.height(14.dp))
                             Text(
-                                text = if (stepIndex == steps.lastIndex) {
-                                    stringResource(R.string.onboarding_action_enter_app)
-                                } else {
-                                    stringResource(R.string.onboarding_action_next)
-                                }
+                                text = stringResource(R.string.onboarding_title),
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = colorScheme.onSurface
                             )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.onboarding_subtitle),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(18.dp))
+                            LinearProgressIndicator(
+                                progress = { animatedProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(999.dp))
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.onboarding_step_counter,
+                                    stepIndex + 1,
+                                    steps.size
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(18.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth()
+                            ) {
+                                StartupOnboardingLayerHost(
+                                    transitionState = stepTransitionState,
+                                    modifier = Modifier.fillMaxSize(),
+                                ) { scene ->
+                                    key(scene.stepIndex) {
+                                        CompositionLocalProvider(
+                                            LocalAdvancedGlassNavigationOwner provides
+                                                steps[scene.stepIndex]
+                                        ) {
+                                            AdvancedGlassSceneLayer(
+                                                controller = advancedGlassController,
+                                                modifier = Modifier.fillMaxSize(),
+                                                disableStretchOverscroll =
+                                                    backgroundImageUri != null,
+                                                fixedBackground = true,
+                                                background = {
+                                                    Box(Modifier.fillMaxSize())
+                                                },
+                                                content = {
+                                                    Box(Modifier.fillMaxSize()) {
+                                                        RenderOnboardingStepContent(
+                                                            scene.stepIndex
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (stepIndex > 0) {
+                                    HapticTextButton(
+                                        onClick = {
+                                            transitionToStep(stepIndex - 1)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(stringResource(R.string.action_back))
+                                    }
+                                } else {
+                                    Spacer(Modifier.weight(1f))
+                                }
+
+                                HapticButton(
+                                    onClick = ::goNextStep,
+                                    enabled = !finishing,
+                                    modifier = Modifier.weight(1.4f),
+                                    shape = OnboardingControlShape
+                                ) {
+                                    Text(
+                                        text = if (stepIndex == steps.lastIndex) {
+                                            stringResource(R.string.onboarding_learning_enter_app)
+                                        } else {
+                                            stringResource(R.string.onboarding_action_next)
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -806,6 +1174,51 @@ fun StartupOnboardingScreen() {
                 showClearGitHubConfigDialog = showClearGitHubConfigDialog,
                 onShowClearGitHubConfigDialogChange = { showClearGitHubConfigDialog = it }
             )
+            SettingsWebDavDialogs(
+                showWebDavConfigDialog = showWebDavConfigDialog,
+                onShowWebDavConfigDialogChange = { showWebDavConfigDialog = it },
+                showClearWebDavConfigDialog = showClearWebDavConfigDialog,
+                onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
+            )
+            if (notificationPermissionWarningVisible) {
+                StartupNotificationPermissionWarningDialog(
+                    attempt = notificationPermissionWarningAttempts,
+                    onRequestPermission = ::requestNotificationPermission,
+                    onDismiss = {
+                        notificationPermissionWarningVisible = false
+                        if (
+                            !hasFinishedStartupNotificationPermissionWarning(
+                                notificationPermissionWarningAttempts
+                            )
+                        ) {
+                            scope.launch {
+                                delay(180L)
+                                if (!notificationPermissionGranted) {
+                                    showNotificationPermissionWarning()
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            if (noPlatformWarningVisible) {
+                StartupNoPlatformWarningDialog(
+                    onContinue = {
+                        noPlatformWarningVisible = false
+                        transitionToStep(stepIndex + 1)
+                    },
+                    onDismiss = { noPlatformWarningVisible = false }
+                )
+            }
+            if (enhancedAdvancedBlurPromptVisible) {
+                StartupEnhancedAdvancedBlurPromptDialog(
+                    onEnable = {
+                        enhancedAdvancedBlurPromptVisible = false
+                        scope.launch { repo.setEnhancedAdvancedBlurEnabled(true) }
+                    },
+                    onDismiss = { enhancedAdvancedBlurPromptVisible = false }
+                )
+            }
             loginSuccessTitle?.let { title ->
                 LoginSuccessDialog(
                     title = title,
@@ -831,13 +1244,18 @@ fun StartupOnboardingScreen() {
 }
 
 @Composable
-private fun StepContainer(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        content = content
-    )
+private fun StepContainer(
+    stepIndex: Int,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    key(stepIndex) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            content = content
+        )
+    }
 }
 
 @Composable
@@ -850,7 +1268,7 @@ private fun StepHeader(icon: ImageVector, title: String, description: String) {
     ) {
         Surface(
             modifier = Modifier.size(54.dp),
-            shape = RoundedCornerShape(18.dp),
+            shape = OnboardingControlShape,
             color = colors.primaryContainer
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -858,7 +1276,12 @@ private fun StepHeader(icon: ImageVector, title: String, description: String) {
             }
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.onSurface
+            )
             Spacer(Modifier.height(4.dp))
             Text(description, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
         }
@@ -884,10 +1307,6 @@ private fun LanguageContent(
         )
         Spacer(Modifier.height(12.dp))
     }
-    HintCard(
-        title = stringResource(R.string.onboarding_language_hint_title),
-        body = stringResource(R.string.onboarding_language_hint_body)
-    )
 }
 
 @Composable
@@ -966,18 +1385,24 @@ private fun PlatformContent(
 }
 
 @Composable
-private fun GitHubSyncContent(
+private fun BackupRestoreContent(
     gitHubState: GitHubSyncUiState,
+    webDavState: WebDavSyncUiState,
     onDismissGitHubMessage: () -> Unit,
+    onDismissWebDavMessage: () -> Unit,
     onOpenGitHubConfig: () -> Unit,
     onOpenClearGitHubConfig: () -> Unit,
     onToggleGitHubAutoSync: (Boolean) -> Unit,
-    onGitHubSyncNow: () -> Unit
+    onGitHubSyncNow: () -> Unit,
+    onOpenWebDavConfig: () -> Unit,
+    onOpenClearWebDavConfig: () -> Unit,
+    onToggleWebDavAutoSync: (Boolean) -> Unit,
+    onWebDavSyncNow: () -> Unit
 ) {
     StepHeader(
         icon = Icons.Outlined.CloudSync,
-        title = stringResource(R.string.common_github),
-        description = stringResource(R.string.onboarding_github_desc)
+        title = stringResource(R.string.onboarding_backup_restore_title),
+        description = stringResource(R.string.onboarding_backup_restore_desc)
     )
     Spacer(Modifier.height(18.dp))
     gitHubState.errorMessage?.let {
@@ -988,6 +1413,14 @@ private fun GitHubSyncContent(
         InlineMessage(text = it, onClose = onDismissGitHubMessage)
         Spacer(Modifier.height(14.dp))
     }
+    webDavState.errorMessage?.let {
+        InlineMessage(text = it, onClose = onDismissWebDavMessage)
+        Spacer(Modifier.height(14.dp))
+    }
+    webDavState.successMessage?.let {
+        InlineMessage(text = it, onClose = onDismissWebDavMessage)
+        Spacer(Modifier.height(14.dp))
+    }
     GitHubSyncCard(
         state = gitHubState,
         onOpenConfig = onOpenGitHubConfig,
@@ -995,8 +1428,16 @@ private fun GitHubSyncContent(
         onToggleAutoSync = onToggleGitHubAutoSync,
         onSyncNow = onGitHubSyncNow
     )
+    Spacer(Modifier.height(14.dp))
+    WebDavSyncCard(
+        state = webDavState,
+        onOpenConfig = onOpenWebDavConfig,
+        onOpenClearConfig = onOpenClearWebDavConfig,
+        onToggleAutoSync = onToggleWebDavAutoSync,
+        onSyncNow = onWebDavSyncNow
+    )
     Spacer(Modifier.height(18.dp))
-    HintCard(body = stringResource(R.string.onboarding_github_hint))
+    HintCard(body = stringResource(R.string.onboarding_backup_restore_hint))
 }
 
 @Composable
@@ -1004,50 +1445,27 @@ private fun PersonalizeContent(
     pendingUiScale: Float,
     onUiScaleChange: (Float) -> Unit,
     onUiScaleCommit: () -> Unit,
-    pendingLyricFontScale: Float,
-    onLyricFontScaleChange: (Float) -> Unit,
-    onLyricFontScaleCommit: () -> Unit,
     backgroundImageUri: String?,
     backgroundImageBlur: Float,
     backgroundImageAlpha: Float,
+    enhancedAdvancedBlurAvailable: Boolean,
+    enhancedAdvancedBlurEnabled: Boolean,
     onSelectBackground: () -> Unit,
     onClearBackground: () -> Unit,
+    onBackgroundBlurChange: (Float) -> Unit,
     onBackgroundBlurCommit: (Float) -> Unit,
+    onBackgroundAlphaChange: (Float) -> Unit,
     onBackgroundAlphaCommit: (Float) -> Unit,
-    previewLyricFontScale: Float,
+    onEnhancedAdvancedBlurChange: (Boolean) -> Unit,
     isDarkTheme: Boolean,
     onThemeToggleRequest: (Offset, Float) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
-        mutableFloatStateOf(backgroundImageBlur)
-    }
-    var pendingBackgroundImageAlpha by rememberSaveable(backgroundImageUri) {
-        mutableFloatStateOf(backgroundImageAlpha)
-    }
-
-    LaunchedEffect(backgroundImageBlur, backgroundImageUri) {
-        if ((pendingBackgroundImageBlur - backgroundImageBlur).absoluteValue > 0.001f) {
-            pendingBackgroundImageBlur = backgroundImageBlur
-        }
-    }
-    LaunchedEffect(backgroundImageAlpha, backgroundImageUri) {
-        if ((pendingBackgroundImageAlpha - backgroundImageAlpha).absoluteValue > 0.001f) {
-            pendingBackgroundImageAlpha = backgroundImageAlpha
-        }
-    }
 
     StepHeader(
         icon = Icons.Outlined.Palette,
         title = stringResource(R.string.onboarding_personalize_title),
         description = stringResource(R.string.onboarding_personalize_desc)
-    )
-    Spacer(Modifier.height(18.dp))
-    PreviewCard(
-        backgroundImageUri = backgroundImageUri,
-        backgroundImageBlur = pendingBackgroundImageBlur,
-        backgroundImageAlpha = pendingBackgroundImageAlpha,
-        lyricFontScale = previewLyricFontScale
     )
     Spacer(Modifier.height(18.dp))
     HintCard(
@@ -1083,60 +1501,86 @@ private fun PersonalizeContent(
     }
     Spacer(Modifier.height(14.dp))
     HintCard(
-        title = stringResource(R.string.lyrics_font_size),
-        body = stringResource(R.string.settings_lyrics_font_current, (pendingLyricFontScale * 100).roundToInt())
-    ) {
-        Slider(
-            value = pendingLyricFontScale,
-            onValueChange = onLyricFontScaleChange,
-            onValueChangeFinished = onLyricFontScaleCommit,
-            valueRange = MIN_LYRIC_FONT_SCALE..MAX_LYRIC_FONT_SCALE,
-            steps = 10
-        )
-        Text(
-            text = stringResource(R.string.settings_lyrics_sample),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                fontSize = scaledLyricFontSize(18f, pendingLyricFontScale).sp
-            ),
-            color = colors.onSurface
-        )
-    }
-    Spacer(Modifier.height(14.dp))
-    HintCard(
         title = stringResource(R.string.background_custom),
         body = stringResource(R.string.onboarding_background_hint)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HapticOutlinedButton(onClick = onSelectBackground, modifier = Modifier.weight(1f)) {
+            HapticOutlinedButton(
+                onClick = onSelectBackground,
+                modifier = Modifier.weight(1f),
+                shape = OnboardingControlShape,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+            ) {
                 Text(
                     if (backgroundImageUri == null) {
                         stringResource(R.string.onboarding_background_select)
                     } else {
                         stringResource(R.string.onboarding_background_change)
-                    }
+                    },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             if (backgroundImageUri != null) {
-                HapticOutlinedButton(onClick = onClearBackground, modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.onboarding_background_clear))
+                HapticOutlinedButton(
+                    onClick = onClearBackground,
+                    modifier = Modifier.weight(1f),
+                    shape = OnboardingControlShape,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.onboarding_background_clear),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
         if (backgroundImageUri != null) {
             Text(stringResource(R.string.background_blur), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
             Slider(
-                value = pendingBackgroundImageBlur,
-                onValueChange = { pendingBackgroundImageBlur = it },
-                onValueChangeFinished = { onBackgroundBlurCommit(pendingBackgroundImageBlur) },
+                value = backgroundImageBlur,
+                onValueChange = onBackgroundBlurChange,
+                onValueChangeFinished = { onBackgroundBlurCommit(backgroundImageBlur) },
                 valueRange = 0f..25f
             )
             Text(stringResource(R.string.background_opacity), color = colors.onSurface, style = MaterialTheme.typography.bodyMedium)
             Slider(
-                value = pendingBackgroundImageAlpha,
-                onValueChange = { pendingBackgroundImageAlpha = it },
-                onValueChangeFinished = { onBackgroundAlphaCommit(pendingBackgroundImageAlpha) },
+                value = backgroundImageAlpha,
+                onValueChange = onBackgroundAlphaChange,
+                onValueChangeFinished = { onBackgroundAlphaCommit(backgroundImageAlpha) },
                 valueRange = 0.1f..1.0f
             )
+        }
+    }
+    if (enhancedAdvancedBlurAvailable) {
+        Spacer(Modifier.height(14.dp))
+        HintCard(
+            title = stringResource(R.string.settings_enhanced_advanced_blur),
+            body = if (backgroundImageUri == null) {
+                stringResource(R.string.onboarding_enhanced_blur_no_background_desc)
+            } else {
+                stringResource(R.string.onboarding_enhanced_blur_background_desc)
+            }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.onboarding_enhanced_blur_switch_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
+                Switch(
+                    checked = enhancedAdvancedBlurEnabled,
+                    onCheckedChange = onEnhancedAdvancedBlurChange
+                )
+            }
         }
     }
     Spacer(Modifier.height(14.dp))
@@ -1150,14 +1594,13 @@ private fun PersonalizeContent(
 @Composable
 private fun OptionCard(title: String, selected: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Surface(
+    OnboardingGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
+            .clip(OnboardingCardShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = if (selected) colors.secondaryContainer else colors.surfaceVariant.copy(alpha = 0.56f),
-        tonalElevation = if (selected) 6.dp else 0.dp
+        shape = OnboardingCardShape,
+        color = if (selected) colors.secondaryContainer else colors.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -1166,7 +1609,12 @@ private fun OptionCard(title: String, selected: Boolean, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = if (selected) colors.onSecondaryContainer else colors.onSurface)
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) colors.onSecondaryContainer else colors.onSurface
+            )
             if (selected) {
                 Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = colors.onSecondaryContainer)
             }
@@ -1184,13 +1632,13 @@ private fun PlatformCard(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    Surface(
+    OnboardingGlassSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(OnboardingCardShape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
-        color = if (connected) colors.secondaryContainer.copy(alpha = 0.72f) else colors.surfaceVariant.copy(alpha = 0.5f)
+        shape = OnboardingCardShape,
+        color = if (connected) colors.secondaryContainer else colors.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -1201,15 +1649,20 @@ private fun PlatformCard(
         ) {
             Surface(
                 modifier = Modifier.size(52.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = colors.surface.copy(alpha = 0.72f)
+                shape = OnboardingControlShape,
+                color = colors.surface
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(painter = icon, contentDescription = title, tint = colors.onSurface, modifier = Modifier.size(28.dp))
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
                 Spacer(Modifier.height(6.dp))
                 StatusPill(status, connected)
             }
@@ -1232,7 +1685,7 @@ private fun OnboardingActionButton(
         modifier = modifier
             .widthIn(max = 104.dp)
             .defaultMinSize(minWidth = 1.dp, minHeight = 36.dp),
-        shape = RoundedCornerShape(18.dp),
+        shape = OnboardingControlShape,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Text(
@@ -1276,9 +1729,9 @@ private fun HintCard(
     content: @Composable ColumnScope.() -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = colors.surfaceVariant.copy(alpha = 0.58f)
+    OnboardingGlassSurface(
+        shape = OnboardingCardShape,
+        color = colors.surfaceContainerHigh
     ) {
         Column(
             modifier = Modifier
@@ -1287,122 +1740,15 @@ private fun HintCard(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             title?.let {
-                Text(it, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+                Text(
+                    it,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.onSurface
+                )
             }
             Text(body, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             content()
-        }
-    }
-}
-
-@Composable
-private fun PreviewCard(
-    backgroundImageUri: String?,
-    backgroundImageBlur: Float,
-    backgroundImageAlpha: Float,
-    lyricFontScale: Float
-) {
-    val colors = MaterialTheme.colorScheme
-    val context = LocalContext.current
-    val legacyBlur = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0f else backgroundImageBlur
-    val previewImageRequest = remember(context, backgroundImageUri, legacyBlur) {
-        backgroundImageUri?.let { uri ->
-            ImageRequest.Builder(context)
-                .data(uri.toUri())
-                .crossfade(false)
-                .transformations(
-                    if (legacyBlur > 0f) {
-                        listOf(BlurTransformation(context, radius = legacyBlur))
-                    } else {
-                        emptyList()
-                    }
-                )
-                .build()
-        }
-    }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(240.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = colors.surfaceVariant.copy(alpha = 0.42f)
-    ) {
-        Box(Modifier.fillMaxSize()) {
-            if (previewImageRequest != null) {
-                AsyncImage(
-                    model = previewImageRequest,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .let { base ->
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && backgroundImageBlur > 0f) {
-                                base.blur(backgroundImageBlur.dp)
-                            } else {
-                                base
-                            }
-                        },
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(colors.surface.copy(alpha = (1f - backgroundImageAlpha).coerceIn(0.18f, 0.72f)))
-                )
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    colors.primaryContainer.copy(alpha = 0.9f),
-                                    colors.tertiaryContainer.copy(alpha = 0.7f),
-                                    colors.surfaceVariant.copy(alpha = 0.82f)
-                                )
-                            )
-                        )
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Blob(color = colors.primary, size = 10.dp)
-                    Blob(color = colors.secondary, size = 10.dp)
-                    Blob(color = colors.tertiary, size = 10.dp)
-                }
-                Surface(shape = RoundedCornerShape(24.dp), color = colors.surface.copy(alpha = 0.82f)) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.onboarding_preview_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = colors.onSurface
-                        )
-                        Text(
-                            text = stringResource(R.string.onboarding_preview_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.settings_lyrics_sample),
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontSize = scaledLyricFontSize(24f, lyricFontScale).sp
-                            ),
-                            color = colors.onSurface
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -1436,12 +1782,12 @@ private fun GitHubSyncCard(
         null
     }
 
-    Surface(
-        shape = RoundedCornerShape(26.dp),
+    OnboardingGlassSurface(
+        shape = OnboardingCardShape,
         color = if (state.isConfigured) {
-            colors.secondaryContainer.copy(alpha = 0.72f)
+            colors.secondaryContainer
         } else {
-            colors.surfaceVariant.copy(alpha = 0.5f)
+            colors.surfaceContainerHigh
         }
     ) {
         Column(
@@ -1457,8 +1803,8 @@ private fun GitHubSyncCard(
             ) {
                 Surface(
                     modifier = Modifier.size(52.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = colors.surface.copy(alpha = 0.72f)
+                    shape = OnboardingControlShape,
+                    color = colors.surface
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -1471,8 +1817,11 @@ private fun GitHubSyncCard(
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.github_auto_sync),
+                        text = stringResource(
+                            R.string.onboarding_backup_restore_github_title
+                        ),
                         style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
                     Spacer(Modifier.height(6.dp))
@@ -1513,8 +1862,8 @@ private fun GitHubSyncCard(
 
             if (state.isConfigured) {
                 Surface(
-                    shape = RoundedCornerShape(22.dp),
-                    color = colors.surface.copy(alpha = 0.72f)
+                    shape = OnboardingControlShape,
+                    color = colors.surface
                 ) {
                     Row(
                         modifier = Modifier
@@ -1554,7 +1903,7 @@ private fun GitHubSyncCard(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        HapticOutlinedButton(onClick = onSyncNow, shape = RoundedCornerShape(18.dp)) {
+                        HapticOutlinedButton(onClick = onSyncNow, shape = OnboardingControlShape) {
                             Text(stringResource(R.string.settings_sync_now))
                         }
                     }
@@ -1571,12 +1920,280 @@ private fun GitHubSyncCard(
 }
 
 @Composable
-private fun Blob(modifier: Modifier = Modifier, color: Color, size: Dp) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(color)
+private fun WebDavSyncCard(
+    state: WebDavSyncUiState,
+    onOpenConfig: () -> Unit,
+    onOpenClearConfig: () -> Unit,
+    onToggleAutoSync: (Boolean) -> Unit,
+    onSyncNow: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val endpoint = state.serverUrl.takeIf { it.isNotBlank() }?.let { serverUrl ->
+        state.basePath.takeIf { it.isNotBlank() }?.let { basePath ->
+            "$serverUrl/$basePath"
+        } ?: serverUrl
+    }
+
+    OnboardingGlassSurface(
+        shape = OnboardingCardShape,
+        color = if (state.isConfigured) {
+            colors.secondaryContainer
+        } else {
+            colors.surfaceContainerHigh
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = OnboardingControlShape,
+                    color = colors.surface
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.CloudSync,
+                            contentDescription = stringResource(
+                                R.string.onboarding_backup_restore_webdav_title
+                            ),
+                            tint = colors.onSurface,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(
+                            R.string.onboarding_backup_restore_webdav_title
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    StatusPill(
+                        label = if (state.isConfigured) {
+                            stringResource(R.string.settings_configured)
+                        } else {
+                            stringResource(R.string.settings_not_configured)
+                        },
+                        connected = state.isConfigured
+                    )
+                    endpoint?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.onboarding_backup_restore_webdav_endpoint,
+                                it
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    if (state.isConfigured) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = if (state.lastSyncTime > 0) {
+                                stringResource(
+                                    R.string.sync_last_time,
+                                    formatSyncTime(state.lastSyncTime)
+                                )
+                            } else {
+                                stringResource(R.string.sync_not_synced)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                }
+                OnboardingActionButton(
+                    text = if (state.isConfigured) {
+                        stringResource(R.string.onboarding_platform_action_manage)
+                    } else {
+                        stringResource(R.string.settings_configure)
+                    },
+                    onClick = onOpenConfig
+                )
+            }
+
+            if (state.isConfigured) {
+                Surface(
+                    shape = OnboardingControlShape,
+                    color = colors.surface
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.sync_auto),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = colors.onSurface
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.webdav_auto_sync_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.autoSyncEnabled,
+                            onCheckedChange = onToggleAutoSync
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.isSyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        HapticOutlinedButton(onClick = onSyncNow, shape = OnboardingControlShape) {
+                            Text(stringResource(R.string.settings_sync_now))
+                        }
+                    }
+                    HapticTextButton(onClick = onOpenClearConfig) {
+                        Text(
+                            text = stringResource(R.string.settings_clear_config),
+                            color = colors.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StartupNoPlatformWarningDialog(
+    onContinue: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.onboarding_platforms_no_login_title))
+        },
+        text = {
+            Text(stringResource(R.string.onboarding_platforms_no_login_desc))
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onContinue) {
+                Text(stringResource(R.string.onboarding_platforms_no_login_continue))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.onboarding_platforms_no_login_connect))
+            }
+        }
+    )
+}
+
+@Composable
+private fun StartupEnhancedAdvancedBlurPromptDialog(
+    onEnable: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.onboarding_enhanced_blur_prompt_title))
+        },
+        text = {
+            Text(stringResource(R.string.onboarding_enhanced_blur_prompt_desc))
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onEnable) {
+                Text(stringResource(R.string.onboarding_enhanced_blur_prompt_enable))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.onboarding_enhanced_blur_prompt_not_now))
+            }
+        }
+    )
+}
+
+@Composable
+private fun StartupNotificationPermissionWarningDialog(
+    attempt: Int,
+    onRequestPermission: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isFinalWarning = attempt >= STARTUP_NOTIFICATION_PERMISSION_WARNING_ATTEMPTS
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (isFinalWarning) {
+                        R.string.onboarding_notification_permission_final_warning_title
+                    } else {
+                        R.string.onboarding_notification_permission_warning_title
+                    }
+                )
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    if (isFinalWarning) {
+                        R.string.onboarding_notification_permission_final_warning_desc
+                    } else {
+                        R.string.onboarding_notification_permission_warning_desc
+                    }
+                )
+            )
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onRequestPermission) {
+                Text(
+                    stringResource(
+                        if (isFinalWarning) {
+                            R.string.onboarding_notification_permission_final_request
+                        } else {
+                            R.string.onboarding_notification_permission_request_again
+                        }
+                    )
+                )
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(
+                    stringResource(
+                        if (isFinalWarning) {
+                            R.string.onboarding_notification_permission_final_skip
+                        } else {
+                            R.string.onboarding_notification_permission_skip
+                        }
+                    )
+                )
+            }
+        }
     )
 }
 

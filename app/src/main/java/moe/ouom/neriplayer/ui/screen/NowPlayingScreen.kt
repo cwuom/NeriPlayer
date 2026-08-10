@@ -2859,6 +2859,7 @@ fun NowPlayingScreen(
                                     text = currentSong?.customName ?: currentSong?.name ?: "",
                                     marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                                     style = MaterialTheme.typography.headlineSmall,
+                                    color = targetNowPlayingColorScheme.onSurface,
                                     modifier = Modifier
                                         .widthIn(max = maxWidth)
                                         .clip(RoundedCornerShape(8.dp))

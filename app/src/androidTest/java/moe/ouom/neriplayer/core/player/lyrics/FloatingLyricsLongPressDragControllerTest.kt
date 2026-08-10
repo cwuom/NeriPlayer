@@ -7,6 +7,7 @@ import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -31,8 +32,8 @@ class FloatingLyricsLongPressDragControllerTest {
         val up = MotionEvent.obtain(0L, 8L, MotionEvent.ACTION_UP, 16f, 24f, 0)
 
         try {
-            controller.onTouch(view, down)
-            controller.onTouch(view, up)
+            assertTrue(controller.onTouch(view, down))
+            assertTrue(controller.onTouch(view, up))
         } finally {
             down.recycle()
             up.recycle()

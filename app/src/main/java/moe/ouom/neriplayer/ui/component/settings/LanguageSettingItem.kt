@@ -24,7 +24,6 @@ package moe.ouom.neriplayer.ui.component.settings
  */
 
 
-import android.app.Activity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
@@ -53,7 +52,7 @@ private val LanguageOptionShape = RoundedCornerShape(16.dp)
 @Composable
 fun LanguageSettingItem(
     modifier: Modifier = Modifier,
-    onBeforeRestart: () -> Unit = {}
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     val context = LocalContext.current
     var showDialog by remember { mutableStateOf(false) }
@@ -90,10 +89,7 @@ fun LanguageSettingItem(
                                     if (currentLanguage == language) return@clickable
                                     LanguageManager.setLanguage(context, language)
                                     currentLanguage = language
-                                    (context as? Activity)?.let { activity ->
-                                        onBeforeRestart()
-                                        LanguageManager.restartActivity(activity)
-                                    }
+                                    onLanguageChanged(language)
                                 }
                                 .padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -105,10 +101,7 @@ fun LanguageSettingItem(
                                     if (currentLanguage == language) return@RadioButton
                                     LanguageManager.setLanguage(context, language)
                                     currentLanguage = language
-                                    (context as? Activity)?.let { activity ->
-                                        onBeforeRestart()
-                                        LanguageManager.restartActivity(activity)
-                                    }
+                                    onLanguageChanged(language)
                                 }
                             )
                             Spacer(modifier = Modifier.width(8.dp))

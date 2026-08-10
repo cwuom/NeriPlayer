@@ -71,6 +71,10 @@ object LanguageManager {
         prefs.edit {
             putString(KEY_LANGUAGE, language.code)
         }
+        val locale = resolveLocale(context, language)
+        if (Locale.getDefault() != locale) {
+            Locale.setDefault(locale)
+        }
         cachedAppContext = null
         cachedAppLocale = null
     }
@@ -84,11 +88,7 @@ object LanguageManager {
      */
     fun applyLanguage(context: Context): Context {
         val language = getCurrentLanguage(context)
-        val locale = when (language) {
-            Language.CHINESE -> Locale.forLanguageTag("zh")
-            Language.ENGLISH -> Locale.forLanguageTag("en")
-            Language.SYSTEM -> context.resources.configuration.locales[0]
-        }
+        val locale = resolveLocale(context, language)
 
         val isAppContext = context.applicationContext === context
         if (isAppContext && cachedAppContext != null && cachedAppLocale == locale) {
@@ -98,24 +98,33 @@ object LanguageManager {
             return cachedAppContext!!
         }
 
-        val currentLocale = context.resources.configuration.locales[0]
-
-        if (currentLocale == locale && Locale.getDefault() == locale) {
-            return context
-        }
-
         if (Locale.getDefault() != locale) {
             Locale.setDefault(locale)
         }
-        val config = Configuration(context.resources.configuration)
-        config.setLocale(locale)
-
-        val newContext = context.createConfigurationContext(config)
+        val newContext = localizedContext(context, language)
         if (isAppContext) {
             cachedAppContext = newContext
             cachedAppLocale = locale
         }
         return newContext
+    }
+
+    fun localizedContext(context: Context, language: Language): Context {
+        val locale = resolveLocale(context, language)
+        val currentLocale = context.resources.configuration.locales[0]
+        if (currentLocale == locale) {
+            return context
+        }
+        val config = Configuration(context.resources.configuration)
+        config.setLocale(locale)
+        return context.createConfigurationContext(config)
+    }
+
+    private fun resolveLocale(context: Context, language: Language): Locale = when (language) {
+        Language.CHINESE -> Locale.forLanguageTag("zh")
+        Language.ENGLISH -> Locale.forLanguageTag("en")
+        Language.SYSTEM -> (context.applicationContext ?: context)
+            .resources.configuration.locales[0]
     }
 
     /**

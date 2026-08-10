@@ -162,6 +162,7 @@ import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -544,6 +545,7 @@ fun SettingsScreen(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -1301,7 +1303,7 @@ fun SettingsScreen(
                                 highlightPulse = settingsHighlightPulse,
                                 onHighlightFinished = onSettingsHighlightFinished
                             ),
-                            onBeforeRestart = onBeforeLanguageRestart
+                            onLanguageChanged = onLanguageChanged
                         )
                         ListItem(
                             modifier = Modifier.settingsHighlightTarget(

@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui.component.sheet
 
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.OverscrollFactory
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -13,6 +15,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Velocity
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 
 @Composable
 private fun rememberBottomSheetNestedScrollConnection(
@@ -60,10 +63,25 @@ internal fun shouldPassBottomSheetMotionToParent(
 ): Boolean = availableY > 0f && allowDownwardToParent
 
 fun Modifier.bottomSheetScrollGuard(
-    allowDownwardToParent: () -> Boolean = { false }
+    allowDownwardToParent: (() -> Boolean)? = null
 ): Modifier = composed {
-    nestedScroll(rememberBottomSheetNestedScrollConnection(allowDownwardToParent))
+    if (shouldInstallBottomSheetNestedScrollGuard(
+            overscrollFactory = LocalOverscrollFactory.current,
+            preserveParentHandoff = allowDownwardToParent != null
+        )
+    ) {
+        nestedScroll(
+            rememberBottomSheetNestedScrollConnection(allowDownwardToParent ?: { false })
+        )
+    } else {
+        this
+    }
 }
+
+internal fun shouldInstallBottomSheetNestedScrollGuard(
+    overscrollFactory: OverscrollFactory?,
+    preserveParentHandoff: Boolean = false
+): Boolean = overscrollFactory !== AdvancedGlassOverscrollFactory || preserveParentHandoff
 
 fun Modifier.bottomSheetDragBlocker(): Modifier = pointerInput(Unit) {
     detectVerticalDragGestures { change, _ ->
