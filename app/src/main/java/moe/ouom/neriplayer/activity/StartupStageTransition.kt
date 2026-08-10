@@ -18,11 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -166,25 +164,12 @@ private fun StartupStageTransitionPlaceholder(stage: StartupStage) {
                             .clip(RoundedCornerShape(2.dp))
                     )
                     Spacer(Modifier.height(18.dp))
-                    Box(
+                    Spacer(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(30.dp),
-                            color = colors.primary,
-                            strokeWidth = 2.5.dp
-                        )
-                    }
+                            .weight(1f)
+                    )
                 }
-            } else {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = colors.primary,
-                    strokeWidth = 3.dp
-                )
             }
         }
     }

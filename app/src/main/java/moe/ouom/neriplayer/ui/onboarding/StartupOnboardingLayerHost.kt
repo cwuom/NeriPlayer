@@ -178,6 +178,12 @@ internal fun rememberStartupOnboardingLayerTransitionState(
 internal class StartupOnboardingLayerTransitionState internal constructor(
     private val controller: StartupOnboardingLayerTransitionController
 ) {
+    val isRunning: Boolean
+        get() = controller.isRunning
+
+    fun canReverseTo(targetStepIndex: Int): Boolean =
+        controller.canReverseTo(targetStepIndex)
+
     val visibleScenes: List<StartupOnboardingLayerScene>
         get() = controller.visibleScenes
 
@@ -282,6 +288,12 @@ internal class StartupOnboardingLayerTransitionController(
     private var generation = 0L
     private var containerHasWidth = false
     private var initialSceneFrameRendered = false
+
+    val isRunning: Boolean
+        get() = running
+
+    fun canReverseTo(targetStepIndex: Int): Boolean =
+        running && fromStepIndex == targetStepIndex
 
     val activeGlassStepIndex: Int
         get() = resolveStartupOnboardingGlassOwnerStepIndex(

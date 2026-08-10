@@ -146,6 +146,67 @@ class StartupOnboardingProgressTest {
     }
 
     @Test
+    fun onboardingLayerExposesTheRunningLockWhileAnIncomingScenePrepares() {
+        val controller = StartupOnboardingLayerTransitionController(
+            scope = CoroutineScope(Job()),
+            initialStepIndex = 0
+        )
+        try {
+            controller.onContainerWidthChanged(1080)
+            controller.onInitialSceneFrameRendered()
+
+            assertEquals(false, controller.isRunning)
+
+            controller.request(1)
+
+            assertEquals(true, controller.isRunning)
+        } finally {
+            controller.dispose()
+        }
+    }
+
+    @Test
+    fun navigationIsBlockedWhileTransitioningOrFinishing() {
+        assertEquals(
+            true,
+            canNavigateStartupOnboardingStep(
+                finishing = false,
+                transitionRunning = false
+            )
+        )
+        assertEquals(
+            false,
+            canNavigateStartupOnboardingStep(
+                finishing = false,
+                transitionRunning = true
+            )
+        )
+        assertEquals(
+            false,
+            canNavigateStartupOnboardingStep(
+                finishing = true,
+                transitionRunning = false
+            )
+        )
+        assertEquals(
+            true,
+            canNavigateStartupOnboardingBack(
+                finishing = false,
+                transitionRunning = true,
+                canReverseTransition = true
+            )
+        )
+        assertEquals(
+            false,
+            canNavigateStartupOnboardingBack(
+                finishing = false,
+                transitionRunning = true,
+                canReverseTransition = false
+            )
+        )
+    }
+
+    @Test
     fun onboardingLayerReversesAnInFlightTransitionFromItsCurrentProgress() {
         val reversed = reverseStartupOnboardingLayerTransitionProgress(
             enteringTranslationProgress = 0.4f,

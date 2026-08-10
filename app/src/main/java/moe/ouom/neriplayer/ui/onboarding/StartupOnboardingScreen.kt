@@ -178,6 +178,17 @@ internal fun shouldAdvanceStartupOnboarding(
     permissionNavigationBlocked: Boolean
 ): Boolean = !permissionRequestActive && !permissionNavigationBlocked
 
+internal fun canNavigateStartupOnboardingStep(
+    finishing: Boolean,
+    transitionRunning: Boolean
+): Boolean = !finishing && !transitionRunning
+
+internal fun canNavigateStartupOnboardingBack(
+    finishing: Boolean,
+    transitionRunning: Boolean,
+    canReverseTransition: Boolean
+): Boolean = !finishing && (!transitionRunning || canReverseTransition)
+
 internal const val STARTUP_NOTIFICATION_PERMISSION_WARNING_ATTEMPTS = 2
 
 internal fun shouldShowStartupNotificationPermissionWarning(
@@ -582,7 +593,15 @@ fun StartupOnboardingScreen(
 
     fun transitionToStep(targetIndex: Int) {
         val nextIndex = targetIndex.coerceIn(0, steps.lastIndex)
+        if (finishing) return
+        if (
+            stepTransitionState.isRunning &&
+            !stepTransitionState.canReverseTo(nextIndex)
+        ) {
+            return
+        }
         if (nextIndex == stepIndex) return
+        stepTransitionState.request(nextIndex)
         stepIndex = nextIndex
     }
 
@@ -600,6 +619,14 @@ fun StartupOnboardingScreen(
     }
 
     fun goNextStep() {
+        if (
+            !canNavigateStartupOnboardingStep(
+                finishing = finishing,
+                transitionRunning = stepTransitionState.isRunning
+            )
+        ) {
+            return
+        }
         if (
             !shouldAdvanceStartupOnboarding(
                 permissionRequestActive = permissionRequestActive,
@@ -936,6 +963,15 @@ fun StartupOnboardingScreen(
 
     CompositionLocalProvider(LocalDensity provides previewDensity) {
         val colorScheme = MaterialTheme.colorScheme
+        val canNavigateNext = canNavigateStartupOnboardingStep(
+            finishing = finishing,
+            transitionRunning = stepTransitionState.isRunning
+        )
+        val canNavigateBack = canNavigateStartupOnboardingBack(
+            finishing = finishing,
+            transitionRunning = stepTransitionState.isRunning,
+            canReverseTransition = stepTransitionState.canReverseTo(stepIndex - 1)
+        )
         val visibleStepScenes = stepTransitionState.visibleScenes
         val activeGlassStepIndex = stepTransitionState.activeGlassStepIndex
         val activeNavigationOwners = setOf(steps[activeGlassStepIndex])
@@ -1078,6 +1114,7 @@ fun StartupOnboardingScreen(
                                         onClick = {
                                             transitionToStep(stepIndex - 1)
                                         },
+                                        enabled = canNavigateBack,
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Text(stringResource(R.string.action_back))
@@ -1088,7 +1125,7 @@ fun StartupOnboardingScreen(
 
                                 HapticButton(
                                     onClick = ::goNextStep,
-                                    enabled = !finishing,
+                                    enabled = canNavigateNext,
                                     modifier = Modifier.weight(1.4f),
                                     shape = OnboardingControlShape
                                 ) {
