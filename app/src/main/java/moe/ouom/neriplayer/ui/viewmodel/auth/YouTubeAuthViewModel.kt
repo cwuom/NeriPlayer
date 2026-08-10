@@ -54,28 +54,33 @@ sealed interface YouTubeAuthEvent {
 }
 
 class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = AppContainer.youtubeAuthRepo
+    private val repo by lazy { AppContainer.youtubeAuthRepo }
 
-    private val _uiState = MutableStateFlow(
-        YouTubeAuthUiState(
-            health = repo.getAuthHealth(),
-            hasSavedAuth = repo.getAuthOnce().hasEffectiveAuth()
-        )
-    )
+    private val _uiState = MutableStateFlow(YouTubeAuthUiState())
     val uiState: StateFlow<YouTubeAuthUiState>
         get() = _uiState.asStateFlow()
 
     private val _events = Channel<YouTubeAuthEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            val initialHealth = repo.getAuthHealth()
+            val hasSavedAuth = repo.getAuthOnce().hasEffectiveAuth()
+            _uiState.update { current ->
+                current.copy(
+                    health = initialHealth,
+                    hasSavedAuth = hasSavedAuth
+                )
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
             repo.authHealthFlow.collect { health ->
                 _uiState.update { current ->
                     current.copy(health = health)
                 }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repo.authFlow.collect { bundle ->
                 _uiState.update { current ->
                     current.copy(hasSavedAuth = bundle.hasEffectiveAuth())

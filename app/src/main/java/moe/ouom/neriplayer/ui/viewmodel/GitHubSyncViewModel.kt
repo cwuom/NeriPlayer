@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -47,13 +48,13 @@ class GitHubSyncViewModel : ViewModel() {
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        if (storage == null) {
-            storage = SecureTokenStorage(appContext)
-            syncManager = GitHubSyncManager.getInstance(appContext)
+        viewModelScope.launch(Dispatchers.IO) {
+            if (storage == null) {
+                storage = SecureTokenStorage(appContext)
+                syncManager = GitHubSyncManager.getInstance(appContext)
+            }
             loadConfiguration()
-            return
         }
-        loadConfiguration()
     }
 
     /**

@@ -60,23 +60,26 @@ sealed interface NeteaseAuthEvent {
 
 class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val cookieRepo = AppContainer.neteaseCookieRepo
+    private val cookieRepo by lazy { AppContainer.neteaseCookieRepo }
     private val cookieStore: MutableMap<String, String> = mutableMapOf()
-    private val api = AppContainer.neteaseClient
+    private val api by lazy { AppContainer.neteaseClient }
 
-    private val _uiState = MutableStateFlow(
-        NeteaseAuthUiState(
-            health = cookieRepo.getAuthHealth(),
-            isLoggedIn = cookieRepo.getAuthHealth().state != SavedCookieAuthState.Missing,
-            hasSavedCookies = cookieRepo.getCookiesOnce().isNotEmpty()
-        )
-    )
+    private val _uiState = MutableStateFlow(NeteaseAuthUiState())
     val uiState: StateFlow<NeteaseAuthUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<NeteaseAuthEvent>(extraBufferCapacity = 8)
     val events: MutableSharedFlow<NeteaseAuthEvent> = _events
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            val initialHealth = cookieRepo.getAuthHealth()
+            val initialCookies = cookieRepo.getCookiesOnce()
+            _uiState.value = _uiState.value.copy(
+                health = initialHealth,
+                isLoggedIn = initialHealth.state != SavedCookieAuthState.Missing,
+                hasSavedCookies = initialCookies.isNotEmpty()
+            )
+        }
         viewModelScope.launch(Dispatchers.IO) {
             cookieRepo.cookieFlow.collect { saved ->
                 cookieStore.clear()
@@ -86,7 +89,7 @@ class NeteaseAuthViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             cookieRepo.authHealthFlow.collect { health ->
                 _uiState.value = _uiState.value.copy(
                     health = health,

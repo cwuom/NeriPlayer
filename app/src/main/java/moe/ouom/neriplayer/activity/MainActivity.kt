@@ -119,8 +119,8 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
-import moe.ouom.neriplayer.core.startup.StartupStageFlow
 import moe.ouom.neriplayer.core.startup.StartupStage
+import moe.ouom.neriplayer.core.startup.StartupStageResolver
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
@@ -380,11 +380,17 @@ class MainActivity : ComponentActivity() {
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.followSystemDark
             )
-            val startupStageFlow = remember(settingsRepository) {
-                StartupStageFlow.from(
-                    disclaimerAccepted = settingsRepository.disclaimerAcceptedFlow,
-                    startupOnboardingCompleted = settingsRepository.startupOnboardingCompletedFlow
-                )
+            val disclaimerAccepted by settingsRepository.disclaimerAcceptedFlow
+                .collectAsStateWithLifecycle(initialValue = null)
+            val startupOnboardingCompleted by settingsRepository.startupOnboardingCompletedFlow
+                .collectAsStateWithLifecycle(initialValue = null)
+            var pendingDisclaimerAccepted by rememberSaveable {
+                mutableStateOf(false)
+            }
+            LaunchedEffect(disclaimerAccepted) {
+                if (disclaimerAccepted == true) {
+                    pendingDisclaimerAccepted = false
+                }
             }
 
             val systemDark = rememberActualSystemDarkTheme()
@@ -465,9 +471,23 @@ class MainActivity : ComponentActivity() {
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(Unit) { playedEntrance = true }
 
-                val stage by startupStageFlow.collectAsStateWithLifecycle(initialValue = StartupStage.Loading)
+                val stage = remember(
+                    disclaimerAccepted,
+                    startupOnboardingCompleted,
+                    pendingDisclaimerAccepted
+                ) {
+                    StartupStageResolver.resolve(
+                        disclaimerAccepted = disclaimerAccepted,
+                        startupOnboardingCompleted = startupOnboardingCompleted,
+                        pendingDisclaimerAccepted = pendingDisclaimerAccepted
+                    )
+                }
+                var hasDisplayedDisclaimer by rememberSaveable { mutableStateOf(false) }
                 var previousStartupStage by remember { mutableStateOf<StartupStage?>(null) }
                 LaunchedEffect(stage) {
+                    if (stage == StartupStage.Disclaimer) {
+                        hasDisplayedDisclaimer = true
+                    }
                     previousStartupStage = stage
                 }
                 val pendingMobileDataDownloadInterruptionRequest by
@@ -538,7 +558,8 @@ class MainActivity : ComponentActivity() {
                 ) { current ->
                     StartupStageContentGate(
                         stage = current,
-                        previousStage = previousStartupStage
+                        previousStage = previousStartupStage,
+                        disclaimerWasShown = hasDisplayedDisclaimer || pendingDisclaimerAccepted
                     ) {
                     when (current) {
                         StartupStage.Loading -> {
@@ -552,7 +573,21 @@ class MainActivity : ComponentActivity() {
                         StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
                             DisclaimerScreen(
-                                onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
+                                onAgree = {
+                                    pendingDisclaimerAccepted = true
+                                    scope.launch {
+                                        runCatching {
+                                            settingsRepository.setDisclaimerAccepted(true)
+                                        }.onFailure { error ->
+                                            pendingDisclaimerAccepted = false
+                                            NPLogger.e(
+                                                "MainActivity",
+                                                "accept disclaimer failed",
+                                                error
+                                            )
+                                        }
+                                    }
+                                }
                             )
                         }
                         StartupStage.Onboarding -> {

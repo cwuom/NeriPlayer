@@ -47,21 +47,32 @@ private const val STARTUP_STAGE_CONTENT_FADE_DURATION_MILLIS = 260
 
 internal fun shouldDeferStartupStageContent(
     stage: StartupStage,
-    previousStage: StartupStage? = null
-): Boolean = stage == StartupStage.Onboarding && previousStage != StartupStage.Main
+    previousStage: StartupStage? = null,
+    disclaimerWasShown: Boolean = false
+): Boolean {
+    if (stage != StartupStage.Onboarding) return false
+    if (disclaimerWasShown) return false
+    return previousStage != StartupStage.Disclaimer &&
+        previousStage != StartupStage.Main
+}
 
 @Composable
 internal fun StartupStageContentGate(
     stage: StartupStage,
     previousStage: StartupStage? = null,
+    disclaimerWasShown: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val shouldDefer = remember(stage) {
-        shouldDeferStartupStageContent(stage, previousStage)
+    val shouldDefer = remember(stage, previousStage, disclaimerWasShown) {
+        shouldDeferStartupStageContent(
+            stage = stage,
+            previousStage = previousStage,
+            disclaimerWasShown = disclaimerWasShown
+        )
     }
-    var contentReady by remember(stage) { mutableStateOf(!shouldDefer) }
+    var contentReady by remember(stage, shouldDefer) { mutableStateOf(!shouldDefer) }
 
-    LaunchedEffect(stage) {
+    LaunchedEffect(stage, shouldDefer) {
         if (!shouldDefer) {
             contentReady = true
             return@LaunchedEffect
