@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
-private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 4
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 5
 private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY = "schema_version"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
@@ -238,7 +238,7 @@ suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreference
 
 fun readPlaybackPreferenceSnapshotSync(context: Context): PlaybackPreferenceSnapshot {
     readPlaybackPreferenceSnapshotCached(context)?.let { return it }
-    schedulePlaybackPreferenceSnapshotWarm(context.applicationContext)
+    schedulePlaybackPreferenceSnapshotWarm(context.applicationContext ?: context)
     return PlaybackPreferenceSnapshot()
 }
 
@@ -517,6 +517,9 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         return null
     }
     val cacheVersion = prefs.getInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, 1)
+    if (cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION) {
+        return null
+    }
     val legacyMobileDataQuality = prefs.getString(
         PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY,
         null
