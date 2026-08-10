@@ -4,7 +4,12 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.OverscrollFactory
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
@@ -29,6 +34,14 @@ import kotlin.math.pow
 import kotlin.math.round
 import kotlin.math.sign
 
+internal data class AdvancedGlassOverscrollBackdrop(
+    val color: Color,
+    val offsetY: MutableState<Float>
+)
+
+internal val LocalAdvancedGlassOverscrollBackdrop =
+    staticCompositionLocalOf<AdvancedGlassOverscrollBackdrop?> { null }
+
 internal object AdvancedGlassOverscrollFactory : OverscrollFactory {
     override fun createOverscrollEffect(): OverscrollEffect = AdvancedGlassOverscrollEffect()
 
@@ -43,12 +56,14 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
             if (field != value) {
                 field = value
                 invalidatePlacement?.invoke()
+                syncBackdropOffset?.invoke()
             }
         }
     private var rawDragY = 0f
     private var resistanceScalePx = 0f
     private var animationJob: Job? = null
     private var invalidatePlacement: (() -> Unit)? = null
+    private var syncBackdropOffset: (() -> Unit)? = null
     private var launchAnimation: ((suspend CoroutineScope.() -> Unit) -> Job)? = null
 
     override val isInProgress: Boolean
@@ -126,10 +141,12 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
     fun attach(
         resistanceScalePx: Float,
         invalidatePlacement: () -> Unit,
+        syncBackdropOffset: () -> Unit,
         launchAnimation: (suspend CoroutineScope.() -> Unit) -> Job
     ) {
         this.resistanceScalePx = resistanceScalePx
         this.invalidatePlacement = invalidatePlacement
+        this.syncBackdropOffset = syncBackdropOffset
         this.launchAnimation = launchAnimation
     }
 
@@ -146,6 +163,7 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         animationJob = null
         resetOffset()
         invalidatePlacement = null
+        syncBackdropOffset = null
         launchAnimation = null
     }
 
@@ -200,6 +218,7 @@ private class AdvancedGlassOverscrollNode(
         effect.attach(
             resistanceScalePx = resistanceScalePx(),
             invalidatePlacement = { invalidatePlacement() },
+            syncBackdropOffset = { syncBackdropOffset() },
             launchAnimation = { block -> coroutineScope.launch(block = block) }
         )
     }
@@ -207,6 +226,15 @@ private class AdvancedGlassOverscrollNode(
     override fun onDetach() {
         effect.detach()
         super.onDetach()
+    }
+
+    private fun syncBackdropOffset() {
+        currentValueOf(LocalAdvancedGlassOverscrollBackdrop)?.offsetY?.value =
+            effect.currentOffsetY()
+    }
+
+    private fun resistanceScalePx(): Float = with(currentValueOf(LocalDensity)) {
+        OVERSCROLL_RESISTANCE_SCALE_DP.dp.toPx()
     }
 
     override fun MeasureScope.measure(
@@ -226,10 +254,40 @@ private class AdvancedGlassOverscrollNode(
             }
         }
     }
+}
 
-    private fun resistanceScalePx(): Float = with(currentValueOf(LocalDensity)) {
-        OVERSCROLL_RESISTANCE_SCALE_DP.dp.toPx()
+internal fun androidx.compose.ui.Modifier.drawAdvancedGlassOverscrollBackdrop(
+    backdrop: AdvancedGlassOverscrollBackdrop
+): androidx.compose.ui.Modifier = drawBehind {
+    val fill = resolveAdvancedGlassOverscrollEdgeFill(
+        offsetY = backdrop.offsetY.value,
+        viewportHeight = size.height
+    )
+    if (fill != null) {
+        drawRect(
+            color = backdrop.color,
+            topLeft = Offset(0f, fill.top),
+            size = Size(size.width, fill.height)
+        )
     }
+}
+
+internal data class AdvancedGlassOverscrollEdgeFill(
+    val top: Float,
+    val height: Float
+)
+
+internal fun resolveAdvancedGlassOverscrollEdgeFill(
+    offsetY: Float,
+    viewportHeight: Float
+): AdvancedGlassOverscrollEdgeFill? {
+    if (offsetY <= 0f || viewportHeight <= 0f) return null
+    val height = round(offsetY).coerceAtMost(viewportHeight)
+    if (height <= 0f) return null
+    return AdvancedGlassOverscrollEdgeFill(
+        top = 0f,
+        height = height
+    )
 }
 
 internal fun dampedAdvancedGlassOverscrollOffset(
