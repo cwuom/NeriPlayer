@@ -5,6 +5,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
@@ -31,6 +32,7 @@ internal class PlayerStartupBootstrapper(
             startupPlaybackPreferences = playbackPreferences,
             restoredStateSnapshot = restoredStateSnapshot
         )
+        LegacyJsonCleanupScheduler.schedule(app, "player-bootstrap")
         NPLogger.d("NERI-App", "PlayerManager.initialize called")
         NPLogger.d(
             "NERI-App",

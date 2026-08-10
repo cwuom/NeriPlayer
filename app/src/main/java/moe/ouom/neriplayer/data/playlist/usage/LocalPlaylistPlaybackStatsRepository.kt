@@ -3,10 +3,19 @@ package moe.ouom.neriplayer.data.playlist.usage
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistPlaybackRoomStore
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.data.stats.playbackStatsDayStartAt
 import moe.ouom.neriplayer.data.stats.resolvePlaybackStatsTimeRange
@@ -50,7 +59,10 @@ data class LocalPlaylistPlaybackSyncSnapshot(
     val buckets: List<SyncLocalPlaylistPlaybackBucket>
 )
 
-class LocalPlaylistPlaybackStatsRepository private constructor(private val app: Context) {
+class LocalPlaylistPlaybackStatsRepository private constructor(
+    private val app: Context,
+    private val roomStore: LocalPlaylistPlaybackRoomStore? = null
+) {
     companion object {
         @Volatile
         private var instance: LocalPlaylistPlaybackStatsRepository? = null
@@ -58,33 +70,83 @@ class LocalPlaylistPlaybackStatsRepository private constructor(private val app: 
         fun getInstance(context: Context): LocalPlaylistPlaybackStatsRepository {
             return instance ?: synchronized(this) {
                 instance ?: LocalPlaylistPlaybackStatsRepository(
-                    context.applicationContext
+                    context.applicationContext,
+                    LocalPlaylistPlaybackRoomStore(
+                        NeriUserDataDatabase.getInstance(context.applicationContext)
+                    )
                 ).also { instance = it }
             }
         }
     }
 
     private val gson = Gson()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val file = File(app.filesDir, "local_playlist_playback_stats.json")
     private val syncStorage by lazy { SecureTokenStorage(app) }
     private val fallbackCounterDeviceId = "local-playlist-playback-${UUID.randomUUID()}"
     private val mutex = Mutex()
-    private val _stats = MutableStateFlow(loadFromDisk())
+    @Volatile
+    private var roomStorageEnabled = roomStore != null
+    private val _stats = MutableStateFlow(loadInitialStats())
     val statsFlow: StateFlow<List<LocalPlaylistPlaybackStat>> = _stats
+
+    private fun loadInitialStats(): List<LocalPlaylistPlaybackStat> {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomStats = runCatching {
+                runBlocking { activeRoomStore.readIfRoomPrimary() }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to read Room local playlist playback stats",
+                    error
+                )
+            }.getOrNull()
+            if (roomStats != null) {
+                LegacyJsonCleanupScheduler.schedule(
+                    app,
+                    "local-playlist-playback-room-load"
+                )
+                return normalizeLocalPlaylistPlaybackStats(roomStats)
+            }
+        }
+
+        val legacyStats = loadFromDisk()
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            runCatching {
+                runBlocking { activeRoomStore.importLegacyAndPromote(legacyStats) }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to promote local playlist playback JSON to Room",
+                    error
+                )
+            }
+            LegacyJsonCleanupScheduler.schedule(
+                app,
+                "local-playlist-playback-import"
+            )
+        }
+        return legacyStats
+    }
 
     suspend fun recordPlayNow(
         playlistId: Long,
         playedAt: Long = System.currentTimeMillis()
     ) {
         mutex.withLock {
+            val current = _stats.value
             val updated = recordLocalPlaylistPlay(
-                current = _stats.value,
+                current = current,
                 playlistId = playlistId,
                 playedAt = playedAt,
                 deviceId = syncCounterDeviceId()
             )
             _stats.value = updated
-            persist(updated)
+            persistSnapshot(current, updated)
         }
     }
 
@@ -124,7 +186,7 @@ class LocalPlaylistPlaybackStatsRepository private constructor(private val app: 
             )
             val updated = finalized.toLocalPlaybackStats()
             _stats.value = updated
-            persist(updated)
+            persistSnapshot(currentStats, updated)
         }
     }
 
@@ -159,6 +221,39 @@ class LocalPlaylistPlaybackStatsRepository private constructor(private val app: 
     private fun persist(stats: List<LocalPlaylistPlaybackStat>) {
         runCatching {
             file.writeTextAtomically(gson.toJson(stats))
+        }
+    }
+
+    private suspend fun persistSnapshot(
+        previous: List<LocalPlaylistPlaybackStat>,
+        next: List<LocalPlaylistPlaybackStat>
+    ) {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomWriteSucceeded = runCatching {
+                activeRoomStore.writeIncremental(previous, next)
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "LocalPlaylistPlaybackRepo",
+                    "Failed to write Room local playlist playback stats",
+                    error
+                )
+            }.isSuccess
+            if (roomWriteSucceeded) {
+                return
+            }
+        }
+        persist(next)
+        roomStore?.let { fallbackStore ->
+            runCatching { fallbackStore.markLegacyJsonPrimary() }
+                .onFailure { error ->
+                    NPLogger.e(
+                        "LocalPlaylistPlaybackRepo",
+                        "Failed to mark local playlist playback JSON fallback state",
+                        error
+                    )
+                }
         }
     }
 

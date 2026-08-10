@@ -35,14 +35,19 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomImportStatus
+import moe.ouom.neriplayer.data.local.database.store.PlayHistoryRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.sync.PlayHistoryUpdateMode
 import moe.ouom.neriplayer.data.sync.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlayDeletion
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
@@ -150,11 +155,16 @@ internal fun playHistoryAutoSyncDelayMillis(urgency: PlayHistorySyncUrgency): Lo
     }
 }
 
-class PlayHistoryRepository private constructor(private val app: Context) {
+class PlayHistoryRepository private constructor(
+    private val app: Context,
+    private val roomStore: PlayHistoryRoomStore? = null
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file: File by lazy { File(app.filesDir, "play_history.json") }
-    private val _history = MutableStateFlow(loadFromDisk())
+    @Volatile
+    private var roomStorageEnabled = roomStore != null
+    private val _history = MutableStateFlow(loadInitialHistory())
     val historyFlow: StateFlow<List<PlayedEntry>> = _history
     private val storage by lazy { SecureTokenStorage(app) }
     private val syncPreferences by lazy { SyncPreferences(app) }
@@ -162,7 +172,56 @@ class PlayHistoryRepository private constructor(private val app: Context) {
     private val historyMutex = Mutex()
     private var pendingSettledSyncJob: Job? = null
 
-    private fun loadFromDisk(): List<PlayedEntry> {
+    private fun loadInitialHistory(): List<PlayedEntry> {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomEntries = runCatching {
+                runBlocking {
+                    activeRoomStore.readIfRoomPrimary()
+                }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "PlayHistoryRepo",
+                    "Failed to read Room history; falling back to legacy JSON",
+                    error
+                )
+            }.getOrNull()
+            if (roomEntries != null) {
+                LegacyJsonCleanupScheduler.schedule(app, "play-history-room-load")
+                return roomEntries
+            }
+        }
+
+        val legacyEntries = loadLegacyFromDisk()
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val imported = runCatching {
+                runBlocking {
+                    activeRoomStore.importLegacyAndPromote(legacyEntries)
+                }
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "PlayHistoryRepo",
+                    "Failed to promote legacy history to Room",
+                    error
+                )
+            }.getOrNull()
+            if (imported?.status == PlayHistoryRoomImportStatus.SKIPPED_NOT_EQUIVALENT) {
+                roomStorageEnabled = false
+                NPLogger.w(
+                    "PlayHistoryRepo",
+                    "Room history mapper is not equivalent; keep legacy JSON"
+                )
+            } else if (imported?.status == PlayHistoryRoomImportStatus.IMPORTED) {
+                LegacyJsonCleanupScheduler.schedule(app, "play-history-import")
+            }
+        }
+        return legacyEntries
+    }
+
+    private fun loadLegacyFromDisk(): List<PlayedEntry> {
         return try {
             if (!file.exists()) return emptyList()
             val raw = file.readText()
@@ -181,6 +240,41 @@ class PlayHistoryRepository private constructor(private val app: Context) {
             file.writeTextAtomically(gson.toJson(list))
         }.onFailure { error ->
             NPLogger.e("PlayHistoryRepo", "Failed to persist play history", error)
+        }
+    }
+
+    private suspend fun persistSnapshot(
+        previous: List<PlayedEntry>,
+        next: List<PlayedEntry>
+    ) {
+        if (roomStorageEnabled && roomStore != null) {
+            val activeRoomStore = roomStore
+            val roomWriteSucceeded = runCatching {
+                activeRoomStore.writeIncremental(previous = previous, next = next)
+            }.onFailure { error ->
+                roomStorageEnabled = false
+                NPLogger.e(
+                    "PlayHistoryRepo",
+                    "Failed to write Room history; falling back to legacy JSON",
+                    error
+                )
+            }.isSuccess
+            if (roomWriteSucceeded) {
+                return
+            }
+        }
+
+        persistToDisk(next)
+        roomStore?.let { fallbackStore ->
+            runCatching {
+                fallbackStore.markLegacyJsonPrimary()
+            }.onFailure { error ->
+                NPLogger.e(
+                    "PlayHistoryRepo",
+                    "Failed to mark legacy history fallback state",
+                    error
+                )
+            }
         }
     }
 
@@ -275,7 +369,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 markSyncMutation()
                 NPLogger.d("PlayHistoryRepo", "Updated history size: ${updated.size}, latest: ${updated.firstOrNull()?.name}")
                 _history.value = updated
-                persistToDisk(updated)
+                persistSnapshot(previous = current, next = updated)
 
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
@@ -338,7 +432,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
                 markSyncMutation()
                 _history.value = updated
-                persistToDisk(updated)
+                persistSnapshot(previous = current, next = updated)
                 if (!LocalSongSupport.isLocalSong(song.album, song.mediaUri, song.albumId, app)) {
                     storage.removeRecentPlayDeletion(song.identityKey())
                 }
@@ -379,7 +473,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                     .take(1000)
 
                 _history.value = updated
-                persistToDisk(updated)
+                persistSnapshot(previous = current, next = updated)
                 if (triggerSync) {
                     triggerSyncIfNeeded(PlayHistorySyncUrgency.SETTLED)
                 }
@@ -407,7 +501,20 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 }
 
                 _history.value = emptyList()
-                persistToDisk(emptyList())
+                if (roomStorageEnabled && roomStore != null) {
+                    runCatching { roomStore.clear() }
+                        .onFailure { error ->
+                            roomStorageEnabled = false
+                            NPLogger.e(
+                                "PlayHistoryRepo",
+                                "Failed to clear Room history; falling back to legacy JSON",
+                                error
+                            )
+                        }
+                }
+                if (!roomStorageEnabled) {
+                    persistToDisk(emptyList())
+                }
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -440,7 +547,7 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
                 val updated = current.filterNot { it.identityKey() in removalKeys }
                 _history.value = updated
-                persistToDisk(updated)
+                persistSnapshot(previous = current, next = updated)
                 triggerSyncIfNeeded(markMutation = false)
             }
         }
@@ -454,8 +561,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 .distinctBy { it.identityKey() }
                 .take(1000)
             NPLogger.d("PlayHistoryRepo", "updateHistory() setting history to ${clipped.size} entries, latest: ${clipped.firstOrNull()?.name}")
+            val previous = _history.value
             _history.value = clipped
-            persistToDisk(clipped)
+            persistSnapshot(previous = previous, next = clipped)
         }
     }
 
@@ -471,8 +579,9 @@ class PlayHistoryRepository private constructor(private val app: Context) {
                 .sortedByDescending { it.playedAt }
                 .distinctBy { it.identityKey() }
                 .take(1000)
+            val previous = _history.value
             _history.value = clipped
-            persistToDisk(clipped)
+            persistSnapshot(previous = previous, next = clipped)
             true
         }
     }
@@ -534,7 +643,13 @@ class PlayHistoryRepository private constructor(private val app: Context) {
 
         fun getInstance(context: Context): PlayHistoryRepository {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: PlayHistoryRepository(context.applicationContext).also { INSTANCE = it }
+                val appContext = context.applicationContext
+                INSTANCE ?: PlayHistoryRepository(
+                    app = appContext,
+                    roomStore = PlayHistoryRoomStore(
+                        database = NeriUserDataDatabase.getInstance(appContext)
+                    )
+                ).also { INSTANCE = it }
             }
         }
     }

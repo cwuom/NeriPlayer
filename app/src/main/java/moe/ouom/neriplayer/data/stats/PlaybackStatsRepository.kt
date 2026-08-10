@@ -14,6 +14,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomSnapshot
+import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomStore
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
@@ -23,6 +27,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncTrackStat
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
@@ -47,6 +52,25 @@ data class TrackStat(
     val identityKey: String
 )
 
+private data class PlaybackStatsPersistenceSnapshot(
+    val stats: List<TrackStat>,
+    val dailyStats: List<PlaybackStatBucket>,
+    val counterSnapshot: PlaybackStatsSyncCounterSnapshot,
+    val counterEpochStartedAt: Long,
+    val clearedAt: Long
+)
+
+private fun PlaybackStatsRoomSnapshot.toPersistenceSnapshot():
+    PlaybackStatsPersistenceSnapshot {
+    return PlaybackStatsPersistenceSnapshot(
+        stats = stats,
+        dailyStats = dailyStats,
+        counterSnapshot = counterSnapshot,
+        counterEpochStartedAt = counterEpochStartedAt,
+        clearedAt = clearedAt
+    )
+}
+
 private data class PlaybackStatsMetadata(
     val clearedAt: Long = 0L
 )
@@ -61,20 +85,84 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     private val metadataFile: File by lazy { File(app.filesDir, "playback_stats_meta.json") }
     private val mutex = Mutex()
     private val persistFileMutex = Mutex()
+    private val roomPersistenceMutex = Mutex()
     private var persistJob: Job? = null
     private var persistGeneration = 0L
     private var pendingPersistence: PlaybackStatsPersistenceSnapshot? = null
     private var persistenceDirty = false
-    private val counterStore by lazy { PlaybackStatsCounterStore(app, gson) }
-    private val _stats = MutableStateFlow(loadFromDisk())
-    private val _statsClearedAt = MutableStateFlow(loadMetadata().clearedAt)
-    private val _dailyStats = MutableStateFlow(loadDailyStatsFromDisk())
+    private val counterStore = PlaybackStatsCounterStore(app, gson)
+    private val roomStore = PlaybackStatsRoomStore(
+        NeriUserDataDatabase.getInstance(app.applicationContext)
+    )
+    @Volatile
+    private var roomStorageEnabled = true
+    private val initialState = loadInitialState()
+    private val _stats = MutableStateFlow(initialState.stats)
+    private val _statsClearedAt = MutableStateFlow(initialState.clearedAt)
+    private val _dailyStats = MutableStateFlow(initialState.dailyStats)
+    private var persistedSnapshot = initialState
     val statsFlow: StateFlow<List<TrackStat>> = _stats
     val dailyStatsFlow: StateFlow<List<PlaybackStatBucket>> = _dailyStats
     val statsClearedAtFlow: StateFlow<Long> = _statsClearedAt
 
     init {
         reconcileLoadedStats()
+    }
+
+    private fun loadInitialState(): PlaybackStatsPersistenceSnapshot {
+        val roomSnapshot = runCatching {
+            runBlocking { roomStore.readIfRoomPrimary() }
+        }.onFailure { error ->
+            roomStorageEnabled = false
+            NPLogger.e(
+                "PlaybackStatsRepo",
+                "Failed to read Room playback stats",
+                error
+            )
+        }.getOrNull()
+        if (roomSnapshot != null) {
+            counterStore.replaceFromRoom(
+                snapshot = roomSnapshot.counterSnapshot,
+                epochStartedAt = roomSnapshot.counterEpochStartedAt
+            )
+            LegacyJsonCleanupScheduler.schedule(app, "playback-stats-room-load")
+            return roomSnapshot.toPersistenceSnapshot()
+        }
+
+        val clearedAt = loadMetadata().clearedAt
+        val stats = loadFromDisk()
+        val dailyStats = loadDailyStatsFromDisk(
+            stats = stats,
+            clearedAt = clearedAt
+        )
+        val legacyState = PlaybackStatsPersistenceSnapshot(
+            stats = stats,
+            dailyStats = dailyStats,
+            counterSnapshot = counterStore.snapshot(),
+            counterEpochStartedAt = counterStore.epochStartedAt(),
+            clearedAt = clearedAt
+        )
+        runCatching {
+            runBlocking {
+                roomStore.importLegacyAndPromote(
+                    stats = legacyState.stats,
+                    dailyStats = legacyState.dailyStats,
+                    counterSnapshot = legacyState.counterSnapshot,
+                    counterEpochStartedAt = legacyState.counterEpochStartedAt,
+                    clearedAt = legacyState.clearedAt
+                )
+            }
+            LegacyJsonCleanupScheduler.schedule(app, "playback-stats-import")
+            roomStorageEnabled = true
+        }.onFailure { error ->
+            roomStorageEnabled = false
+            NPLogger.e(
+                "PlaybackStatsRepo",
+                "Failed to promote playback stats JSON to Room",
+                error
+            )
+        }
+        return legacyState
     }
 
     private fun reconcileLoadedStats() {
@@ -109,10 +197,7 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         scope.launch {
             mutex.withLock {
                 persistSnapshot(
-                    PlaybackStatsPersistenceSnapshot(
-                        stats = _stats.value,
-                        dailyStats = _dailyStats.value
-                    )
+                    currentPersistenceSnapshot()
                 )
             }
         }
@@ -175,12 +260,15 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }
     }
 
-    private fun loadDailyStatsFromDisk(): List<PlaybackStatBucket> {
+    private fun loadDailyStatsFromDisk(
+        stats: List<TrackStat>,
+        clearedAt: Long
+    ): List<PlaybackStatBucket> {
         return try {
             if (!dailyFile.exists()) {
                 val migrated = buildLegacyDailyStats(
-                    stats = _stats.value,
-                    clearedAt = _statsClearedAt.value
+                    stats = stats,
+                    clearedAt = clearedAt
                 )
                 if (migrated.isNotEmpty()) {
                     persistDailyStatsToDisk(migrated)
@@ -213,24 +301,27 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         }.getOrDefault(false)
     }
 
-    private fun persistMetadata(clearedAt: Long) {
-        runCatching {
+    private fun persistMetadata(clearedAt: Long): Boolean {
+        return runCatching {
             metadataFile.writeTextAtomically(gson.toJson(PlaybackStatsMetadata(clearedAt)))
+            true
         }.onFailure { error ->
             NPLogger.e("PlaybackStatsRepo", "Failed to persist stats metadata", error)
-        }
+        }.getOrDefault(false)
     }
 
-    private data class PlaybackStatsPersistenceSnapshot(
-        val stats: List<TrackStat>,
-        val dailyStats: List<PlaybackStatBucket>
-    )
+    private fun currentPersistenceSnapshot(): PlaybackStatsPersistenceSnapshot {
+        return PlaybackStatsPersistenceSnapshot(
+            stats = _stats.value,
+            dailyStats = _dailyStats.value,
+            counterSnapshot = counterStore.snapshot(),
+            counterEpochStartedAt = counterStore.epochStartedAt(),
+            clearedAt = _statsClearedAt.value
+        )
+    }
 
     private fun schedulePersistenceLocked() {
-        pendingPersistence = PlaybackStatsPersistenceSnapshot(
-            stats = _stats.value,
-            dailyStats = _dailyStats.value
-        )
+        pendingPersistence = currentPersistenceSnapshot()
         persistenceDirty = true
         persistGeneration += 1L
         val generation = persistGeneration
@@ -262,15 +353,65 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
         snapshot: PlaybackStatsPersistenceSnapshot,
         expectedGeneration: Long? = null
     ) {
-        val succeeded = persistFileMutex.withLock {
-            persistToDisk(snapshot.stats) && persistDailyStatsToDisk(snapshot.dailyStats)
-        }
-        if (succeeded) {
-            synchronized(this) {
-                if (expectedGeneration == null || expectedGeneration == persistGeneration) {
-                    persistenceDirty = false
+        roomPersistenceMutex.withLock {
+            if (roomStorageEnabled) {
+                val roomSucceeded = runCatching {
+                    roomStore.writeIncremental(
+                        previousStats = persistedSnapshot.stats,
+                        nextStats = snapshot.stats,
+                        previousDailyStats = persistedSnapshot.dailyStats,
+                        nextDailyStats = snapshot.dailyStats,
+                        previousCounterSnapshot = persistedSnapshot.counterSnapshot,
+                        counterSnapshot = snapshot.counterSnapshot,
+                        counterEpochStartedAt = snapshot.counterEpochStartedAt,
+                        clearedAt = snapshot.clearedAt
+                    )
+                }.onFailure { error ->
+                    roomStorageEnabled = false
+                    NPLogger.e(
+                        "PlaybackStatsRepo",
+                        "Failed to write Room playback stats",
+                        error
+                    )
+                }.isSuccess
+                if (roomSucceeded) {
+                    persistedSnapshot = snapshot
+                    markPersistenceClean(expectedGeneration)
+                    return@withLock
                 }
             }
+            val legacySucceeded = persistLegacySnapshot(snapshot)
+            if (legacySucceeded) {
+                runCatching { roomStore.markLegacyJsonPrimary() }
+                    .onFailure { error ->
+                        NPLogger.e(
+                            "PlaybackStatsRepo",
+                            "Failed to mark playback stats JSON fallback state",
+                            error
+                        )
+                    }
+                persistedSnapshot = snapshot
+                markPersistenceClean(expectedGeneration)
+            }
+        }
+    }
+
+    private fun markPersistenceClean(expectedGeneration: Long?) {
+        synchronized(this) {
+            if (expectedGeneration == null || expectedGeneration == persistGeneration) {
+                persistenceDirty = false
+            }
+        }
+    }
+
+    private fun persistLegacySnapshot(
+        snapshot: PlaybackStatsPersistenceSnapshot
+    ): Boolean {
+        return synchronized(persistFileMutex) {
+            persistToDisk(snapshot.stats) &&
+                persistDailyStatsToDisk(snapshot.dailyStats) &&
+                persistMetadata(snapshot.clearedAt) &&
+                counterStore.persistLegacyProjection()
         }
     }
 
@@ -281,20 +422,14 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     }
 
     suspend fun flushPendingWrites() {
-        mutex.withLock {
+        mutex.withLock<Unit> {
             val shouldPersist = synchronized(this@PlaybackStatsRepository) {
                 persistenceDirty || pendingPersistence != null || persistJob?.isActive == true
             }
             cancelScheduledPersistenceLocked()
             if (shouldPersist) {
-                persistSnapshot(
-                    PlaybackStatsPersistenceSnapshot(
-                        stats = _stats.value,
-                        dailyStats = _dailyStats.value
-                    )
-                )
+                persistSnapshot(currentPersistenceSnapshot())
             }
-            counterStore.flushPendingWrites()
         }
     }
 
@@ -491,11 +626,9 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 _dailyStats.value = emptyList()
                 _statsClearedAt.value = clearedAt
                 cancelScheduledPersistenceLocked()
-                val statsSaved = persistToDisk(emptyList())
-                val dailyStatsSaved = persistDailyStatsToDisk(emptyList())
-                persistenceDirty = !(statsSaved && dailyStatsSaved)
-                persistMetadata(clearedAt)
                 counterStore.reset(clearedAt)
+                persistenceDirty = true
+                persistSnapshot(currentPersistenceSnapshot())
                 triggerSync()
             }
         }
@@ -510,10 +643,9 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
                 _stats.value = updated
                 _dailyStats.value = updatedDailyStats
                 cancelScheduledPersistenceLocked()
-                val statsSaved = persistToDisk(updated)
-                val dailyStatsSaved = persistDailyStatsToDisk(updatedDailyStats)
-                persistenceDirty = !(statsSaved && dailyStatsSaved)
                 counterStore.removeTracks(keys)
+                persistenceDirty = true
+                persistSnapshot(currentPersistenceSnapshot())
                 triggerSync()
             }
         }
@@ -594,17 +726,15 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
             }
             if (shouldUpdateClearBarrier) {
                 _statsClearedAt.value = effectiveClearedAt
-                persistMetadata(effectiveClearedAt)
             }
             cancelScheduledPersistenceLocked()
-            val statsSaved = persistToDisk(updated)
-            val dailyStatsSaved = persistDailyStatsToDisk(updatedDailyStats)
-            persistenceDirty = !(statsSaved && dailyStatsSaved)
             counterStore.replaceFromSync(
                 syncStats = finalized.stats,
                 syncDailyStats = finalized.buckets,
                 epochStartedAt = effectiveClearedAt
             )
+            persistenceDirty = true
+            persistSnapshot(currentPersistenceSnapshot())
         }
     }
 

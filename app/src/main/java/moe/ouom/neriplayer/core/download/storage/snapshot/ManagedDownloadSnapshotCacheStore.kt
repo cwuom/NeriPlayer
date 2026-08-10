@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 
@@ -40,12 +41,12 @@ internal class ManagedDownloadSnapshotCacheStore(
         if (currentCache?.key == cacheKey) {
             return true
         }
-        return restoreFromDisk(appContext, expectedKey = cacheKey) != null
+        return restorePersisted(appContext, expectedKey = cacheKey) != null
     }
 
     fun cachedSnapshot(
         context: Context,
-        restoreFromDisk: Boolean = true
+        restorePersisted: Boolean = true
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
         val appContext = context.applicationContext
         val cacheKey = currentKey(appContext)
@@ -53,10 +54,10 @@ internal class ManagedDownloadSnapshotCacheStore(
             ?.takeIf { it.key == cacheKey }
             ?.snapshot
             ?.let { return it }
-        if (!restoreFromDisk) {
+        if (!restorePersisted) {
             return null
         }
-        return restoreFromDisk(appContext, expectedKey = cacheKey)
+        return restorePersisted(appContext, expectedKey = cacheKey)
     }
 
     fun putSnapshot(
@@ -68,14 +69,14 @@ internal class ManagedDownloadSnapshotCacheStore(
         schedulePersist(context.applicationContext, cacheKey)
     }
 
-    fun restoreFromDisk(
+    fun restorePersisted(
         context: Context,
         expectedKey: String? = null
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
-        val restored = ManagedDownloadSnapshotDiskCache.restore(
-            context = context.applicationContext,
-            expectedKey = expectedKey
-        ) ?: return null
+        val appContext = context.applicationContext
+        val restored = runBlocking {
+            ManagedDownloadSnapshotRoomStore(appContext).restore(expectedKey)
+        } ?: return null
         snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
         return restored.second
     }
@@ -90,7 +91,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         val currentSnapshot = snapshotCache
             ?.takeIf { it.key == cacheKey }
             ?.snapshot
-            ?: restoreFromDisk(appContext, expectedKey = cacheKey)
+            ?: restorePersisted(appContext, expectedKey = cacheKey)
             ?: return true
         val updatedSnapshot = ManagedDownloadSnapshotIndex.applyMetadataWrite(
             snapshot = currentSnapshot,
@@ -111,7 +112,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         val currentSnapshot = snapshotCache
             ?.takeIf { it.key == cacheKey }
             ?.snapshot
-            ?: restoreFromDisk(appContext, expectedKey = cacheKey)
+            ?: restorePersisted(appContext, expectedKey = cacheKey)
             ?: return false
         val updatedSnapshot = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
             snapshot = currentSnapshot,
@@ -134,7 +135,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         val currentSnapshot = snapshotCache
             ?.takeIf { it.key == cacheKey }
             ?.snapshot
-            ?: restoreFromDisk(appContext, expectedKey = cacheKey)
+            ?: restorePersisted(appContext, expectedKey = cacheKey)
             ?: return true
         val updatedSnapshot = ManagedDownloadSnapshotIndex.applyReferenceDeletes(
             snapshot = currentSnapshot,
@@ -151,7 +152,9 @@ internal class ManagedDownloadSnapshotCacheStore(
             snapshotPersistJob = null
         }
         val appContext = context?.applicationContext ?: return
-        ManagedDownloadSnapshotDiskCache.delete(appContext)
+        runBlocking {
+            ManagedDownloadSnapshotRoomStore(appContext).clear()
+        }
     }
 
     private fun schedulePersist(
@@ -166,11 +169,12 @@ internal class ManagedDownloadSnapshotCacheStore(
                 val currentCache = snapshotCache
                     ?.takeIf { it.key == expectedKey }
                     ?: return@launch
-                ManagedDownloadSnapshotDiskCache.persist(
-                    context = appContext,
+                if (ManagedDownloadSnapshotRoomStore(appContext).persist(
                     cacheKey = currentCache.key,
                     snapshot = currentCache.snapshot
-                )
+                )) {
+                    ManagedDownloadSnapshotDiskCache.delete(appContext)
+                }
             }
         }
     }

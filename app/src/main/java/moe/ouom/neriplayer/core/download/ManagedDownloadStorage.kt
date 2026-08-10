@@ -479,9 +479,9 @@ internal object ManagedDownloadStorage {
 
     internal fun cachedDownloadLibrarySnapshot(
         context: Context,
-        restoreFromDisk: Boolean = true
+        restorePersisted: Boolean = true
     ): DownloadLibrarySnapshot? {
-        return snapshotCacheStore.cachedSnapshot(context, restoreFromDisk)
+        return snapshotCacheStore.cachedSnapshot(context, restorePersisted)
     }
 
     internal fun directoryIdentity(uriString: String?): String? {
@@ -936,9 +936,9 @@ internal object ManagedDownloadStorage {
     ): DownloadLibrarySnapshot = synchronized(snapshotBuildLock) {
         val cacheKey = snapshotCacheStore.currentKey(context)
         if (!forceRefresh) {
-            snapshotCacheStore.cachedSnapshot(context, restoreFromDisk = false)
+            snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
                 ?.let { return@synchronized it }
-            snapshotCacheStore.restoreFromDisk(context, expectedKey = cacheKey)
+            snapshotCacheStore.restorePersisted(context, expectedKey = cacheKey)
                 ?.let { return@synchronized it }
         }
 
