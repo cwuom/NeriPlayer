@@ -19,8 +19,10 @@ fun Context.currentTrafficNetworkType(): TrafficNetworkType {
 }
 
 private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
-    val capabilities = activeNetwork?.let { network -> getNetworkCapabilities(network) }
+    val network = activeNetwork ?: return@runCatching false
+    val capabilities = getNetworkCapabilities(network)
     hasLikelyNetworkTransport(
+        hasActiveNetwork = true,
         activeHasDirectTransport = capabilities?.hasDirectNetworkTransport() == true,
         anyKnownHasDirectTransport = { anyKnownNetworkHasDirectTransport() }
     )
@@ -47,9 +49,11 @@ private fun NetworkCapabilities.hasDirectNetworkTransport(): Boolean {
 }
 
 internal fun hasLikelyNetworkTransport(
+    hasActiveNetwork: Boolean,
     activeHasDirectTransport: Boolean,
     anyKnownHasDirectTransport: () -> Boolean
 ): Boolean {
+    if (!hasActiveNetwork) return false
     if (activeHasDirectTransport) return true
 
     return anyKnownHasDirectTransport()

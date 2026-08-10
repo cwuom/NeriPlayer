@@ -49,6 +49,7 @@ class NetworkStatusMonitorPolicyTest {
     fun `virtual transport alone does not keep app online`() {
         assertFalse(
             hasLikelyNetworkTransport(
+                hasActiveNetwork = true,
                 activeHasDirectTransport = false,
                 anyKnownHasDirectTransport = { false }
             )
@@ -56,9 +57,21 @@ class NetworkStatusMonitorPolicyTest {
     }
 
     @Test
-    fun `fallback direct network keeps app online when active network is unusable`() {
+    fun `missing active network enters offline mode even with stale direct transport`() {
+        assertFalse(
+            hasLikelyNetworkTransport(
+                hasActiveNetwork = false,
+                activeHasDirectTransport = false,
+                anyKnownHasDirectTransport = { true }
+            )
+        )
+    }
+
+    @Test
+    fun `fallback direct network keeps app online when active network is indirect`() {
         assertTrue(
             hasLikelyNetworkTransport(
+                hasActiveNetwork = true,
                 activeHasDirectTransport = false,
                 anyKnownHasDirectTransport = { true }
             )
@@ -69,6 +82,7 @@ class NetworkStatusMonitorPolicyTest {
     fun `active direct transport does not scan fallback networks`() {
         assertTrue(
             hasLikelyNetworkTransport(
+                hasActiveNetwork = true,
                 activeHasDirectTransport = true,
                 anyKnownHasDirectTransport = { error("fallback should not be evaluated") }
             )
