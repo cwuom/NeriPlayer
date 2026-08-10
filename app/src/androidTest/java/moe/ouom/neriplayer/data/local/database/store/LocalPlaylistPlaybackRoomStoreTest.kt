@@ -43,7 +43,15 @@ class LocalPlaylistPlaybackRoomStoreTest {
                         dayStartAt = 86_400_000L,
                         playCount = 5L,
                         firstPlayedAt = 100L,
-                        lastPlayedAt = 200L
+                        lastPlayedAt = 200L,
+                        counterShards = listOf(
+                            SyncPlaybackCounterShard(
+                                deviceId = "device-a",
+                                playCount = 4,
+                                firstPlayedAt = 100L,
+                                lastPlayedAt = 200L
+                            )
+                        )
                     )
                 )
             )
