@@ -240,6 +240,13 @@ internal fun shouldStopPlaybackOnTaskRemoved(
     return hasPlaybackSurfaceContent && transportActive
 }
 
+internal fun resolveTaskRemovedTransportActive(
+    playerTransportActive: Boolean,
+    listenTogetherRemotePlaying: Boolean,
+): Boolean {
+    return playerTransportActive || listenTogetherRemotePlaying
+}
+
 internal data class TaskRemovedPlaybackAction(
     val stopPlaybackImmediately: Boolean,
     val persistPlaybackState: Boolean,
@@ -259,9 +266,14 @@ internal data class TaskRemovedPlaybackCallbacks(
 
 internal fun resolveTaskRemovedPlaybackAction(
     hasPlaybackSurfaceContent: Boolean,
-    transportActive: Boolean,
+    playerTransportActive: Boolean,
+    listenTogetherRemotePlaying: Boolean,
     hasItems: Boolean,
 ): TaskRemovedPlaybackAction {
+    val transportActive = resolveTaskRemovedTransportActive(
+        playerTransportActive = playerTransportActive,
+        listenTogetherRemotePlaying = listenTogetherRemotePlaying,
+    )
     val stopPlaybackImmediately = shouldStopPlaybackOnTaskRemoved(
         hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
         transportActive = transportActive,
@@ -282,21 +294,28 @@ internal suspend fun executeTaskRemovedPlaybackAction(
         runCatching { callbacks.stopPlaybackImmediately() }
             .onFailure(callbacks.onPlaybackStopFailure)
     }
-    if (action.persistPlaybackState) {
+    val playbackStatePersisted = if (action.persistPlaybackState) {
         val reason = if (action.stopPlaybackImmediately) {
             "task_removed"
         } else {
             "inactive_task_removed"
         }
         callbacks.persistPlaybackState(reason)
+    } else {
+        true
     }
     if (action.updateNotificationAfterPersist) {
         runCatching { callbacks.updateNotification() }
             .onFailure(callbacks.onNotificationUpdateFailure)
     }
     if (action.stopServiceAfterPersist) {
-        callbacks.stopForegroundIfStarted("task_removed")
-        callbacks.stopSelf()
+        if (playbackStatePersisted) {
+            callbacks.stopForegroundIfStarted("task_removed")
+            callbacks.stopSelf()
+        } else {
+            runCatching { callbacks.updateNotification() }
+                .onFailure(callbacks.onNotificationUpdateFailure)
+        }
     }
 }
 
@@ -2646,18 +2665,25 @@ class AudioPlayerService : Service() {
         super.onTaskRemoved(rootIntent)
         val hasPlaybackSurfaceContent = hasPlaybackSurfaceContent()
         val hasItems = PlayerManager.hasItems()
-        val transportActive = runCatching {
+        val playerTransportActive = runCatching {
             PlayerManager.isTransportActiveWithoutInitialization()
         }.getOrDefault(false)
+        val listenTogetherRemotePlaying = isListenTogetherRemotePlaying()
+        val transportActive = resolveTaskRemovedTransportActive(
+            playerTransportActive = playerTransportActive,
+            listenTogetherRemotePlaying = listenTogetherRemotePlaying,
+        )
         val taskRemovedAction = resolveTaskRemovedPlaybackAction(
             hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
-            transportActive = transportActive,
+            playerTransportActive = playerTransportActive,
+            listenTogetherRemotePlaying = listenTogetherRemotePlaying,
             hasItems = hasItems,
         )
         NPLogger.w(
             "NERI-APS",
             "onTaskRemoved hasSurface=$hasPlaybackSurfaceContent " +
-                "transportActive=$transportActive hasItems=$hasItems " +
+                "transportActive=$transportActive playerTransport=$playerTransportActive " +
+                "listenTogetherRemotePlaying=$listenTogetherRemotePlaying hasItems=$hasItems " +
                 "isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
         if (taskRemovedAction.stopPlaybackImmediately) {

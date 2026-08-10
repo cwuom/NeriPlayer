@@ -26,7 +26,8 @@ class AudioPlayerServicePolicyTest {
     fun `active transport is persisted before service stops when task is removed`() {
         val action = resolveTaskRemovedPlaybackAction(
             hasPlaybackSurfaceContent = true,
-            transportActive = true,
+            playerTransportActive = true,
+            listenTogetherRemotePlaying = false,
             hasItems = true,
         )
 
@@ -40,7 +41,8 @@ class AudioPlayerServicePolicyTest {
     fun `listen together transport is persisted before service stops when task is removed`() {
         val action = resolveTaskRemovedPlaybackAction(
             hasPlaybackSurfaceContent = true,
-            transportActive = true,
+            playerTransportActive = false,
+            listenTogetherRemotePlaying = true,
             hasItems = false,
         )
 
@@ -54,7 +56,8 @@ class AudioPlayerServicePolicyTest {
     fun `paused queue is persisted but service is retained when task is removed`() {
         val action = resolveTaskRemovedPlaybackAction(
             hasPlaybackSurfaceContent = true,
-            transportActive = false,
+            playerTransportActive = false,
+            listenTogetherRemotePlaying = false,
             hasItems = true,
         )
 
@@ -68,7 +71,8 @@ class AudioPlayerServicePolicyTest {
     fun `empty playback surface is ignored for task removal`() {
         val action = resolveTaskRemovedPlaybackAction(
             hasPlaybackSurfaceContent = false,
-            transportActive = true,
+            playerTransportActive = true,
+            listenTogetherRemotePlaying = true,
             hasItems = false,
         )
 
@@ -85,7 +89,8 @@ class AudioPlayerServicePolicyTest {
         executeTaskRemovedPlaybackAction(
             action = resolveTaskRemovedPlaybackAction(
                 hasPlaybackSurfaceContent = true,
-                transportActive = true,
+                playerTransportActive = true,
+                listenTogetherRemotePlaying = false,
                 hasItems = true,
             ),
             callbacks = taskRemovedCallbacks(calls)
@@ -109,7 +114,8 @@ class AudioPlayerServicePolicyTest {
         executeTaskRemovedPlaybackAction(
             action = resolveTaskRemovedPlaybackAction(
                 hasPlaybackSurfaceContent = true,
-                transportActive = true,
+                playerTransportActive = true,
+                listenTogetherRemotePlaying = false,
                 hasItems = true,
             ),
             callbacks = taskRemovedCallbacks(
@@ -140,7 +146,8 @@ class AudioPlayerServicePolicyTest {
         executeTaskRemovedPlaybackAction(
             action = resolveTaskRemovedPlaybackAction(
                 hasPlaybackSurfaceContent = true,
-                transportActive = false,
+                playerTransportActive = false,
+                listenTogetherRemotePlaying = false,
                 hasItems = true,
             ),
             callbacks = taskRemovedCallbacks(calls)
@@ -162,7 +169,8 @@ class AudioPlayerServicePolicyTest {
         executeTaskRemovedPlaybackAction(
             action = resolveTaskRemovedPlaybackAction(
                 hasPlaybackSurfaceContent = false,
-                transportActive = true,
+                playerTransportActive = true,
+                listenTogetherRemotePlaying = true,
                 hasItems = false,
             ),
             callbacks = taskRemovedCallbacks(calls)
@@ -193,18 +201,67 @@ class AudioPlayerServicePolicyTest {
         )
     }
 
+    @Test
+    fun `remote listen together playback counts as active task removal transport`() {
+        assertTrue(
+            resolveTaskRemovedTransportActive(
+                playerTransportActive = false,
+                listenTogetherRemotePlaying = true,
+            )
+        )
+        assertTrue(
+            resolveTaskRemovedPlaybackAction(
+                hasPlaybackSurfaceContent = true,
+                playerTransportActive = false,
+                listenTogetherRemotePlaying = true,
+                hasItems = false,
+            ).stopPlaybackImmediately
+        )
+    }
+
+    @Test
+    fun `active task removal keeps service when persistence fails`() = runTest {
+        val calls = mutableListOf<String>()
+
+        executeTaskRemovedPlaybackAction(
+            action = resolveTaskRemovedPlaybackAction(
+                hasPlaybackSurfaceContent = true,
+                playerTransportActive = true,
+                listenTogetherRemotePlaying = false,
+                hasItems = true,
+            ),
+            callbacks = taskRemovedCallbacks(
+                calls = calls,
+                persistPlaybackState = { reason ->
+                    calls += "persist:$reason"
+                    false
+                }
+            )
+        )
+
+        assertEquals(
+            listOf(
+                "stop_playback",
+                "persist:task_removed",
+                "update_notification",
+            ),
+            calls
+        )
+    }
+
     private fun taskRemovedCallbacks(
         calls: MutableList<String>,
         stopPlaybackImmediately: () -> Unit = {
             calls += "stop_playback"
         },
+        persistPlaybackState: suspend (String) -> Boolean = { reason ->
+            calls += "persist:$reason"
+            true
+        },
     ): TaskRemovedPlaybackCallbacks {
         return TaskRemovedPlaybackCallbacks(
             stopPlaybackImmediately = stopPlaybackImmediately,
-            persistPlaybackState = { reason ->
-                calls += "persist:$reason"
-                true
-            },
+            persistPlaybackState = persistPlaybackState,
             stopForegroundIfStarted = { reason ->
                 calls += "stop_foreground:$reason"
             },
