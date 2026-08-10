@@ -38,7 +38,11 @@ class PlaybackAudioOffloadPolicyTest {
                 audioSource = PlaybackAudioSource.NETEASE
             )
         )
-        assertFalse(
+    }
+
+    @Test
+    fun `bili fallback streams require pcm so task removal cannot leave queued offload audio`() {
+        assertTrue(
             resolveRequiresPcmAudioProcessing(
                 audioSource = PlaybackAudioSource.BILIBILI
             )
