@@ -76,6 +76,27 @@ class NeriUserDataDatabaseMigrationTest {
             assertEquals(1L, migrated.longFor("SELECT COUNT(*) FROM playlist_member"))
             assertEquals(1L, migrated.longFor("SELECT COUNT(*) FROM playlist_member_token"))
             assertEquals(
+                "old-device",
+                migrated.stringFor(
+                    "SELECT device_id FROM playlist_member_token " +
+                        "WHERE playlist_id = 601 AND identity_key = '9001|NeteaseAlbum|'"
+                )
+            )
+            assertEquals(
+                42L,
+                migrated.longFor(
+                    "SELECT counter FROM playlist_member_token " +
+                        "WHERE playlist_id = 601 AND identity_key = '9001|NeteaseAlbum|'"
+                )
+            )
+            assertEquals(
+                0L,
+                migrated.longFor(
+                    "SELECT token_index FROM playlist_member_token " +
+                        "WHERE playlist_id = 601 AND identity_key = '9001|NeteaseAlbum|'"
+                )
+            )
+            assertEquals(
                 "旧Room歌单",
                 migrated.stringFor("SELECT name FROM local_playlist WHERE playlist_id = 601")
             )

@@ -24,6 +24,15 @@ internal class ManagedDownloadSnapshotCacheStore(
     @Volatile
     private var snapshotPersistJob: Job? = null
 
+    @Volatile
+    private var snapshotClearJob: Job? = null
+
+    @Volatile
+    private var snapshotClearInFlight: Boolean = false
+
+    @Volatile
+    private var snapshotGeneration: Long = 0L
+
     private val snapshotPersistenceLock = Any()
 
     fun currentKey(context: Context): String {
@@ -74,9 +83,20 @@ internal class ManagedDownloadSnapshotCacheStore(
         expectedKey: String? = null
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
         val appContext = context.applicationContext
+        val generation = synchronized(snapshotPersistenceLock) {
+            if (snapshotClearInFlight) {
+                return null
+            }
+            snapshotGeneration
+        }
         val restored = runBlocking {
             ManagedDownloadSnapshotRoomStore(appContext).restore(expectedKey)
         } ?: return null
+        synchronized(snapshotPersistenceLock) {
+            if (generation != snapshotGeneration || snapshotClearInFlight) {
+                return null
+            }
+        }
         snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
         return restored.second
     }
@@ -147,13 +167,37 @@ internal class ManagedDownloadSnapshotCacheStore(
 
     fun invalidate(context: Context? = null) {
         snapshotCache = null
+        val appContext = context?.applicationContext
         synchronized(snapshotPersistenceLock) {
+            snapshotGeneration += 1L
             snapshotPersistJob?.cancel()
             snapshotPersistJob = null
+            snapshotClearJob?.cancel()
+            snapshotClearJob = null
+            if (appContext == null) {
+                snapshotClearInFlight = false
+            } else {
+                snapshotClearInFlight = true
+            }
         }
-        val appContext = context?.applicationContext ?: return
-        scope.launch {
+        appContext ?: return
+        val clearJob = scope.launch {
             ManagedDownloadSnapshotRoomStore(appContext).clear()
+        }
+        synchronized(snapshotPersistenceLock) {
+            snapshotClearJob = clearJob
+            if (clearJob.isCompleted) {
+                snapshotClearJob = null
+                snapshotClearInFlight = false
+            }
+        }
+        clearJob.invokeOnCompletion {
+            synchronized(snapshotPersistenceLock) {
+                if (snapshotClearJob === clearJob) {
+                    snapshotClearJob = null
+                    snapshotClearInFlight = false
+                }
+            }
         }
     }
 

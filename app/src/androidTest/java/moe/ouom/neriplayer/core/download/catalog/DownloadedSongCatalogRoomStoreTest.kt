@@ -79,7 +79,7 @@ class DownloadedSongCatalogRoomStoreTest {
             )
 
             assertEquals(
-                listOf(song.copy(matchedLyric = null, matchedTranslatedLyric = null)),
+                listOf(song),
                 store.restore()
             )
             assertTrue(cacheFile.exists())

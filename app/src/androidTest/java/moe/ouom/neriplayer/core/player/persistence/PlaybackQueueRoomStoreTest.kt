@@ -179,6 +179,43 @@ class PlaybackQueueRoomStoreTest {
     }
 
     @Test
+    fun legacyJsonRemainsUsableWhenRoomMarkerWriteFails() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val dir = File(context.cacheDir, "playback-queue-marker-failure-${System.nanoTime()}")
+        val legacyStore = PlaybackQueueLegacyStore(
+            stateFile = File(dir, "last_playlist.json"),
+            playbackStateFile = File(dir, "last_playback_state.json"),
+            gson = Gson()
+        )
+
+        try {
+            val state = PersistedState(
+                playlist = listOf(song(3L, "marker-failure")),
+                index = 0,
+                positionMs = 3_000L
+            )
+            val target = persistPlaybackQueueWithRoomFallback(
+                roomStore = MarkerFailingPlaybackQueueStateStore(),
+                legacyStore = legacyStore,
+                queueState = state,
+                playbackState = PersistedPlaybackState(index = 0, positionMs = 3_000L),
+                shouldWriteQueueState = true,
+                shouldWritePlaybackState = true
+            )
+
+            assertEquals(PlaybackQueuePersistTarget.LEGACY_JSON, target)
+            assertEquals(state, legacyStore.read())
+        } finally {
+            database.close()
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun noOpPersistDoesNotClearNonEmptyQueue() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dir = File(context.cacheDir, "playback-queue-noop-${System.nanoTime()}")
@@ -273,5 +310,23 @@ class PlaybackQueueRoomStoreTest {
         }
 
         override suspend fun markLegacyJsonPrimary(now: Long) = Unit
+    }
+
+    private class MarkerFailingPlaybackQueueStateStore : PlaybackQueueStateStore {
+        override suspend fun replaceSnapshot(state: PersistedState, now: Long) {
+            throw IOException("forced Room snapshot failure")
+        }
+
+        override suspend fun updatePlaybackState(state: PersistedPlaybackState, now: Long) {
+            throw IOException("forced Room playback failure")
+        }
+
+        override suspend fun clear(now: Long) {
+            throw IOException("forced Room clear failure")
+        }
+
+        override suspend fun markLegacyJsonPrimary(now: Long) {
+            throw IOException("forced Room marker failure")
+        }
     }
 }

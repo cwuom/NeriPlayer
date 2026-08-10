@@ -295,6 +295,8 @@ internal fun serializeDownloadedSongsCatalog(
                         put("downloadTime", song.downloadTime)
                         put("coverPath", song.coverPath)
                         put("coverUrl", song.coverUrl)
+                        put("matchedLyric", song.matchedLyric)
+                        put("matchedTranslatedLyric", song.matchedTranslatedLyric)
                         put("matchedLyricSource", song.matchedLyricSource)
                         put("matchedSongId", song.matchedSongId)
                         put("userLyricOffsetMs", song.userLyricOffsetMs)

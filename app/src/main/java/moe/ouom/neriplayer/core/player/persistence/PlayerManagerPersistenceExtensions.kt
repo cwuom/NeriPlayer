@@ -240,7 +240,10 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
         }.getOrElse { error ->
             onRoomFailure(error)
             legacyStore.clear()
-            roomStore.markLegacyJsonPrimary(now)
+            runCatching { roomStore.markLegacyJsonPrimary(now) }
+                .onFailure { markerError ->
+                    onRoomFailure(markerError)
+                }
             PlaybackQueuePersistTarget.LEGACY_JSON
         }
     }
@@ -256,9 +259,30 @@ internal suspend fun persistPlaybackQueueWithRoomFallback(
     }.getOrElse { error ->
         onRoomFailure(error)
         legacyStore.write(queueState, playbackState)
-        roomStore.markLegacyJsonPrimary(now)
+        runCatching { roomStore.markLegacyJsonPrimary(now) }
+            .onFailure { markerError ->
+                onRoomFailure(markerError)
+            }
         PlaybackQueuePersistTarget.LEGACY_JSON
     }
+}
+
+private fun readLegacyPlaybackState(
+    stateFile: File,
+    playbackStateFile: File
+): PersistedState? {
+    return runCatching {
+        PlaybackQueueLegacyStore(
+            stateFile = stateFile,
+            playbackStateFile = playbackStateFile,
+            gson = PlayerManager.gson
+        ).read()
+    }.onFailure { error ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "Failed to read legacy playback state: ${error.message}"
+        )
+    }.getOrNull()
 }
 
 private fun buildRestoredStateSnapshot(
@@ -356,14 +380,13 @@ internal suspend fun preloadRestoredStateSnapshot(
         val roomStore = PlaybackQueueRoomStore(
             NeriUserDataDatabase.getInstance(app.applicationContext)
         )
-        val roomData = runCatching { roomStore.readIfRoomPrimary() }
+        val roomRead = runCatching { roomStore.readIfRoomPrimary() }
             .onFailure { error ->
                 NPLogger.w(
                     "NERI-PlayerManager",
                     "restoreState: Room read failed, trying legacy JSON: ${error.message}"
                 )
             }
-            .getOrNull()
         val roomPrimary = runCatching { roomStore.isRoomPrimary() }
             .onFailure { error ->
                 NPLogger.w(
@@ -372,21 +395,13 @@ internal suspend fun preloadRestoredStateSnapshot(
                 )
             }
             .getOrDefault(false)
-        val data = if (roomPrimary) {
-            roomData
+        val data = if (roomPrimary && roomRead.getOrNull() != null) {
+            roomRead.getOrNull()
         } else {
-            runCatching {
-                PlaybackQueueLegacyStore(
-                    stateFile = startupStateFile,
-                    playbackStateFile = startupPlaybackStateFile,
-                    gson = PlayerManager.gson
-                ).read()
-            }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "Failed to read legacy playback state: ${error.message}"
-                )
-            }.getOrNull()?.also { legacyData ->
+            readLegacyPlaybackState(
+                stateFile = startupStateFile,
+                playbackStateFile = startupPlaybackStateFile
+            )?.also { legacyData ->
                 runCatching {
                     roomStore.replaceSnapshot(legacyData)
                 }.onFailure { error ->
@@ -430,14 +445,24 @@ private fun loadRestoredStateSnapshot(
                     )
                 }
                 .getOrDefault(false)
-            if (roomPrimary) {
-                roomStore.readIfRoomPrimary()
+            val roomRead = if (roomPrimary) {
+                runCatching { roomStore.readIfRoomPrimary() }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NERI-PlayerManager",
+                            "restoreState: Room read failed, trying legacy JSON: ${error.message}"
+                        )
+                    }
             } else {
-                    PlaybackQueueLegacyStore(
-                        stateFile = stateFile,
-                        playbackStateFile = playbackStateFile,
-                        gson = PlayerManager.gson
-                    ).read()?.also { legacyData ->
+                null
+            }
+            if (roomPrimary && roomRead?.getOrNull() != null) {
+                roomRead.getOrNull()
+            } else {
+                readLegacyPlaybackState(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile
+                )?.also { legacyData ->
                     runCatching {
                         roomStore.replaceSnapshot(legacyData)
                     }.onFailure { error ->
