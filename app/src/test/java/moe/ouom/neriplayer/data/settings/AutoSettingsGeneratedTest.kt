@@ -364,6 +364,28 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun playbackFadeInSettingUsesPlaybackMetadata() {
+        val metadata = AutoSettingsMetadata.requireSetting(SettingsKeys.PLAYBACK_FADE_IN)
+
+        assertEquals("playback_fade_in", metadata.keyName)
+        assertEquals(SettingValueType.Boolean, metadata.valueType)
+        assertEquals(SettingUiType.Custom, metadata.ui)
+        assertEquals(SettingAccessMode.KeyOnly, metadata.access)
+        assertEquals(AutoSettingsSections.playback, metadata.section)
+    }
+
+    @Test
+    fun playbackCrossfadeNextSettingUsesPlaybackMetadata() {
+        val metadata = AutoSettingsMetadata.requireSetting(SettingsKeys.PLAYBACK_CROSSFADE_NEXT)
+
+        assertEquals("playback_crossfade_next", metadata.keyName)
+        assertEquals(SettingValueType.Boolean, metadata.valueType)
+        assertEquals(SettingUiType.Custom, metadata.ui)
+        assertEquals(SettingAccessMode.KeyOnly, metadata.access)
+        assertEquals(AutoSettingsSections.playback, metadata.section)
+    }
+
+    @Test
     fun exploreSearchHistorySettingDefaultsToEnabled() {
         val setting = AutoSettingsSchema.general.exploreSearchHistoryEnabled
 
