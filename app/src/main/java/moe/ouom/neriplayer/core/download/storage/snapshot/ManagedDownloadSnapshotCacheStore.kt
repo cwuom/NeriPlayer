@@ -9,9 +9,24 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 
+internal interface ManagedDownloadSnapshotPersistenceStore {
+    suspend fun restore(
+        expectedKey: String? = null
+    ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>?
+
+    suspend fun persist(
+        cacheKey: String,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Boolean
+
+    suspend fun clear()
+}
+
 internal class ManagedDownloadSnapshotCacheStore(
     private val scope: CoroutineScope,
-    private val cacheKeyProvider: (Context) -> String
+    private val cacheKeyProvider: (Context) -> String,
+    private val persistenceStoreProvider: (Context) -> ManagedDownloadSnapshotPersistenceStore =
+        { context -> ManagedDownloadSnapshotRoomStore(context) }
 ) {
     private data class SnapshotCache(
         val key: String,
@@ -90,7 +105,7 @@ internal class ManagedDownloadSnapshotCacheStore(
             snapshotGeneration
         }
         val restored = runBlocking {
-            ManagedDownloadSnapshotRoomStore(appContext).restore(expectedKey)
+            persistenceStoreProvider(appContext).restore(expectedKey)
         } ?: return null
         synchronized(snapshotPersistenceLock) {
             if (generation != snapshotGeneration || snapshotClearInFlight) {
@@ -182,7 +197,7 @@ internal class ManagedDownloadSnapshotCacheStore(
         }
         appContext ?: return
         val clearJob = scope.launch {
-            ManagedDownloadSnapshotRoomStore(appContext).clear()
+            persistenceStoreProvider(appContext).clear()
         }
         synchronized(snapshotPersistenceLock) {
             snapshotClearJob = clearJob
@@ -213,7 +228,7 @@ internal class ManagedDownloadSnapshotCacheStore(
                 val currentCache = snapshotCache
                     ?.takeIf { it.key == expectedKey }
                     ?: return@launch
-                if (ManagedDownloadSnapshotRoomStore(appContext).persist(
+                if (persistenceStoreProvider(appContext).persist(
                     cacheKey = currentCache.key,
                     snapshot = currentCache.snapshot
                 )) {

@@ -13,9 +13,9 @@ internal class ManagedDownloadSnapshotRoomStore(
     private val context: Context,
     private val database: NeriUserDataDatabase =
         NeriUserDataDatabase.getInstance(context.applicationContext)
-) {
-    suspend fun restore(
-        expectedKey: String? = null
+) : ManagedDownloadSnapshotPersistenceStore {
+    override suspend fun restore(
+        expectedKey: String?
     ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? {
         return globalMutex.withLock {
             runCatching {
@@ -26,7 +26,7 @@ internal class ManagedDownloadSnapshotRoomStore(
         }
     }
 
-    suspend fun persist(
+    override suspend fun persist(
         cacheKey: String,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): Boolean {
@@ -35,7 +35,7 @@ internal class ManagedDownloadSnapshotRoomStore(
         }
     }
 
-    suspend fun clear() {
+    override suspend fun clear() {
         globalMutex.withLock {
             runCatching {
                 database.withTransaction {
