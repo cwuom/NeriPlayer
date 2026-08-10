@@ -2499,8 +2499,10 @@ object PlayerManager {
 
     internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()
 
-    internal fun stopPlaybackImmediately(reason: String) =
-        this.stopPlaybackImmediatelyImpl(reason)
+    internal fun stopPlaybackImmediately(
+        reason: String,
+        forcePersist: Boolean = true
+    ) = this.stopPlaybackImmediatelyImpl(reason, forcePersist)
 
     internal fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) =
         this.stopPlaybackPreservingQueueImpl(clearMediaUrl)

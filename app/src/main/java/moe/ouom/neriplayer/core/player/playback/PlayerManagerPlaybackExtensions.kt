@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
@@ -195,6 +196,46 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
         debugReason = "audio_route_loss:$reason",
         flushPlayerOutput = true,
     )
+}
+
+private fun PlayerManager.persistPausedPlaybackState(
+    forcePersist: Boolean,
+    positionMs: Long,
+    shouldResumePlayback: Boolean,
+    reason: String
+) {
+    if (!forcePersist) {
+        scheduleStatePersist(
+            positionMs = positionMs,
+            shouldResumePlayback = shouldResumePlayback
+        )
+        return
+    }
+    ioScope.launch {
+        try {
+            runCatching { drainPlaybackStatsPersistJobBlocking(reason) }
+                .onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "pause persistence could not drain playback stats: reason=$reason",
+                        error
+                    )
+                }
+            persistStateNow(
+                positionMs = positionMs,
+                shouldResumePlayback = shouldResumePlayback,
+                reason = reason
+            )
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "pause persistence failed: reason=$reason",
+                error
+            )
+        }
+    }
 }
 
 internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan) {
@@ -1272,9 +1313,11 @@ internal fun PlayerManager.pauseImpl(
             LyriconManager.setPlaybackState(false)
         }
         clearAudioRouteMuteSuppression(reason = debugReason)
-        scheduleStatePersist(
+        persistPausedPlaybackState(
+            forcePersist = forcePersist,
             positionMs = action.persistPositionMs,
-            shouldResumePlayback = action.persistShouldResumePlayback
+            shouldResumePlayback = action.persistShouldResumePlayback,
+            reason = debugReason
         )
         emitPlaybackCommand(
             type = "PAUSE",
@@ -1425,34 +1468,12 @@ private fun PlayerManager.pauseInternal(
             _playbackDurationMs.value
         )
     )
-    if (forcePersist) {
-        ioScope.launch {
-            try {
-                runCatching { drainPlaybackStatsPersistJobBlocking(debugReason) }
-                    .onFailure { error ->
-                        NPLogger.w(
-                            "NERI-PlayerManager",
-                            "pause persistence could not drain playback stats: reason=$debugReason",
-                            error
-                        )
-                    }
-                persistState(positionMs = currentPosition, shouldResumePlayback = false)
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "pause persistence failed: reason=$debugReason",
-                    error
-                )
-            }
-        }
-    } else {
-        scheduleStatePersist(
-            positionMs = currentPosition,
-            shouldResumePlayback = false
-        )
-    }
+    persistPausedPlaybackState(
+        forcePersist = forcePersist,
+        positionMs = currentPosition,
+        shouldResumePlayback = false,
+        reason = debugReason
+    )
 }
 
 internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
@@ -2073,9 +2094,12 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
     scheduleStatePersist()
 }
 
-internal fun PlayerManager.stopPlaybackImmediatelyImpl(reason: String) {
+internal fun PlayerManager.stopPlaybackImmediatelyImpl(
+    reason: String,
+    forcePersist: Boolean = true
+) {
     pauseImpl(
-        forcePersist = true,
+        forcePersist = forcePersist,
         commandSource = PlaybackCommandSource.LOCAL_SAFETY,
         allowFadeOut = false,
         debugReason = reason,
