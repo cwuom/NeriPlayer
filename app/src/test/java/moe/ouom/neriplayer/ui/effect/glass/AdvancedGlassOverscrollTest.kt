@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,5 +41,47 @@ class AdvancedGlassOverscrollTest {
 
             assertEquals(rawDrag, restored, 0.01f)
         }
+    }
+
+    @Test
+    fun positiveOverscrollFillsTheExposedTopEdgeUsingRoundedTranslation() {
+        val fill = resolveAdvancedGlassOverscrollEdgeFill(
+            offsetY = 47.6f,
+            viewportHeight = 320f
+        )
+
+        val resolvedFill = requireNotNull(fill)
+        assertEquals(0f, resolvedFill.top, 0.001f)
+        assertEquals(48f, resolvedFill.height, 0.001f)
+    }
+
+    @Test
+    fun negativeOverscrollDoesNotFillTheTopEdge() {
+        assertNull(
+            resolveAdvancedGlassOverscrollEdgeFill(
+                offsetY = -48f,
+                viewportHeight = 320f
+            )
+        )
+    }
+
+    @Test
+    fun oversizedPositiveOverscrollIsClampedToTheViewport() {
+        val fill = resolveAdvancedGlassOverscrollEdgeFill(
+            offsetY = 500f,
+            viewportHeight = 320f
+        )
+
+        assertEquals(320f, requireNotNull(fill).height, 0.001f)
+    }
+
+    @Test
+    fun zeroOverscrollDoesNotDrawAnEdgeFill() {
+        assertNull(
+            resolveAdvancedGlassOverscrollEdgeFill(
+                offsetY = 0f,
+                viewportHeight = 320f
+            )
+        )
     }
 }
