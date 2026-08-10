@@ -123,7 +123,8 @@ object LanguageManager {
     private fun resolveLocale(context: Context, language: Language): Locale = when (language) {
         Language.CHINESE -> Locale.forLanguageTag("zh")
         Language.ENGLISH -> Locale.forLanguageTag("en")
-        Language.SYSTEM -> context.applicationContext.resources.configuration.locales[0]
+        Language.SYSTEM -> (context.applicationContext ?: context)
+            .resources.configuration.locales[0]
     }
 
     /**

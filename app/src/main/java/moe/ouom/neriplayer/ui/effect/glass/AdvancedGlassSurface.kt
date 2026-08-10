@@ -45,12 +45,12 @@ internal fun shouldRegisterAdvancedGlassRegion(
 ): Boolean = sceneActive && backdropRegistrationEnabled &&
     (belongsToActiveNavigationScreen || belongsToPrewarmedNavigationScreen)
 
-internal fun shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-    preserveTintForInactiveNavigationOwner: Boolean,
+internal fun shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+    suppressInactiveNavigationSurface: Boolean,
     canRenderGlass: Boolean,
     belongsToActiveNavigationScreen: Boolean,
     belongsToPrewarmedNavigationScreen: Boolean
-): Boolean = preserveTintForInactiveNavigationOwner &&
+): Boolean = suppressInactiveNavigationSurface &&
     canRenderGlass &&
     !belongsToActiveNavigationScreen &&
     belongsToPrewarmedNavigationScreen
@@ -63,7 +63,7 @@ internal fun AdvancedGlassSurface(
     fallbackColor: Color = Color.Transparent,
     tintColor: Color = Color.Unspecified,
     enabled: Boolean = true,
-    preserveTintForInactiveNavigationOwner: Boolean = false,
+    suppressInactiveNavigationSurface: Boolean = false,
     content: @Composable BoxScope.() -> Unit
 ) {
     val controller = LocalAdvancedGlassController.current
@@ -101,13 +101,13 @@ internal fun AdvancedGlassSurface(
     val canRenderGlass = enabled && sceneActive && backdropsReady &&
         canSampleAdvancedGlassBackdrop(controller, glassDepth, role)
     val glassEnabled = canRenderGlass && belongsToActiveNavigationScreen
-    val preservesInactiveNavigationTint = shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-        preserveTintForInactiveNavigationOwner = preserveTintForInactiveNavigationOwner,
+    val suppressesInactiveNavigationSurface =
+        shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+        suppressInactiveNavigationSurface = suppressInactiveNavigationSurface,
         canRenderGlass = canRenderGlass,
         belongsToActiveNavigationScreen = belongsToActiveNavigationScreen,
         belongsToPrewarmedNavigationScreen = belongsToPrewarmedNavigationScreen
     )
-    val drawsGlassTint = glassEnabled || preservesInactiveNavigationTint
     val registersBackdrop = canRenderGlass && shouldRegisterAdvancedGlassRegion(
         sceneActive = sceneActive,
         backdropRegistrationEnabled = backdropRegistrationEnabled,
@@ -161,14 +161,17 @@ internal fun AdvancedGlassSurface(
             .clip(shape)
             .then(regionRegistrationModifier)
     ) {
-        if (drawsGlassTint) {
+        if (glassEnabled) {
             GlassColorLayer(
                 shape = shape,
                 color = resolvedTintColor.copy(
                     alpha = resolvedTintColor.alpha * tokens.tintAlpha
                 )
             )
-        } else if (fallbackColor != Color.Transparent) {
+        } else if (
+            fallbackColor != Color.Transparent &&
+            !suppressesInactiveNavigationSurface
+        ) {
             GlassColorLayer(shape, fallbackColor)
         }
 
@@ -178,7 +181,7 @@ internal fun AdvancedGlassSurface(
             content()
         }
 
-        if (drawsGlassTint && tokens.edgeAlpha > 0f) {
+        if (glassEnabled && tokens.edgeAlpha > 0f) {
             GlassEdgeLayer(
                 role = role,
                 shape = shape,

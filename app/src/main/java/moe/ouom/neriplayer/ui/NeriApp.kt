@@ -266,6 +266,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -1339,7 +1340,8 @@ fun NeriApp(
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
-    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     var appContentReady by rememberSaveable { mutableStateOf(false) }
 
@@ -1367,7 +1369,8 @@ fun NeriApp(
                 launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                 onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
                 onIsDarkChanged = onIsDarkChanged,
-                onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged
+                onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged,
+                onLanguageChanged = onLanguageChanged
             )
         }
     }
@@ -1403,7 +1406,8 @@ private fun NeriAppContent(
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
-    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -3178,6 +3182,7 @@ private fun NeriAppContent(
                             }
                         },
                         onBeforeLanguageRestart = clearThemeRevealState,
+                        onLanguageChanged = onLanguageChanged,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
                         renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(

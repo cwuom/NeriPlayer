@@ -63,34 +63,34 @@ class AdvancedGlassSurfaceTest {
     }
 
     @Test
-    fun prewarmedInactiveNavigationOwnerCanPreserveGlassTintDuringOnboarding() {
+    fun prewarmedInactiveNavigationOwnerSuppressesItsGlassSurfaceDuringOnboarding() {
         assertTrue(
-            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-                preserveTintForInactiveNavigationOwner = true,
+            shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+                suppressInactiveNavigationSurface = true,
                 canRenderGlass = true,
                 belongsToActiveNavigationScreen = false,
                 belongsToPrewarmedNavigationScreen = true
             )
         )
         assertFalse(
-            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-                preserveTintForInactiveNavigationOwner = false,
+            shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+                suppressInactiveNavigationSurface = false,
                 canRenderGlass = true,
                 belongsToActiveNavigationScreen = false,
                 belongsToPrewarmedNavigationScreen = true
             )
         )
         assertFalse(
-            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-                preserveTintForInactiveNavigationOwner = true,
+            shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+                suppressInactiveNavigationSurface = true,
                 canRenderGlass = true,
                 belongsToActiveNavigationScreen = true,
                 belongsToPrewarmedNavigationScreen = true
             )
         )
         assertFalse(
-            shouldPreserveAdvancedGlassTintForInactiveNavigationOwner(
-                preserveTintForInactiveNavigationOwner = true,
+            shouldSuppressAdvancedGlassSurfaceForInactiveNavigationOwner(
+                suppressInactiveNavigationSurface = true,
                 canRenderGlass = false,
                 belongsToActiveNavigationScreen = false,
                 belongsToPrewarmedNavigationScreen = true

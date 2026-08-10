@@ -906,6 +906,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNowPlayingVisibilityChanged = { visible ->
                                     isNowPlayingVisible = visible
+                                },
+                                onLanguageChanged = { language ->
+                                    selectedAppLanguage = language
                                 }
                             )
                         }

@@ -58,6 +58,34 @@ internal data class StartupOnboardingLayerSceneMotion(
     val alpha: Float
 )
 
+@Immutable
+internal data class StartupOnboardingLayerTransitionProgress(
+    val enteringTranslation: Float,
+    val exitingTranslation: Float,
+    val enteringAlpha: Float,
+    val exitingAlpha: Float
+)
+
+internal fun reverseStartupOnboardingLayerTransitionProgress(
+    enteringTranslationProgress: Float,
+    exitingTranslationProgress: Float,
+    enteringAlphaProgress: Float,
+    exitingAlphaProgress: Float
+): StartupOnboardingLayerTransitionProgress {
+    val enteringTranslation = enteringTranslationProgress.coerceIn(0f, 1f)
+    val exitingTranslation = exitingTranslationProgress.coerceIn(0f, 1f)
+    val enteringAlpha = enteringAlphaProgress.coerceIn(0f, 1f)
+    val exitingAlpha = exitingAlphaProgress.coerceIn(0f, 1f)
+    return StartupOnboardingLayerTransitionProgress(
+        enteringTranslation = (1f - exitingTranslation * 5f / 7f)
+            .coerceIn(0f, 1f),
+        exitingTranslation = ((1f - enteringTranslation) * 7f / 5f)
+            .coerceIn(0f, 1f),
+        enteringAlpha = 1f - exitingAlpha,
+        exitingAlpha = 1f - enteringAlpha
+    )
+}
+
 internal fun resolveStartupOnboardingGlassOwnerStepIndex(
     fromStepIndex: Int?,
     toStepIndex: Int,
@@ -312,11 +340,16 @@ internal class StartupOnboardingLayerTransitionController(
             queuedStepIndex = null
             return
         }
-        if (
-            awaitingIncomingScenePreparation &&
-            targetStepIndex == fromStepIndex
-        ) {
-            cancelIncomingScenePreparation()
+        if (awaitingIncomingScenePreparation) {
+            if (targetStepIndex == fromStepIndex) {
+                cancelIncomingScenePreparation()
+            } else {
+                replaceIncomingScenePreparation(targetStepIndex)
+            }
+            return
+        }
+        if (targetStepIndex == fromStepIndex) {
+            reverseRunningTransition()
             return
         }
         queuedStepIndex = targetStepIndex
@@ -414,17 +447,62 @@ internal class StartupOnboardingLayerTransitionController(
         queuedStepIndex = null
     }
 
+    private fun replaceIncomingScenePreparation(targetStepIndex: Int) {
+        val currentFromStepIndex = fromStepIndex ?: return
+        generation++
+        transitionJob?.cancel()
+        transitionJob = null
+        toStepIndex = targetStepIndex
+        direction = if (targetStepIndex > currentFromStepIndex) 1 else -1
+        enteringTranslationProgress = 0f
+        exitingTranslationProgress = 0f
+        enteringAlphaProgress = 0f
+        exitingAlphaProgress = 0f
+        awaitingIncomingScenePreparation = true
+        running = true
+        queuedStepIndex = null
+    }
+
+    private fun reverseRunningTransition() {
+        val previousFromStepIndex = fromStepIndex ?: return
+        val previousToStepIndex = toStepIndex
+        val reversedProgress = reverseStartupOnboardingLayerTransitionProgress(
+            enteringTranslationProgress = enteringTranslationProgress,
+            exitingTranslationProgress = exitingTranslationProgress,
+            enteringAlphaProgress = enteringAlphaProgress,
+            exitingAlphaProgress = exitingAlphaProgress
+        )
+        val transitionToken = ++generation
+        transitionJob?.cancel()
+        transitionJob = null
+        fromStepIndex = previousToStepIndex
+        toStepIndex = previousFromStepIndex
+        direction = -direction
+        enteringTranslationProgress = reversedProgress.enteringTranslation
+        exitingTranslationProgress = reversedProgress.exitingTranslation
+        enteringAlphaProgress = reversedProgress.enteringAlpha
+        exitingAlphaProgress = reversedProgress.exitingAlpha
+        awaitingIncomingScenePreparation = false
+        running = true
+        queuedStepIndex = null
+        launchTransition(transitionToken)
+    }
+
     private fun launchTransition(transitionToken: Long) {
+        val enteringTranslationStart = enteringTranslationProgress
+        val exitingTranslationStart = exitingTranslationProgress
+        val enteringAlphaStart = enteringAlphaProgress
+        val exitingAlphaStart = exitingAlphaProgress
         transitionJob = scope.launch {
             try {
                 coroutineScope {
                     launch {
                         animate(
-                            initialValue = 0f,
+                            initialValue = enteringTranslationStart,
                             targetValue = 1f,
-                            animationSpec = tween(
+                            animationSpec = startupOnboardingRemainingAnimationSpec(
                                 durationMillis = STARTUP_ONBOARDING_STEP_ENTER_DURATION_MS,
-                                easing = FastOutSlowInEasing
+                                startProgress = enteringTranslationStart
                             )
                         ) { value, _ ->
                             if (transitionToken == generation) {
@@ -434,11 +512,11 @@ internal class StartupOnboardingLayerTransitionController(
                     }
                     launch {
                         animate(
-                            initialValue = 0f,
+                            initialValue = exitingTranslationStart,
                             targetValue = 1f,
-                            animationSpec = tween(
+                            animationSpec = startupOnboardingRemainingAnimationSpec(
                                 durationMillis = STARTUP_ONBOARDING_STEP_EXIT_DURATION_MS,
-                                easing = FastOutSlowInEasing
+                                startProgress = exitingTranslationStart
                             )
                         ) { value, _ ->
                             if (transitionToken == generation) {
@@ -448,11 +526,11 @@ internal class StartupOnboardingLayerTransitionController(
                     }
                     launch {
                         animate(
-                            initialValue = 0f,
+                            initialValue = enteringAlphaStart,
                             targetValue = 1f,
-                            animationSpec = tween(
+                            animationSpec = startupOnboardingRemainingAnimationSpec(
                                 durationMillis = STARTUP_ONBOARDING_STEP_ENTER_FADE_DURATION_MS,
-                                easing = FastOutSlowInEasing
+                                startProgress = enteringAlphaStart
                             )
                         ) { value, _ ->
                             if (transitionToken == generation) {
@@ -462,11 +540,11 @@ internal class StartupOnboardingLayerTransitionController(
                     }
                     launch {
                         animate(
-                            initialValue = 0f,
+                            initialValue = exitingAlphaStart,
                             targetValue = 1f,
-                            animationSpec = tween(
+                            animationSpec = startupOnboardingRemainingAnimationSpec(
                                 durationMillis = STARTUP_ONBOARDING_STEP_EXIT_FADE_DURATION_MS,
-                                easing = FastOutSlowInEasing
+                                startProgress = exitingAlphaStart
                             )
                         ) { value, _ ->
                             if (transitionToken == generation) {
@@ -482,6 +560,16 @@ internal class StartupOnboardingLayerTransitionController(
             }
         }
     }
+
+    private fun startupOnboardingRemainingAnimationSpec(
+        durationMillis: Int,
+        startProgress: Float
+    ) = tween<Float>(
+        durationMillis = (
+            durationMillis * (1f - startProgress.coerceIn(0f, 1f))
+            ).roundToInt().coerceAtLeast(1),
+        easing = FastOutSlowInEasing
+    )
 
     private fun settleAtTarget() {
         fromStepIndex = null

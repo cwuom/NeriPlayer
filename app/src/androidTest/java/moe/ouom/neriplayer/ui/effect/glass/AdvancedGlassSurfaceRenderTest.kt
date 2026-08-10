@@ -701,7 +701,7 @@ class AdvancedGlassSurfaceRenderTest {
     }
 
     @Test
-    fun prewarmedInactiveNavigationOwnerPreservesTintDuringHandoff() {
+    fun prewarmedInactiveNavigationOwnerDoesNotDrawASecondGlassSurface() {
         val activeOwner = Any()
         val inactiveOwner = Any()
         composeRule.setContent {
@@ -749,7 +749,7 @@ class AdvancedGlassSurfaceRenderTest {
                                         .align(Alignment.CenterStart),
                                     fallbackColor = Color.Transparent,
                                     tintColor = Color.Black,
-                                    preserveTintForInactiveNavigationOwner = true
+                                    suppressInactiveNavigationSurface = true
                                 ) {}
                             }
                             CompositionLocalProvider(
@@ -763,7 +763,7 @@ class AdvancedGlassSurfaceRenderTest {
                                         .testTag(PrewarmedInactiveTintTag),
                                     fallbackColor = Color.Transparent,
                                     tintColor = Color.Black,
-                                    preserveTintForInactiveNavigationOwner = true
+                                    suppressInactiveNavigationSurface = true
                                 ) {}
                             }
                         }
@@ -777,10 +777,8 @@ class AdvancedGlassSurfaceRenderTest {
         val pixel = image.toPixelMap()[image.width / 2, image.height / 2]
 
         assertTrue(
-            "prewarmed inactive owner fell back to a blank or opaque frame: $pixel",
-            pixel.red in 0.15f..0.85f &&
-                pixel.green in 0.15f..0.85f &&
-                pixel.blue in 0.15f..0.85f
+            "prewarmed inactive owner still drew a second glass surface: $pixel",
+            pixel.red > 0.9f && pixel.green > 0.9f && pixel.blue > 0.9f
         )
     }
 

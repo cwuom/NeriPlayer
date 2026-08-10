@@ -109,7 +109,7 @@ internal fun OnboardingGlassSurface(
         shape = shape,
         fallbackColor = color,
         tintColor = color,
-        preserveTintForInactiveNavigationOwner = true,
+        suppressInactiveNavigationSurface = true,
         content = content
     )
 }

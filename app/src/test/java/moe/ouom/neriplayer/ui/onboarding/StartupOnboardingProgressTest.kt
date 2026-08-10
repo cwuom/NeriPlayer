@@ -146,6 +146,43 @@ class StartupOnboardingProgressTest {
     }
 
     @Test
+    fun onboardingLayerReversesAnInFlightTransitionFromItsCurrentProgress() {
+        val reversed = reverseStartupOnboardingLayerTransitionProgress(
+            enteringTranslationProgress = 0.4f,
+            exitingTranslationProgress = 0.6f,
+            enteringAlphaProgress = 0.7f,
+            exitingAlphaProgress = 0.3f
+        )
+
+        assertEquals(1f - 0.6f * 5f / 7f, reversed.enteringTranslation, 0.0001f)
+        assertEquals((1f - 0.4f) * 7f / 5f, reversed.exitingTranslation, 0.0001f)
+        assertEquals(0.7f, reversed.enteringAlpha, 0.0001f)
+        assertEquals(0.3f, reversed.exitingAlpha, 0.0001f)
+    }
+
+    @Test
+    fun onboardingLayerReplacesASecondPendingTargetBeforeAnimationStarts() {
+        val controller = StartupOnboardingLayerTransitionController(
+            scope = CoroutineScope(Job()),
+            initialStepIndex = 0
+        )
+        try {
+            controller.onContainerWidthChanged(1080)
+            controller.onInitialSceneFrameRendered()
+            controller.request(1)
+            controller.request(2)
+
+            assertEquals(
+                listOf(0, 2),
+                controller.visibleScenes.map(StartupOnboardingLayerScene::stepIndex)
+            )
+            assertEquals(0, controller.activeGlassStepIndex)
+        } finally {
+            controller.dispose()
+        }
+    }
+
+    @Test
     fun onboardingStepSceneMotionMatchesTheOriginalSlideDistances() {
         assertEquals(
             IntOffset(200, 0),
