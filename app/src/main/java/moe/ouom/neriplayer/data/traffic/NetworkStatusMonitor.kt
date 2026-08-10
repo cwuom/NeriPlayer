@@ -18,14 +18,6 @@ fun Context.currentTrafficNetworkType(): TrafficNetworkType {
     return connectivityManager.currentTrafficNetworkType()
 }
 
-fun Context.isTrafficRiskNetworkNow(): Boolean {
-    return when (currentTrafficNetworkType()) {
-        TrafficNetworkType.MOBILE,
-        TrafficNetworkType.ROAMING -> true
-        TrafficNetworkType.WIFI -> false
-    }
-}
-
 private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
     val capabilities = activeNetwork?.let { network -> getNetworkCapabilities(network) }
     hasLikelyNetworkTransport(
