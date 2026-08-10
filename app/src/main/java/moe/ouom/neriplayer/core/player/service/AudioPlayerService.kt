@@ -230,6 +230,13 @@ internal fun shouldStopServiceForExternalPauseCommand(
     return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
 }
 
+internal fun shouldStopPlaybackOnTaskRemoved(
+    hasPlaybackSurfaceContent: Boolean,
+    transportActive: Boolean,
+): Boolean {
+    return hasPlaybackSurfaceContent && transportActive
+}
+
 internal fun mediaSessionPlaybackActions(): Long {
     return PlaybackState.ACTION_PLAY or
         PlaybackState.ACTION_PAUSE or
@@ -2574,25 +2581,60 @@ class AudioPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        val hasPlaybackSurfaceContent = hasPlaybackSurfaceContent()
+        val transportActive = runCatching {
+            PlayerManager.isTransportActiveWithoutInitialization()
+        }.getOrDefault(false)
         NPLogger.w(
             "NERI-APS",
-            "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+            "onTaskRemoved hasSurface=$hasPlaybackSurfaceContent " +
+                "transportActive=$transportActive hasItems=${PlayerManager.hasItems()} " +
+                "isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        // 划掉任务不代表用户停止播放, 正在播的会话要保留进程重建恢复意图
-        if (PlayerManager.hasItems()) {
+        if (
+            shouldStopPlaybackOnTaskRemoved(
+                hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
+                transportActive = transportActive,
+            )
+        ) {
+            allowServiceRestart = false
             flushPlaybackStatsSafely("task_removed", "task removed")
+            runCatching {
+                PlayerManager.stopPlaybackImmediately("task_removed")
+            }.onFailure {
+                NPLogger.w("NERI-APS", "playback stop failed during task removed", it)
+            }
             runCatching {
                 PlayerManager.scheduleStatePersist(
                     positionMs = PlayerManager.playbackPositionFlow.value,
-                    shouldResumePlayback = PlayerManager.playWhenReadyFlow.value ||
-                        PlayerManager.isPlayingFlow.value,
+                    shouldResumePlayback = false,
                     debounceMs = 0L
                 )
             }.onFailure {
                 NPLogger.w("NERI-APS", "state persist failed during task removed", it)
             }
+            stopForegroundIfStarted("task_removed")
+            stopSelf()
+            return
+        }
+        if (PlayerManager.hasItems()) {
+            runCatching {
+                PlayerManager.scheduleStatePersist(
+                    positionMs = PlayerManager.playbackPositionFlow.value,
+                    shouldResumePlayback = false,
+                    debounceMs = 0L
+                )
+            }.onFailure {
+                NPLogger.w("NERI-APS", "state persist failed during inactive task removed", it)
+            }
             runCatching { updateNotification() }
-                .onFailure { NPLogger.w("NERI-APS", "notification update failed during task removed", it) }
+                .onFailure {
+                    NPLogger.w(
+                        "NERI-APS",
+                        "notification update failed during inactive task removed",
+                        it
+                    )
+                }
         }
     }
 

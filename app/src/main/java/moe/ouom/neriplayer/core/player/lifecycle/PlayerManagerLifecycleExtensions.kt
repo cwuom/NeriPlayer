@@ -1291,8 +1291,10 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         }
         NPLogger.d(
             "NERI-PlayerManager",
-            "handleAudioBecomingNoisy(): schedule delayed pause for device=${currentDevice.type}:${currentDevice.name}"
+            "handleAudioBecomingNoisy(): mute while confirming disconnect for " +
+                "device=${currentDevice.type}:${currentDevice.name}"
         )
+        suppressPlaybackForAudioRouteLoss(reason = "bluetooth_disconnect_pending")
         schedulePauseForBluetoothDisconnect(
             previousDevice = currentDevice,
             reason = "becoming_noisy"

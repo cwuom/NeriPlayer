@@ -192,7 +192,8 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
         },
         allowFadeOut = false,
         preserveMutedVolume = true,
-        debugReason = "audio_route_loss:$reason"
+        debugReason = "audio_route_loss:$reason",
+        flushPlayerOutput = true,
     )
 }
 
@@ -1235,7 +1236,8 @@ internal fun PlayerManager.pauseImpl(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     allowFadeOut: Boolean = true,
     preserveMutedVolume: Boolean = false,
-    debugReason: String = "pause_internal"
+    debugReason: String = "pause_internal",
+    flushPlayerOutput: Boolean = false,
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -1259,6 +1261,13 @@ internal fun PlayerManager.pauseImpl(
         pendingMediaLoadPositionMs = action.persistPositionMs
         _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
         _isPlayingFlow.value = false
+        if (flushPlayerOutput) {
+            runCatching {
+                player.playWhenReady = false
+                player.stop()
+            }
+            _playerPlaybackStateFlow.value = Player.STATE_IDLE
+        }
         if (lyriconEnabled) {
             LyriconManager.setPlaybackState(false)
         }
@@ -1316,7 +1325,8 @@ internal fun PlayerManager.pauseImpl(
                     forcePersist = forcePersist,
                     resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
                     restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
-                    debugReason = debugReason
+                    debugReason = debugReason,
+                    flushPlayerOutput = flushPlayerOutput,
                 )
             } finally {
                 if (pendingPauseJob === scheduledPauseJob) {
@@ -1330,7 +1340,8 @@ internal fun PlayerManager.pauseImpl(
             forcePersist = forcePersist,
             resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
             restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
-            debugReason = debugReason
+            debugReason = debugReason,
+            flushPlayerOutput = flushPlayerOutput,
         )
     }
     emitPlaybackCommand(
@@ -1356,7 +1367,8 @@ private fun PlayerManager.pauseInternal(
     forcePersist: Boolean,
     resetVolumeBeforePause: Boolean,
     restoreVolumeAfterPause: Boolean,
-    debugReason: String
+    debugReason: String,
+    flushPlayerOutput: Boolean,
 ) {
     pendingPauseJob = null
     updateResumePlaybackRequested(false)
@@ -1377,7 +1389,13 @@ private fun PlayerManager.pauseInternal(
         "pauseInternal: reason=$debugReason, song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist, resetVolumeBeforePause=$resetVolumeBeforePause, restoreVolumeAfterPause=$restoreVolumeAfterPause, stack=[$stackHint]"
     )
     player.playWhenReady = false
-    player.pause()
+    if (flushPlayerOutput) {
+        player.stop()
+        _playerPlaybackStateFlow.value = Player.STATE_IDLE
+        stopProgressUpdates()
+    } else {
+        player.pause()
+    }
     if (lyriconEnabled) {
         LyriconManager.setPlaybackState(false)
     }
@@ -2053,4 +2071,14 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         "stopPlaybackPreservingQueue(): completed, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, retainedSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
     )
     scheduleStatePersist()
+}
+
+internal fun PlayerManager.stopPlaybackImmediatelyImpl(reason: String) {
+    pauseImpl(
+        forcePersist = true,
+        commandSource = PlaybackCommandSource.LOCAL_SAFETY,
+        allowFadeOut = false,
+        debugReason = reason,
+        flushPlayerOutput = true,
+    )
 }

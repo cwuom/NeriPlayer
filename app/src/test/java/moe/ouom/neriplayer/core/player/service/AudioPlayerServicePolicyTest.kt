@@ -22,6 +22,36 @@ import org.junit.Test
 class AudioPlayerServicePolicyTest {
 
     @Test
+    fun `active transport is stopped when task is removed`() {
+        assertTrue(
+            shouldStopPlaybackOnTaskRemoved(
+                hasPlaybackSurfaceContent = true,
+                transportActive = true,
+            )
+        )
+    }
+
+    @Test
+    fun `paused queue is retained when task is removed`() {
+        assertFalse(
+            shouldStopPlaybackOnTaskRemoved(
+                hasPlaybackSurfaceContent = true,
+                transportActive = false,
+            )
+        )
+    }
+
+    @Test
+    fun `empty playback surface is never stopped for task removal`() {
+        assertFalse(
+            shouldStopPlaybackOnTaskRemoved(
+                hasPlaybackSurfaceContent = false,
+                transportActive = true,
+            )
+        )
+    }
+
+    @Test
     fun `media session stop is downgraded to pause-only`() {
         assertFalse(
             shouldStopServiceForExternalPauseCommand(
