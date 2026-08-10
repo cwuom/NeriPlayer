@@ -931,12 +931,26 @@ internal fun PlayerManager.initializeImpl(
         }
         ioScope.launch {
             settingsRepo.neteaseAutoSourceSwitchFlow.collect { enabled ->
+                val previousEnabled = neteaseAutoSourceSwitchEnabled
                 neteaseAutoSourceSwitchEnabled = enabled
+                if (!previousEnabled && enabled) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "netease_auto_source_switch_enabled"
+                    )
+                }
             }
         }
         ioScope.launch {
             settingsRepo.neteaseLocalSourceFallbackFlow.collect { enabled ->
+                val previousEnabled = neteaseLocalSourceFallbackEnabled
                 neteaseLocalSourceFallbackEnabled = enabled
+                if (!previousEnabled && enabled) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "netease_local_source_fallback_enabled"
+                    )
+                }
             }
         }
         ioScope.launch {
