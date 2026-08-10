@@ -115,8 +115,8 @@ data class PlaybackPreferenceSnapshot(
     val keepPlaybackModeState: Boolean = true,
     val neteaseAutoSourceSwitch: Boolean = false,
     val neteaseLocalSourceFallback: Boolean = false,
-    val playbackFadeIn: Boolean = false,
-    val playbackCrossfadeNext: Boolean = false,
+    val playbackFadeIn: Boolean = true,
+    val playbackCrossfadeNext: Boolean = true,
     val sleepTimerFinishCurrentOnExpiry: Boolean = false,
     val playbackFadeInDurationMs: Long = 500L,
     val playbackFadeOutDurationMs: Long = 500L,
@@ -432,8 +432,8 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
         neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: false,
         neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: false,
-        playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: false,
-        playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false,
+        playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: true,
+        playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: true,
         sleepTimerFinishCurrentOnExpiry =
             this[SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY] ?: false,
         playbackFadeInDurationMs = this[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L,
@@ -580,8 +580,8 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
             prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, false),
         neteaseLocalSourceFallback =
             prefs.getBoolean(PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY, false),
-        playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, false),
-        playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, false),
+        playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, true),
+        playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, true),
         sleepTimerFinishCurrentOnExpiry = prefs.getBoolean(
             PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY_KEY,
             false

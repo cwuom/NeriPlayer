@@ -1526,8 +1526,12 @@ private fun NeriAppContent(
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
-    val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(initialValue = false)
-    val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(initialValue = false)
+    val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.playbackFadeIn
+    )
+    val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.playbackCrossfadeNext
+    )
     val sleepTimerFinishCurrentOnExpiry by repo.sleepTimerFinishCurrentOnExpiryFlow
         .collectAsStateWithLifecycle(
             initialValue = startupPlaybackPreferences.sleepTimerFinishCurrentOnExpiry

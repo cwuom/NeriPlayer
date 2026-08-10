@@ -11,6 +11,24 @@ import java.io.File
 
 class SettingsRepositoryTest {
     @Test
+    fun playbackFadeSettingsDefaultToEnabledWhenUnset() {
+        val filesDir = File.createTempFile("neriplayer-settings-fade", "").apply {
+            delete()
+            mkdirs()
+            deleteOnExit()
+        }
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(filesDir)
+        `when`(context.applicationContext).thenReturn(context)
+        val repository = SettingsRepository(context)
+
+        runBlocking {
+            assertTrue(repository.playbackFadeInFlow.first())
+            assertTrue(repository.playbackCrossfadeNextFlow.first())
+        }
+    }
+
+    @Test
     fun enablingDynamicIslandLyricsTurnsOnBluetoothLyricsAndTranslation() {
         val filesDir = File.createTempFile("neriplayer-settings", "").apply {
             delete()

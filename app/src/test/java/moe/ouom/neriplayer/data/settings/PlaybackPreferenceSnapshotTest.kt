@@ -34,6 +34,25 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `empty preferences enable playback fade by default`() {
+        val snapshot = preferencesOf().toPlaybackPreferenceSnapshot()
+
+        assertTrue(snapshot.playbackFadeIn)
+        assertTrue(snapshot.playbackCrossfadeNext)
+    }
+
+    @Test
+    fun `explicitly disabled playback fades remain disabled`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.PLAYBACK_FADE_IN to false,
+            SettingsKeys.PLAYBACK_CROSSFADE_NEXT to false
+        ).toPlaybackPreferenceSnapshot()
+
+        assertFalse(snapshot.playbackFadeIn)
+        assertFalse(snapshot.playbackCrossfadeNext)
+    }
+
+    @Test
     fun `preferences restore long form playback progress setting`() {
         val snapshot = preferencesOf(
             SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS to false
@@ -113,7 +132,8 @@ class PlaybackPreferenceSnapshotTest {
         assertFalse(snapshot.neteaseAutoSourceSwitch)
         assertFalse(snapshot.neteaseLocalSourceFallback)
         assertFalse(snapshot.allowMixedPlayback)
-        assertFalse(snapshot.playbackFadeIn)
+        assertTrue(snapshot.playbackFadeIn)
+        assertTrue(snapshot.playbackCrossfadeNext)
         assertFalse(snapshot.sleepTimerFinishCurrentOnExpiry)
         assertFalse(snapshot.playbackVolumeNormalizationEnabled)
         assertFalse(snapshot.playbackHighResolutionOutputEnabled)

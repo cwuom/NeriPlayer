@@ -437,10 +437,10 @@ class SettingsRepository(private val context: Context) {
         autoSettingsRepository.homeCardRecommendedFlow
 
     val playbackFadeInFlow: Flow<Boolean> =
-        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_FADE_IN] ?: true }
 
     val playbackCrossfadeNextFlow: Flow<Boolean> =
-        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false }
+        dataStoreSettingFlow { it[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: true }
 
     val sleepTimerFinishCurrentOnExpiryFlow: Flow<Boolean> =
         dataStoreSettingFlow {
