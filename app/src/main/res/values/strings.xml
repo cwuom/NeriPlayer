@@ -1251,6 +1251,7 @@
     <string name="settings_background_select">选择一张图片</string>
     <string name="settings_network_expand">网络连接与代理选项</string>
     <string name="settings_no_cache">不缓存 (0 MB)</string>
+    <string name="settings_cache_unlimited">无上限</string>
     <string name="settings_download_management">下载管理</string>
     <string name="settings_download_expand">下载目录、保存格式与任务管理</string>
     <string name="settings_download_progress">下载进度</string>
@@ -1648,7 +1649,7 @@
     <string name="settings_cache_manage">管理缓存大小与清理</string>
     <string name="settings_storage_cache">存储与缓存</string>
     <string name="settings_storage_expand">缓存大小、清理与存储用量</string>
-    <string name="settings_cache_notice">设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。</string>
+    <string name="settings_cache_notice">设置为 0 MB 即禁用缓存，滑到滑块末端为无上限。修改上限后需重启应用生效。</string>
     <string name="settings_cache_size_gb">%.1f GB</string>
     <string name="settings_cache_size_mb">%1$d MB</string>
 

@@ -25,6 +25,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -130,6 +131,7 @@ import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
@@ -154,16 +156,17 @@ internal fun PlayerManager.initializeImpl(
         }
         initializationInProgress = true
     }
+    val effectiveMaxCacheSize = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSize)
     try {
         runCatching {
             NPLogger.d(
                 "NERI-PlayerManager",
-                "initialize(): maxCacheSize=$maxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
+                "initialize(): maxCacheSize=$effectiveMaxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
             )
             application = app
             _localPlaylistsReadyFlow.value = false
             FloatingLyricsOverlayManager.initialize(app)
-            currentCacheSize = maxCacheSize
+            currentCacheSize = effectiveMaxCacheSize
 
             ioScope = newIoScope()
             mainScope = newMainScope()
@@ -250,13 +253,23 @@ internal fun PlayerManager.initializeImpl(
         )
         conditionalHttpFactory = conditionalFactory
 
-        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
+        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (
+            effectiveMaxCacheSize > 0 ||
+                effectiveMaxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+        ) {
             val cacheDir = File(app.cacheDir, "media_cache")
             val dbProvider = StandaloneDatabaseProvider(app)
+            val cacheEvictor = if (
+                effectiveMaxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+            ) {
+                NoOpCacheEvictor()
+            } else {
+                LeastRecentlyUsedCacheEvictor(effectiveMaxCacheSize)
+            }
 
             cache = SimpleCache(
                 cacheDir,
-                LeastRecentlyUsedCacheEvictor(maxCacheSize),
+                cacheEvictor,
                 dbProvider
             )
 
@@ -1034,12 +1047,12 @@ internal fun PlayerManager.initializeImpl(
         initialized = true
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): success, cacheSize=$maxCacheSize, restoredQueueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
+            "initialize(): success, cacheSize=$effectiveMaxCacheSize, restoredQueueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
         )
     }.onFailure { e ->
         NPLogger.e(
             "NERI-PlayerManager",
-            "initialize(): failed, cacheSize=$maxCacheSize, currentPlaylistSize=${currentPlaylist.size}, currentIndex=$currentIndex",
+            "initialize(): failed, cacheSize=$effectiveMaxCacheSize, currentPlaylistSize=${currentPlaylist.size}, currentIndex=$currentIndex",
             e
         )
         NPLogger.w(

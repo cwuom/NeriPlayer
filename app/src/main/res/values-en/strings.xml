@@ -1251,6 +1251,7 @@
     <string name="settings_background_select">Select image</string>
     <string name="settings_network_expand">Network and proxy options</string>
     <string name="settings_no_cache">No cache</string>
+    <string name="settings_cache_unlimited">Unlimited</string>
     <string name="settings_download_management">Download Management</string>
     <string name="settings_download_expand">Location, file format, and download tasks</string>
     <string name="settings_download_progress">Download Progress</string>
@@ -1648,7 +1649,7 @@
     <string name="settings_cache_manage">Manage cache</string>
     <string name="settings_storage_cache">Storage &amp; Cache</string>
     <string name="settings_storage_expand">Cache size, cleanup, and storage use</string>
-    <string name="settings_cache_notice">Set to 0 MB to disable cache. Restart required after changing limit.</string>
+    <string name="settings_cache_notice">Set to 0 MB to disable cache, or move the slider to the end for unlimited. Restart required after changing the limit.</string>
     <string name="settings_cache_size_gb">%.1f GB</string>
     <string name="settings_cache_size_mb">%1$d MB</string>
 
