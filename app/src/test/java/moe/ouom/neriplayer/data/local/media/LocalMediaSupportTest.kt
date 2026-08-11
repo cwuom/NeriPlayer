@@ -179,14 +179,39 @@ class LocalMediaSupportTest {
     }
 
     @Test
-    fun `findNearbyLyricFiles keeps lrc priority across source and Lyrics directory`() {
+    fun `resolveEffectiveLocalLyricContent falls back to embedded lyrics for blank sidecar`() {
+        assertEquals(
+            "[00:00.00]embedded",
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "  \n",
+                embeddedContent = "[00:00.00]embedded"
+            )
+        )
+        assertEquals(
+            "[00:00.00]sidecar",
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "[00:00.00]sidecar",
+                embeddedContent = "[00:00.00]embedded"
+            )
+        )
+        assertEquals(
+            null,
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "",
+                embeddedContent = " "
+            )
+        )
+    }
+
+    @Test
+    fun `findNearbyLyricFiles keeps source directory priority over Lyrics fallback`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
-        File(sourceDir, "song.txt").writeText("source original")
-        File(sourceDir, "song_trans.txt").writeText("source translation")
+        val original = File(sourceDir, "song.txt").apply { writeText("source original") }
+        val translated = File(sourceDir, "song_trans.txt").apply { writeText("source translation") }
         val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
-        val original = File(lyricsDir, "song.lrc").apply { writeText("nested original") }
-        val translated = File(lyricsDir, "song_trans.lrc").apply { writeText("nested translation") }
+        File(lyricsDir, "song.lrc").writeText("nested original")
+        File(lyricsDir, "song_trans.lrc").writeText("nested translation")
 
         val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
 

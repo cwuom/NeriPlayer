@@ -1257,9 +1257,15 @@ object LocalMediaSupport {
             nearbyLyricFiles.translated,
             "translated lyric"
         )
-        val effectiveLyricContent = nearbyLyricContent ?: tagLibMetadata?.lyrics?.takeIf { it.isNotBlank() }
-        val effectiveTranslatedLyricContent = nearbyTranslatedLyricContent
-            ?: tagLibMetadata?.translatedLyrics?.takeIf { it.isNotBlank() }
+        val hasEffectiveExternalLyric = !nearbyLyricContent.isNullOrBlank()
+        val effectiveLyricContent = resolveEffectiveLocalLyricContent(
+            sidecarContent = nearbyLyricContent,
+            embeddedContent = tagLibMetadata?.lyrics
+        )
+        val effectiveTranslatedLyricContent = resolveEffectiveLocalLyricContent(
+            sidecarContent = nearbyTranslatedLyricContent,
+            embeddedContent = tagLibMetadata?.translatedLyrics
+        )
 
         val retriever = MediaMetadataRetriever()
         return try {
@@ -1392,9 +1398,9 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricFiles.original?.absolutePath,
+                lyricPath = nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
                 lyricSource = when {
-                    nearbyLyricFiles.original != null -> context.getString(R.string.local_song_lyric_external)
+                    hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
@@ -1458,9 +1464,9 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricFiles.original?.absolutePath,
+                lyricPath = nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
                 lyricSource = when {
-                    nearbyLyricFiles.original != null -> context.getString(R.string.local_song_lyric_external)
+                    hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
@@ -2252,22 +2258,7 @@ object LocalMediaSupport {
     private sealed class EditableCoverWritePlan {
         data object Unchanged : EditableCoverWritePlan()
         data object Unreadable : EditableCoverWritePlan()
-        data class Update(val pictures: Array<Picture>) : EditableCoverWritePlan() {
-            override fun equals(other: Any?): Boolean {
-                if (this === other) return true
-                if (javaClass != other?.javaClass) return false
-
-                other as Update
-
-                if (!pictures.contentEquals(other.pictures)) return false
-
-                return true
-            }
-
-            override fun hashCode(): Int {
-                return pictures.contentHashCode()
-            }
-        }
+        data class Update(val pictures: Array<Picture>) : EditableCoverWritePlan()
     }
 
     private data class EditableMetadataSnapshot(
@@ -2387,11 +2378,7 @@ object LocalMediaSupport {
         audioExtension: String?
     ): Array<Picture> {
         if (usesRolelessEditableCoverPictures(audioExtension)) {
-            return if (replacementPicture == null) {
-                emptyArray()
-            } else {
-                arrayOf(replacementPicture)
-            }
+            return replacementPicture?.let(::arrayOf) ?: emptyArray()
         }
         val retainedPictures = existingPictures.filterNot(::isFrontCoverPicture)
         return if (replacementPicture == null) {
@@ -3078,12 +3065,20 @@ object LocalMediaSupport {
         }
     }
 
+    internal fun resolveEffectiveLocalLyricContent(
+        sidecarContent: String?,
+        embeddedContent: String?
+    ): String? {
+        return sidecarContent?.takeIf(String::isNotBlank)
+            ?: embeddedContent?.takeIf(String::isNotBlank)
+    }
+
     private fun findFirstLyricSidecar(
         searchDirectories: List<File>,
         fileNames: List<String>
     ): File? {
-        return fileNames.asSequence()
-            .flatMap { fileName -> searchDirectories.asSequence().map { File(it, fileName) } }
+        return searchDirectories.asSequence()
+            .flatMap { directory -> fileNames.asSequence().map { File(directory, it) } }
             .firstOrNull(File::isFile)
     }
 
