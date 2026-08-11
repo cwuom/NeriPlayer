@@ -400,10 +400,7 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
     val cacheDataSource = CacheDataSource.Factory()
         .setCache(mediaCache)
         .setUpstreamDataSourceFactory(upstreamFactory)
-        .setFlags(
-            CacheDataSource.FLAG_BLOCK_ON_CACHE or
-                CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
-        )
+        .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
         .setEventListener(object : CacheDataSource.EventListener {
             override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
                 AppContainer.trafficStatsRepo.recordCacheHitBytes(cachedBytesRead)
