@@ -57,6 +57,19 @@ private const val HOME_INITIAL_LOAD_DEFER_MS = 250L
 
 private fun shouldFallbackRecommend(code: Int): Boolean = code == 301 || code == 50000005
 
+internal fun homeSongFetchAttemptCount(source: NeteaseHomeSongSource): Int {
+    return if (source == NeteaseHomeSongSource.PRIVATE_FM) {
+        1
+    } else {
+        HOME_MAX_FAILURE_BEFORE_WARNING
+    }
+}
+
+internal fun shouldRefreshNeteaseHome(
+    loginChanged: Boolean,
+    recommendationsBootstrapped: Boolean
+): Boolean = loginChanged || !recommendationsBootstrapped
+
 data class HomeSectionState<T>(
     val items: List<T> = emptyList(),
     val loading: Boolean = false,
@@ -283,9 +296,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 hasRecommendLogin = nextHasLogin
                 if (loginChanged) {
                     _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
-                    refreshNeteaseHome()
                 }
-                if (!homeRecommendationsBootstrapped) {
+                if (shouldRefreshNeteaseHome(loginChanged, homeRecommendationsBootstrapped)) {
                     homeRecommendationsBootstrapped = true
                     refreshNeteaseHome()
                 }
@@ -628,10 +640,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun <T> fetchWithRetry(
         name: String,
+        maxAttempts: Int = HOME_MAX_FAILURE_BEFORE_WARNING,
         fetch: suspend () -> List<T>
     ): RetryLoadResult<T> {
+        require(maxAttempts > 0) { "maxAttempts must be positive" }
         var lastError: Throwable? = null
-        repeat(HOME_MAX_FAILURE_BEFORE_WARNING) { attempt ->
+        repeat(maxAttempts) { attempt ->
             try {
                 val items = fetch()
                 if (attempt > 0) {
@@ -646,7 +660,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 lastError = e
                 NPLogger.w(
                     TAG,
-                    "$name attempt ${attempt + 1}/$HOME_MAX_FAILURE_BEFORE_WARNING failed: ${e.message}"
+                    "$name attempt ${attempt + 1}/$maxAttempts failed: ${e.message}"
                 )
             }
         }
@@ -688,7 +702,14 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         name: String,
         source: NeteaseHomeSongSource
     ): HomeNeteaseSongSectionState {
-        return when (val result = fetchWithRetry("$name/$source") { fetchSongSource(source) }) {
+        return when (
+            val result = fetchWithRetry(
+                name = "$name/$source",
+                maxAttempts = homeSongFetchAttemptCount(source)
+            ) {
+                fetchSongSource(source)
+            }
+        ) {
             is RetryLoadResult.Success -> {
                 NPLogger.d(
                     TAG,

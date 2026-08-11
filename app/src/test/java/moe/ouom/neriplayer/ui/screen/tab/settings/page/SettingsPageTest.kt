@@ -498,6 +498,25 @@ class SettingsPageTest {
     }
 
     @Test
+    fun internationalHomeCardTitlesAreSearchable() {
+        val entries = buildSettingsSearchEntries(settingsStringContext())
+        val expectedTargets = listOf(
+            "guess you like" to "setting:home_card_trending",
+            "猜你喜欢" to "setting:home_card_trending",
+            "daily discover" to "setting:home_card_radar",
+            "每日发现" to "setting:home_card_radar",
+            "more recommendations" to "setting:home_card_recommended",
+            "更多推荐" to "setting:home_card_recommended"
+        )
+
+        expectedTargets.forEach { (query, targetId) ->
+            assertTrue(
+                searchSettingsEntries(entries, query).any { it.targetId == targetId }
+            )
+        }
+    }
+
+    @Test
     fun dependentSettingsHighlightTheirPrimaryControls() {
         fun targetId(keyName: String): String {
             return AutoSettingsMetadata.settings.first { it.keyName == keyName }.searchTargetId()

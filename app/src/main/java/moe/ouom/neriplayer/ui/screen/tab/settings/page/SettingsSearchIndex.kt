@@ -794,9 +794,35 @@ private val SettingSearchAliases = mapOf(
     "default_start_destination" to listOf("start page", "home", "tab", "qidongye"),
     "auto_show_keyboard" to listOf("keyboard", "input", "shurufa", "jianpan"),
     "home_card_continue" to listOf("continue", "recent", "jixu"),
-    "home_card_trending" to listOf("trending", "charts", "hot", "biao sheng", "xin ge", "new song"),
-    "home_card_radar" to listOf("radar", "discover", "siren leidar", "fm", "leida gedan", "private"),
-    "home_card_recommended" to listOf("recommend", "tuijian", "daily playlist", "high quality", "acg"),
+    "home_card_trending" to listOf(
+        "trending",
+        "charts",
+        "hot",
+        "biao sheng",
+        "xin ge",
+        "new song",
+        "guess you like",
+        "猜你喜欢"
+    ),
+    "home_card_radar" to listOf(
+        "radar",
+        "discover",
+        "siren leidar",
+        "fm",
+        "leida gedan",
+        "private",
+        "daily discover",
+        "每日发现"
+    ),
+    "home_card_recommended" to listOf(
+        "recommend",
+        "tuijian",
+        "daily playlist",
+        "high quality",
+        "acg",
+        "more recommendations",
+        "更多推荐"
+    ),
     "show_cover_source_badge" to listOf("badge", "source", "cover", "biaoshi"),
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
     "nowplaying_show_title" to listOf("title", "song name", "geming"),

@@ -47,7 +47,7 @@ internal val NeteaseRadarPlaylistDefinitions = listOf(
     NeteaseRadarPlaylistDefinition(id = 5_362_359_247L, name = "宝藏雷达"),
     NeteaseRadarPlaylistDefinition(id = 5_300_458_264L, name = "新歌雷达"),
     NeteaseRadarPlaylistDefinition(id = 5_327_906_368L, name = "乐迷雷达"),
-    NeteaseRadarPlaylistDefinition(id = 6_700_242_542L, name = "雷击顿唱片行")
+    NeteaseRadarPlaylistDefinition(id = 5_341_776_086L, name = "神秘雷达")
 )
 
 internal val NeteaseHomeTrendingSongSources = listOf(

@@ -118,9 +118,10 @@ class NeteaseHomeRecommendationsTest {
     @Test
     fun radarPlaylistDefinitions_keepOfficialRadarIds() {
         assertEquals(
-            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 6700242542L),
+            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 5341776086L),
             NeteaseRadarPlaylistDefinitions.map { it.id }
         )
+        assertEquals("神秘雷达", NeteaseRadarPlaylistDefinitions.last().name)
     }
 
     @Test
@@ -186,6 +187,41 @@ class NeteaseHomeRecommendationsTest {
         )
 
         assertEquals(listOf(first, second), merged)
+    }
+
+    @Test
+    fun privateFmDisablesOuterRetry() {
+        assertEquals(1, homeSongFetchAttemptCount(NeteaseHomeSongSource.PRIVATE_FM))
+        assertEquals(3, homeSongFetchAttemptCount(NeteaseHomeSongSource.DAILY_RECOMMEND))
+    }
+
+    @Test
+    fun cookieUpdateRefreshesHomeForLoginChangesOrInitialBootstrap() {
+        assertTrue(
+            shouldRefreshNeteaseHome(
+                loginChanged = true,
+                recommendationsBootstrapped = false
+            )
+        )
+        assertTrue(
+            shouldRefreshNeteaseHome(
+                loginChanged = true,
+                recommendationsBootstrapped = true
+            )
+        )
+        assertTrue(
+            shouldRefreshNeteaseHome(
+                loginChanged = false,
+                recommendationsBootstrapped = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldRefreshNeteaseHome(
+                loginChanged = false,
+                recommendationsBootstrapped = true
+            )
+        )
     }
 
     private fun testSong(id: Long, audioId: String): SongItem {
