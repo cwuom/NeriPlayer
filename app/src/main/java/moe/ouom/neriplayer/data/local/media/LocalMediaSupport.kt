@@ -3038,7 +3038,10 @@ object LocalMediaSupport {
         return file.toURI().toString()
     }
 
-    internal fun findNearbyLyricFiles(file: File?): NearbyLyricFiles {
+    internal fun findNearbyLyricFiles(
+        file: File?,
+        extensions: List<String> = lyricExtensions
+    ): NearbyLyricFiles {
         val actualFile = file ?: return NearbyLyricFiles(null, null)
         val parent = actualFile.parentFile ?: return NearbyLyricFiles(null, null)
         val baseName = actualFile.nameWithoutExtension
@@ -3048,11 +3051,19 @@ object LocalMediaSupport {
         return NearbyLyricFiles(
             original = findFirstLyricSidecar(
                 searchDirectories = searchDirectories,
-                fileNames = lyricSidecarNames(baseName, translated = false)
+                fileNames = lyricSidecarNames(
+                    baseName = baseName,
+                    translated = false,
+                    extensions = extensions
+                )
             ),
             translated = findFirstLyricSidecar(
                 searchDirectories = searchDirectories,
-                fileNames = lyricSidecarNames(baseName, translated = true)
+                fileNames = lyricSidecarNames(
+                    baseName = baseName,
+                    translated = true,
+                    extensions = extensions
+                )
             )
         )
     }
@@ -3076,13 +3087,17 @@ object LocalMediaSupport {
             .firstOrNull(File::isFile)
     }
 
-    private fun lyricSidecarNames(baseName: String, translated: Boolean): List<String> {
+    private fun lyricSidecarNames(
+        baseName: String,
+        translated: Boolean,
+        extensions: List<String>
+    ): List<String> {
         val prefix = if (translated) "${baseName}_trans" else baseName
         return buildList {
-            lyricExtensions.forEach { extension ->
+            extensions.forEach { extension ->
                 add("$prefix.$extension")
             }
-            if ("lrc" in lyricExtensions) {
+            if ("lrc" in extensions) {
                 add("$prefix.lrc.txt")
             }
         }

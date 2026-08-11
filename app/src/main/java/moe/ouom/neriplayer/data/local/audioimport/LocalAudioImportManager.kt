@@ -130,31 +130,24 @@ internal fun buildNearbySidecarCopyPlans(
             }
         }
 
-        fun addLyricSidecars(translated: Boolean) {
-            val prefixForSource = if (translated) "${sourceBase}_trans" else sourceBase
-            val prefixForTarget = if (translated) "${targetBase}_trans" else targetBase
-            val suffixes = buildList {
-                lyricExtensions.forEach { extension ->
-                    add(".$extension")
-                }
-                if ("lrc" in lyricExtensions) {
-                    add(".lrc.txt")
-                }
-            }
-            suffixes.forEach { suffix ->
-                addIfExists(
-                    File(sourceDir, "$prefixForSource$suffix"),
-                    File(targetDir, "$prefixForTarget$suffix")
-                )
-                addIfExists(
-                    File(File(sourceDir, "Lyrics"), "$prefixForSource$suffix"),
-                    File(targetDir, "$prefixForTarget$suffix")
-                )
-            }
+        val nearbyLyricFiles = LocalMediaSupport.findNearbyLyricFiles(
+            file = sourceFile,
+            extensions = lyricExtensions
+        )
+
+        fun addSelectedLyricSidecar(source: File?, translated: Boolean) {
+            source ?: return
+            val sourcePrefix = if (translated) "${sourceBase}_trans" else sourceBase
+            val targetPrefix = if (translated) "${targetBase}_trans" else targetBase
+            val suffix = source.name
+                .removePrefix(sourcePrefix)
+                .takeIf { it.startsWith('.') }
+                ?: return
+            addIfExists(source, File(targetDir, "$targetPrefix$suffix"))
         }
 
-        addLyricSidecars(translated = false)
-        addLyricSidecars(translated = true)
+        addSelectedLyricSidecar(nearbyLyricFiles.original, translated = false)
+        addSelectedLyricSidecar(nearbyLyricFiles.translated, translated = true)
 
         imageExtensions.forEach { extension ->
             addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
