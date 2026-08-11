@@ -68,9 +68,18 @@ class SettingsPageTest {
         }
 
         assertEquals(R.string.player_continue, titleRes("home_card_continue"))
-        assertEquals(R.string.recommend_trending, titleRes("home_card_trending"))
-        assertEquals(R.string.recommend_radar, titleRes("home_card_radar"))
-        assertEquals(R.string.recommend_for_you, titleRes("home_card_recommended"))
+        assertEquals(
+            R.string.settings_home_card_netease_trending,
+            titleRes("home_card_trending")
+        )
+        assertEquals(
+            R.string.settings_home_card_netease_radar,
+            titleRes("home_card_radar")
+        )
+        assertEquals(
+            R.string.settings_home_card_netease_recommended,
+            titleRes("home_card_recommended")
+        )
     }
 
     @Test
