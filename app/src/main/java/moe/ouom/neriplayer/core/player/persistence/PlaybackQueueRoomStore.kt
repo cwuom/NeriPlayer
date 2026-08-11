@@ -13,9 +13,30 @@ import moe.ouom.neriplayer.data.local.database.entity.PLAYBACK_QUEUE_STATE_ID
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueSongEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlaybackQueueStateEntity
 
+internal interface PlaybackQueueStateStore {
+    suspend fun replaceSnapshot(
+        state: PersistedState,
+        now: Long
+    )
+
+    suspend fun updatePlaybackState(
+        state: PersistedPlaybackState,
+        now: Long
+    )
+
+    suspend fun clear(now: Long)
+
+    suspend fun markLegacyJsonPrimary(now: Long)
+}
+
+internal data class PlaybackQueueRoomSnapshot(
+    val state: PersistedState,
+    val updatedAt: Long
+)
+
 internal class PlaybackQueueRoomStore(
     private val database: NeriUserDataDatabase
-) {
+) : PlaybackQueueStateStore {
     suspend fun isRoomPrimary(): Boolean {
         return database.syncMetadataDao()
             .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
@@ -23,15 +44,23 @@ internal class PlaybackQueueRoomStore(
     }
 
     suspend fun readIfRoomPrimary(): PersistedState? {
+        return readSnapshotIfRoomPrimary()?.state
+    }
+
+    suspend fun readSnapshotIfRoomPrimary(): PlaybackQueueRoomSnapshot? {
         if (!isRoomPrimary()) {
             return null
         }
-        return readState()
+        return readSnapshot()
     }
 
-    suspend fun replaceSnapshot(
+    suspend fun replaceSnapshot(state: PersistedState) {
+        replaceSnapshot(state, System.currentTimeMillis())
+    }
+
+    override suspend fun replaceSnapshot(
         state: PersistedState,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.playbackQueueDao()
@@ -48,9 +77,13 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
-    suspend fun updatePlaybackState(
+    suspend fun updatePlaybackState(state: PersistedPlaybackState) {
+        updatePlaybackState(state, System.currentTimeMillis())
+    }
+
+    override suspend fun updatePlaybackState(
         state: PersistedPlaybackState,
-        now: Long = System.currentTimeMillis()
+        now: Long
     ) {
         database.withTransaction {
             val dao = database.playbackQueueDao()
@@ -66,7 +99,11 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
-    suspend fun clear(now: Long = System.currentTimeMillis()) {
+    suspend fun clear() {
+        clear(System.currentTimeMillis())
+    }
+
+    override suspend fun clear(now: Long) {
         database.withTransaction {
             database.playbackQueueDao().deleteState()
             database.playbackQueueDao().deleteSongs()
@@ -74,25 +111,43 @@ internal class PlaybackQueueRoomStore(
         }
     }
 
-    private suspend fun readState(): PersistedState? {
+    suspend fun markLegacyJsonPrimary() {
+        markLegacyJsonPrimary(System.currentTimeMillis())
+    }
+
+    override suspend fun markLegacyJsonPrimary(now: Long) {
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = CUTOVER_STATE_METADATA_KEY,
+                value = LEGACY_JSON_STATE,
+                updatedAt = now
+            )
+        )
+    }
+
+    private suspend fun readSnapshot(): PlaybackQueueRoomSnapshot? {
         return database.withTransaction {
             val dao = database.playbackQueueDao()
             val state = dao.getState() ?: return@withTransaction null
-            PersistedState(
-                playlist = dao.getSongs(PLAYBACK_QUEUE_MAIN).map(PlaybackQueueSongEntity::toPersistedSong),
-                index = state.currentIndex,
-                mediaUrl = state.mediaUrl,
-                positionMs = state.positionMs,
-                shouldResumePlayback = state.shouldResumePlayback,
-                repeatMode = state.repeatMode,
-                shuffleEnabled = state.shuffleEnabled,
-                shuffleRestorePlaylist = if (state.shuffleEnabled == true) {
-                    dao.getSongs(PLAYBACK_QUEUE_SHUFFLE_RESTORE)
-                        .map(PlaybackQueueSongEntity::toPersistedSong)
-                } else {
-                    null
-                },
-                shuffleRestoreIndex = state.shuffleRestoreIndex
+            PlaybackQueueRoomSnapshot(
+                state = PersistedState(
+                    playlist = dao.getSongs(PLAYBACK_QUEUE_MAIN)
+                        .map(PlaybackQueueSongEntity::toPersistedSong),
+                    index = state.currentIndex,
+                    mediaUrl = state.mediaUrl,
+                    positionMs = state.positionMs,
+                    shouldResumePlayback = state.shouldResumePlayback,
+                    repeatMode = state.repeatMode,
+                    shuffleEnabled = state.shuffleEnabled,
+                    shuffleRestorePlaylist = if (state.shuffleEnabled == true) {
+                        dao.getSongs(PLAYBACK_QUEUE_SHUFFLE_RESTORE)
+                            .map(PlaybackQueueSongEntity::toPersistedSong)
+                    } else {
+                        null
+                    },
+                    shuffleRestoreIndex = state.shuffleRestoreIndex
+                ),
+                updatedAt = state.updatedAt
             )
         }
     }
@@ -110,6 +165,7 @@ internal class PlaybackQueueRoomStore(
     companion object {
         const val CUTOVER_STATE_METADATA_KEY = "playback_queue_cutover_state"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        const val LEGACY_JSON_STATE = "legacy_json"
     }
 }
 

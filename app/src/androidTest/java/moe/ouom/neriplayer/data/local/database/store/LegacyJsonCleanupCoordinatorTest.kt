@@ -22,6 +22,13 @@ class LegacyJsonCleanupCoordinatorTest {
     @Test
     fun cleanupDeletesEligibleFilesAndKeepsUnrelatedFiles() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val originalFiles = snapshotFiles(
+            context,
+            "playback_stats_counters.json",
+            "last_playlist.json",
+            "managed_download_snapshot_v1.json",
+            "keep_me.json"
+        )
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
@@ -65,19 +72,18 @@ class LegacyJsonCleanupCoordinatorTest {
             assertTrue(audit?.value?.contains("last_playlist.json") == true)
         } finally {
             database.close()
-            cleanupFiles(
-                context,
-                "playback_stats_counters.json",
-                "last_playlist.json",
-                "managed_download_snapshot_v1.json",
-                "keep_me.json"
-            )
+            restoreFiles(context, originalFiles)
         }
     }
 
     @Test
     fun cleanupDeletesEligibleFilesEvenWhenOtherTargetsAreBlocked() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val originalFiles = snapshotFiles(
+            context,
+            "playback_stats_counters.json",
+            "last_playback_state.json"
+        )
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
@@ -110,11 +116,55 @@ class LegacyJsonCleanupCoordinatorTest {
             assertTrue(audit?.value?.contains("last_playback_state.json") == true)
         } finally {
             database.close()
-            cleanupFiles(
-                context,
-                "playback_stats_counters.json",
-                "last_playback_state.json"
+            restoreFiles(context, originalFiles)
+        }
+    }
+
+    @Test
+    fun cleanupKeepsLegacyJsonFallbackFilesInMixedUpgradeState() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val originalFiles = snapshotFiles(
+            context,
+            "local_playlists.json",
+            "last_playlist.json",
+            "play_history.json"
+        )
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+
+        try {
+            setRoomPrimary(
+                database = database,
+                key = LocalPlaylistRoomStore.CUTOVER_STATE_METADATA_KEY
             )
+            setLegacyJsonPrimary(
+                database = database,
+                key = PlaybackQueueRoomStore.CUTOVER_STATE_METADATA_KEY
+            )
+
+            val promotedPlaylistFile = writeLegacyFile(context, "local_playlists.json")
+            val fallbackQueueFile = writeLegacyFile(context, "last_playlist.json")
+            val missingMarkerHistoryFile = writeLegacyFile(context, "play_history.json")
+            val fallbackQueueContent = fallbackQueueFile.readText()
+            val missingMarkerHistoryContent = missingMarkerHistoryFile.readText()
+
+            val coordinator = LegacyJsonCleanupCoordinator(context, database)
+            val plan = coordinator.buildPlan()
+            val result = coordinator.execute(plan, confirmed = true)
+
+            assertEquals(LegacyJsonCleanupStatus.BLOCKED, result.status)
+            assertFalse(promotedPlaylistFile.exists())
+            assertTrue(fallbackQueueFile.exists())
+            assertTrue(missingMarkerHistoryFile.exists())
+            assertTrue(result.blockedFiles.contains("last_playlist.json"))
+            assertTrue(result.blockedFiles.contains("play_history.json"))
+            assertEquals(fallbackQueueContent, fallbackQueueFile.readText())
+            assertEquals(missingMarkerHistoryContent, missingMarkerHistoryFile.readText())
+        } finally {
+            database.close()
+            restoreFiles(context, originalFiles)
         }
     }
 
@@ -131,15 +181,39 @@ class LegacyJsonCleanupCoordinatorTest {
         )
     }
 
+    private suspend fun setLegacyJsonPrimary(
+        database: NeriUserDataDatabase,
+        key: String
+    ) {
+        database.syncMetadataDao().upsertMigrationMetadata(
+            MigrationMetadataEntity(
+                key = key,
+                value = PlaybackQueueRoomStore.LEGACY_JSON_STATE,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
     private fun writeLegacyFile(context: Context, fileName: String): File {
         return File(context.filesDir, fileName).apply {
             writeText("legacy")
         }
     }
 
-    private fun cleanupFiles(context: Context, vararg fileNames: String) {
-        fileNames.forEach { fileName ->
-            File(context.filesDir, fileName).delete()
+    private fun snapshotFiles(context: Context, vararg fileNames: String): Map<String, String?> {
+        return fileNames.associateWith { fileName ->
+            File(context.filesDir, fileName).takeIf(File::exists)?.readText()
+        }
+    }
+
+    private fun restoreFiles(context: Context, files: Map<String, String?>) {
+        files.forEach { (fileName, content) ->
+            val file = File(context.filesDir, fileName)
+            if (content == null) {
+                file.delete()
+            } else {
+                file.writeText(content)
+            }
         }
     }
 }

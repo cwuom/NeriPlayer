@@ -9,9 +9,24 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 
+internal interface ManagedDownloadSnapshotPersistenceStore {
+    suspend fun restore(
+        expectedKey: String? = null
+    ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>?
+
+    suspend fun persist(
+        cacheKey: String,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): Boolean
+
+    suspend fun clear()
+}
+
 internal class ManagedDownloadSnapshotCacheStore(
     private val scope: CoroutineScope,
-    private val cacheKeyProvider: (Context) -> String
+    private val cacheKeyProvider: (Context) -> String,
+    private val persistenceStoreProvider: (Context) -> ManagedDownloadSnapshotPersistenceStore =
+        { context -> ManagedDownloadSnapshotRoomStore(context) }
 ) {
     private data class SnapshotCache(
         val key: String,
@@ -23,6 +38,15 @@ internal class ManagedDownloadSnapshotCacheStore(
 
     @Volatile
     private var snapshotPersistJob: Job? = null
+
+    @Volatile
+    private var snapshotClearJob: Job? = null
+
+    @Volatile
+    private var snapshotClearInFlight: Boolean = false
+
+    @Volatile
+    private var snapshotGeneration: Long = 0L
 
     private val snapshotPersistenceLock = Any()
 
@@ -74,9 +98,20 @@ internal class ManagedDownloadSnapshotCacheStore(
         expectedKey: String? = null
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
         val appContext = context.applicationContext
+        val generation = synchronized(snapshotPersistenceLock) {
+            if (snapshotClearInFlight) {
+                return null
+            }
+            snapshotGeneration
+        }
         val restored = runBlocking {
-            ManagedDownloadSnapshotRoomStore(appContext).restore(expectedKey)
+            persistenceStoreProvider(appContext).restore(expectedKey)
         } ?: return null
+        synchronized(snapshotPersistenceLock) {
+            if (generation != snapshotGeneration || snapshotClearInFlight) {
+                return null
+            }
+        }
         snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
         return restored.second
     }
@@ -147,13 +182,37 @@ internal class ManagedDownloadSnapshotCacheStore(
 
     fun invalidate(context: Context? = null) {
         snapshotCache = null
+        val appContext = context?.applicationContext
         synchronized(snapshotPersistenceLock) {
+            snapshotGeneration += 1L
             snapshotPersistJob?.cancel()
             snapshotPersistJob = null
+            snapshotClearJob?.cancel()
+            snapshotClearJob = null
+            if (appContext == null) {
+                snapshotClearInFlight = false
+            } else {
+                snapshotClearInFlight = true
+            }
         }
-        val appContext = context?.applicationContext ?: return
-        runBlocking {
-            ManagedDownloadSnapshotRoomStore(appContext).clear()
+        appContext ?: return
+        val clearJob = scope.launch {
+            persistenceStoreProvider(appContext).clear()
+        }
+        synchronized(snapshotPersistenceLock) {
+            snapshotClearJob = clearJob
+            if (clearJob.isCompleted) {
+                snapshotClearJob = null
+                snapshotClearInFlight = false
+            }
+        }
+        clearJob.invokeOnCompletion {
+            synchronized(snapshotPersistenceLock) {
+                if (snapshotClearJob === clearJob) {
+                    snapshotClearJob = null
+                    snapshotClearInFlight = false
+                }
+            }
         }
     }
 
@@ -169,7 +228,7 @@ internal class ManagedDownloadSnapshotCacheStore(
                 val currentCache = snapshotCache
                     ?.takeIf { it.key == expectedKey }
                     ?: return@launch
-                if (ManagedDownloadSnapshotRoomStore(appContext).persist(
+                if (persistenceStoreProvider(appContext).persist(
                     cacheKey = currentCache.key,
                     snapshot = currentCache.snapshot
                 )) {

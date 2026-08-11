@@ -116,6 +116,7 @@ class NeriPlayerApplication : Application() {
                 AppContainer.playlistUsageRepo
                 AppContainer.localPlaylistPlaybackStatsRepo
                 AppContainer.playbackStatsRepo
+                AppContainer.trafficStatsRepo
             }
             AppContainer.launchBackgroundIo {
                 AppContainer.neteasePlaylistCacheRepo.importLegacyCaches()

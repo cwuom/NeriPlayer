@@ -2118,7 +2118,10 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<DownloadedSong>
     ) {
-        downloadedSongCatalogStore.persist(context, songs)
+        val persisted = downloadedSongCatalogStore.persist(context, songs)
+        if (!persisted) {
+            scheduleCatalogReconcile(context, forceRefresh = true)
+        }
     }
 
     fun startDownload(context: Context, song: SongItem) {
