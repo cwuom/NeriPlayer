@@ -351,8 +351,11 @@ For release build and signing details, see
 - 🎧 **Multi-source exploration and playback**:
   supports NetEase Cloud Music, Bilibili, YouTube Music, and local audio.
 - 🏠 **Home recommendations and continue listening**:
-  the Home page supports recently used playlists and recommendation cards.
-  International mode prioritizes YouTube Music home shelves.
+  the Home page supports recently used playlists, all available NetEase recommendation
+  sources, Radar playlists, and recommendation cards. It shows all available
+  charts, new songs, daily picks, Private FM, high-quality playlists, and other
+  feeds together; refreshing updates every section. International mode prioritizes
+  YouTube Music home shelves.
 - 🗂️ **Categorized Library browsing**:
   `Library` includes Local, Favorites, NetEase, YouTube Music, and Bilibili areas.
   YouTube can be fully disabled under Settings > General, which hides its entry

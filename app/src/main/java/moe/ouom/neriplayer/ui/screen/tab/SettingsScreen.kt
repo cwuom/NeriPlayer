@@ -1015,36 +1015,33 @@ fun SettingsScreen(
     val homeTrendingLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_guess_you_like
     } else {
-        R.string.recommend_trending
+        R.string.settings_home_card_netease_trending
     }
     val homeRadarLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_daily_discover
     } else {
-        R.string.recommend_radar
+        R.string.settings_home_card_netease_radar
     }
     val homeRecommendedLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_more_recommendations
     } else {
-        R.string.recommend_for_you
+        R.string.settings_home_card_netease_recommended
     }
     val homeTrendingSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_guess_you_like_desc
     } else {
-        null
+        R.string.settings_home_card_netease_trending_desc
     }
     val homeRadarSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_daily_discover_desc
     } else {
-        null
+        R.string.settings_home_card_netease_radar_desc
     }
     val homeRecommendedSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_more_recommendations_desc
     } else {
-        null
+        R.string.settings_home_card_netease_recommended_desc
     }
-    val neteaseHomeCardAuthHealth by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycleCompat()
-    val neteaseHomeCardsEnabled = internationalEnabled ||
-        neteaseHomeCardAuthHealth.state != SavedCookieAuthState.Missing
     val effectiveDefaultStartDestination = remember(defaultStartDestination, homeStartAvailable) {
         if (!homeStartAvailable && defaultStartDestination == "home") {
             "explore"
@@ -1521,7 +1518,6 @@ fun SettingsScreen(
                                 homeTrendingSupportingRes = homeTrendingSupportingRes,
                                 homeRadarSupportingRes = homeRadarSupportingRes,
                                 homeRecommendedSupportingRes = homeRecommendedSupportingRes,
-                                neteaseHomeCardsEnabled = neteaseHomeCardsEnabled,
                                 homeStartAvailable = homeStartAvailable,
                                 showHomeContinueCard = showHomeContinueCard,
                                 onShowHomeContinueCardChange = onShowHomeContinueCardChange,
@@ -2944,7 +2940,6 @@ private fun SettingsPersonalizationPageContent(
     homeTrendingSupportingRes: Int?,
     homeRadarSupportingRes: Int?,
     homeRecommendedSupportingRes: Int?,
-    neteaseHomeCardsEnabled: Boolean,
     homeStartAvailable: Boolean,
     showHomeContinueCard: Boolean,
     onShowHomeContinueCardChange: (Boolean) -> Unit,
@@ -3063,15 +3058,6 @@ private fun SettingsPersonalizationPageContent(
                 title = stringResource(R.string.settings_personalization_home_section),
                 description = stringResource(R.string.settings_personalization_home_section_desc)
             )
-            if (!neteaseHomeCardsEnabled && !internationalEnabled) {
-                Text(
-                    text = stringResource(R.string.settings_home_card_netease_login_required),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
             SettingsHomeCardSwitch(
                 title = stringResource(R.string.player_continue),
                 icon = Icons.Outlined.History,
@@ -3089,7 +3075,6 @@ private fun SettingsPersonalizationPageContent(
                 icon = Icons.Outlined.Bolt,
                 checked = showHomeTrendingCard,
                 onCheckedChange = onShowHomeTrendingCardChange,
-                enabled = neteaseHomeCardsEnabled,
                 targetId = "setting:home_card_trending",
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -3102,7 +3087,6 @@ private fun SettingsPersonalizationPageContent(
                 icon = if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Radar,
                 checked = showHomeRadarCard,
                 onCheckedChange = onShowHomeRadarCardChange,
-                enabled = neteaseHomeCardsEnabled,
                 targetId = "setting:home_card_radar",
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,

@@ -32,6 +32,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.material3.Surface
@@ -105,6 +106,10 @@ class HomeHostRuntimeState {
         firstVisibleItemIndex = 0,
         firstVisibleItemScrollOffset = 0
     )
+    val radarPlaylistListState: LazyListState = LazyListState(
+        firstVisibleItemIndex = 0,
+        firstVisibleItemScrollOffset = 0
+    )
     val topAppBarState: TopAppBarState = TopAppBarState(
         initialHeightOffsetLimit = -Float.MAX_VALUE,
         initialHeightOffset = 0f,
@@ -114,6 +119,8 @@ class HomeHostRuntimeState {
     var pendingGridRestoreOffset by mutableIntStateOf(0)
     var pendingGridRestoreKey by mutableStateOf<String?>(null)
     var pendingGridRestoreArmed by mutableStateOf(false)
+    var pendingRadarPlaylistRestoreIndex by mutableStateOf<Int?>(null)
+    var pendingRadarPlaylistRestoreOffset by mutableIntStateOf(0)
     var homeScrollAnchorIndexes by mutableStateOf<Map<String, Int>>(emptyMap())
 }
 
@@ -177,6 +184,8 @@ fun HomeHostScreen(
         runtimeState.pendingGridRestoreOffset = 0
         runtimeState.pendingGridRestoreKey = null
         runtimeState.pendingGridRestoreArmed = false
+        runtimeState.pendingRadarPlaylistRestoreIndex = null
+        runtimeState.pendingRadarPlaylistRestoreOffset = 0
     }
 
     fun captureHomeScrollPosition() {
@@ -184,6 +193,9 @@ fun HomeHostScreen(
         runtimeState.pendingGridRestoreIndex = position.index
         runtimeState.pendingGridRestoreOffset = position.offset
         runtimeState.pendingGridRestoreKey = position.key
+        val radarPosition = runtimeState.radarPlaylistListState.captureHostScrollPosition()
+        runtimeState.pendingRadarPlaylistRestoreIndex = radarPosition.index
+        runtimeState.pendingRadarPlaylistRestoreOffset = radarPosition.offset
         runtimeState.pendingGridRestoreArmed = false
     }
 
@@ -295,6 +307,15 @@ fun HomeHostScreen(
             ),
             resolvedIndex = resolvedIndex
         )
+        val radarRestoreIndex = runtimeState.pendingRadarPlaylistRestoreIndex
+        if (radarRestoreIndex != null) {
+            runtimeState.radarPlaylistListState.restoreHostScrollPosition(
+                HostScrollPosition(
+                    index = radarRestoreIndex,
+                    offset = runtimeState.pendingRadarPlaylistRestoreOffset
+                )
+            )
+        }
         clearPendingHomeScrollRestore()
     }
     val suppressRestoredSceneEntry = rememberMainTabSceneRestoredEntry()
@@ -366,6 +387,7 @@ fun HomeHostScreen(
                                 usageLoaded = homeUsageLoaded,
                                 offlineMode = offlineMode,
                                 gridState = gridState,
+                                radarPlaylistListState = runtimeState.radarPlaylistListState,
                                 topAppBarState = runtimeState.topAppBarState,
                                 onScrollAnchorIndexesChanged = { indexes ->
                                     if (runtimeState.homeScrollAnchorIndexes != indexes) {

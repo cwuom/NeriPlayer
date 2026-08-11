@@ -466,7 +466,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardTrending = autoSetting(
-            titleRes = R.string.recommend_trending
+            titleRes = R.string.settings_home_card_netease_trending
         )
 
         @AutoSetting(
@@ -477,7 +477,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRadar = autoSetting(
-            titleRes = R.string.recommend_radar
+            titleRes = R.string.settings_home_card_netease_radar
         )
 
         @AutoSetting(
@@ -488,7 +488,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRecommended = autoSetting(
-            titleRes = R.string.recommend_for_you
+            titleRes = R.string.settings_home_card_netease_recommended
         )
     }
 
