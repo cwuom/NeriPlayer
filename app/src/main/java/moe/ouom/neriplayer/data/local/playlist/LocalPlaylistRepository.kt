@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.addNeteasePlaylistSongIdsInBatches
+import moe.ouom.neriplayer.data.local.playlist.sync.classifyNeteasePlaylistAddFailures
 import moe.ouom.neriplayer.data.local.playlist.sync.parseNeteaseRemotePlaylists
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -2212,6 +2213,10 @@ class LocalPlaylistRepository private constructor(
         return buildLocalNeteaseCandidates(songs).candidates.map { it.song }
     }
 
+    fun filterNeteaseLikeSyncCandidatesPreservingDuplicates(songs: List<SongItem>): List<SongItem> {
+        return resolveLocalNeteaseCandidates(songs).map(NeteaseResolvedCandidate::song)
+    }
+
     suspend fun filterNeteaseLikeSyncCandidatesExcludingLiked(
         client: NeteaseClient,
         songs: List<SongItem>
@@ -2498,14 +2503,17 @@ class LocalPlaylistRepository private constructor(
                     failedIds.removeAll(recovered.toSet())
                 }
             }
-            val unresolvedFailedIds = LinkedHashSet<Long>()
-            failedIds.forEach { songId ->
-                if (isNeteaseSongIdStillResolvable(client, songId)) {
-                    unresolvedFailedIds.add(songId)
-                } else {
-                    skippedUnsupported += 1
-                }
+            val failedSongResolution = classifyNeteasePlaylistAddFailures(
+                failedIds = failedIds,
+                batchSize = NETEASE_SONG_DETAIL_BATCH_SIZE
+            ) { ids ->
+                fetchResolvableNeteaseSongIds(
+                    client = client,
+                    ids = ids,
+                    logLabel = "resolveFailedNeteaseSongIds"
+                )
             }
+            skippedUnsupported += failedSongResolution.skippedUnsupported
 
             NeteaseLikeSyncResult(
                 totalSongs = songs.size,
@@ -2513,7 +2521,7 @@ class LocalPlaylistRepository private constructor(
                 skippedUnsupported = skippedUnsupported,
                 skippedExisting = plan.skippedExisting,
                 added = addedIds.size,
-                failed = unresolvedFailedIds.size,
+                failed = failedSongResolution.unresolvedFailedIds.size,
                 message = plan.message,
                 targetPlaylistId = targetPlaylistId.takeIf { it > 0L }
             )
@@ -2744,30 +2752,34 @@ class LocalPlaylistRepository private constructor(
         }
 
         var supportedSongs = 0
-        var skippedUnsupported = 0
         var skippedExisting = 0
         val seenNeteaseIds = mutableSetOf<Long>()
         val candidates = ArrayList<NeteaseResolvedCandidate>(songs.size)
-        for (song in songs) {
-            val neteaseId = resolveNeteaseSongId(song)
-            if (neteaseId == null) {
-                skippedUnsupported += 1
-                continue
-            }
+        for (candidate in resolveLocalNeteaseCandidates(songs)) {
+            val neteaseId = candidate.neteaseId
             if (!seenNeteaseIds.add(neteaseId)) {
                 // 同一首网易云歌曲只保留最早出现的那条，保证顺序稳定
                 skippedExisting += 1
                 continue
             }
             supportedSongs += 1
-            candidates += NeteaseResolvedCandidate(song = song, neteaseId = neteaseId)
+            candidates += candidate
         }
+        val skippedUnsupported = songs.size - supportedSongs - skippedExisting
         return LocalNeteaseCandidateSummary(
             supportedSongs = supportedSongs,
             skippedUnsupported = skippedUnsupported,
             skippedExisting = skippedExisting,
             candidates = candidates
         )
+    }
+
+    private fun resolveLocalNeteaseCandidates(songs: List<SongItem>): List<NeteaseResolvedCandidate> {
+        return songs.mapNotNull { song ->
+            resolveNeteaseSongId(song)?.let { neteaseId ->
+                NeteaseResolvedCandidate(song = song, neteaseId = neteaseId)
+            }
+        }
     }
 
     private fun validateNeteaseSyncCandidates(
@@ -2785,7 +2797,7 @@ class LocalPlaylistRepository private constructor(
 
         val validatedCandidates = ArrayList<NeteaseResolvedCandidate>(summary.candidates.size)
         var skippedUnsupported = summary.skippedUnsupported
-        summary.candidates.chunked(300).forEachIndexed { pageIndex, chunk ->
+        summary.candidates.chunked(NETEASE_SONG_DETAIL_BATCH_SIZE).forEachIndexed { pageIndex, chunk ->
             val resolvedIds = fetchResolvableNeteaseSongIds(
                 client = client,
                 ids = chunk.map(NeteaseResolvedCandidate::neteaseId),
@@ -2896,7 +2908,7 @@ class LocalPlaylistRepository private constructor(
 
         val resolvedIds = LinkedHashSet<Long>(trackIds.size)
         val fingerprints = mutableSetOf<String>()
-        trackIds.chunked(300).forEachIndexed { pageIndex, ids ->
+        trackIds.chunked(NETEASE_SONG_DETAIL_BATCH_SIZE).forEachIndexed { pageIndex, ids ->
             val raw = runCatching { client.getSongDetail(ids) }
                 .getOrElse { error ->
                     NPLogger.e(
@@ -3021,18 +3033,6 @@ class LocalPlaylistRepository private constructor(
         return runCatching { JSONObject(raw).optInt("code", -1) }.getOrElse { -1 }
     }
 
-    private fun isNeteaseSongIdStillResolvable(
-        client: NeteaseClient,
-        songId: Long
-    ): Boolean {
-        val resolvedIds = fetchResolvableNeteaseSongIds(
-            client = client,
-            ids = listOf(songId),
-            logLabel = "isNeteaseSongIdStillResolvable"
-        ) ?: return true
-        return songId in resolvedIds
-    }
-
     private fun SongItem.toNeteaseFingerprint(): String? {
         return buildNeteaseFingerprint(
             name = originalName ?: customName ?: name,
@@ -3097,6 +3097,7 @@ class LocalPlaylistRepository private constructor(
         private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
         private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
         private const val NETEASE_PLAYLIST_ADD_BATCH_SIZE = 50
+        private const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
         private const val NETEASE_ALBUM_PREFIX = "Netease"
         private const val NETEASE_COMPARE_FAILED_MESSAGE =
             "网易云云端比对失败，已停止同步以避免误同步"

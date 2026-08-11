@@ -28,6 +28,11 @@ internal data class NeteasePlaylistBatchAddResult(
     val failedIds: Set<Long>
 )
 
+internal data class NeteasePlaylistFailedSongResolution(
+    val unresolvedFailedIds: Set<Long>,
+    val skippedUnsupported: Int
+)
+
 internal fun addNeteasePlaylistSongIdsInBatches(
     songIds: List<Long>,
     batchSize: Int,
@@ -68,5 +73,44 @@ internal fun addNeteasePlaylistSongIdsInBatches(
     return NeteasePlaylistBatchAddResult(
         addedIds = addedIds,
         failedIds = failedIds
+    )
+}
+
+internal fun classifyNeteasePlaylistAddFailures(
+    failedIds: Collection<Long>,
+    batchSize: Int,
+    resolveBatch: (List<Long>) -> Set<Long>?
+): NeteasePlaylistFailedSongResolution {
+    require(batchSize > 0) { "batchSize must be positive" }
+    val distinctIds = failedIds.asSequence()
+        .filter { it > 0L }
+        .distinct()
+        .toList()
+    if (distinctIds.isEmpty()) {
+        return NeteasePlaylistFailedSongResolution(
+            unresolvedFailedIds = emptySet(),
+            skippedUnsupported = 0
+        )
+    }
+
+    val unresolvedFailedIds = LinkedHashSet<Long>(distinctIds.size)
+    var skippedUnsupported = 0
+    distinctIds.chunked(batchSize).forEach { ids ->
+        val resolvedIds = resolveBatch(ids)
+        if (resolvedIds == null) {
+            unresolvedFailedIds.addAll(ids)
+            return@forEach
+        }
+        ids.forEach { id ->
+            if (id in resolvedIds) {
+                unresolvedFailedIds.add(id)
+            } else {
+                skippedUnsupported += 1
+            }
+        }
+    }
+    return NeteasePlaylistFailedSongResolution(
+        unresolvedFailedIds = unresolvedFailedIds,
+        skippedUnsupported = skippedUnsupported
     )
 }

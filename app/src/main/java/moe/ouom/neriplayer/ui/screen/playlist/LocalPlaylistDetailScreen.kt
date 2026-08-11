@@ -1292,9 +1292,8 @@ fun LocalPlaylistDetailScreen(
             fun selectNeteaseRemotePlaylist(target: NeteaseRemotePlaylist) {
                 val selectedSongs = pendingNeteaseRemoteSyncSongs
                 if (selectedSongs.isEmpty()) return
-                val supportedSongs = selectedSongs.filter { song ->
-                    repo.filterNeteaseLikeSyncCandidates(listOf(song)).isNotEmpty()
-                }
+                val supportedSongs =
+                    repo.filterNeteaseLikeSyncCandidatesPreservingDuplicates(selectedSongs)
                 val unsupportedCount = selectedSongs.size - supportedSongs.size
                 if (supportedSongs.isEmpty()) {
                     dismissNeteaseRemotePlaylistPicker()
@@ -1326,9 +1325,8 @@ fun LocalPlaylistDetailScreen(
             fun openNeteaseRemotePlaylistPicker() {
                 val selectedSongs = selectedSongsForAction
                 if (selectedSongs.isEmpty() || syncInProgress) return
-                val supportedSongs = selectedSongs.filter { song ->
-                    repo.filterNeteaseLikeSyncCandidates(listOf(song)).isNotEmpty()
-                }
+                val supportedSongs =
+                    repo.filterNeteaseLikeSyncCandidatesPreservingDuplicates(selectedSongs)
                 if (supportedSongs.isEmpty()) {
                     scope.launch {
                         snackbarHostState.showNeriSnackbar(

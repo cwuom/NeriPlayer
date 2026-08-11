@@ -47,4 +47,51 @@ class NeteasePlaylistBatchAddTest {
         assertEquals(emptySet<Long>(), result.failedIds)
         assertEquals(listOf(listOf(6L, 7L)), calls)
     }
+
+    @Test
+    fun `failed song resolution batches lookups and skips only confirmed unsupported ids`() {
+        val calls = mutableListOf<List<Long>>()
+
+        val result = classifyNeteasePlaylistAddFailures(
+            failedIds = (1L..7L).toList(),
+            batchSize = 3
+        ) { ids ->
+            calls += ids.toList()
+            ids.filter { it % 2L == 1L }.toSet()
+        }
+
+        assertEquals(
+            linkedSetOf(1L, 3L, 5L, 7L),
+            result.unresolvedFailedIds
+        )
+        assertEquals(3, result.skippedUnsupported)
+        assertEquals(
+            listOf(
+                listOf(1L, 2L, 3L),
+                listOf(4L, 5L, 6L),
+                listOf(7L)
+            ),
+            calls
+        )
+    }
+
+    @Test
+    fun `failed song resolution keeps unknown lookup results as failed`() {
+        val calls = mutableListOf<List<Long>>()
+
+        val result = classifyNeteasePlaylistAddFailures(
+            failedIds = listOf(1L, 2L, 3L, 4L),
+            batchSize = 3
+        ) { ids ->
+            calls += ids.toList()
+            null
+        }
+
+        assertEquals(linkedSetOf(1L, 2L, 3L, 4L), result.unresolvedFailedIds)
+        assertEquals(0, result.skippedUnsupported)
+        assertEquals(
+            listOf(listOf(1L, 2L, 3L), listOf(4L)),
+            calls
+        )
+    }
 }
