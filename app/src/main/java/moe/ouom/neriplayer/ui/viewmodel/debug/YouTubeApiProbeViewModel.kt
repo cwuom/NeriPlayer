@@ -41,6 +41,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicDebugProbeResult
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicLocaleResolver
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
+import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 
 data class YouTubeApiProbeUiState(
@@ -191,7 +192,10 @@ class YouTubeApiProbeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             authRepo.clear()
             client.clearBootstrapCache()
-            clearWebViewLoginState()
+            clearWebViewLoginState(
+                context = getApplication<Application>(),
+                platform = WebLoginPlatform.YOUTUBE
+            )
             _ui.value = _ui.value.copy(
                 running = false,
                 authSummary = buildAuthSummary(),
