@@ -38,7 +38,11 @@ class PlaybackAudioOffloadPolicyTest {
                 audioSource = PlaybackAudioSource.NETEASE
             )
         )
-        assertFalse(
+    }
+
+    @Test
+    fun `bilibili fallback streams require pcm processing`() {
+        assertTrue(
             resolveRequiresPcmAudioProcessing(
                 audioSource = PlaybackAudioSource.BILIBILI
             )

@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.core.net.toUri
 import androidx.media3.common.PlaybackException
+import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
@@ -65,6 +66,69 @@ import java.io.File
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
 internal const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
+
+internal data class CachedResourceIntegrity(
+    val isComplete: Boolean,
+    val requiresRepair: Boolean,
+    val coveredLength: Long
+)
+
+internal fun inspectCachedResourceSpans(
+    spans: Collection<CacheSpan>,
+    contentLength: Long
+): CachedResourceIntegrity {
+    if (contentLength <= 0L || spans.isEmpty()) {
+        return CachedResourceIntegrity(
+            isComplete = false,
+            requiresRepair = false,
+            coveredLength = 0L
+        )
+    }
+
+    var coveredUntil = 0L
+    var requiresRepair = false
+    var hasGap = false
+    for (span in spans.sortedBy { it.position }) {
+        val file = span.file
+        val hasValidFile = span.isCached &&
+            span.position >= 0L &&
+            span.length > 0L &&
+            file?.isFile == true &&
+            file.length() == span.length
+        if (!hasValidFile) {
+            requiresRepair = true
+            continue
+        }
+
+        val endPosition = span.position + span.length
+        if (endPosition < span.position) {
+            requiresRepair = true
+            continue
+        }
+        if (
+            span.position >= contentLength ||
+            endPosition > contentLength
+        ) {
+            requiresRepair = true
+            continue
+        }
+        if (span.position > coveredUntil) {
+            hasGap = true
+            continue
+        }
+        if (span.position < coveredUntil) {
+            requiresRepair = true
+            continue
+        }
+        coveredUntil = maxOf(coveredUntil, endPosition)
+    }
+
+    return CachedResourceIntegrity(
+        isComplete = coveredUntil >= contentLength && !requiresRepair && !hasGap,
+        requiresRepair = requiresRepair,
+        coveredLength = coveredUntil
+    )
+}
 
 internal suspend fun PlayerManager.resolveSongUrl(
     song: SongItem,
@@ -132,15 +196,22 @@ internal suspend fun PlayerManager.resolveSongUrl(
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
         youtubePreferM4aOverride = youtubeRecoveryStrategy?.preferM4a
     )
-    val hasCachedData = if (forceRefresh) {
+    val cacheIntegrity = if (forceRefresh) {
         NPLogger.d(
             "NERI-PlayerManager",
             "resolveSongUrl: bypass complete YouTube cache for forced refresh: $cacheKey"
         )
-        false
+        CachedResourceIntegrity(false, false, 0L)
     } else {
-        checkExoPlayerCache(cacheKey)
+        inspectExoPlayerCache(cacheKey)
     }
+    if (cacheIntegrity.requiresRepair) {
+        invalidateCachedResourceForPlaybackRecovery(
+            cacheKey = cacheKey,
+            reason = "resolve_integrity_check"
+        )
+    }
+    val hasCachedData = !forceRefresh && cacheIntegrity.isComplete
     if (hasCachedData) {
         NPLogger.d(
             "NERI-PlayerManager",
@@ -414,13 +485,40 @@ internal fun PlayerManager.shouldAttemptUrlRefresh(
     isOfflineCache: Boolean
 ): Boolean {
     if (song == null) return false
-    if (isYouTubeMusicTrack(song)) {
+    return shouldAttemptCachedPlaybackRepair(
+        error = error,
+        isOfflineCache = isOfflineCache,
+        isYouTubeTrack = isYouTubeMusicTrack(song),
+        isLocalSong = isLocalSong(song)
+    )
+}
+
+internal fun shouldAttemptCachedPlaybackRepair(
+    error: PlaybackException,
+    isOfflineCache: Boolean,
+    isYouTubeTrack: Boolean,
+    isLocalSong: Boolean
+): Boolean {
+    if (isOfflineCache) return true
+    if (isLocalSong) return false
+    if (isYouTubeTrack) {
         return shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache)
     }
-    if (isLocalSong(song)) return false
-    if (isOfflineCache) return false
+    return isRecoverableRemotePlaybackCacheError(error)
+}
+
+internal fun isRecoverableRemotePlaybackCacheError(error: PlaybackException): Boolean {
     return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+        error.errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ||
+        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+        error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+        error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
+        error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT ||
+        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
+        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
 }
 
 internal fun PlayerManager.youtubePlaybackRecoveryStrategyForError(
@@ -979,51 +1077,62 @@ private fun PlayerManager.checkLocalCache(
     )
 }
 
-internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
+internal fun PlayerManager.inspectExoPlayerCache(
+    cacheKey: String
+): CachedResourceIntegrity {
     return try {
-        if (!isCacheInitialized()) return false
+        if (!isCacheInitialized()) {
+            return CachedResourceIntegrity(false, false, 0L)
+        }
 
         val cachedSpans = cache.getCachedSpans(cacheKey)
-        if (cachedSpans.isEmpty()) return false
+        if (cachedSpans.isEmpty()) {
+            return CachedResourceIntegrity(false, false, 0L)
+        }
 
         val contentLength = ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
         if (contentLength <= 0L) {
             NPLogger.d("NERI-PlayerManager", "缓存命中但缺少内容长度，视为未完成缓存: $cacheKey")
-            return false
+            return CachedResourceIntegrity(false, false, 0L)
         }
 
-        val orderedSpans = cachedSpans.sortedBy { it.position }
-        var coveredUntil = 0L
-        for (span in orderedSpans) {
-            if (span.position > coveredUntil) {
-                NPLogger.d(
-                    "NERI-PlayerManager",
-                    "缓存存在空洞，视为未完成缓存: $cacheKey @ ${span.position}"
-                )
-                return false
-            }
-            coveredUntil = maxOf(coveredUntil, span.position + span.length)
-            if (coveredUntil >= contentLength) break
-        }
+        val integrity = inspectCachedResourceSpans(cachedSpans, contentLength)
+        when {
+            integrity.requiresRepair -> NPLogger.w(
+                "NERI-PlayerManager",
+                "缓存 span 文件缺失或长度异常，标记为损坏: key=$cacheKey, " +
+                    "covered=${integrity.coveredLength}/$contentLength"
+            )
 
-        val isComplete = coveredUntil >= contentLength
-        if (isComplete) {
-            NPLogger.d(
+            integrity.isComplete -> NPLogger.d(
                 "NERI-PlayerManager",
                 "缓存完整可用: $cacheKey, length=$contentLength, spans=${cachedSpans.size}"
             )
-        } else {
-            NPLogger.d(
+
+            else -> NPLogger.d(
                 "NERI-PlayerManager",
-                "缓存未完整覆盖: $cacheKey, covered=$coveredUntil/$contentLength"
+                "缓存未完整覆盖: $cacheKey, " +
+                    "covered=${integrity.coveredLength}/$contentLength"
             )
         }
-
-        isComplete
+        integrity
     } catch (e: Exception) {
         NPLogger.w("NERI-PlayerManager", "检查缓存完整性失败: ${e.message}")
-        false
+        CachedResourceIntegrity(false, true, 0L)
     }
+}
+
+internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
+    val integrity = inspectExoPlayerCache(cacheKey)
+    if (integrity.requiresRepair) {
+        ioScope.launch {
+            invalidateCachedResourceForPlaybackRecovery(
+                cacheKey = cacheKey,
+                reason = "integrity_check"
+            )
+        }
+    }
+    return integrity.isComplete
 }
 
 internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
@@ -1059,10 +1168,27 @@ internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
     }
 }
 
-private suspend fun PlayerManager.invalidateCachedResourceBeforeResolve(
+internal fun PlayerManager.currentPlaybackCacheKeyForRecovery(): String? {
+    offlineCacheKeyFromUrl(_currentMediaUrl.value)?.let { return it }
+
+    if (isPlayerInitialized()) {
+        player.currentMediaItem?.localConfiguration?.customCacheKey
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+    }
+
+    val song = _currentSongFlow.value ?: return null
+    if (isLocalSong(song)) return null
+    return currentPlaybackCandidate()?.cacheKeyOverride
+        ?.takeIf { it.isNotBlank() }
+        ?: computeCacheKey(song).takeIf { it.isNotBlank() }
+}
+
+internal suspend fun PlayerManager.invalidateCachedResourceForPlaybackRecovery(
     cacheKey: String,
     reason: String
 ) = withContext(Dispatchers.IO) {
+    if (cacheKey.isBlank()) return@withContext
     if (!isCacheInitialized()) return@withContext
     try {
         cache.removeResource(cacheKey)
@@ -1077,6 +1203,11 @@ private suspend fun PlayerManager.invalidateCachedResourceBeforeResolve(
         )
     }
 }
+
+private suspend fun PlayerManager.invalidateCachedResourceBeforeResolve(
+    cacheKey: String,
+    reason: String
+) = invalidateCachedResourceForPlaybackRecovery(cacheKey, reason)
 
 private suspend fun PlayerManager.getNeteaseSongUrl(
     song: SongItem,
