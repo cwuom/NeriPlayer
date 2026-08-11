@@ -92,6 +92,22 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `copyNearbySidecars preserves translated lyric sidecar`() {
+        val sourceDir = tempFolder.newFolder("source-translated-lyrics")
+        val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song_trans.lrc").writeText("translated")
+
+        val targetDir = tempFolder.newFolder("imports-translated-lyrics")
+        val targetAudio = File(targetDir, "imported_song.flac").apply { writeText("audio") }
+
+        LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
+
+        val copiedTranslated = File(targetDir, "imported_song_trans.lrc")
+        assertTrue(copiedTranslated.exists())
+        assertEquals("translated", copiedTranslated.readText())
+    }
+
+    @Test
     fun `buildQuickImportedSong falls back to file name and local placeholder metadata`() {
         val importedFile = tempFolder.newFile("001_demo_track.flac")
 

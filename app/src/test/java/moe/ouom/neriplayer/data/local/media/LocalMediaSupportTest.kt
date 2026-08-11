@@ -152,4 +152,29 @@ class LocalMediaSupportTest {
         assertEquals(false, selection.usesFallbackAlbum)
         assertEquals(0L, selection.durationMs)
     }
+
+    @Test
+    fun `findNearbyLyricFiles discovers original and translated sidecars separately`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val original = File(sourceDir, "song.lrc").apply { writeText("original") }
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        val translated = File(lyricsDir, "song_trans.lrc").apply { writeText("translated") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(original.canonicalPath, found.original?.canonicalPath)
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
+
+    @Test
+    fun `findNearbyLyricFiles keeps lrc txt compatibility for translated sidecars`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics-lrc-txt")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val translated = File(sourceDir, "song_trans.lrc.txt").apply { writeText("translated") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
 }
