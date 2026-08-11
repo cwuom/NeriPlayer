@@ -26,6 +26,8 @@ package moe.ouom.neriplayer.data.storage
 import android.content.Context
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -164,24 +166,38 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     val logDir = File(diagnosticsBaseDir, DIR_LOGS)
     val crashDir = File(diagnosticsBaseDir, DIR_CRASHES)
 
-    val downloadableAudio = runCatching {
-        ManagedDownloadStorage.listDownloadedAudio(appContext)
-    }.getOrDefault(emptyList())
-    val rawPlatformCacheStats = runCatching {
-        val roomStore = PlatformPlaylistCacheRoomStore(
-            NeriUserDataDatabase.getInstance(appContext)
+    val (downloadableAudio, rawPlatformCacheStats, databaseFileStats) = coroutineScope {
+        val downloadableAudio = async {
+            runCatching {
+                ManagedDownloadStorage.listDownloadedAudio(appContext)
+            }.getOrDefault(emptyList())
+        }
+        val rawPlatformCacheStats = async {
+            runCatching {
+                val roomStore = PlatformPlaylistCacheRoomStore(
+                    NeriUserDataDatabase.getInstance(appContext)
+                )
+                roomStore.storageStats(PLATFORM_CACHE_PLATFORMS)
+            }.getOrDefault(emptyMap())
+        }
+        val databaseFileStats = async {
+            databaseFiles.fold(FileStats.Empty) { acc, file ->
+                acc + statsOf(file)
+            }
+        }
+        Triple(
+            downloadableAudio.await(),
+            rawPlatformCacheStats.await(),
+            databaseFileStats.await()
         )
-        roomStore.storageStats(PLATFORM_CACHE_PLATFORMS)
-    }.getOrDefault(emptyMap())
+    }
     val platformCacheStats = normalizePlatformCacheStats(
         stats = rawPlatformCacheStats,
-        databaseBytes = databaseFiles.fold(FileStats.Empty) { acc, file ->
-            acc + statsOf(file)
-        }.sizeBytes
+        databaseBytes = databaseFileStats.sizeBytes
     )
     val platformCachePageBytes = platformCacheStats.values.sumOf { it.allocatedPageBytes }
     val databaseUsageStats = databaseUsageStats(
-        files = databaseFiles,
+        databaseStats = databaseFileStats,
         roomCachePageBytes = platformCachePageBytes
     )
 
@@ -573,12 +589,9 @@ private fun normalizePlatformCacheStats(
 }
 
 private fun databaseUsageStats(
-    files: List<File>,
+    databaseStats: FileStats,
     roomCachePageBytes: Long
 ): FileStats {
-    val databaseStats = files.fold(FileStats.Empty) { acc, file ->
-        acc + statsOf(file)
-    }
     val attributedBytes = roomCachePageBytes.coerceIn(0L, databaseStats.sizeBytes)
     return FileStats(
         sizeBytes = databaseStats.sizeBytes - attributedBytes,
@@ -588,12 +601,16 @@ private fun databaseUsageStats(
 
 private fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileStats {
     if (file == null || !file.exists()) return FileStats.Empty
+    val excludedRootPaths = excludedRoots.map { root -> root.absolutePath }
     return runCatching {
         if (file.isFile) {
             FileStats(file.length(), 1)
         } else {
             file.walkTopDown()
-                .filter { entry -> entry.isFile && excludedRoots.none { entry.isUnder(it) } }
+                .onEnter { directory ->
+                    excludedRootPaths.none { directory.isUnder(it) }
+                }
+                .filter { entry -> entry.isFile }
                 .fold(FileStats.Empty) { acc, entry ->
                     acc + FileStats(entry.length(), 1)
                 }
@@ -601,9 +618,8 @@ private fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileS
     }.getOrDefault(FileStats.Empty)
 }
 
-private fun File.isUnder(root: File): Boolean {
-    val rootPath = runCatching { root.canonicalPath }.getOrDefault(root.absolutePath)
-    val filePath = runCatching { canonicalPath }.getOrDefault(absolutePath)
+private fun File.isUnder(rootPath: String): Boolean {
+    val filePath = absolutePath
     return filePath == rootPath || filePath.startsWith("$rootPath${File.separator}")
 }
 
