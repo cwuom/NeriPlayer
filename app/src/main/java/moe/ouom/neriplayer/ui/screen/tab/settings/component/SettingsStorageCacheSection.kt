@@ -155,6 +155,10 @@ internal fun SettingsStorageCacheSection(
         pendingDownloadFileNameTemplate
     ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    fun dismissDownloadFileNameDialog() {
+        pendingDownloadFileNameTemplate = currentSavedTemplate
+        showDownloadFileNameDialog = false
+    }
     val samplePreview = renderManagedDownloadBaseName(
         title = "晴天",
         artist = "周杰伦",
@@ -638,7 +642,7 @@ internal fun SettingsStorageCacheSection(
 
     if (showDownloadFileNameDialog) {
         MiuixSettingsDialog(
-            onDismissRequest = { showDownloadFileNameDialog = false },
+            onDismissRequest = ::dismissDownloadFileNameDialog,
             title = { Text(stringResource(R.string.settings_download_file_name_format)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -692,7 +696,7 @@ internal fun SettingsStorageCacheSection(
                     ) {
                         Text(stringResource(R.string.action_reset))
                     }
-                    MiuixSettingsTextButton(onClick = { showDownloadFileNameDialog = false }) {
+                    MiuixSettingsTextButton(onClick = ::dismissDownloadFileNameDialog) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
