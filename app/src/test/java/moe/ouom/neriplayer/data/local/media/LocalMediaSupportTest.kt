@@ -152,4 +152,70 @@ class LocalMediaSupportTest {
         assertEquals(false, selection.usesFallbackAlbum)
         assertEquals(0L, selection.durationMs)
     }
+
+    @Test
+    fun `findNearbyLyricFiles discovers original and translated sidecars separately`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val original = File(sourceDir, "song.lrc").apply { writeText("original") }
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        val translated = File(lyricsDir, "song_trans.lrc").apply { writeText("translated") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(original.canonicalPath, found.original?.canonicalPath)
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
+
+    @Test
+    fun `findNearbyLyricFiles keeps lrc txt compatibility for translated sidecars`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics-lrc-txt")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val translated = File(sourceDir, "song_trans.lrc.txt").apply { writeText("translated") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
+
+    @Test
+    fun `resolveEffectiveLocalLyricContent falls back to embedded lyrics for blank sidecar`() {
+        assertEquals(
+            "[00:00.00]embedded",
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "  \n",
+                embeddedContent = "[00:00.00]embedded"
+            )
+        )
+        assertEquals(
+            "[00:00.00]sidecar",
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "[00:00.00]sidecar",
+                embeddedContent = "[00:00.00]embedded"
+            )
+        )
+        assertEquals(
+            null,
+            LocalMediaSupport.resolveEffectiveLocalLyricContent(
+                sidecarContent = "",
+                embeddedContent = " "
+            )
+        )
+    }
+
+    @Test
+    fun `findNearbyLyricFiles keeps source directory priority over Lyrics fallback`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val original = File(sourceDir, "song.txt").apply { writeText("source original") }
+        val translated = File(sourceDir, "song_trans.txt").apply { writeText("source translation") }
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        File(lyricsDir, "song.lrc").writeText("nested original")
+        File(lyricsDir, "song_trans.lrc").writeText("nested translation")
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(original.canonicalPath, found.original?.canonicalPath)
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
 }

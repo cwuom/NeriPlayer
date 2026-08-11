@@ -388,6 +388,27 @@ internal object PlayerLyricsProvider {
         )
     }
 
+    private fun loadOnDemandLocalTranslatedLyrics(
+        application: Application,
+        song: SongItem
+    ): List<LyricEntry>? {
+        if (!song.isLocalSong()) {
+            return null
+        }
+
+        val localTranslatedLyric = runCatching {
+            LocalMediaSupport.inspect(application, song)?.translatedLyricContent
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "本地翻译歌词懒加载失败: ${it.message}")
+        }.getOrNull()
+
+        return parseLocalLyricOverride(
+            rawLyric = localTranslatedLyric,
+            durationMs = song.durationMs,
+            logPrefix = "本地翻译歌词解析失败"
+        )
+    }
+
     suspend fun getNeteaseLyrics(
         songId: Long,
         neteaseClient: NeteaseClient,
@@ -512,6 +533,13 @@ internal object PlayerLyricsProvider {
                 )?.let { return@withContext it }
             } else {
                 NPLogger.w("NERI-PlayerManager", "已忽略下载的 YouTube 全零翻译时间轴: ${song.name}")
+            }
+
+            loadOnDemandLocalTranslatedLyrics(application, song)?.let { entries ->
+                if (entries.isEmpty()) {
+                    return@withContext emptyList()
+                }
+                return@withContext entries
             }
 
             if (isYouTubeMusicTrack) {
