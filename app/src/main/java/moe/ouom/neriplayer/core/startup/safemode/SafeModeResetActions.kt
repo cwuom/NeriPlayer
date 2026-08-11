@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.auth.bili.BiliCookieRepository
 import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
-import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
+import moe.ouom.neriplayer.data.auth.web.clearAllWebViewLoginState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRepository
 import moe.ouom.neriplayer.data.settings.BootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
@@ -27,7 +27,7 @@ internal class SafeModeResetActions(
             BiliCookieRepository(appContext).clear()
             YouTubeAuthRepository(appContext).clear()
         }
-        clearWebViewLoginState()
+        clearAllWebViewLoginState(appContext)
     }
 
     suspend fun resetAppSettings() {

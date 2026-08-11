@@ -102,6 +102,15 @@
             android:process=":netease_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         />
+        <receiver
+            android:name=".data.auth.web.NeteaseWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":netease_login"
+        >
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".activity.auth.BiliWebLoginActivity"
             android:exported="false"
@@ -114,12 +123,30 @@
             android:process=":bili_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
+        <receiver
+            android:name=".data.auth.web.BiliWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":bili_web_login"
+        >
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".activity.auth.YouTubeWebLoginActivity"
             android:exported="false"
             android:process=":youtube_web_login"
             android:theme="@style/Theme.Material3.DayNight.NoActionBar"
             />
+        <receiver
+            android:name=".data.auth.web.YouTubeWebViewLoginStateClearReceiver"
+            android:exported="false"
+            android:process=":youtube_web_login"
+        >
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.action.CLEAR_WEBVIEW_LOGIN_STATE" />
+            </intent-filter>
+        </receiver>
         <service
             android:name="moe.ouom.neriplayer.core.player.service.AudioPlayerService"
             android:exported="false"

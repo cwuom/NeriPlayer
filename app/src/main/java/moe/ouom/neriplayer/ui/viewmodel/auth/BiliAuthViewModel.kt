@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
+import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import org.json.JSONObject
 
 data class BiliAuthUiState(
@@ -99,7 +100,10 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCookies() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.clear()
-            clearWebViewLoginState()
+            clearWebViewLoginState(
+                context = getApplication(),
+                platform = WebLoginPlatform.BILI
+            )
             _events.send(
                 BiliAuthEvent.ShowSnack(
                     getApplication<Application>().getString(R.string.auth_cookie_cleared)

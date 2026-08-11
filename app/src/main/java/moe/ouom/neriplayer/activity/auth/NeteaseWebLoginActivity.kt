@@ -47,12 +47,15 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.auth.web.ForegroundWebLoginGuard
+import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
 import moe.ouom.neriplayer.data.auth.web.normalizeNeteaseWebLoginCookies
 import moe.ouom.neriplayer.data.auth.web.shouldAutoCompleteNeteaseWebLogin
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -66,16 +69,11 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     companion object {
         const val RESULT_COOKIE = "result_cookie_map_json"
         private const val LOG_TAG = "NERI-NeteaseLogin"
-        private const val TARGET_URL = "https://music.163.com/"
         private val ALLOWED_LOGIN_DOMAINS = setOf(
             "163.com",
             "126.net",
             "163yun.com"
         )
-        private const val DESKTOP_UA =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                    "Chrome/124.0.0.0 Safari/537.36"
     }
 
     private lateinit var webView: WebView
@@ -92,6 +90,10 @@ class NeteaseWebLoginActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
+        val webLoginSettings = resolveNeteaseWebLoginWebSettings(
+            smallestScreenWidthDp = resources.configuration.smallestScreenWidthDp,
+            defaultUserAgent = WebSettings.getDefaultUserAgent(this)
+        )
 
         val root = CoordinatorLayout(this).apply {
             fitsSystemWindows = false
@@ -139,9 +141,10 @@ class NeteaseWebLoginActivity : ComponentActivity() {
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 allowFileAccess = false
                 allowContentAccess = false
-                userAgentString = DESKTOP_UA
-                useWideViewPort = true
-                loadWithOverviewMode = true
+                cacheMode = WebSettings.LOAD_NO_CACHE
+                userAgentString = webLoginSettings.userAgent
+                useWideViewPort = webLoginSettings.useWideViewPort
+                loadWithOverviewMode = webLoginSettings.loadWithOverviewMode
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
@@ -181,9 +184,15 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             }
         )
 
-        initialCookies = readCookieMap()
-        loginCompletionWatcher.start()
-        webView.loadUrl(TARGET_URL)
+        lifecycleScope.launch {
+            // 登录页位于独立进程，打开时先清掉上一次的浏览器会话
+            clearWebViewLoginState()
+            webView.clearCache(true)
+            webView.clearHistory()
+            initialCookies = readCookieMap()
+            loginCompletionWatcher.start()
+            webView.loadUrl(webLoginSettings.url)
+        }
     }
 
     override fun onResume() {
@@ -267,9 +276,12 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     private fun readCookieMap(): Map<String, String> {
         val cm = CookieManager.getInstance()
         val main = cm.getCookie("https://music.163.com").orEmpty()
+        val mobile = cm.getCookie("https://y.music.163.com").orEmpty()
         val api = cm.getCookie("https://interface.music.163.com").orEmpty()
         val api3 = cm.getCookie("https://interface3.music.163.com").orEmpty()
-        val merged = listOf(main, api, api3).filter { it.isNotBlank() }.joinToString("; ")
+        val merged = listOf(main, mobile, api, api3)
+            .filter { it.isNotBlank() }
+            .joinToString("; ")
         if (merged.isBlank()) {
             return emptyMap()
         }
