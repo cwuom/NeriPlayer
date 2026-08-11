@@ -45,6 +45,8 @@ user-owned data.
 
 > [!WARNING]
 > This project is for learning and research purposes only. Do not use it for illegal purposes.
+> Access, play, or save content only when you have the rights, authorization, or platform permission to do so.
+> This project does not provide media content, keys, paywall/DRM/region-bypass mechanisms, a public media proxy, or media redistribution.
 >
 > This project and its maintainer do not accept any form of sponsorship, donation, or commercial funding.
 
@@ -54,6 +56,9 @@ user-owned data.
 > NeriPlayer does not provide a public cloud music library or media distribution service.
 > Online audio capabilities depend on your authorization on third-party platforms.
 > VIP or restricted content still follows the original platform rules.
+> YouTube Music references in this document describe account sessions, playback compatibility,
+> and failure recovery only. They do not describe bypassing platform restrictions,
+> copying protected content, or redistributing media.
 
 ---
 
@@ -111,7 +116,7 @@ Current positioning:
 - **Startup and recovery flow**: the normal startup path is
   `Loading -> Disclaimer -> Onboarding -> Main`. If the previous launch ended in
   a crash or system ANR, the app enters `Safe Mode` first.
-- **Test guardrails**: download storage, sync merging, YouTube playback,
+- **Test guardrails**: download storage, sync merging, YouTube playback compatibility,
   Listen Together, lyrics, playback policies, config backup, and safe mode all
   have focused unit or device tests.
 
@@ -127,18 +132,18 @@ Current positioning:
   downloaded audio, playback cache, cached covers, and local playlists remain
   usable without a network.
 - **Multi-source playback is not just a list of entry points**:
-  `PlayerManager` owns stream resolution, queues, and failure recovery. When a
-  NetEase track is unavailable, has no playable URL, or only returns a preview,
+  `PlayerManager` owns playback resolution, queues, and failure recovery. When a
+  NetEase track is unavailable, has no playable result, or only returns a preview,
   the player first tries a lower quality, then
   `PlayerManagerNeteaseAutoSourceSwitch` scores Bilibili candidates by title,
   artist, and duration. Playback errors can also refresh the current URL before
   falling back to skip/stop behavior.
-- **YouTube resolution has layered fallbacks**:
+- **YouTube playback compatibility has layered fallbacks**:
   valid signed-in identity cookies are preserved and rotated when needed, while
   anonymous visitor sessions keep separate bootstrap and PoToken state. Verified
   signature/n, `player.js`, and challenge results are cached and reused; stale
-  player code or a CDN-rejected direct URL falls through to EJS/HLS instead of
-  retrying the same unusable stream.
+  player code or a platform-rejected playback candidate falls through to EJS/HLS
+  instead of retrying the same unusable candidate.
 - **High-performance GLSL/AGSL fluid background**:
   the Now Playing dynamic background is rendered frame-by-frame by
   `BgEffectPainter`, `RuntimeShader`, and
@@ -211,7 +216,7 @@ Current positioning:
 - **Downloads have moved from "can save" to "can recover"**:
   downloads do not use the system `DownloadManager`. They use the shared
   `OkHttpClient`, configurable concurrency, staging files, and sidecar metadata.
-  Direct links, YouTube range chunks, and HLS each have a resume strategy.
+  Direct HTTP transfers, platform-specific range transfers, and HLS each have a resume strategy.
   Network-policy pauses can continue later, startup recovery restores unfinished
   queues, and already-finalized local hits are settled directly. Manual
   cancellation cleans up partial artifacts.
@@ -265,20 +270,21 @@ Current positioning:
 - **Listen Together syncs the room, not just a progress bar**:
   the Android client and Cloudflare Worker maintain rooms, roles, queues,
   playback state, repeat/shuffle modes, controller-offline recovery, member
-  control requests, optional stream-link sharing, version-gated updates, and
+  control requests, optional session playback-candidate sharing, version-gated updates, and
   custom server URLs. Repeat/shuffle changes use `PLAYBACK_MODE` /
-  `REQUEST_PLAYBACK_MODE`, while member controls and asynchronous stream-link
+  `REQUEST_PLAYBACK_MODE`, while member controls and asynchronous playback-candidate
   results validate the target stable track key so they cannot affect a track
   that has already changed. The client also estimates server clock offset, corrects
-  position drift by threshold, and reloads the authoritative stream after an
-  asynchronous shared link arrives so pending local startup cannot override
+  position drift by threshold, and reloads the authoritative playback candidate after an
+  asynchronous shared candidate result arrives so pending local startup cannot override
   the room's pause/play command.
   Invites must carry the room secret needed for a first join, while member secrets
   are kept out of public room state. Local tracks cannot create or replace a room
-  track. When stream sharing is enabled, Durable Objects cache the controller's
-  current URLs so listeners can retrieve them without waiting for another controller
-  response. A current track keeps at most three validated candidates; listeners always
-  resolve with their own quality policy first and use those session-only candidates only
+  track. When session candidate sharing is enabled, Durable Objects temporarily
+  cache the controller's current playback candidates so listeners can retrieve them
+  without waiting for another controller response. A current track keeps at most
+  three validated candidates; listeners always resolve with their own quality policy first
+  and use those session-only candidates only
   after local resolution fails, so they never enter song or offline caches. Reconnecting
   with the same member credential does not trigger member-change auto-pause, and both
   roles keep their WebSocket connection alive. Explicitly leaving a room removes the
@@ -327,8 +333,9 @@ Current positioning:
    ```bash
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
-5. On first launch, read the disclaimer and complete onboarding. Android 13+
-   devices will request notification permission.
+5. On first launch, read the disclaimer and complete onboarding. The flow explains
+   notification and local-music permissions, and requests them only after you choose
+   to allow them; either can be skipped.
 6. For debugging tools, tap the **version number** 7 times in Settings. A
    standalone `Debug` tab will appear in the bottom bar.
 
@@ -344,8 +351,11 @@ For release build and signing details, see
 - 🎧 **Multi-source exploration and playback**:
   supports NetEase Cloud Music, Bilibili, YouTube Music, and local audio.
 - 🏠 **Home recommendations and continue listening**:
-  the Home page supports recently used playlists and recommendation cards.
-  International mode prioritizes YouTube Music home shelves.
+  the Home page supports recently used playlists, all available NetEase recommendation
+  sources, Radar playlists, and recommendation cards. It shows all available
+  charts, new songs, daily picks, Private FM, high-quality playlists, and other
+  feeds together; refreshing updates every section. International mode prioritizes
+  YouTube Music home shelves.
 - 🗂️ **Categorized Library browsing**:
   `Library` includes Local, Favorites, NetEase, YouTube Music, and Bilibili areas.
   YouTube can be fully disabled under Settings > General, which hides its entry
@@ -375,14 +385,14 @@ For release build and signing details, see
   matching lyrics, preferring word-level lyrics without hiding regular lyrics
   while automatically removing title and credit lines from matched lyrics.
 - 🧠 **Media3 playback core**:
-  `PlayerManager` handles stream resolution, queue state, shuffle/repeat,
+  `PlayerManager` handles playback resolution, queue state, shuffle/repeat,
   persistence, failure retry, playback URL refresh, YouTube prefetching, and
   platform-specific request policies.
   Shuffle generates a real shuffled queue first, then plays, persists, and displays
   that queue sequentially.
 - YouTube playback preserves valid login cookies, supports cookie rotation and
-  anonymous resolution, reuses bootstrap/`player.js`/PoToken caches with priority
-  prefetching, and falls back to EJS/HLS after direct-link rejection.
+  anonymous playback sessions, reuses bootstrap/`player.js`/PoToken caches with priority
+  prefetching, and falls back to EJS/HLS after playback-candidate rejection.
 - ⏩ **Optional BilibiliSponsorBlock auto-skip**: disabled by default. When enabled,
   the public API receives only a SHA-256 prefix of the current BV ID; matching
   page, duration, and `intro`/`outro`/`sponsor`/`music_offtopic`/`filler`/`padding` segments are
@@ -394,11 +404,12 @@ For release build and signing details, see
   persisted by `BVID + CID` and sync through GitHub/WebDAV. The Now Playing editor
   provides set-start/set-end, 5-second seek, and play/pause controls; local auto-skip
   remains off during Listen Together to avoid room-state drift.
-- 🔁 **NetEase auto source switch**:
-  when a NetEase song is unavailable, has no playable URL, or only returns a
-  preview clip, the player first tries lower quality and can then match a
-  Bilibili fallback source by title, artist, and duration. When enabled, it can
-  also match a readable local audio file by stable metadata.
+- 🔁 **NetEase playback fallback**:
+  when a NetEase song is unavailable, has no playable result, or only returns a
+  preview clip, the player first tries lower quality. Bilibili and local-audio
+  fallback are disabled by default and are attempted only after the user enables
+  them; enabling can match a Bilibili candidate by title, artist, and duration or
+  a readable local audio file by stable metadata.
 - 🧯 **Playback failure fallback**:
   playback errors first try refreshing the active playback URL. Bilibili stream
   resolution retries missing DASH audio and can fall back to html5/mp4 progressive
@@ -456,8 +467,8 @@ For release build and signing details, see
   local management with lyrics, covers, metadata, and audio tags. Default
   download concurrency is **6**, configurable up to **8**. Download queues are
   persisted so unfinished work can recover after restart, while complete local
-  files can settle directly as finished. `googlevideo` direct links use chunked
-  Range requests and resume by offset; if post-download tag writing fails, the
+  files can settle directly as finished. Platform transfers that require explicit
+  Range requests resume by offset; if post-download tag writing fails, the
   finalized audio file is retained.
 - 📁 **Migratable download directory**:
   downloads default to the app-managed directory, but can be moved to a custom
@@ -594,7 +605,7 @@ For release build and signing details, see
 
 - **NetEase Cloud Music**:
   login, song search, curated playlists, albums, playlist/album list search,
-  playback, downloads, lyrics, playback metadata completion, auto source switching
+  playback, downloads, lyrics, playback metadata completion, playback fallback
   for restricted playback, syncing local favorites to NetEase Liked Songs,
   artist pages, paged artist songs/albums, and artist follow support.
 - **Bilibili**:
@@ -605,8 +616,9 @@ For release build and signing details, see
   from `season_id` or video details.
   It is not a full video discovery or comments client.
 - **YouTube Music**:
-  login, home/library playlist browsing, playlist details, search, playback,
-  downloads, PoToken, and JS Challenge support.
+  login, home/library playlist browsing, playlist details, search, playback compatibility,
+  PoToken, and JS Challenge support. Content access remains bound by platform rules
+  and the user's account permissions.
 - **QQ Music**:
   currently used only for playback metadata and lyrics completion. Login,
   playback, and library data are not implemented.
@@ -686,13 +698,13 @@ For release build and signing details, see
   MediaSession, and basic transport controls.
 - Bilibili playback uses `ConditionalHttpDataSourceFactory` to append
   `Referer / User-Agent / Cookie`.
-- YouTube Music playback includes Google Video Range support, seek refresh policy,
+- YouTube Music playback includes platform range-transfer compatibility, seek refresh policy,
   and prefetching. Login cookies, anonymous sessions, bootstrap, `player.js`, and
-  PoToken caches are reused, with EJS/HLS fallback after direct-link rejection.
+  PoToken caches are reused, with EJS/HLS fallback after playback-candidate rejection.
   Large seeks in long YouTube audio use a shorter startup-recovery window instead
-  of waiting for the normal stream watchdog timeout.
+  of waiting for the normal playback-start watchdog timeout.
 - NetEase playback automatically tries lower quality when the current quality is
-  unavailable, and can switch to a matched Bilibili or local-audio fallback source
+  unavailable, and can switch to a matched Bilibili or local-audio fallback candidate
   for restricted or preview-only tracks.
 - Playback state is persisted periodically for queue and state recovery.
 - Player code is split by responsibility across `playback/`, `url/`, `resolver/`,
@@ -804,8 +816,8 @@ For release build and signing details, see
   snapshot, the task is settled as complete without re-fetching the stream or
   repeatedly probing SAF storage.
 - Downloads support **automatic resume**, but the strategy depends on transport type:
-  - **Direct downloads** resume through `Range: bytes=<offset>-`
-  - **Chunked range downloads** resume by byte offset, mainly for YouTube flows
+  - **Direct HTTP transfers** resume through `Range: bytes=<offset>-`
+  - **Chunked range transfers** resume by byte offset, mainly for platform candidates
     that require explicit range requests
   - **HLS downloads** resume from a saved segment index plus downloaded byte count
     through a `.hls.json` checkpoint
@@ -969,9 +981,9 @@ and community feedback. They are not fixed-date commitments.
 - [x] Lyrics-editor source selection, temporary result caching, and
   word-level-first lyric matching
 - [x] Listen Together repeat/shuffle sync, stable-track-key target validation,
-  server clock-offset estimation, and authoritative stream recovery
+  server clock-offset estimation, and authoritative playback recovery
 - [x] Listen Together duration-based position projection, single-track repeat wrapping,
-  and up to three session-only stream candidates
+  and up to three session-only playback candidates
 - [x] Listen Together invite/member secrets, ordered control events, and queue-only
   member track selection
 - [x] 32-bit high-resolution system output, PCM-float channel balance, and thread-safe loudness-normalization state
@@ -990,7 +1002,7 @@ and community feedback. They are not fixed-date commitments.
 - [x] Fast local scan previews, background metadata hydration, and cover fallback resolution
 - [x] Existing-metadata scan filtering, long-form progress memory, and completion clearing
 - [x] Optional BilibiliSponsorBlock auto-skip and compact Now Playing lyric-range selection
-- [x] Listen Together stream-link sharing toggles, asynchronous stream resolution, and more stable room sync
+- [x] Listen Together session-candidate sharing toggles, asynchronous playback-candidate resolution, and more stable room sync
 - [x] Long-press lyric selection, copy, song sharing, and lyric card generation
 - [x] Phonetic lyric display and the lyric behavior sheet
 - [x] Independent 200 ms Lyricon/SuperLyric position feed, safer lyric matching, and Super Island share URLs
@@ -1022,7 +1034,7 @@ and community feedback. They are not fixed-date commitments.
 - [x] WebDAV sync
 - [x] Playback stats
 - [x] Playback sound effects
-- [x] NetEase auto source switch for restricted playback
+- [x] NetEase playback fallback for restricted playback
 - [x] Lyricon integration / external lyrics output
 - [x] Safe mode and startup crash logs
 

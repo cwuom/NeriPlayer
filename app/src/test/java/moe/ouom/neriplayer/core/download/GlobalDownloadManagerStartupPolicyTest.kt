@@ -276,8 +276,6 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(
             listOf(
                 song.copy(
-                    matchedLyric = null,
-                    matchedTranslatedLyric = null,
                     originalLyric = null,
                     originalTranslatedLyric = null
                 )

@@ -26,55 +26,31 @@ package moe.ouom.neriplayer.data.sync
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import moe.ouom.neriplayer.data.local.media.LocalSongSupport
-import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.CoverUrlMappingRoomStore
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+
+private const val COVER_URL_MAPPER_TAG = "CoverUrlMapper"
 
 /**
  * 封面地址映射管理器
  * 维护本地地址和网络地址的映射关系
  * 用于同步时将本地地址转换为网络地址
  */
-class CoverUrlMapper private constructor(private val storageDir: File) {
-
-    private val gson = Gson()
-    private val file: File = File(storageDir, "cover_url_mapping.json")
-
-    // 本地地址 -> 网络地址的映射
-    private val mapping = java.util.concurrent.ConcurrentHashMap<String, String>()
+class CoverUrlMapper private constructor(
+    private val store: CoverUrlMappingStore
+) {
+    private val mapping = ConcurrentHashMap<String, String>()
 
     init {
-        loadFromDisk()
-    }
-
-    private fun loadFromDisk() {
-        try {
-            if (file.exists()) {
-                val type = object : TypeToken<Map<String, String>>() {}.type
-                val loaded = gson.fromJson<Map<String, String>>(file.readText(), type)
-                if (loaded != null) {
-                    mapping.putAll(loaded)
-                    NPLogger.d(TAG, "Loaded ${mapping.size} cover URL mappings")
-                }
-            }
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "Failed to load cover URL mappings", e)
-        }
-    }
-
-    private fun saveToDisk() {
-        try {
-            val json = gson.toJson(mapping)
-            val parent = file.parentFile ?: storageDir
-            val tmp = File(parent, file.name + ".tmp")
-            tmp.writeText(json)
-            if (!tmp.renameTo(file)) {
-                file.writeText(json)
-                tmp.delete()
-            }
-        } catch (e: Exception) {
-            NPLogger.e(TAG, "Failed to save cover URL mappings", e)
-        }
+        mapping.putAll(store.load())
+        NPLogger.d(COVER_URL_MAPPER_TAG, "Loaded ${mapping.size} cover URL mappings")
     }
 
     /**
@@ -87,8 +63,8 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
         if (!isLocalUrl(localUrl)) return
 
         mapping[localUrl] = networkUrl
-        saveToDisk()
-        NPLogger.d(TAG, "Saved cover mapping: $localUrl -> $networkUrl")
+        store.save(localUrl, networkUrl)
+        NPLogger.d(COVER_URL_MAPPER_TAG, "Saved cover mapping: $localUrl -> $networkUrl")
     }
 
     /**
@@ -137,8 +113,8 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
 
         if (toRemove.isNotEmpty()) {
             toRemove.forEach { mapping.remove(it) }
-            saveToDisk()
-            NPLogger.d(TAG, "Cleaned up ${toRemove.size} invalid mappings")
+            store.delete(toRemove)
+            NPLogger.d(COVER_URL_MAPPER_TAG, "Cleaned up ${toRemove.size} invalid mappings")
         }
     }
 
@@ -149,16 +125,148 @@ class CoverUrlMapper private constructor(private val storageDir: File) {
     }
 
     companion object {
-        private const val TAG = "CoverUrlMapper"
+        private const val FILE_NAME = "cover_url_mapping.json"
 
         @Volatile
         private var instance: CoverUrlMapper? = null
 
         fun getInstance(context: Context): CoverUrlMapper {
-            val storageDir = context.applicationContext?.filesDir ?: context.filesDir
+            val appContext = context.applicationContext ?: context
             return instance ?: synchronized(this) {
-                instance ?: CoverUrlMapper(storageDir).also { instance = it }
+                instance ?: CoverUrlMapper(
+                    RoomCoverUrlMappingStore(appContext, FILE_NAME)
+                ).also { instance = it }
+            }
+        }
+
+        internal fun createForTest(
+            initialMappings: Map<String, String> = emptyMap()
+        ): CoverUrlMapper {
+            return CoverUrlMapper(InMemoryCoverUrlMappingStore(initialMappings))
+        }
+
+        internal fun installForTest(mapper: CoverUrlMapper?) {
+            synchronized(this) {
+                instance = mapper
             }
         }
     }
+}
+
+internal interface CoverUrlMappingStore {
+    fun load(): Map<String, String>
+
+    fun save(localUrl: String, networkUrl: String)
+
+    fun delete(localUrls: Collection<String>)
+}
+
+private class RoomCoverUrlMappingStore(
+    context: Context,
+    fileName: String
+) : CoverUrlMappingStore {
+    private val appContext = context.applicationContext ?: context
+    private val roomStore = CoverUrlMappingRoomStore(
+        NeriUserDataDatabase.getInstance(appContext)
+    )
+    private val gson = Gson()
+    private val legacyFile = File(appContext.filesDir, fileName)
+    private val legacyType = object : TypeToken<Map<String, String?>>() {}.type
+
+    @Volatile
+    private var cleanupEligible = true
+
+    override fun load(): Map<String, String> {
+        return runBlocking(Dispatchers.IO) {
+            roomStore.readIfRoomPrimary()?.also {
+                LegacyJsonCleanupScheduler.schedule(appContext, "cover-url-mapping-room-load")
+                return@runBlocking it
+            }
+
+            when (val legacy = readLegacyMappings()) {
+                is LegacyMappingLoadResult.Missing -> emptyMap()
+                is LegacyMappingLoadResult.Loaded -> {
+                    cleanupEligible = true
+                    roomStore.importLegacyAndPromote(
+                        mappings = legacy.mappings,
+                        cleanupEligible = true
+                    )
+                    LegacyJsonCleanupScheduler.schedule(appContext, "cover-url-mapping-import")
+                    legacy.mappings
+                }
+                is LegacyMappingLoadResult.Failed -> {
+                    cleanupEligible = false
+                    NPLogger.e(
+                        COVER_URL_MAPPER_TAG,
+                        "Failed to import cover URL mappings",
+                        legacy.error
+                    )
+                    emptyMap()
+                }
+            }
+        }
+    }
+
+    override fun save(localUrl: String, networkUrl: String) {
+        runBlocking(Dispatchers.IO) {
+            roomStore.upsert(
+                localUrl = localUrl,
+                networkUrl = networkUrl,
+                cleanupEligible = cleanupEligible
+            )
+        }
+    }
+
+    override fun delete(localUrls: Collection<String>) {
+        runBlocking(Dispatchers.IO) {
+            roomStore.delete(
+                localUrls = localUrls,
+                cleanupEligible = cleanupEligible
+            )
+        }
+    }
+
+    private fun readLegacyMappings(): LegacyMappingLoadResult {
+        if (!legacyFile.exists()) return LegacyMappingLoadResult.Missing
+        return runCatching {
+            val loaded = gson.fromJson<Map<String, String?>>(
+                legacyFile.readText(Charsets.UTF_8),
+                legacyType
+            ).orEmpty()
+            val mappings = loaded.mapNotNull { (localUrl, networkUrl) ->
+                if (localUrl.isBlank() || networkUrl.isNullOrBlank()) {
+                    null
+                } else {
+                    localUrl to networkUrl
+                }
+            }.toMap()
+            LegacyMappingLoadResult.Loaded(mappings)
+        }.getOrElse { error ->
+            LegacyMappingLoadResult.Failed(error)
+        }
+    }
+}
+
+private class InMemoryCoverUrlMappingStore(
+    initialMappings: Map<String, String>
+) : CoverUrlMappingStore {
+    private val mappings = ConcurrentHashMap(initialMappings)
+
+    override fun load(): Map<String, String> = mappings.toMap()
+
+    override fun save(localUrl: String, networkUrl: String) {
+        mappings[localUrl] = networkUrl
+    }
+
+    override fun delete(localUrls: Collection<String>) {
+        localUrls.forEach(mappings::remove)
+    }
+}
+
+private sealed interface LegacyMappingLoadResult {
+    data object Missing : LegacyMappingLoadResult
+
+    data class Loaded(val mappings: Map<String, String>) : LegacyMappingLoadResult
+
+    data class Failed(val error: Throwable) : LegacyMappingLoadResult
 }

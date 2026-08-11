@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.model.resolvePlayerQueueRestoreOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerRepeatAllShuffleOrder
 import moe.ouom.neriplayer.core.player.model.resolvePlayerSequentialShuffleOrder
+import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackStartPlan
@@ -96,7 +97,7 @@ internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
     }
     volumeFadeJob?.cancel()
     volumeFadeJob = null
-    if (resetToFull && isPlayerInitialized()) {
+    if (resetToFull && !isAudioRouteMuteSuppressed() && isPlayerInitialized()) {
         runPlayerActionOnMainThread {
             runCatching { player.volume = 1f }
         }
@@ -113,13 +114,26 @@ internal fun PlayerManager.cancelPendingPauseRequestImpl(resetVolumeToFull: Bool
     }
     pendingPauseJob?.cancel()
     pendingPauseJob = null
-    if (resetVolumeToFull && hadPendingPause && isPlayerInitialized()) {
+    if (
+        resetVolumeToFull &&
+        hadPendingPause &&
+        !isAudioRouteMuteSuppressed() &&
+        isPlayerInitialized()
+    ) {
         runPlayerActionOnMainThread {
             if (isPlayerInitialized()) {
                 player.volume = 1f
             }
         }
     }
+}
+
+private fun PlayerManager.isAudioRouteMuteSuppressed(): Boolean {
+    return audioRouteMuteRestoreVolume != null
+}
+
+private fun PlayerManager.volumeWhileAudioRouteMuted(volume: Float): Float {
+    return if (isAudioRouteMuteSuppressed()) 0f else volume
 }
 
 internal fun PlayerManager.clearAudioRouteMuteSuppression(reason: String) {
@@ -173,9 +187,12 @@ internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: S
 }
 
 internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
-    val useListenTogetherSafetyPause = shouldUseListenTogetherListenerSafetyPause()
-    if (useListenTogetherSafetyPause) {
-        markListenTogetherSafetyPausePendingResume()
+    if (shouldMuteListenTogetherListenerForAudioRouteLoss()) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "pauseForAudioRouteLoss(): keep Listen Together listener playing silently, reason=$reason, currentSong=${_currentSongFlow.value?.name}"
+        )
+        return
     }
     _playWhenReadyFlow.value = false
     _isPlayingFlow.value = false
@@ -185,15 +202,52 @@ internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
     syncPlaybackControlPlayingState()
     pauseImpl(
         forcePersist = false,
-        commandSource = if (useListenTogetherSafetyPause) {
-            PlaybackCommandSource.LOCAL_SAFETY
-        } else {
-            PlaybackCommandSource.LOCAL
-        },
+        commandSource = PlaybackCommandSource.LOCAL,
         allowFadeOut = false,
         preserveMutedVolume = true,
-        debugReason = "audio_route_loss:$reason"
+        debugReason = "audio_route_loss:$reason",
+        flushPlayerOutput = true,
     )
+}
+
+private fun PlayerManager.persistPausedPlaybackState(
+    forcePersist: Boolean,
+    positionMs: Long,
+    shouldResumePlayback: Boolean,
+    reason: String
+) {
+    if (!forcePersist) {
+        scheduleStatePersist(
+            positionMs = positionMs,
+            shouldResumePlayback = shouldResumePlayback
+        )
+        return
+    }
+    ioScope.launch {
+        try {
+            runCatching { drainPlaybackStatsPersistJobBlocking(reason) }
+                .onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "pause persistence could not drain playback stats: reason=$reason",
+                        error
+                    )
+                }
+            persistStateNow(
+                positionMs = positionMs,
+                shouldResumePlayback = shouldResumePlayback,
+                reason = reason
+            )
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "pause persistence failed: reason=$reason",
+                error
+            )
+        }
+    }
 }
 
 internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan) {
@@ -208,7 +262,7 @@ internal fun PlayerManager.preparePlayerForManagedStart(plan: PlaybackStartPlan)
         "preparePlayerForManagedStart: useFadeIn=${effectivePlan.useFadeIn}, fadeDurationMs=${effectivePlan.fadeDurationMs}, initialVolume=${effectivePlan.initialVolume}, currentSong=${_currentSongFlow.value?.name}"
     )
     player.playWhenReady = false
-    player.volume = effectivePlan.initialVolume
+    player.volume = volumeWhileAudioRouteMuted(effectivePlan.initialVolume)
 }
 
 internal suspend fun PlayerManager.fadeOutCurrentPlaybackIfNeeded(
@@ -284,11 +338,11 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
             return@runPlayerActionOnMainThread
         }
         applyAudioFocusPolicyOnMainThread()
-        player.volume = effectivePlan.initialVolume
+        player.volume = volumeWhileAudioRouteMuted(effectivePlan.initialVolume)
         player.playWhenReady = true
         player.play()
     }
-    if (!effectivePlan.useFadeIn) {
+    if (!effectivePlan.useFadeIn || isAudioRouteMuteSuppressed()) {
         return
     }
 
@@ -299,10 +353,12 @@ internal fun PlayerManager.startPlayerPlaybackWithFade(plan: PlaybackStartPlan) 
         repeat(steps) { step ->
             delay(stepDelay)
             if (!isPlayerInitialized()) return@launch
-            player.volume = ((step + 1).toFloat() / steps).coerceAtMost(1f)
+            player.volume = volumeWhileAudioRouteMuted(
+                ((step + 1).toFloat() / steps).coerceAtMost(1f)
+            )
         }
         if (isPlayerInitialized()) {
-            player.volume = 1f
+            player.volume = volumeWhileAudioRouteMuted(1f)
         }
         volumeFadeJob = null
     }
@@ -1235,7 +1291,8 @@ internal fun PlayerManager.pauseImpl(
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     allowFadeOut: Boolean = true,
     preserveMutedVolume: Boolean = false,
-    debugReason: String = "pause_internal"
+    debugReason: String = "pause_internal",
+    flushPlayerOutput: Boolean = false,
 ) {
     ensureInitialized()
     if (!initialized) return
@@ -1259,13 +1316,22 @@ internal fun PlayerManager.pauseImpl(
         pendingMediaLoadPositionMs = action.persistPositionMs
         _playWhenReadyFlow.value = action.resumePlaybackAfterLoad
         _isPlayingFlow.value = false
+        if (flushPlayerOutput) {
+            runCatching {
+                player.playWhenReady = false
+                player.stop()
+            }
+            _playerPlaybackStateFlow.value = Player.STATE_IDLE
+        }
         if (lyriconEnabled) {
             LyriconManager.setPlaybackState(false)
         }
         clearAudioRouteMuteSuppression(reason = debugReason)
-        scheduleStatePersist(
+        persistPausedPlaybackState(
+            forcePersist = forcePersist,
             positionMs = action.persistPositionMs,
-            shouldResumePlayback = action.persistShouldResumePlayback
+            shouldResumePlayback = action.persistShouldResumePlayback,
+            reason = debugReason
         )
         emitPlaybackCommand(
             type = "PAUSE",
@@ -1316,7 +1382,8 @@ internal fun PlayerManager.pauseImpl(
                     forcePersist = forcePersist,
                     resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
                     restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
-                    debugReason = debugReason
+                    debugReason = debugReason,
+                    flushPlayerOutput = flushPlayerOutput,
                 )
             } finally {
                 if (pendingPauseJob === scheduledPauseJob) {
@@ -1330,7 +1397,8 @@ internal fun PlayerManager.pauseImpl(
             forcePersist = forcePersist,
             resetVolumeBeforePause = pauseVolumePlan.resetVolumeBeforePause,
             restoreVolumeAfterPause = pauseVolumePlan.restoreVolumeAfterPause,
-            debugReason = debugReason
+            debugReason = debugReason,
+            flushPlayerOutput = flushPlayerOutput,
         )
     }
     emitPlaybackCommand(
@@ -1356,7 +1424,8 @@ private fun PlayerManager.pauseInternal(
     forcePersist: Boolean,
     resetVolumeBeforePause: Boolean,
     restoreVolumeAfterPause: Boolean,
-    debugReason: String
+    debugReason: String,
+    flushPlayerOutput: Boolean,
 ) {
     pendingPauseJob = null
     updateResumePlaybackRequested(false)
@@ -1377,7 +1446,13 @@ private fun PlayerManager.pauseInternal(
         "pauseInternal: reason=$debugReason, song=${currentSong?.name}, positionMs=$currentPosition, state=${playbackStateName(player.playbackState)}, playWhenReady=${player.playWhenReady}, forcePersist=$forcePersist, resetVolumeBeforePause=$resetVolumeBeforePause, restoreVolumeAfterPause=$restoreVolumeAfterPause, stack=[$stackHint]"
     )
     player.playWhenReady = false
-    player.pause()
+    if (flushPlayerOutput) {
+        player.stop()
+        _playerPlaybackStateFlow.value = Player.STATE_IDLE
+        stopProgressUpdates()
+    } else {
+        player.pause()
+    }
     if (lyriconEnabled) {
         LyriconManager.setPlaybackState(false)
     }
@@ -1407,34 +1482,12 @@ private fun PlayerManager.pauseInternal(
             _playbackDurationMs.value
         )
     )
-    if (forcePersist) {
-        ioScope.launch {
-            try {
-                runCatching { drainPlaybackStatsPersistJobBlocking(debugReason) }
-                    .onFailure { error ->
-                        NPLogger.w(
-                            "NERI-PlayerManager",
-                            "pause persistence could not drain playback stats: reason=$debugReason",
-                            error
-                        )
-                    }
-                persistState(positionMs = currentPosition, shouldResumePlayback = false)
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "pause persistence failed: reason=$debugReason",
-                    error
-                )
-            }
-        }
-    } else {
-        scheduleStatePersist(
-            positionMs = currentPosition,
-            shouldResumePlayback = false
-        )
-    }
+    persistPausedPlaybackState(
+        forcePersist = forcePersist,
+        positionMs = currentPosition,
+        shouldResumePlayback = false,
+        reason = debugReason
+    )
 }
 
 internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
@@ -2053,4 +2106,17 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         "stopPlaybackPreservingQueue(): completed, queueSize=${currentPlaylist.size}, currentIndex=$currentIndex, retainedSong=${_currentSongFlow.value?.name}, mediaUrlPresent=${!_currentMediaUrl.value.isNullOrBlank()}"
     )
     scheduleStatePersist()
+}
+
+internal fun PlayerManager.stopPlaybackImmediatelyImpl(
+    reason: String,
+    forcePersist: Boolean = true
+) {
+    pauseImpl(
+        forcePersist = forcePersist,
+        commandSource = PlaybackCommandSource.LOCAL_SAFETY,
+        allowFadeOut = false,
+        debugReason = reason,
+        flushPlayerOutput = true,
+    )
 }

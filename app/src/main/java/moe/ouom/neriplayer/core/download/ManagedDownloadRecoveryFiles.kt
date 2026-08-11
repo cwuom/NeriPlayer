@@ -1,14 +1,16 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
-import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import java.io.File
 
 internal object ManagedDownloadRecoveryFiles {
@@ -118,47 +120,51 @@ internal object ManagedDownloadRecoveryFiles {
     }
 
     fun upsertPendingDownloadQueue(context: Context, songs: List<SongItem>) {
-        upsertPendingDownloadQueueInFile(
-            queueFile = pendingDownloadQueueFile(context),
-            songs = songs
-        )
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).upsertPendingDownloadQueue(songs)
+        }
     }
 
     fun listPendingQueuedDownloads(context: Context): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
-        return listPendingQueuedDownloadsFromFile(pendingDownloadQueueFile(context))
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).listPendingQueuedDownloads()
+        }
     }
 
     fun removePendingDownloadQueueEntries(context: Context, songKeys: Collection<String>) {
-        removePendingDownloadQueueEntriesFromFile(
-            queueFile = pendingDownloadQueueFile(context),
-            songKeys = songKeys
-        )
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).removePendingDownloadQueueEntries(songKeys)
+        }
     }
 
     fun clearPendingDownloadQueue(context: Context) {
-        clearPendingDownloadQueueFile(pendingDownloadQueueFile(context))
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).clearPendingDownloadQueue()
+        }
     }
 
     fun markCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        markCancelledDownloadKeysInFile(
-            keysFile = cancelledDownloadKeysFile(context),
-            songKeys = songKeys
-        )
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).markCancelledDownloadKeys(songKeys)
+        }
     }
 
     fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return listCancelledDownloadKeysFromFile(cancelledDownloadKeysFile(context))
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).listCancelledDownloadKeys()
+        }
     }
 
     fun removeCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        removeCancelledDownloadKeysFromFile(
-            keysFile = cancelledDownloadKeysFile(context),
-            songKeys = songKeys
-        )
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).removeCancelledDownloadKeys(songKeys)
+        }
     }
 
     fun clearCancelledDownloadKeys(context: Context) {
-        clearCancelledDownloadKeysFile(cancelledDownloadKeysFile(context))
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).clearCancelledDownloadKeys()
+        }
     }
 
     fun upsertPendingDownloadQueueInFile(
@@ -268,11 +274,10 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
-    private fun pendingDownloadQueueFile(context: Context): File {
-        return File(context.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
-    }
-
-    private fun cancelledDownloadKeysFile(context: Context): File {
-        return File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+    private fun roomStore(context: Context): DownloadRecoveryRoomStore {
+        return DownloadRecoveryRoomStore(
+            context = context.applicationContext,
+            database = NeriUserDataDatabase.getInstance(context.applicationContext)
+        )
     }
 }

@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Context
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,7 +13,11 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotPersistenceStore
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
+import org.mockito.Mockito
 
 class ManagedDownloadStorageSnapshotCacheTest {
 
@@ -111,6 +121,107 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals(metadata, restored?.second?.metadataByAudioName?.get("Artist - Song.mp3"))
         assertEquals(coverEntry, restored?.second?.coverEntriesByName?.get(coverEntry.name))
         assertEquals(lyricEntry, restored?.second?.lyricEntriesByName?.get(lyricEntry.name))
+    }
+
+    @Test
+    fun `room snapshot mapper round trips entries and indexes`() {
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Room Song.flac",
+            reference = "/music/Artist - Room Song.flac",
+            mediaUri = "file:///music/Artist%20-%20Room%20Song.flac",
+            localFilePath = "/music/Artist - Room Song.flac",
+            sizeBytes = 8192L,
+            lastModifiedMs = 123L
+        )
+        val metadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Room Song.flac.npmeta.json",
+            reference = "/music/Artist - Room Song.flac.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Room%20Song.flac.npmeta.json",
+            localFilePath = "/music/Artist - Room Song.flac.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 124L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "room-stable",
+            songId = 44L,
+            identityAlbum = "NeteaseAlbum",
+            name = "Room Song",
+            artist = "Artist",
+            mediaUri = "https://example.com/room.flac",
+            channelId = "netease",
+            audioId = "44",
+            durationMs = 240_000L,
+            downloadFinalized = true
+        )
+        val snapshot = ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = listOf(audioEntry),
+            audioEntriesByLookupKey = mapOf(audioEntry.reference to audioEntry),
+            metadataEntriesByAudioName = mapOf(audioEntry.name to metadataEntry),
+            metadataByAudioName = mapOf(audioEntry.name to metadata),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = mapOf("room-stable" to listOf(audioEntry)),
+            audioEntriesBySongId = mapOf(44L to listOf(audioEntry)),
+            audioEntriesByMediaUri = mapOf("https://example.com/room.flac" to listOf(audioEntry)),
+            audioEntriesByRemoteTrackKey = mapOf("netease|44|" to listOf(audioEntry)),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = setOf(audioEntry.reference, metadataEntry.reference)
+        )
+        val entries = ManagedDownloadSnapshotRoomMapper.toEntryEntities("root", snapshot)
+        val restored = ManagedDownloadSnapshotRoomMapper.toSnapshot(
+            audioEntries = entries.filter {
+                it.bucket == ManagedDownloadSnapshotRoomMapper.BUCKET_AUDIO
+            },
+            metadataEntries = entries.filter {
+                it.bucket == ManagedDownloadSnapshotRoomMapper.BUCKET_METADATA
+            },
+            metadata = ManagedDownloadSnapshotRoomMapper.toMetadataEntities("root", snapshot),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(snapshot.audioEntries, restored.audioEntries)
+        assertEquals(metadata, restored.metadataByAudioName[audioEntry.name])
+        assertEquals(listOf(audioEntry), restored.audioEntriesByStableKey["room-stable"])
+        assertEquals(listOf(audioEntry), restored.audioEntriesByRemoteTrackKey["netease|44|"])
+        assertTrue(restored.knownReferences.contains(metadataEntry.reference))
+    }
+
+    @Test
+    fun `invalidation rejects stale persisted restore and resumes after clear`() {
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
+        val snapshot = emptySnapshot()
+        val persistenceStore = BlockingSnapshotPersistenceStore("root" to snapshot)
+        val cacheStore = ManagedDownloadSnapshotCacheStore(
+            scope = CoroutineScope(Dispatchers.IO),
+            cacheKeyProvider = { "root" },
+            persistenceStoreProvider = { persistenceStore }
+        )
+        val executor = Executors.newSingleThreadExecutor()
+
+        try {
+            val restoreFuture = executor.submit<ManagedDownloadStorage.DownloadLibrarySnapshot?> {
+                cacheStore.restorePersisted(context, expectedKey = "root")
+            }
+            assertTrue(persistenceStore.restoreStarted.await(5, TimeUnit.SECONDS))
+
+            cacheStore.invalidate(context)
+
+            assertTrue(persistenceStore.clearStarted.await(5, TimeUnit.SECONDS))
+            persistenceStore.releaseRestore.countDown()
+
+            assertNull(restoreFuture.get(5, TimeUnit.SECONDS))
+            assertNull(cacheStore.peekSnapshot())
+
+            persistenceStore.releaseClear.countDown()
+            assertTrue(persistenceStore.clearFinished.await(5, TimeUnit.SECONDS))
+            assertEquals(snapshot, cacheStore.restorePersisted(context, expectedKey = "root"))
+        } finally {
+            executor.shutdownNow()
+            persistenceStore.releaseRestore.countDown()
+            persistenceStore.releaseClear.countDown()
+        }
     }
 
     @Test
@@ -687,5 +798,55 @@ class ManagedDownloadStorageSnapshotCacheTest {
         )
 
         assertNull(reusableCover)
+    }
+
+    private fun emptySnapshot(): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        return ManagedDownloadStorage.DownloadLibrarySnapshot(
+            audioEntries = emptyList(),
+            audioEntriesByLookupKey = emptyMap(),
+            metadataEntriesByAudioName = emptyMap(),
+            metadataByAudioName = emptyMap(),
+            audioEntriesWithoutMetadata = emptyList(),
+            audioEntriesByStableKey = emptyMap(),
+            audioEntriesBySongId = emptyMap(),
+            audioEntriesByMediaUri = emptyMap(),
+            audioEntriesByRemoteTrackKey = emptyMap(),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap(),
+            knownReferences = emptySet()
+        )
+    }
+
+    private class BlockingSnapshotPersistenceStore(
+        private val restoredSnapshot:
+            Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>
+    ) : ManagedDownloadSnapshotPersistenceStore {
+        val restoreStarted = CountDownLatch(1)
+        val releaseRestore = CountDownLatch(1)
+        val clearStarted = CountDownLatch(1)
+        val releaseClear = CountDownLatch(1)
+        val clearFinished = CountDownLatch(1)
+
+        override suspend fun restore(
+            expectedKey: String?
+        ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? {
+            restoreStarted.countDown()
+            assertTrue(releaseRestore.await(5, TimeUnit.SECONDS))
+            return restoredSnapshot.takeIf { expectedKey == null || it.first == expectedKey }
+        }
+
+        override suspend fun persist(
+            cacheKey: String,
+            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        ): Boolean = true
+
+        override suspend fun clear() {
+            clearStarted.countDown()
+            try {
+                assertTrue(releaseClear.await(5, TimeUnit.SECONDS))
+            } finally {
+                clearFinished.countDown()
+            }
+        }
     }
 }

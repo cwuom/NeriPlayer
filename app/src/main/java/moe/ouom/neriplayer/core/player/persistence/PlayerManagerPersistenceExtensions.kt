@@ -8,8 +8,10 @@ import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -51,6 +53,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
@@ -61,8 +64,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
-import java.io.OutputStreamWriter
 import java.lang.reflect.Type
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -170,51 +173,21 @@ private fun PlayerManager.buildPersistedPlaylistState(
     )
 }
 
-private fun PlayerManager.writeJson(file: File, payload: Any) {
-    file.parentFile?.mkdirs()
-    val tempFile = File(file.parentFile ?: File("."), ".${file.name}.${System.nanoTime()}.tmp")
-    try {
-        tempFile.outputStream().use { stream ->
-            val writer = OutputStreamWriter(stream, Charsets.UTF_8).buffered()
-            gson.toJson(payload, writer)
-            writer.flush()
-            stream.fd.sync()
-        }
-        if (file.exists() && !file.delete()) {
-            error("Unable to replace ${file.name}")
-        }
-        if (!tempFile.renameTo(file)) {
-            error("Unable to commit ${file.name}")
-        }
-    } catch (error: Throwable) {
-        tempFile.delete()
-        throw error
-    }
-}
-
 private fun <T> PlayerManager.readJson(file: File, type: Type): T {
     file.inputStream().bufferedReader().use { reader ->
         return gson.fromJson(reader, type)
     }
 }
 
-private fun loadRestoredStateSnapshot(
-    app: Application,
-    stateFile: File,
-    playbackStateFile: File,
-    keepLastPlaybackProgressEnabled: Boolean,
-    keepPlaybackModeStateEnabled: Boolean
-): RestoredPlayerStateSnapshot? {
-    if (!stateFile.exists()) {
-        NPLogger.d("NERI-PlayerManager", "restoreState: skipped because state file does not exist")
-        return null
-    }
-
-    return runCatching {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "restoreState: reading ${stateFile.absolutePath}"
-        )
+internal class PlaybackQueueLegacyStore(
+    private val stateFile: File,
+    private val playbackStateFile: File,
+    private val gson: com.google.gson.Gson
+) {
+    fun read(): PersistedState? {
+        if (!stateFile.exists()) {
+            return null
+        }
         val type = object : TypeToken<PersistedState>() {}.type
         val legacyData: PersistedState = PlayerManager.readJson(stateFile, type)
         val playbackState = playbackStateFile.takeIf(File::exists)?.runCatching {
@@ -223,7 +196,138 @@ private fun loadRestoredStateSnapshot(
                 PersistedPlaybackState::class.java
             )
         }?.getOrNull()
-        val data = playbackState?.let(legacyData::withPlaybackState) ?: legacyData
+        return playbackState?.let(legacyData::withPlaybackState) ?: legacyData
+    }
+
+    fun write(
+        state: PersistedState,
+        playbackState: PersistedPlaybackState
+    ) {
+        runCatching { playbackStateFile.delete() }
+        stateFile.writeTextAtomically(gson.toJson(state))
+        playbackStateFile.writeTextAtomically(gson.toJson(playbackState))
+    }
+
+    fun lastModified(): Long {
+        return maxOf(
+            stateFile.takeIf(File::exists)?.lastModified() ?: 0L,
+            playbackStateFile.takeIf(File::exists)?.lastModified() ?: 0L
+        )
+    }
+
+    fun clear() {
+        runCatching { stateFile.delete() }
+        runCatching { playbackStateFile.delete() }
+    }
+}
+
+internal enum class PlaybackQueuePersistTarget {
+    ROOM,
+    LEGACY_JSON,
+    NONE
+}
+
+internal suspend fun persistPlaybackQueueWithRoomFallback(
+    roomStore: PlaybackQueueStateStore,
+    legacyStore: PlaybackQueueLegacyStore,
+    queueState: PersistedState?,
+    playbackState: PersistedPlaybackState,
+    shouldWriteQueueState: Boolean,
+    shouldWritePlaybackState: Boolean,
+    onRoomFailure: (Throwable) -> Unit = {}
+): PlaybackQueuePersistTarget {
+    if (!shouldWriteQueueState && !shouldWritePlaybackState) {
+        return PlaybackQueuePersistTarget.NONE
+    }
+    val now = System.currentTimeMillis()
+    if (queueState == null) {
+        return runCatching {
+            roomStore.clear(now)
+            legacyStore.clear()
+            PlaybackQueuePersistTarget.ROOM
+        }.getOrElse { error ->
+            onRoomFailure(error)
+            legacyStore.write(
+                PersistedState(playlist = emptyList(), index = -1)
+                    .withPlaybackState(playbackState),
+                playbackState
+            )
+            runCatching { roomStore.markLegacyJsonPrimary(now) }
+                .onFailure { markerError ->
+                    onRoomFailure(markerError)
+                }
+            PlaybackQueuePersistTarget.LEGACY_JSON
+        }
+    }
+
+    return runCatching {
+        if (shouldWriteQueueState) {
+            roomStore.replaceSnapshot(queueState, now)
+        }
+        if (shouldWritePlaybackState && !shouldWriteQueueState) {
+            roomStore.updatePlaybackState(playbackState, now)
+        }
+        PlaybackQueuePersistTarget.ROOM
+    }.getOrElse { error ->
+        onRoomFailure(error)
+        legacyStore.write(queueState, playbackState)
+        runCatching { roomStore.markLegacyJsonPrimary(now) }
+            .onFailure { markerError ->
+                onRoomFailure(markerError)
+            }
+        PlaybackQueuePersistTarget.LEGACY_JSON
+    }
+}
+
+internal data class PlaybackQueueLegacySnapshot(
+    val state: PersistedState,
+    val updatedAt: Long
+)
+
+private fun readLegacyPlaybackStateSnapshot(
+    stateFile: File,
+    playbackStateFile: File
+): PlaybackQueueLegacySnapshot? {
+    return runCatching {
+        val legacyStore = PlaybackQueueLegacyStore(
+            stateFile = stateFile,
+            playbackStateFile = playbackStateFile,
+            gson = PlayerManager.gson
+        )
+        val state = legacyStore.read() ?: return@runCatching null
+        PlaybackQueueLegacySnapshot(
+            state = state,
+            updatedAt = legacyStore.lastModified()
+        )
+    }.onFailure { error ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "Failed to read legacy playback state: ${error.message}"
+        )
+    }.getOrNull()
+}
+
+internal fun selectRestoredPlaybackState(
+    roomPrimary: Boolean,
+    roomSnapshot: PlaybackQueueRoomSnapshot?,
+    legacySnapshot: PlaybackQueueLegacySnapshot?
+): PersistedState? {
+    if (!roomPrimary || roomSnapshot == null) {
+        return legacySnapshot?.state
+    }
+    if (legacySnapshot != null && legacySnapshot.updatedAt >= roomSnapshot.updatedAt) {
+        return legacySnapshot.state
+    }
+    return roomSnapshot.state
+}
+
+private fun buildRestoredStateSnapshot(
+    app: Application,
+    data: PersistedState,
+    keepLastPlaybackProgressEnabled: Boolean,
+    keepPlaybackModeStateEnabled: Boolean
+): RestoredPlayerStateSnapshot? {
+    return runCatching {
         val playlist = data.playlist.map { persistedSong -> persistedSong.toSongItem() }
         val currentlyUnreadableLocalCount = playlist.count { song ->
             LocalSongSupport.isLocalSong(song, app) &&
@@ -309,14 +413,148 @@ internal suspend fun preloadRestoredStateSnapshot(
     val startupStateFile = File(app.filesDir, "last_playlist.json")
     val startupPlaybackStateFile = File(app.filesDir, "last_playback_state.json")
     return withContext(Dispatchers.IO) {
-        loadRestoredStateSnapshot(
+        val roomStore = PlaybackQueueRoomStore(
+            NeriUserDataDatabase.getInstance(app.applicationContext)
+        )
+        val roomRead = runCatching { roomStore.readSnapshotIfRoomPrimary() }
+            .onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "restoreState: Room read failed, trying legacy JSON: ${error.message}"
+                )
+            }
+        val roomPrimary = runCatching { roomStore.isRoomPrimary() }
+            .onFailure { error ->
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "restoreState: Room marker read failed: ${error.message}"
+                )
+            }
+            .getOrDefault(false)
+        val roomSnapshot = roomRead.getOrNull()
+        val legacySnapshot = if (!roomPrimary ||
+            roomSnapshot == null ||
+            PlaybackQueueLegacyStore(
+                stateFile = startupStateFile,
+                playbackStateFile = startupPlaybackStateFile,
+                gson = PlayerManager.gson
+            ).lastModified() >= roomSnapshot.updatedAt
+        ) {
+            readLegacyPlaybackStateSnapshot(
+                stateFile = startupStateFile,
+                playbackStateFile = startupPlaybackStateFile
+            )
+        } else {
+            null
+        }
+        val data = selectRestoredPlaybackState(
+            roomPrimary = roomPrimary,
+            roomSnapshot = roomSnapshot,
+            legacySnapshot = legacySnapshot
+        )
+        val selectedLegacySnapshot = legacySnapshot
+        if (data != null && selectedLegacySnapshot != null && data === selectedLegacySnapshot.state) {
+            selectedLegacySnapshot.state.also { legacyData ->
+                runCatching {
+                    roomStore.replaceSnapshot(legacyData)
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Failed to import legacy playback state into Room: ${error.message}"
+                    )
+                }
+            }
+        }
+        if (data == null) {
+            NPLogger.d("NERI-PlayerManager", "restoreState: no persisted playback state")
+            null
+        } else {
+            buildRestoredStateSnapshot(
+                app = app,
+                data = data,
+                keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
+                keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
+            )
+        }
+    }
+}
+
+private fun loadRestoredStateSnapshot(
+    app: Application,
+    stateFile: File,
+    playbackStateFile: File,
+    keepLastPlaybackProgressEnabled: Boolean,
+    keepPlaybackModeStateEnabled: Boolean
+): RestoredPlayerStateSnapshot? {
+    return runCatching {
+        val data = runBlocking(Dispatchers.IO) {
+            val database = NeriUserDataDatabase.getInstance(app.applicationContext)
+            val roomStore = PlaybackQueueRoomStore(database)
+            val roomPrimary = runCatching { roomStore.isRoomPrimary() }
+                .onFailure { error ->
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "restoreState: Room marker read failed: ${error.message}"
+                    )
+                }
+                .getOrDefault(false)
+            val roomRead = if (roomPrimary) {
+                runCatching { roomStore.readSnapshotIfRoomPrimary() }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NERI-PlayerManager",
+                            "restoreState: Room read failed, trying legacy JSON: ${error.message}"
+                        )
+                    }
+            } else {
+                null
+            }
+            val roomSnapshot = roomRead?.getOrNull()
+            val legacySnapshot = if (!roomPrimary ||
+                roomSnapshot == null ||
+                PlaybackQueueLegacyStore(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile,
+                    gson = PlayerManager.gson
+                ).lastModified() >= roomSnapshot.updatedAt
+            ) {
+                readLegacyPlaybackStateSnapshot(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile
+                )
+            } else {
+                null
+            }
+            val selected = selectRestoredPlaybackState(
+                roomPrimary = roomPrimary,
+                roomSnapshot = roomSnapshot,
+                legacySnapshot = legacySnapshot
+            )
+            val selectedLegacySnapshot = legacySnapshot
+            if (selected != null && selectedLegacySnapshot != null && selected === selectedLegacySnapshot.state) {
+                selectedLegacySnapshot.state.also { legacyData ->
+                    runCatching {
+                        roomStore.replaceSnapshot(legacyData)
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            "NERI-PlayerManager",
+                            "restoreState: failed to import legacy playback state: ${error.message}"
+                        )
+                    }
+                }
+            } else {
+                selected
+            }
+        } ?: return@runCatching null
+        buildRestoredStateSnapshot(
             app = app,
-            stateFile = startupStateFile,
-            playbackStateFile = startupPlaybackStateFile,
+            data = data,
             keepLastPlaybackProgressEnabled = keepLastPlaybackProgressEnabled,
             keepPlaybackModeStateEnabled = keepPlaybackModeStateEnabled
         )
-    }
+    }.onFailure { error ->
+        NPLogger.w("NERI-PlayerManager", "Failed to restore state: ${error.message}")
+    }.getOrNull()
 }
 
 internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerStateSnapshot) {
@@ -388,6 +626,26 @@ internal fun PlayerManager.scheduleStatePersist(
             shouldResumePlayback = shouldResumePlayback
         )
     }
+}
+
+internal suspend fun PlayerManager.persistStateNow(
+    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
+    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot(),
+    reason: String
+): Boolean {
+    if (!initialized) return false
+    val pendingJob = scheduledStatePersistJob
+    scheduledStatePersistJob = null
+    pendingJob?.cancelAndJoin()
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "persistStateNow: reason=$reason positionMs=$positionMs shouldResume=$shouldResumePlayback"
+    )
+    persistState(
+        positionMs = positionMs,
+        shouldResumePlayback = shouldResumePlayback
+    )
+    return true
 }
 
 private suspend fun PlayerManager.updateCurrentFavorite(
@@ -516,11 +774,32 @@ internal suspend fun PlayerManager.persistStateImpl(
     withContext(Dispatchers.IO) {
         statePersistMutex.withLock {
             try {
+                val roomStore = PlaybackQueueRoomStore(
+                    NeriUserDataDatabase.getInstance(application.applicationContext)
+                )
+                val legacyStore = PlaybackQueueLegacyStore(
+                    stateFile = stateFile,
+                    playbackStateFile = playbackStateFile,
+                    gson = gson
+                )
                 if (playlistReference.isEmpty()) {
                     restoredResumePositionMs = 0L
                     restoredShouldResumePlayback = false
-                    stateFile.delete()
-                    playbackStateFile.delete()
+                    val persistTarget = persistPlaybackQueueWithRoomFallback(
+                        roomStore = roomStore,
+                        legacyStore = legacyStore,
+                        queueState = null,
+                        playbackState = playbackStateSnapshot,
+                        shouldWriteQueueState = true,
+                        shouldWritePlaybackState = true,
+                        onRoomFailure = { error ->
+                            NPLogger.e(
+                                "NERI-PlayerManager",
+                                "persistState: Room clear failed; falling back to legacy JSON",
+                                error
+                            )
+                        }
+                    )
                     shuffleRestorePlaylistReference = null
                     shuffleRestoreCurrentIndex = -1
                     lastPersistedPlaylistReference = null
@@ -528,39 +807,59 @@ internal suspend fun PlayerManager.persistStateImpl(
                     lastStatePersistAtMs = SystemClock.elapsedRealtime()
                     NPLogger.d(
                         "NERI-PlayerManager",
-                        "persistState: cleared persisted playback state because queue is empty"
+                        "persistState: cleared persisted playback state because queue is empty, target=$persistTarget"
                     )
                     return@withLock
                 }
 
-                val shouldWriteLegacyState = playlistReference !== lastPersistedPlaylistReference
+                val shouldWriteQueueState = playlistReference !== lastPersistedPlaylistReference
                 val shouldWritePlaybackState =
-                    shouldWriteLegacyState ||
+                    shouldWriteQueueState ||
                         playbackStateSnapshot != lastPersistedPlaybackState ||
-                        !playbackStateFile.exists()
+                        lastPersistedPlaybackState == null
 
-                if (shouldWriteLegacyState) {
-                    val data = buildPersistedPlaylistState(
+                val queueState = if (shouldWriteQueueState || shouldWritePlaybackState) {
+                    buildPersistedPlaylistState(
                         playlistReference = playlistReference,
                         playbackStateSnapshot = playbackStateSnapshot
                     )
-                    writeJson(stateFile, data)
+                } else {
+                    null
+                }
+                val persistTarget = persistPlaybackQueueWithRoomFallback(
+                    roomStore = roomStore,
+                    legacyStore = legacyStore,
+                    queueState = queueState,
+                    playbackState = playbackStateSnapshot,
+                    shouldWriteQueueState = shouldWriteQueueState,
+                    shouldWritePlaybackState = shouldWritePlaybackState,
+                    onRoomFailure = { error ->
+                        NPLogger.e(
+                            "NERI-PlayerManager",
+                            "persistState: Room write failed; falling back to legacy JSON",
+                            error
+                        )
+                    }
+                )
+
+                if (shouldWriteQueueState) {
                     lastPersistedPlaylistReference = playlistReference
                     NPLogger.d(
                         "NERI-PlayerManager",
-                        "persistState: wrote state file, path=${stateFile.absolutePath}, queueSize=${playlistReference.size}, index=$currentIndexSnapshot"
+                        "persistState: wrote $persistTarget queue state, queueSize=${playlistReference.size}, index=$currentIndexSnapshot"
                     )
                 }
 
                 if (shouldWritePlaybackState) {
-                    writeJson(playbackStateFile, playbackStateSnapshot)
                     lastPersistedPlaybackState = playbackStateSnapshot
                 }
 
-                if (shouldWriteLegacyState || shouldWritePlaybackState) {
+                if (shouldWriteQueueState || shouldWritePlaybackState) {
                     lastStatePersistAtMs = SystemClock.elapsedRealtime()
                 }
             } catch (e: Exception) {
+                lastPersistedPlaylistReference = null
+                lastPersistedPlaybackState = null
                 NPLogger.e("PlayerManager", "Failed to persist state", e)
             }
         }

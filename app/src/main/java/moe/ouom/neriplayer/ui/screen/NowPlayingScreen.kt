@@ -2859,6 +2859,7 @@ fun NowPlayingScreen(
                                     text = currentSong?.customName ?: currentSong?.name ?: "",
                                     marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                                     style = MaterialTheme.typography.headlineSmall,
+                                    color = targetNowPlayingColorScheme.onSurface,
                                     modifier = Modifier
                                         .widthIn(max = maxWidth)
                                         .clip(RoundedCornerShape(8.dp))
@@ -5331,6 +5332,14 @@ fun LyricsEditorSheet(
     }
     val hasSearchedSelectedLyricSources = selectedLyricMatchSources.any { source ->
         source in searchedLyricMatchSources
+    }
+
+    BackHandler {
+        when {
+            showLocalMetadataWriteBackConfirm -> showLocalMetadataWriteBackConfirm = false
+            showLyricMatchSheet -> showLyricMatchSheet = false
+            else -> dismissLyricsEditor()
+        }
     }
 
     fun saveLyrics(writeLocalMetadata: Boolean) {

@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
+import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthHealth
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
@@ -54,28 +55,33 @@ sealed interface YouTubeAuthEvent {
 }
 
 class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = AppContainer.youtubeAuthRepo
+    private val repo by lazy { AppContainer.youtubeAuthRepo }
 
-    private val _uiState = MutableStateFlow(
-        YouTubeAuthUiState(
-            health = repo.getAuthHealth(),
-            hasSavedAuth = repo.getAuthOnce().hasEffectiveAuth()
-        )
-    )
+    private val _uiState = MutableStateFlow(YouTubeAuthUiState())
     val uiState: StateFlow<YouTubeAuthUiState>
         get() = _uiState.asStateFlow()
 
     private val _events = Channel<YouTubeAuthEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            val initialHealth = repo.getAuthHealth()
+            val hasSavedAuth = repo.getAuthOnce().hasEffectiveAuth()
+            _uiState.update { current ->
+                current.copy(
+                    health = initialHealth,
+                    hasSavedAuth = hasSavedAuth
+                )
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
             repo.authHealthFlow.collect { health ->
                 _uiState.update { current ->
                     current.copy(health = health)
                 }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repo.authFlow.collect { bundle ->
                 _uiState.update { current ->
                     current.copy(hasSavedAuth = bundle.hasEffectiveAuth())
@@ -97,7 +103,10 @@ class YouTubeAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearAuth() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.clear()
-            clearWebViewLoginState()
+            clearWebViewLoginState(
+                context = getApplication<Application>(),
+                platform = WebLoginPlatform.YOUTUBE
+            )
             _events.send(
                 YouTubeAuthEvent.ShowSnack(
                     getApplication<Application>().getString(R.string.auth_cookie_cleared)

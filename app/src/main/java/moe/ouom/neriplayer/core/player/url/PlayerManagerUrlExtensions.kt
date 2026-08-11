@@ -1239,7 +1239,18 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                         resolvedQualityKey = quality,
                         fallbackDurationMs = song.durationMs,
                         getLocalizedString = { getLocalizedString(it) }
-                    )
+                    ).let { result ->
+                        if (parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
+                            result.copy(
+                                cacheKeyOverride = buildNeteasePreviewCacheKey(
+                                    songId = song.id,
+                                    preferredQuality = quality
+                                )
+                            )
+                        } else {
+                            result
+                        }
+                    }
                     if (parsed.notice != NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
                         if (quality != effectiveQuality) {
                             NPLogger.w(

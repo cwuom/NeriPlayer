@@ -144,6 +144,7 @@ import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.NowPlayingSongTitle
+import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
@@ -443,6 +444,7 @@ fun LyricsScreen(
                         text = currentSong?.displayName() ?: stringResource(R.string.lyrics_unknown_song),
                         marqueeEnabled = nowPlayingSongTitleMarqueeEnabled,
                         style = MaterialTheme.typography.titleMedium,
+                        color = LocalNeriTargetColorScheme.current.onSurface,
                         modifier = Modifier
                             .widthIn(max = maxWidth)
                             .clip(RoundedCornerShape(6.dp))

@@ -45,7 +45,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import androidx.core.content.edit
 
 private const val PLAYBACK_SNAPSHOT_PREFS = "playback_snapshot_cache"
-private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 4
+private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION = 5
 private const val PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY = "schema_version"
 private const val PLAYBACK_SNAPSHOT_READY_KEY = "ready"
 private const val PLAYBACK_AUDIO_QUALITY_KEY = "audio_quality"
@@ -113,10 +113,10 @@ data class PlaybackPreferenceSnapshot(
     val keepLastPlaybackProgress: Boolean = true,
     val rememberLongFormPlaybackProgress: Boolean = true,
     val keepPlaybackModeState: Boolean = true,
-    val neteaseAutoSourceSwitch: Boolean = true,
-    val neteaseLocalSourceFallback: Boolean = true,
-    val playbackFadeIn: Boolean = false,
-    val playbackCrossfadeNext: Boolean = false,
+    val neteaseAutoSourceSwitch: Boolean = false,
+    val neteaseLocalSourceFallback: Boolean = false,
+    val playbackFadeIn: Boolean = true,
+    val playbackCrossfadeNext: Boolean = true,
     val sleepTimerFinishCurrentOnExpiry: Boolean = false,
     val playbackFadeInDurationMs: Long = 500L,
     val playbackFadeOutDurationMs: Long = 500L,
@@ -204,7 +204,7 @@ data class PlaybackPreferenceSnapshot(
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
-            maxCacheSizeBytes = maxCacheSizeBytes.coerceAtLeast(0L)
+            maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
         )
     }
 
@@ -238,7 +238,7 @@ suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreference
 
 fun readPlaybackPreferenceSnapshotSync(context: Context): PlaybackPreferenceSnapshot {
     readPlaybackPreferenceSnapshotCached(context)?.let { return it }
-    schedulePlaybackPreferenceSnapshotWarm(context.applicationContext)
+    schedulePlaybackPreferenceSnapshotWarm(context.applicationContext ?: context)
     return PlaybackPreferenceSnapshot()
 }
 
@@ -430,10 +430,10 @@ internal fun Preferences.toPlaybackPreferenceSnapshot(): PlaybackPreferenceSnaps
         rememberLongFormPlaybackProgress =
             this[SettingsKeys.REMEMBER_LONG_FORM_PLAYBACK_PROGRESS] ?: true,
         keepPlaybackModeState = this[SettingsKeys.KEEP_PLAYBACK_MODE_STATE] ?: true,
-        neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: true,
-        neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: true,
-        playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: false,
-        playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: false,
+        neteaseAutoSourceSwitch = this[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] ?: false,
+        neteaseLocalSourceFallback = this[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] ?: false,
+        playbackFadeIn = this[SettingsKeys.PLAYBACK_FADE_IN] ?: true,
+        playbackCrossfadeNext = this[SettingsKeys.PLAYBACK_CROSSFADE_NEXT] ?: true,
         sleepTimerFinishCurrentOnExpiry =
             this[SettingsKeys.PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY] ?: false,
         playbackFadeInDurationMs = this[SettingsKeys.PLAYBACK_FADE_IN_DURATION_MS] ?: 500L,
@@ -517,6 +517,9 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         return null
     }
     val cacheVersion = prefs.getInt(PLAYBACK_SNAPSHOT_SCHEMA_VERSION_KEY, 1)
+    if (cacheVersion < PLAYBACK_SNAPSHOT_SCHEMA_VERSION) {
+        return null
+    }
     val legacyMobileDataQuality = prefs.getString(
         PLAYBACK_MOBILE_DATA_DOWNGRADE_QUALITY_KEY,
         null
@@ -574,11 +577,11 @@ private fun readCachedPlaybackPreferenceSnapshot(context: Context): PlaybackPref
         ),
         keepPlaybackModeState = prefs.getBoolean(PLAYBACK_KEEP_MODE_STATE_KEY, true),
         neteaseAutoSourceSwitch =
-            prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, true),
+            prefs.getBoolean(PLAYBACK_NETEASE_AUTO_SOURCE_SWITCH_KEY, false),
         neteaseLocalSourceFallback =
-            prefs.getBoolean(PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY, true),
-        playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, false),
-        playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, false),
+            prefs.getBoolean(PLAYBACK_NETEASE_LOCAL_SOURCE_FALLBACK_KEY, false),
+        playbackFadeIn = prefs.getBoolean(PLAYBACK_FADE_IN_KEY, true),
+        playbackCrossfadeNext = prefs.getBoolean(PLAYBACK_CROSSFADE_NEXT_KEY, true),
         sleepTimerFinishCurrentOnExpiry = prefs.getBoolean(
             PLAYBACK_SLEEP_TIMER_FINISH_CURRENT_ON_EXPIRY_KEY,
             false

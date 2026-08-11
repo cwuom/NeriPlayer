@@ -266,6 +266,7 @@ import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.openAppBackgroundSettings
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import moe.ouom.neriplayer.util.platform.requestIgnoreBatteryOptimizationsCompat
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -1339,14 +1340,10 @@ fun NeriApp(
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
-    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
-    val context = LocalContext.current
     var appContentReady by rememberSaveable { mutableStateOf(false) }
-    val bootstrapIsDark = StartupThemeResolver.resolveSnapshotUseDark(
-        snapshot = initialThemeSnapshot,
-        systemDark = isActualSystemDarkTheme(context)
-    )
 
     LaunchedEffect(Unit) {
         // 先交一个极轻的背景首帧, 下一帧再挂整棵导航和状态订阅树
@@ -1354,22 +1351,29 @@ fun NeriApp(
         appContentReady = true
     }
 
-    if (!appContentReady) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(if (bootstrapIsDark) Color(0xFF121212) else Color(0xFFF4EFE7))
-        )
-        return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        AnimatedVisibility(
+            visible = appContentReady,
+            enter = fadeIn(
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            ),
+            exit = ExitTransition.None,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            NeriAppContent(
+                initialThemeSnapshot = initialThemeSnapshot,
+                launcherShortcutRequestFlow = launcherShortcutRequestFlow,
+                onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
+                onIsDarkChanged = onIsDarkChanged,
+                onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged,
+                onLanguageChanged = onLanguageChanged
+            )
+        }
     }
-
-    NeriAppContent(
-        initialThemeSnapshot = initialThemeSnapshot,
-        launcherShortcutRequestFlow = launcherShortcutRequestFlow,
-        onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
-        onIsDarkChanged = onIsDarkChanged,
-        onNowPlayingVisibilityChanged = onNowPlayingVisibilityChanged
-    )
 }
 
 @Composable
@@ -1402,7 +1406,8 @@ private fun NeriAppContent(
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
     onIsDarkChanged: (Boolean) -> Unit = {},
-    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {}
+    onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -1521,8 +1526,12 @@ private fun NeriAppContent(
     val showHomeTrendingCard by repo.homeCardTrendingFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
-    val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(initialValue = false)
-    val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(initialValue = false)
+    val playbackFadeIn by repo.playbackFadeInFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.playbackFadeIn
+    )
+    val playbackCrossfadeNext by repo.playbackCrossfadeNextFlow.collectAsStateWithLifecycle(
+        initialValue = startupPlaybackPreferences.playbackCrossfadeNext
+    )
     val sleepTimerFinishCurrentOnExpiry by repo.sleepTimerFinishCurrentOnExpiryFlow
         .collectAsStateWithLifecycle(
             initialValue = startupPlaybackPreferences.sleepTimerFinishCurrentOnExpiry
@@ -3177,6 +3186,7 @@ private fun NeriAppContent(
                             }
                         },
                         onBeforeLanguageRestart = clearThemeRevealState,
+                        onLanguageChanged = onLanguageChanged,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
                         renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
                             RenderMainTabNavigationScene(

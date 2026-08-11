@@ -130,13 +130,24 @@ internal fun buildNearbySidecarCopyPlans(
             }
         }
 
-        lyricExtensions.forEach { extension ->
-            addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
-            addIfExists(
-                File(File(sourceDir, "Lyrics"), "$sourceBase.$extension"),
-                File(targetDir, "$targetBase.$extension")
-            )
+        val nearbyLyricFiles = LocalMediaSupport.findNearbyLyricFiles(
+            file = sourceFile,
+            extensions = lyricExtensions
+        )
+
+        fun addSelectedLyricSidecar(source: File?, translated: Boolean) {
+            source ?: return
+            val sourcePrefix = if (translated) "${sourceBase}_trans" else sourceBase
+            val targetPrefix = if (translated) "${targetBase}_trans" else targetBase
+            val suffix = source.name
+                .removePrefix(sourcePrefix)
+                .takeIf { it.startsWith('.') }
+                ?: return
+            addIfExists(source, File(targetDir, "$targetPrefix$suffix"))
         }
+
+        addSelectedLyricSidecar(nearbyLyricFiles.original, translated = false)
+        addSelectedLyricSidecar(nearbyLyricFiles.translated, translated = true)
 
         imageExtensions.forEach { extension ->
             addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.settings
 
 import android.content.Context
+import androidx.datastore.preferences.core.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
@@ -31,19 +32,31 @@ class NeteaseLocalSourceFallbackSettingAndroidTest {
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
         repository = SettingsRepository(context)
-        runBlocking { repository.setNeteaseLocalSourceFallback(true) }
+        runBlocking {
+            context.dataStore.edit { preferences ->
+                preferences.remove(SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH)
+                preferences.remove(SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK)
+            }
+            context.deleteSharedPreferences(TestPlaybackSnapshotPrefs)
+        }
     }
 
     @After
     fun tearDown() {
-        runBlocking { repository.setNeteaseLocalSourceFallback(true) }
+        runBlocking {
+            context.dataStore.edit { preferences ->
+                preferences.remove(SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH)
+                preferences.remove(SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK)
+            }
+            context.deleteSharedPreferences(TestPlaybackSnapshotPrefs)
+        }
     }
 
     @Test
-    fun defaultsToEnabled() {
+    fun defaultsToDisabled() {
         runBlocking {
-            assertTrue(repository.neteaseLocalSourceFallbackFlow.first())
-            assertTrue(readPlaybackPreferenceSnapshot(context).neteaseLocalSourceFallback)
+            assertFalse(repository.neteaseLocalSourceFallbackFlow.first())
+            assertFalse(readPlaybackPreferenceSnapshot(context).neteaseLocalSourceFallback)
         }
     }
 
@@ -81,6 +94,63 @@ class NeteaseLocalSourceFallbackSettingAndroidTest {
             assertTrue(snapshot.neteaseAutoSourceSwitch)
             assertFalse(snapshot.neteaseLocalSourceFallback)
             assertTrue(repository.neteaseAutoSourceSwitchFlow.first())
+        }
+    }
+
+    @Test
+    fun combinedFallbackSettingUpdatesBothOptions() {
+        runBlocking {
+            repository.setNeteasePlaybackSourceFallback(true)
+
+            assertTrue(repository.neteaseAutoSourceSwitchFlow.first())
+            assertTrue(repository.neteaseLocalSourceFallbackFlow.first())
+            assertTrue(readPlaybackPreferenceSnapshot(context).neteaseAutoSourceSwitch)
+            assertTrue(readPlaybackPreferenceSnapshot(context).neteaseLocalSourceFallback)
+        }
+    }
+
+    @Test
+    fun legacySnapshotIsRebuiltWithNewDefaultsWhenDataStoreKeysAreMissing() {
+        runBlocking {
+            context.getSharedPreferences(TestPlaybackSnapshotPrefs, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("ready", true)
+                .putInt("schema_version", 4)
+                .putBoolean("netease_auto_source_switch", true)
+                .putBoolean("netease_local_source_fallback", true)
+                .commit()
+
+            val snapshot = readPlaybackPreferenceSnapshot(context)
+
+            assertFalse(snapshot.neteaseAutoSourceSwitch)
+            assertFalse(snapshot.neteaseLocalSourceFallback)
+            assertEquals(
+                5,
+                context.getSharedPreferences(TestPlaybackSnapshotPrefs, Context.MODE_PRIVATE)
+                    .getInt("schema_version", 0)
+            )
+        }
+    }
+
+    @Test
+    fun legacySnapshotRebuildPreservesExplicitDataStoreChoice() {
+        runBlocking {
+            context.dataStore.edit { preferences ->
+                preferences[SettingsKeys.NETEASE_AUTO_SOURCE_SWITCH] = true
+                preferences[SettingsKeys.NETEASE_LOCAL_SOURCE_FALLBACK] = true
+            }
+            context.getSharedPreferences(TestPlaybackSnapshotPrefs, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("ready", true)
+                .putInt("schema_version", 4)
+                .putBoolean("netease_auto_source_switch", false)
+                .putBoolean("netease_local_source_fallback", false)
+                .commit()
+
+            val snapshot = readPlaybackPreferenceSnapshot(context)
+
+            assertTrue(snapshot.neteaseAutoSourceSwitch)
+            assertTrue(snapshot.neteaseLocalSourceFallback)
         }
     }
 

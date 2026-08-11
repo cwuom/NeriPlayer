@@ -44,15 +44,16 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -60,12 +61,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -85,11 +84,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toDrawable
@@ -121,12 +119,11 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
-import moe.ouom.neriplayer.core.startup.StartupStageFlow
 import moe.ouom.neriplayer.core.startup.StartupStage
+import moe.ouom.neriplayer.core.startup.StartupStageResolver
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
-import moe.ouom.neriplayer.core.startup.permission.StartupNotificationPermission
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeRecoveryCoordinator
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -148,6 +145,7 @@ import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.MobileDataDownloadInterruptionDialog
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
@@ -156,7 +154,6 @@ import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
-import moe.ouom.neriplayer.ui.haptic.HapticButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -248,12 +245,29 @@ private fun AppUiDensityRoot(
     )
 }
 
+@Composable
+private fun LocalizedAppContent(
+    language: LanguageManager.Language,
+    content: @Composable () -> Unit
+) {
+    val baseContext = LocalContext.current
+    val localizedContext = remember(baseContext, language) {
+        LanguageManager.localizedContext(baseContext, language)
+    }
+    CompositionLocalProvider(
+        LocalContext provides localizedContext,
+        LocalConfiguration provides localizedContext.resources.configuration,
+        content = content
+    )
+}
+
 private fun MainActivity.setNeriContent(
     content: @Composable () -> Unit
 ) {
     setContent {
         CompositionLocalProvider(
             LocalActivityResultRegistryOwner provides this@setNeriContent,
+            LocalOverscrollFactory provides AdvancedGlassOverscrollFactory,
             content = content
         )
     }
@@ -338,9 +352,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setNeriContent {
+            var selectedAppLanguage by remember {
+                mutableStateOf(LanguageManager.getCurrentLanguage(this@MainActivity))
+            }
             val uiDensityScale by settingsRepository.uiDensityScaleFlow
                 .collectAsStateWithLifecycle(initialValue = 1.0f)
             AppUiDensityRoot(uiDensityScale) {
+                LocalizedAppContent(language = selectedAppLanguage) {
                 val devModeEnabled by settingsRepository.devModeEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
                 val alwaysRecordLogsEnabled by settingsRepository.alwaysRecordLogsEnabledFlow.collectAsStateWithLifecycle(
                     initialValue = false
@@ -362,11 +380,17 @@ class MainActivity : ComponentActivity() {
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.followSystemDark
             )
-            val startupStageFlow = remember(settingsRepository) {
-                StartupStageFlow.from(
-                    disclaimerAccepted = settingsRepository.disclaimerAcceptedFlow,
-                    startupOnboardingCompleted = settingsRepository.startupOnboardingCompletedFlow
-                )
+            val disclaimerAccepted by settingsRepository.disclaimerAcceptedFlow
+                .collectAsStateWithLifecycle(initialValue = null)
+            val startupOnboardingCompleted by settingsRepository.startupOnboardingCompletedFlow
+                .collectAsStateWithLifecycle(initialValue = null)
+            var pendingDisclaimerAccepted by rememberSaveable {
+                mutableStateOf(false)
+            }
+            LaunchedEffect(disclaimerAccepted) {
+                if (disclaimerAccepted == true) {
+                    pendingDisclaimerAccepted = false
+                }
             }
 
             val systemDark = rememberActualSystemDarkTheme()
@@ -391,15 +415,6 @@ class MainActivity : ComponentActivity() {
                         followSystemDark = followSystemDark,
                         forceDark = forceDark
                     )
-                }
-            }
-
-            if (StartupNotificationPermission.shouldRequest()) {
-                val launcher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) {  }
-                LaunchedEffect(Unit) {
-                    launcher.launch(StartupNotificationPermission.permission)
                 }
             }
 
@@ -456,7 +471,25 @@ class MainActivity : ComponentActivity() {
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(Unit) { playedEntrance = true }
 
-                val stage by startupStageFlow.collectAsStateWithLifecycle(initialValue = StartupStage.Loading)
+                val stage = remember(
+                    disclaimerAccepted,
+                    startupOnboardingCompleted,
+                    pendingDisclaimerAccepted
+                ) {
+                    StartupStageResolver.resolve(
+                        disclaimerAccepted = disclaimerAccepted,
+                        startupOnboardingCompleted = startupOnboardingCompleted,
+                        pendingDisclaimerAccepted = pendingDisclaimerAccepted
+                    )
+                }
+                var hasDisplayedDisclaimer by rememberSaveable { mutableStateOf(false) }
+                var previousStartupStage by remember { mutableStateOf<StartupStage?>(null) }
+                LaunchedEffect(stage) {
+                    if (stage == StartupStage.Disclaimer) {
+                        hasDisplayedDisclaimer = true
+                    }
+                    previousStartupStage = stage
+                }
                 val pendingMobileDataDownloadInterruptionRequest by
                     GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsStateWithLifecycle()
                 val rootLifecycleOwner = LocalLifecycleOwner.current
@@ -479,6 +512,7 @@ class MainActivity : ComponentActivity() {
                     if (stage != StartupStage.Main) {
                         return@LaunchedEffect
                     }
+                    delay(STARTUP_STAGE_CONTENT_DELAY_MILLIS)
                     rootLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
                         val warningResult = startupSyncWarningCoordinator.check(hasShownTokenWarning)
                         hasShownTokenWarning = warningResult.hasShownWarning
@@ -493,22 +527,40 @@ class MainActivity : ComponentActivity() {
                 AnimatedContent(
                     targetState = stage,
                     transitionSpec = {
-                        val enter = slideInVertically(
-                            animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+                        val enter = fadeIn(
+                            animationSpec = tween(420, easing = FastOutSlowInEasing)
+                        ) + scaleIn(
+                            initialScale = 0.97f,
+                            animationSpec = tween(560, easing = FastOutSlowInEasing)
+                        ) + slideInVertically(
+                            animationSpec = tween(
+                                durationMillis = STARTUP_STAGE_ENTER_DURATION_MILLIS,
+                                easing = FastOutSlowInEasing
+                            ),
                             initialOffsetY = { fullHeight ->
-                                if (playedEntrance) fullHeight / 8 else 0
+                                if (playedEntrance) fullHeight / 7 else fullHeight / 16
                             }
-                        ) + fadeIn(animationSpec = tween(350, delayMillis = if (playedEntrance) 50 else 0))
+                        )
 
-                        val exit = slideOutVertically(
-                            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
-                            targetOffsetY = { -it / 12 }
-                        ) + fadeOut(animationSpec = tween(250))
+                        val exit = fadeOut(
+                            animationSpec = tween(300, easing = FastOutSlowInEasing)
+                        ) + scaleOut(
+                            targetScale = 1.015f,
+                            animationSpec = tween(420, easing = FastOutSlowInEasing)
+                        ) + slideOutVertically(
+                            animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                            targetOffsetY = { -it / 14 }
+                        )
 
                         enter togetherWith exit using SizeTransform(clip = false)
                     },
                     label = "AppStageTransition"
                 ) { current ->
+                    StartupStageContentGate(
+                        stage = current,
+                        previousStage = previousStartupStage,
+                        disclaimerWasShown = hasDisplayedDisclaimer || pendingDisclaimerAccepted
+                    ) {
                     when (current) {
                         StartupStage.Loading -> {
                             Box(
@@ -521,11 +573,27 @@ class MainActivity : ComponentActivity() {
                         StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
                             DisclaimerScreen(
-                                onAgree = { scope.launch { settingsRepository.setDisclaimerAccepted(true) } }
+                                onAgree = {
+                                    pendingDisclaimerAccepted = true
+                                    scope.launch {
+                                        runCatching {
+                                            settingsRepository.setDisclaimerAccepted(true)
+                                        }.onFailure { error ->
+                                            pendingDisclaimerAccepted = false
+                                            NPLogger.e(
+                                                "MainActivity",
+                                                "accept disclaimer failed",
+                                                error
+                                            )
+                                        }
+                                    }
+                                }
                             )
                         }
                         StartupStage.Onboarding -> {
-                            StartupOnboardingScreen()
+                            StartupOnboardingScreen(
+                                onLanguageChanged = { selectedAppLanguage = it }
+                            )
                         }
                         StartupStage.Main -> {
                             // 弹窗状态管理和事件监听
@@ -873,9 +941,13 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNowPlayingVisibilityChanged = { visible ->
                                     isNowPlayingVisible = visible
+                                },
+                                onLanguageChanged = { language ->
+                                    selectedAppLanguage = language
                                 }
                             )
                         }
+                    }
                     }
                 }
 
@@ -952,6 +1024,7 @@ class MainActivity : ComponentActivity() {
                             pendingStartupCrashReport = null
                         }
                     )
+                }
                 }
                 }
             }
@@ -1419,169 +1492,13 @@ private fun StartupCrashReportDialog(
     )
 }
 
-/* --------------------- 免责声明与隐私说明 --------------------- */
-
 @Composable
 fun DisclaimerScreen(
     onAgree: () -> Unit,
     initialCountdownSeconds: Int = 5
 ) {
-    var countdown by remember(initialCountdownSeconds) {
-        mutableIntStateOf(initialCountdownSeconds.coerceAtLeast(0))
-    }
-    LaunchedEffect(Unit) { while (countdown > 0) { delay(1000); countdown-- } }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.disclaimer_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    SectionTitle(stringResource(R.string.disclaimer_section1_title))
-                    BodyText(stringResource(R.string.disclaimer_section1_body))
-
-                    SectionTitle(stringResource(R.string.disclaimer_section2_title))
-                    Bullets(
-                        listOf(
-                            stringResource(R.string.disclaimer_section2_bullet1),
-                            stringResource(R.string.disclaimer_section2_bullet2),
-                            stringResource(R.string.disclaimer_section2_bullet3),
-                            stringResource(R.string.disclaimer_section2_bullet4)
-                        )
-                    )
-
-                    SectionTitle(stringResource(R.string.disclaimer_section3_title))
-                    Bullets(
-                        listOf(
-                            stringResource(R.string.disclaimer_section3_bullet1),
-                            stringResource(R.string.disclaimer_section3_bullet2),
-                            stringResource(R.string.disclaimer_section3_bullet3)
-                        )
-                    )
-
-                    SectionTitle(stringResource(R.string.disclaimer_section4_title))
-                    Bullets(
-                        listOf(
-                            stringResource(R.string.disclaimer_section4_bullet1),
-                            stringResource(R.string.disclaimer_section4_bullet2),
-                            stringResource(R.string.disclaimer_section4_bullet3)
-                        )
-                    )
-
-                    SectionTitle(stringResource(R.string.disclaimer_section5_title))
-                    Bullets(
-                        listOf(
-                            stringResource(R.string.disclaimer_section5_bullet1),
-                            stringResource(R.string.disclaimer_section5_bullet2),
-                            stringResource(R.string.disclaimer_section5_bullet3),
-                            stringResource(R.string.disclaimer_section5_bullet4),
-                            stringResource(R.string.disclaimer_section5_bullet5),
-                            stringResource(R.string.disclaimer_section5_bullet6),
-                            stringResource(R.string.disclaimer_section5_bullet7),
-                            stringResource(R.string.disclaimer_section5_bullet8),
-                            stringResource(R.string.disclaimer_section5_bullet9)
-                        )
-                    )
-
-                    SectionTitle(stringResource(R.string.disclaimer_section6_title))
-                    Bullets(
-                        listOf(
-                            stringResource(R.string.disclaimer_section6_bullet1),
-                            stringResource(R.string.disclaimer_section6_bullet2),
-                            stringResource(R.string.disclaimer_section6_bullet3)
-                        )
-                    )
-
-                    SectionTitle(stringResource(R.string.disclaimer_section7_title))
-                    BodyText(stringResource(R.string.disclaimer_section7_body))
-
-                    SectionTitle(stringResource(R.string.disclaimer_section8_title))
-                    BodyText(stringResource(R.string.disclaimer_section8_body))
-
-                    SectionTitle(stringResource(R.string.disclaimer_section9_title))
-                    EmphasisText(stringResource(R.string.disclaimer_section9_body))
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                HapticButton(
-                    onClick = { onAgree() },
-                    enabled = countdown == 0,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = if (countdown == 0) stringResource(R.string.disclaimer_agree_countdown) else stringResource(R.string.disclaimer_read_countdown, countdown),
-                        style = MaterialTheme.typography.titleMedium,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-    }
-}
-}
-
-@Composable private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-        modifier = Modifier.padding(top = 6.dp)
+    StartupDisclaimerContent(
+        onAgree = onAgree,
+        initialCountdownSeconds = initialCountdownSeconds
     )
-}
-@Composable private fun BodyText(text: String) {
-    Text(text = text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Start)
-}
-@Composable private fun EmphasisText(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.error,
-        textAlign = TextAlign.Start
-    )
-}
-@Composable private fun Bullets(items: List<String>) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.forEach { item ->
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
-                Text("• ", style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    text = item,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
 }

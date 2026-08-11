@@ -49,6 +49,26 @@ class StartupStageResolverTest {
     }
 
     @Test
+    fun `routes pending disclaimer acceptance without waiting for storage echo`() {
+        assertEquals(
+            StartupStage.Onboarding,
+            StartupStageResolver.resolve(
+                disclaimerAccepted = false,
+                startupOnboardingCompleted = null,
+                pendingDisclaimerAccepted = true
+            )
+        )
+        assertEquals(
+            StartupStage.Main,
+            StartupStageResolver.resolve(
+                disclaimerAccepted = false,
+                startupOnboardingCompleted = true,
+                pendingDisclaimerAccepted = true
+            )
+        )
+    }
+
+    @Test
     fun `routes fully prepared users to main stage`() {
         assertEquals(
             StartupStage.Main,

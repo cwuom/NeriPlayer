@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.page
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,7 +57,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -68,6 +74,7 @@ import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdropRegistratio
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassController
 import moe.ouom.neriplayer.ui.effect.glass.isolatedAdvancedGlassHorizontalTransition
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 
 private val MiuixCardShape = RoundedCornerShape(16.dp)
 private val MiuixHighlightShape = RoundedCornerShape(18.dp)
@@ -75,14 +82,21 @@ private val MiuixSettingsContentPadding = PaddingValues(horizontal = 4.dp, verti
 private val MiuixPageRowPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 private val MiuixSettingsTabletMaxWidth = 920.dp
 
-private fun isForwardSettingsDetailTransition(
+private fun shouldAnimateSettingsDetailTransition(
     initialPage: SettingsPage,
     targetPage: SettingsPage
 ): Boolean {
-    if (targetPage.backTargetPage() == initialPage) return true
-    if (initialPage.backTargetPage() == targetPage) return false
-    return targetPage.ordinal >= initialPage.ordinal
+    return targetPage.backTargetPage() == initialPage ||
+        initialPage.backTargetPage() == targetPage
 }
+
+private fun SettingsPage.participatesInSplitDetailTransition(): Boolean {
+    return backTargetPage() != null || SettingsPage.entries.any { page ->
+        page.backTargetPage() == this
+    }
+}
+
+internal fun settingsPageRowTestTag(page: SettingsPage): String = "settings-page-row-${page.name}"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,7 +107,16 @@ internal fun MiuixSettingsHomeScaffold(
     modifier: Modifier = Modifier,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = listState.canScrollForward,
+                canScrollBackward = listState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
+        }
+    )
     val showExpandedTitleMask = scrollBehavior.state.collapsedFraction < 0.5f
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
@@ -280,6 +303,10 @@ private fun MiuixSettingsPageRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 76.dp)
+            .testTag(settingsPageRowTestTag(page))
+            .semantics {
+                this.selected = selected
+            }
             .background(
                 if (selected) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
@@ -349,7 +376,16 @@ internal fun MiuixSettingsDetailScaffold(
     showBackButton: Boolean = true,
     content: LazyListScope.() -> Unit
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = listState.canScrollForward,
+                canScrollBackward = listState.canScrollBackward,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
+        }
+    )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
     val horizontalPadding = if (isTabletLayout) 28.dp else 18.dp
@@ -454,47 +490,67 @@ internal fun MiuixSettingsResponsiveDetailScaffold(
                 .weight(0.58f)
                 .fillMaxHeight()
         ) {
-            val targetPage = selectedPage
-            if (targetPage == null) {
-                MiuixSettingsDetailScaffold(
-                    title = title,
-                    onBack = onBack,
-                    listState = listState,
-                    topAppBarState = topAppBarState,
-                    showBackButton = false,
-                    content = content
-                )
-            } else {
-                AnimatedContent(
-                    targetState = targetPage,
-                    modifier = Modifier.fillMaxSize(),
-                    label = "settings_split_detail_switch",
-                    transitionSpec = {
-                        isolatedAdvancedGlassHorizontalTransition(
-                            forward = isForwardSettingsDetailTransition(
-                                initialPage = initialState,
-                                targetPage = targetState
-                            )
-                        ).using(SizeTransform(clip = true))
-                    }
-                ) { page ->
-                    AdvancedGlassNavigationHandoff(
-                        enabled = isolateAdvancedGlassTransitions && transition.isRunning
+            when {
+                selectedPage == null -> {
+                    MiuixSettingsDetailScaffold(
+                        title = title,
+                        onBack = onBack,
+                        listState = listState,
+                        topAppBarState = topAppBarState,
+                        showBackButton = false,
+                        content = content
+                    )
+                }
+
+                !selectedPage.participatesInSplitDetailTransition() -> {
+                    MiuixSettingsDetailScaffold(
+                        title = title,
+                        onBack = onBack,
+                        listState = listState,
+                        topAppBarState = topAppBarState,
+                        showBackButton = showSplitDetailBackButton
                     ) {
-                        AdvancedGlassScene(
-                            active = isolateAdvancedGlassTransitions || page == targetPage
+                        if (detailContent == null) {
+                            content()
+                        } else {
+                            detailContent(selectedPage)
+                        }
+                    }
+                }
+
+                else -> {
+                    AnimatedContent(
+                        targetState = selectedPage,
+                        modifier = Modifier.fillMaxSize(),
+                        label = "settings_split_detail_switch",
+                        transitionSpec = {
+                            if (shouldAnimateSettingsDetailTransition(initialState, targetState)) {
+                                isolatedAdvancedGlassHorizontalTransition(
+                                    forward = targetState.backTargetPage() == initialState
+                                ).using(SizeTransform(clip = true))
+                            } else {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            }
+                        }
+                    ) { page ->
+                        AdvancedGlassNavigationHandoff(
+                            enabled = isolateAdvancedGlassTransitions && transition.isRunning
                         ) {
-                            MiuixSettingsDetailScaffold(
-                                title = stringResource(page.titleRes),
-                                onBack = onBack,
-                                listState = listState,
-                                topAppBarState = topAppBarState,
-                                showBackButton = showSplitDetailBackButton
+                            AdvancedGlassScene(
+                                active = isolateAdvancedGlassTransitions || page == selectedPage
                             ) {
-                                if (detailContent == null) {
-                                    content()
-                                } else {
-                                    detailContent(page)
+                                MiuixSettingsDetailScaffold(
+                                    title = stringResource(page.titleRes),
+                                    onBack = onBack,
+                                    listState = listState,
+                                    topAppBarState = topAppBarState,
+                                    showBackButton = showSplitDetailBackButton
+                                ) {
+                                    if (detailContent == null) {
+                                        content()
+                                    } else {
+                                        detailContent(page)
+                                    }
                                 }
                             }
                         }

@@ -34,6 +34,7 @@ import kotlin.math.roundToInt
 
 internal const val ONEPLUS_HIGH_DENSITY_DPI_THRESHOLD = 500
 internal const val ONEPLUS_HIGH_DENSITY_UI_SCALE = 0.95f
+internal const val PHONE_SMALLEST_SCREEN_WIDTH_DP = 600
 
 internal fun isOnePlusHighDensityDisplay(
     manufacturer: String?,
@@ -112,7 +113,7 @@ private fun Context.hasOnePlusHighDensityCorrection(): Boolean {
  * 仅对手机锁定竖屏，平板等大屏设备保持系统默认方向
  */
 fun Activity.lockPortraitIfPhone() {
-    val isPhone = resources.configuration.smallestScreenWidthDp < 600
+    val isPhone = resources.configuration.smallestScreenWidthDp < PHONE_SMALLEST_SCREEN_WIDTH_DP
     requestedOrientation = if (isPhone) {
         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     } else {

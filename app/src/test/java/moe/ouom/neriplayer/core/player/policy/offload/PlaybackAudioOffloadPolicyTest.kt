@@ -41,7 +41,7 @@ class PlaybackAudioOffloadPolicyTest {
     }
 
     @Test
-    fun `bilibili fallback streams require pcm processing`() {
+    fun `bili fallback streams require pcm so task removal cannot leave queued offload audio`() {
         assertTrue(
             resolveRequiresPcmAudioProcessing(
                 audioSource = PlaybackAudioSource.BILIBILI

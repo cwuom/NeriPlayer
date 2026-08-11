@@ -50,6 +50,7 @@ import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LYRIC_DEFAULT_OFFSET_STEP_MS
 import moe.ouom.neriplayer.data.settings.MAX_LYRIC_DEFAULT_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.MIN_LYRIC_DEFAULT_OFFSET_MS
+import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsScopes
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsSwitchItems
@@ -71,6 +72,7 @@ internal fun SettingsLyricsSection(
     onExpandedChange: (Boolean) -> Unit,
     showHeader: Boolean = true,
     autoSettingsRepository: AutoSettingsRepository,
+    settingsRepository: SettingsRepository,
     scope: CoroutineScope,
     floatingLyricsPreferences: FloatingLyricsPreferences,
     onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
@@ -109,9 +111,7 @@ internal fun SettingsLyricsSection(
         ) {
             if (shouldShowCard(0)) LyricsDetailCard(
                 showCard = !showHeader,
-                highlighted = false,
                 highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_lyrics_floating_section),
@@ -128,9 +128,7 @@ internal fun SettingsLyricsSection(
             if (cardIndex == null) LyricsDetailGap(showHeader)
             if (shouldShowCard(1)) LyricsDetailCard(
                 showCard = !showHeader,
-                highlighted = false,
                 highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_lyrics_source_section),
@@ -144,13 +142,17 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+                DynamicIslandLyricsSetting(
+                    repository = settingsRepository,
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished
+                )
             }
             if (cardIndex == null) LyricsDetailGap(showHeader)
             if (shouldShowCard(2)) LyricsDetailCard(
                 showCard = !showHeader,
-                highlighted = false,
                 highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_lyrics_offset_section),
@@ -185,16 +187,14 @@ internal fun SettingsLyricsSection(
 @Composable
 private fun LyricsDetailCard(
     showCard: Boolean,
-    highlighted: Boolean = false,
     highlightPulse: Int = 0,
-    onHighlightFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     if (showCard) {
         MiuixSettingsSectionCard(
-            highlighted = highlighted,
+            highlighted = false,
             highlightPulse = highlightPulse,
-            onHighlightFinished = if (highlighted) onHighlightFinished else null,
+            onHighlightFinished = null,
             content = content
         )
     } else {

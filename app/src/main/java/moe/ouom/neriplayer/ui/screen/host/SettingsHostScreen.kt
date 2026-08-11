@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.screen.DownloadManagerScreen
 import moe.ouom.neriplayer.ui.screen.DownloadProgressScreen
 import moe.ouom.neriplayer.ui.screen.tab.SettingsScreen
+import moe.ouom.neriplayer.util.platform.LanguageManager
 
 internal enum class SettingsScreenState {
     Settings,
@@ -231,6 +232,7 @@ fun SettingsHostScreen(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
     coherentFeedbackEnabled: Boolean = false,
     renderScene: @Composable (
         revealTopFraction: Float,
@@ -515,7 +517,8 @@ fun SettingsHostScreen(
                             maxCacheSizeBytes = maxCacheSizeBytes,
                             onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
                             onClearCacheClick = onClearCacheClick,
-                            onBeforeLanguageRestart = onBeforeLanguageRestart
+                            onBeforeLanguageRestart = onBeforeLanguageRestart,
+                            onLanguageChanged = onLanguageChanged
                                 )
                             }
 

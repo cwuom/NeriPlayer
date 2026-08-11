@@ -17,14 +17,17 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaylistDeletionPolicy
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -40,6 +43,16 @@ class LocalPlaylistRepositoryTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Before
+    fun setUpCoverMapper() {
+        CoverUrlMapper.installForTest(CoverUrlMapper.createForTest())
+    }
+
+    @After
+    fun tearDownCoverMapper() {
+        CoverUrlMapper.installForTest(null)
+    }
 
     @Test
     fun `async initial load does not publish or overwrite before persisted state is ready`() = runTest {
@@ -255,6 +268,26 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `bulk netease candidate filtering preserves duplicate original rows`() {
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "bulk_netease_candidates.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        val first = remoteNeteaseSong(id = 46L, name = "first")
+        val duplicate = first.copy(name = "edited duplicate")
+        val unsupported = localSong(index = 47)
+
+        assertEquals(
+            listOf(first, duplicate),
+            repository.filterNeteaseLikeSyncCandidatesPreservingDuplicates(
+                listOf(first, duplicate, unsupported)
+            )
+        )
+    }
+
+    @Test
     fun `adding downloaded copy to regular playlist retains remote source and sync identity`() = runTest {
         val playlistId = 46L
         val syncStore = RecordingSyncMutationStore()
@@ -378,6 +411,24 @@ class LocalPlaylistRepositoryTest {
         assertEquals(
             playlist.songs.map { it.addedAt },
             playlist.songs.map { it.addedAt }.sortedDescending()
+        )
+    }
+
+    @Test
+    fun `room promotion suppresses legacy playlist normalization rewrite`() {
+        assertFalse(
+            shouldRewriteLegacyPlaylistsAfterInitialLoad(
+                migrationRequired = true,
+                allowMigrationWrite = true,
+                roomPromotedDuringLoad = true
+            )
+        )
+        assertTrue(
+            shouldRewriteLegacyPlaylistsAfterInitialLoad(
+                migrationRequired = true,
+                allowMigrationWrite = true,
+                roomPromotedDuringLoad = false
+            )
         )
     }
 

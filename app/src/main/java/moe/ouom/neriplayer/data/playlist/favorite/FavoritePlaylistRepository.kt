@@ -28,12 +28,19 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.FavoritePlaylistRoomStore
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
@@ -63,20 +70,40 @@ data class FavoritePlaylist(
 )
 
 class FavoritePlaylistRepository private constructor(private val context: Context) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val gson = Gson()
     private val file = File(context.filesDir, "favorite_playlists.json")
     private val mutex = Mutex()
+    private val persistenceMutex = Mutex()
+    private val roomStore = FavoritePlaylistRoomStore(
+        NeriUserDataDatabase.getInstance(context.applicationContext)
+    )
+    @Volatile
+    private var roomStorageEnabled = true
     private val syncStorage by lazy { SecureTokenStorage(context) }
 
-    private val _snapshots = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
-    private val _favorites = MutableStateFlow<List<FavoritePlaylist>>(emptyList())
+    private val initialSnapshots = load()
+    private val _snapshots = MutableStateFlow(initialSnapshots)
+    private val _favorites = MutableStateFlow(visibleFavorites(initialSnapshots))
+    private var persistedSnapshots = initialSnapshots
     val favorites: StateFlow<List<FavoritePlaylist>> = _favorites
 
     init {
-        loadFromDisk()
+        publishInMemory(initialSnapshots)
     }
 
-    private fun loadFromDisk() {
+    private fun load(): List<FavoritePlaylist> {
+        val roomFavorites = runCatching {
+            runBlocking { roomStore.readIfRoomPrimary() }
+        }.onFailure { error ->
+            roomStorageEnabled = false
+            NPLogger.e(TAG, "读取 Room 收藏歌单失败，回退到 JSON", error)
+        }.getOrNull()
+        if (roomFavorites != null) {
+            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-room-load")
+            return normalize(roomFavorites)
+        }
+
         val list = try {
             if (!file.exists()) {
                 emptyList()
@@ -87,7 +114,18 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         } catch (_: Exception) {
             emptyList()
         }
-        publish(list, triggerSync = false, persist = false)
+        val normalized = normalize(list)
+        runCatching {
+            runBlocking {
+                roomStore.importLegacyAndPromote(normalized)
+            }
+            LegacyJsonCleanupScheduler.schedule(context, "favorite-playlist-import")
+            roomStorageEnabled = true
+        }.onFailure { error ->
+            roomStorageEnabled = false
+            NPLogger.e(TAG, "将收藏歌单 JSON 导入 Room 失败", error)
+        }
+        return normalized
     }
 
     private fun saveToDisk(favorites: List<FavoritePlaylist>): Boolean {
@@ -98,13 +136,17 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
         }.isSuccess
     }
 
-    private fun publish(
+    private fun publishInMemory(
         favorites: List<FavoritePlaylist>,
-        triggerSync: Boolean = true,
-        persist: Boolean = true
     ) {
-        val normalized = favorites
-            .groupBy { "${it.id}_${it.source}" }
+        val normalized = normalize(favorites)
+        _snapshots.value = normalized
+        _favorites.value = visibleFavorites(normalized)
+    }
+
+    private fun normalize(favorites: List<FavoritePlaylist>): List<FavoritePlaylist> {
+        return favorites
+            .groupBy { it.id to it.source }
             .map { (_, snapshots) ->
                 snapshots.maxByOrNull { maxOf(it.modifiedAt, it.addedTime) }!!
                     .normalizeSortOrder()
@@ -112,14 +154,28 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
                 maxOf(it.modifiedAt, it.addedTime)
             })
-        _snapshots.value = normalized
-        _favorites.value = normalized
+    }
+
+    private fun visibleFavorites(
+        favorites: List<FavoritePlaylist>
+    ): List<FavoritePlaylist> {
+        return favorites
             .filterNot(FavoritePlaylist::isDeleted)
             .sortedWith(compareByDescending<FavoritePlaylist> { it.sortOrder }.thenByDescending {
                 maxOf(it.modifiedAt, it.addedTime)
             })
-        // 初次从盘加载时无需把刚读到的数据原样写回, 避免每次冷启动无条件重写收藏文件
-        val persisted = if (persist) saveToDisk(normalized) else false
+    }
+
+    private suspend fun publish(
+        favorites: List<FavoritePlaylist>,
+        triggerSync: Boolean = true,
+        persist: Boolean = true
+    ) {
+        val normalized = normalize(favorites)
+        publishInMemory(normalized)
+        if (!persist) return
+
+        val persisted = persist(normalized)
         if (triggerSync) {
             if (persisted) {
                 syncStorage.markSyncMutation()
@@ -127,6 +183,38 @@ class FavoritePlaylistRepository private constructor(private val context: Contex
             } else {
                 NPLogger.w(TAG, "收藏歌单未成功落盘，跳过自动同步")
             }
+        }
+    }
+
+    private suspend fun persist(
+        favorites: List<FavoritePlaylist>
+    ): Boolean {
+        return persistenceMutex.withLock {
+            if (roomStorageEnabled) {
+                val roomSucceeded = runCatching {
+                    roomStore.writeIncremental(
+                        previous = persistedSnapshots,
+                        next = favorites
+                    )
+                }.onFailure { error ->
+                    roomStorageEnabled = false
+                    NPLogger.e(TAG, "写入 Room 收藏歌单失败，回退到 JSON", error)
+                }.isSuccess
+                if (roomSucceeded) {
+                    persistedSnapshots = favorites
+                    return@withLock true
+                }
+            }
+
+            val legacySucceeded = saveToDisk(favorites)
+            if (legacySucceeded) {
+                runCatching { roomStore.markLegacyJsonPrimary() }
+                    .onFailure { error ->
+                        NPLogger.e(TAG, "标记收藏歌单 JSON 回退状态失败", error)
+                    }
+            }
+            persistedSnapshots = favorites
+            legacySucceeded
         }
     }
 

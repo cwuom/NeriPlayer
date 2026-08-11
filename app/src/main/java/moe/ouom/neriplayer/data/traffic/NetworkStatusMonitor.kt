@@ -18,20 +18,12 @@ fun Context.currentTrafficNetworkType(): TrafficNetworkType {
     return connectivityManager.currentTrafficNetworkType()
 }
 
-fun Context.isTrafficRiskNetworkNow(): Boolean {
-    return when (currentTrafficNetworkType()) {
-        TrafficNetworkType.MOBILE,
-        TrafficNetworkType.ROAMING -> true
-        TrafficNetworkType.WIFI -> false
-    }
-}
-
 private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
     val network = activeNetwork ?: return@runCatching false
-    val capabilities = getNetworkCapabilities(network) ?: return@runCatching false
+    val capabilities = getNetworkCapabilities(network)
     hasLikelyNetworkTransport(
-        activeHasDirectTransport = capabilities.hasDirectNetworkTransport(),
-        activeHasVpnTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN),
+        hasActiveNetwork = true,
+        activeHasDirectTransport = capabilities?.hasDirectNetworkTransport() == true,
         anyKnownHasDirectTransport = { anyKnownNetworkHasDirectTransport() }
     )
 }.getOrDefault(false)
@@ -57,12 +49,12 @@ private fun NetworkCapabilities.hasDirectNetworkTransport(): Boolean {
 }
 
 internal fun hasLikelyNetworkTransport(
+    hasActiveNetwork: Boolean,
     activeHasDirectTransport: Boolean,
-    activeHasVpnTransport: Boolean,
     anyKnownHasDirectTransport: () -> Boolean
 ): Boolean {
+    if (!hasActiveNetwork) return false
     if (activeHasDirectTransport) return true
-    if (!activeHasVpnTransport) return false
 
     return anyKnownHasDirectTransport()
 }

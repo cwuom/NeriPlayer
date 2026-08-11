@@ -171,8 +171,9 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         _floatingTranslatedLyricLineFlow.value = translatedLine
     }
     val payload = resolveExternalBluetoothLyricPayload(
-        lyricEnabled = externalBluetoothLyricsEnabled,
-        translationEnabled = externalBluetoothTranslationEnabled,
+        lyricEnabled = externalBluetoothLyricsEnabled || dynamicIslandLyricsEnabled,
+        translationEnabled = externalBluetoothTranslationEnabled ||
+            dynamicIslandLyricsEnabled,
         lyricLine = line,
         translationLine = translatedLine
     )
@@ -202,18 +203,35 @@ private fun PlayerManager.clearFloatingTranslatedLyricLine() {
 private fun PlayerManager.shouldProvideExternalLyricLine(): Boolean {
     return externalBluetoothLyricsEnabled ||
         externalBluetoothTranslationEnabled ||
+        dynamicIslandLyricsEnabled ||
         statusBarLyricsEnable ||
         floatingLyricsEnabled
 }
 
 private fun PlayerManager.shouldProvideExternalTranslatedLyricLine(): Boolean {
+    return shouldProvideExternalTranslatedLyricLine(
+        externalBluetoothTranslationEnabled = externalBluetoothTranslationEnabled,
+        floatingLyricsEnabled = floatingLyricsEnabled,
+        floatingLyricsShowTranslation = floatingLyricsShowTranslation,
+        dynamicIslandLyricsEnabled = dynamicIslandLyricsEnabled
+    )
+}
+
+internal fun shouldProvideExternalTranslatedLyricLine(
+    externalBluetoothTranslationEnabled: Boolean,
+    floatingLyricsEnabled: Boolean,
+    floatingLyricsShowTranslation: Boolean,
+    dynamicIslandLyricsEnabled: Boolean
+): Boolean {
     return externalBluetoothTranslationEnabled ||
+        dynamicIslandLyricsEnabled ||
         (floatingLyricsEnabled && floatingLyricsShowTranslation)
 }
 
 internal fun PlayerManager.isExternalBluetoothLyricCadenceActive(): Boolean {
-    val deviceType = _currentAudioDevice.value?.type ?: return false
-    return isBluetoothOutputType(deviceType) &&
-        (externalBluetoothLyricsEnabled || externalBluetoothTranslationEnabled) &&
+    val deviceType = _currentAudioDevice.value?.type
+    val hasBluetoothOutput = deviceType != null && isBluetoothOutputType(deviceType)
+    return (dynamicIslandLyricsEnabled || hasBluetoothOutput) &&
+        (externalBluetoothLyricsEnabled || externalBluetoothTranslationEnabled || dynamicIslandLyricsEnabled) &&
         externalBluetoothLyrics.isNotEmpty()
 }

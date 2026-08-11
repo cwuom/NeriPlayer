@@ -210,6 +210,7 @@ object AutoSettingsSchema {
             descriptionRes = R.string.settings_bili_skip_segment_prompt_desc,
             icon = AutoSettingIcon.Info
         )
+
     }
 
     /*
@@ -465,7 +466,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardTrending = autoSetting(
-            titleRes = R.string.recommend_trending
+            titleRes = R.string.settings_home_card_netease_trending
         )
 
         @AutoSetting(
@@ -476,7 +477,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRadar = autoSetting(
-            titleRes = R.string.recommend_radar
+            titleRes = R.string.settings_home_card_netease_radar
         )
 
         @AutoSetting(
@@ -487,7 +488,7 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardRecommended = autoSetting(
-            titleRes = R.string.recommend_for_you
+            titleRes = R.string.settings_home_card_netease_recommended
         )
     }
 
@@ -1189,7 +1190,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "external_bluetooth_lyrics_enabled",
             type = SettingValueType.Boolean,
-            defaultBoolean = false,
+            defaultBoolean = true,
             order = 26,
             ui = SettingUiType.Switch
         )
@@ -1202,7 +1203,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "external_bluetooth_translation_enabled",
             type = SettingValueType.Boolean,
-            defaultBoolean = false,
+            defaultBoolean = true,
             order = 27,
             ui = SettingUiType.Switch
         )
@@ -1210,6 +1211,21 @@ object AutoSettingsSchema {
             titleRes = R.string.settings_external_bluetooth_translation_enabled,
             descriptionRes = R.string.settings_external_bluetooth_translation_enabled_desc,
             icon = AutoSettingIcon.Translate
+        )
+
+        @AutoSetting(
+            key = "dynamic_island_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 28,
+            ui = SettingUiType.Custom
+        )
+        val dynamicIslandLyricsEnabled = autoSwitchSetting(
+            key = "dynamic_island_lyrics_enabled",
+            defaultValue = true,
+            titleRes = R.string.settings_dynamic_island_lyrics_enabled,
+            descriptionRes = R.string.settings_dynamic_island_lyrics_enabled_desc,
+            icon = AutoSettingIcon.AutoAwesome
         )
 
         @AutoSetting(
@@ -1460,7 +1476,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "playback_fade_in",
             type = SettingValueType.Boolean,
-            defaultBoolean = false,
+            defaultBoolean = true,
             order = 10,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
@@ -1473,7 +1489,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "playback_crossfade_next",
             type = SettingValueType.Boolean,
-            defaultBoolean = false,
+            defaultBoolean = true,
             order = 20,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
@@ -1684,7 +1700,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "netease_auto_source_switch",
             type = SettingValueType.Boolean,
-            defaultBoolean = true,
+            defaultBoolean = false,
             order = 135,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly
@@ -1698,7 +1714,7 @@ object AutoSettingsSchema {
         @AutoSetting(
             key = "netease_local_source_fallback",
             type = SettingValueType.Boolean,
-            defaultBoolean = true,
+            defaultBoolean = false,
             order = 136,
             ui = SettingUiType.Custom,
             access = SettingAccessMode.KeyOnly

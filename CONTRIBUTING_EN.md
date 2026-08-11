@@ -81,8 +81,8 @@ Additional notes:
 
 NeriPlayer covers a broad product surface. Protect these paths first:
 
-- **Playback**: `PlayerManager`, stream resolution, cache, URL refresh,
-  auto source switching, long-form progress memory, BilibiliSponsorBlock skip
+- **Playback**: `PlayerManager`, playback resolution, cache, URL refresh,
+  playback fallback, long-form progress memory, BilibiliSponsorBlock skip
   policy, state recovery, loudness normalization, channel balance, high-resolution
   output, the USB-exclusive native path, startup watchdogs, and foreground/background
   health audits.
@@ -105,7 +105,7 @@ NeriPlayer covers a broad product surface. Protect these paths first:
 - **Storage and cache UI**: `StorageUsageAnalyzer`, cache cleanup options,
   download directory indexes, and SAF snapshots.
 - **Listen Together**: Android client, Worker protocol fields, roles, queues,
-  version-gated updates, stream-link sharing toggles, and controller-offline recovery.
+  version-gated updates, session-candidate sharing toggles, and controller-offline recovery.
 - **Diagnostics**: safe mode, JVM/native crash logs, ANR capture, and Debug probes.
 - **Local persistence**: debounced playback/traffic-stat writes, lifecycle flushes,
   atomic file replacement, and local-playlist/SAF initialization readiness.
@@ -131,8 +131,9 @@ for the new behavior.
    ```bash
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
-4. First launch enters the disclaimer and startup onboarding flow. Android 13+
-   devices request notification permission.
+4. First launch enters the disclaimer and startup onboarding flow. Notification and
+   local-music permissions are explained first and requested only after the user
+   chooses them; either can be skipped.
 5. For debugging access, tap the **version number** 7 times in Settings. A
    standalone `Debug` tab will appear in the bottom navigation bar.
 
@@ -264,12 +265,13 @@ Security reminders:
   - NetEase artist summaries, JSON parsing, and detail-screen state management.
 
 - `app/src/main/java/moe/ouom/neriplayer/ui/onboarding/`
-  - First-run onboarding for language, platform accounts, GitHub sync, and personalization.
+  - First-run onboarding for language, platform accounts, permission guidance,
+    playback controls, GitHub sync, and personalization.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/api/`
   - `netease/`: NetEase endpoints, crypto, and account capabilities.
   - `bili/`: Bilibili search, QR login, favorites, collections, playback info,
-    and audio stream extraction.
+    and audio playback resolution.
     Explore link recognition preserves Bilibili selected parts, `cid`, and
     `season_id` context; changes should check both `ExploreLinkRecognizer` and
     `ExploreViewModel`.
@@ -280,11 +282,11 @@ Security reminders:
   - `lyrics/`: external lyrics sources. Current implementation: `LrcLibClient`.
 
 - `app/src/main/java/moe/ouom/neriplayer/core/player/`
-  - `PlayerManager.kt`: unified Media3 ExoPlayer management, stream resolution, queue,
+  - `PlayerManager.kt`: unified Media3 ExoPlayer management, playback resolution, queue,
     cache, state recovery, retry, and playback policy.
   - `service/AudioPlayerService.kt`: foreground playback service, media notification,
     MediaSession, and media button handling.
-  - `download/AudioDownloadManager.kt`: resolves platform streams and saves downloads;
+  - `download/AudioDownloadManager.kt`: resolves platform playback and saves downloads;
     `DownloadParallelism.kt` defines concurrency boundaries.
   - `effects/PlaybackEffectsController.kt`: speed, pitch, loudness enhancer, and equalizer.
   - `engine/`: Media3 audio processors, including loudness normalization,
@@ -298,7 +300,7 @@ Security reminders:
     playback startup watchdogs, foreground/background health audits, failure recovery,
     and USB-exclusive fallback handling.
   - `resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`: Bilibili fallback for NetEase
-    tracks that are restricted, have no playable URL, or only return previews.
+    tracks that are restricted, have no playable result, or only return previews.
   - `resolver/youtube/YouTubeGoogleVideoRangeSupport.kt`, `YouTubeSeekRefreshPolicy.kt`, and
     `prefetch/YouTubePrefetchRunner.kt`: YouTube Music playback compatibility policies.
   - `metadata/`: lyrics, metadata, and external Bluetooth lyrics handling.
@@ -381,8 +383,9 @@ Security reminders:
 
 - `Explore` is NetEase curated playlists + YouTube Music playlists +
   platform-specific NetEase/Bilibili/YouTube Music search. It is not mixed search.
-- `Home` mainly shows local continue-listening and NetEase recommendations in the
-  default Chinese mode. International mode prioritizes YouTube Music home shelves.
+- `Home` shows local continue-listening, all available NetEase recommendation
+  sources, and Radar playlists in the default Chinese mode. Refreshing updates
+  each section. International mode prioritizes YouTube Music home shelves.
 - The QQ Music entry in `Library` is still a placeholder and does not represent
   full platform integration.
 - Local artist categories are aggregated from imported/saved local songs by
@@ -396,7 +399,7 @@ Security reminders:
 - `YouTube Music` supports login, anonymous playback, home/playlist browsing,
   details, search, playback, and downloads. Valid identity cookies are preserved
   and rotated when needed; bootstrap, `player.js`, PoToken, and challenge-result
-  caches are reused; signature or direct-link failures can fall through to EJS/HLS.
+  caches are reused; signature or playback-candidate failures can fall through to EJS/HLS.
   Cache hits and local tests are not proof of real-account or network stability.
   Large seeks in long audio use an expedited startup-recovery window and still
   need real-network qualification.
@@ -414,7 +417,8 @@ Security reminders:
   and background lyric timing.
 - NetEase playback tries lower qualities when the current quality is unavailable.
   For restricted, missing-URL, or preview-only tracks, it can auto-match a
-  Bilibili or local-audio fallback source when enabled.
+  Bilibili or local-audio fallback source only when the user enables it; both
+  fallback settings are disabled by default.
 - NetEase playlist detail cache is only for playlist detail fast display and
   failure fallback. Album details still refresh live and should not reuse playlist cache.
 - Local "My Favorite Music" can sync recognizable NetEase songs to NetEase
@@ -427,7 +431,7 @@ Security reminders:
   clear task state for newer requests.
 - Resume behavior depends on transport type:
   - direct downloads resume through working-file size plus `Range`
-  - `googlevideo` explicit chunked downloads resume by byte offset
+  - platform-specific explicit chunked downloads resume by byte offset
   - HLS downloads resume from a saved segment checkpoint in `.hls.json`
 - Working files live under `cache/download_staging/` and also keep `.resume.json`
   metadata so unfinished downloads can be reconstructed after app restart or
@@ -504,7 +508,7 @@ Security reminders:
   result is the final local metadata shape.
 - When `shareAudioLinks=false` in Listen Together, room snapshots and queue items
   must not expose `streamUrl`. Turning the setting off must also clear any cached
-  shared links immediately, and `REQUEST_LINK` must be rejected.
+  shared candidates immediately, and `REQUEST_LINK` must be rejected.
 - Listen Together repeat/shuffle changes use `PLAYBACK_MODE` /
   `REQUEST_PLAYBACK_MODE`. Member controls must validate the target stable track
   key, reject older `clientInstanceId`/`clientSequence`/`clientTimeMs` events, and
@@ -526,7 +530,7 @@ Use this when integrating a new platform into `Explore` search or discovery.
 1. Implement a client or repository under `core/api/`.
 2. Add request, pagination, and state mapping in `ExploreViewModel`.
 3. Add platform tabs and result UI in `ExploreScreen` / host screens.
-4. If playback is needed, connect the platform to `PlayerManager` stream resolution.
+4. If playback is needed, connect the platform to `PlayerManager` playback resolution.
 5. If downloads are needed, complete `AudioDownloadManager` and download metadata mapping.
 
 #### 2. Add a playback metadata completion source
@@ -538,25 +542,25 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
 3. Add routing, matching, and fallback logic in `SearchManager`.
 4. Add `MusicPlatform`, string resources, and debug probes as needed.
 
-#### 3. Add a streaming platform
+#### 3. Add an online playback platform
 
 1. Use `bili/` or `youtube/` as a reference for client and playback repository design.
 2. Extend `core/player/engine/datasource/ConditionalHttpDataSourceFactory.kt`
    if special headers are needed.
 3. Add the platform under `core/player/url/` and its matching `resolver/` path.
-4. Keep downloads, lyrics, covers, and stats separated from transient streaming cache.
+4. Keep downloads, lyrics, covers, and stats separated from transient playback cache.
 5. If NetEase Liked Songs sync should support the new source, provide stable
    NetEase song IDs or a verified mapping and reuse candidate validation in
    `LocalPlaylistRepository`.
 
-#### 4. Modify NetEase auto source switching
+#### 4. Modify NetEase playback fallback
 
 1. The entry point is the NetEase URL resolution flow in
    `core/player/url/PlayerManagerUrlExtensions.kt`.
 2. Matching and scoring live in
    `core/player/resolver/netease/PlayerManagerNeteaseAutoSourceSwitch.kt`.
-3. Auto source switching is only a fallback for restricted, missing-URL, or
-   preview-only NetEase playback. Do not turn it into cross-platform aggregate search.
+3. Playback fallback is only for restricted, missing-URL, or preview-only NetEase
+   playback. Do not turn it into cross-platform aggregate search.
 4. When changing matching, consider title, artist, video pages, duration
    tolerance, and cache key stability.
 
@@ -735,7 +739,7 @@ Use this for cover, lyrics, and track metadata completion, not for `Explore`.
    and tests must be updated.
 4. When `shareAudioLinks=false`, HTTP and WebSocket room snapshots must not expose
    `track.streamUrl` or `queue[*].streamUrl`, and turning the setting off must
-   clear any cached shared links immediately.
+   clear any cached shared candidates immediately.
 5. `REQUEST_LINK` / `LINK_READY`, member control, controller-offline recovery,
    and version-gated updates must be reviewed together so older state cannot
    overwrite newer room state.
@@ -834,7 +838,7 @@ Before submitting, consider at least these checks:
    ```bash
    ./gradlew :app:testDebugUnitTest
    ```
-3. If you changed auth-dependent flows, stream resolution, or other integration-heavy
+3. If you changed auth-dependent flows, playback resolution, or other integration-heavy
    behavior, optional smoke tests are available:
    ```bash
    ./gradlew :app:testDebugUnitTest -DrunNeteaseSmoke=true
@@ -885,7 +889,7 @@ Existing focused tests cover areas such as:
 
 - YouTube login, cookie rotation, anonymous sessions, challenge parsing, PoToken,
   playback, Range/Seek policy, expedited long-seek recovery, and prefetching
-- NetEase lyrics, local smoke tests, auto source switching, and playback response parsing
+- NetEase lyrics, local smoke tests, playback fallback, and playback response parsing
 - USB-exclusive keep-alive, startup watchdogs, foreground/background recovery,
   32-bit/float output, UAC2 explicit feedback, long-gap clock reacquisition,
   coordinated reconfiguration, Runtime Report v2, deferred-refresh retry,
@@ -905,7 +909,7 @@ Existing focused tests cover areas such as:
 - Long-form progress thresholds, explicit-position precedence, BilibiliSponsorBlock
   local skips, and its Listen Together disable policy
 - Listen Together base URL validation, version gating, repeat/shuffle modes,
-  stable-track-key target validation, session-only stream candidates, invite/member secrets,
+  stable-track-key target validation, session-only playback candidates, invite/member secrets,
   explicit leave/reconnect behavior, event ordering, playback sync planning,
   session control/cancellation, and protocol compatibility
 - Lyrics UI, Japanese kana translation spacing, word timing, external Bluetooth lyrics,

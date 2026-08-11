@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -78,7 +79,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassOverscrollBackdrop
+import moe.ouom.neriplayer.ui.effect.glass.drawAdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.format.formatPlayCount
@@ -618,8 +622,24 @@ internal fun PlaylistModernVisualColorsProvider(
             coverUrl = coverUrl,
             offlineMode = offlineMode
         )
-    CompositionLocalProvider(LocalPlaylistHeroVisualColors provides visualColors) {
-        content()
+    val overscrollOffset = remember { mutableStateOf(0f) }
+    val overscrollBackdrop = remember(overscrollOffset, visualColors.background) {
+        AdvancedGlassOverscrollBackdrop(
+            color = visualColors.background,
+            offsetY = overscrollOffset
+        )
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawAdvancedGlassOverscrollBackdrop(overscrollBackdrop)
+    ) {
+        CompositionLocalProvider(
+            LocalPlaylistHeroVisualColors provides visualColors,
+            LocalAdvancedGlassOverscrollBackdrop provides overscrollBackdrop
+        ) {
+            content()
+        }
     }
 }
 

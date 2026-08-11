@@ -7,7 +7,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -23,7 +26,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
-import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.ModernKaraokeLyricsView
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import kotlin.math.abs
 import kotlin.math.max
@@ -51,8 +54,10 @@ fun AdvancedLyricsView(
     lyricBlurAmount: Float = 2.5f,
     isPlaying: Boolean = false,
     animateViewportScroll: Boolean = false,
+    userScrollEnabled: Boolean = true,
     playbackSpeed: Float = 1f,
     lowPowerRendering: Boolean = false,
+    useAdditiveBlend: Boolean = !lowPowerRendering,
     offset: Dp = 48.dp,
     keepAliveZone: Dp = 108.dp,
     playedLyricViewportFraction: Float = 0.30f,
@@ -143,7 +148,7 @@ fun AdvancedLyricsView(
         )
 
         CompositionLocalProvider(LocalTextStyle provides translationTextStyle) {
-            ModernKaraokeLyricsView(
+            KaraokeLyricsView(
                 listState = listState,
                 lyrics = syncedLyrics,
                 currentPosition = { safeCurrentPosition.toInt() },
@@ -157,7 +162,18 @@ fun AdvancedLyricsView(
                         onSeekTo(line.start.toLong())
                     }
                 },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (useAdditiveBlend) {
+                            Modifier.graphicsLayer {
+                                blendMode = BlendMode.Plus
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 normalLineTextStyle = normalTextStyle,
                 accompanimentLineTextStyle = accompanimentTextStyle,
                 textColor = textColor,
@@ -165,16 +181,25 @@ fun AdvancedLyricsView(
                 showPhonetic = false,
                 useBlurEffect = lyricBlurEnabled,
                 animateViewportScroll = animateViewportScroll,
+                userScrollEnabled = userScrollEnabled,
                 offset = effectiveOffset,
                 keepAliveZone = keepAliveZone,
                 bottomContentInset = bottomContentInset,
                 blurDelta = if (lowPowerRendering) blurDelta * 0.55f else blurDelta,
                 topFadeLength = topFadeLength,
                 bottomFadeLength = bottomFadeLength,
-                useAdditiveBlend = !lowPowerRendering
+                focusedLineScale = 1.015f,
+                unfocusedLineScale = 0.965f,
+                activeLineAlpha = 1f,
+                inactiveLineAlpha = 0.28f,
+                blendMode = resolveAdvancedLyricsBlendMode(useAdditiveBlend)
             )
         }
     }
+}
+
+internal fun resolveAdvancedLyricsBlendMode(useAdditiveBlend: Boolean): BlendMode {
+    return if (useAdditiveBlend) BlendMode.Plus else BlendMode.SrcOver
 }
 
 private fun resolvePressedLyricEntry(

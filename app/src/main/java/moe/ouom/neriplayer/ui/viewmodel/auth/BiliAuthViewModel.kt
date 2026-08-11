@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.common.parseRawCookieText
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthHealth
 import moe.ouom.neriplayer.data.auth.web.clearWebViewLoginState
+import moe.ouom.neriplayer.data.auth.web.WebLoginPlatform
 import org.json.JSONObject
 
 data class BiliAuthUiState(
@@ -52,28 +53,33 @@ sealed interface BiliAuthEvent {
 }
 
 class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = AppContainer.biliCookieRepo
+    private val repo by lazy { AppContainer.biliCookieRepo }
 
-    private val _uiState = MutableStateFlow(
-        BiliAuthUiState(
-            health = repo.getAuthHealth(),
-            hasSavedCookies = repo.getCookiesOnce().isNotEmpty()
-        )
-    )
+    private val _uiState = MutableStateFlow(BiliAuthUiState())
     val uiState: StateFlow<BiliAuthUiState> = _uiState.asStateFlow()
 
     private val _events = Channel<BiliAuthEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            val initialHealth = repo.getAuthHealth()
+            val hasSavedCookies = repo.getCookiesOnce().isNotEmpty()
+            _uiState.update { current ->
+                current.copy(
+                    health = initialHealth,
+                    hasSavedCookies = hasSavedCookies
+                )
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
             repo.authHealthFlow.collect { health ->
                 _uiState.update { current ->
                     current.copy(health = health)
                 }
             }
         }
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repo.cookieFlow.collect { cookies ->
                 _uiState.update { current ->
                     current.copy(hasSavedCookies = cookies.isNotEmpty())
@@ -94,7 +100,10 @@ class BiliAuthViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCookies() {
         viewModelScope.launch(Dispatchers.IO) {
             repo.clear()
-            clearWebViewLoginState()
+            clearWebViewLoginState(
+                context = getApplication(),
+                platform = WebLoginPlatform.BILI
+            )
             _events.send(
                 BiliAuthEvent.ShowSnack(
                     getApplication<Application>().getString(R.string.auth_cookie_cleared)

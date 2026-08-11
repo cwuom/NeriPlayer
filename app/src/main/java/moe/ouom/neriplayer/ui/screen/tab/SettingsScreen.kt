@@ -36,10 +36,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -162,6 +159,7 @@ import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
+import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassScene
@@ -256,6 +254,42 @@ private fun isForwardSettingsPageTransition(
     if (targetPage.backTargetPage() == initialPage) return true
     if (initialPage.backTargetPage() == targetPage) return false
     return targetPage.ordinal >= initialPage.ordinal
+}
+
+@Composable
+internal fun SettingsPageHost(
+    activePage: SettingsPage?,
+    splitLayout: Boolean,
+    isolateAdvancedGlassTransitions: Boolean,
+    content: @Composable (SettingsPage?) -> Unit
+) {
+    if (splitLayout) {
+        AdvancedGlassScene(active = true) {
+            content(activePage)
+        }
+        return
+    }
+
+    AnimatedContent(
+        targetState = activePage,
+        modifier = Modifier.fillMaxSize(),
+        label = "settings_page_switch",
+        transitionSpec = {
+            isolatedAdvancedGlassHorizontalTransition(
+                forward = isForwardSettingsPageTransition(initialState, targetState)
+            ).using(SizeTransform(clip = true))
+        }
+    ) { selectedPage ->
+        AdvancedGlassNavigationHandoff(
+            enabled = isolateAdvancedGlassTransitions && transition.isRunning
+        ) {
+            AdvancedGlassScene(
+                active = isolateAdvancedGlassTransitions || selectedPage == activePage
+            ) {
+                content(selectedPage)
+            }
+        }
+    }
 }
 
 private fun Context.neteaseQualityLabel(value: String): String {
@@ -544,6 +578,7 @@ fun SettingsScreen(
     onMaxCacheSizeBytesChange: (Long) -> Unit,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     onBeforeLanguageRestart: () -> Unit = {},
+    onLanguageChanged: (LanguageManager.Language) -> Unit = {},
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -980,36 +1015,33 @@ fun SettingsScreen(
     val homeTrendingLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_guess_you_like
     } else {
-        R.string.recommend_trending
+        R.string.settings_home_card_netease_trending
     }
     val homeRadarLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_daily_discover
     } else {
-        R.string.recommend_radar
+        R.string.settings_home_card_netease_radar
     }
     val homeRecommendedLabelRes = if (internationalEnabled) {
         R.string.home_ytmusic_more_recommendations
     } else {
-        R.string.recommend_for_you
+        R.string.settings_home_card_netease_recommended
     }
     val homeTrendingSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_guess_you_like_desc
     } else {
-        null
+        R.string.settings_home_card_netease_trending_desc
     }
     val homeRadarSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_daily_discover_desc
     } else {
-        null
+        R.string.settings_home_card_netease_radar_desc
     }
     val homeRecommendedSupportingRes = if (internationalEnabled) {
         R.string.settings_home_card_ytmusic_more_recommendations_desc
     } else {
-        null
+        R.string.settings_home_card_netease_recommended_desc
     }
-    val neteaseHomeCardAuthHealth by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycleCompat()
-    val neteaseHomeCardsEnabled = internationalEnabled ||
-        neteaseHomeCardAuthHealth.state != SavedCookieAuthState.Missing
     val effectiveDefaultStartDestination = remember(defaultStartDestination, homeStartAvailable) {
         if (!homeStartAvailable && defaultStartDestination == "home") {
             "explore"
@@ -1220,35 +1252,16 @@ fun SettingsScreen(
         }
     }
 
-    AnimatedContent(
-        targetState = activeSettingsPage,
-        modifier = Modifier.fillMaxSize(),
-        label = "settings_page_switch",
-        transitionSpec = {
-            if (isSettingsSplitLayout) {
-                EnterTransition.None togetherWith ExitTransition.None
-            } else {
-                isolatedAdvancedGlassHorizontalTransition(
-                    forward = isForwardSettingsPageTransition(initialState, targetState)
-                ).using(SizeTransform(clip = true))
-            }
-        }
-    ) { selectedPage ->
-        AdvancedGlassNavigationHandoff(
-            enabled = isolateAdvancedGlassTransitions && transition.isRunning
-        ) {
-            AdvancedGlassScene(
-                active = isolateAdvancedGlassTransitions || selectedPage == activeSettingsPage
-            ) {
-                if (selectedPage == null) {
-                    MiuixSettingsHomeScaffold(
-                        listState = listState,
-                        topAppBarState = homeTopAppBarState,
-                        title = settingsHomeTitle,
-                        content = settingsHomeContent
-                    )
-                } else {
-                    MiuixSettingsResponsiveDetailScaffold(
+    val settingsPageContent: @Composable (SettingsPage?) -> Unit = { selectedPage ->
+        if (selectedPage == null) {
+            MiuixSettingsHomeScaffold(
+                listState = listState,
+                topAppBarState = homeTopAppBarState,
+                title = settingsHomeTitle,
+                content = settingsHomeContent
+            )
+        } else {
+            MiuixSettingsResponsiveDetailScaffold(
                 title = stringResource(selectedPage.titleRes),
                 onBack = ::navigateBackFromActiveSettingsPage,
                 listState = detailListStates.getValue(selectedPage),
@@ -1260,7 +1273,7 @@ fun SettingsScreen(
                 homeTopAppBarState = homeTopAppBarState,
                 homeTitle = settingsHomeTitle,
                 homeContent = settingsHomeContent
-                ) {
+            ) {
                 item(key = "${selectedPage.name}:header") {
                     MiuixSettingsHeader(
                         icon = selectedPage.icon,
@@ -1301,7 +1314,7 @@ fun SettingsScreen(
                                 highlightPulse = settingsHighlightPulse,
                                 onHighlightFinished = onSettingsHighlightFinished
                             ),
-                            onBeforeRestart = onBeforeLanguageRestart
+                            onLanguageChanged = onLanguageChanged
                         )
                         ListItem(
                             modifier = Modifier.settingsHighlightTarget(
@@ -1505,7 +1518,6 @@ fun SettingsScreen(
                                 homeTrendingSupportingRes = homeTrendingSupportingRes,
                                 homeRadarSupportingRes = homeRadarSupportingRes,
                                 homeRecommendedSupportingRes = homeRecommendedSupportingRes,
-                                neteaseHomeCardsEnabled = neteaseHomeCardsEnabled,
                                 homeStartAvailable = homeStartAvailable,
                                 showHomeContinueCard = showHomeContinueCard,
                                 onShowHomeContinueCardChange = onShowHomeContinueCardChange,
@@ -1612,6 +1624,7 @@ fun SettingsScreen(
                                 onExpandedChange = {},
                                 showHeader = false,
                                 autoSettingsRepository = autoSettingsRepository,
+                                settingsRepository = AppContainer.settingsRepo,
                                 scope = scope,
                                 floatingLyricsPreferences = floatingLyricsPreferences,
                                 onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
@@ -2107,12 +2120,17 @@ fun SettingsScreen(
                         )
                     }
                 }
-                    }
                 }
             }
         }
     }
-    }
+
+    SettingsPageHost(
+        activePage = activeSettingsPage,
+        splitLayout = isSettingsSplitLayout,
+        isolateAdvancedGlassTransitions = isolateAdvancedGlassTransitions,
+        content = settingsPageContent
+    )
 
     SettingsNeteaseAuthDialogs(
         showSheet = showNeteaseSheet,
@@ -2922,7 +2940,6 @@ private fun SettingsPersonalizationPageContent(
     homeTrendingSupportingRes: Int?,
     homeRadarSupportingRes: Int?,
     homeRecommendedSupportingRes: Int?,
-    neteaseHomeCardsEnabled: Boolean,
     homeStartAvailable: Boolean,
     showHomeContinueCard: Boolean,
     onShowHomeContinueCardChange: (Boolean) -> Unit,
@@ -3041,15 +3058,6 @@ private fun SettingsPersonalizationPageContent(
                 title = stringResource(R.string.settings_personalization_home_section),
                 description = stringResource(R.string.settings_personalization_home_section_desc)
             )
-            if (!neteaseHomeCardsEnabled && !internationalEnabled) {
-                Text(
-                    text = stringResource(R.string.settings_home_card_netease_login_required),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
             SettingsHomeCardSwitch(
                 title = stringResource(R.string.player_continue),
                 icon = Icons.Outlined.History,
@@ -3067,7 +3075,6 @@ private fun SettingsPersonalizationPageContent(
                 icon = Icons.Outlined.Bolt,
                 checked = showHomeTrendingCard,
                 onCheckedChange = onShowHomeTrendingCardChange,
-                enabled = neteaseHomeCardsEnabled,
                 targetId = "setting:home_card_trending",
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
@@ -3080,7 +3087,6 @@ private fun SettingsPersonalizationPageContent(
                 icon = if (internationalEnabled) Icons.Outlined.Explore else Icons.Outlined.Radar,
                 checked = showHomeRadarCard,
                 onCheckedChange = onShowHomeRadarCardChange,
-                enabled = neteaseHomeCardsEnabled,
                 targetId = "setting:home_card_radar",
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,

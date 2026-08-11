@@ -414,7 +414,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "english",
                 "chinese"
             ),
-            order = SettingsPage.General.ordinal * 100 + 4
+            order = 4
         ),
         entry(
             page = SettingsPage.General,
@@ -432,7 +432,7 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
                 "gjh",
                 "qiehuanpingtai"
             ),
-            order = SettingsPage.General.ordinal * 100 + 90
+            order = 90
         ),
         entry(
             page = SettingsPage.Accounts,
@@ -794,9 +794,35 @@ private val SettingSearchAliases = mapOf(
     "default_start_destination" to listOf("start page", "home", "tab", "qidongye"),
     "auto_show_keyboard" to listOf("keyboard", "input", "shurufa", "jianpan"),
     "home_card_continue" to listOf("continue", "recent", "jixu"),
-    "home_card_trending" to listOf("trending", "hot", "biao sheng"),
-    "home_card_radar" to listOf("radar", "discover", "siren leidar"),
-    "home_card_recommended" to listOf("recommend", "tuijian"),
+    "home_card_trending" to listOf(
+        "trending",
+        "charts",
+        "hot",
+        "biao sheng",
+        "xin ge",
+        "new song",
+        "guess you like",
+        "猜你喜欢"
+    ),
+    "home_card_radar" to listOf(
+        "radar",
+        "discover",
+        "siren leidar",
+        "fm",
+        "leida gedan",
+        "private",
+        "daily discover",
+        "每日发现"
+    ),
+    "home_card_recommended" to listOf(
+        "recommend",
+        "tuijian",
+        "daily playlist",
+        "high quality",
+        "acg",
+        "more recommendations",
+        "更多推荐"
+    ),
     "show_cover_source_badge" to listOf("badge", "source", "cover", "biaoshi"),
     "always_use_new_tab_style" to listOf("tab", "bottom bar", "new ui"),
     "nowplaying_show_title" to listOf("title", "song name", "geming"),
@@ -842,6 +868,13 @@ private val SettingSearchAliases = mapOf(
     "status_bar_lyrics_enabled" to listOf("status bar", "zhuangtailan", "lyric"),
     "floating_lyrics_enabled" to listOf("floating", "desktop lyrics", "xuanfu"),
     "external_bluetooth_lyrics_enabled" to listOf("bluetooth", "car", "lyric", "lanyageci", "bt"),
+    "dynamic_island_lyrics_enabled" to listOf(
+        "灵动岛",
+        "dynamic island",
+        "live activity",
+        "always send",
+        "bluetooth lyrics"
+    ),
     "cloud_music_lyric_default_offset_ms" to listOf("netease lyrics offset", "wy geci pianyi"),
     "qq_music_lyric_default_offset_ms" to listOf("qq lyrics offset", "qq geci pianyi"),
     "bypass_proxy" to listOf("proxy", "vpn", "direct", "daili"),

@@ -10,18 +10,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomSnapshot
+import moe.ouom.neriplayer.data.local.database.store.BiliVideoSkipRoomStore
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.webdav.WebDavSyncWorker
-import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 
 const val MAX_BILI_VIDEO_SKIP_INTERVALS = 100
@@ -225,10 +227,16 @@ class BiliVideoSkipRepository private constructor(context: Context) {
     private val draftsMutex = Mutex()
     private val draftsStateLock = Any()
     private val draftsPersistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val roomStore = BiliVideoSkipRoomStore(
+        NeriUserDataDatabase.getInstance(appContext)
+    )
     private val rulesFile = File(appContext.filesDir, RULES_FILE_NAME)
     private val draftsFile = File(appContext.filesDir, DRAFTS_FILE_NAME)
-    private val _rules = MutableStateFlow(readRules())
-    private val _drafts = MutableStateFlow(readDrafts())
+    private val initialSnapshot = runBlocking(Dispatchers.IO) {
+        loadInitialSnapshot()
+    }
+    private val _rules = MutableStateFlow(initialSnapshot.rules)
+    private val _drafts = MutableStateFlow(initialSnapshot.drafts)
     private var draftsStateVersion = 0L
     private var draftPersistJob: Job? = null
 
@@ -310,11 +318,10 @@ class BiliVideoSkipRepository private constructor(context: Context) {
         mutex.withLock {
             val previous = _rules.value.firstOrNull { it.target == normalizedTarget }
             val deleted = normalizedIntervals.isEmpty()
-            if (
-                previous != null &&
-                    previous.isDeleted == deleted &&
+            val hasSameSnapshot =
+                previous != null && previous.isDeleted == deleted &&
                     previous.intervals == normalizedIntervals
-            ) {
+            if (hasSameSnapshot) {
                 return@withLock false
             }
             if (previous == null && deleted) {
@@ -330,7 +337,7 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             val updatedRules = normalizeBiliVideoSkipRules(
                 _rules.value.filterNot { it.target == normalizedTarget } + updatedRule
             )
-            persistRules(updatedRules)
+            roomStore.replaceRules(updatedRules)
             _rules.value = updatedRules
             markMutationAndScheduleSync()
             true
@@ -347,13 +354,44 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             }
             val normalizedRules = normalizeBiliVideoSkipRules(rules)
             if (_rules.value == normalizedRules) return@withLock true
-            persistRules(normalizedRules)
+            roomStore.replaceRules(normalizedRules)
             _rules.value = normalizedRules
             true
         }
     }
 
-    private fun readRules(): List<BiliVideoSkipRule> {
+    private suspend fun loadInitialSnapshot(): BiliVideoSkipRoomSnapshot {
+        val roomPrimary = runCatching { roomStore.isRoomPrimary() }
+            .onFailure { error ->
+                NPLogger.w(TAG, "Failed to read Bili skip Room marker", error)
+            }
+            .getOrDefault(false)
+        if (roomPrimary) {
+            LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-room-load")
+            return roomStore.readIfRoomPrimary()
+                ?: BiliVideoSkipRoomSnapshot(emptyList(), emptyList())
+        }
+
+        val legacyRules = readLegacyRulesOrNull()
+        val legacyDrafts = readLegacyDraftsOrNull()
+        val shouldImportLegacyFiles = legacyRules != null &&
+            legacyDrafts != null &&
+            (rulesFile.exists() || draftsFile.exists())
+        if (shouldImportLegacyFiles) {
+            runCatching {
+                roomStore.replaceAll(legacyRules, legacyDrafts)
+                LegacyJsonCleanupScheduler.schedule(appContext, "bili-skip-import")
+            }.onFailure { error ->
+                NPLogger.w(TAG, "Failed to import Bili skip JSON into Room", error)
+            }
+        }
+        return BiliVideoSkipRoomSnapshot(
+            rules = legacyRules.orEmpty(),
+            drafts = legacyDrafts.orEmpty()
+        )
+    }
+
+    private fun readLegacyRulesOrNull(): List<BiliVideoSkipRule>? {
         if (!rulesFile.exists()) return emptyList()
         return runCatching {
             val document = json.decodeFromString<BiliVideoSkipRulesDocument>(
@@ -362,10 +400,10 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             normalizeBiliVideoSkipRules(document.rules)
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read Bili video skip rules", error)
-        }.getOrDefault(emptyList())
+        }.getOrNull()
     }
 
-    private fun readDrafts(): List<BiliVideoSkipDraft> {
+    private fun readLegacyDraftsOrNull(): List<BiliVideoSkipDraft>? {
         if (!draftsFile.exists()) return emptyList()
         return runCatching {
             val document = json.decodeFromString<BiliVideoSkipDraftsDocument>(
@@ -374,13 +412,7 @@ class BiliVideoSkipRepository private constructor(context: Context) {
             normalizeBiliVideoSkipDrafts(document.drafts)
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read Bili video skip drafts", error)
-        }.getOrDefault(emptyList())
-    }
-
-    private fun persistRules(rules: List<BiliVideoSkipRule>) {
-        rulesFile.writeTextAtomically(
-            json.encodeToString(BiliVideoSkipRulesDocument(rules = rules))
-        )
+        }.getOrNull()
     }
 
     private suspend fun persistDraftsIfCurrent(expectedStateVersion: Long) {
@@ -389,9 +421,7 @@ class BiliVideoSkipRepository private constructor(context: Context) {
                 val snapshot = synchronized(draftsStateLock) {
                     _drafts.value.takeIf { draftsStateVersion == expectedStateVersion }
                 } ?: return@withLock
-                draftsFile.writeTextAtomically(
-                    json.encodeToString(BiliVideoSkipDraftsDocument(drafts = snapshot))
-                )
+                roomStore.replaceDrafts(snapshot)
             }
         } catch (error: CancellationException) {
             throw error

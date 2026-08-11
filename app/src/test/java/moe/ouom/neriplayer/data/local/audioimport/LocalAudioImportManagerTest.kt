@@ -92,6 +92,59 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `copyNearbySidecars preserves translated lyric sidecar`() {
+        val sourceDir = tempFolder.newFolder("source-translated-lyrics")
+        val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song_trans.lrc").writeText("translated")
+
+        val targetDir = tempFolder.newFolder("imports-translated-lyrics")
+        val targetAudio = File(targetDir, "imported_song.flac").apply { writeText("audio") }
+
+        LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
+
+        val copiedTranslated = File(targetDir, "imported_song_trans.lrc")
+        assertTrue(copiedTranslated.exists())
+        assertEquals("translated", copiedTranslated.readText())
+    }
+
+    @Test
+    fun `copyNearbySidecars preserves translated lrc txt suffix`() {
+        val sourceDir = tempFolder.newFolder("source-translated-lrc-txt")
+        val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song_trans.lrc.txt").writeText("translated")
+
+        val targetDir = tempFolder.newFolder("imports-translated-lrc-txt")
+        val targetAudio = File(targetDir, "imported_song.flac").apply { writeText("audio") }
+
+        LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
+
+        val copiedTranslated = File(targetDir, "imported_song_trans.lrc.txt")
+        assertTrue(copiedTranslated.exists())
+        assertEquals("translated", copiedTranslated.readText())
+    }
+
+    @Test
+    fun `copyNearbySidecars preserves source directory lyric selection priority`() {
+        val sourceDir = tempFolder.newFolder("source-lyrics-priority")
+        val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.txt").writeText("source original")
+        File(sourceDir, "song_trans.txt").writeText("source translation")
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        File(lyricsDir, "song.lrc").writeText("nested original")
+        File(lyricsDir, "song_trans.lrc").writeText("nested translation")
+
+        val targetDir = tempFolder.newFolder("imports-lyrics-priority")
+        val targetAudio = File(targetDir, "imported_song.flac").apply { writeText("audio") }
+
+        LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
+
+        assertEquals("source original", File(targetDir, "imported_song.txt").readText())
+        assertFalse(File(targetDir, "imported_song.lrc").exists())
+        assertEquals("source translation", File(targetDir, "imported_song_trans.txt").readText())
+        assertFalse(File(targetDir, "imported_song_trans.lrc").exists())
+    }
+
+    @Test
     fun `buildQuickImportedSong falls back to file name and local placeholder metadata`() {
         val importedFile = tempFolder.newFile("001_demo_track.flac")
 

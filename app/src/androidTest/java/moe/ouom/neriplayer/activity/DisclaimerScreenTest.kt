@@ -63,6 +63,30 @@ class DisclaimerScreenTest {
         }
     }
 
+    @Test
+    fun fullDetails_areHiddenUntilUserExpandsThem() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val showDetails = context.getString(R.string.disclaimer_show_details)
+        val firstDetailTitle = context.getString(R.string.disclaimer_section1_title)
+
+        composeRule.setContent {
+            MaterialTheme {
+                DisclaimerScreen(
+                    onAgree = {},
+                    initialCountdownSeconds = 0
+                )
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            hasText(showDetails)
+        }
+        composeRule.onNodeWithText(firstDetailTitle).assertDoesNotExist()
+
+        composeRule.onNodeWithText(showDetails).performClick()
+        composeRule.onNodeWithText(firstDetailTitle).assertExists()
+    }
+
     private fun hasText(text: String): Boolean {
         return runCatching {
             composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()

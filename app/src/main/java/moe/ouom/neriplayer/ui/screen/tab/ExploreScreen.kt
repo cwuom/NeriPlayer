@@ -148,6 +148,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
+import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -664,7 +665,35 @@ fun ExploreScreen(
         queueExploreSearchRecord(normalizedQuery)
     }
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            when {
+                searchQuery.isNotEmpty() -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = searchListState.canScrollForward,
+                    canScrollBackward = searchListState.canScrollBackward,
+                    collapsedFraction = topAppBarState.collapsedFraction
+                )
+                ui.selectedSearchSource == SearchSource.NETEASE ->
+                    shouldAllowCollapsingTopAppBar(
+                        canScrollForward = gridState.canScrollForward,
+                        canScrollBackward = gridState.canScrollBackward,
+                        collapsedFraction = topAppBarState.collapsedFraction
+                    )
+                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC ->
+                    shouldAllowCollapsingTopAppBar(
+                        canScrollForward = youtubeGridState.canScrollForward,
+                        canScrollBackward = youtubeGridState.canScrollBackward,
+                        collapsedFraction = topAppBarState.collapsedFraction
+                    )
+                else -> shouldAllowCollapsingTopAppBar(
+                    canScrollForward = false,
+                    canScrollBackward = false,
+                    collapsedFraction = topAppBarState.collapsedFraction
+                )
+            }
+        }
+    )
 
     Scaffold(
         modifier = Modifier
@@ -1228,7 +1257,16 @@ fun ExploreScreen(
 @Composable
 private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
     val miniPlayerHeight = LocalMiniPlayerHeight.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
+        state = topAppBarState,
+        canScroll = {
+            shouldAllowCollapsingTopAppBar(
+                canScrollForward = false,
+                canScrollBackward = false,
+                collapsedFraction = topAppBarState.collapsedFraction
+            )
+        }
+    )
 
     Scaffold(
         modifier = Modifier

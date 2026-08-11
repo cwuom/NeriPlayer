@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -222,7 +223,12 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
+            runCatching { ManagedDownloadStorage.listCancelledDownloadKeys(appContext) }
+                .onFailure { error ->
+                    NPLogger.w(TAG, "预热已取消下载标记失败: ${error.message}")
+                }
             recoverPendingDownloadsForStartup(appContext)
+            LegacyJsonCleanupScheduler.schedule(appContext, "download-startup")
             if (
                 !shouldRunInitialDownloadScan(
                     catalogReady = restoredCatalog,
@@ -1566,7 +1572,7 @@ object GlobalDownloadManager {
             downloadedSongMetadataRevision.incrementAndGet()
             val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
                 context = context,
-                restoreFromDisk = false
+                restorePersisted = false
             )?.takeIf { cachedSnapshot ->
                 cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.reference) ||
                     cachedSnapshot.audioEntriesByLookupKey.containsKey(storedAudio.mediaUri)
@@ -1951,7 +1957,7 @@ object GlobalDownloadManager {
 
                 val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
                     context = appContext,
-                    restoreFromDisk = false
+                    restorePersisted = false
                 )
                 val storedAudio = snapshot?.audioEntriesByLookupKey?.get(playbackReference)
                 val playbackUri = storedAudio?.playbackUri
@@ -2112,7 +2118,10 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<DownloadedSong>
     ) {
-        downloadedSongCatalogStore.persist(context, songs)
+        val persisted = downloadedSongCatalogStore.persist(context, songs)
+        if (!persisted) {
+            scheduleCatalogReconcile(context, forceRefresh = true)
+        }
     }
 
     fun startDownload(context: Context, song: SongItem) {
@@ -2770,7 +2779,7 @@ object GlobalDownloadManager {
         val reference = resolveDownloadedSongPlaybackReference(downloadedSong) ?: return null
         val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
             context = context,
-            restoreFromDisk = false
+            restorePersisted = false
         )
         if (!shouldTrustFastDownloadedSongCatalogHit(reference, snapshot?.knownReferences)) {
             NPLogger.w(

@@ -16,18 +16,19 @@ class StartupNotificationPermissionTest {
     }
 
     @Test
-    fun `does not request notification permission before Android 13`() {
+    fun `does not support notification permission before Android 13`() {
         assertFalse(
-            StartupNotificationPermission.shouldRequest(
+            StartupNotificationPermission.isSupported(
                 sdkInt = Build.VERSION_CODES.TIRAMISU - 1
             )
         )
+        assertFalse(StartupNotificationPermission.isSupported(sdkInt = Build.VERSION_CODES.Q))
     }
 
     @Test
-    fun `requests notification permission on Android 13 and above`() {
+    fun `supports notification permission on Android 13 and above`() {
         assertTrue(
-            StartupNotificationPermission.shouldRequest(
+            StartupNotificationPermission.isSupported(
                 sdkInt = Build.VERSION_CODES.TIRAMISU
             )
         )

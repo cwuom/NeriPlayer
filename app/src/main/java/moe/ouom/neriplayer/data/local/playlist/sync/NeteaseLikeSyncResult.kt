@@ -30,5 +30,6 @@ data class NeteaseLikeSyncResult(
     val skippedExisting: Int,
     val added: Int,
     val failed: Int,
-    val message: String? = null
+    val message: String? = null,
+    val targetPlaylistId: Long? = null
 )

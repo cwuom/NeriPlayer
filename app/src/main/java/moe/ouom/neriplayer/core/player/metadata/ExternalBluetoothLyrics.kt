@@ -45,9 +45,7 @@ internal fun findFloatingTranslatedLyricLine(
     if (lyrics.isEmpty() || translations.isEmpty()) return null
     val targetTimeMs = (positionMs + lyricOffsetMs).coerceAtLeast(0L)
     val lyricIndex = findCurrentExternalBluetoothLyricIndex(lyrics, targetTimeMs)
-    val lyric = lyrics.getOrNull(lyricIndex)
-        ?.takeIf { it.text.isNotBlank() }
-        ?: return null
+    if (lyrics.getOrNull(lyricIndex)?.text.isNullOrBlank()) return null
     val matches = translationMatchesByIndex ?: matchTranslationsToLineIndices(
         lines = lyrics,
         translations = translations.filter { it.text.isNotBlank() }
@@ -79,11 +77,12 @@ internal fun resolveExternalBluetoothLyricPayload(
 
 internal fun shouldUseExternalBluetoothLyrics(
     audioDeviceType: Int?,
-    payload: ExternalBluetoothLyricPayload
+    payload: ExternalBluetoothLyricPayload,
+    forceSendLyrics: Boolean = false
 ): Boolean {
-    return audioDeviceType != null &&
-        isBluetoothOutputType(audioDeviceType) &&
-        (!payload.lyric.isNullOrBlank() || !payload.translation.isNullOrBlank())
+    val hasLyricPayload = !payload.lyric.isNullOrBlank() || !payload.translation.isNullOrBlank()
+    return hasLyricPayload &&
+        (forceSendLyrics || (audioDeviceType != null && isBluetoothOutputType(audioDeviceType)))
 }
 
 internal fun resolveExternalBluetoothMetadataText(

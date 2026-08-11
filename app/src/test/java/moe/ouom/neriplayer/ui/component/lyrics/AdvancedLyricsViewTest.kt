@@ -7,8 +7,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.BlendMode
 
 class AdvancedLyricsViewTest {
+
+    @Test
+    fun `preview can use source over blend on light surfaces`() {
+        assertEquals(BlendMode.SrcOver, resolveAdvancedLyricsBlendMode(false))
+        assertEquals(BlendMode.Plus, resolveAdvancedLyricsBlendMode(true))
+    }
 
     @Test
     fun `buildAdvancedSyncedLyrics converts word timed entries into karaoke line`() {

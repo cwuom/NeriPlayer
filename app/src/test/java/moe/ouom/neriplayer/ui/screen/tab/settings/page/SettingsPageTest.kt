@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.util.search.SearchTextMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito
 import org.mockito.stubbing.Answer
@@ -67,9 +68,18 @@ class SettingsPageTest {
         }
 
         assertEquals(R.string.player_continue, titleRes("home_card_continue"))
-        assertEquals(R.string.recommend_trending, titleRes("home_card_trending"))
-        assertEquals(R.string.recommend_radar, titleRes("home_card_radar"))
-        assertEquals(R.string.recommend_for_you, titleRes("home_card_recommended"))
+        assertEquals(
+            R.string.settings_home_card_netease_trending,
+            titleRes("home_card_trending")
+        )
+        assertEquals(
+            R.string.settings_home_card_netease_radar,
+            titleRes("home_card_radar")
+        )
+        assertEquals(
+            R.string.settings_home_card_netease_recommended,
+            titleRes("home_card_recommended")
+        )
     }
 
     @Test
@@ -94,6 +104,17 @@ class SettingsPageTest {
         assertEquals(AutoSettingsSections.theme, dynamicColor.section)
         assertEquals(SettingsPage.Theme, dynamicColor.settingsPage())
         assertEquals("setting:dynamic_color", dynamicColor.searchTargetId())
+    }
+
+    @Test
+    fun dynamicIslandLyricsSettingOpensLyricsPage() {
+        val dynamicIslandLyrics = AutoSettingsMetadata.settings.first {
+            it.keyName == "dynamic_island_lyrics_enabled"
+        }
+
+        assertEquals(AutoSettingsSections.lyrics, dynamicIslandLyrics.section)
+        assertEquals(SettingsPage.Lyrics, dynamicIslandLyrics.settingsPage())
+        assertEquals("setting:dynamic_island_lyrics_enabled", dynamicIslandLyrics.searchTargetId())
     }
 
     @Test
@@ -466,6 +487,36 @@ class SettingsPageTest {
     }
 
     @Test
+    fun dynamicIslandLyricsSettingIsSearchable() {
+        val entries = buildSettingsSearchEntries(settingsStringContext())
+
+        assertTrue(
+            searchSettingsEntries(entries, "dynamic island").any {
+                it.targetId == "setting:dynamic_island_lyrics_enabled"
+            }
+        )
+    }
+
+    @Test
+    fun internationalHomeCardTitlesAreSearchable() {
+        val entries = buildSettingsSearchEntries(settingsStringContext())
+        val expectedTargets = listOf(
+            "guess you like" to "setting:home_card_trending",
+            "猜你喜欢" to "setting:home_card_trending",
+            "daily discover" to "setting:home_card_radar",
+            "每日发现" to "setting:home_card_radar",
+            "more recommendations" to "setting:home_card_recommended",
+            "更多推荐" to "setting:home_card_recommended"
+        )
+
+        expectedTargets.forEach { (query, targetId) ->
+            assertTrue(
+                searchSettingsEntries(entries, query).any { it.targetId == targetId }
+            )
+        }
+    }
+
+    @Test
     fun dependentSettingsHighlightTheirPrimaryControls() {
         fun targetId(keyName: String): String {
             return AutoSettingsMetadata.settings.first { it.keyName == keyName }.searchTargetId()
@@ -680,7 +731,9 @@ class SettingsPageTest {
             R.string.settings_export_config to "导出配置文件",
             R.string.settings_import_config to "导入配置文件",
             R.string.settings_export_config_desc to "导出设置、登录信息和同步配置",
-            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置"
+            R.string.settings_import_config_desc to "从配置文件恢复设置、登录信息和同步配置",
+            R.string.settings_dynamic_island_lyrics_enabled to "灵动岛歌词",
+            R.string.settings_dynamic_island_lyrics_enabled_desc to "即使没有连接蓝牙设备，也会上传蓝牙歌词元数据"
         )
     }
 }

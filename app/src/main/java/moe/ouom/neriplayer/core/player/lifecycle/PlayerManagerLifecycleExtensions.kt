@@ -25,6 +25,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -94,6 +95,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.shouldDeferUsbExclusiveRecover
 import moe.ouom.neriplayer.core.player.policy.usb.shouldSkipRedundantUsbExclusiveReconfiguration
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.shouldClearResumePlaybackRequestOnPlayWhenReadyPause
+import moe.ouom.neriplayer.core.player.policy.command.shouldResumeSilentlyForListenTogetherNoisyPause
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
 import moe.ouom.neriplayer.core.player.playback.pauseForAudioRouteLoss
@@ -130,6 +132,7 @@ import moe.ouom.neriplayer.core.player.watchdog.schedulePlaybackStartupWatchdog
 import moe.ouom.neriplayer.core.player.watchdog.trySwitchToNextPlaybackCandidateForRecovery
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshotSync
 import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
@@ -157,9 +160,16 @@ private fun createVerifiedMediaCache(
     val cacheDir = File(app.cacheDir, MEDIA_CACHE_DIRECTORY_NAME)
 
     fun openCache(): SimpleCache {
+        val cacheEvictor = if (
+            maxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+        ) {
+            NoOpCacheEvictor()
+        } else {
+            LeastRecentlyUsedCacheEvictor(maxCacheSize)
+        }
         val createdCache = SimpleCache(
             cacheDir,
-            LeastRecentlyUsedCacheEvictor(maxCacheSize),
+            cacheEvictor,
             databaseProvider
         )
         return try {
@@ -227,16 +237,17 @@ internal fun PlayerManager.initializeImpl(
         }
         initializationInProgress = true
     }
+    val effectiveMaxCacheSize = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSize)
     try {
         runCatching {
             NPLogger.d(
                 "NERI-PlayerManager",
-                "initialize(): maxCacheSize=$maxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
+                "initialize(): maxCacheSize=$effectiveMaxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
             )
             application = app
             _localPlaylistsReadyFlow.value = false
             FloatingLyricsOverlayManager.initialize(app)
-            currentCacheSize = maxCacheSize
+            currentCacheSize = effectiveMaxCacheSize
 
             ioScope = newIoScope()
             mainScope = newMainScope()
@@ -299,6 +310,7 @@ internal fun PlayerManager.initializeImpl(
             initialPlaybackPreferences.qqMusicLyricDefaultOffsetMs
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
+        dynamicIslandLyricsEnabled = false
         amllLyricsEnabled = initialPlaybackPreferences.amllLyricsEnabled
         lyriconEnabled = initialPlaybackPreferences.lyriconEnabled
         LyriconManager.setEnabled(lyriconEnabled)
@@ -322,11 +334,14 @@ internal fun PlayerManager.initializeImpl(
         )
         conditionalHttpFactory = conditionalFactory
 
-        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (maxCacheSize > 0) {
+        val finalDataSourceFactory: androidx.media3.datasource.DataSource.Factory = if (
+            effectiveMaxCacheSize > 0 ||
+                effectiveMaxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+        ) {
             val dbProvider = StandaloneDatabaseProvider(app)
             val mediaCache = createVerifiedMediaCache(
                 app = app,
-                maxCacheSize = maxCacheSize,
+                maxCacheSize = effectiveMaxCacheSize,
                 databaseProvider = dbProvider
             )
             if (mediaCache == null) {
@@ -655,6 +670,26 @@ internal fun PlayerManager.initializeImpl(
                         "NERI-PlayerManager",
                         "playWhenReady=false, reason=${playWhenReadyChangeReasonName(reason)}, state=${playbackStateName(player.playbackState)}, mediaId=${player.currentMediaItem?.mediaId}, stack=[${debugStackHint()}]"
                     )
+                    if (shouldResumeSilentlyForListenTogetherNoisyPause(
+                            playWhenReady = playWhenReady,
+                            playWhenReadyChangeReason = reason,
+                            muteListenTogetherListenerForAudioRouteLoss =
+                                shouldMuteListenTogetherListenerForAudioRouteLoss()
+                        )
+                    ) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "restore Listen Together listener playWhenReady after noisy route by muting locally"
+                        )
+                        suppressPlaybackForAudioRouteLoss(
+                            reason = "listen_together_exoplayer_becoming_noisy"
+                        )
+                        playImpl(
+                            commandSource = PlaybackCommandSource.LOCAL_SAFETY,
+                            allowFadeIn = false
+                        )
+                        return
+                    }
                     if (
                         shouldClearResumePlaybackRequestOnPlayWhenReadyPause(
                             playWhenReady = playWhenReady,
@@ -854,6 +889,12 @@ internal fun PlayerManager.initializeImpl(
             }
         }
         ioScope.launch {
+            settingsRepo.dynamicIslandLyricsEnabledFlow.collect { enabled ->
+                dynamicIslandLyricsEnabled = enabled
+                syncExternalBluetoothLyrics(_currentSongFlow.value)
+            }
+        }
+        ioScope.launch {
             settingsRepo
                 .settingFlow(AutoSettingsSchema.general.biliSkipSegmentPromptEnabled)
                 .collect { enabled ->
@@ -1017,12 +1058,26 @@ internal fun PlayerManager.initializeImpl(
         }
         ioScope.launch {
             settingsRepo.neteaseAutoSourceSwitchFlow.collect { enabled ->
+                val previousEnabled = neteaseAutoSourceSwitchEnabled
                 neteaseAutoSourceSwitchEnabled = enabled
+                if (!previousEnabled && enabled) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "netease_auto_source_switch_enabled"
+                    )
+                }
             }
         }
         ioScope.launch {
             settingsRepo.neteaseLocalSourceFallbackFlow.collect { enabled ->
+                val previousEnabled = neteaseLocalSourceFallbackEnabled
                 neteaseLocalSourceFallbackEnabled = enabled
+                if (!previousEnabled && enabled) {
+                    scheduleQualityRefresh(
+                        source = PlaybackAudioSource.NETEASE,
+                        reason = "netease_local_source_fallback_enabled"
+                    )
+                }
             }
         }
         ioScope.launch {
@@ -1085,12 +1140,12 @@ internal fun PlayerManager.initializeImpl(
         initialized = true
         NPLogger.d(
             "NERI-PlayerManager",
-            "initialize(): success, cacheSize=$maxCacheSize, restoredQueueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
+            "initialize(): success, cacheSize=$effectiveMaxCacheSize, restoredQueueSize=${currentPlaylist.size}, currentIndex=$currentIndex, currentDevice=${_currentAudioDevice.value?.type}:${_currentAudioDevice.value?.name}"
         )
     }.onFailure { e ->
         NPLogger.e(
             "NERI-PlayerManager",
-            "initialize(): failed, cacheSize=$maxCacheSize, currentPlaylistSize=${currentPlaylist.size}, currentIndex=$currentIndex",
+            "initialize(): failed, cacheSize=$effectiveMaxCacheSize, currentPlaylistSize=${currentPlaylist.size}, currentIndex=$currentIndex",
             e
         )
         NPLogger.w(
@@ -1370,6 +1425,14 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): ignored for USB exclusive route")
         return false
     }
+    if (shouldMuteListenTogetherListenerForAudioRouteLoss()) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "handleAudioBecomingNoisy(): mute Listen Together listener without pausing"
+        )
+        suppressPlaybackForAudioRouteLoss(reason = "listen_together_becoming_noisy")
+        return true
+    }
     if (currentDevice != null && requiresDisconnectConfirmation(currentDevice.type)) {
         if (!shouldPauseForBluetoothDisconnect(currentDevice, null)) {
             NPLogger.d("NERI-PlayerManager", "handleAudioBecomingNoisy(): bluetooth confirmation rejected")
@@ -1377,8 +1440,10 @@ internal fun PlayerManager.handleAudioBecomingNoisyImpl(): Boolean {
         }
         NPLogger.d(
             "NERI-PlayerManager",
-            "handleAudioBecomingNoisy(): schedule delayed pause for device=${currentDevice.type}:${currentDevice.name}"
+            "handleAudioBecomingNoisy(): mute while confirming disconnect for " +
+                "device=${currentDevice.type}:${currentDevice.name}"
         )
+        suppressPlaybackForAudioRouteLoss(reason = "bluetooth_disconnect_pending")
         schedulePauseForBluetoothDisconnect(
             previousDevice = currentDevice,
             reason = "becoming_noisy"
@@ -1500,7 +1565,15 @@ private fun PlayerManager.handleDeviceChange(
         "NERI-PlayerManager",
         "handleDeviceChange(): ${previousDevice?.type}:${previousDevice?.name} -> ${newDevice.type}:${newDevice.name}, isPlaying=${_isPlayingFlow.value}"
     )
-    if (shouldPauseForBluetoothDisconnect(previousDevice, newDevice)) {
+    if (shouldMuteListenTogetherListenerForOutputDisconnect(previousDevice, newDevice)) {
+        bluetoothDisconnectPauseJob?.cancel()
+        bluetoothDisconnectPauseJob = null
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "Detected Listen Together listener output disconnect (${previousDevice?.type} -> ${newDevice.type}), muting without pausing."
+        )
+        suppressPlaybackForAudioRouteLoss(reason = "listen_together_output_disconnect")
+    } else if (shouldPauseForBluetoothDisconnect(previousDevice, newDevice)) {
         schedulePauseForBluetoothDisconnect(
             previousDevice = previousDevice,
             reason = "device_changed_to_${newDevice.type}"
@@ -3577,6 +3650,16 @@ private fun PlayerManager.shouldPauseForImmediateOutputDisconnect(
     return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
 }
 
+private fun PlayerManager.shouldMuteListenTogetherListenerForOutputDisconnect(
+    previousDevice: AudioDevice?,
+    newDevice: AudioDevice?
+): Boolean {
+    if (!shouldMuteListenTogetherListenerForAudioRouteLoss()) return false
+    if (previousDevice?.type?.let(::isHeadsetLikeOutput) != true) return false
+    if (!_isPlayingFlow.value) return false
+    return newDevice == null || newDevice.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+}
+
 private fun PlayerManager.shouldTreatAsUsbExclusiveRouteJitter(
     previousDevice: AudioDevice?,
     newDevice: AudioDevice?
@@ -3665,6 +3748,7 @@ internal fun PlayerManager.releaseImpl() {
         externalBluetoothLyricsSongKey = null
         externalBluetoothLyricsEnabled = false
         externalBluetoothTranslationEnabled = false
+        dynamicIslandLyricsEnabled = false
         floatingLyricsEnabled = false
         floatingLyricsShowTranslation = true
         statusBarLyricsEnable = false
