@@ -112,7 +112,8 @@ import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.restoreState
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
-import moe.ouom.neriplayer.core.player.url.offlineCacheKeyFromUrl
+import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
+import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -138,6 +139,86 @@ import moe.ouom.neriplayer.data.settings.toUsbExclusivePreferences
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.readBackgroundBehaviorAllowance
 import java.io.File
+
+private const val MEDIA_CACHE_DIRECTORY_NAME = "media_cache"
+
+private fun Throwable.isSimpleCacheFolderLocked(): Boolean {
+    return generateSequence(this) { it.cause }
+        .any { cause ->
+            cause.message?.contains(
+                "Another SimpleCache instance uses the folder",
+                ignoreCase = true
+            ) == true
+        }
+}
+
+private fun createVerifiedMediaCache(
+    app: Application,
+    maxCacheSize: Long,
+    databaseProvider: StandaloneDatabaseProvider
+): SimpleCache? {
+    val cacheDir = File(app.cacheDir, MEDIA_CACHE_DIRECTORY_NAME)
+
+    fun openCache(): SimpleCache {
+        val cacheEvictor = if (
+            maxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+        ) {
+            NoOpCacheEvictor()
+        } else {
+            LeastRecentlyUsedCacheEvictor(maxCacheSize)
+        }
+        val createdCache = SimpleCache(
+            cacheDir,
+            cacheEvictor,
+            databaseProvider
+        )
+        return try {
+            createdCache.checkInitialization()
+            createdCache
+        } catch (error: Exception) {
+            runCatching { createdCache.release() }
+            throw error
+        }
+    }
+
+    val firstAttempt = runCatching { openCache() }
+    firstAttempt.getOrNull()?.let { return it }
+
+    val firstError = firstAttempt.exceptionOrNull() ?: return null
+    if (firstError.isSimpleCacheFolderLocked()) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "media cache is already locked; continue without cache for this process",
+            firstError
+        )
+        return null
+    }
+
+    NPLogger.w(
+        "NERI-PlayerManager",
+        "media cache initialization failed; rebuilding the cache directory",
+        firstError
+    )
+    runCatching {
+        SimpleCache.delete(cacheDir, databaseProvider)
+    }.onFailure { deleteError ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "failed to remove broken media cache; playback will bypass cache",
+            deleteError
+        )
+    }
+
+    return runCatching { openCache() }
+        .onFailure { error ->
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "rebuilt media cache is unavailable; playback will bypass cache",
+                error
+            )
+        }
+        .getOrNull()
+}
 
 internal fun PlayerManager.initializeImpl(
     app: Application,
@@ -257,35 +338,43 @@ internal fun PlayerManager.initializeImpl(
             effectiveMaxCacheSize > 0 ||
                 effectiveMaxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
         ) {
-            val cacheDir = File(app.cacheDir, "media_cache")
             val dbProvider = StandaloneDatabaseProvider(app)
-            val cacheEvictor = if (
-                effectiveMaxCacheSize == CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
-            ) {
-                NoOpCacheEvictor()
-            } else {
-                LeastRecentlyUsedCacheEvictor(effectiveMaxCacheSize)
-            }
-
-            cache = SimpleCache(
-                cacheDir,
-                cacheEvictor,
-                dbProvider
+            val mediaCache = createVerifiedMediaCache(
+                app = app,
+                maxCacheSize = effectiveMaxCacheSize,
+                databaseProvider = dbProvider
             )
+            if (mediaCache == null) {
+                androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
+            } else {
+                cache = mediaCache
+                val cacheDsFactory = CacheDataSource.Factory()
+                    .setCache(mediaCache)
+                    .setUpstreamDataSourceFactory(conditionalFactory)
+                    .setFlags(
+                        CacheDataSource.FLAG_BLOCK_ON_CACHE or
+                            CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
+                    )
+                    .setEventListener(object : CacheDataSource.EventListener {
+                        override fun onCachedBytesRead(
+                            cacheSizeBytes: Long,
+                            cachedBytesRead: Long
+                        ) {
+                            AppContainer.trafficStatsRepo.recordCacheHitBytes(cachedBytesRead)
+                        }
 
-            val cacheDsFactory = CacheDataSource.Factory()
-                .setCache(cache)
-                .setUpstreamDataSourceFactory(conditionalFactory)
-                .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
-                .setEventListener(object : CacheDataSource.EventListener {
-                    override fun onCachedBytesRead(cacheSizeBytes: Long, cachedBytesRead: Long) {
-                        AppContainer.trafficStatsRepo.recordCacheHitBytes(cachedBytesRead)
-                    }
+                        override fun onCacheIgnored(reason: Int) {
+                            if (reason == CacheDataSource.CACHE_IGNORED_REASON_ERROR) {
+                                NPLogger.w(
+                                    "NERI-PlayerManager",
+                                    "cache read failed; bypassing cache for the next data source cycle"
+                                )
+                            }
+                        }
+                    })
 
-                    override fun onCacheIgnored(reason: Int) = Unit
-                })
-
-            androidx.media3.datasource.DefaultDataSource.Factory(app, cacheDsFactory)
+                androidx.media3.datasource.DefaultDataSource.Factory(app, cacheDsFactory)
+            }
         } else {
             NPLogger.d("NERI-Player", "Cache disabled by user setting (size=0).")
             androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
@@ -392,11 +481,8 @@ internal fun PlayerManager.initializeImpl(
                         song = currentSong,
                         isOfflineCache = isOfflineCache
                     )
-                    val cacheKeyToInvalidateBeforeResolve = if (youtubeRecoveryStrategy != null) {
-                        offlineCacheKeyFromUrl(currentUrl)
-                    } else {
-                        null
-                    }
+                    val cacheKeyToInvalidateBeforeResolve =
+                        currentPlaybackCacheKeyForRecovery()
                     val shouldBypassRefreshCooldown = (
                         pendingSeekPositionOrNull() != null &&
                             YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
@@ -464,10 +550,17 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
 
+                val cacheKeyForFailure = currentPlaybackCacheKeyForRecovery()
                 if (isOfflineCache) {
                     pause()
                 } else {
                     mainScope.launch {
+                        cacheKeyForFailure?.let { cacheKey ->
+                            invalidateCachedResourceForPlaybackRecovery(
+                                cacheKey = cacheKey,
+                                reason = "unrecoverable_playback_${error.errorCodeName}"
+                            )
+                        }
                         advanceAfterPlaybackFailure(
                             source = "playback_error_${error.errorCodeName}"
                         )
@@ -1147,7 +1240,7 @@ internal suspend fun PlayerManager.clearCacheImpl(
                     }
                 }
 
-                val cacheDir = File(application.cacheDir, "media_cache")
+                val cacheDir = File(application.cacheDir, MEDIA_CACHE_DIRECTORY_NAME)
                 if (cacheDir.exists() && cacheDir.isDirectory) {
                     val files = cacheDir.listFiles() ?: emptyArray()
                     files.forEach { file ->
