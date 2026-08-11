@@ -177,4 +177,20 @@ class LocalMediaSupportTest {
 
         assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
     }
+
+    @Test
+    fun `findNearbyLyricFiles keeps lrc priority across source and Lyrics directory`() {
+        val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.txt").writeText("source original")
+        File(sourceDir, "song_trans.txt").writeText("source translation")
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        val original = File(lyricsDir, "song.lrc").apply { writeText("nested original") }
+        val translated = File(lyricsDir, "song_trans.lrc").apply { writeText("nested translation") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(original.canonicalPath, found.original?.canonicalPath)
+        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
 }

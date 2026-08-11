@@ -3082,8 +3082,8 @@ object LocalMediaSupport {
         searchDirectories: List<File>,
         fileNames: List<String>
     ): File? {
-        return searchDirectories.asSequence()
-            .flatMap { directory -> fileNames.asSequence().map { File(directory, it) } }
+        return fileNames.asSequence()
+            .flatMap { fileName -> searchDirectories.asSequence().map { File(it, fileName) } }
             .firstOrNull(File::isFile)
     }
 
