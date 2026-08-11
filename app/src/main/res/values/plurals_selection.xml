@@ -1,5 +1,8 @@
 <resources>
     <!-- Selection & Confirmation -->
+    <plurals name="local_playlist_sync_netease_unsupported">
+        <item quantity="other">另有 %d 首不是网易云歌曲，无法同步</item>
+    </plurals>
     <plurals name="common_selected_count">
         <item quantity="other">已选 %d 项</item>
     </plurals>

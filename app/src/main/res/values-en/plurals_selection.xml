@@ -1,5 +1,9 @@
 <resources>
     <!-- Selection & Confirmation -->
+    <plurals name="local_playlist_sync_netease_unsupported">
+        <item quantity="one">%d selected song is not from NetEase and was not synced</item>
+        <item quantity="other">%d selected songs are not from NetEase and were not synced</item>
+    </plurals>
     <plurals name="common_selected_count">
         <item quantity="one">%d selected</item>
         <item quantity="other">%d selected</item>

@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistSongDeleteResult
 import moe.ouom.neriplayer.data.local.playlist.runLocalPlaylistMutationSafely
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncResult
+import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseRemotePlaylist
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -557,6 +558,33 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             val result = repo.syncSongsToNeteaseLiked(AppContainer.neteaseClient, songs)
+            onResult(result)
+        }
+    }
+
+    fun fetchNeteaseRemotePlaylists(
+        onResult: (Result<List<NeteaseRemotePlaylist>>) -> Unit
+    ) {
+        viewModelScope.launch {
+            onResult(
+                runCatching {
+                    repo.fetchNeteaseRemotePlaylists(AppContainer.neteaseClient)
+                }
+            )
+        }
+    }
+
+    fun syncSongsToNeteasePlaylist(
+        targetPlaylistId: Long,
+        songs: List<SongItem>,
+        onResult: (NeteaseLikeSyncResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = repo.syncSongsToNeteasePlaylist(
+                client = AppContainer.neteaseClient,
+                targetPlaylistId = targetPlaylistId,
+                songs = songs
+            )
             onResult(result)
         }
     }

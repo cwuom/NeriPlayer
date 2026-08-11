@@ -618,6 +618,15 @@ class NeteaseClient {
     }
 
     @Throws(IOException::class)
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): String {
+        return callWeApi(
+            path = "/playlist/manipulate/tracks",
+            params = buildNeteasePlaylistAddTracksParams(playlistId, songIds),
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
     fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"
         val params = mutableMapOf<String, Any>(
