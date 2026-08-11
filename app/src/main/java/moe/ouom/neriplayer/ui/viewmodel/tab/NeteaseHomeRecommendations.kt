@@ -10,6 +10,7 @@ internal const val NETEASE_PRIVATE_RADAR_PLAYLIST_ID = 3_136_952_023L
 internal const val NETEASE_TOPLIST_SOARING_ID = 19_723_756L
 internal const val NETEASE_TOPLIST_NEW_ID = 3_779_629L
 internal const val NETEASE_TOPLIST_HOT_ID = 3_778_678L
+internal const val NETEASE_FAN_RADAR_PLAYLIST_ID = 5_327_906_368L
 
 internal class ApiCodeException(val code: Int) : IllegalStateException("api_code=$code")
 
@@ -46,8 +47,8 @@ internal val NeteaseRadarPlaylistDefinitions = listOf(
     NeteaseRadarPlaylistDefinition(id = 5_320_167_908L, name = "时光雷达"),
     NeteaseRadarPlaylistDefinition(id = 5_362_359_247L, name = "宝藏雷达"),
     NeteaseRadarPlaylistDefinition(id = 5_300_458_264L, name = "新歌雷达"),
-    NeteaseRadarPlaylistDefinition(id = 5_327_906_368L, name = "乐迷雷达"),
-    NeteaseRadarPlaylistDefinition(id = 6_700_242_542L, name = "雷击顿唱片行")
+    NeteaseRadarPlaylistDefinition(id = NETEASE_FAN_RADAR_PLAYLIST_ID, name = "乐迷雷达"),
+    NeteaseRadarPlaylistDefinition(id = 5_341_776_086L, name = "神秘雷达")
 )
 
 internal val NeteaseHomeTrendingSongSources = listOf(

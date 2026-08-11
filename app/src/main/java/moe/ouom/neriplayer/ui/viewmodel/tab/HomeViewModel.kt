@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeShelf
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
@@ -227,6 +228,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        client.setPersistedCookies(initialRecommendCookies)
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
 
         // 观察国际化设置变化, 切换推荐源
@@ -879,17 +881,60 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun loadRadarPlaylistSummaries(): List<PlaylistSummary> {
+        val hasLogin = hasRecommendLogin
         return withContext(Dispatchers.IO) {
-            NeteaseRadarPlaylistDefinitions.map { definition ->
-                runCatching {
-                    parseNeteasePlaylistDetailSummary(
-                        raw = client.getPlaylistDetail(definition.id, n = 1, s = 0),
-                        fallback = definition
-                    )
-                }.getOrElse {
-                    definition.toPlaylistSummary()
+            val fanRadarSummary = if (hasLogin) {
+                loadLoggedInFanRadarSummary()
+            } else {
+                null
+            }
+            val summaries = NeteaseRadarPlaylistDefinitions.map { definition ->
+                if (definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID && fanRadarSummary != null) {
+                    fanRadarSummary
+                } else {
+                    runCatching {
+                        parseNeteasePlaylistDetailSummary(
+                            raw = client.getPlaylistDetail(definition.id, n = 1, s = 0),
+                            fallback = definition
+                        )
+                    }.getOrElse {
+                        definition.toPlaylistSummary()
+                    }
                 }
             }
+            if (hasLogin) {
+                persistNeteaseRadarSessionCookies()
+            }
+            summaries
+        }
+    }
+
+    private fun loadLoggedInFanRadarSummary(): PlaylistSummary? {
+        runCatching { client.ensurePersonalizedSession() }
+            .onFailure { error ->
+                NPLogger.w(TAG, "radar session preheat failed: ${error.message}")
+            }
+        val fallback = NeteaseRadarPlaylistDefinitions.first { definition ->
+            definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID
+        }
+        return runCatching {
+            parseNeteasePlaylistDetailSummary(
+                raw = client.getPlaylistDetail(NETEASE_FAN_RADAR_PLAYLIST_ID),
+                fallback = fallback
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "fan radar metadata preheat failed: ${error.message}")
+        }.getOrNull()
+    }
+
+    private fun persistNeteaseRadarSessionCookies() {
+        val persisted = repo.getCookiesOnce()
+        val updated = mergeNeteaseSessionCookies(
+            persistedCookies = persisted,
+            runtimeCookies = client.getNeteaseRequestCookies()
+        )
+        if (updated != persisted && repo.saveCookies(updated)) {
+            NPLogger.d(TAG, "persisted NetEase radar session context")
         }
     }
 

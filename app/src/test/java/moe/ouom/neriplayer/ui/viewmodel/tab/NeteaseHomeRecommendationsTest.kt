@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
 import moe.ouom.neriplayer.data.model.SongItem
 
 class NeteaseHomeRecommendationsTest {
@@ -119,10 +120,56 @@ class NeteaseHomeRecommendationsTest {
     @Test
     fun radarPlaylistDefinitions_keepOfficialRadarIds() {
         assertEquals(
-            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 6700242542L),
+            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 5341776086L),
             NeteaseRadarPlaylistDefinitions.map { it.id }
         )
-        assertEquals("雷击顿唱片行", NeteaseRadarPlaylistDefinitions.last().name)
+        assertEquals("神秘雷达", NeteaseRadarPlaylistDefinitions.last().name)
+    }
+
+    @Test
+    fun parsePlaylistDetail_keepsAccountSpecificRadarTitleAndCover() {
+        val detail = parseNeteasePlaylistDetailSummary(
+            raw = """
+                {
+                  "code": 200,
+                  "playlist": {
+                    "id": 5327906368,
+                    "name": "为你定制的乐迷雷达",
+                    "coverImgUrl": "http://p1.music.126.net/account-radar.jpg",
+                    "playCount": 42,
+                    "trackCount": 30
+                  }
+                }
+            """.trimIndent(),
+            fallback = NeteaseRadarPlaylistDefinition(
+                id = 5327906368L,
+                name = "乐迷雷达"
+            )
+        )
+
+        assertEquals("为你定制的乐迷雷达", detail.name)
+        assertEquals("https://p1.music.126.net/account-radar.jpg", detail.picUrl)
+        assertEquals(42L, detail.playCount)
+    }
+
+    @Test
+    fun mergeRadarSessionCookies_keepsOnlyRequiredRuntimeContext() {
+        val cookies = mergeNeteaseSessionCookies(
+            persistedCookies = mapOf(
+                "MUSIC_U" to "login-cookie",
+                "NMTID" to "old-context"
+            ),
+            runtimeCookies = mapOf(
+                "NMTID" to "new-context",
+                "__csrf" to "new-csrf",
+                "unrelated" to "ignored"
+            )
+        )
+
+        assertEquals("login-cookie", cookies["MUSIC_U"])
+        assertEquals("new-context", cookies["NMTID"])
+        assertEquals("new-csrf", cookies["__csrf"])
+        assertFalse(cookies.containsKey("unrelated"))
     }
 
     @Test
