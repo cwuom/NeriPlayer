@@ -599,9 +599,7 @@
     <string name="local_playlist_sync_netease_loading_playlists">正在拉取网易云歌单</string>
     <string name="local_playlist_sync_netease_load_failed">网易云歌单拉取失败</string>
     <string name="local_playlist_sync_netease_no_playlists">没有可添加歌曲的网易云歌单</string>
-    <string name="local_playlist_sync_netease_track_count">%d 首歌曲</string>
     <string name="local_playlist_sync_netease_partial_confirm_title">部分歌曲不能同步</string>
-    <string name="local_playlist_sync_netease_partial_confirm_message">有 %1$d 首不是网易云歌曲，不能同步。将剩余 %2$d 首同步到“%3$s”吗？</string>
     <string name="local_playlist_sync_netease_empty">收藏为空，无需同步</string>
     <string name="local_playlist_sync_netease_no_supported">没有可同步的歌曲</string>
     <string name="local_playlist_sync_netease_all_synced">已同步到网易云，无需重复同步</string>

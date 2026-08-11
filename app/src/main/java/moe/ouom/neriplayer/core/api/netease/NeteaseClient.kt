@@ -861,30 +861,6 @@ class NeteaseClient {
     }
 
     /**
-     * 批量添加歌曲到网易云歌单
-     * 网易云接口允许一次提交多个歌曲 ID，调用方应控制批次大小并检查返回 code
-     */
-    @Throws(IOException::class)
-    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): String {
-        require(playlistId > 0L) { "playlistId must be positive" }
-        require(songIds.isNotEmpty()) { "songIds must not be empty" }
-        val ids = songIds.asSequence()
-            .filter { it > 0L }
-            .distinct()
-            .joinToString(",")
-        require(ids.isNotEmpty()) { "songIds must contain a positive id" }
-        return callWeApi(
-            "/playlist/manipulate/tracks",
-            mapOf(
-                "op" to "add",
-                "pid" to playlistId.toString(),
-                "tracks" to ids
-            ),
-            usePersistedCookies = true
-        )
-    }
-
-    /**
      * 获取当前登录用户的账户信息 (包含 userId)
      */
     @Throws(IOException::class)

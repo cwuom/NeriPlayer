@@ -564,8 +564,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     fun fetchNeteaseRemotePlaylists(
         onResult: (Result<List<NeteaseRemotePlaylist>>) -> Unit
-    ) {
-        viewModelScope.launch {
+    ): Job {
+        return viewModelScope.launch {
             onResult(
                 runCatching {
                     repo.fetchNeteaseRemotePlaylists(AppContainer.neteaseClient)

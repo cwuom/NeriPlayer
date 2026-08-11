@@ -24,6 +24,7 @@ package moe.ouom.neriplayer.data.local.playlist.sync
  */
 
 import org.json.JSONObject
+import java.io.IOException
 
 data class NeteaseRemotePlaylist(
     val id: Long,
@@ -35,28 +36,40 @@ internal fun parseNeteaseRemotePlaylists(
     raw: String,
     ownerUserId: Long? = null
 ): List<NeteaseRemotePlaylist> {
-    if (raw.isBlank()) return emptyList()
-    return runCatching {
-        val root = JSONObject(raw)
-        if (root.optInt("code", -1) != 200) return@runCatching emptyList()
-        val array = root.optJSONArray("playlist")
-            ?: root.optJSONArray("playlists")
-            ?: return@runCatching emptyList()
-        val result = ArrayList<NeteaseRemotePlaylist>(array.length())
-        val seenIds = LinkedHashSet<Long>()
-        for (index in 0 until array.length()) {
-            val playlist = array.optJSONObject(index) ?: continue
-            val id = playlist.optLong("id", 0L)
-            val name = playlist.optString("name", "").trim()
-            val creatorId = playlist.optJSONObject("creator")?.optLong("userId", 0L) ?: 0L
-            if (ownerUserId != null && creatorId != ownerUserId) continue
-            if (id <= 0L || name.isBlank() || !seenIds.add(id)) continue
-            result += NeteaseRemotePlaylist(
-                id = id,
-                name = name,
-                trackCount = playlist.optInt("trackCount", 0)
-            )
-        }
-        result
-    }.getOrDefault(emptyList())
+    if (raw.isBlank()) {
+        throw IOException("NetEase playlist response is empty")
+    }
+
+    val root = try {
+        JSONObject(raw)
+    } catch (error: Exception) {
+        throw IOException("Failed to parse NetEase playlist response", error)
+    }
+    val code = root.optInt("code", -1)
+    if (code != 200) {
+        val message = root.optString("msg", "").trim()
+        throw IOException(
+            message.ifBlank { "NetEase playlist request failed with code $code" }
+        )
+    }
+
+    val array = root.optJSONArray("playlist")
+        ?: root.optJSONArray("playlists")
+        ?: throw IOException("NetEase playlist response is missing the playlist list")
+    val result = ArrayList<NeteaseRemotePlaylist>(array.length())
+    val seenIds = LinkedHashSet<Long>()
+    for (index in 0 until array.length()) {
+        val playlist = array.optJSONObject(index) ?: continue
+        val id = playlist.optLong("id", 0L)
+        val name = playlist.optString("name", "").trim()
+        val creatorId = playlist.optJSONObject("creator")?.optLong("userId", 0L) ?: 0L
+        if (ownerUserId != null && creatorId != ownerUserId) continue
+        if (id <= 0L || name.isBlank() || !seenIds.add(id)) continue
+        result += NeteaseRemotePlaylist(
+            id = id,
+            name = name,
+            trackCount = playlist.optInt("trackCount", 0)
+        )
+    }
+    return result
 }

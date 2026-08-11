@@ -599,9 +599,7 @@
     <string name="local_playlist_sync_netease_loading_playlists">Loading NetEase playlists</string>
     <string name="local_playlist_sync_netease_load_failed">Failed to load NetEase playlists</string>
     <string name="local_playlist_sync_netease_no_playlists">No NetEase playlist is available for adding songs</string>
-    <string name="local_playlist_sync_netease_track_count">%d songs</string>
     <string name="local_playlist_sync_netease_partial_confirm_title">Some songs cannot sync</string>
-    <string name="local_playlist_sync_netease_partial_confirm_message">%1$d selected songs are not from NetEase and cannot sync. Sync the remaining %2$d songs to “%3$s”?</string>
     <string name="local_playlist_sync_netease_empty">Favorites are empty. Nothing to sync.</string>
     <string name="local_playlist_sync_netease_no_supported">No songs available to sync.</string>
     <string name="local_playlist_sync_netease_all_synced">Already synced to NetEase. Nothing to update.</string>

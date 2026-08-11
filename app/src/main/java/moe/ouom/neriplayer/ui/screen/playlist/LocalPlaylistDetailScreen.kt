@@ -157,6 +157,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -534,6 +535,8 @@ fun LocalPlaylistDetailScreen(
             }
             var neteaseRemotePlaylistsLoading by remember { mutableStateOf(false) }
             var neteaseRemotePlaylistsError by remember { mutableStateOf<String?>(null) }
+            var neteaseRemotePlaylistsLoadJob by remember { mutableStateOf<Job?>(null) }
+            var neteaseRemotePlaylistsRequestGeneration by remember { mutableIntStateOf(0) }
             var pendingNeteaseRemoteSyncSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
             var pendingNeteaseRemoteSyncConfirm by remember {
                 mutableStateOf<PendingNeteaseRemotePlaylistSync?>(null)
@@ -1256,6 +1259,14 @@ fun LocalPlaylistDetailScreen(
                 derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
             }
 
+            fun dismissNeteaseRemotePlaylistPicker() {
+                neteaseRemotePlaylistsRequestGeneration += 1
+                neteaseRemotePlaylistsLoadJob?.cancel()
+                neteaseRemotePlaylistsLoadJob = null
+                neteaseRemotePlaylistsLoading = false
+                showNeteaseRemotePlaylistPicker = false
+            }
+
             fun startNeteaseRemotePlaylistSync(
                 target: NeteaseRemotePlaylist,
                 songs: List<SongItem>,
@@ -1286,7 +1297,7 @@ fun LocalPlaylistDetailScreen(
                 }
                 val unsupportedCount = selectedSongs.size - supportedSongs.size
                 if (supportedSongs.isEmpty()) {
-                    showNeteaseRemotePlaylistPicker = false
+                    dismissNeteaseRemotePlaylistPicker()
                     scope.launch {
                         snackbarHostState.showNeriSnackbar(
                             composeResources.getString(
@@ -1296,7 +1307,7 @@ fun LocalPlaylistDetailScreen(
                     }
                     return
                 }
-                showNeteaseRemotePlaylistPicker = false
+                dismissNeteaseRemotePlaylistPicker()
                 if (unsupportedCount > 0) {
                     pendingNeteaseRemoteSyncConfirm = PendingNeteaseRemotePlaylistSync(
                         songs = supportedSongs,
@@ -1329,25 +1340,31 @@ fun LocalPlaylistDetailScreen(
                     return
                 }
                 pendingNeteaseRemoteSyncSongs = selectedSongs
+                neteaseRemotePlaylistsLoadJob?.cancel()
+                val requestGeneration = neteaseRemotePlaylistsRequestGeneration + 1
+                neteaseRemotePlaylistsRequestGeneration = requestGeneration
                 neteaseRemotePlaylists = emptyList()
                 neteaseRemotePlaylistsError = null
                 neteaseRemotePlaylistsLoading = true
                 showNeteaseRemotePlaylistPicker = true
-                vm.fetchNeteaseRemotePlaylists { result ->
-                    neteaseRemotePlaylistsLoading = false
-                    result.onSuccess { playlists ->
-                        neteaseRemotePlaylists = playlists
-                        if (playlists.isEmpty()) {
-                            neteaseRemotePlaylistsError = composeResources.getString(
-                                R.string.local_playlist_sync_netease_no_playlists
-                            )
+                neteaseRemotePlaylistsLoadJob = vm.fetchNeteaseRemotePlaylists { result ->
+                    if (requestGeneration == neteaseRemotePlaylistsRequestGeneration) {
+                        neteaseRemotePlaylistsLoadJob = null
+                        neteaseRemotePlaylistsLoading = false
+                        result.onSuccess { playlists ->
+                            neteaseRemotePlaylists = playlists
+                            if (playlists.isEmpty()) {
+                                neteaseRemotePlaylistsError = composeResources.getString(
+                                    R.string.local_playlist_sync_netease_no_playlists
+                                )
+                            }
+                        }.onFailure { error ->
+                            neteaseRemotePlaylistsError = error.message
+                                ?.takeIf(String::isNotBlank)
+                                ?: composeResources.getString(
+                                    R.string.local_playlist_sync_netease_load_failed
+                                )
                         }
-                    }.onFailure { error ->
-                        neteaseRemotePlaylistsError = error.message
-                            ?.takeIf(String::isNotBlank)
-                            ?: composeResources.getString(
-                                R.string.local_playlist_sync_netease_load_failed
-                            )
                     }
                 }
             }
@@ -2604,11 +2621,7 @@ fun LocalPlaylistDetailScreen(
                         loading = neteaseRemotePlaylistsLoading,
                         errorMessage = neteaseRemotePlaylistsError,
                         onPlaylistClick = ::selectNeteaseRemotePlaylist,
-                        onDismissRequest = {
-                            if (!neteaseRemotePlaylistsLoading) {
-                                showNeteaseRemotePlaylistPicker = false
-                            }
-                        }
+                        onDismissRequest = ::dismissNeteaseRemotePlaylistPicker
                     )
                 }
 
@@ -2625,12 +2638,16 @@ fun LocalPlaylistDetailScreen(
                         },
                         text = {
                             Text(
-                                stringResource(
-                                    R.string.local_playlist_sync_netease_partial_confirm_message,
+                                "${pluralStringResource(
+                                    R.plurals.local_playlist_sync_netease_partial_confirm_unsupported,
                                     pending.unsupportedCount,
+                                    pending.unsupportedCount
+                                )} ${pluralStringResource(
+                                    R.plurals.local_playlist_sync_netease_partial_confirm_target,
+                                    supportedCount,
                                     supportedCount,
                                     pending.target.name
-                                )
+                                )}"
                             )
                         },
                         confirmButton = {
@@ -2741,7 +2758,7 @@ fun LocalPlaylistDetailScreen(
 }
 
 @Composable
-private fun NeteaseRemotePlaylistPickerDialog(
+internal fun NeteaseRemotePlaylistPickerDialog(
     playlists: List<NeteaseRemotePlaylist>,
     loading: Boolean,
     errorMessage: String?,
@@ -2806,8 +2823,9 @@ private fun NeteaseRemotePlaylistPickerDialog(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = stringResource(
-                                            R.string.local_playlist_sync_netease_track_count,
+                                        text = pluralStringResource(
+                                            R.plurals.local_playlist_sync_netease_track_count,
+                                            playlist.trackCount,
                                             playlist.trackCount
                                         ),
                                         style = MaterialTheme.typography.bodySmall,
@@ -2823,8 +2841,7 @@ private fun NeteaseRemotePlaylistPickerDialog(
         confirmButton = {},
         dismissButton = {
             HapticTextButton(
-                onClick = onDismissRequest,
-                enabled = !loading
+                onClick = onDismissRequest
             ) {
                 Text(stringResource(R.string.action_cancel))
             }

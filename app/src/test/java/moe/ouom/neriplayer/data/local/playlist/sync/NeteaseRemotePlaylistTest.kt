@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.data.local.playlist.sync
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.IOException
 
 class NeteaseRemotePlaylistTest {
     @Test
@@ -62,5 +65,17 @@ class NeteaseRemotePlaylistTest {
             listOf(NeteaseRemotePlaylist(id = 201L, name = "Fallback", trackCount = 3)),
             playlists
         )
+    }
+
+    @Test
+    fun `parse remote playlists reports api errors`() {
+        val error = assertThrows(IOException::class.java) {
+            parseNeteaseRemotePlaylists(
+                raw = """{"code":301,"msg":"login required"}""",
+                ownerUserId = 9L
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("login required"))
     }
 }
