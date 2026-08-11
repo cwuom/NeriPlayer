@@ -204,7 +204,7 @@ data class PlaybackPreferenceSnapshot(
             ),
             cloudMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(cloudMusicLyricDefaultOffsetMs),
             qqMusicLyricDefaultOffsetMs = normalizeLyricDefaultOffsetMs(qqMusicLyricDefaultOffsetMs),
-            maxCacheSizeBytes = maxCacheSizeBytes.coerceAtLeast(0L)
+            maxCacheSizeBytes = CacheSizePolicy.normalizeCacheSizeBytes(maxCacheSizeBytes)
         )
     }
 
