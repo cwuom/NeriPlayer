@@ -23,7 +23,6 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
  * Updated: 2026/3/23
  */
 
-import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -45,10 +44,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.SdStorage
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -59,21 +56,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
-import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
@@ -83,9 +74,7 @@ import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageCacheKind
-import moe.ouom.neriplayer.data.storage.StorageUsageItem
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
-import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsCheckbox
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
@@ -112,10 +101,8 @@ internal fun SettingsStorageCacheSection(
     onDownloadFileNameTemplateChange: (String?) -> Unit,
     maxCacheSizeBytes: Long,
     onMaxCacheSizeBytesChange: (Long) -> Unit,
-    showStorageDetails: Boolean,
-    onShowStorageDetailsChange: (Boolean) -> Unit,
+    onOpenStorageDetails: () -> Unit,
     storageDetails: StorageUsageSummary,
-    onStorageDetailsChange: (StorageUsageSummary) -> Unit,
     showClearCacheDialog: Boolean,
     onShowClearCacheDialogChange: (Boolean) -> Unit,
     clearAudioCache: Boolean,
@@ -126,8 +113,18 @@ internal fun SettingsStorageCacheSection(
     onClearDownloadStagingCacheChange: (Boolean) -> Unit,
     clearSharedMediaCache: Boolean,
     onClearSharedMediaCacheChange: (Boolean) -> Unit,
-    clearPlatformListCache: Boolean,
-    onClearPlatformListCacheChange: (Boolean) -> Unit,
+    clearNeteasePlaylistCache: Boolean,
+    onClearNeteasePlaylistCacheChange: (Boolean) -> Unit,
+    clearBiliFavoriteCache: Boolean,
+    onClearBiliFavoriteCacheChange: (Boolean) -> Unit,
+    clearBiliArchiveCache: Boolean,
+    onClearBiliArchiveCacheChange: (Boolean) -> Unit,
+    clearYoutubePlaylistCache: Boolean,
+    onClearYoutubePlaylistCacheChange: (Boolean) -> Unit,
+    clearLogFiles: Boolean,
+    onClearLogFilesChange: (Boolean) -> Unit,
+    clearCrashLogs: Boolean,
+    onClearCrashLogsChange: (Boolean) -> Unit,
     downloadStagingClearEnabled: Boolean,
     onClearCacheClick: (StorageCacheClearOptions) -> Unit,
     cardIndex: Int? = null,
@@ -135,10 +132,7 @@ internal fun SettingsStorageCacheSection(
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
 ) {
-    val context = LocalContext.current
     val composeResources = LocalResources.current
-    val scope = rememberCoroutineScope()
-    var isStorageDetailsLoading by remember { mutableStateOf(false) }
     var showDownloadFileNameDialog by remember { mutableStateOf(false) }
     var pendingDownloadFileNameTemplate by rememberSaveable {
         mutableStateOf(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
@@ -412,18 +406,10 @@ internal fun SettingsStorageCacheSection(
                     trailingContent = {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             MiuixSettingsOutlinedButton(
-                                enabled = !isStorageDetailsLoading,
-                                onClick = {
-                                    onShowStorageDetailsChange(true)
-                                    isStorageDetailsLoading = true
-                                    scope.launch {
-                                        onStorageDetailsChange(analyzeStorageUsage(context))
-                                        isStorageDetailsLoading = false
-                                    }
-                                }
+                                onClick = onOpenStorageDetails
                             ) {
                                 Icon(
-                                    Icons.Outlined.Info,
+                                    Icons.Outlined.SdStorage,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -455,82 +441,6 @@ internal fun SettingsStorageCacheSection(
     }
 
     val shouldRenderCacheDialogs = cardIndex == null || cardIndex == 3
-
-    if (shouldRenderCacheDialogs && showStorageDetails) {
-        MiuixSettingsDialog(
-            onDismissRequest = { onShowStorageDetailsChange(false) },
-            title = { Text(stringResource(R.string.storage_details_title)) },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    if (isStorageDetailsLoading) {
-                        Text(
-                            stringResource(R.string.storage_details_loading),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else {
-                        Text(
-                            stringResource(R.string.storage_details_subtitle),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        storageDetails.sections.forEachIndexed { index, section ->
-                            if (index > 0) {
-                                Spacer(Modifier.height(12.dp))
-                            }
-                            Text(
-                                text = section.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            section.items.forEach { item ->
-                                StorageUsageRow(item)
-                            }
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider()
-                        Spacer(Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                stringResource(R.string.storage_details_total),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(
-                                formatFileSize(storageDetails.totalSizeBytes),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiuixSettingsTextButton(
-                        onClick = {
-                            runCatching {
-                                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                intent.data = "package:${context.packageName}".toUri()
-                                context.startActivity(intent)
-                            }
-                        }
-                    ) {
-                        Text(stringResource(R.string.storage_open_system_settings))
-                    }
-                    MiuixSettingsTextButton(onClick = { onShowStorageDetailsChange(false) }) {
-                        Text(stringResource(R.string.action_close))
-                    }
-                }
-            }
-        )
-    }
 
     if (shouldRenderCacheDialogs && showClearCacheDialog) {
         MiuixSettingsDialog(
@@ -592,14 +502,64 @@ internal fun SettingsStorageCacheSection(
                         onCheckedChange = onClearSharedMediaCacheChange
                     )
                     CacheTypeRow(
-                        checked = clearPlatformListCache,
-                        title = stringResource(R.string.storage_type_platform_list_cache),
+                        checked = clearNeteasePlaylistCache,
+                        title = stringResource(R.string.storage_type_netease_playlist_cache),
                         description = cacheTypeDescription(
                             storageDetails = storageDetails,
-                            kind = StorageCacheKind.PlatformList,
-                            fallback = stringResource(R.string.storage_desc_platform_list_cache)
+                            kind = StorageCacheKind.NeteasePlaylist,
+                            fallback = stringResource(R.string.storage_desc_netease_playlist_cache)
                         ),
-                        onCheckedChange = onClearPlatformListCacheChange
+                        onCheckedChange = onClearNeteasePlaylistCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearBiliFavoriteCache,
+                        title = stringResource(R.string.storage_type_bili_favorite_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.BiliFavorite,
+                            fallback = stringResource(R.string.storage_desc_bili_favorite_cache)
+                        ),
+                        onCheckedChange = onClearBiliFavoriteCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearBiliArchiveCache,
+                        title = stringResource(R.string.storage_type_bili_archive_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.BiliArchive,
+                            fallback = stringResource(R.string.storage_desc_bili_archive_cache)
+                        ),
+                        onCheckedChange = onClearBiliArchiveCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearYoutubePlaylistCache,
+                        title = stringResource(R.string.storage_type_youtube_playlist_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.YouTubePlaylist,
+                            fallback = stringResource(R.string.storage_desc_youtube_playlist_cache)
+                        ),
+                        onCheckedChange = onClearYoutubePlaylistCacheChange
+                    )
+                    CacheTypeRow(
+                        checked = clearLogFiles,
+                        title = stringResource(R.string.storage_type_log_files),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.LogFiles,
+                            fallback = stringResource(R.string.storage_desc_log_files)
+                        ),
+                        onCheckedChange = onClearLogFilesChange
+                    )
+                    CacheTypeRow(
+                        checked = clearCrashLogs,
+                        title = stringResource(R.string.storage_type_crash_logs),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.CrashLogs,
+                            fallback = stringResource(R.string.storage_desc_crash_logs)
+                        ),
+                        onCheckedChange = onClearCrashLogsChange
                     )
                 }
             },
@@ -609,7 +569,12 @@ internal fun SettingsStorageCacheSection(
                     imageCache = clearImageCache,
                     downloadStaging = clearDownloadStagingCache && downloadStagingClearEnabled,
                     sharedMedia = clearSharedMediaCache,
-                    platformList = clearPlatformListCache
+                    neteasePlaylistCache = clearNeteasePlaylistCache,
+                    biliFavoriteCache = clearBiliFavoriteCache,
+                    biliArchiveCache = clearBiliArchiveCache,
+                    youtubePlaylistCache = clearYoutubePlaylistCache,
+                    logFiles = clearLogFiles,
+                    crashLogs = clearCrashLogs
                 )
                 MiuixSettingsTextButton(
                     onClick = {
@@ -756,49 +721,6 @@ private fun CacheTypeRow(
             Text(
                 description,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun StorageUsageRow(item: StorageUsageItem) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = item.description,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (!item.path.isNullOrBlank()) {
-                Text(
-                    text = item.path,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-        }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                formatFileSize(item.sizeBytes),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                pluralStringResource(
-                    R.plurals.storage_details_file_count,
-                    item.fileCount,
-                    item.fileCount
-                ),
-                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

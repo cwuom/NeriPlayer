@@ -3171,14 +3171,19 @@ private fun NeriAppContent(
                                 }
                                 if (options.needsExtraCacheClear) {
                                     val result = clearExtraStorageCaches(context, options)
-                                    messages += if (result.success) {
-                                        composeResources.getString(
+                                    messages += when {
+                                        !result.success -> composeResources.getString(
+                                            R.string.storage_extra_cache_clear_partial
+                                        )
+                                        result.roomBytesMadeReusable > 0L ->
+                                            composeResources.getString(
+                                                R.string.storage_extra_cache_clear_room_complete,
+                                                formatFileSize(result.freedBytes),
+                                                formatFileSize(result.roomBytesMadeReusable)
+                                            )
+                                        else -> composeResources.getString(
                                             R.string.storage_extra_cache_clear_complete,
                                             formatFileSize(result.freedBytes)
-                                        )
-                                    } else {
-                                        composeResources.getString(
-                                            R.string.storage_extra_cache_clear_partial
                                         )
                                     }
                                 }

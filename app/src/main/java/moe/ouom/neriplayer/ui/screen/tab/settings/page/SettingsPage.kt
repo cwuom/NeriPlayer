@@ -79,6 +79,11 @@ internal enum class SettingsPage(
         AutoSettingsSchema.storage.metadata,
         Icons.Outlined.Storage
     ),
+    StorageCacheDetails(
+        titleRes = R.string.settings_storage_cache_details,
+        descriptionRes = R.string.settings_storage_cache_details_desc,
+        icon = Icons.Outlined.Storage
+    ),
     TrafficManagement(
         AutoSettingsSchema.trafficManagement.metadata,
         Icons.Outlined.Analytics
@@ -140,5 +145,6 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
 
 internal fun SettingsPage.backTargetPage(): SettingsPage? = when (this) {
     SettingsPage.UsbExclusive -> SettingsPage.Playback
+    SettingsPage.StorageCacheDetails -> SettingsPage.Storage
     else -> null
 }

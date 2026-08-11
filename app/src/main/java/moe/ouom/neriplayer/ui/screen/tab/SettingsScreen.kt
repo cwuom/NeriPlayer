@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.data.settings.normalizeLyricFontScale
 import moe.ouom.neriplayer.data.settings.scaledLyricFontSize
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
+import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
@@ -180,6 +181,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSectio
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsStorageCacheSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.StorageCacheDetailsContent
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsTrafficManagementSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeSeedListItem
@@ -635,11 +637,16 @@ fun SettingsScreen(
     var clearImageCache by remember { mutableStateOf(true) }
     var clearDownloadStagingCache by remember { mutableStateOf(false) }
     var clearSharedMediaCache by remember { mutableStateOf(false) }
-    var clearPlatformListCache by remember { mutableStateOf(false) }
+    var clearNeteasePlaylistCache by remember { mutableStateOf(false) }
+    var clearBiliFavoriteCache by remember { mutableStateOf(false) }
+    var clearBiliArchiveCache by remember { mutableStateOf(false) }
+    var clearYoutubePlaylistCache by remember { mutableStateOf(false) }
+    var clearLogFiles by remember { mutableStateOf(false) }
+    var clearCrashLogs by remember { mutableStateOf(false) }
 
     // 存储占用详情状态
-    var showStorageDetails by remember { mutableStateOf(false) }
     var storageDetails by remember { mutableStateOf(StorageUsageSummary.Empty) }
+    var storageDetailsLoading by remember { mutableStateOf(false) }
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -1121,6 +1128,20 @@ fun SettingsScreen(
     val isSettingsSplitLayout = currentWindowWidthDp() >= 840.dp
     var activeSettingsPage by rememberSaveable {
         mutableStateOf(if (isSettingsSplitLayout) SettingsPage.General else null)
+    }
+    fun refreshStorageDetails() {
+        if (storageDetailsLoading) return
+        storageDetailsLoading = true
+        scope.launch {
+            storageDetails = analyzeStorageUsage(context)
+            storageDetailsLoading = false
+        }
+    }
+
+    LaunchedEffect(activeSettingsPage) {
+        if (activeSettingsPage == SettingsPage.StorageCacheDetails && storageDetails == StorageUsageSummary.Empty) {
+            refreshStorageDetails()
+        }
     }
     LaunchedEffect(activeSettingsPage, context) {
         if (activeSettingsPage == SettingsPage.Backup) {
@@ -1951,10 +1972,11 @@ fun SettingsScreen(
                                 onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
                                 maxCacheSizeBytes = maxCacheSizeBytes,
                                 onMaxCacheSizeBytesChange = onMaxCacheSizeBytesChange,
-                                showStorageDetails = showStorageDetails,
-                                onShowStorageDetailsChange = { showStorageDetails = it },
+                                onOpenStorageDetails = {
+                                    activeSettingsPage = SettingsPage.StorageCacheDetails
+                                    refreshStorageDetails()
+                                },
                                 storageDetails = storageDetails,
-                                onStorageDetailsChange = { storageDetails = it },
                                 showClearCacheDialog = showClearCacheDialog,
                                 onShowClearCacheDialogChange = { showClearCacheDialog = it },
                                 clearAudioCache = clearAudioCache,
@@ -1965,8 +1987,18 @@ fun SettingsScreen(
                                 onClearDownloadStagingCacheChange = { clearDownloadStagingCache = it },
                                 clearSharedMediaCache = clearSharedMediaCache,
                                 onClearSharedMediaCacheChange = { clearSharedMediaCache = it },
-                                clearPlatformListCache = clearPlatformListCache,
-                                onClearPlatformListCacheChange = { clearPlatformListCache = it },
+                                clearNeteasePlaylistCache = clearNeteasePlaylistCache,
+                                onClearNeteasePlaylistCacheChange = { clearNeteasePlaylistCache = it },
+                                clearBiliFavoriteCache = clearBiliFavoriteCache,
+                                onClearBiliFavoriteCacheChange = { clearBiliFavoriteCache = it },
+                                clearBiliArchiveCache = clearBiliArchiveCache,
+                                onClearBiliArchiveCacheChange = { clearBiliArchiveCache = it },
+                                clearYoutubePlaylistCache = clearYoutubePlaylistCache,
+                                onClearYoutubePlaylistCacheChange = { clearYoutubePlaylistCache = it },
+                                clearLogFiles = clearLogFiles,
+                                onClearLogFilesChange = { clearLogFiles = it },
+                                clearCrashLogs = clearCrashLogs,
+                                onClearCrashLogsChange = { clearCrashLogs = it },
                                 downloadStagingClearEnabled = !hasActiveDownloadOperations,
                                 onClearCacheClick = onClearCacheClick,
                                 cardIndex = cardIndex,
@@ -1975,6 +2007,29 @@ fun SettingsScreen(
                                 onHighlightFinished = onSettingsHighlightFinished
                             )
                         }
+                    }
+                }
+
+                SettingsPage.StorageCacheDetails -> {
+                    item(key = "${selectedPage.name}:content") {
+                        StorageCacheDetailsContent(
+                            storageDetails = storageDetails,
+                            isScanning = storageDetailsLoading,
+                            onRefresh = ::refreshStorageDetails,
+                            onClearCache = {
+                                activeSettingsPage = SettingsPage.Storage
+                                showClearCacheDialog = true
+                            },
+                            onOpenSystemSettings = {
+                                runCatching {
+                                    val intent = Intent(
+                                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                        "package:${context.packageName}".toUri()
+                                    )
+                                    context.startActivity(intent)
+                                }
+                            }
+                        )
                     }
                 }
 

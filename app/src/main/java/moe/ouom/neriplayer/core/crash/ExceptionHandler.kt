@@ -65,6 +65,9 @@ object ExceptionHandler {
     @Volatile
     private var initialized = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val crashLogLock = Any()
+    @Volatile
+    private var crashLogGeneration = 0L
     private var crashLogFile: File? = null
     private val crashLogScope = CoroutineScope(Dispatchers.IO)
     private val errorDialogEvents = MutableSharedFlow<ErrorDialogEvent>(extraBufferCapacity = 1)
@@ -288,7 +291,10 @@ object ExceptionHandler {
      */
     private fun setupCrashLogFile(context: Context) {
         try {
-            crashLogFile = CrashLogFiles.createCrashLogFile(context, prefix = "crash")
+            val newFile = CrashLogFiles.createCrashLogFile(context, prefix = "crash")
+            synchronized(crashLogLock) {
+                crashLogFile = newFile
+            }
         } catch (e: Exception) {
             NPLogger.e("ExceptionHandler", "Failed to setup crash log file", e)
         }
@@ -307,13 +313,37 @@ object ExceptionHandler {
         return crashDir
     }
 
+    fun clearCrashLogs(context: Context): Boolean {
+        val appContext = context.applicationContext
+        val crashDir = resolveCrashDirectory(appContext) ?: return false
+        synchronized(crashLogLock) {
+            crashLogGeneration += 1L
+            crashLogFile = null
+        }
+        val cleared = runCatching {
+            crashDir.listFiles().orEmpty().all { file -> file.deleteRecursively() }
+        }.getOrDefault(false)
+        CrashReportStore.clearPendingCrashReport(appContext)
+        if (initialized) {
+            runCatching { setupCrashLogFile(appContext) }
+                .onFailure { error ->
+                    NPLogger.e("ExceptionHandler", "Failed to reopen crash log file", error)
+                }
+        }
+        return cleared
+    }
+
     /**
      * 写入崩溃日志到文件 (独立于NPLogger, 始终执行)
      */
     private fun writeCrashLogToFile(exceptionInfo: String) {
-        val logFile = crashLogFile ?: return
+        val (logFile, generation) = synchronized(crashLogLock) {
+            crashLogFile to crashLogGeneration
+        }
+        logFile ?: return
 
         crashLogScope.launch {
+            if (generation != crashLogGeneration) return@launch
             try {
                 FileOutputStream(logFile, true).use { fos ->
                     fos.write(exceptionInfo.toByteArray())
@@ -329,11 +359,15 @@ object ExceptionHandler {
      * 同步写入崩溃日志 (用于未捕获异常, 确保落盘)
      */
     private fun writeCrashLogSync(exceptionInfo: String) {
-        if (crashLogFile == null) {
+        if (synchronized(crashLogLock) { crashLogFile == null }) {
             applicationRef?.get()?.let(::setupCrashLogFile)
         }
-        val logFile = crashLogFile ?: return
+        val (logFile, generation) = synchronized(crashLogLock) {
+            crashLogFile to crashLogGeneration
+        }
+        logFile ?: return
         try {
+            if (generation != crashLogGeneration) return
             FileOutputStream(logFile, true).use { fos ->
                 fos.write(exceptionInfo.toByteArray())
                 fos.write("\n\n".toByteArray())

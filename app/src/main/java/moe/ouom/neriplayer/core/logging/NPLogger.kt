@@ -46,6 +46,7 @@ object NPLogger {
 
     private data class LogFileEntry(
         val file: File,
+        val generation: Long,
         val level: Int,
         val tag: String,
         val message: String,
@@ -56,6 +57,8 @@ object NPLogger {
     private var isFileLoggingEnabled = false
     private var logFile: File? = null
     private var initialized = false
+    @Volatile
+    private var fileLogGeneration = 0L
 
     private val logScope = CoroutineScope(Dispatchers.IO)
     private val fileLogChannel = Channel<LogFileEntry>(
@@ -116,6 +119,29 @@ object NPLogger {
         if (enabled == isFileLoggingEnabled && (enabled && logFile != null)) return
         isFileLoggingEnabled = enabled
         if (enabled) setupLogFile(context)
+    }
+
+    fun clearLogFiles(context: Context): Boolean {
+        val directory = resolveLogDirectory(context)
+        val activeLogFile = synchronized(fileLogWriterLock) {
+            fileLogGeneration += 1L
+            logFile
+        }
+        if (!directory.exists()) return true
+
+        val cleared = directory.listFiles().orEmpty().all { entry ->
+            if (activeLogFile != null && entry == activeLogFile) {
+                runCatching {
+                    FileOutputStream(entry, false).use { }
+                }.isSuccess
+            } else {
+                runCatching { entry.deleteRecursively() }.getOrDefault(false)
+            }
+        }
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+        return cleared
     }
 
     private fun log(level: Int, tag: String?, message: Any?, tr: Throwable? = null) {
@@ -181,6 +207,7 @@ object NPLogger {
         fileLogChannel.trySend(
             LogFileEntry(
                 file = currentLogFile,
+                generation = fileLogGeneration,
                 level = level,
                 tag = tag,
                 message = message,
@@ -201,6 +228,7 @@ object NPLogger {
     }
 
     private fun writeLogEntryNow(entry: LogFileEntry) {
+        if (entry.generation != fileLogGeneration) return
         try {
             FileOutputStream(entry.file, true).use { fos ->
                 fos.write(formatFileLogEntry(entry).toByteArray())
@@ -248,13 +276,17 @@ object NPLogger {
     fun getLogDirectory(context: Context): File? {
         if (!isFileLoggingEnabled) return null
 
-        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-        val directory = baseDir?.let { File(it, "logs") } ?: return null
+        val directory = resolveLogDirectory(context)
 
         if (!directory.exists()) {
             directory.mkdirs()
         }
 
         return directory
+    }
+
+    private fun resolveLogDirectory(context: Context): File {
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        return File(baseDir, "logs")
     }
 }
