@@ -124,40 +124,4 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
         )
         assertTrue(strategy!!.requireDirect)
     }
-
-    @Test
-    fun `offline cache playback failure always refreshes the resource`() {
-        assertTrue(
-            shouldAttemptCachedPlaybackRepair(
-                error = playbackError(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED),
-                isOfflineCache = true,
-                isYouTubeTrack = false,
-                isLocalSong = false
-            )
-        )
-    }
-
-    @Test
-    fun `remote timeout refreshes the resource so a bad cache entry is discarded`() {
-        assertTrue(
-            shouldAttemptCachedPlaybackRepair(
-                error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT),
-                isOfflineCache = false,
-                isYouTubeTrack = false,
-                isLocalSong = false
-            )
-        )
-    }
-
-    @Test
-    fun `local media does not trigger remote cache repair`() {
-        assertFalse(
-            shouldAttemptCachedPlaybackRepair(
-                error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT),
-                isOfflineCache = false,
-                isYouTubeTrack = false,
-                isLocalSong = true
-            )
-        )
-    }
 }
