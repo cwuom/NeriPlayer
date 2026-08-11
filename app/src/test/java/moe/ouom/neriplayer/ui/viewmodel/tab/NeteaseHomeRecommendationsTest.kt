@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.SongItem
@@ -118,10 +119,10 @@ class NeteaseHomeRecommendationsTest {
     @Test
     fun radarPlaylistDefinitions_keepOfficialRadarIds() {
         assertEquals(
-            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 5341776086L),
+            listOf(5320167908L, 5362359247L, 5300458264L, 5327906368L, 6700242542L),
             NeteaseRadarPlaylistDefinitions.map { it.id }
         )
-        assertEquals("神秘雷达", NeteaseRadarPlaylistDefinitions.last().name)
+        assertEquals("雷击顿唱片行", NeteaseRadarPlaylistDefinitions.last().name)
     }
 
     @Test
@@ -215,8 +216,7 @@ class NeteaseHomeRecommendationsTest {
                 recommendationsBootstrapped = false
             )
         )
-        assertEquals(
-            false,
+        assertFalse(
             shouldRefreshNeteaseHome(
                 loginChanged = false,
                 recommendationsBootstrapped = true

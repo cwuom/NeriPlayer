@@ -291,6 +291,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 val cookies = raw.toMutableMap()
                 if (!cookies.containsKey("os")) cookies["os"] = "pc"
                 NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
+                client.setPersistedCookies(cookies)
                 val nextHasLogin = !cookies["MUSIC_U"].isNullOrBlank()
                 val loginChanged = hasRecommendLogin != nextHasLogin
                 hasRecommendLogin = nextHasLogin
