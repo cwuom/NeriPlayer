@@ -16,8 +16,10 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
-import moe.ouom.neriplayer.core.player.url.checkExoPlayerCache
+import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
+import moe.ouom.neriplayer.core.player.url.hasCompleteExoPlayerCache
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
@@ -181,7 +183,7 @@ internal fun PlayerManager.kickoffYouTubePlaybackIntentWarmup(
         ?: return
     val preferredQuality = effectiveYouTubeQuality()
     val cacheKey = computeYouTubeCacheKey(videoId, preferredQuality)
-    if (checkExoPlayerCache(cacheKey)) {
+    if (hasCompleteExoPlayerCache(cacheKey)) {
         return
     }
     NPLogger.d(
@@ -260,6 +262,20 @@ private fun PlayerManager.canRunYouTubePrefetch(source: String): Boolean {
     return false
 }
 
+private suspend fun PlayerManager.shouldStartMediaCachePrefetch(cacheKey: String): Boolean {
+    return when (prepareExoPlayerCacheForPrefetch(cacheKey)) {
+        CachePrefetchReadiness.COMPLETE -> false
+        CachePrefetchReadiness.READY_FOR_PREFETCH -> true
+        CachePrefetchReadiness.UNAVAILABLE -> {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "skip YouTube media prefetch because the cache cannot be repaired safely: key=$cacheKey"
+            )
+            false
+        }
+    }
+}
+
 private fun PlayerManager.kickoffYouTubePlayableAudioPrefetches(
     videoIds: List<String>,
     preferredQuality: String,
@@ -288,7 +304,7 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
         )
         return
     }
-    if (checkExoPlayerCache(cacheKey)) {
+    if (!shouldStartMediaCachePrefetch(cacheKey)) {
         return
     }
     val existingJob = youtubeStreamWarmupJobs[cacheKey]
@@ -311,7 +327,10 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
         ) ?: return
         invalidateMismatchedCachedResource(
             cacheKey = cacheKey,
-            expectedContentLength = playableAudio.contentLength
+            expectedContentLength = playableAudio.contentLength,
+            shouldApplyMutation = {
+                !playbackDemandArbiter.shouldYieldPrefetch(cacheKey)
+            }
         )
         if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
             NPLogger.d(
@@ -320,7 +339,7 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             )
             return
         }
-        if (checkExoPlayerCache(cacheKey)) {
+        if (!shouldStartMediaCachePrefetch(cacheKey)) {
             return
         }
         if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
@@ -391,16 +410,14 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
     cacheKey: String,
     targetBytes: Long
 ): Long = withContext(Dispatchers.IO) {
-    if (!isCacheInitialized()) {
-        return@withContext 0L
-    }
+    val mediaCache = cache ?: return@withContext 0L
     val upstreamFactory = conditionalHttpFactory ?: return@withContext 0L
     val requestedBytes = targetBytes.coerceAtLeast(YOUTUBE_WARMUP_MIN_PREFETCH_BYTES)
     if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
         return@withContext 0L
     }
     val cacheDataSource = CacheDataSource.Factory()
-        .setCache(cache)
+        .setCache(mediaCache)
         .setUpstreamDataSourceFactory(upstreamFactory)
         .setFlags(CacheDataSource.FLAG_BLOCK_ON_CACHE)
         .setEventListener(object : CacheDataSource.EventListener {

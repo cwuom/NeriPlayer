@@ -283,7 +283,8 @@ object PlayerManager {
     @Volatile
     internal var interactiveNowPlayingVisible: Boolean = false
 
-    internal lateinit var cache: Cache
+    @Volatile
+    internal var cache: Cache? = null
     internal var conditionalHttpFactory: ConditionalHttpDataSourceFactory? = null
 
     // Helper function to get localized string
@@ -823,7 +824,7 @@ object PlayerManager {
 
     internal fun isPlayerInitialized(): Boolean = this::player.isInitialized
 
-    internal fun isCacheInitialized(): Boolean = this::cache.isInitialized
+    internal fun isCacheInitialized(): Boolean = cache != null
 
     internal fun syncPlaybackControlPlayingState() {
         _playbackControlPlayingFlow.value = shouldShowPauseButtonForPlaybackControls(

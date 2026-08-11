@@ -23,6 +23,8 @@ import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
+import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
+import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -200,7 +202,12 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
         return
     }
 
-    if (trySwitchToNextPlaybackCandidateForRecovery(reason = "startup_stall")) {
+    if (
+        trySwitchToNextPlaybackCandidateForRecovery(
+            reason = "startup_stall",
+            invalidateCurrentCache = false
+        )
+    ) {
         return
     }
 
@@ -286,12 +293,16 @@ private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestTok
     return true
 }
 
-internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: String): Boolean {
+internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(
+    reason: String,
+    invalidateCurrentCache: Boolean
+): Boolean {
     val nextIndex = activePlaybackUrlIndex + 1
     val candidate = activePlaybackCandidates.getOrNull(nextIndex) ?: return false
     val requestToken = playbackRequestToken
     if (requestToken != playbackRequestToken) return false
 
+    val staleCacheKey = currentPlaybackCacheKeyForRecovery()
     activePlaybackUrlIndex = nextIndex
     activePlaybackResumePositionMs = player.currentPosition.coerceAtLeast(0L)
     NPLogger.w(
@@ -302,7 +313,10 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
         applyPlaybackCandidate(
             candidate = candidate,
             resumePositionMs = activePlaybackResumePositionMs,
-            requestToken = requestToken
+            requestToken = requestToken,
+            staleCacheKey = staleCacheKey,
+            invalidateCurrentCache = invalidateCurrentCache,
+            recoveryReason = reason
         )
     }
     return true
@@ -311,10 +325,27 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
 private suspend fun PlayerManager.applyPlaybackCandidate(
     candidate: PlaybackUrlCandidate,
     resumePositionMs: Long,
-    requestToken: Long
+    requestToken: Long,
+    staleCacheKey: String?,
+    invalidateCurrentCache: Boolean,
+    recoveryReason: String
 ) {
     val song = _currentSongFlow.value ?: return
+    if (requestToken != playbackRequestToken) return
     val cacheKey = candidate.cacheKeyOverride ?: computeCacheKey(song)
+    if (
+        shouldInvalidateStalePlaybackCache(
+            invalidateCurrentCache = invalidateCurrentCache,
+            staleCacheKey = staleCacheKey,
+            nextCacheKey = cacheKey
+        )
+    ) {
+        invalidateCachedResourceForPlaybackRecovery(
+            cacheKey = staleCacheKey.orEmpty(),
+            reason = recoveryReason
+        )
+    }
+    if (requestToken != playbackRequestToken) return
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
         expectedContentLength = candidate.expectedContentLength
@@ -343,6 +374,16 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     startProgressUpdates()
     scheduleStatePersist(positionMs = resumePositionMs, shouldResumePlayback = true)
     schedulePlaybackStartupWatchdog(reason = "candidate_switch")
+}
+
+internal fun shouldInvalidateStalePlaybackCache(
+    invalidateCurrentCache: Boolean,
+    staleCacheKey: String?,
+    nextCacheKey: String
+): Boolean {
+    return invalidateCurrentCache &&
+        !staleCacheKey.isNullOrBlank() &&
+        staleCacheKey != nextCacheKey
 }
 
 internal fun PlayerManager.shouldTreatReadyAtStartAsUnhealthyPrepared(): Boolean {
