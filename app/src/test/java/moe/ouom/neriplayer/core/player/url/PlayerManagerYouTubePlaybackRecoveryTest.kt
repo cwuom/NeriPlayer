@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.url
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.StuckPlayerException
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -228,5 +229,92 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
                 error = error
             )
         )
+        assertFalse(
+            shouldInvalidateCacheAfterPlaybackFailure(
+                shouldInvalidateCache = shouldInvalidateCachedResourceForPlaybackRecovery(error),
+                isOfflineCache = false
+            )
+        )
+    }
+
+    @Test
+    fun `unrecoverable remote network failure invalidates its cache`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT)
+
+        assertTrue(
+            shouldInvalidateCacheAfterPlaybackFailure(
+                shouldInvalidateCache = shouldInvalidateCachedResourceForPlaybackRecovery(error),
+                isOfflineCache = false
+            )
+        )
+    }
+
+    @Test
+    fun `offline cache failure never invalidates cache in final failure path`() {
+        assertFalse(
+            shouldInvalidateCacheAfterPlaybackFailure(
+                shouldInvalidateCache = true,
+                isOfflineCache = true
+            )
+        )
+    }
+
+    @Test
+    fun `offline decoder error discards cache so recovery does not loop on damaged media`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
+
+        assertTrue(
+            shouldInvalidateCacheForPlaybackRecovery(
+                error = error,
+                isOfflineCache = true
+            )
+        )
+    }
+
+    @Test
+    fun `remote decoder error retains cache because decoder support is not cache corruption`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
+
+        assertFalse(
+            shouldInvalidateCacheForPlaybackRecovery(
+                error = error,
+                isOfflineCache = false
+            )
+        )
+    }
+
+    @Test
+    fun `media3 stuck timeout does not discard cache`() {
+        val error = PlaybackException(
+            "test",
+            StuckPlayerException(
+                StuckPlayerException.STUCK_PLAYING_NOT_ENDING,
+                60_000
+            ),
+            PlaybackException.ERROR_CODE_TIMEOUT
+        )
+
+        assertFalse(shouldInvalidateCachedResourceForPlaybackRecovery(error))
+        assertFalse(shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache = false))
+        assertNull(resolveYouTubePlaybackRecoveryStrategy(error, isOfflineCache = false))
+        assertTrue(shouldTreatPlaybackFailureAsTrackEnd(error))
+        assertTrue(shouldAdvanceAfterStuckTrackEnd(error, playbackRequested = true))
+        assertFalse(shouldAdvanceAfterStuckTrackEnd(error, playbackRequested = false))
+    }
+
+    @Test
+    fun `other media3 stuck timeouts retain normal recovery behavior`() {
+        val error = PlaybackException(
+            "test",
+            StuckPlayerException(
+                StuckPlayerException.STUCK_BUFFERING_NO_PROGRESS,
+                60_000
+            ),
+            PlaybackException.ERROR_CODE_TIMEOUT
+        )
+
+        assertTrue(shouldInvalidateCachedResourceForPlaybackRecovery(error))
+        assertTrue(shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache = false))
+        assertFalse(shouldTreatPlaybackFailureAsTrackEnd(error))
     }
 }

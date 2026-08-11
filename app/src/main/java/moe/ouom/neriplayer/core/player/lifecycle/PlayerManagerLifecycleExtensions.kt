@@ -23,6 +23,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.Cache.CacheException
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
@@ -114,8 +115,11 @@ import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
-import moe.ouom.neriplayer.core.player.url.shouldInvalidateCachedResourceForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheAfterPlaybackFailure
+import moe.ouom.neriplayer.core.player.url.shouldInvalidateCacheForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
+import moe.ouom.neriplayer.core.player.url.shouldAdvanceAfterStuckTrackEnd
+import moe.ouom.neriplayer.core.player.url.shouldTreatPlaybackFailureAsTrackEnd
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -153,6 +157,20 @@ private fun Throwable.isSimpleCacheFolderLocked(): Boolean {
         }
 }
 
+private fun Throwable.hasCacheInitializationFailure(): Boolean {
+    return generateSequence(this) { it.cause }
+        .any { it is CacheException }
+}
+
+internal fun shouldRebuildMediaCacheAfterInitializationFailure(error: Throwable): Boolean {
+    return !error.isSimpleCacheFolderLocked() && error.hasCacheInitializationFailure()
+}
+
+internal fun isMediaCacheDirectorySafeToOpen(cacheDir: File): Boolean {
+    return !cacheDir.exists() ||
+        (cacheDir.isDirectory && cacheDir.listFiles()?.isEmpty() == true)
+}
+
 private fun createVerifiedMediaCache(
     app: Application,
     maxCacheSize: Long,
@@ -186,10 +204,22 @@ private fun createVerifiedMediaCache(
     firstAttempt.getOrNull()?.let { return it }
 
     val firstError = firstAttempt.exceptionOrNull() ?: return null
-    if (firstError.isSimpleCacheFolderLocked()) {
+    if (
+        firstError.isSimpleCacheFolderLocked() ||
+            SimpleCache.isCacheFolderLocked(cacheDir)
+    ) {
         NPLogger.w(
             "NERI-PlayerManager",
             "media cache is already locked; continue without cache for this process",
+            firstError
+        )
+        return null
+    }
+
+    if (!shouldRebuildMediaCacheAfterInitializationFailure(firstError)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "media cache initialization failed outside the cache store; playback will bypass cache",
             firstError
         )
         return null
@@ -200,14 +230,22 @@ private fun createVerifiedMediaCache(
         "media cache initialization failed; rebuilding the cache directory",
         firstError
     )
-    runCatching {
+    val removedBrokenCache = runCatching {
         SimpleCache.delete(cacheDir, databaseProvider)
+        isMediaCacheDirectorySafeToOpen(cacheDir)
     }.onFailure { deleteError ->
         NPLogger.w(
             "NERI-PlayerManager",
             "failed to remove broken media cache; playback will bypass cache",
             deleteError
         )
+    }.getOrDefault(false)
+    if (!removedBrokenCache) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "broken media cache could not be removed completely; playback will bypass cache"
+        )
+        return null
     }
 
     return runCatching { openCache() }
@@ -470,11 +508,27 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
 
+                if (shouldAdvanceAfterStuckTrackEnd(error, resumePlaybackRequested)) {
+                    NPLogger.w(
+                        "NERI-PlayerManager",
+                        "Media3 reported a track that did not end; advance the queue without invalidating cache"
+                    )
+                    handleTrackEndedIfNeeded(source = "media3_stuck_playing_not_ending")
+                    return
+                }
+                if (shouldTreatPlaybackFailureAsTrackEnd(error)) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Ignore track-end timeout because playback is no longer requested"
+                    )
+                    return
+                }
+
                 val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
                 val shouldInvalidateCache =
-                    shouldInvalidateCachedResourceForPlaybackRecovery(error)
+                    shouldInvalidateCacheForPlaybackRecovery(error, isOfflineCache)
 
                 val cause = error.cause
                 val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
@@ -566,16 +620,21 @@ internal fun PlayerManager.initializeImpl(
                     return
                 }
 
-                val cacheKeyForFailure = currentPlaybackCacheKeyForRecovery()
                 if (isOfflineCache) {
                     pause()
                 } else {
                     mainScope.launch {
-                        cacheKeyForFailure?.let { cacheKey ->
-                            invalidateCachedResourceForPlaybackRecovery(
-                                cacheKey = cacheKey,
-                                reason = "unrecoverable_playback_${error.errorCodeName}"
+                        if (shouldInvalidateCacheAfterPlaybackFailure(
+                                shouldInvalidateCache = shouldInvalidateCache,
+                                isOfflineCache = isOfflineCache
                             )
+                        ) {
+                            currentPlaybackCacheKeyForRecovery()?.let { cacheKey ->
+                                invalidateCachedResourceForPlaybackRecovery(
+                                    cacheKey = cacheKey,
+                                    reason = "unrecoverable_playback_${error.errorCodeName}"
+                                )
+                            }
                         }
                         advanceAfterPlaybackFailure(
                             source = "playback_error_${error.errorCodeName}"
@@ -1236,8 +1295,6 @@ internal suspend fun PlayerManager.clearCacheImpl(
 ): Pair<Boolean, String> {
     return kotlinx.coroutines.withContext(Dispatchers.IO) {
         var apiRemovedCount = 0
-        var physicalDeletedCount = 0
-        var totalSpaceFreed = 0L
 
         try {
             if (clearAudio) {
@@ -1246,21 +1303,9 @@ internal suspend fun PlayerManager.clearCacheImpl(
                     val keysSnapshot = HashSet(mediaCache.keys)
                     keysSnapshot.forEach { key ->
                         try {
-                            val resource = mediaCache.getCachedSpans(key)
-                            resource.forEach { totalSpaceFreed += it.length }
                             mediaCache.removeResource(key)
                             apiRemovedCount++
                         } catch (_: Exception) {
-                        }
-                    }
-                }
-
-                val cacheDir = File(application.cacheDir, MEDIA_CACHE_DIRECTORY_NAME)
-                if (cacheDir.exists() && cacheDir.isDirectory) {
-                    val files = cacheDir.listFiles() ?: emptyArray()
-                    files.forEach { file ->
-                        if (file.isFile && file.name.endsWith(".exo") && file.delete()) {
-                            physicalDeletedCount++
                         }
                     }
                 }
@@ -1278,10 +1323,10 @@ internal suspend fun PlayerManager.clearCacheImpl(
 
             NPLogger.d(
                 "NERI-Player",
-                "Cache Clear: API removed $apiRemovedCount keys, Physically deleted $physicalDeletedCount .exo files."
+                "Cache Clear: removed $apiRemovedCount resources through SimpleCache."
             )
 
-            val msg = if (physicalDeletedCount > 0 || apiRemovedCount > 0 || clearImage) {
+            val msg = if (apiRemovedCount > 0 || clearImage) {
                 getLocalizedString(R.string.cache_clear_complete)
             } else {
                 getLocalizedString(R.string.settings_cache_empty)

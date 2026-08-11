@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.core.net.toUri
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.util.StuckPlayerException
 import androidx.media3.datasource.cache.CacheSpan
 import androidx.media3.datasource.cache.ContentMetadata
 import kotlinx.coroutines.CompletableDeferred
@@ -72,6 +73,12 @@ internal data class CachedResourceIntegrity(
     val requiresRepair: Boolean,
     val coveredLength: Long
 )
+
+internal enum class CachePrefetchReadiness {
+    COMPLETE,
+    READY_FOR_PREFETCH,
+    UNAVAILABLE
+}
 
 internal fun inspectCachedResourceSpans(
     spans: Collection<CacheSpan>,
@@ -511,6 +518,19 @@ internal fun shouldInvalidateCachedResourceForPlaybackRecovery(
     error: PlaybackException
 ): Boolean = isRecoverableRemotePlaybackCacheError(error)
 
+internal fun shouldInvalidateCacheForPlaybackRecovery(
+    error: PlaybackException,
+    isOfflineCache: Boolean
+): Boolean {
+    return shouldInvalidateCachedResourceForPlaybackRecovery(error) ||
+        (isOfflineCache && isRecoverableCachedMediaFormatError(error))
+}
+
+internal fun shouldInvalidateCacheAfterPlaybackFailure(
+    shouldInvalidateCache: Boolean,
+    isOfflineCache: Boolean
+): Boolean = shouldInvalidateCache && !isOfflineCache
+
 internal fun isRecoverableRemotePlaybackCacheError(error: PlaybackException): Boolean {
     return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ||
@@ -518,7 +538,26 @@ internal fun isRecoverableRemotePlaybackCacheError(error: PlaybackException): Bo
         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
-        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT
+        (
+            error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT &&
+                !shouldTreatPlaybackFailureAsTrackEnd(error)
+            )
+}
+
+internal fun shouldTreatPlaybackFailureAsTrackEnd(error: PlaybackException): Boolean {
+    return error.stuckPlayerExceptionOrNull()?.stuckType ==
+        StuckPlayerException.STUCK_PLAYING_NOT_ENDING
+}
+
+internal fun shouldAdvanceAfterStuckTrackEnd(
+    error: PlaybackException,
+    playbackRequested: Boolean
+): Boolean = playbackRequested && shouldTreatPlaybackFailureAsTrackEnd(error)
+
+private fun PlaybackException.stuckPlayerExceptionOrNull(): StuckPlayerException? {
+    return generateSequence(cause) { it.cause }
+        .filterIsInstance<StuckPlayerException>()
+        .firstOrNull()
 }
 
 internal fun PlayerManager.youtubePlaybackRecoveryStrategyForError(
@@ -593,11 +632,14 @@ private fun isRecoverableYouTubeRemotePlaybackError(error: PlaybackException): B
         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
-        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT ||
-        isRecoverableYouTubeFormatError(error)
+        (
+            error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT &&
+                !shouldTreatPlaybackFailureAsTrackEnd(error)
+            ) ||
+        isRecoverableCachedMediaFormatError(error)
 }
 
-private fun isRecoverableYouTubeFormatError(error: PlaybackException): Boolean {
+private fun isRecoverableCachedMediaFormatError(error: PlaybackException): Boolean {
     return error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
         error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
         error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
@@ -1121,17 +1163,30 @@ internal fun PlayerManager.inspectExoPlayerCache(
     }
 }
 
-internal fun PlayerManager.checkExoPlayerCache(cacheKey: String): Boolean {
+internal fun PlayerManager.hasCompleteExoPlayerCache(cacheKey: String): Boolean {
+    return inspectExoPlayerCache(cacheKey).isComplete
+}
+
+internal suspend fun PlayerManager.prepareExoPlayerCacheForPrefetch(
+    cacheKey: String
+): CachePrefetchReadiness {
+    val currentCache = cache ?: return CachePrefetchReadiness.UNAVAILABLE
+
     val integrity = inspectExoPlayerCache(cacheKey)
-    if (integrity.requiresRepair) {
-        ioScope.launch {
-            invalidateCachedResourceForPlaybackRecovery(
-                cacheKey = cacheKey,
-                reason = "integrity_check"
-            )
-        }
+    if (cache !== currentCache) return CachePrefetchReadiness.UNAVAILABLE
+    if (integrity.isComplete) return CachePrefetchReadiness.COMPLETE
+    if (!integrity.requiresRepair) return CachePrefetchReadiness.READY_FOR_PREFETCH
+
+    return if (
+        invalidateCachedResourceForPlaybackRecovery(
+            cacheKey = cacheKey,
+            reason = "prefetch_integrity_check"
+        )
+    ) {
+        CachePrefetchReadiness.READY_FOR_PREFETCH
+    } else {
+        CachePrefetchReadiness.UNAVAILABLE
     }
-    return integrity.isComplete
 }
 
 internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
@@ -1186,20 +1241,22 @@ internal fun PlayerManager.currentPlaybackCacheKeyForRecovery(): String? {
 internal suspend fun PlayerManager.invalidateCachedResourceForPlaybackRecovery(
     cacheKey: String,
     reason: String
-) = withContext(Dispatchers.IO) {
-    if (cacheKey.isBlank()) return@withContext
-    val mediaCache = cache ?: return@withContext
+): Boolean = withContext(Dispatchers.IO) {
+    if (cacheKey.isBlank()) return@withContext false
+    val mediaCache = cache ?: return@withContext false
     try {
         mediaCache.removeResource(cacheKey)
         NPLogger.w(
             "NERI-PlayerManager",
             "已移除异常播放缓存: key=$cacheKey, reason=$reason"
         )
+        true
     } catch (e: Exception) {
         NPLogger.w(
             "NERI-PlayerManager",
             "移除异常播放缓存失败: key=$cacheKey, reason=$reason, error=${e.message}"
         )
+        false
     }
 }
 
