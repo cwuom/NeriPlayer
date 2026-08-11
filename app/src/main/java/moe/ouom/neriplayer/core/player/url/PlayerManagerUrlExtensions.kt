@@ -507,6 +507,10 @@ internal fun shouldAttemptCachedPlaybackRepair(
     return isRecoverableRemotePlaybackCacheError(error)
 }
 
+internal fun shouldInvalidateCachedResourceForPlaybackRecovery(
+    error: PlaybackException
+): Boolean = isRecoverableRemotePlaybackCacheError(error)
+
 internal fun isRecoverableRemotePlaybackCacheError(error: PlaybackException): Boolean {
     return error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE ||
@@ -514,11 +518,7 @@ internal fun isRecoverableRemotePlaybackCacheError(error: PlaybackException): Bo
         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE ||
         error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
-        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT ||
-        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
-        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ||
-        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
-        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED
+        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT
 }
 
 internal fun PlayerManager.youtubePlaybackRecoveryStrategyForError(
@@ -1080,17 +1080,16 @@ private fun PlayerManager.checkLocalCache(
 internal fun PlayerManager.inspectExoPlayerCache(
     cacheKey: String
 ): CachedResourceIntegrity {
+    val mediaCache = cache ?: return CachedResourceIntegrity(false, false, 0L)
     return try {
-        if (!isCacheInitialized()) {
-            return CachedResourceIntegrity(false, false, 0L)
-        }
-
-        val cachedSpans = cache.getCachedSpans(cacheKey)
+        val cachedSpans = mediaCache.getCachedSpans(cacheKey)
         if (cachedSpans.isEmpty()) {
             return CachedResourceIntegrity(false, false, 0L)
         }
 
-        val contentLength = ContentMetadata.getContentLength(cache.getContentMetadata(cacheKey))
+        val contentLength = ContentMetadata.getContentLength(
+            mediaCache.getContentMetadata(cacheKey)
+        )
         if (contentLength <= 0L) {
             NPLogger.d("NERI-PlayerManager", "缓存命中但缺少内容长度，视为未完成缓存: $cacheKey")
             return CachedResourceIntegrity(false, false, 0L)
@@ -1141,14 +1140,14 @@ internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
     shouldApplyMutation: () -> Boolean = { true }
 ) = withContext(Dispatchers.IO) {
     val expectedLength = expectedContentLength?.takeIf { it > 0L } ?: return@withContext
-    if (!isCacheInitialized()) return@withContext
+    val mediaCache = cache ?: return@withContext
 
     try {
-        val cachedSpans = cache.getCachedSpans(cacheKey)
+        val cachedSpans = mediaCache.getCachedSpans(cacheKey)
         if (cachedSpans.isEmpty()) return@withContext
 
         val cachedContentLength = ContentMetadata.getContentLength(
-            cache.getContentMetadata(cacheKey)
+            mediaCache.getContentMetadata(cacheKey)
         )
         if (!shouldReplaceCachedPreviewResource(cachedContentLength, expectedLength)) {
             return@withContext
@@ -1159,7 +1158,7 @@ internal suspend fun PlayerManager.invalidateMismatchedCachedResource(
             "缓存疑似预览片段，移除旧缓存以便重新拉取完整资源: key=$cacheKey, cached=$cachedContentLength, expected=$expectedLength"
         )
         if (!shouldApplyMutation()) return@withContext
-        cache.removeResource(cacheKey)
+        mediaCache.removeResource(cacheKey)
     } catch (e: Exception) {
         NPLogger.w(
             "NERI-PlayerManager",
@@ -1189,9 +1188,9 @@ internal suspend fun PlayerManager.invalidateCachedResourceForPlaybackRecovery(
     reason: String
 ) = withContext(Dispatchers.IO) {
     if (cacheKey.isBlank()) return@withContext
-    if (!isCacheInitialized()) return@withContext
+    val mediaCache = cache ?: return@withContext
     try {
-        cache.removeResource(cacheKey)
+        mediaCache.removeResource(cacheKey)
         NPLogger.w(
             "NERI-PlayerManager",
             "已移除异常播放缓存: key=$cacheKey, reason=$reason"

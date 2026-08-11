@@ -126,25 +126,37 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
     }
 
     @Test
-    fun `offline cache playback failure always refreshes the resource`() {
+    fun `offline audio failure refreshes without deleting the cache`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
         assertTrue(
             shouldAttemptCachedPlaybackRepair(
-                error = playbackError(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED),
+                error = error,
                 isOfflineCache = true,
                 isYouTubeTrack = false,
                 isLocalSong = false
+            )
+        )
+        assertFalse(
+            shouldInvalidateCachedResourceForPlaybackRecovery(
+                error = error
             )
         )
     }
 
     @Test
     fun `remote timeout refreshes the resource so a bad cache entry is discarded`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT)
         assertTrue(
             shouldAttemptCachedPlaybackRepair(
-                error = playbackError(PlaybackException.ERROR_CODE_TIMEOUT),
+                error = error,
                 isOfflineCache = false,
                 isYouTubeTrack = false,
                 isLocalSong = false
+            )
+        )
+        assertTrue(
+            shouldInvalidateCachedResourceForPlaybackRecovery(
+                error = error
             )
         )
     }
@@ -157,6 +169,63 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
                 isOfflineCache = false,
                 isYouTubeTrack = false,
                 isLocalSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `remote decoder failure does not trigger generic cache recovery`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
+
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = false
+            )
+        )
+        assertFalse(
+            shouldInvalidateCachedResourceForPlaybackRecovery(
+                error = error
+            )
+        )
+    }
+
+    @Test
+    fun `remote parsing failure does not trigger generic cache recovery`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED)
+
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = false
+            )
+        )
+        assertFalse(
+            shouldInvalidateCachedResourceForPlaybackRecovery(
+                error = error
+            )
+        )
+    }
+
+    @Test
+    fun `youtube format recovery retains a remote cache entry`() {
+        val error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
+
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = error,
+                isOfflineCache = false,
+                isYouTubeTrack = true,
+                isLocalSong = false
+            )
+        )
+        assertFalse(
+            shouldInvalidateCachedResourceForPlaybackRecovery(
+                error = error
             )
         )
     }

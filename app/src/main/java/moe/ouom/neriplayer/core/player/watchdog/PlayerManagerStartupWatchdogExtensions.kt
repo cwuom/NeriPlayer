@@ -202,7 +202,12 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
         return
     }
 
-    if (trySwitchToNextPlaybackCandidateForRecovery(reason = "startup_stall")) {
+    if (
+        trySwitchToNextPlaybackCandidateForRecovery(
+            reason = "startup_stall",
+            invalidateCurrentCache = false
+        )
+    ) {
         return
     }
 
@@ -288,7 +293,10 @@ private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestTok
     return true
 }
 
-internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: String): Boolean {
+internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(
+    reason: String,
+    invalidateCurrentCache: Boolean
+): Boolean {
     val nextIndex = activePlaybackUrlIndex + 1
     val candidate = activePlaybackCandidates.getOrNull(nextIndex) ?: return false
     val requestToken = playbackRequestToken
@@ -307,6 +315,7 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
             resumePositionMs = activePlaybackResumePositionMs,
             requestToken = requestToken,
             staleCacheKey = staleCacheKey,
+            invalidateCurrentCache = invalidateCurrentCache,
             recoveryReason = reason
         )
     }
@@ -318,18 +327,25 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     resumePositionMs: Long,
     requestToken: Long,
     staleCacheKey: String?,
+    invalidateCurrentCache: Boolean,
     recoveryReason: String
 ) {
     val song = _currentSongFlow.value ?: return
     if (requestToken != playbackRequestToken) return
-    staleCacheKey?.let {
+    val cacheKey = candidate.cacheKeyOverride ?: computeCacheKey(song)
+    if (
+        shouldInvalidateStalePlaybackCache(
+            invalidateCurrentCache = invalidateCurrentCache,
+            staleCacheKey = staleCacheKey,
+            nextCacheKey = cacheKey
+        )
+    ) {
         invalidateCachedResourceForPlaybackRecovery(
-            cacheKey = it,
+            cacheKey = staleCacheKey.orEmpty(),
             reason = recoveryReason
         )
     }
     if (requestToken != playbackRequestToken) return
-    val cacheKey = candidate.cacheKeyOverride ?: computeCacheKey(song)
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
         expectedContentLength = candidate.expectedContentLength
@@ -358,6 +374,16 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     startProgressUpdates()
     scheduleStatePersist(positionMs = resumePositionMs, shouldResumePlayback = true)
     schedulePlaybackStartupWatchdog(reason = "candidate_switch")
+}
+
+internal fun shouldInvalidateStalePlaybackCache(
+    invalidateCurrentCache: Boolean,
+    staleCacheKey: String?,
+    nextCacheKey: String
+): Boolean {
+    return invalidateCurrentCache &&
+        !staleCacheKey.isNullOrBlank() &&
+        staleCacheKey != nextCacheKey
 }
 
 internal fun PlayerManager.shouldTreatReadyAtStartAsUnhealthyPrepared(): Boolean {

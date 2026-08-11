@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
+import moe.ouom.neriplayer.core.player.url.shouldInvalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.shouldAttemptUrlRefresh
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForError
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -218,6 +219,12 @@ private fun createVerifiedMediaCache(
             )
         }
         .getOrNull()
+}
+
+internal fun PlayerManager.releaseMediaCache() {
+    val mediaCache = cache
+    cache = null
+    mediaCache?.release()
 }
 
 internal fun PlayerManager.initializeImpl(
@@ -345,6 +352,7 @@ internal fun PlayerManager.initializeImpl(
                 databaseProvider = dbProvider
             )
             if (mediaCache == null) {
+                cache = null
                 androidx.media3.datasource.DefaultDataSource.Factory(app, conditionalFactory)
             } else {
                 cache = mediaCache
@@ -465,12 +473,17 @@ internal fun PlayerManager.initializeImpl(
                 val currentSong = _currentSongFlow.value
                 val currentUrl = _currentMediaUrl.value
                 val isOfflineCache = currentUrl?.startsWith("http://offline.cache/") == true
+                val shouldInvalidateCache =
+                    shouldInvalidateCachedResourceForPlaybackRecovery(error)
 
                 val cause = error.cause
                 val shouldResumeAfterRecovery = resumePlaybackRequested || player.playWhenReady || player.isPlaying
                 if (
                     shouldResumeAfterRecovery &&
-                    trySwitchToNextPlaybackCandidateForRecovery(reason = "player_error_${error.errorCodeName}")
+                    trySwitchToNextPlaybackCandidateForRecovery(
+                        reason = "player_error_${error.errorCodeName}",
+                        invalidateCurrentCache = shouldInvalidateCache
+                    )
                 ) {
                     return
                 }
@@ -481,8 +494,11 @@ internal fun PlayerManager.initializeImpl(
                         song = currentSong,
                         isOfflineCache = isOfflineCache
                     )
-                    val cacheKeyToInvalidateBeforeResolve =
+                    val cacheKeyToInvalidateBeforeResolve = if (shouldInvalidateCache) {
                         currentPlaybackCacheKeyForRecovery()
+                    } else {
+                        null
+                    }
                     val shouldBypassRefreshCooldown = (
                         pendingSeekPositionOrNull() != null &&
                             YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(
@@ -1182,10 +1198,8 @@ internal fun PlayerManager.initializeImpl(
             NPLogger.w("NERI-PlayerManager", "initialize(): rollback release effects failed: ${it.message}")
         }
         runCatching {
-            if (isCacheInitialized()) {
-                cache.release()
-                NPLogger.d("NERI-PlayerManager", "initialize(): rollback released cache")
-            }
+            releaseMediaCache()
+            NPLogger.d("NERI-PlayerManager", "initialize(): rollback released cache")
         }.onFailure {
             NPLogger.w("NERI-PlayerManager", "initialize(): rollback release cache failed: ${it.message}")
         }
@@ -1227,13 +1241,14 @@ internal suspend fun PlayerManager.clearCacheImpl(
 
         try {
             if (clearAudio) {
-                if (isCacheInitialized()) {
-                    val keysSnapshot = HashSet(cache.keys)
+                val mediaCache = cache
+                if (mediaCache != null) {
+                    val keysSnapshot = HashSet(mediaCache.keys)
                     keysSnapshot.forEach { key ->
                         try {
-                            val resource = cache.getCachedSpans(key)
+                            val resource = mediaCache.getCachedSpans(key)
                             resource.forEach { totalSpaceFreed += it.length }
-                            cache.removeResource(key)
+                            mediaCache.removeResource(key)
                             apiRemovedCount++
                         } catch (_: Exception) {
                         }
@@ -3763,9 +3778,7 @@ internal fun PlayerManager.releaseImpl() {
         _playbackSoundState.value = playbackEffectsController.release()
         _playWhenReadyFlow.value = false
         _playerPlaybackStateFlow.value = Player.STATE_IDLE
-        if (isCacheInitialized()) {
-            cache.release()
-        }
+        releaseMediaCache()
         conditionalHttpFactory?.close()
         conditionalHttpFactory = null
 

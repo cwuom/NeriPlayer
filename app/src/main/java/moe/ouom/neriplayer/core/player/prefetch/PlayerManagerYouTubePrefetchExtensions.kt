@@ -391,16 +391,14 @@ private suspend fun PlayerManager.prefetchIntoPlayerCache(
     cacheKey: String,
     targetBytes: Long
 ): Long = withContext(Dispatchers.IO) {
-    if (!isCacheInitialized()) {
-        return@withContext 0L
-    }
+    val mediaCache = cache ?: return@withContext 0L
     val upstreamFactory = conditionalHttpFactory ?: return@withContext 0L
     val requestedBytes = targetBytes.coerceAtLeast(YOUTUBE_WARMUP_MIN_PREFETCH_BYTES)
     if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
         return@withContext 0L
     }
     val cacheDataSource = CacheDataSource.Factory()
-        .setCache(cache)
+        .setCache(mediaCache)
         .setUpstreamDataSourceFactory(upstreamFactory)
         .setFlags(
             CacheDataSource.FLAG_BLOCK_ON_CACHE or
