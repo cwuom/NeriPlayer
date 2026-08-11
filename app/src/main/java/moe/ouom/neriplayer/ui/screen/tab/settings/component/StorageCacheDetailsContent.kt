@@ -534,7 +534,7 @@ private fun StorageUsageItemRow(item: StorageUsageItem) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = item.databaseRecordCount?.let { recordCount ->
+                text = item.countDescription ?: item.databaseRecordCount?.let { recordCount ->
                     stringResource(R.string.storage_details_cache_record_count, recordCount)
                 } ?: pluralStringResource(
                     R.plurals.storage_details_file_count,
@@ -561,6 +561,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.OtherCache -> Icons.Outlined.Layers
         StorageUsageItemKind.DownloadedMusic -> Icons.Outlined.DownloadDone
         StorageUsageItemKind.DownloadedLyrics -> Icons.Outlined.Subtitles
+        StorageUsageItemKind.DownloadedCovers -> Icons.Outlined.PictureInPictureAlt
         StorageUsageItemKind.DownloadIndex -> Icons.Outlined.Tab
         StorageUsageItemKind.LogFiles -> Icons.Outlined.Description
         StorageUsageItemKind.CrashLogs -> Icons.Outlined.BugReport

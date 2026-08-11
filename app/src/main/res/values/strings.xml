@@ -1649,6 +1649,7 @@
     <string name="storage_type_youtube_playlist_cache">YouTube Music 歌单缓存</string>
     <string name="storage_type_downloaded_music">下载的音乐</string>
     <string name="storage_type_downloaded_lyrics">下载歌词文件</string>
+    <string name="storage_type_downloaded_covers">下载封面文件</string>
     <string name="storage_type_download_index">下载索引</string>
     <string name="storage_type_log_files">日志文件</string>
     <string name="storage_type_crash_logs">崩溃日志</string>
@@ -1670,6 +1671,7 @@
     <string name="storage_desc_other_cache">缓存目录内未归入上述类型的文件</string>
     <string name="storage_desc_downloaded_music">用户主动下载保存的歌曲，不会通过清缓存删除</string>
     <string name="storage_desc_downloaded_lyrics">下载歌曲附带的原文和翻译歌词文件，不会通过清缓存删除</string>
+    <string name="storage_desc_downloaded_covers">下载歌曲附带的封面文件，不会通过清缓存删除</string>
     <string name="storage_desc_download_index">下载目录索引、待下载队列和取消记录</string>
     <string name="storage_desc_log_files">调试日志和长期记录日志</string>
     <string name="storage_desc_crash_logs">崩溃、ANR 和原生崩溃报告</string>
@@ -1696,6 +1698,14 @@
     <string name="storage_cleanable_total">可清理缓存</string>
     <string name="storage_details_files_summary">%1$s · %2$d 个文件</string>
     <string name="storage_details_cache_record_count">Room 缓存 %1$d 条</string>
+    <plurals name="storage_details_download_index_record_count">
+        <item quantity="one">索引记录 %1$d 条</item>
+        <item quantity="other">索引记录 %1$d 条</item>
+    </plurals>
+    <plurals name="storage_details_download_index_record_and_file_count">
+        <item quantity="one">索引记录 %1$d 条 · 索引文件：%2$d 个</item>
+        <item quantity="other">索引记录 %1$d 条 · 索引文件：%2$d 个</item>
+    </plurals>
     <string name="storage_details_empty">暂未发现可计量文件</string>
 
     <!-- Sync & Backup -->

@@ -32,8 +32,11 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.store.DownloadIndexRoomStore
+import moe.ouom.neriplayer.data.local.database.store.DownloadIndexStorageStats
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStorageStats
 
@@ -62,6 +65,7 @@ enum class StorageUsageItemKind {
     OtherCache,
     DownloadedMusic,
     DownloadedLyrics,
+    DownloadedCovers,
     DownloadIndex,
     LogFiles,
     CrashLogs,
@@ -108,6 +112,7 @@ data class StorageUsageItem(
     val fileCount: Int,
     val kind: StorageUsageItemKind,
     val databaseRecordCount: Int? = null,
+    val countDescription: String? = null,
     val cacheKind: StorageCacheKind? = null
 )
 
@@ -147,6 +152,13 @@ data class ExtraCacheClearResult(
     val deletedFiles: Int
 )
 
+private data class StorageUsageScanInputs(
+    val downloadLibraryUsage: ManagedDownloadLibraryUsage,
+    val platformCacheStats: Map<String, PlatformPlaylistCacheStorageStats>,
+    val downloadIndexStorageStats: DownloadIndexStorageStats,
+    val databaseFileStats: FileStats
+)
+
 suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
     val filesDir = appContext.filesDir
@@ -166,13 +178,16 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     val logDir = File(diagnosticsBaseDir, DIR_LOGS)
     val crashDir = File(diagnosticsBaseDir, DIR_CRASHES)
 
-    val (downloadableAudio, rawPlatformCacheStats, databaseFileStats) = coroutineScope {
-        val downloadableAudio = async {
+    val scanInputs = coroutineScope {
+        val downloadLibraryUsage = async {
             runCatching {
-                ManagedDownloadStorage.listDownloadedAudio(appContext)
-            }.getOrDefault(emptyList())
+                ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                    context = appContext,
+                    forceRefresh = true
+                ).toManagedDownloadLibraryUsage()
+            }.getOrDefault(ManagedDownloadLibraryUsage.Empty)
         }
-        val rawPlatformCacheStats = async {
+        val platformCacheStats = async {
             runCatching {
                 val roomStore = PlatformPlaylistCacheRoomStore(
                     NeriUserDataDatabase.getInstance(appContext)
@@ -180,26 +195,43 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
                 roomStore.storageStats(PLATFORM_CACHE_PLATFORMS)
             }.getOrDefault(emptyMap())
         }
+        val downloadIndexStorageStats = async {
+            runCatching {
+                DownloadIndexRoomStore(
+                    NeriUserDataDatabase.getInstance(appContext)
+                ).storageStats()
+            }.getOrDefault(DownloadIndexStorageStats.Empty)
+        }
         val databaseFileStats = async {
             databaseFiles.fold(FileStats.Empty) { acc, file ->
                 acc + statsOf(file)
             }
         }
-        Triple(
-            downloadableAudio.await(),
-            rawPlatformCacheStats.await(),
-            databaseFileStats.await()
+        StorageUsageScanInputs(
+            downloadLibraryUsage = downloadLibraryUsage.await(),
+            platformCacheStats = platformCacheStats.await(),
+            downloadIndexStorageStats = downloadIndexStorageStats.await(),
+            databaseFileStats = databaseFileStats.await()
         )
     }
-    val platformCacheStats = normalizePlatformCacheStats(
-        stats = rawPlatformCacheStats,
-        databaseBytes = databaseFileStats.sizeBytes
+    val databaseAttribution = normalizeDatabaseStorageAttribution(
+        platformCacheStats = scanInputs.platformCacheStats,
+        downloadIndexStorageStats = scanInputs.downloadIndexStorageStats,
+        databaseBytes = scanInputs.databaseFileStats.sizeBytes
     )
-    val platformCachePageBytes = platformCacheStats.values.sumOf { it.allocatedPageBytes }
+    val platformCacheStats = databaseAttribution.platformCacheStats
+    val downloadIndexStorageStats = databaseAttribution.downloadIndexStorageStats
+    val attributedDatabaseBytes = platformCacheStats.values.sumOf {
+        it.allocatedPageBytes
+    } + downloadIndexStorageStats.allocatedPageBytes
     val databaseUsageStats = databaseUsageStats(
-        databaseStats = databaseFileStats,
-        roomCachePageBytes = platformCachePageBytes
+        databaseStats = scanInputs.databaseFileStats,
+        attributedDatabaseBytes = attributedDatabaseBytes
     )
+    val downloadIndexFileStats = scanInputs.downloadLibraryUsage.metadataFiles +
+        downloadMetadataFiles.fold(FileStats.Empty) { acc, file ->
+            acc + statsOf(file)
+        }
 
     val cacheKnownRoots = listOf(
         mediaCacheDir,
@@ -214,7 +246,8 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
         downloadMetadataFiles = downloadMetadataFiles,
         playlistDataFiles = playlistDataFiles,
         logDir = logDir,
-        crashDir = crashDir
+        crashDir = crashDir,
+        downloadedStorageFiles = scanInputs.downloadLibraryUsage.localFiles
     )
 
     StorageUsageSummary(
@@ -335,17 +368,28 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
                         title = appContext.getString(R.string.storage_type_downloaded_music),
                         description = appContext.getString(R.string.storage_desc_downloaded_music),
                         path = null,
-                        sizeBytes = downloadableAudio.sumOf { it.sizeBytes },
-                        fileCount = downloadableAudio.size,
+                        sizeBytes = scanInputs.downloadLibraryUsage.audioFiles.sizeBytes,
+                        fileCount = scanInputs.downloadLibraryUsage.audioFiles.fileCount,
                         kind = StorageUsageItemKind.DownloadedMusic
                     ),
-                    downloadedLyricUsageItem(appContext),
-                    aggregateUsageItem(
+                    downloadedLibraryUsageItem(
                         context = appContext,
-                        titleRes = R.string.storage_type_download_index,
-                        descriptionRes = R.string.storage_desc_download_index,
-                        files = downloadMetadataFiles,
-                        kind = StorageUsageItemKind.DownloadIndex
+                        titleRes = R.string.storage_type_downloaded_lyrics,
+                        descriptionRes = R.string.storage_desc_downloaded_lyrics,
+                        stats = scanInputs.downloadLibraryUsage.lyricFiles,
+                        kind = StorageUsageItemKind.DownloadedLyrics
+                    ),
+                    downloadedLibraryUsageItem(
+                        context = appContext,
+                        titleRes = R.string.storage_type_downloaded_covers,
+                        descriptionRes = R.string.storage_desc_downloaded_covers,
+                        stats = scanInputs.downloadLibraryUsage.coverFiles,
+                        kind = StorageUsageItemKind.DownloadedCovers
+                    ),
+                    downloadIndexUsageItem(
+                        context = appContext,
+                        fileStats = downloadIndexFileStats,
+                        roomStats = downloadIndexStorageStats
                     )
                 )
             ),
@@ -393,19 +437,58 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     )
 }
 
-private fun downloadedLyricUsageItem(
-    context: Context
+private fun downloadedLibraryUsageItem(
+    context: Context,
+    titleRes: Int,
+    descriptionRes: Int,
+    stats: FileStats,
+    kind: StorageUsageItemKind
 ): StorageUsageItem {
-    val lyricsDir = defaultDownloadLyricsDir(context)
-    val stats = statsOf(lyricsDir)
     return StorageUsageItem(
-        title = context.getString(R.string.storage_type_downloaded_lyrics),
-        description = context.getString(R.string.storage_desc_downloaded_lyrics),
-        path = lyricsDir.absolutePath,
+        title = context.getString(titleRes),
+        description = context.getString(descriptionRes),
+        path = null,
         sizeBytes = stats.sizeBytes,
         fileCount = stats.fileCount,
-        kind = StorageUsageItemKind.DownloadedLyrics
+        kind = kind
     )
+}
+
+private fun downloadIndexUsageItem(
+    context: Context,
+    fileStats: FileStats,
+    roomStats: DownloadIndexStorageStats
+): StorageUsageItem {
+    val stats = downloadIndexUsageStats(fileStats, roomStats)
+    return StorageUsageItem(
+        title = context.getString(R.string.storage_type_download_index),
+        description = context.getString(R.string.storage_desc_download_index),
+        path = null,
+        sizeBytes = stats.sizeBytes,
+        fileCount = stats.fileCount,
+        kind = StorageUsageItemKind.DownloadIndex,
+        countDescription = downloadIndexCountDescription(context, stats)
+    )
+}
+
+private fun downloadIndexCountDescription(
+    context: Context,
+    stats: DownloadIndexUsageStats
+): String? {
+    if (stats.databaseRecordCount <= 0) return null
+    return if (stats.fileCount > 0) {
+        context.resources.getQuantityString(
+            R.plurals.storage_details_download_index_record_and_file_count,
+            stats.databaseRecordCount,
+            stats.databaseRecordCount,
+            stats.fileCount
+        )
+    } else {
+        context.resources.getQuantityString(
+            R.plurals.storage_details_download_index_record_count,
+            stats.databaseRecordCount
+        )
+    }
 }
 
 suspend fun clearExtraStorageCaches(
@@ -576,27 +659,156 @@ internal data class FileStats(
     }
 }
 
-private fun normalizePlatformCacheStats(
-    stats: Map<String, PlatformPlaylistCacheStorageStats>,
-    databaseBytes: Long
-): Map<String, PlatformPlaylistCacheStorageStats> {
-    val totalAllocatedBytes = stats.values.sumOf { it.allocatedPageBytes }
-    if (totalAllocatedBytes <= 0L || databaseBytes <= 0L || totalAllocatedBytes <= databaseBytes) {
-        return stats
-    }
-    return stats.mapValues { (_, value) ->
-        value.copy(
-            allocatedPageBytes = (value.allocatedPageBytes.toDouble() * databaseBytes /
-                totalAllocatedBytes).toLong()
+internal data class ManagedDownloadLibraryUsage(
+    val audioFiles: FileStats,
+    val lyricFiles: FileStats,
+    val coverFiles: FileStats,
+    val metadataFiles: FileStats,
+    val localFiles: List<File>
+) {
+    companion object {
+        val Empty = ManagedDownloadLibraryUsage(
+            audioFiles = FileStats.Empty,
+            lyricFiles = FileStats.Empty,
+            coverFiles = FileStats.Empty,
+            metadataFiles = FileStats.Empty,
+            localFiles = emptyList()
         )
     }
 }
 
-private fun databaseUsageStats(
-    databaseStats: FileStats,
-    roomCachePageBytes: Long
+internal data class DownloadIndexUsageStats(
+    val sizeBytes: Long,
+    val fileCount: Int,
+    val databaseRecordCount: Int
+)
+
+internal fun ManagedDownloadStorage.DownloadLibrarySnapshot.toManagedDownloadLibraryUsage():
+    ManagedDownloadLibraryUsage {
+    return managedDownloadLibraryUsage(
+        audioEntries = audioEntries,
+        lyricEntries = lyricEntriesByName.values,
+        coverEntries = coverEntriesByName.values,
+        metadataEntries = metadataEntriesByAudioName.values
+    )
+}
+
+internal fun managedDownloadLibraryUsage(
+    audioEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+    lyricEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+    coverEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+    metadataEntries: Collection<ManagedDownloadStorage.StoredEntry>
+): ManagedDownloadLibraryUsage {
+    val allEntries = audioEntries + lyricEntries + coverEntries + metadataEntries
+    return ManagedDownloadLibraryUsage(
+        audioFiles = storedEntryStats(audioEntries),
+        lyricFiles = storedEntryStats(lyricEntries),
+        coverFiles = storedEntryStats(coverEntries),
+        metadataFiles = storedEntryStats(metadataEntries),
+        localFiles = managedStoredEntries(allEntries)
+            .mapNotNull(ManagedDownloadStorage.StoredEntry::localFilePath)
+            .map(::File)
+            .distinctBy { file -> file.absolutePath }
+    )
+}
+
+internal fun downloadIndexUsageStats(
+    fileStats: FileStats,
+    roomStats: DownloadIndexStorageStats
+): DownloadIndexUsageStats {
+    return DownloadIndexUsageStats(
+        sizeBytes = fileStats.sizeBytes + roomStats.allocatedPageBytes,
+        fileCount = fileStats.fileCount,
+        databaseRecordCount = roomStats.databaseRecordCount
+    )
+}
+
+private fun storedEntryStats(
+    entries: Collection<ManagedDownloadStorage.StoredEntry>
 ): FileStats {
-    val attributedBytes = roomCachePageBytes.coerceIn(0L, databaseStats.sizeBytes)
+    return managedStoredEntries(entries).fold(FileStats.Empty) { stats, entry ->
+        stats + FileStats(entry.sizeBytes.coerceAtLeast(0L), 1)
+    }
+}
+
+private fun managedStoredEntries(
+    entries: Collection<ManagedDownloadStorage.StoredEntry>
+): List<ManagedDownloadStorage.StoredEntry> {
+    return entries
+        .asSequence()
+        .filterNot { entry -> entry.isDirectory || entry.name == NO_MEDIA_FILE_NAME }
+        .distinctBy(ManagedDownloadStorage.StoredEntry::usageIdentity)
+        .toList()
+}
+
+private fun ManagedDownloadStorage.StoredEntry.usageIdentity(): String {
+    return reference.takeIf(String::isNotBlank)
+        ?: mediaUri.takeIf(String::isNotBlank)
+        ?: name
+}
+
+internal data class DatabaseStorageAttribution(
+    val platformCacheStats: Map<String, PlatformPlaylistCacheStorageStats>,
+    val downloadIndexStorageStats: DownloadIndexStorageStats
+)
+
+internal fun normalizeDatabaseStorageAttribution(
+    platformCacheStats: Map<String, PlatformPlaylistCacheStorageStats>,
+    downloadIndexStorageStats: DownloadIndexStorageStats,
+    databaseBytes: Long
+): DatabaseStorageAttribution {
+    val allocations = buildMap {
+        platformCacheStats
+            .filterValues { it.allocatedPageBytes > 0L }
+            .toSortedMap()
+            .forEach { (platform, stats) ->
+                put("platform:$platform", stats.allocatedPageBytes)
+            }
+        if (downloadIndexStorageStats.allocatedPageBytes > 0L) {
+            put("download_index", downloadIndexStorageStats.allocatedPageBytes)
+        }
+    }
+    val totalAllocatedBytes = allocations.values.sum()
+    if (totalAllocatedBytes <= 0L || databaseBytes <= 0L || totalAllocatedBytes <= databaseBytes) {
+        return DatabaseStorageAttribution(
+            platformCacheStats = platformCacheStats,
+            downloadIndexStorageStats = downloadIndexStorageStats
+        )
+    }
+
+    var remainingBytes = databaseBytes
+    var remainingAllocatedBytes = totalAllocatedBytes
+    val normalizedBytes = buildMap {
+        allocations.entries.forEachIndexed { index, (key, allocatedBytes) ->
+            val normalized = if (index == allocations.size - 1) {
+                remainingBytes
+            } else {
+                (remainingBytes.toDouble() * allocatedBytes / remainingAllocatedBytes)
+                    .toLong()
+                    .coerceIn(0L, remainingBytes)
+            }
+            put(key, normalized)
+            remainingBytes -= normalized
+            remainingAllocatedBytes -= allocatedBytes
+        }
+    }
+    return DatabaseStorageAttribution(
+        platformCacheStats = platformCacheStats.mapValues { (platform, stats) ->
+            stats.copy(
+                allocatedPageBytes = normalizedBytes["platform:$platform"] ?: 0L
+            )
+        },
+        downloadIndexStorageStats = downloadIndexStorageStats.copy(
+            allocatedPageBytes = normalizedBytes["download_index"] ?: 0L
+        )
+    )
+}
+
+internal fun databaseUsageStats(
+    databaseStats: FileStats,
+    attributedDatabaseBytes: Long
+): FileStats {
+    val attributedBytes = attributedDatabaseBytes.coerceIn(0L, databaseStats.sizeBytes)
     return FileStats(
         sizeBytes = databaseStats.sizeBytes - attributedBytes,
         fileCount = databaseStats.fileCount
@@ -611,7 +823,8 @@ internal fun knownAppDataRoots(
     downloadMetadataFiles: List<File>,
     playlistDataFiles: List<File>,
     logDir: File,
-    crashDir: File
+    crashDir: File,
+    downloadedStorageFiles: List<File> = emptyList()
 ): List<File> {
     return platformCacheDirs +
         downloadStagingDirs +
@@ -620,7 +833,8 @@ internal fun knownAppDataRoots(
         downloadMetadataFiles +
         playlistDataFiles +
         logDir +
-        crashDir
+        crashDir +
+        downloadedStorageFiles
 }
 
 internal fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileStats {
@@ -634,7 +848,9 @@ internal fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): File
                 .onEnter { directory ->
                     excludedRootPaths.none { directory.isUnder(it) }
                 }
-                .filter { entry -> entry.isFile }
+                .filter { entry ->
+                    entry.isFile && excludedRootPaths.none { entry.isUnder(it) }
+                }
                 .fold(FileStats.Empty) { acc, entry ->
                     acc + FileStats(entry.length(), 1)
                 }
@@ -677,7 +893,8 @@ private fun downloadMetadataFiles(filesDir: File): List<File> {
         File(filesDir, FILE_MANAGED_DOWNLOAD_SNAPSHOT),
         File(filesDir, FILE_PENDING_DOWNLOAD_QUEUE),
         File(filesDir, FILE_CANCELLED_DOWNLOAD_KEYS),
-        File(filesDir, FILE_DOWNLOADED_SONG_CATALOG)
+        File(filesDir, FILE_DOWNLOADED_SONG_CATALOG_V3),
+        File(filesDir, FILE_DOWNLOADED_SONG_CATALOG_V4)
     )
 }
 
@@ -689,18 +906,10 @@ private fun playlistDataFiles(filesDir: File): List<File> {
     )
 }
 
-private fun defaultDownloadLyricsDir(context: Context): File {
-    val baseDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
-        ?: context.filesDir
-    return File(File(baseDir, DIR_DOWNLOAD_ROOT), DIR_DOWNLOAD_LYRICS)
-}
-
 private const val DIR_MEDIA_CACHE = "media_cache"
 private const val DIR_IMAGE_CACHE = "image_cache"
 private const val DIR_DOWNLOAD_STAGING = "download_staging"
 private const val DIR_SHARED_MEDIA_EXPORTS = "shared_media_exports"
-private const val DIR_DOWNLOAD_ROOT = "NeriPlayer"
-private const val DIR_DOWNLOAD_LYRICS = "Lyrics"
 private const val DIR_BILI_FAVORITE_CACHE = "bili_favorite_cache"
 private const val DIR_BILI_ARCHIVE_CACHE = "bili_archive_cache"
 private const val DIR_NETEASE_PLAYLIST_CACHE = "netease_playlist_cache"
@@ -712,7 +921,8 @@ private const val DIR_CRASHES = "crashes"
 private const val FILE_MANAGED_DOWNLOAD_SNAPSHOT = "managed_download_snapshot_v1.json"
 private const val FILE_PENDING_DOWNLOAD_QUEUE = "pending_download_queue_v1.json"
 private const val FILE_CANCELLED_DOWNLOAD_KEYS = "cancelled_download_keys_v1.json"
-private const val FILE_DOWNLOADED_SONG_CATALOG = "downloaded_song_catalog_v3.json"
+private const val FILE_DOWNLOADED_SONG_CATALOG_V3 = "downloaded_song_catalog_v3.json"
+private const val FILE_DOWNLOADED_SONG_CATALOG_V4 = "downloaded_song_catalog_v4.json"
 private const val FILE_LOCAL_PLAYLISTS = "local_playlists.json"
 private const val FILE_FAVORITE_PLAYLISTS = "favorite_playlists.json"
 private const val FILE_PLAYLIST_USAGE = "playlist_usage.json"
