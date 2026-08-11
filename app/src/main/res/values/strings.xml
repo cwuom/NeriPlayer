@@ -589,10 +589,17 @@
     <string name="local_playlist_delete_songs">删除所选歌曲</string>
     <string name="local_playlist_delete_count">删除（%d）</string>
     <string name="local_playlist_sync_netease_liked">同步到网易云我喜欢的音乐</string>
+    <string name="local_playlist_sync_netease_playlist">同步到网易云歌单</string>
     <string name="local_playlist_sync_netease_confirm_title">同步到网易云？</string>
     <string name="local_playlist_sync_netease_confirm_message">将所选歌曲同步到网易云我喜欢的音乐，是否继续？</string>
     <string name="local_playlist_sync_netease_preview_title">同步到网易云</string>
     <string name="local_playlist_sync_netease_result">同步完成：总计 %1$d，新增 %2$d，已存在 %3$d，跳过不支持 %4$d，失败 %5$d</string>
+    <string name="local_playlist_sync_netease_target">目标歌单“%s”</string>
+    <string name="local_playlist_sync_netease_picker_title">选择网易云歌单</string>
+    <string name="local_playlist_sync_netease_loading_playlists">正在拉取网易云歌单</string>
+    <string name="local_playlist_sync_netease_load_failed">网易云歌单拉取失败</string>
+    <string name="local_playlist_sync_netease_no_playlists">没有可添加歌曲的网易云歌单</string>
+    <string name="local_playlist_sync_netease_partial_confirm_title">部分歌曲不能同步</string>
     <string name="local_playlist_sync_netease_empty">收藏为空，无需同步</string>
     <string name="local_playlist_sync_netease_no_supported">没有可同步的歌曲</string>
     <string name="local_playlist_sync_netease_all_synced">已同步到网易云，无需重复同步</string>
@@ -1251,6 +1258,7 @@
     <string name="settings_background_select">选择一张图片</string>
     <string name="settings_network_expand">网络连接与代理选项</string>
     <string name="settings_no_cache">不缓存 (0 MB)</string>
+    <string name="settings_cache_unlimited">无上限</string>
     <string name="settings_download_management">下载管理</string>
     <string name="settings_download_expand">下载目录、保存格式与任务管理</string>
     <string name="settings_download_progress">下载进度</string>
@@ -1605,6 +1613,7 @@
     <string name="storage_details_warning_title">⚠️ 系统设置显示不准确？</string>
     <string name="storage_details_warning_message">如果系统显示的占用远大于此处统计，这是 Android 系统缓存问题。\n\n解决方法：\n1. 重启手机\n2. 等待系统自动更新\n3. 打开系统设置查看</string>
     <string name="storage_open_system_settings">打开系统设置</string>
+    <string name="storage_open_system_settings_failed">无法打开系统设置</string>
     <string name="storage_clear_type_size">%1$s，当前约 %2$s</string>
     <string name="storage_extra_cache_clear_complete">临时缓存已清理，释放 %1$s</string>
     <string name="storage_extra_cache_clear_room_complete">临时缓存已清理，释放 %1$s；约 %2$s Room 页面已可复用</string>
@@ -1656,7 +1665,7 @@
     <string name="settings_cache_manage">管理缓存大小与清理</string>
     <string name="settings_storage_cache">存储与缓存</string>
     <string name="settings_storage_expand">缓存大小、清理与存储用量</string>
-    <string name="settings_cache_notice">设置为 0 MB 即禁用缓存。修改上限后需重启应用生效。</string>
+    <string name="settings_cache_notice">设置为 0 MB 即禁用缓存，滑到滑块末端为无上限。修改上限后需重启应用生效。</string>
     <string name="settings_cache_size_gb">%.1f GB</string>
     <string name="settings_cache_size_mb">%1$d MB</string>
     <string name="settings_storage_cache_details">缓存详情</string>

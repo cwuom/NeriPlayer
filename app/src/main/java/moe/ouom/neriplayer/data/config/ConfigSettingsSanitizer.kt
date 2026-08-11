@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.player.model.normalizePlaybackPitch
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackSpeed
 import moe.ouom.neriplayer.core.player.model.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
+import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.settings.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.YouTubePlaybackSourcePreferencePolicy
@@ -174,7 +175,8 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 SettingsKeys.PLAYBACK_CROSSFADE_IN_DURATION_MS.name,
                 SettingsKeys.PLAYBACK_CROSSFADE_OUT_DURATION_MS.name ->
                     value.coerceIn(PLAYBACK_FADE_DURATION_RANGE_MS)
-                SettingsKeys.MAX_CACHE_SIZE_BYTES.name -> value.coerceIn(CACHE_SIZE_RANGE_BYTES)
+                SettingsKeys.MAX_CACHE_SIZE_BYTES.name ->
+                    CacheSizePolicy.normalizeCacheSizeBytes(value)
                 else -> value
             }
             if (normalized != value) {
@@ -394,8 +396,6 @@ private val NOW_PLAYING_COVER_BLUR_AMOUNT_RANGE = 0f..500f
 private val NOW_PLAYING_COVER_BLUR_DARKEN_RANGE = 0f..0.8f
 private val LYRIC_BLUR_AMOUNT_RANGE = 0f..8f
 private val PLAYBACK_FADE_DURATION_RANGE_MS = 0L..3000L
-private val CACHE_SIZE_RANGE_BYTES = 0L..(10L * 1024L * 1024L * 1024L)
-
 private const val DEFAULT_NETEASE_AUDIO_QUALITY = "exhigh"
 private const val DEFAULT_YOUTUBE_AUDIO_QUALITY = "high"
 private const val DEFAULT_BILI_AUDIO_QUALITY = "high"

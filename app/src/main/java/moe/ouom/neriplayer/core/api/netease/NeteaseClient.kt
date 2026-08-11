@@ -618,6 +618,15 @@ class NeteaseClient {
     }
 
     @Throws(IOException::class)
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): String {
+        return callWeApi(
+            path = "/playlist/manipulate/tracks",
+            params = buildNeteasePlaylistAddTracksParams(playlistId, songIds),
+            usePersistedCookies = true
+        )
+    }
+
+    @Throws(IOException::class)
     fun getDjRadioDetail(radioId: Long, n: Int = 100000, s: Int = 8): String {
         val url = "https://music.163.com/api/v6/playlist/detail"
         val params = mutableMapOf<String, Any>(
@@ -849,30 +858,6 @@ class NeteaseClient {
         )
         time?.let { params["time"] = it.toString() }
         return callWeApi("/song/like", params, usePersistedCookies = true)
-    }
-
-    /**
-     * 批量添加歌曲到网易云歌单
-     * 网易云接口允许一次提交多个歌曲 ID，调用方应控制批次大小并检查返回 code
-     */
-    @Throws(IOException::class)
-    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>): String {
-        require(playlistId > 0L) { "playlistId must be positive" }
-        require(songIds.isNotEmpty()) { "songIds must not be empty" }
-        val ids = songIds.asSequence()
-            .filter { it > 0L }
-            .distinct()
-            .joinToString(",")
-        require(ids.isNotEmpty()) { "songIds must contain a positive id" }
-        return callWeApi(
-            "/playlist/manipulate/tracks",
-            mapOf(
-                "op" to "add",
-                "pid" to playlistId.toString(),
-                "tracks" to ids
-            ),
-            usePersistedCookies = true
-        )
     }
 
     /**

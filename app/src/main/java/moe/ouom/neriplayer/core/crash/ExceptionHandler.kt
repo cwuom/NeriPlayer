@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.util.crash.CrashLogFiles
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.util.crash.NativeCrashHandler
+import moe.ouom.neriplayer.util.io.clearAllFiles
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -320,9 +321,9 @@ object ExceptionHandler {
             crashLogGeneration += 1L
             crashLogFile = null
         }
-        val cleared = runCatching {
-            crashDir.listFiles().orEmpty().all { file -> file.deleteRecursively() }
-        }.getOrDefault(false)
+        val cleared = clearAllFiles(crashDir.listFiles().orEmpty().asIterable()) { file ->
+            runCatching { file.deleteRecursively() }.getOrDefault(false)
+        }
         CrashReportStore.clearPendingCrashReport(appContext)
         if (initialized) {
             runCatching { setupCrashLogFile(appContext) }

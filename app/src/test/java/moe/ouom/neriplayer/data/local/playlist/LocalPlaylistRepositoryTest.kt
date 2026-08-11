@@ -268,6 +268,26 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `bulk netease candidate filtering preserves duplicate original rows`() {
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "bulk_netease_candidates.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        val first = remoteNeteaseSong(id = 46L, name = "first")
+        val duplicate = first.copy(name = "edited duplicate")
+        val unsupported = localSong(index = 47)
+
+        assertEquals(
+            listOf(first, duplicate),
+            repository.filterNeteaseLikeSyncCandidatesPreservingDuplicates(
+                listOf(first, duplicate, unsupported)
+            )
+        )
+    }
+
+    @Test
     fun `adding downloaded copy to regular playlist retains remote source and sync identity`() = runTest {
         val playlistId = 46L
         val syncStore = RecordingSyncMutationStore()

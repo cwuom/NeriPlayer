@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.BuildConfig
+import moe.ouom.neriplayer.util.io.clearAllFiles
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -129,7 +130,7 @@ object NPLogger {
         }
         if (!directory.exists()) return true
 
-        val cleared = directory.listFiles().orEmpty().all { entry ->
+        val cleared = clearAllFiles(directory.listFiles().orEmpty().asIterable()) { entry ->
             if (activeLogFile != null && entry == activeLogFile) {
                 runCatching {
                     FileOutputStream(entry, false).use { }

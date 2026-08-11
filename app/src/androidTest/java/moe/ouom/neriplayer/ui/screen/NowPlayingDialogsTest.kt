@@ -1,8 +1,13 @@
 package moe.ouom.neriplayer.ui.screen
 
+import androidx.activity.compose.BackHandler
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -27,7 +32,7 @@ import org.junit.runner.RunWith
 class NowPlayingDialogsTest {
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Before
     fun assumeDeviceUnlocked() {
@@ -124,6 +129,47 @@ class NowPlayingDialogsTest {
 
         composeRule.waitUntil(timeoutMillis = 3_000) {
             composeRule.onAllNodesWithText("译文B").fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
+    fun lyricsEditorSheet_systemBackReturnsToSongInfoBeforeOuterMenu() {
+        var lyricsEditorDismissed = false
+        var outerMenuBackHandled = false
+
+        composeRule.setContent {
+            val lyricsEditorShown = remember { mutableStateOf(true) }
+            MaterialTheme {
+                Box {
+                    BackHandler {
+                        outerMenuBackHandled = true
+                    }
+                    if (lyricsEditorShown.value) {
+                        LyricsEditorSheet(
+                            originalSong = demoSongItem(),
+                            initialLyrics = "原文A",
+                            initialTranslatedLyrics = "译文B",
+                            onDismiss = {
+                                lyricsEditorDismissed = true
+                                lyricsEditorShown.value = false
+                            }
+                        )
+                    } else {
+                        Text("编辑歌曲信息仍在")
+                    }
+                }
+            }
+        }
+
+        waitForText("原文A")
+        composeRule.runOnIdle {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+        waitForText("编辑歌曲信息仍在")
+
+        composeRule.runOnIdle {
+            assertTrue(lyricsEditorDismissed)
+            assertTrue(!outerMenuBackHandled)
         }
     }
 

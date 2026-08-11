@@ -72,6 +72,7 @@ import moe.ouom.neriplayer.core.download.renderManagedDownloadBaseName
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsKeys
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsListItem
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsMetadata
+import moe.ouom.neriplayer.data.settings.CacheSizePolicy
 import moe.ouom.neriplayer.data.storage.StorageCacheClearOptions
 import moe.ouom.neriplayer.data.storage.StorageCacheKind
 import moe.ouom.neriplayer.data.storage.StorageUsageSummary
@@ -149,6 +150,10 @@ internal fun SettingsStorageCacheSection(
         pendingDownloadFileNameTemplate
     ) ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     val currentSavedTemplate = downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    fun dismissDownloadFileNameDialog() {
+        pendingDownloadFileNameTemplate = currentSavedTemplate
+        showDownloadFileNameDialog.value = false
+    }
     val samplePreview = renderManagedDownloadBaseName(
         title = "晴天",
         artist = "周杰伦",
@@ -335,17 +340,29 @@ internal fun SettingsStorageCacheSection(
                     setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.MAX_CACHE_SIZE_BYTES),
                     showDefaultIcon = false,
                     supportingContent = {
-                        val sizeMb = maxCacheSizeBytes / (1024 * 1024).toFloat()
-                        var sliderValue by remember(sizeMb) { mutableFloatStateOf(sizeMb) }
-                        val displaySize = if (sliderValue >= 1024) {
-                            composeResources.getString(R.string.settings_cache_size_gb, sliderValue / 1024)
-                        } else {
-                            composeResources.getString(R.string.settings_cache_size_mb, sliderValue.toInt())
+                        var sliderValue by remember(maxCacheSizeBytes) {
+                            mutableFloatStateOf(CacheSizePolicy.toSliderValue(maxCacheSizeBytes))
+                        }
+                        val displaySize = when {
+                            sliderValue >= CacheSizePolicy.CACHE_SIZE_SLIDER_UNLIMITED_VALUE ->
+                                stringResource(R.string.settings_cache_unlimited)
+                            sliderValue >= 1024f ->
+                                composeResources.getString(
+                                    R.string.settings_cache_size_gb,
+                                    sliderValue / 1024
+                                )
+                            else ->
+                                composeResources.getString(
+                                    R.string.settings_cache_size_mb,
+                                    sliderValue.toInt()
+                                )
                         }
 
                         Column {
                             Text(
-                                text = if (sliderValue < 10f) {
+                                text = if (
+                                    sliderValue < CacheSizePolicy.CACHE_SIZE_SLIDER_NO_CACHE_THRESHOLD_MB
+                                ) {
                                     stringResource(R.string.settings_no_cache)
                                 } else {
                                     displaySize
@@ -357,14 +374,11 @@ internal fun SettingsStorageCacheSection(
                                 value = sliderValue,
                                 onValueChange = { sliderValue = it },
                                 onValueChangeFinished = {
-                                    val newBytes = if (sliderValue < 10f) {
-                                        0L
-                                    } else {
-                                        (sliderValue * 1024 * 1024).toLong()
-                                    }
-                                    onMaxCacheSizeBytesChange(newBytes)
+                                    onMaxCacheSizeBytesChange(
+                                        CacheSizePolicy.fromSliderValue(sliderValue)
+                                    )
                                 },
-                                valueRange = 0f..(10 * 1024f),
+                                valueRange = 0f..CacheSizePolicy.CACHE_SIZE_SLIDER_UNLIMITED_VALUE,
                                 steps = 0
                             )
                             Text(
@@ -591,7 +605,7 @@ internal fun SettingsStorageCacheSection(
 
     if (showDownloadFileNameDialog.value) {
         MiuixSettingsDialog(
-            onDismissRequest = { showDownloadFileNameDialog.value = false },
+            onDismissRequest = ::dismissDownloadFileNameDialog,
             title = { Text(stringResource(R.string.settings_download_file_name_format)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -645,7 +659,7 @@ internal fun SettingsStorageCacheSection(
                     ) {
                         Text(stringResource(R.string.action_reset))
                     }
-                    MiuixSettingsTextButton(onClick = { showDownloadFileNameDialog.value = false }) {
+                    MiuixSettingsTextButton(onClick = ::dismissDownloadFileNameDialog) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }

@@ -2036,6 +2036,12 @@ fun SettingsScreen(
                                         "package:${context.packageName}".toUri()
                                     )
                                     context.startActivity(intent)
+                                }.onFailure {
+                                    showSettingsMessage(
+                                        composeResources.getString(
+                                            R.string.storage_open_system_settings_failed
+                                        )
+                                    )
                                 }
                             }
                         )

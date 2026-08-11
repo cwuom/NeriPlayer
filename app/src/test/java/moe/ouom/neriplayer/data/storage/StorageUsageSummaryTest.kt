@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.storage
 
+import java.io.File
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -52,6 +54,35 @@ class StorageUsageSummaryTest {
 
         assertEquals(150L, summary.cleanableSizeBytes)
         assertEquals(1_150L, summary.totalSizeBytes)
+    }
+
+    @Test
+    fun appDataStatsExcludeDiagnosticDirectories() {
+        val root = Files.createTempDirectory("neriplayer-storage-usage").toFile()
+        try {
+            File(root, "settings.json").writeBytes(ByteArray(3))
+            val logDir = File(root, "logs").apply { mkdirs() }
+            File(logDir, "current.log").writeBytes(ByteArray(5))
+            val crashDir = File(root, "crashes").apply { mkdirs() }
+            File(crashDir, "crash.log").writeBytes(ByteArray(7))
+
+            val excludedRoots = knownAppDataRoots(
+                platformCacheDirs = emptyList(),
+                downloadStagingDirs = emptyList(),
+                localCoverDir = File(root, "covers"),
+                backgroundDir = File(root, "background"),
+                downloadMetadataFiles = emptyList(),
+                playlistDataFiles = emptyList(),
+                logDir = logDir,
+                crashDir = crashDir
+            )
+            val stats = statsOf(root, excludedRoots = excludedRoots)
+
+            assertEquals(3L, stats.sizeBytes)
+            assertEquals(1, stats.fileCount)
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     private fun usageItem(

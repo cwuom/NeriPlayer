@@ -1,5 +1,17 @@
 <resources>
     <!-- Selection & Confirmation -->
+    <plurals name="local_playlist_sync_netease_unsupported">
+        <item quantity="other">另有 %d 首不是网易云歌曲，无法同步</item>
+    </plurals>
+    <plurals name="local_playlist_sync_netease_track_count">
+        <item quantity="other">%d 首歌曲</item>
+    </plurals>
+    <plurals name="local_playlist_sync_netease_partial_confirm_unsupported">
+        <item quantity="other">有 %d 首不是网易云歌曲，不能同步。</item>
+    </plurals>
+    <plurals name="local_playlist_sync_netease_partial_confirm_target">
+        <item quantity="other">将剩余 %d 首同步到“%s”吗？</item>
+    </plurals>
     <plurals name="common_selected_count">
         <item quantity="other">已选 %d 项</item>
     </plurals>

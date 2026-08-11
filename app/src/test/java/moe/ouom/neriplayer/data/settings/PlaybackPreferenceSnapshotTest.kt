@@ -73,6 +73,15 @@ class PlaybackPreferenceSnapshotTest {
     }
 
     @Test
+    fun `preferences preserve unlimited cache setting`() {
+        val snapshot = preferencesOf(
+            SettingsKeys.MAX_CACHE_SIZE_BYTES to CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES
+        ).toPlaybackPreferenceSnapshot()
+
+        assertEquals(CacheSizePolicy.UNLIMITED_CACHE_SIZE_BYTES, snapshot.maxCacheSizeBytes)
+    }
+
+    @Test
     fun `sanitized normalizes playback runtime values`() {
         val snapshot = PlaybackPreferenceSnapshot(
             playbackFadeInDurationMs = -100L,

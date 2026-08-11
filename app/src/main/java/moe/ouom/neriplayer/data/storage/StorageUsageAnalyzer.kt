@@ -206,12 +206,16 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
         imageCacheDir,
         sharedMediaDir
     ) + downloadStagingDirs
-    val filesKnownRoots = platformCacheDirs +
-        downloadStagingDirs +
-        localCoverDir +
-        backgroundDir +
-        downloadMetadataFiles +
-        playlistDataFiles
+    val filesKnownRoots = knownAppDataRoots(
+        platformCacheDirs = platformCacheDirs,
+        downloadStagingDirs = downloadStagingDirs,
+        localCoverDir = localCoverDir,
+        backgroundDir = backgroundDir,
+        downloadMetadataFiles = downloadMetadataFiles,
+        playlistDataFiles = playlistDataFiles,
+        logDir = logDir,
+        crashDir = crashDir
+    )
 
     StorageUsageSummary(
         sections = listOf(
@@ -556,7 +560,7 @@ private fun databaseUsageItem(
     )
 }
 
-private data class FileStats(
+internal data class FileStats(
     val sizeBytes: Long,
     val fileCount: Int
 ) {
@@ -599,7 +603,27 @@ private fun databaseUsageStats(
     )
 }
 
-private fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileStats {
+internal fun knownAppDataRoots(
+    platformCacheDirs: List<File>,
+    downloadStagingDirs: List<File>,
+    localCoverDir: File,
+    backgroundDir: File,
+    downloadMetadataFiles: List<File>,
+    playlistDataFiles: List<File>,
+    logDir: File,
+    crashDir: File
+): List<File> {
+    return platformCacheDirs +
+        downloadStagingDirs +
+        localCoverDir +
+        backgroundDir +
+        downloadMetadataFiles +
+        playlistDataFiles +
+        logDir +
+        crashDir
+}
+
+internal fun statsOf(file: File?, excludedRoots: List<File> = emptyList()): FileStats {
     if (file == null || !file.exists()) return FileStats.Empty
     val excludedRootPaths = excludedRoots.map { root -> root.absolutePath }
     return runCatching {
