@@ -32,6 +32,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -76,6 +77,55 @@ class PlatformPlaylistCacheRoomMigrationTest {
             store.replace(record)
 
             assertEquals(record, store.read("netease", "42"))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun roomStoreClearsOnlySelectedPlatformCaches() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = inMemoryDatabase(context)
+        try {
+            val store = PlatformPlaylistCacheRoomStore(database)
+            store.replace(platformCacheRecord(platform = "netease", cacheKey = "n1"))
+            store.replace(platformCacheRecord(platform = "youtube_music", cacheKey = "y1"))
+
+            store.clearSelected(listOf("netease"))
+
+            assertNull(store.read("netease", "n1"))
+            assertNotNull(store.read("youtube_music", "y1"))
+            assertEquals(1, store.countSelected(listOf("youtube_music")))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun roomStoreReportsNonZeroPageUsageForCachedRecords() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = inMemoryDatabase(context)
+        try {
+            val store = PlatformPlaylistCacheRoomStore(database)
+            store.replace(
+                platformCacheRecord(
+                    platform = "netease",
+                    cacheKey = "n1"
+                ).copy(
+                    tracks = listOf(
+                        PlatformPlaylistCacheTrackRecord(
+                            itemKey = "n1-track",
+                            name = "a room-backed song with payload",
+                            artist = "artist"
+                        )
+                    )
+                )
+            )
+
+            val stats = store.storageStats(listOf("netease")).getValue("netease")
+
+            assertEquals(1, stats.cacheRecordCount)
+            assertTrue(stats.allocatedPageBytes > 0L)
         } finally {
             database.close()
         }
@@ -189,6 +239,27 @@ class PlatformPlaylistCacheRoomMigrationTest {
             context,
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
+    }
+
+    private fun platformCacheRecord(
+        platform: String,
+        cacheKey: String
+    ): PlatformPlaylistCacheRecord {
+        return PlatformPlaylistCacheRecord(
+            platform = platform,
+            cacheKey = cacheKey,
+            title = "$platform cache",
+            trackCount = 1,
+            totalCount = 1,
+            savedAtMs = 100L,
+            tracks = listOf(
+                PlatformPlaylistCacheTrackRecord(
+                    itemKey = "$cacheKey-track",
+                    name = "song",
+                    artist = "artist"
+                )
+            )
+        )
     }
 
     private fun neteaseCache(

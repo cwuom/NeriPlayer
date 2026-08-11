@@ -74,4 +74,28 @@ internal interface PlatformPlaylistCacheDao {
         platform: String,
         cacheKey: String
     )
+
+    @Query(
+        "DELETE FROM platform_playlist_cache_track_artist " +
+            "WHERE platform IN (:platforms)"
+    )
+    suspend fun deleteArtistsForPlatforms(platforms: List<String>)
+
+    @Query(
+        "DELETE FROM platform_playlist_cache_track " +
+            "WHERE platform IN (:platforms)"
+    )
+    suspend fun deleteTracksForPlatforms(platforms: List<String>)
+
+    @Query(
+        "DELETE FROM platform_playlist_cache " +
+            "WHERE platform IN (:platforms)"
+    )
+    suspend fun deleteCachesForPlatforms(platforms: List<String>)
+
+    @Query(
+        "SELECT COUNT(*) FROM platform_playlist_cache " +
+            "WHERE platform IN (:platforms)"
+    )
+    suspend fun countCachesForPlatforms(platforms: List<String>): Int
 }

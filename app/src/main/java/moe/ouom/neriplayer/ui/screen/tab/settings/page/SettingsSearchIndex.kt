@@ -771,6 +771,14 @@ private val PageSearchAliases = mapOf(
         "cunchu",
         "huancun"
     ),
+    SettingsPage.StorageCacheDetails to listOf(
+        "storage",
+        "cache",
+        "details",
+        "space",
+        "huancun",
+        "xiangqing"
+    ),
     SettingsPage.TrafficManagement to listOf("traffic", "mobile", "roaming", "data", "liuliang"),
     SettingsPage.Downloads to listOf("download", "downloads", "threads", "parallel", "concurrency", "xiazai"),
     SettingsPage.Backup to listOf("backup", "sync", "github", "webdav", "import", "export", "beifen"),
