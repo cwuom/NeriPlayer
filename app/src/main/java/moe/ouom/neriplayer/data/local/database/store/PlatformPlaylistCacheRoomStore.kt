@@ -130,7 +130,7 @@ internal class PlatformPlaylistCacheRoomStore(
         return database.platformPlaylistCacheDao().countCachesForPlatforms(platforms)
     }
 
-    suspend fun storageStats(
+    fun storageStats(
         platforms: List<String>
     ): Map<String, PlatformPlaylistCacheStorageStats> {
         val selectedPlatforms = platforms.distinct()

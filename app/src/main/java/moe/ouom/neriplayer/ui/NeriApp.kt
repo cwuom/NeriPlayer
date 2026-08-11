@@ -172,7 +172,6 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
 import moe.ouom.neriplayer.data.settings.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
-import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.settings.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.settings.LyricFontScaleTarget
@@ -202,7 +201,6 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneLayer
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_BACKGROUND_SINK_FRACTION
 import moe.ouom.neriplayer.ui.effect.glass.DRAWER_RECESSED_CONTENT_SCALE
-import moe.ouom.neriplayer.ui.effect.glass.advancedGlassMainTabTransitionSpec
 import moe.ouom.neriplayer.ui.effect.glass.advancedGlassSceneZIndex
 import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassVisibilitySceneMotion
 import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
@@ -242,7 +240,6 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.theme.NeriTheme
-import moe.ouom.neriplayer.ui.theme.isActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.view.HyperBackground
@@ -660,14 +657,9 @@ internal fun AnimatedContentTransitionScope<NavBackStackEntry>.transparentDetail
     return if (!coherentFeedbackEnabled) {
         ExitTransition.KeepUntilTransitionsFinished
     } else if (handoff == MainTabDetailHandoff.RETURN_TO_TAB) {
-        val durationMillis = if (coherentFeedbackEnabled) {
-            MAIN_TAB_DETAIL_CLOSE_DURATION_MS
-        } else {
-            DRAWER_DETAIL_CLOSE_DURATION_MS
-        }
         slideOutVertically(
             animationSpec = tween(
-                durationMillis = durationMillis,
+                durationMillis = MAIN_TAB_DETAIL_CLOSE_DURATION_MS,
                 easing = mainTabDetailContentOffsetEasing()
             )
         ) { fullHeight -> fullHeight }
@@ -806,7 +798,7 @@ internal fun resolveMainStartDestination(
     }
 }
 
-private fun SongItem?.resolveUiCoverSource(context: android.content.Context): String? {
+private fun SongItem?.resolveUiCoverSource(context: Context): String? {
     return this?.displayCoverUrl(context)
 }
 
@@ -1511,12 +1503,8 @@ private fun NeriAppContent(
     val backgroundImageAlpha by repo.backgroundImageAlphaFlow.collectAsStateWithLifecycle(initialValue = 0.3f)
     val hapticFeedbackEnabled by repo.hapticFeedbackEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val showCoverSourceBadge by repo.showCoverSourceBadgeFlow.collectAsStateWithLifecycle(initialValue = true)
-    val nowPlayingToolbarDockEnabled by repo.nowPlayingToolbarDockEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val nowPlayingKeepScreenOn by repo.nowPlayingKeepScreenOnFlow.collectAsStateWithLifecycle(initialValue = true)
     val showNowPlayingTitle by repo.nowPlayingShowTitleFlow.collectAsStateWithLifecycle(initialValue = true)
-    val showNowPlayingProgressQualitySwitch by repo.nowPlayingProgressShowQualitySwitchFlow.collectAsStateWithLifecycle(initialValue = true)
-    val showNowPlayingProgressAudioCodec by repo.nowPlayingProgressShowAudioCodecFlow.collectAsStateWithLifecycle(initialValue = true)
-    val showNowPlayingProgressAudioSpec by repo.nowPlayingProgressShowAudioSpecFlow.collectAsStateWithLifecycle(initialValue = true)
     val showLyricTranslation by repo.showLyricTranslationFlow.collectAsStateWithLifecycle(initialValue = true)
     val defaultStartDestination: String? by repo.defaultStartDestinationFlow
         .collectAsStateWithLifecycle(initialValue = null)
@@ -2198,10 +2186,6 @@ private fun NeriAppContent(
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
         ensureAudioServiceStarted(source = "play_bili_audio_and_open_now_playing")
-    }
-
-    fun playBiliAudioAndOpenNowPlaying(videos: List<BiliVideoItem>, index: Int) {
-        playBiliAudioAndOpenNowPlayingWithSource(videos, index, null)
     }
 
     fun playBiliPartsAndOpenNowPlayingWithSource(

@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -86,55 +92,67 @@ internal fun StorageCacheDetailsContent(
     onClearCache: () -> Unit,
     onOpenSystemSettings: () -> Unit
 ) {
-    if (isScanning) {
-        StorageScanCard()
-        return
-    }
-
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val useTwoColumns = maxWidth >= TABLET_CONTENT_MIN_WIDTH
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            StorageUsageSummaryCard(
-                storageDetails = storageDetails,
-                onRefresh = onRefresh,
-                onClearCache = onClearCache,
-                onOpenSystemSettings = onOpenSystemSettings
-            )
-            if (storageDetails.sections.isEmpty()) {
-                MiuixSettingsSectionCard {
-                    Text(
-                        text = stringResource(R.string.storage_details_empty),
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else if (useTwoColumns) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    StorageUsageSectionColumn(
-                        sections = storageDetails.sections.filterIndexed { index, _ ->
-                            index % 2 == 0
-                        },
-                        totalSizeBytes = storageDetails.totalSizeBytes,
-                        modifier = Modifier.weight(1f)
-                    )
-                    StorageUsageSectionColumn(
-                        sections = storageDetails.sections.filterIndexed { index, _ ->
-                            index % 2 == 1
-                        },
-                        totalSizeBytes = storageDetails.totalSizeBytes,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            } else {
-                StorageUsageSectionColumn(
-                    sections = storageDetails.sections,
-                    totalSizeBytes = storageDetails.totalSizeBytes
+    AnimatedContent(
+        targetState = isScanning,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(240)) +
+                scaleIn(initialScale = 0.98f, animationSpec = tween(240)))
+                .togetherWith(
+                    fadeOut(animationSpec = tween(120)) +
+                        scaleOut(targetScale = 1.02f, animationSpec = tween(120))
                 )
+        },
+        label = "storage_scan_content"
+    ) { scanning ->
+        if (scanning) {
+            StorageScanCard()
+        } else {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val useTwoColumns = maxWidth >= TABLET_CONTENT_MIN_WIDTH
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StorageUsageSummaryCard(
+                        storageDetails = storageDetails,
+                        onRefresh = onRefresh,
+                        onClearCache = onClearCache,
+                        onOpenSystemSettings = onOpenSystemSettings
+                    )
+                    if (storageDetails.sections.isEmpty()) {
+                        MiuixSettingsSectionCard {
+                            Text(
+                                text = stringResource(R.string.storage_details_empty),
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else if (useTwoColumns) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            StorageUsageSectionColumn(
+                                sections = storageDetails.sections.filterIndexed { index, _ ->
+                                    index % 2 == 0
+                                },
+                                totalSizeBytes = storageDetails.totalSizeBytes,
+                                modifier = Modifier.weight(1f)
+                            )
+                            StorageUsageSectionColumn(
+                                sections = storageDetails.sections.filterIndexed { index, _ ->
+                                    index % 2 == 1
+                                },
+                                totalSizeBytes = storageDetails.totalSizeBytes,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    } else {
+                        StorageUsageSectionColumn(
+                            sections = storageDetails.sections,
+                            totalSizeBytes = storageDetails.totalSizeBytes
+                        )
+                    }
+                }
             }
         }
     }

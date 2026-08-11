@@ -121,6 +121,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -647,6 +648,7 @@ fun SettingsScreen(
     // 存储占用详情状态
     var storageDetails by remember { mutableStateOf(StorageUsageSummary.Empty) }
     var storageDetailsLoading by remember { mutableStateOf(false) }
+    var storageScanRequest by rememberSaveable { mutableIntStateOf(0) }
 
 
     // 各种对话框和弹窗的显示状态 //
@@ -1131,9 +1133,16 @@ fun SettingsScreen(
     }
     fun refreshStorageDetails() {
         if (storageDetailsLoading) return
+        storageScanRequest++
+    }
+
+    LaunchedEffect(storageScanRequest) {
+        if (storageScanRequest == 0) return@LaunchedEffect
         storageDetailsLoading = true
-        scope.launch {
+        yield()
+        try {
             storageDetails = analyzeStorageUsage(context)
+        } finally {
             storageDetailsLoading = false
         }
     }
@@ -3064,11 +3073,7 @@ private fun SettingsPersonalizationPageContent(
             initial = false
         )
 
-        if (shouldShowCard(0)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(0)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_start_section),
                 description = stringResource(R.string.settings_personalization_start_section_desc)
@@ -3109,11 +3114,7 @@ private fun SettingsPersonalizationPageContent(
             )
         }
 
-        if (shouldShowCard(1)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(1)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_home_section),
                 description = stringResource(R.string.settings_personalization_home_section_desc)
@@ -3186,11 +3187,7 @@ private fun SettingsPersonalizationPageContent(
             }
         }
 
-        if (shouldShowCard(2)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(2)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_playback_info_section),
                 description = stringResource(R.string.settings_personalization_playback_info_section_desc)
@@ -3273,11 +3270,7 @@ private fun SettingsPersonalizationPageContent(
             )
         }
 
-        if (shouldShowCard(3)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(3)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_playback_controls_section),
                 description = stringResource(R.string.settings_personalization_playback_controls_section_desc)
@@ -3339,11 +3332,7 @@ private fun SettingsPersonalizationPageContent(
             )
         }
 
-        if (shouldShowCard(4)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(4)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_lyrics_scale_section),
                 description = stringResource(R.string.settings_personalization_lyrics_scale_section_desc)
@@ -3433,11 +3422,7 @@ private fun SettingsPersonalizationPageContent(
 
         }
 
-        if (shouldShowCard(5)) PersonalizationDetailCard(
-            highlighted = false,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        ) {
+        if (shouldShowCard(5)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_background_section),
                 description = stringResource(R.string.settings_personalization_background_section_desc)
@@ -3512,15 +3497,9 @@ private fun SettingsPersonalizationPageContent(
 
 @Composable
 private fun PersonalizationDetailCard(
-    highlighted: Boolean,
-    highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?,
     content: @Composable () -> Unit
 ) {
     MiuixSettingsSectionCard(
-        highlighted = highlighted,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = if (highlighted) onHighlightFinished else null,
         content = content
     )
 }
@@ -3539,7 +3518,9 @@ private fun PlaybackControlLayoutSettings(
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
-    var selectedSetting by remember { mutableStateOf<PlaybackControlLayoutSetting?>(null) }
+    val selectedSetting = remember {
+        mutableStateOf<PlaybackControlLayoutSetting?>(null)
+    }
 
     PlaybackControlLayoutListItem(
         targetId = "setting:nowplaying_control_placement",
@@ -3547,7 +3528,9 @@ private fun PlaybackControlLayoutSettings(
         title = stringResource(R.string.settings_nowplaying_control_placement),
         description = stringResource(R.string.settings_nowplaying_control_placement_desc),
         value = nowPlayingControlPlacementLabel(preferences.nowPlayingPlacement),
-        onClick = { selectedSetting = PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT },
+        onClick = {
+            selectedSetting.value = PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT
+        },
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -3558,7 +3541,9 @@ private fun PlaybackControlLayoutSettings(
         title = stringResource(R.string.settings_nowplaying_control_size),
         description = stringResource(R.string.settings_nowplaying_control_size_desc),
         value = playbackControlSizeLabel(preferences.nowPlayingSize),
-        onClick = { selectedSetting = PlaybackControlLayoutSetting.NOW_PLAYING_SIZE },
+        onClick = {
+            selectedSetting.value = PlaybackControlLayoutSetting.NOW_PLAYING_SIZE
+        },
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
@@ -3569,13 +3554,15 @@ private fun PlaybackControlLayoutSettings(
         title = stringResource(R.string.settings_lyrics_control_size),
         description = stringResource(R.string.settings_lyrics_control_size_desc),
         value = playbackControlSizeLabel(preferences.lyricsSize),
-        onClick = { selectedSetting = PlaybackControlLayoutSetting.LYRICS_SIZE },
+        onClick = {
+            selectedSetting.value = PlaybackControlLayoutSetting.LYRICS_SIZE
+        },
         highlightTargetId = highlightTargetId,
         highlightPulse = highlightPulse,
         onHighlightFinished = onHighlightFinished
     )
 
-    val setting = selectedSetting ?: return
+    val setting = selectedSetting.value ?: return
     val title = when (setting) {
         PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT ->
             stringResource(R.string.settings_nowplaying_control_placement)
@@ -3585,7 +3572,7 @@ private fun PlaybackControlLayoutSettings(
             stringResource(R.string.settings_lyrics_control_size)
     }
     MiuixSettingsDialog(
-        onDismissRequest = { selectedSetting = null },
+        onDismissRequest = { selectedSetting.value = null },
         title = { Text(title) },
         text = {
             Column {
@@ -3606,7 +3593,7 @@ private fun PlaybackControlLayoutSettings(
                                     onPreferencesChange(
                                         preferences.copy(nowPlayingPlacement = placement)
                                     )
-                                    selectedSetting = null
+                                    selectedSetting.value = null
                                 }
                             )
                         }
@@ -3620,7 +3607,6 @@ private fun PlaybackControlLayoutSettings(
                                     size == preferences.nowPlayingSize
                                 PlaybackControlLayoutSetting.LYRICS_SIZE ->
                                     size == preferences.lyricsSize
-                                PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT -> false
                             }
                             MiuixSettingsChoiceRow(
                                 title = playbackControlSizeLabel(size),
@@ -3632,11 +3618,9 @@ private fun PlaybackControlLayoutSettings(
                                                 preferences.copy(nowPlayingSize = size)
                                             PlaybackControlLayoutSetting.LYRICS_SIZE ->
                                                 preferences.copy(lyricsSize = size)
-                                            PlaybackControlLayoutSetting.NOW_PLAYING_PLACEMENT ->
-                                                preferences
                                         }
                                     )
-                                    selectedSetting = null
+                                    selectedSetting.value = null
                                 }
                             )
                         }
@@ -3646,7 +3630,7 @@ private fun PlaybackControlLayoutSettings(
         },
         confirmButton = {
             MiuixSettingsTextButton(
-                onClick = { selectedSetting = null },
+                onClick = { selectedSetting.value = null },
                 text = { Text(stringResource(R.string.action_close)) }
             )
         }

@@ -133,7 +133,7 @@ internal fun SettingsStorageCacheSection(
     onHighlightFinished: (() -> Unit)? = null
 ) {
     val composeResources = LocalResources.current
-    var showDownloadFileNameDialog by remember { mutableStateOf(false) }
+    val showDownloadFileNameDialog = remember { mutableStateOf(false) }
     var pendingDownloadFileNameTemplate by rememberSaveable {
         mutableStateOf(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
     }
@@ -186,10 +186,7 @@ internal fun SettingsStorageCacheSection(
                 )
         ) {
             if (shouldShowCard(0)) StorageDetailCard(
-                showCard = !showHeader,
-                highlighted = false,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
+                showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_storage_download_section),
@@ -278,10 +275,7 @@ internal fun SettingsStorageCacheSection(
             if (cardIndex == null) StorageDetailGap(showHeader)
 
             if (shouldShowCard(1)) StorageDetailCard(
-                showCard = !showHeader,
-                highlighted = false,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
+                showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_storage_filename_section),
@@ -325,16 +319,13 @@ internal fun SettingsStorageCacheSection(
                     highlightTargetId = highlightTargetId,
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished,
-                    onClick = { showDownloadFileNameDialog = true }
+                    onClick = { showDownloadFileNameDialog.value = true }
                 )
             }
             if (cardIndex == null) StorageDetailGap(showHeader)
 
             if (shouldShowCard(2)) StorageDetailCard(
-                showCard = !showHeader,
-                highlighted = false,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
+                showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_storage_cache_limit_section),
@@ -391,10 +382,7 @@ internal fun SettingsStorageCacheSection(
             if (cardIndex == null) StorageDetailGap(showHeader)
 
             if (shouldShowCard(3)) StorageDetailCard(
-                showCard = !showHeader,
-                highlighted = false,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
+                showCard = !showHeader
             ) {
                 MiuixSettingsSectionIntro(
                     title = stringResource(R.string.settings_storage_cache_clear_section),
@@ -601,9 +589,9 @@ internal fun SettingsStorageCacheSection(
         )
     }
 
-    if (showDownloadFileNameDialog) {
+    if (showDownloadFileNameDialog.value) {
         MiuixSettingsDialog(
-            onDismissRequest = { showDownloadFileNameDialog = false },
+            onDismissRequest = { showDownloadFileNameDialog.value = false },
             title = { Text(stringResource(R.string.settings_download_file_name_format)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -638,7 +626,7 @@ internal fun SettingsStorageCacheSection(
                         onDownloadFileNameTemplateChange(
                             normalizeDownloadFileNameTemplate(pendingDownloadFileNameTemplate)
                         )
-                        showDownloadFileNameDialog = false
+                        showDownloadFileNameDialog.value = false
                     },
                     enabled = canApplyDownloadFileNameTemplate
                 ) {
@@ -651,13 +639,13 @@ internal fun SettingsStorageCacheSection(
                         onClick = {
                             pendingDownloadFileNameTemplate = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
                             onDownloadFileNameTemplateChange(null)
-                            showDownloadFileNameDialog = false
+                            showDownloadFileNameDialog.value = false
                         },
                         enabled = currentSavedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
                     ) {
                         Text(stringResource(R.string.action_reset))
                     }
-                    MiuixSettingsTextButton(onClick = { showDownloadFileNameDialog = false }) {
+                    MiuixSettingsTextButton(onClick = { showDownloadFileNameDialog.value = false }) {
                         Text(stringResource(R.string.action_cancel))
                     }
                 }
@@ -669,16 +657,10 @@ internal fun SettingsStorageCacheSection(
 @Composable
 private fun StorageDetailCard(
     showCard: Boolean,
-    highlighted: Boolean = false,
-    highlightPulse: Int = 0,
-    onHighlightFinished: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     if (showCard) {
         MiuixSettingsSectionCard(
-            highlighted = highlighted,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = if (highlighted) onHighlightFinished else null,
             content = content
         )
     } else {
