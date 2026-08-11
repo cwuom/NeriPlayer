@@ -5334,6 +5334,14 @@ fun LyricsEditorSheet(
         source in searchedLyricMatchSources
     }
 
+    BackHandler {
+        when {
+            showLocalMetadataWriteBackConfirm -> showLocalMetadataWriteBackConfirm = false
+            showLyricMatchSheet -> showLyricMatchSheet = false
+            else -> dismissLyricsEditor()
+        }
+    }
+
     fun saveLyrics(writeLocalMetadata: Boolean) {
         isSaving = true
         coroutineScope.launch {
