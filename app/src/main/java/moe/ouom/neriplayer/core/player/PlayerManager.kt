@@ -2288,8 +2288,34 @@ object PlayerManager {
                     "bili-$biliSongId-${effectiveBiliQuality()}"
                 }
             }
-            else -> "netease-${song.id}-${effectiveNeteaseQuality()}"
+            else -> buildNeteasePlaybackCacheKey(
+                songId = song.id,
+                preferredQuality = effectiveNeteaseQuality(),
+                useFallbackNamespace = neteaseAutoSourceSwitchEnabled ||
+                    neteaseLocalSourceFallbackEnabled
+            )
         }
+    }
+
+    internal fun buildNeteasePlaybackCacheKey(
+        songId: Long,
+        preferredQuality: String,
+        useFallbackNamespace: Boolean
+    ): String {
+        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
+        return if (useFallbackNamespace) {
+            "netease-$songId-$quality-fallback-v1"
+        } else {
+            "netease-$songId-$quality"
+        }
+    }
+
+    internal fun buildNeteasePreviewCacheKey(
+        songId: Long,
+        preferredQuality: String
+    ): String {
+        val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }
+        return "netease-preview-v1-$songId-$quality"
     }
 
     /**
