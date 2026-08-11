@@ -631,7 +631,6 @@ internal fun PlaylistModernVisualColorsProvider(
     }
     Box(
         modifier = Modifier
-            .fillMaxSize()
             .drawAdvancedGlassOverscrollBackdrop(overscrollBackdrop)
     ) {
         CompositionLocalProvider(
