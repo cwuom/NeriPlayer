@@ -882,49 +882,55 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadRadarPlaylistSummaries(): List<PlaylistSummary> {
         val hasLogin = hasRecommendLogin
-        return withContext(Dispatchers.IO) {
-            val fanRadarSummary = if (hasLogin) {
-                loadLoggedInFanRadarSummary()
-            } else {
-                null
-            }
-            val summaries = NeteaseRadarPlaylistDefinitions.map { definition ->
-                if (definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID && fanRadarSummary != null) {
-                    fanRadarSummary
-                } else {
-                    runCatching {
-                        parseNeteasePlaylistDetailSummary(
-                            raw = client.getPlaylistDetail(definition.id, n = 1, s = 0),
-                            fallback = definition
-                        )
-                    }.getOrElse {
-                        definition.toPlaylistSummary()
-                    }
-                }
-            }
-            if (hasLogin) {
-                persistNeteaseRadarSessionCookies()
-            }
-            summaries
+        val fanRadarSummary = if (hasLogin) {
+            loadLoggedInFanRadarSummary()
+        } else {
+            null
         }
+        val summaries = loadNeteaseRadarPlaylistSummaries(
+            definitions = NeteaseRadarPlaylistDefinitions,
+            fanRadarSummary = fanRadarSummary,
+            loadDetail = { playlistId, n, s ->
+                client.getPlaylistDetailCancellable(playlistId, n, s)
+            },
+            onLoadFailure = { definition, error ->
+                NPLogger.w(TAG, "radar metadata failed: playlistId=${definition.id}, error=${error.message}")
+            }
+        )
+        if (hasLogin) {
+            persistNeteaseRadarSessionCookies()
+        }
+        return summaries
     }
 
-    private fun loadLoggedInFanRadarSummary(): PlaylistSummary? {
-        runCatching { client.ensurePersonalizedSession() }
-            .onFailure { error ->
-                NPLogger.w(TAG, "radar session preheat failed: ${error.message}")
+    private suspend fun loadLoggedInFanRadarSummary(): PlaylistSummary? {
+        try {
+            withContext(Dispatchers.IO) {
+                client.ensurePersonalizedSession()
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "radar session preheat failed: ${error.message}")
+        }
         val fallback = NeteaseRadarPlaylistDefinitions.first { definition ->
             definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID
         }
-        return runCatching {
+        return try {
             parseNeteasePlaylistDetailSummary(
-                raw = client.getPlaylistDetail(NETEASE_FAN_RADAR_PLAYLIST_ID),
+                raw = client.getPlaylistDetailCancellable(
+                    NETEASE_FAN_RADAR_PLAYLIST_ID,
+                    n = 1,
+                    s = 0
+                ),
                 fallback = fallback
             )
-        }.onFailure { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(TAG, "fan radar metadata preheat failed: ${error.message}")
-        }.getOrNull()
+            null
+        }
     }
 
     private fun persistNeteaseRadarSessionCookies() {

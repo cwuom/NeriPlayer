@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.coroutineContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -241,6 +247,31 @@ class NeteaseHomeRecommendationsTest {
     fun privateFmDisablesOuterRetry() {
         assertEquals(1, homeSongFetchAttemptCount(NeteaseHomeSongSource.PRIVATE_FM))
         assertEquals(3, homeSongFetchAttemptCount(NeteaseHomeSongSource.DAILY_RECOMMEND))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun radarSummaryRequestsOnlyMetadataAndStopsAfterCancellation() = runTest {
+        val requested = mutableListOf<Triple<Long, Int, Int>>()
+        val result = async {
+            loadNeteaseRadarPlaylistSummaries(
+                definitions = NeteaseRadarPlaylistDefinitions.take(2),
+                fanRadarSummary = null,
+                loadDetail = { playlistId, n, s ->
+                    requested += Triple(playlistId, n, s)
+                    coroutineContext.cancel()
+                    """{"code":200}"""
+                }
+            )
+        }
+
+        runCurrent()
+
+        assertTrue(result.isCancelled)
+        assertEquals(
+            listOf(Triple(NeteaseRadarPlaylistDefinitions.first().id, 1, 0)),
+            requested
+        )
     }
 
     @Test

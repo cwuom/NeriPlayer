@@ -56,6 +56,31 @@ class NeteaseClientTest {
         assertTrueHexSessionCookie(cookies["NMTID"])
     }
 
+    @Test
+    fun musicUOnlyLogin_requiresWeapiSessionPreheat() {
+        assertTrue(
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = mapOf("MUSIC_U" to "login-session"),
+                requestCookies = emptyMap(),
+                usePersistedCookies = true
+            )
+        )
+        assertFalse(
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = mapOf("MUSIC_U" to "login-session"),
+                requestCookies = mapOf("__csrf" to "csrf-token"),
+                usePersistedCookies = true
+            )
+        )
+        assertFalse(
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = mapOf("MUSIC_U" to "login-session"),
+                requestCookies = emptyMap(),
+                usePersistedCookies = false
+            )
+        )
+    }
+
     private fun assertTrueHexSessionCookie(value: String?) {
         assertEquals(32, value?.length)
         assertTrue(value?.all { it in '0'..'9' || it in 'a'..'f' } == true)

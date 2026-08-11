@@ -28,6 +28,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.awaitResponse
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import moe.ouom.neriplayer.util.io.readBytesLimited
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.FormBody
@@ -86,6 +88,16 @@ internal fun mergeNeteaseSessionCookies(
     return result
 }
 
+internal fun shouldPreheatNeteaseWeapiSession(
+    persistedCookies: Map<String, String>,
+    requestCookies: Map<String, String>,
+    usePersistedCookies: Boolean
+): Boolean {
+    return usePersistedCookies &&
+        !persistedCookies["MUSIC_U"].isNullOrBlank() &&
+        requestCookies["__csrf"].isNullOrBlank()
+}
+
 class NeteaseClient {
     private companion object {
         const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
@@ -109,6 +121,7 @@ class NeteaseClient {
     private val http1RetryClient: OkHttpClient
     private val cookieStore: MutableMap<String, MutableList<Cookie>> = mutableMapOf()
     private val cookieLock = Any()
+    private val neteaseMainUrl = "https://$NETEASE_MAIN_HOST/".toHttpUrl()
 
     @Volatile
     private var persistedCookies: Map<String, String> = emptyMap()
@@ -238,15 +251,21 @@ class NeteaseClient {
         }
         synchronized(personalizedSessionLock) {
             val alreadyPreheated = synchronized(cookieLock) {
-                preheatedAuthCookieFingerprint == fingerprint
+                preheatedAuthCookieFingerprint == fingerprint &&
+                    !requestCookiesForUrlLocked(neteaseMainUrl)["__csrf"].isNullOrBlank()
             }
             if (alreadyPreheated) return
 
             ensureWeapiSession()
 
             synchronized(cookieLock) {
-                if (authCookieFingerprint(persistedCookies) == fingerprint) {
+                if (
+                    authCookieFingerprint(persistedCookies) == fingerprint &&
+                    !requestCookiesForUrlLocked(neteaseMainUrl)["__csrf"].isNullOrBlank()
+                ) {
                     preheatedAuthCookieFingerprint = fingerprint
+                } else {
+                    preheatedAuthCookieFingerprint = null
                 }
             }
         }
@@ -328,6 +347,7 @@ class NeteaseClient {
         usePersistedCookies: Boolean = true,
         retryHttp1OnStreamReset: Boolean = false
     ): String {
+        ensureWeapiSessionIfNeeded(mode, usePersistedCookies)
         val request = buildRequest(
             url = url,
             params = params,
@@ -344,6 +364,67 @@ class NeteaseClient {
                 "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
             )
             executeRequest(http1RetryClient, request)
+        }
+    }
+
+    private suspend fun requestCancellable(
+        url: String,
+        params: Map<String, Any>,
+        mode: CryptoMode = CryptoMode.WEAPI,
+        method: String = "POST",
+        usePersistedCookies: Boolean = true,
+        retryHttp1OnStreamReset: Boolean = false
+    ): String {
+        if (mode == CryptoMode.WEAPI) {
+            withContext(Dispatchers.IO) {
+                ensureWeapiSessionIfNeeded(mode, usePersistedCookies)
+            }
+        }
+        val request = buildRequest(
+            url = url,
+            params = params,
+            mode = mode,
+            method = method,
+            usePersistedCookies = usePersistedCookies
+        )
+        return try {
+            executeRequestCancellable(okHttpClient, request)
+        } catch (error: IOException) {
+            if (!retryHttp1OnStreamReset || !error.isTransientHttp2StreamReset()) throw error
+            NPLogger.w(
+                "NERI-NeteaseClient",
+                "HTTP/2 stream reset for $url, retrying with HTTP/1.1: ${error.message.orEmpty()}"
+            )
+            executeRequestCancellable(http1RetryClient, request)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun ensureWeapiSessionIfNeeded(
+        mode: CryptoMode,
+        usePersistedCookies: Boolean
+    ) {
+        if (mode != CryptoMode.WEAPI) return
+        val needsPreheat = synchronized(cookieLock) {
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = persistedCookies,
+                requestCookies = requestCookiesForUrlLocked(neteaseMainUrl),
+                usePersistedCookies = usePersistedCookies
+            )
+        }
+        if (!needsPreheat) return
+
+        ensurePersonalizedSession()
+
+        val stillMissingCsrf = synchronized(cookieLock) {
+            shouldPreheatNeteaseWeapiSession(
+                persistedCookies = persistedCookies,
+                requestCookies = requestCookiesForUrlLocked(neteaseMainUrl),
+                usePersistedCookies = usePersistedCookies
+            )
+        }
+        if (stillMissingCsrf) {
+            throw IOException("NetEase session preheat did not provide __csrf")
         }
     }
 
@@ -597,14 +678,13 @@ class NeteaseClient {
             "offset" to offset.toString(),
             "total" to "true"
         )
-        val request = buildRequest(
+        return requestCancellable(
             url = url,
             params = params,
             mode = CryptoMode.WEAPI,
             method = "POST",
             usePersistedCookies = usePersistedCookies
         )
-        return executeRequestCancellable(okHttpClient, request)
     }
 
     /**
@@ -668,6 +748,22 @@ class NeteaseClient {
             "ids" to "[$idsParam]"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
+    }
+
+    internal suspend fun getSongDetailCancellable(ids: List<Long>): String {
+        require(ids.isNotEmpty()) { "ids must not be empty" }
+        val url = "https://music.163.com/weapi/v3/song/detail"
+        val idsParam = ids.joinToString(",")
+        val detailParam = ids.joinToString(
+            separator = ",",
+            prefix = "[",
+            postfix = "]"
+        ) { id -> """{"id":$id}""" }
+        val params = mapOf(
+            "c" to detailParam,
+            "ids" to "[$idsParam]"
+        )
+        return requestCancellable(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
     }
 
     @Throws(IOException::class)
@@ -783,6 +879,20 @@ class NeteaseClient {
             "s" to s.toString()
         )
         return request(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    internal suspend fun getPlaylistDetailCancellable(
+        playlistId: Long,
+        n: Int = 100000,
+        s: Int = 8
+    ): String {
+        val url = "https://music.163.com/api/v6/playlist/detail"
+        val params = mapOf<String, Any>(
+            "id" to playlistId.toString(),
+            "n" to n.toString(),
+            "s" to s.toString()
+        )
+        return requestCancellable(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
     }
 
     @Throws(IOException::class)

@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.ui.viewmodel.playlist
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -131,12 +132,11 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         }
 
         try {
-            val raw = withContext(Dispatchers.IO) {
-                preparePlaylistRequest(playlist.id)
-                client.getPlaylistDetail(playlist.id).also {
-                    if (playlist.id == NETEASE_FAN_RADAR_PLAYLIST_ID) {
-                        persistNeteaseSessionCookies()
-                    }
+            preparePlaylistRequest(playlist.id)
+            val raw = client.getPlaylistDetailCancellable(playlist.id)
+            if (playlist.id == NETEASE_FAN_RADAR_PLAYLIST_ID) {
+                withContext(Dispatchers.IO) {
+                    persistNeteaseSessionCookies()
                 }
             }
             NPLogger.d(TAG_PD, "detail head=${raw.take(500)}")
@@ -169,8 +169,13 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 tracks = tracks
             )
             withContext(Dispatchers.IO) {
+                if (client.hasLogin()) {
+                    persistNeteaseSessionCookies()
+                }
                 playlistCacheRepo.save(parsed.toCache(tracks))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IOException) {
             val fallback = cached ?: withContext(Dispatchers.IO) { playlistCacheRepo.read(playlist.id) }
             if (fallback != null) {
@@ -198,19 +203,24 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         }
     }
 
-    private fun preparePlaylistRequest(playlistId: Long) {
-        val cookies = cookieRepo.getCookiesOnce()
-        client.setPersistedCookies(cookies)
-        if (
-            playlistId != NETEASE_FAN_RADAR_PLAYLIST_ID ||
-            cookies["MUSIC_U"].isNullOrBlank()
-        ) {
-            return
-        }
-        runCatching { client.ensurePersonalizedSession() }
-            .onFailure { error ->
+    private suspend fun preparePlaylistRequest(playlistId: Long) {
+        withContext(Dispatchers.IO) {
+            val cookies = cookieRepo.getCookiesOnce()
+            client.setPersistedCookies(cookies)
+            if (
+                playlistId != NETEASE_FAN_RADAR_PLAYLIST_ID ||
+                cookies["MUSIC_U"].isNullOrBlank()
+            ) {
+                return@withContext
+            }
+            try {
+                client.ensurePersonalizedSession()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 NPLogger.w(TAG_PD, "radar session preheat failed: ${error.message}")
             }
+        }
     }
 
     private fun persistNeteaseSessionCookies() {
@@ -558,8 +568,8 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
         val pageSize = 300
         val pages = missingIds.chunked(pageSize)
         val deferred = pages.mapIndexed { index, ids ->
-            async(Dispatchers.IO) {
-                index to client.getSongDetail(ids)
+            async {
+                index to client.getSongDetailCancellable(ids)
             }
         }
         val fetchedMap = mutableMapOf<Long, SongItem>()

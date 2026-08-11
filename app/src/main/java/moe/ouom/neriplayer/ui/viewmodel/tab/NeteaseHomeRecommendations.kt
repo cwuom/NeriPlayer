@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
@@ -156,6 +159,35 @@ internal fun parseNeteasePlaylistDetailSummary(
     val playlist = root.optJSONObject("playlist")
     return playlist?.let(::parseNeteasePlaylistSummary)
         ?: fallback.toPlaylistSummary()
+}
+
+internal suspend fun loadNeteaseRadarPlaylistSummaries(
+    definitions: List<NeteaseRadarPlaylistDefinition>,
+    fanRadarSummary: PlaylistSummary?,
+    loadDetail: suspend (playlistId: Long, n: Int, s: Int) -> String,
+    onLoadFailure: (NeteaseRadarPlaylistDefinition, Throwable) -> Unit = { _, _ -> }
+): List<PlaylistSummary> {
+    return buildList(definitions.size) {
+        definitions.forEach { definition ->
+            currentCoroutineContext().ensureActive()
+            if (definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID && fanRadarSummary != null) {
+                add(fanRadarSummary)
+                return@forEach
+            }
+
+            val summary = try {
+                val raw = loadDetail(definition.id, 1, 0)
+                currentCoroutineContext().ensureActive()
+                parseNeteasePlaylistDetailSummary(raw, definition)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                onLoadFailure(definition, error)
+                definition.toPlaylistSummary()
+            }
+            add(summary)
+        }
+    }
 }
 
 internal fun NeteaseRadarPlaylistDefinition.toPlaylistSummary(): PlaylistSummary {
