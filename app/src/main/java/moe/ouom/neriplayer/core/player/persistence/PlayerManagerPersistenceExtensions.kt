@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -625,6 +626,26 @@ internal fun PlayerManager.scheduleStatePersist(
             shouldResumePlayback = shouldResumePlayback
         )
     }
+}
+
+internal suspend fun PlayerManager.persistStateNow(
+    positionMs: Long = _playbackPositionMs.value.coerceAtLeast(0L),
+    shouldResumePlayback: Boolean = currentPlaylist.isNotEmpty() && shouldResumePlaybackSnapshot(),
+    reason: String
+): Boolean {
+    if (!initialized) return false
+    val pendingJob = scheduledStatePersistJob
+    scheduledStatePersistJob = null
+    pendingJob?.cancelAndJoin()
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "persistStateNow: reason=$reason positionMs=$positionMs shouldResume=$shouldResumePlayback"
+    )
+    persistState(
+        positionMs = positionMs,
+        shouldResumePlayback = shouldResumePlayback
+    )
+    return true
 }
 
 private suspend fun PlayerManager.updateCurrentFavorite(

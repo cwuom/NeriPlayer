@@ -230,6 +230,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.playback.stopPlaybackImmediatelyImpl
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import java.io.File
 import java.io.RandomAccessFile
@@ -2523,6 +2524,11 @@ object PlayerManager {
     ) = this.applyListenTogetherPlaybackModeImpl(repeatMode, shuffleEnabled)
 
     internal fun stopProgressUpdates() = this.stopProgressUpdatesImpl()
+
+    internal fun stopPlaybackImmediately(
+        reason: String,
+        forcePersist: Boolean = true
+    ) = this.stopPlaybackImmediatelyImpl(reason, forcePersist)
 
     internal fun stopPlaybackPreservingQueue(clearMediaUrl: Boolean = false) =
         this.stopPlaybackPreservingQueueImpl(clearMediaUrl)

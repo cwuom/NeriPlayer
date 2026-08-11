@@ -78,6 +78,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
@@ -92,6 +93,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusivePlaybackRes
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothMetadataText
 import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
+import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
@@ -213,6 +215,7 @@ private const val USB_EXCLUSIVE_BACKGROUND_KEEPALIVE_INTERVAL_MS = 1_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
 private const val USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS = 3L
+private const val TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS = 3_000L
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -228,6 +231,92 @@ internal fun shouldStopServiceForExternalPauseCommand(
 ): Boolean {
     // 系统外部控制面板的 stop 经常只是"结束本次会话", 不能把当前队列一并释放掉
     return stopServiceRequested && source != MEDIA_SESSION_STOP_SOURCE
+}
+
+internal fun shouldStopPlaybackOnTaskRemoved(
+    hasPlaybackSurfaceContent: Boolean,
+    transportActive: Boolean,
+): Boolean {
+    return hasPlaybackSurfaceContent && transportActive
+}
+
+internal fun resolveTaskRemovedTransportActive(
+    playerTransportActive: Boolean,
+    listenTogetherRemotePlaying: Boolean,
+): Boolean {
+    return playerTransportActive || listenTogetherRemotePlaying
+}
+
+internal data class TaskRemovedPlaybackAction(
+    val stopPlaybackImmediately: Boolean,
+    val persistPlaybackState: Boolean,
+    val stopServiceAfterPersist: Boolean,
+    val updateNotificationAfterPersist: Boolean,
+)
+
+internal data class TaskRemovedPlaybackCallbacks(
+    val stopPlaybackImmediately: () -> Unit,
+    val persistPlaybackState: suspend (String) -> Boolean,
+    val stopForegroundIfStarted: (String) -> Unit,
+    val stopSelf: () -> Unit,
+    val updateNotification: () -> Unit,
+    val onPlaybackStopFailure: (Throwable) -> Unit,
+    val onNotificationUpdateFailure: (Throwable) -> Unit,
+)
+
+internal fun resolveTaskRemovedPlaybackAction(
+    hasPlaybackSurfaceContent: Boolean,
+    playerTransportActive: Boolean,
+    listenTogetherRemotePlaying: Boolean,
+    hasItems: Boolean,
+): TaskRemovedPlaybackAction {
+    val transportActive = resolveTaskRemovedTransportActive(
+        playerTransportActive = playerTransportActive,
+        listenTogetherRemotePlaying = listenTogetherRemotePlaying,
+    )
+    val stopPlaybackImmediately = shouldStopPlaybackOnTaskRemoved(
+        hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
+        transportActive = transportActive,
+    )
+    return TaskRemovedPlaybackAction(
+        stopPlaybackImmediately = stopPlaybackImmediately,
+        persistPlaybackState = stopPlaybackImmediately || hasItems,
+        stopServiceAfterPersist = stopPlaybackImmediately,
+        updateNotificationAfterPersist = hasItems && !stopPlaybackImmediately,
+    )
+}
+
+internal suspend fun executeTaskRemovedPlaybackAction(
+    action: TaskRemovedPlaybackAction,
+    callbacks: TaskRemovedPlaybackCallbacks,
+) {
+    if (action.stopPlaybackImmediately) {
+        runCatching { callbacks.stopPlaybackImmediately() }
+            .onFailure(callbacks.onPlaybackStopFailure)
+    }
+    val playbackStatePersisted = if (action.persistPlaybackState) {
+        val reason = if (action.stopPlaybackImmediately) {
+            "task_removed"
+        } else {
+            "inactive_task_removed"
+        }
+        callbacks.persistPlaybackState(reason)
+    } else {
+        true
+    }
+    if (action.updateNotificationAfterPersist) {
+        runCatching { callbacks.updateNotification() }
+            .onFailure(callbacks.onNotificationUpdateFailure)
+    }
+    if (action.stopServiceAfterPersist) {
+        if (playbackStatePersisted) {
+            callbacks.stopForegroundIfStarted("task_removed")
+            callbacks.stopSelf()
+        } else {
+            runCatching { callbacks.updateNotification() }
+                .onFailure(callbacks.onNotificationUpdateFailure)
+        }
+    }
 }
 
 internal fun mediaSessionPlaybackActions(): Long {
@@ -2574,26 +2663,95 @@ class AudioPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        val hasPlaybackSurfaceContent = hasPlaybackSurfaceContent()
+        val hasItems = PlayerManager.hasItems()
+        val playerTransportActive = runCatching {
+            PlayerManager.isTransportActiveWithoutInitialization()
+        }.getOrDefault(false)
+        val listenTogetherRemotePlaying = isListenTogetherRemotePlaying()
+        val transportActive = resolveTaskRemovedTransportActive(
+            playerTransportActive = playerTransportActive,
+            listenTogetherRemotePlaying = listenTogetherRemotePlaying,
+        )
+        val taskRemovedAction = resolveTaskRemovedPlaybackAction(
+            hasPlaybackSurfaceContent = hasPlaybackSurfaceContent,
+            playerTransportActive = playerTransportActive,
+            listenTogetherRemotePlaying = listenTogetherRemotePlaying,
+            hasItems = hasItems,
+        )
         NPLogger.w(
             "NERI-APS",
-            "onTaskRemoved hasItems=${PlayerManager.hasItems()} isPlaying=${PlayerManager.isPlayingFlow.value}"
+            "onTaskRemoved hasSurface=$hasPlaybackSurfaceContent " +
+                "transportActive=$transportActive playerTransport=$playerTransportActive " +
+                "listenTogetherRemotePlaying=$listenTogetherRemotePlaying hasItems=$hasItems " +
+                "isPlaying=${PlayerManager.isPlayingFlow.value}"
         )
-        // 划掉任务不代表用户停止播放, 正在播的会话要保留进程重建恢复意图
-        if (PlayerManager.hasItems()) {
+        if (taskRemovedAction.stopPlaybackImmediately) {
+            allowServiceRestart = false
             flushPlaybackStatsSafely("task_removed", "task removed")
-            runCatching {
-                PlayerManager.scheduleStatePersist(
-                    positionMs = PlayerManager.playbackPositionFlow.value,
-                    shouldResumePlayback = PlayerManager.playWhenReadyFlow.value ||
-                        PlayerManager.isPlayingFlow.value,
-                    debounceMs = 0L
+            serviceScope.launch {
+                executeTaskRemovedPlaybackAction(
+                    action = taskRemovedAction,
+                    callbacks = taskRemovedPlaybackCallbacks()
                 )
-            }.onFailure {
-                NPLogger.w("NERI-APS", "state persist failed during task removed", it)
             }
-            runCatching { updateNotification() }
-                .onFailure { NPLogger.w("NERI-APS", "notification update failed during task removed", it) }
+            return
         }
+        if (taskRemovedAction.persistPlaybackState) {
+            serviceScope.launch {
+                executeTaskRemovedPlaybackAction(
+                    action = taskRemovedAction,
+                    callbacks = taskRemovedPlaybackCallbacks()
+                )
+            }
+        }
+    }
+
+    private fun taskRemovedPlaybackCallbacks(): TaskRemovedPlaybackCallbacks {
+        return TaskRemovedPlaybackCallbacks(
+            stopPlaybackImmediately = {
+                PlayerManager.stopPlaybackImmediately(
+                    reason = "task_removed",
+                    forcePersist = false
+                )
+            },
+            persistPlaybackState = { reason ->
+                persistTaskRemovedPlaybackState(reason)
+            },
+            stopForegroundIfStarted = { reason ->
+                stopForegroundIfStarted(reason)
+            },
+            stopSelf = {
+                stopSelf()
+            },
+            updateNotification = {
+                updateNotification()
+            },
+            onPlaybackStopFailure = { error ->
+                NPLogger.w("NERI-APS", "playback stop failed during task removed", error)
+            },
+            onNotificationUpdateFailure = { error ->
+                NPLogger.w(
+                    "NERI-APS",
+                    "notification update failed during inactive task removed",
+                    error
+                )
+            },
+        )
+    }
+
+    private suspend fun persistTaskRemovedPlaybackState(reason: String): Boolean {
+        return runCatching {
+            withTimeout(TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS) {
+                PlayerManager.persistStateNow(
+                    positionMs = PlayerManager.playbackPositionFlow.value,
+                    shouldResumePlayback = false,
+                    reason = reason
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w("NERI-APS", "state persist failed during $reason", error)
+        }.getOrDefault(false)
     }
 
     private fun flushPlaybackStatsSafely(reason: String, context: String) {
