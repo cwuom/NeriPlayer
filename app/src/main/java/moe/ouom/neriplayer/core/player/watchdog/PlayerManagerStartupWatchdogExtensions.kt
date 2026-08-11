@@ -23,8 +23,6 @@ import moe.ouom.neriplayer.core.player.policy.command.resolvePlaybackStartPlan
 import moe.ouom.neriplayer.core.player.policy.progress.hasPlaybackProgressAdvancedSinceBaseline
 import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
-import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
-import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -294,7 +292,6 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
     val requestToken = playbackRequestToken
     if (requestToken != playbackRequestToken) return false
 
-    val staleCacheKey = currentPlaybackCacheKeyForRecovery()
     activePlaybackUrlIndex = nextIndex
     activePlaybackResumePositionMs = player.currentPosition.coerceAtLeast(0L)
     NPLogger.w(
@@ -305,9 +302,7 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
         applyPlaybackCandidate(
             candidate = candidate,
             resumePositionMs = activePlaybackResumePositionMs,
-            requestToken = requestToken,
-            staleCacheKey = staleCacheKey,
-            recoveryReason = reason
+            requestToken = requestToken
         )
     }
     return true
@@ -316,19 +311,9 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(reason: S
 private suspend fun PlayerManager.applyPlaybackCandidate(
     candidate: PlaybackUrlCandidate,
     resumePositionMs: Long,
-    requestToken: Long,
-    staleCacheKey: String?,
-    recoveryReason: String
+    requestToken: Long
 ) {
     val song = _currentSongFlow.value ?: return
-    if (requestToken != playbackRequestToken) return
-    staleCacheKey?.let {
-        invalidateCachedResourceForPlaybackRecovery(
-            cacheKey = it,
-            reason = recoveryReason
-        )
-    }
-    if (requestToken != playbackRequestToken) return
     val cacheKey = candidate.cacheKeyOverride ?: computeCacheKey(song)
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
