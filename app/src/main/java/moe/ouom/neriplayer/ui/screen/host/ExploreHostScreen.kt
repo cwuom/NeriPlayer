@@ -28,8 +28,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.updateTransition
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
@@ -47,6 +47,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,12 +56,19 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.bili.BiliClient
+import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.youtube.stableYouTubeMusicId
+import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
+import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
+import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
+import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorDetailScreen
 import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorItemsScreen
@@ -69,20 +77,12 @@ import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.ExploreScreen
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.effect.glass.advancedGlassHostNavigationTransition
-import moe.ouom.neriplayer.ui.effect.glass.animateAdvancedGlassSceneMotion
-import moe.ouom.neriplayer.ui.animateMainTabDetailCloseRootRevealFraction
-import moe.ouom.neriplayer.ui.clipMainTabDetailCloseRoot
-import moe.ouom.neriplayer.ui.rememberMainTabSceneRestoredEntry
 import moe.ouom.neriplayer.ui.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
-import moe.ouom.neriplayer.core.api.bili.buildBiliSongAlbum
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
 
 // 探索页选中项
@@ -106,6 +106,12 @@ internal sealed class ExploreSelectedItem {
         val creator: YouTubeMusicCreatorSummary,
         val section: YouTubeMusicCreatorSection
     ) : ExploreSelectedItem()
+}
+
+internal fun youtubeMusicCreatorDetailStateKey(
+    creator: YouTubeMusicCreatorSummary
+): String {
+    return "youtube_music_creator_detail_${creator.browseId}"
 }
 
 private val ExploreSelectedItem?.navigationDepth: Int
@@ -237,6 +243,7 @@ fun ExploreHostScreen(
     val searchListState = rememberSaveable(saver = searchListStateSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val detailStateHolder = rememberSaveableStateHolder()
     val topAppBarState = rememberTopAppBarState()
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchScrollContextKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -476,40 +483,44 @@ fun ExploreHostScreen(
                             }
 
                             is ExploreSelectedItem.YouTubeMusicCreator -> {
-                                YouTubeMusicCreatorDetailScreen(
-                                    creator = current.creator,
-                                    onBack = ::closeSelectedDetail,
-                                    onSongClick = onSongClick,
-                                    onPlaylistClick = { playlist ->
-                                        openExploreSelectedItem(
-                                            ExploreSelectedItem.YouTubeMusic(
-                                                playlist = playlist.copy(
-                                                    creatorName = playlist.creatorName.ifBlank {
-                                                        current.creator.title
-                                                    }
-                                                ),
-                                                parentCreator = current.creator
+                                detailStateHolder.SaveableStateProvider(
+                                    key = youtubeMusicCreatorDetailStateKey(current.creator)
+                                ) {
+                                    YouTubeMusicCreatorDetailScreen(
+                                        creator = current.creator,
+                                        onBack = ::closeSelectedDetail,
+                                        onSongClick = onSongClick,
+                                        onPlaylistClick = { playlist ->
+                                            openExploreSelectedItem(
+                                                ExploreSelectedItem.YouTubeMusic(
+                                                    playlist = playlist.copy(
+                                                        creatorName = playlist.creatorName.ifBlank {
+                                                            current.creator.title
+                                                        }
+                                                    ),
+                                                    parentCreator = current.creator
+                                                )
                                             )
-                                        )
-                                    },
-                                    onCreatorClick = { creator ->
-                                        openExploreSelectedItem(
-                                            ExploreSelectedItem.YouTubeMusicCreator(
-                                                creator = creator,
-                                                parentCreator = current.creator
+                                        },
+                                        onCreatorClick = { creator ->
+                                            openExploreSelectedItem(
+                                                ExploreSelectedItem.YouTubeMusicCreator(
+                                                    creator = creator,
+                                                    parentCreator = current.creator
+                                                )
                                             )
-                                        )
-                                    },
-                                    onSectionMoreClick = { section ->
-                                        openExploreSelectedItem(
-                                            ExploreSelectedItem.YouTubeMusicCreatorItems(
-                                                creator = current.creator,
-                                                section = section
+                                        },
+                                        onSectionMoreClick = { section ->
+                                            openExploreSelectedItem(
+                                                ExploreSelectedItem.YouTubeMusicCreatorItems(
+                                                    creator = current.creator,
+                                                    section = section
+                                                )
                                             )
-                                        )
-                                    },
-                                    offlineMode = offlineMode
-                                )
+                                        },
+                                        offlineMode = offlineMode
+                                    )
+                                }
                             }
 
                             is ExploreSelectedItem.YouTubeMusicCreatorItems -> {

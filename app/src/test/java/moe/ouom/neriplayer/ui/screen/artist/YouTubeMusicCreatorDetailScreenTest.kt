@@ -13,6 +13,23 @@ import org.junit.Test
 class YouTubeMusicCreatorDetailScreenTest {
 
     @Test
+    fun creatorDetailStateKeys_areScopedToCreatorAndSection() {
+        val section = YouTubeMusicCreatorSection(
+            title = "Albums",
+            items = emptyList(),
+            moreEndpoint = YouTubeMusicCreatorBrowseEndpoint(
+                browseId = "UCdemoCreator",
+                params = "albums"
+            )
+        )
+
+        assertEquals(
+            "UCdemoCreator|UCdemoCreator|albums|Albums",
+            youtubeMusicCreatorSectionScrollStateKey("UCdemoCreator", section)
+        )
+    }
+
+    @Test
     fun sectionMore_isShownForPlayableTopSongs() {
         val section = YouTubeMusicCreatorSection(
             title = "TOP SONGS",
