@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,8 +25,24 @@ class YouTubeMusicCreatorDetailScreenTest {
         )
 
         assertEquals(
-            "UCdemoCreator|UCdemoCreator|albums|Albums",
-            youtubeMusicCreatorSectionScrollStateKey("UCdemoCreator", section)
+            "UCdemoCreator|UCdemoCreator|albums|Albums|0",
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 0
+            )
+        )
+        assertNotEquals(
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 0
+            ),
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 1
+            )
         )
     }
 

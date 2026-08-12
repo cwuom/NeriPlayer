@@ -115,9 +115,10 @@ internal fun preserveYouTubeMusicCreatorName(
 
 internal fun youtubeMusicCreatorSectionScrollStateKey(
     creatorBrowseId: String,
-    section: YouTubeMusicCreatorSection
+    section: YouTubeMusicCreatorSection,
+    sectionIndex: Int
 ): String {
-    return "$creatorBrowseId|${youtubeMusicCreatorSectionKey(section)}"
+    return "$creatorBrowseId|${youtubeMusicCreatorSectionKey(section)}|$sectionIndex"
 }
 
 internal fun youtubeMusicCreatorDetailViewModelKey(creatorBrowseId: String): String {
@@ -134,8 +135,7 @@ fun YouTubeMusicCreatorDetailScreen(
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit = {},
     offlineMode: Boolean = false,
-    detailViewModelFactory: androidx.lifecycle.ViewModelProvider.Factory? = null,
-    onSectionListState: ((String, LazyListState) -> Unit)? = null
+    detailViewModelFactory: androidx.lifecycle.ViewModelProvider.Factory? = null
 ) {
     val context = LocalContext.current
     val resolvedViewModelFactory = detailViewModelFactory ?: viewModelFactory {
@@ -203,8 +203,7 @@ fun YouTubeMusicCreatorDetailScreen(
                 },
                 onCreatorClick = onCreatorClick,
                 onSectionMoreClick = onSectionMoreClick,
-                isTabletLayout = isTabletLayout,
-                onSectionListState = onSectionListState
+                isTabletLayout = isTabletLayout
             )
         }
     }
@@ -224,8 +223,7 @@ internal fun YouTubeMusicCreatorDetailContent(
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
-    isTabletLayout: Boolean,
-    onSectionListState: ((String, LazyListState) -> Unit)? = null
+    isTabletLayout: Boolean
 ) {
     val detail = uiState.detail
     Box(
@@ -323,10 +321,11 @@ internal fun YouTubeMusicCreatorDetailContent(
                     itemsIndexed(
                         items = detail.sections,
                         key = { index, section -> "creator-section-$index-${section.title}" }
-                    ) { _, section ->
+                    ) { sectionIndex, section ->
                         YouTubeMusicCreatorSection(
                             section = section,
                             creatorBrowseId = creatorBrowseId,
+                            sectionIndex = sectionIndex,
                             stateHolder = sectionStateHolder,
                             offlineMode = offlineMode,
                             isPlaybackQueueLoading =
@@ -340,8 +339,7 @@ internal fun YouTubeMusicCreatorDetailContent(
                             onSectionSongClick = onSectionSongClick,
                             onPlaylistClick = onPlaylistClick,
                             onCreatorClick = onCreatorClick,
-                            onSectionMoreClick = onSectionMoreClick,
-                            onSectionListState = onSectionListState
+                            onSectionMoreClick = onSectionMoreClick
                         )
                     }
                 }
@@ -504,6 +502,7 @@ private fun YouTubeMusicCreatorHeader(
 private fun YouTubeMusicCreatorSection(
     section: YouTubeMusicCreatorSection,
     creatorBrowseId: String,
+    sectionIndex: Int,
     stateHolder: SaveableStateHolder,
     offlineMode: Boolean,
     isPlaybackQueueLoading: Boolean,
@@ -512,8 +511,7 @@ private fun YouTubeMusicCreatorSection(
     onSectionSongClick: (YouTubeMusicCreatorSection, YouTubeMusicCreatorItem) -> Unit,
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
-    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
-    onSectionListState: ((String, LazyListState) -> Unit)?
+    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit
 ) {
     val playableItems = section.items.mapNotNull { item ->
         item.toCreatorSongItem()?.let { item to it }
@@ -581,16 +579,14 @@ private fun YouTubeMusicCreatorSection(
             }
         } else {
             stateHolder.SaveableStateProvider(
-                key = youtubeMusicCreatorSectionScrollStateKey(creatorBrowseId, section)
+                key = youtubeMusicCreatorSectionScrollStateKey(
+                    creatorBrowseId = creatorBrowseId,
+                    section = section,
+                    sectionIndex = sectionIndex
+                )
             ) {
                 val listState = rememberSaveable(saver = LazyListState.Saver) {
                     LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
-                }
-                androidx.compose.runtime.SideEffect {
-                    onSectionListState?.invoke(
-                        youtubeMusicCreatorSectionScrollStateKey(creatorBrowseId, section),
-                        listState
-                    )
                 }
                 LazyRow(
                     state = listState,
