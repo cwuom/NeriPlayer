@@ -17,8 +17,11 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
+import moe.ouom.neriplayer.core.player.url.buildYouTubePlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.url.hasCompleteExoPlayerCache
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedPlaybackDescriptor
+import moe.ouom.neriplayer.core.player.url.persistCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
@@ -331,6 +334,28 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             shouldApplyMutation = {
                 !playbackDemandArbiter.shouldYieldPrefetch(cacheKey)
             }
+        )
+        val playbackAudioInfo = buildYouTubePlaybackAudioInfo(playableAudio) { it.toString() }
+        val representationIdentity = listOf(
+            playableAudio.mimeType.orEmpty(),
+            playableAudio.bitrateKbps?.toString().orEmpty(),
+            playableAudio.sampleRateHz?.toString().orEmpty(),
+            playableAudio.streamType.name
+        ).joinToString(separator = "|")
+        invalidateMismatchedCachedPlaybackDescriptor(
+            cacheKey = cacheKey,
+            audioInfo = playbackAudioInfo,
+            expectedContentLength = playableAudio.contentLength,
+            representationIdentity = representationIdentity,
+            shouldApplyMutation = {
+                !playbackDemandArbiter.shouldYieldPrefetch(cacheKey)
+            }
+        )
+        persistCachedPlaybackDescriptor(
+            cacheKey = cacheKey,
+            audioInfo = playbackAudioInfo,
+            expectedContentLength = playableAudio.contentLength,
+            representationIdentity = representationIdentity
         )
         if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
             NPLogger.d(

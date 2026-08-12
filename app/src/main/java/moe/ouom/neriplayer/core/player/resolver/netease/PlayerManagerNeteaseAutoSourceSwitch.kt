@@ -82,6 +82,7 @@ private fun SongUrlResult.Success.toPlaybackUrlCandidate(): PlaybackUrlCandidate
         mimeType = mimeType,
         expectedContentLength = expectedContentLength,
         audioInfo = audioInfo,
+        representationIdentity = representationIdentity,
         cacheKeyOverride = cacheKeyOverride
     )
 }
@@ -185,6 +186,12 @@ private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
         audioInfo = buildBiliPlaybackAudioInfo(selectedStream, availableStreams) {
             getLocalizedString(it)
         },
+        representationIdentity = listOf(
+            selectedStream.id?.toString().orEmpty(),
+            selectedStream.qualityTag.orEmpty(),
+            selectedStream.mimeType.trim().lowercase(),
+            selectedStream.bitrateKbps.toString()
+        ).joinToString(separator = "|"),
         cacheKeyOverride = buildNeteaseAutoBiliCacheKey(
             bvid = videoInfo.bvid,
             cid = pageMatch.page.cid,

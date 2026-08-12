@@ -26,6 +26,9 @@ import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedPlaybackDescriptor
+import moe.ouom.neriplayer.core.player.url.offlineCacheKeyFromUrl
+import moe.ouom.neriplayer.core.player.url.persistCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -53,6 +56,14 @@ internal fun PlayerManager.clearActivePlaybackCandidates() {
     activePlaybackCommandSource = PlaybackCommandSource.LOCAL
     startupStallRecoveryAttempts = 0
     resetPlaybackProgressAdvanceBaseline(0L)
+}
+
+internal fun shouldInvalidateOfflineCacheForStartupStall(
+    recoveryAttempt: Int,
+    currentUrl: String?
+): Boolean {
+    return recoveryAttempt == 1 &&
+        offlineCacheKeyFromUrl(currentUrl) != null
 }
 
 internal fun PlayerManager.currentPlaybackCandidate(): PlaybackUrlCandidate? {
@@ -188,6 +199,31 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
     if (requestToken != playbackRequestToken) return
     startupStallRecoveryAttempts += 1
 
+    val offlineCacheKey = offlineCacheKeyFromUrl(_currentMediaUrl.value)
+    if (
+        offlineCacheKey != null &&
+        shouldInvalidateOfflineCacheForStartupStall(
+            recoveryAttempt = startupStallRecoveryAttempts,
+            currentUrl = _currentMediaUrl.value
+        )
+    ) {
+        val song = _currentSongFlow.value
+        if (song != null && !isLocalSong(song)) {
+            val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
+            refreshCurrentSongUrl(
+                resumePositionMs = resumePositionMs,
+                allowFallback = false,
+                reason = "startup_stall_offline_cache",
+                bypassCooldown = true,
+                fallbackSeekPositionMs = resumePositionMs,
+                resumePlaybackAfterRefresh = true,
+                resumedPlaybackCommandSource = activePlaybackCommandSource,
+                cacheKeyToInvalidateBeforeResolve = offlineCacheKey
+            )
+            return
+        }
+    }
+
     if (tryRecoverUsbExclusiveStartupStall(requestToken)) {
         return
     }
@@ -238,7 +274,8 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
             fallbackSeekPositionMs = resumePositionMs,
             resumePlaybackAfterRefresh = true,
             resumedPlaybackCommandSource = activePlaybackCommandSource,
-            youtubeRecoveryStrategy = stallRecoveryStrategy
+            youtubeRecoveryStrategy = stallRecoveryStrategy,
+            cacheKeyToInvalidateBeforeResolve = null
         )
         return
     }
@@ -350,7 +387,19 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
         cacheKey = cacheKey,
         expectedContentLength = candidate.expectedContentLength
     )
+    invalidateMismatchedCachedPlaybackDescriptor(
+        cacheKey = cacheKey,
+        audioInfo = candidate.audioInfo,
+        expectedContentLength = candidate.expectedContentLength,
+        representationIdentity = candidate.representationIdentity
+    )
     if (requestToken != playbackRequestToken) return
+    persistCachedPlaybackDescriptor(
+        cacheKey = cacheKey,
+        audioInfo = candidate.audioInfo,
+        expectedContentLength = candidate.expectedContentLength,
+        representationIdentity = candidate.representationIdentity
+    )
     _currentPlaybackAudioInfo.value = candidate.audioInfo
     updateAudioOffloadPreferences("playback_candidate_source")
     val mediaItem = buildMediaItem(song, candidate.url, cacheKey, candidate.mimeType)

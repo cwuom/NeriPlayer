@@ -66,6 +66,8 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedPlaybackDescriptor
+import moe.ouom.neriplayer.core.player.url.persistCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
@@ -878,23 +880,41 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val selectedCandidate = currentPlaybackCandidate()
                     val selectedUrl = selectedCandidate?.url ?: result.url
+                    val selectedAudioInfo = selectedCandidate?.audioInfo ?: result.audioInfo
+                    val selectedMimeType = selectedCandidate?.mimeType ?: result.mimeType
+                    val selectedExpectedContentLength =
+                        selectedCandidate?.expectedContentLength ?: result.expectedContentLength
+                    val selectedRepresentationIdentity =
+                        selectedCandidate?.representationIdentity ?: result.representationIdentity
                     NPLogger.d(
                         "NERI-PlayerManager",
                         "Using custom cache key: $cacheKey for song: ${song.name}"
                     )
                     invalidateMismatchedCachedResource(
                         cacheKey = cacheKey,
-                        expectedContentLength = result.expectedContentLength
+                        expectedContentLength = selectedExpectedContentLength
+                    )
+                    invalidateMismatchedCachedPlaybackDescriptor(
+                        cacheKey = cacheKey,
+                        audioInfo = selectedAudioInfo,
+                        expectedContentLength = selectedExpectedContentLength,
+                        representationIdentity = selectedRepresentationIdentity
+                    )
+                    persistCachedPlaybackDescriptor(
+                        cacheKey = cacheKey,
+                        audioInfo = selectedAudioInfo,
+                        expectedContentLength = selectedExpectedContentLength,
+                        representationIdentity = selectedRepresentationIdentity
                     )
                     val mediaItem = buildMediaItem(
                         _currentSongFlow.value ?: song,
                         selectedUrl,
                         cacheKey,
-                        result.mimeType
+                        selectedMimeType
                     )
                     syncLyriconSong(_currentSongFlow.value ?: song)
                     _currentMediaUrl.value = selectedUrl
-                    _currentPlaybackAudioInfo.value = result.audioInfo
+                    _currentPlaybackAudioInfo.value = selectedAudioInfo
                     updateAudioOffloadPreferences("resolved_stream_source")
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     scheduleStatePersist(

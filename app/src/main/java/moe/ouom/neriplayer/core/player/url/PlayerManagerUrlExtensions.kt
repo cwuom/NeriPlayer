@@ -196,8 +196,6 @@ internal suspend fun PlayerManager.resolveSongUrl(
         return localResult
     }
     val isYouTubeTrack = isYouTubeMusicTrack(song)
-    val resolvedYouTubeQuality = youtubeRecoveryStrategy?.preferredQualityOverride
-        ?: effectiveYouTubeQuality()
     val cacheKey = computeCacheKey(
         song = song,
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
@@ -218,35 +216,47 @@ internal suspend fun PlayerManager.resolveSongUrl(
             reason = "resolve_integrity_check"
         )
     }
-    val hasCachedData = !forceRefresh && cacheIntegrity.isComplete
+    var hasCachedData = !forceRefresh && cacheIntegrity.isComplete
+    if (hasCachedData) {
+        val cachedDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
+        val cachedAudioInfo = cachedDescriptor?.toPlaybackAudioInfo {
+            getLocalizedString(it)
+        }
+        val cachedContentLength = cache?.let {
+            ContentMetadata.getContentLength(it.getContentMetadata(cacheKey))
+        } ?: 0L
+        if (
+            cachedAudioInfo == null ||
+            !cachedDescriptor.matchesCachedContentLength(cachedContentLength)
+        ) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "完整缓存描述符缺失或长度不匹配，淘汰旧资源并重新解析: key=$cacheKey"
+            )
+            invalidateCachedResourceForPlaybackRecovery(
+                cacheKey = cacheKey,
+                reason = "missing_playback_descriptor"
+            )
+            hasCachedData = false
+        }
+    }
     if (hasCachedData) {
         NPLogger.d(
             "NERI-PlayerManager",
             "命中完整缓存，直接走离线缓存地址: $cacheKey"
         )
-        val cachedAudioInfo = _currentPlaybackAudioInfo.value
-            ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
-            ?.takeIf { youtubeRecoveryStrategy == null }
-            ?: when {
-                isYouTubeTrack -> {
-                    buildYouTubeOfflineCacheAudioInfo(resolvedYouTubeQuality) {
-                        getLocalizedString(it)
-                    }
-                }
-
-                !isBiliTrack(song) -> {
-                    buildNeteaseOfflineCacheAudioInfo(effectiveNeteaseQuality()) {
-                        getLocalizedString(it)
-                    }
-                }
-
-                else -> null
-            }
+        val cachedDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
+        val cachedAudioInfo = cachedDescriptor?.toPlaybackAudioInfo {
+            getLocalizedString(it)
+        } ?: return SongUrlResult.Failure
         prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
         return SongUrlResult.Success(
             url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
             durationMs = song.durationMs.takeIf { it > 0L },
             audioInfo = cachedAudioInfo,
+            mimeType = cachedAudioInfo.mimeType,
+            expectedContentLength = cachedDescriptor.expectedContentLength,
+            representationIdentity = cachedDescriptor.representationIdentity,
             cacheKeyOverride = cacheKey
         )
     }
@@ -310,11 +320,16 @@ internal suspend fun PlayerManager.resolveSongUrl(
 
     return if (result is SongUrlResult.Failure && hasCachedData) {
         NPLogger.d("NERI-PlayerManager", "远端解析失败但缓存完整，回退到离线缓存地址: $cacheKey")
-        val fallbackAudioInfo = _currentPlaybackAudioInfo.value
-            ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
+        val fallbackDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
+        val fallbackAudioInfo = fallbackDescriptor?.toPlaybackAudioInfo {
+            getLocalizedString(it)
+        }
         SongUrlResult.Success(
             url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
             audioInfo = fallbackAudioInfo,
+            mimeType = fallbackAudioInfo?.mimeType,
+            expectedContentLength = fallbackDescriptor?.expectedContentLength,
+            representationIdentity = fallbackDescriptor?.representationIdentity,
             cacheKeyOverride = cacheKey,
             durationMs = song.durationMs.takeIf { it > 0L }
         )
@@ -1004,15 +1019,34 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     )
     val selectedCandidate = currentPlaybackCandidate()
     val selectedUrl = selectedCandidate?.url ?: result.url
+    val selectedAudioInfo = selectedCandidate?.audioInfo ?: audioInfo
+    val selectedMimeType = selectedCandidate?.mimeType ?: mimeType
+    val selectedExpectedContentLength =
+        selectedCandidate?.expectedContentLength ?: expectedContentLength
+    val selectedRepresentationIdentity =
+        selectedCandidate?.representationIdentity ?: result.representationIdentity
     invalidateMismatchedCachedResource(
         cacheKey = cacheKey,
-        expectedContentLength = expectedContentLength,
+        expectedContentLength = selectedExpectedContentLength,
         shouldApplyMutation = { gate.runMutation {} }
     )
-    val mediaItem = buildMediaItem(song, selectedUrl, cacheKey, mimeType)
+    invalidateMismatchedCachedPlaybackDescriptor(
+        cacheKey = cacheKey,
+        audioInfo = selectedAudioInfo,
+        expectedContentLength = selectedExpectedContentLength,
+        representationIdentity = selectedRepresentationIdentity,
+        shouldApplyMutation = { gate.runMutation {} }
+    )
+    persistCachedPlaybackDescriptor(
+        cacheKey = cacheKey,
+        audioInfo = selectedAudioInfo,
+        expectedContentLength = selectedExpectedContentLength,
+        representationIdentity = selectedRepresentationIdentity
+    )
+    val mediaItem = buildMediaItem(song, selectedUrl, cacheKey, selectedMimeType)
 
     if (!gate.runMutation { _currentMediaUrl.value = selectedUrl }) return false
-    if (!gate.runMutation { _currentPlaybackAudioInfo.value = audioInfo }) return false
+    if (!gate.runMutation { _currentPlaybackAudioInfo.value = selectedAudioInfo }) return false
     if (!gate.runMutation { currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime() }) return false
     if (!gate.runSuspendingMutation { persistState() }) return false
 
@@ -1450,9 +1484,11 @@ private suspend fun PlayerManager.getBiliAudioUrl(
                 url = audioStream.url,
                 candidateUrls = audioStream.candidateUrls,
                 mimeType = audioStream.mimeType,
+                expectedContentLength = null,
                 audioInfo = buildBiliPlaybackAudioInfo(audioStream, availableStreams) {
                     getLocalizedString(it)
-                }
+                },
+                representationIdentity = buildBiliRepresentationIdentity(audioStream)
             )
         } else {
             if (!suppressError) {
@@ -1531,6 +1567,7 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
                 audioInfo = buildYouTubePlaybackAudioInfo(resolvedPlayableAudio) {
                     getLocalizedString(it)
                 },
+                representationIdentity = buildYouTubeRepresentationIdentity(resolvedPlayableAudio),
                 cacheKeyOverride = youtubeRecoveryStrategy?.let { strategy ->
                     computeYouTubeCacheKey(
                         videoId = videoId,
@@ -1572,4 +1609,26 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
         }
         SongUrlResult.Failure
     }
+}
+
+private fun buildBiliRepresentationIdentity(
+    stream: moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
+): String {
+    return listOf(
+        stream.id?.toString().orEmpty(),
+        stream.qualityTag.orEmpty(),
+        stream.mimeType.trim().lowercase(),
+        stream.bitrateKbps.toString()
+    ).joinToString(separator = "|")
+}
+
+private fun buildYouTubeRepresentationIdentity(
+    playableAudio: moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
+): String {
+    return listOf(
+        playableAudio.mimeType.orEmpty(),
+        playableAudio.bitrateKbps?.toString().orEmpty(),
+        playableAudio.sampleRateHz?.toString().orEmpty(),
+        playableAudio.streamType.name
+    ).joinToString(separator = "|")
 }
