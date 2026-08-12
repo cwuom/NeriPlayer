@@ -133,16 +133,19 @@ fun YouTubeMusicCreatorDetailScreen(
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit = {},
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    detailViewModelFactory: androidx.lifecycle.ViewModelProvider.Factory? = null,
+    onSectionListState: ((String, LazyListState) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val resolvedViewModelFactory = detailViewModelFactory ?: viewModelFactory {
+        initializer {
+            YouTubeMusicCreatorDetailViewModel(context.applicationContext as Application)
+        }
+    }
     val viewModel: YouTubeMusicCreatorDetailViewModel = viewModel(
         key = youtubeMusicCreatorDetailViewModelKey(creator.browseId),
-        factory = viewModelFactory {
-            initializer {
-                YouTubeMusicCreatorDetailViewModel(context.applicationContext as Application)
-            }
-        }
+        factory = resolvedViewModelFactory
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
@@ -200,7 +203,8 @@ fun YouTubeMusicCreatorDetailScreen(
                 },
                 onCreatorClick = onCreatorClick,
                 onSectionMoreClick = onSectionMoreClick,
-                isTabletLayout = isTabletLayout
+                isTabletLayout = isTabletLayout,
+                onSectionListState = onSectionListState
             )
         }
     }

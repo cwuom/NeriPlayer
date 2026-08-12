@@ -15,6 +15,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorDetail
@@ -26,6 +28,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.host.youtubeMusicCreatorDetailStateKey
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailUiState
+import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -104,7 +107,9 @@ private fun CreatorDetailNavigationFixture(
     val scope = rememberCoroutineScope()
     var horizontalState by remember { mutableStateOf<LazyListState?>(null) }
 
-    onShowPlaylistChange { visible -> playlistVisible = visible }
+    androidx.compose.runtime.SideEffect {
+        onShowPlaylistChange { visible -> playlistVisible = visible }
+    }
     if (playlistVisible) {
         Box(Modifier.fillMaxSize())
         return
@@ -117,35 +122,24 @@ private fun CreatorDetailNavigationFixture(
             LazyListState()
         }
         val sectionStateHolder = rememberSaveableStateHolder()
-        onScrollVertical { index, offset ->
-            scope.launch { verticalState.scrollToItem(index, offset) }
-        }
-        onReadPositions {
-            ScrollPositions(
-                verticalIndex = verticalState.firstVisibleItemIndex,
-                verticalOffset = verticalState.firstVisibleItemScrollOffset,
-                horizontalIndex = horizontalState?.firstVisibleItemIndex ?: 0,
-                horizontalOffset = horizontalState?.firstVisibleItemScrollOffset ?: 0
-            )
+        androidx.compose.runtime.SideEffect {
+            onScrollVertical { index, offset ->
+                scope.launch { verticalState.scrollToItem(index, offset) }
+            }
+            onReadPositions {
+                ScrollPositions(
+                    verticalIndex = verticalState.firstVisibleItemIndex,
+                    verticalOffset = verticalState.firstVisibleItemScrollOffset,
+                    horizontalIndex = horizontalState?.firstVisibleItemIndex ?: 0,
+                    horizontalOffset = horizontalState?.firstVisibleItemScrollOffset ?: 0
+                )
+            }
         }
         MaterialTheme {
-            YouTubeMusicCreatorDetailContent(
-                uiState = YouTubeMusicCreatorDetailUiState(
-                    loading = false,
-                    detail = detail
-                ),
-                listState = verticalState,
-                creatorBrowseId = creator.browseId,
-                sectionStateHolder = sectionStateHolder,
-                miniPlayerHeight = 0.dp,
-                offlineMode = false,
-                onRetry = {},
-                onSongClick = { _, _ -> },
-                onSectionSongClick = { _, _ -> },
-                onPlaylistClick = {},
-                onCreatorClick = {},
-                onSectionMoreClick = { playlistVisible = true },
-                isTabletLayout = false,
+            YouTubeMusicCreatorDetailScreen(
+                creator = creator,
+                onPlaylistClick = { playlistVisible = true },
+                detailViewModelFactory = CreatorDetailTestViewModelFactory(detail),
                 onSectionListState = { key, state ->
                     if (key == youtubeMusicCreatorSectionScrollStateKey(
                             creator.browseId,
@@ -160,6 +154,22 @@ private fun CreatorDetailNavigationFixture(
                 }
             )
         }
+    }
+}
+
+private class CreatorDetailTestViewModelFactory(
+    private val detail: YouTubeMusicCreatorDetail
+) : ViewModelProvider.Factory {
+    override fun <T : androidx.lifecycle.ViewModel> create(
+        modelClass: Class<T>,
+        extras: CreationExtras
+    ): T {
+        val application = extras[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
+            ?: error("application is required")
+        return modelClass.cast(YouTubeMusicCreatorDetailViewModel(
+            application = application,
+            loadDetail = { detail }
+        ))
     }
 }
 
