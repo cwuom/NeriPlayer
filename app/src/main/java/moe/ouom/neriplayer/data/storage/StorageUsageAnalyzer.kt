@@ -24,7 +24,9 @@ package moe.ouom.neriplayer.data.storage
  */
 
 import android.content.Context
+import android.content.res.Resources
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -159,6 +161,19 @@ private data class StorageUsageScanInputs(
     val databaseFileStats: FileStats
 )
 
+internal suspend fun <T> storageScanOrDefault(
+    fallback: T,
+    scan: suspend () -> T
+): T {
+    return try {
+        scan()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Throwable) {
+        fallback
+    }
+}
+
 suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
     val filesDir = appContext.filesDir
@@ -180,27 +195,27 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
 
     val scanInputs = coroutineScope {
         val downloadLibraryUsage = async {
-            runCatching {
+            storageScanOrDefault(ManagedDownloadLibraryUsage.Empty) {
                 ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                     context = appContext,
                     forceRefresh = true
                 ).toManagedDownloadLibraryUsage()
-            }.getOrDefault(ManagedDownloadLibraryUsage.Empty)
+            }
         }
         val platformCacheStats = async {
-            runCatching {
+            storageScanOrDefault(emptyMap()) {
                 val roomStore = PlatformPlaylistCacheRoomStore(
                     NeriUserDataDatabase.getInstance(appContext)
                 )
                 roomStore.storageStats(PLATFORM_CACHE_PLATFORMS)
-            }.getOrDefault(emptyMap())
+            }
         }
         val downloadIndexStorageStats = async {
-            runCatching {
+            storageScanOrDefault(DownloadIndexStorageStats.Empty) {
                 DownloadIndexRoomStore(
                     NeriUserDataDatabase.getInstance(appContext)
                 ).storageStats()
-            }.getOrDefault(DownloadIndexStorageStats.Empty)
+            }
         }
         val databaseFileStats = async {
             databaseFiles.fold(FileStats.Empty) { acc, file ->
@@ -467,25 +482,26 @@ private fun downloadIndexUsageItem(
         sizeBytes = stats.sizeBytes,
         fileCount = stats.fileCount,
         kind = StorageUsageItemKind.DownloadIndex,
-        countDescription = downloadIndexCountDescription(context, stats)
+        countDescription = downloadIndexCountDescription(context.resources, stats)
     )
 }
 
-private fun downloadIndexCountDescription(
-    context: Context,
+internal fun downloadIndexCountDescription(
+    resources: Resources,
     stats: DownloadIndexUsageStats
 ): String? {
     if (stats.databaseRecordCount <= 0) return null
     return if (stats.fileCount > 0) {
-        context.resources.getQuantityString(
+        resources.getQuantityString(
             R.plurals.storage_details_download_index_record_and_file_count,
             stats.databaseRecordCount,
             stats.databaseRecordCount,
             stats.fileCount
         )
     } else {
-        context.resources.getQuantityString(
+        resources.getQuantityString(
             R.plurals.storage_details_download_index_record_count,
+            stats.databaseRecordCount,
             stats.databaseRecordCount
         )
     }

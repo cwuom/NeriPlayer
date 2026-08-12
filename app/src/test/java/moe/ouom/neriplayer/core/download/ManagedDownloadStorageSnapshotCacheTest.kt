@@ -194,19 +194,22 @@ class ManagedDownloadStorageSnapshotCacheTest {
         val snapshot = emptySnapshot()
         val persistenceStore = BlockingSnapshotPersistenceStore("root" to snapshot)
         val cacheStore = ManagedDownloadSnapshotCacheStore(
-            scope = CoroutineScope(Dispatchers.IO),
+            scope = CoroutineScope(Dispatchers.Unconfined),
             cacheKeyProvider = { "root" },
             persistenceStoreProvider = { persistenceStore }
         )
-        val executor = Executors.newSingleThreadExecutor()
+        val restoreExecutor = Executors.newSingleThreadExecutor()
+        val invalidationExecutor = Executors.newSingleThreadExecutor()
 
         try {
-            val restoreFuture = executor.submit<ManagedDownloadStorage.DownloadLibrarySnapshot?> {
+            val restoreFuture = restoreExecutor.submit<ManagedDownloadStorage.DownloadLibrarySnapshot?> {
                 cacheStore.restorePersisted(context, expectedKey = "root")
             }
             assertTrue(persistenceStore.restoreStarted.await(5, TimeUnit.SECONDS))
 
-            cacheStore.invalidate(context)
+            val invalidationFuture = invalidationExecutor.submit {
+                cacheStore.invalidate(context)
+            }
 
             assertTrue(persistenceStore.clearStarted.await(5, TimeUnit.SECONDS))
             persistenceStore.releaseRestore.countDown()
@@ -216,9 +219,11 @@ class ManagedDownloadStorageSnapshotCacheTest {
 
             persistenceStore.releaseClear.countDown()
             assertTrue(persistenceStore.clearFinished.await(5, TimeUnit.SECONDS))
+            invalidationFuture.get(5, TimeUnit.SECONDS)
             assertEquals(snapshot, cacheStore.restorePersisted(context, expectedKey = "root"))
         } finally {
-            executor.shutdownNow()
+            restoreExecutor.shutdownNow()
+            invalidationExecutor.shutdownNow()
             persistenceStore.releaseRestore.countDown()
             persistenceStore.releaseClear.countDown()
         }

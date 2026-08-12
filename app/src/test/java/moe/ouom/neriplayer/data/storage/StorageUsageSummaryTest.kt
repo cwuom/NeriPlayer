@@ -2,11 +2,15 @@ package moe.ouom.neriplayer.data.storage
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.database.store.DownloadIndexStorageStats
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStorageStats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -154,6 +158,31 @@ class StorageUsageSummaryTest {
                 attributedDatabaseBytes = attributedBytes
             ).sizeBytes
         )
+    }
+
+    @Test
+    fun storageScanFallsBackForNonCancellationFailure() = runBlocking {
+        assertEquals(
+            "fallback",
+            storageScanOrDefault("fallback") {
+                throw IllegalStateException("storage read failed")
+            }
+        )
+    }
+
+    @Test
+    fun storageScanRethrowsCancellation() {
+        val cancellation = CancellationException("storage scan cancelled")
+
+        val thrown = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                storageScanOrDefault("fallback") {
+                    throw cancellation
+                }
+            }
+        }
+
+        assertSame(cancellation, thrown)
     }
 
     private fun storedEntry(
