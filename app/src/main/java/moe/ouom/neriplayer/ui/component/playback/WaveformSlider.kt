@@ -61,6 +61,7 @@ import kotlin.math.sin
 private const val WAVE_AMPLITUDE = 6f   // 波浪的振幅
 private const val WAVE_FREQUENCY = 0.08f // 波浪的频率
 private const val WAVE_ANIMATION_DURATION_NS = 2_000_000_000L
+private const val NANOS_PER_MILLISECOND = 1_000_000L
 private const val WAVE_SAMPLE_SPACING_PX = 6f
 private const val MIN_WAVE_SEGMENTS = 48
 private const val MAX_WAVE_SEGMENTS = 180
@@ -88,8 +89,14 @@ fun WaveformSlider(
     onValueChangeCanceled: () -> Unit = {},
     enabled: Boolean = true,
     isPlaybackWaiting: Boolean = false,
-    activeTint: Color = MaterialTheme.colorScheme.primary
+    isProgressStalled: Boolean = false,
+    isProgressPreviewing: Boolean = false,
+    activeTint: Color = MaterialTheme.colorScheme.primary,
+    durationMs: Long = 0L,
+    playbackSpeed: Float = 1f,
+    playbackSessionKey: String? = null
 ) {
+    val clampedValue = normalizeWaveProgress(value)
     val activeColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
     val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.3f else 0.18f)
     val thumbColor = activeTint.copy(alpha = if (enabled) 1f else 0.55f)
@@ -117,9 +124,36 @@ fun WaveformSlider(
     val isWaitingPulseAnimating = animationsEnabled && isPlaybackWaiting && !isDragging
     val isWaveAnimating =
         animationsEnabled && enabled && isPlaying && !isPlaybackWaiting && !isDragging
-    LaunchedEffect(lifecycleOwner, isWaitingPulseAnimating, isWaveAnimating) {
+    val isProgressPredicting = shouldPredictWaveProgress(
+        isWaveAnimating = isWaveAnimating,
+        isProgressStalled = isProgressStalled,
+        isProgressPreviewing = isProgressPreviewing
+    )
+    val waveProgress = remember(playbackSessionKey) { WaveProgressPredictor(clampedValue) }
+    LaunchedEffect(
+        playbackSessionKey,
+        clampedValue,
+        durationMs,
+        playbackSpeed,
+        isProgressPredicting
+    ) {
+        waveProgress.updateTarget(
+            targetValue = clampedValue,
+            durationMs = durationMs,
+            playbackSpeed = playbackSpeed,
+            animate = isProgressPredicting
+        )
+    }
+    LaunchedEffect(
+        lifecycleOwner,
+        waveProgress,
+        isWaitingPulseAnimating,
+        isWaveAnimating,
+        isProgressPredicting
+    ) {
         if (!isWaitingPulseAnimating && !isWaveAnimating) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            waveProgress.resetFrameAnchor()
             val anchorPhase = phase
             var anchorFrameNs = 0L
             while (isActive) {
@@ -128,6 +162,9 @@ fun WaveformSlider(
                     anchorFrameNs = frameNs
                 }
                 val elapsedNs = frameNs - anchorFrameNs
+                if (isProgressPredicting) {
+                    waveProgress.onFrame(frameNs)
+                }
                 phase = if (isWaitingPulseAnimating) {
                     resolveWaitingPulsePhase(anchorPhase, elapsedNs)
                 } else {
@@ -182,7 +219,12 @@ fun WaveformSlider(
             .then(dragModifier)
     ) {
         val centerY = size.height / 2
-        val progressPx = value * size.width
+        val progressValue = if (isProgressPredicting) {
+            waveProgress.currentValue
+        } else {
+            clampedValue
+        }
+        val progressPx = progressValue * size.width
         val currentPhase = phase
 
         if (isPlaybackWaiting && !isDragging) {
@@ -273,6 +315,29 @@ internal fun resolveWavePhase(anchorPhase: Float, elapsedNs: Long): Float {
     return resolveAnimationPhase(anchorPhase, elapsedNs, WAVE_ANIMATION_DURATION_NS)
 }
 
+internal fun resolveWaveProgress(
+    anchorValue: Float,
+    durationMs: Long,
+    playbackSpeed: Float,
+    elapsedNs: Long
+): Float {
+    val anchor = normalizeWaveProgress(anchorValue)
+    if (durationMs <= 0L) return anchor
+    val speed = normalizeWavePlaybackSpeed(playbackSpeed)
+    if (speed <= 0f) return anchor
+    val elapsedMs = elapsedNs.coerceAtLeast(0L).toDouble() / NANOS_PER_MILLISECOND
+    val progressAdvance = elapsedMs / durationMs.toDouble() * speed
+    return (anchor + progressAdvance.toFloat()).coerceIn(0f, 1f)
+}
+
+internal fun shouldPredictWaveProgress(
+    isWaveAnimating: Boolean,
+    isProgressStalled: Boolean,
+    isProgressPreviewing: Boolean
+): Boolean {
+    return isWaveAnimating && !isProgressStalled && !isProgressPreviewing
+}
+
 internal fun resolveWaitingPulsePhase(anchorPhase: Float, elapsedNs: Long): Float {
     return resolveAnimationPhase(
         anchorPhase = anchorPhase,
@@ -314,6 +379,72 @@ private fun resolveAnimationPhase(
     val elapsedInCycle = elapsedNs.floorMod(durationNs)
     val cycleFraction = elapsedInCycle.toFloat() / durationNs.toFloat()
     return (anchorPhase + TWO_PI * cycleFraction).floorMod(TWO_PI)
+}
+
+private fun normalizeWaveProgress(value: Float): Float {
+    return value.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+}
+
+private fun normalizeWavePlaybackSpeed(value: Float): Float {
+    return value.takeIf { it.isFinite() && it > 0f } ?: 0f
+}
+
+internal class WaveProgressPredictor(initialValue: Float) {
+    private var anchorValue = normalizeWaveProgress(initialValue)
+    private var targetValue = anchorValue
+    private var durationMs = 0L
+    private var playbackSpeed = 0f
+    private var anchorFrameNs = 0L
+    private var hasPendingAnchor = true
+    private var wasAnimating = false
+
+    var currentValue = anchorValue
+        private set
+
+    fun updateTarget(
+        targetValue: Float,
+        durationMs: Long,
+        playbackSpeed: Float,
+        animate: Boolean
+    ) {
+        val normalizedTarget = normalizeWaveProgress(targetValue)
+        val normalizedDurationMs = durationMs.coerceAtLeast(0L)
+        val normalizedPlaybackSpeed = normalizeWavePlaybackSpeed(playbackSpeed)
+        val inputChanged = normalizedTarget != this.targetValue ||
+            normalizedDurationMs != this.durationMs ||
+            normalizedPlaybackSpeed != this.playbackSpeed
+        if (inputChanged || !animate || !wasAnimating) {
+            anchorValue = normalizedTarget
+            currentValue = normalizedTarget
+            hasPendingAnchor = true
+        }
+        this.targetValue = normalizedTarget
+        this.durationMs = normalizedDurationMs
+        this.playbackSpeed = normalizedPlaybackSpeed
+        wasAnimating = animate
+    }
+
+    fun onFrame(frameNs: Long) {
+        if (frameNs <= 0L) return
+        if (hasPendingAnchor || anchorFrameNs == 0L || frameNs < anchorFrameNs) {
+            anchorFrameNs = frameNs
+            currentValue = anchorValue
+            hasPendingAnchor = false
+            return
+        }
+        currentValue = resolveWaveProgress(
+            anchorValue = anchorValue,
+            durationMs = durationMs,
+            playbackSpeed = playbackSpeed,
+            elapsedNs = frameNs - anchorFrameNs
+        )
+    }
+
+    fun resetFrameAnchor() {
+        anchorValue = currentValue
+        anchorFrameNs = 0L
+        hasPendingAnchor = true
+    }
 }
 
 private fun Long.floorMod(other: Long): Long {

@@ -676,6 +676,7 @@ fun LyricsScreen(
                 lyricOffsetMs = lyricOffsetMs,
                 isPlaying = isPlaying,
                 isPlaybackWaiting = isPlaybackWaiting,
+                playbackSpeed = lyricsPlaybackSoundState.speed,
                 onSeekTo = onSeekTo,
                 seekEnabled = progressSeekEnabled,
                 onPreviewPositionChange = { previewPositionOverrideMs = it },
@@ -1206,6 +1207,7 @@ private fun LyricsProgressSection(
     lyricOffsetMs: Long,
     isPlaying: Boolean,
     isPlaybackWaiting: Boolean,
+    playbackSpeed: Float,
     onSeekTo: (Long) -> Unit,
     seekEnabled: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
@@ -1313,7 +1315,13 @@ private fun LyricsProgressSection(
             },
             isPlaying = isPlaying,
             enabled = seekEnabled,
-            isPlaybackWaiting = delayedPlaybackWaiting
+            isPlaybackWaiting = delayedPlaybackWaiting,
+            isProgressStalled = isPlaybackWaiting,
+            isProgressPreviewing = isUserDraggingSlider ||
+                pendingSeekPreviewPositionMs != null,
+            durationMs = durationMs,
+            playbackSpeed = playbackSpeed,
+            playbackSessionKey = songKey
         )
 
         Text(
