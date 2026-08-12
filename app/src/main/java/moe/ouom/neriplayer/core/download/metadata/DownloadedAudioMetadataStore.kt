@@ -97,11 +97,6 @@ internal class DownloadedAudioMetadataStore(
         val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
         val existingMetadata = read(context, audio)
         val discoveredCoverReference = ManagedDownloadStorage.findCoverReference(context, audio)
-            ?: ManagedDownloadStorage.findReusableCoverReference(
-                context = context,
-                song = song,
-                excludedAudioName = audio.name
-            )
         return DownloadedMetadataSidecarReferences(
             coverReference = sidecarReferences?.coverReference
                 ?: resolveDownloadedMetadataCoverReference(

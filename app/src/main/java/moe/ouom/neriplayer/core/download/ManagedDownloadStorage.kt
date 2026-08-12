@@ -1533,28 +1533,6 @@ internal object ManagedDownloadStorage {
         ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
     }
 
-    suspend fun findReusableCoverReference(
-        context: Context,
-        song: SongItem,
-        excludedAudioName: String? = null
-    ): String? = withContext(Dispatchers.IO) {
-        val snapshot = resolveSnapshotForIndexedLookup(context)
-            ?: buildDownloadLibrarySnapshotBlocking(context)
-        findReusableCoverReference(
-            snapshot = snapshot,
-            song = song,
-            excludedAudioName = excludedAudioName
-        )
-    }
-
-    internal fun findReusableCoverReference(
-        snapshot: DownloadLibrarySnapshot,
-        song: SongItem,
-        excludedAudioName: String? = null
-    ): String? {
-        return ManagedDownloadCoverLookup.findReusableCoverReference(snapshot, song, excludedAudioName)
-    }
-
     private suspend fun resolveRoot(context: Context, directoryUriString: String?): RootHandle? = withContext(Dispatchers.IO) {
         resolveRootBlocking(context, directoryUriString)
     }
