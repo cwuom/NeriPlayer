@@ -81,6 +81,21 @@ class NeteaseClientTest {
         )
     }
 
+    @Test
+    fun radarPlaylistMetadataParams_includeMgcContextAndMetadataLimit() {
+        val params = buildNeteaseRadarPlaylistMetadataParams(5_327_906_368L)
+
+        assertEquals("5327906368", params["id"])
+        assertEquals("1", params["n"])
+        assertEquals("0", params["s"])
+        assertEquals("MGC", params["uiPlaylistType"])
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun radarPlaylistMetadataParams_rejectNonPositivePlaylistId() {
+        buildNeteaseRadarPlaylistMetadataParams(0L)
+    }
+
     private fun assertTrueHexSessionCookie(value: String?) {
         assertEquals(32, value?.length)
         assertTrue(value?.all { it in '0'..'9' || it in 'a'..'f' } == true)

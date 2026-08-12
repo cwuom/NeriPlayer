@@ -882,16 +882,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun loadRadarPlaylistSummaries(): List<PlaylistSummary> {
         val hasLogin = hasRecommendLogin
-        val fanRadarSummary = if (hasLogin) {
-            loadLoggedInFanRadarSummary()
-        } else {
-            null
+        if (hasLogin) {
+            prepareNeteaseRadarSession()
         }
         val summaries = loadNeteaseRadarPlaylistSummaries(
             definitions = NeteaseRadarPlaylistDefinitions,
-            fanRadarSummary = fanRadarSummary,
-            loadDetail = { playlistId, n, s ->
-                client.getPlaylistDetailCancellable(playlistId, n, s)
+            loadMetadata = { playlistId ->
+                client.getRadarPlaylistMetadataCancellable(playlistId)
             },
             onLoadFailure = { definition, error ->
                 NPLogger.w(TAG, "radar metadata failed: playlistId=${definition.id}, error=${error.message}")
@@ -903,7 +900,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return summaries
     }
 
-    private suspend fun loadLoggedInFanRadarSummary(): PlaylistSummary? {
+    private suspend fun prepareNeteaseRadarSession() {
         try {
             withContext(Dispatchers.IO) {
                 client.ensurePersonalizedSession()
@@ -912,24 +909,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "radar session preheat failed: ${error.message}")
-        }
-        val fallback = NeteaseRadarPlaylistDefinitions.first { definition ->
-            definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID
-        }
-        return try {
-            parseNeteasePlaylistDetailSummary(
-                raw = client.getPlaylistDetailCancellable(
-                    NETEASE_FAN_RADAR_PLAYLIST_ID,
-                    n = 1,
-                    s = 0
-                ),
-                fallback = fallback
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(TAG, "fan radar metadata preheat failed: ${error.message}")
-            null
         }
     }
 

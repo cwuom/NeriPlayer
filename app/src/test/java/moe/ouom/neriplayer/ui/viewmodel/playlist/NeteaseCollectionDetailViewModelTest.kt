@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistHeader
+import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 
 class NeteaseCollectionDetailViewModelTest {
 
@@ -67,5 +68,80 @@ class NeteaseCollectionDetailViewModelTest {
         assertEquals("https://example.com/account.jpg", refreshed.header.coverUrl)
         assertEquals(cached.tracks, refreshed.tracks)
         assertEquals(cached.recentTrackSignature, refreshed.recentTrackSignature)
+    }
+
+    @Test
+    fun `radar detail keeps MGC header`() {
+        val header = applyNeteaseRadarPlaylistHeader(
+            playlist = PlaylistSummary(
+                id = 5_320_167_908L,
+                name = "为你定制的时光雷达",
+                picUrl = "http://example.com/account.jpg",
+                playCount = 1_530_000_000L,
+                trackCount = 30
+            ),
+            detailHeader = NeteaseCollectionHeader(
+                id = 5_320_167_908L,
+                isAlbum = false,
+                name = "时光雷达",
+                coverUrl = "https://example.com/visitor.jpg",
+                playCount = 1L,
+                trackCount = 50
+            )
+        )
+
+        assertEquals("为你定制的时光雷达", header.name)
+        assertEquals("https://example.com/account.jpg", header.coverUrl)
+        assertEquals(1_530_000_000L, header.playCount)
+        assertEquals(30, header.trackCount)
+    }
+
+    @Test
+    fun `radar detail keeps title when MGC cover is unavailable`() {
+        val header = applyNeteaseRadarPlaylistHeader(
+            playlist = PlaylistSummary(
+                id = 5_320_167_908L,
+                name = "为你定制的时光雷达",
+                picUrl = "",
+                playCount = 0L,
+                trackCount = 0
+            ),
+            detailHeader = NeteaseCollectionHeader(
+                id = 5_320_167_908L,
+                isAlbum = false,
+                name = "时光雷达",
+                coverUrl = "https://example.com/visitor.jpg",
+                playCount = 1L,
+                trackCount = 50
+            )
+        )
+
+        assertEquals("为你定制的时光雷达", header.name)
+        assertEquals("https://example.com/visitor.jpg", header.coverUrl)
+    }
+
+    @Test
+    fun `ordinary playlists keep their detail header`() {
+        val detailHeader = NeteaseCollectionHeader(
+            id = 123L,
+            isAlbum = false,
+            name = "详情标题",
+            coverUrl = "https://example.com/detail.jpg",
+            playCount = 2L,
+            trackCount = 10
+        )
+
+        val header = applyNeteaseRadarPlaylistHeader(
+            playlist = PlaylistSummary(
+                id = 123L,
+                name = "入口标题",
+                picUrl = "https://example.com/entry.jpg",
+                playCount = 3L,
+                trackCount = 20
+            ),
+            detailHeader = detailHeader
+        )
+
+        assertEquals(detailHeader, header)
     }
 }

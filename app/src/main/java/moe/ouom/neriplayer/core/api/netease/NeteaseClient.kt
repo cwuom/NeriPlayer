@@ -98,6 +98,16 @@ internal fun shouldPreheatNeteaseWeapiSession(
         requestCookies["__csrf"].isNullOrBlank()
 }
 
+internal fun buildNeteaseRadarPlaylistMetadataParams(playlistId: Long): Map<String, Any> {
+    require(playlistId > 0L) { "playlistId must be positive" }
+    return linkedMapOf(
+        "id" to playlistId.toString(),
+        "n" to "1",
+        "s" to "0",
+        "uiPlaylistType" to "MGC"
+    )
+}
+
 class NeteaseClient {
     private companion object {
         const val MAX_RESPONSE_BYTES = 4L * 1024L * 1024L
@@ -892,6 +902,13 @@ class NeteaseClient {
             "n" to n.toString(),
             "s" to s.toString()
         )
+        return requestCancellable(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
+    }
+
+    /** 雷达普通详情接口返回当前推荐周期的标题和封面，曲目仍由 v6 接口加载 */
+    internal suspend fun getRadarPlaylistMetadataCancellable(playlistId: Long): String {
+        val url = "https://music.163.com/api/playlist/detail"
+        val params = buildNeteaseRadarPlaylistMetadataParams(playlistId)
         return requestCancellable(url, params, CryptoMode.API, "POST", usePersistedCookies = true)
     }
 

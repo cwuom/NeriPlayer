@@ -133,12 +133,12 @@ class NeteaseHomeRecommendationsTest {
     }
 
     @Test
-    fun parsePlaylistDetail_keepsAccountSpecificRadarTitleAndCover() {
+    fun parsePlaylistDetail_readsMgcResultWithAccountSpecificRadarTitleAndCover() {
         val detail = parseNeteasePlaylistDetailSummary(
             raw = """
                 {
                   "code": 200,
-                  "playlist": {
+                  "result": {
                     "id": 5327906368,
                     "name": "为你定制的乐迷雷达",
                     "coverImgUrl": "http://p1.music.126.net/account-radar.jpg",
@@ -156,6 +156,43 @@ class NeteaseHomeRecommendationsTest {
         assertEquals("为你定制的乐迷雷达", detail.name)
         assertEquals("https://p1.music.126.net/account-radar.jpg", detail.picUrl)
         assertEquals(42L, detail.playCount)
+    }
+
+    @Test
+    fun radarPlaylistSummaries_useMgcMetadataForFanAndMysteryRadar() = runTest {
+        val requestedIds = mutableListOf<Long>()
+
+        val summaries = loadNeteaseRadarPlaylistSummaries(
+            definitions = NeteaseRadarPlaylistDefinitions,
+            loadMetadata = { playlistId ->
+                requestedIds += playlistId
+                val metadata = when (playlistId) {
+                    NETEASE_FAN_RADAR_PLAYLIST_ID -> "为你定制的乐迷雷达" to "fan"
+                    5_341_776_086L -> "神秘歌友推荐你听《尘缘》|神秘雷达" to "mystery"
+                    else -> "雷达 $playlistId" to "default"
+                }
+                """
+                    {
+                      "code": 200,
+                      "result": {
+                        "id": $playlistId,
+                        "name": "${metadata.first}",
+                        "coverImgUrl": "https://example.com/${metadata.second}.jpg",
+                        "playCount": 42,
+                        "trackCount": 50
+                      }
+                    }
+                """.trimIndent()
+            }
+        )
+
+        assertEquals(NeteaseRadarPlaylistDefinitions.map { it.id }, summaries.map { it.id })
+        assertEquals("为你定制的乐迷雷达", summaries[3].name)
+        assertEquals("https://example.com/fan.jpg", summaries[3].picUrl)
+        assertEquals("神秘歌友推荐你听《尘缘》|神秘雷达", summaries[4].name)
+        assertEquals("https://example.com/mystery.jpg", summaries[4].picUrl)
+        assertEquals(NeteaseRadarPlaylistDefinitions.map { it.id }, requestedIds)
+        assertTrue(requestedIds.contains(NETEASE_FAN_RADAR_PLAYLIST_ID))
     }
 
     @Test
@@ -252,13 +289,12 @@ class NeteaseHomeRecommendationsTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun radarSummaryRequestsOnlyMetadataAndStopsAfterCancellation() = runTest {
-        val requested = mutableListOf<Triple<Long, Int, Int>>()
+        val requested = mutableListOf<Long>()
         val result = async {
             loadNeteaseRadarPlaylistSummaries(
                 definitions = NeteaseRadarPlaylistDefinitions.take(2),
-                fanRadarSummary = null,
-                loadDetail = { playlistId, n, s ->
-                    requested += Triple(playlistId, n, s)
+                loadMetadata = { playlistId ->
+                    requested += playlistId
                     coroutineContext.cancel()
                     """{"code":200}"""
                 }
@@ -269,7 +305,7 @@ class NeteaseHomeRecommendationsTest {
 
         assertTrue(result.isCancelled)
         assertEquals(
-            listOf(Triple(NeteaseRadarPlaylistDefinitions.first().id, 1, 0)),
+            listOf(NeteaseRadarPlaylistDefinitions.first().id),
             requested
         )
     }
