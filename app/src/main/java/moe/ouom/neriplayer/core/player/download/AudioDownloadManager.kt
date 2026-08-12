@@ -184,7 +184,6 @@ object AudioDownloadManager {
         ConcurrentHashMap<String, ManagedDownloadStorage.StoredEntry>()
     private val partialSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
-    private val sharedCoverReferencesByLookupKey = ConcurrentHashMap<String, String>()
     private val hlsResumeStatesByWorkingPath =
         ConcurrentHashMap<String, HlsResumeState>()
     private val retryWakeSignalVersion = MutableStateFlow(0L)
@@ -971,84 +970,6 @@ object AudioDownloadManager {
         partialSidecarReferencesBySongKey.remove(songKey)
     }
 
-    internal fun buildSharedCoverLookupKeys(song: SongItem): List<String> {
-        val remoteCoverKeys = buildRemoteCoverLookupKeys(song)
-        return linkedSetOf<String>().apply {
-            remoteCoverKeys.forEach { add("url:$it") }
-            if (remoteCoverKeys.isEmpty()) {
-                song.identity().album.takeIf(String::isNotBlank)?.let { add("album:$it") }
-            }
-        }.toList()
-    }
-
-    private fun buildRemoteCoverLookupKeys(song: SongItem): List<String> {
-        return linkedSetOf<String>().apply {
-            song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
-            song.coverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
-            song.originalCoverUrl?.trim()?.takeIf(String::isNotBlank)?.let(::add)
-        }.toList()
-    }
-
-    private suspend fun findSharedCoverReference(
-        context: Context,
-        song: SongItem,
-        excludedAudioName: String? = null,
-        allowIndexedLookup: Boolean = true
-    ): String? {
-        val lookupKeys = buildSharedCoverLookupKeys(song)
-        if (lookupKeys.isEmpty()) {
-            return null
-        }
-        val fastSnapshot = if (allowIndexedLookup) {
-            null
-        } else {
-            ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
-                context = context,
-                restorePersisted = false
-            )
-        }
-        for (lookupKey in lookupKeys) {
-            val rememberedReference = sharedCoverReferencesByLookupKey[lookupKey] ?: continue
-            if (!allowIndexedLookup) {
-                if (rememberedReference in fastSnapshot?.knownReferences.orEmpty()) {
-                    return rememberedReference
-                }
-                sharedCoverReferencesByLookupKey.remove(lookupKey, rememberedReference)
-                continue
-            }
-            if (ManagedDownloadStorage.exists(context, rememberedReference)) {
-                return rememberedReference
-            }
-            sharedCoverReferencesByLookupKey.remove(lookupKey, rememberedReference)
-        }
-        if (!allowIndexedLookup) {
-            val snapshot = fastSnapshot ?: return null
-            return ManagedDownloadStorage.findReusableCoverReference(
-                snapshot = snapshot,
-                song = song,
-                excludedAudioName = excludedAudioName
-            )?.also { indexedReference ->
-                rememberSharedCoverReference(song, indexedReference)
-            }
-        }
-        val indexedReference = ManagedDownloadStorage.findReusableCoverReference(
-            context = context,
-            song = song,
-            excludedAudioName = excludedAudioName
-        )
-        if (!indexedReference.isNullOrBlank()) {
-            rememberSharedCoverReference(song, indexedReference)
-        }
-        return indexedReference
-    }
-
-    private fun rememberSharedCoverReference(song: SongItem, coverReference: String?) {
-        val normalizedReference = coverReference?.takeIf(String::isNotBlank) ?: return
-        buildSharedCoverLookupKeys(song).forEach { lookupKey ->
-            sharedCoverReferencesByLookupKey.putIfAbsent(lookupKey, normalizedReference)
-        }
-    }
-
     internal fun mergeDownloadedSidecarReferences(
         existing: DownloadedSidecarReferences?,
         incoming: DownloadedSidecarReferences?
@@ -1745,7 +1666,6 @@ object AudioDownloadManager {
                 null
             }
         if (!existingCover.isNullOrBlank()) {
-            rememberSharedCoverReference(song, existingCover)
             rememberPartialSidecarReferences(
                 songKey,
                 DownloadedSidecarReferences(
@@ -1754,24 +1674,6 @@ object AudioDownloadManager {
                 )
             )
             return existingCover
-        }
-
-        val sharedCover = findSharedCoverReference(
-            context = context,
-            song = song,
-            excludedAudioName = storedAudio.name,
-            allowIndexedLookup = allowIndexedLookup
-        )
-        if (!sharedCover.isNullOrBlank()) {
-            rememberSharedCoverReference(song, sharedCover)
-            rememberPartialSidecarReferences(
-                songKey,
-                DownloadedSidecarReferences(
-                    coverReference = sharedCover,
-                    createdCover = false
-                )
-            )
-            return sharedCover
         }
 
         try {
@@ -1807,7 +1709,6 @@ object AudioDownloadManager {
                         null
                     }
                     if (!committedCoverReference.isNullOrBlank()) {
-                        rememberSharedCoverReference(song, committedCoverReference)
                         rememberPartialSidecarReferences(
                             songKey,
                             DownloadedSidecarReferences(
@@ -1836,7 +1737,7 @@ object AudioDownloadManager {
         return null
     }
 
-    private fun buildCoverSidecarFileName(baseName: String, songKey: String): String {
+    internal fun buildCoverSidecarFileName(baseName: String, songKey: String): String {
         val suffix = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
         return "$baseName-$suffix.jpg"
     }
