@@ -68,7 +68,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorDetail
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItem
@@ -76,8 +75,8 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItemType
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.BlurTransformation
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -121,6 +120,10 @@ internal fun youtubeMusicCreatorSectionScrollStateKey(
     return "$creatorBrowseId|${youtubeMusicCreatorSectionKey(section)}"
 }
 
+internal fun youtubeMusicCreatorDetailViewModelKey(creatorBrowseId: String): String {
+    return "youtube_music_creator_detail_view_model_$creatorBrowseId"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YouTubeMusicCreatorDetailScreen(
@@ -134,6 +137,7 @@ fun YouTubeMusicCreatorDetailScreen(
 ) {
     val context = LocalContext.current
     val viewModel: YouTubeMusicCreatorDetailViewModel = viewModel(
+        key = youtubeMusicCreatorDetailViewModelKey(creator.browseId),
         factory = viewModelFactory {
             initializer {
                 YouTubeMusicCreatorDetailViewModel(context.applicationContext as Application)
@@ -203,7 +207,7 @@ fun YouTubeMusicCreatorDetailScreen(
 }
 
 @Composable
-private fun YouTubeMusicCreatorDetailContent(
+internal fun YouTubeMusicCreatorDetailContent(
     uiState: YouTubeMusicCreatorDetailUiState,
     listState: LazyListState,
     creatorBrowseId: String,
@@ -216,7 +220,8 @@ private fun YouTubeMusicCreatorDetailContent(
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
-    isTabletLayout: Boolean
+    isTabletLayout: Boolean,
+    onSectionListState: ((String, LazyListState) -> Unit)? = null
 ) {
     val detail = uiState.detail
     Box(
@@ -331,7 +336,8 @@ private fun YouTubeMusicCreatorDetailContent(
                             onSectionSongClick = onSectionSongClick,
                             onPlaylistClick = onPlaylistClick,
                             onCreatorClick = onCreatorClick,
-                            onSectionMoreClick = onSectionMoreClick
+                            onSectionMoreClick = onSectionMoreClick,
+                            onSectionListState = onSectionListState
                         )
                     }
                 }
@@ -502,7 +508,8 @@ private fun YouTubeMusicCreatorSection(
     onSectionSongClick: (YouTubeMusicCreatorSection, YouTubeMusicCreatorItem) -> Unit,
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
-    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit
+    onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit,
+    onSectionListState: ((String, LazyListState) -> Unit)?
 ) {
     val playableItems = section.items.mapNotNull { item ->
         item.toCreatorSongItem()?.let { item to it }
@@ -574,6 +581,12 @@ private fun YouTubeMusicCreatorSection(
             ) {
                 val listState = rememberSaveable(saver = LazyListState.Saver) {
                     LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+                }
+                androidx.compose.runtime.SideEffect {
+                    onSectionListState?.invoke(
+                        youtubeMusicCreatorSectionScrollStateKey(creatorBrowseId, section),
+                        listState
+                    )
                 }
                 LazyRow(
                     state = listState,

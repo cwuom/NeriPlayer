@@ -30,6 +30,18 @@ class YouTubeMusicCreatorDetailScreenTest {
     }
 
     @Test
+    fun creatorDetailViewModelKeys_areStableAndIsolatedByCreator() {
+        assertEquals(
+            youtubeMusicCreatorDetailViewModelKey("UCdemoCreator"),
+            youtubeMusicCreatorDetailViewModelKey("UCdemoCreator")
+        )
+        assertTrue(
+            youtubeMusicCreatorDetailViewModelKey("UCparent") !=
+                youtubeMusicCreatorDetailViewModelKey("UCchild")
+        )
+    }
+
+    @Test
     fun sectionMore_isShownForPlayableTopSongs() {
         val section = YouTubeMusicCreatorSection(
             title = "TOP SONGS",

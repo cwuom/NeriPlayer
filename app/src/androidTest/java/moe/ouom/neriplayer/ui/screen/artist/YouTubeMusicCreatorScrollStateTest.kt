@@ -1,21 +1,14 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -24,7 +17,15 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorDetail
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorHeader
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItem
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItemType
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
+import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
+import moe.ouom.neriplayer.ui.screen.host.youtubeMusicCreatorDetailStateKey
+import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailUiState
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
@@ -48,7 +49,7 @@ class YouTubeMusicCreatorScrollStateTest {
         lateinit var scrollHorizontal: (Int, Int) -> Unit
         lateinit var readPositions: () -> ScrollPositions
         composeRule.setContent {
-            CreatorScrollStateFixture(
+            CreatorDetailNavigationFixture(
                 onShowPlaylistChange = { showPlaylist = it },
                 onScrollVertical = { scrollVertical = it },
                 onScrollHorizontal = { scrollHorizontal = it },
@@ -83,67 +84,126 @@ private data class ScrollPositions(
 )
 
 @Composable
-private fun CreatorScrollStateFixture(
+private fun CreatorDetailNavigationFixture(
     onShowPlaylistChange: ((Boolean) -> Unit) -> Unit,
     onScrollVertical: (((Int, Int) -> Unit)) -> Unit,
     onScrollHorizontal: (((Int, Int) -> Unit)) -> Unit,
     onReadPositions: (() -> ScrollPositions) -> Unit
 ) {
     var playlistVisible by remember { mutableStateOf(false) }
+    val creator = remember {
+        YouTubeMusicCreatorSummary(
+            browseId = "UCdemoCreator",
+            title = "Demo Creator",
+            subtitle = "Artist",
+            coverUrl = ""
+        )
+    }
+    val detail = remember { creatorDetailFixture(creator) }
     val stateHolder = rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
+    var horizontalState by remember { mutableStateOf<LazyListState?>(null) }
 
-    SideEffect {
-        onShowPlaylistChange { visible -> playlistVisible = visible }
-    }
+    onShowPlaylistChange { visible -> playlistVisible = visible }
     if (playlistVisible) {
         Box(Modifier.fillMaxSize())
         return
     }
 
-    stateHolder.SaveableStateProvider("creator") {
+    stateHolder.SaveableStateProvider(
+        key = youtubeMusicCreatorDetailStateKey(creator)
+    ) {
         val verticalState = rememberSaveable(saver = LazyListState.Saver) {
             LazyListState()
         }
-        val horizontalState = rememberSaveable(saver = LazyListState.Saver) {
-            LazyListState()
+        val sectionStateHolder = rememberSaveableStateHolder()
+        onScrollVertical { index, offset ->
+            scope.launch { verticalState.scrollToItem(index, offset) }
         }
-        SideEffect {
-            onScrollVertical { index, offset ->
-                scope.launch { verticalState.scrollToItem(index, offset) }
-            }
-            onScrollHorizontal { index, offset ->
-                scope.launch { horizontalState.scrollToItem(index, offset) }
-            }
-            onReadPositions {
-                ScrollPositions(
-                    verticalIndex = verticalState.firstVisibleItemIndex,
-                    verticalOffset = verticalState.firstVisibleItemScrollOffset,
-                    horizontalIndex = horizontalState.firstVisibleItemIndex,
-                    horizontalOffset = horizontalState.firstVisibleItemScrollOffset
-                )
-            }
+        onReadPositions {
+            ScrollPositions(
+                verticalIndex = verticalState.firstVisibleItemIndex,
+                verticalOffset = verticalState.firstVisibleItemScrollOffset,
+                horizontalIndex = horizontalState?.firstVisibleItemIndex ?: 0,
+                horizontalOffset = horizontalState?.firstVisibleItemScrollOffset ?: 0
+            )
         }
-        Column(Modifier.fillMaxSize()) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = verticalState
-            ) {
-                item(key = "horizontal-section") {
-                    LazyRow(state = horizontalState, modifier = Modifier.height(96.dp)) {
-                        items((0..30).toList()) {
-                            Box(Modifier.width(96.dp).height(96.dp))
+        MaterialTheme {
+            YouTubeMusicCreatorDetailContent(
+                uiState = YouTubeMusicCreatorDetailUiState(
+                    loading = false,
+                    detail = detail
+                ),
+                listState = verticalState,
+                creatorBrowseId = creator.browseId,
+                sectionStateHolder = sectionStateHolder,
+                miniPlayerHeight = 0.dp,
+                offlineMode = false,
+                onRetry = {},
+                onSongClick = { _, _ -> },
+                onSectionSongClick = { _, _ -> },
+                onPlaylistClick = {},
+                onCreatorClick = {},
+                onSectionMoreClick = { playlistVisible = true },
+                isTabletLayout = false,
+                onSectionListState = { key, state ->
+                    if (key == youtubeMusicCreatorSectionScrollStateKey(
+                            creator.browseId,
+                            detail.sections.first()
+                        )
+                    ) {
+                        horizontalState = state
+                        onScrollHorizontal { index, offset ->
+                            scope.launch { state.scrollToItem(index, offset) }
                         }
                     }
                 }
-                items((0..30).toList()) { item ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                        )
-                }
-            }
+            )
         }
     }
+}
+
+private fun creatorDetailFixture(
+    creator: YouTubeMusicCreatorSummary
+): YouTubeMusicCreatorDetail {
+    val horizontalItems = (0..30).map { index ->
+        YouTubeMusicCreatorItem(
+            type = if (index == 0) {
+                YouTubeMusicCreatorItemType.Creator
+            } else {
+                YouTubeMusicCreatorItemType.Playlist
+            },
+            title = "Item $index",
+            subtitle = creator.title,
+            coverUrl = "",
+            browseId = "item-$index"
+        )
+    }
+    val horizontalSection = YouTubeMusicCreatorSection(
+        title = "Fans also like",
+        items = horizontalItems
+    )
+    val sections = listOf(horizontalSection) + (1..31).map { index ->
+        YouTubeMusicCreatorSection(
+            title = "Section $index",
+            items = listOf(
+                YouTubeMusicCreatorItem(
+                    type = YouTubeMusicCreatorItemType.Playlist,
+                    title = "Section item $index",
+                    subtitle = creator.title,
+                    coverUrl = "",
+                    browseId = "section-item-$index"
+                )
+            )
+        )
+    }
+    return YouTubeMusicCreatorDetail(
+        header = YouTubeMusicCreatorHeader(
+            browseId = creator.browseId,
+            title = creator.title,
+            subtitle = creator.subtitle,
+            coverUrl = creator.coverUrl
+        ),
+        sections = sections
+    )
 }
