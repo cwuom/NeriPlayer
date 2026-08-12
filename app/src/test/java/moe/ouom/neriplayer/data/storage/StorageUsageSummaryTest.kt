@@ -2,8 +2,15 @@ package moe.ouom.neriplayer.data.storage
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.local.database.store.DownloadIndexStorageStats
+import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheStorageStats
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,6 +90,113 @@ class StorageUsageSummaryTest {
         } finally {
             root.deleteRecursively()
         }
+    }
+
+    @Test
+    fun downloadLibraryUsageCountsLyricSidecarsFromDocumentTreeSnapshot() {
+        val usage = managedDownloadLibraryUsage(
+            audioEntries = listOf(storedEntry("song.m4a", 3_000L)),
+            lyricEntries = listOf(
+                storedEntry(".nomedia", 0L),
+                storedEntry("song.lrc", 120L),
+                storedEntry("song_trans.lrc", 80L)
+            ),
+            coverEntries = listOf(storedEntry("song.jpg", 300L)),
+            metadataEntries = listOf(storedEntry("song.m4a.meta.json", 40L))
+        )
+
+        assertEquals(3_000L, usage.audioFiles.sizeBytes)
+        assertEquals(1, usage.audioFiles.fileCount)
+        assertEquals(200L, usage.lyricFiles.sizeBytes)
+        assertEquals(2, usage.lyricFiles.fileCount)
+        assertEquals(300L, usage.coverFiles.sizeBytes)
+        assertEquals(1, usage.coverFiles.fileCount)
+        assertEquals(40L, usage.metadataFiles.sizeBytes)
+        assertEquals(1, usage.metadataFiles.fileCount)
+        assertTrue(usage.localFiles.isEmpty())
+    }
+
+    @Test
+    fun downloadIndexUsageKeepsRoomRecordsSeparateFromLegacyFiles() {
+        val usage = downloadIndexUsageStats(
+            fileStats = FileStats(sizeBytes = 32L, fileCount = 1),
+            roomStats = DownloadIndexStorageStats(
+                databaseRecordCount = 118,
+                allocatedPageBytes = 8_192L
+            )
+        )
+
+        assertEquals(8_224L, usage.sizeBytes)
+        assertEquals(1, usage.fileCount)
+        assertEquals(118, usage.databaseRecordCount)
+    }
+
+    @Test
+    fun databaseAttributionDoesNotDoubleCountDownloadIndexPages() {
+        val attribution = normalizeDatabaseStorageAttribution(
+            platformCacheStats = mapOf(
+                "netease" to PlatformPlaylistCacheStorageStats(
+                    cacheRecordCount = 2,
+                    allocatedPageBytes = 700L
+                )
+            ),
+            downloadIndexStorageStats = DownloadIndexStorageStats(
+                databaseRecordCount = 118,
+                allocatedPageBytes = 800L
+            ),
+            databaseBytes = 1_000L
+        )
+        val attributedBytes = attribution.platformCacheStats.values.sumOf {
+            it.allocatedPageBytes
+        } + attribution.downloadIndexStorageStats.allocatedPageBytes
+
+        assertEquals(1_000L, attributedBytes)
+        assertEquals(
+            0L,
+            databaseUsageStats(
+                databaseStats = FileStats(sizeBytes = 1_000L, fileCount = 1),
+                attributedDatabaseBytes = attributedBytes
+            ).sizeBytes
+        )
+    }
+
+    @Test
+    fun storageScanFallsBackForNonCancellationFailure() = runBlocking {
+        assertEquals(
+            "fallback",
+            storageScanOrDefault("fallback") {
+                throw IllegalStateException("storage read failed")
+            }
+        )
+    }
+
+    @Test
+    fun storageScanRethrowsCancellation() {
+        val cancellation = CancellationException("storage scan cancelled")
+
+        val thrown = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                storageScanOrDefault("fallback") {
+                    throw cancellation
+                }
+            }
+        }
+
+        assertSame(cancellation, thrown)
+    }
+
+    private fun storedEntry(
+        name: String,
+        sizeBytes: Long
+    ): ManagedDownloadStorage.StoredEntry {
+        return ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "content://downloads/$name",
+            mediaUri = "content://downloads/$name",
+            localFilePath = null,
+            sizeBytes = sizeBytes,
+            lastModifiedMs = 0L
+        )
     }
 
     private fun usageItem(

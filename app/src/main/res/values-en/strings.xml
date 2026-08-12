@@ -1649,6 +1649,7 @@
     <string name="storage_type_youtube_playlist_cache">YouTube Music Playlist Cache</string>
     <string name="storage_type_downloaded_music">Downloaded Music</string>
     <string name="storage_type_downloaded_lyrics">Downloaded Lyrics</string>
+    <string name="storage_type_downloaded_covers">Downloaded Cover Art</string>
     <string name="storage_type_download_index">Download Index</string>
     <string name="storage_type_log_files">Log Files</string>
     <string name="storage_type_crash_logs">Crash Logs</string>
@@ -1670,6 +1671,7 @@
     <string name="storage_desc_other_cache">Files in the cache directory not covered above</string>
     <string name="storage_desc_downloaded_music">Songs saved by the user. These are not removed by clearing cache</string>
     <string name="storage_desc_downloaded_lyrics">Original and translated lyric sidecar files for downloads. These are not removed by clearing cache</string>
+    <string name="storage_desc_downloaded_covers">Cover art sidecar files for downloads. These are not removed by clearing cache</string>
     <string name="storage_desc_download_index">Download catalog, pending queue, and cancellation records</string>
     <string name="storage_desc_log_files">Debug logs and long-running log files</string>
     <string name="storage_desc_crash_logs">Crash, ANR, and native crash reports</string>
@@ -1696,6 +1698,14 @@
     <string name="storage_cleanable_total">Cleanable cache</string>
     <string name="storage_details_files_summary">%1$s · %2$d files</string>
     <string name="storage_details_cache_record_count">%1$d Room cache entries</string>
+    <plurals name="storage_details_download_index_record_count">
+        <item quantity="one">%1$d index record</item>
+        <item quantity="other">%1$d index records</item>
+    </plurals>
+    <plurals name="storage_details_download_index_record_and_file_count">
+        <item quantity="one">%1$d index record · index files: %2$d</item>
+        <item quantity="other">%1$d index records · index files: %2$d</item>
+    </plurals>
     <string name="storage_details_empty">No measurable files found yet</string>
 
     <!-- Sync & Backup -->
