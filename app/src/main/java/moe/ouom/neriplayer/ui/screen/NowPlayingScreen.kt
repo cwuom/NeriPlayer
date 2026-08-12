@@ -2569,6 +2569,7 @@ fun NowPlayingScreen(
                         lyricOffsetMs = totalOffset,
                         isPlaying = isPlaying,
                         isPlaybackWaiting = isPlaybackWaiting,
+                        playbackSpeed = playbackSoundState.speed,
                         progressInfoSegments = progressInfoSegments,
                         seekEnabled = playbackProgressSeekEnabled,
                         activeContentColor = targetNowPlayingActiveIconColor,
@@ -5092,6 +5093,7 @@ private fun NowPlayingProgressSection(
     lyricOffsetMs: Long,
     isPlaying: Boolean,
     isPlaybackWaiting: Boolean,
+    playbackSpeed: Float,
     progressInfoSegments: List<NowPlayingProgressInfoSegment>,
     seekEnabled: Boolean,
     activeContentColor: Color,
@@ -5208,7 +5210,13 @@ private fun NowPlayingProgressSection(
                 isPlaying = isPlaying,
                 enabled = seekEnabled,
                 isPlaybackWaiting = delayedPlaybackWaiting,
-                activeTint = activeContentColor
+                isProgressStalled = isPlaybackWaiting,
+                isProgressPreviewing = isUserDraggingSlider ||
+                    pendingSeekPreviewPositionMs != null,
+                activeTint = activeContentColor,
+                durationMs = durationMs,
+                playbackSpeed = playbackSpeed,
+                playbackSessionKey = songKey
             )
 
             Text(
