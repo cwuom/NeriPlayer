@@ -46,7 +46,6 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistSummaries
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
-import moe.ouom.neriplayer.ui.viewmodel.tab.NETEASE_FAN_RADAR_PLAYLIST_ID
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.isNeteaseRadarPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.parseNeteasePlaylistDetailSummary
@@ -162,7 +161,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 }
                 detailRequest.await() to radarHeaderRequest.await()
             }
-            if (playlist.id == NETEASE_FAN_RADAR_PLAYLIST_ID) {
+            if (isNeteaseRadarPlaylist(playlist.id)) {
                 withContext(Dispatchers.IO) {
                     persistNeteaseSessionCookies()
                 }
@@ -177,7 +176,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             )
             if (!forceRefresh && cached != null && shouldReuseCachedPlaylist(cached, parsed)) {
                 val reusableCache = if (isNeteaseRadarPlaylist(playlist.id)) {
-                    refreshNeteasePlaylistCachedHeader(cached, parsed.header)
+                    refreshNeteasePlaylistCachedHeader(cached, parsedWithRadarHeader.header)
                 } else {
                     cached
                 }
@@ -206,7 +205,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
                 if (client.hasLogin()) {
                     persistNeteaseSessionCookies()
                 }
-                playlistCacheRepo.save(parsed.toCache(tracks))
+                playlistCacheRepo.save(parsedWithRadarHeader.toCache(tracks))
             }
         } catch (e: CancellationException) {
             throw e
@@ -242,7 +241,7 @@ class NeteaseCollectionDetailViewModel(application: Application) : AndroidViewMo
             val cookies = cookieRepo.getCookiesOnce()
             client.setPersistedCookies(cookies)
             if (
-                playlistId != NETEASE_FAN_RADAR_PLAYLIST_ID ||
+                !isNeteaseRadarPlaylist(playlistId) ||
                 cookies["MUSIC_U"].isNullOrBlank()
             ) {
                 return@withContext
