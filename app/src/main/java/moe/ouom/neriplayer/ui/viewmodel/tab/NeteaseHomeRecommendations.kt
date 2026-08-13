@@ -158,10 +158,7 @@ internal fun parseNeteasePlaylistDetailSummary(
     fallback: NeteaseRadarPlaylistDefinition
 ): PlaylistSummary = parseNeteasePlaylistDetailSummary(raw, fallback.toPlaylistSummary())
 
-internal fun parseNeteasePlaylistDetailSummary(
-    raw: String,
-    fallback: PlaylistSummary
-): PlaylistSummary {
+internal fun parseNeteasePlaylistDetailSummaryOrNull(raw: String): PlaylistSummary? {
     val root = JSONObject(raw)
     val code = root.optInt("code", 200)
     if (code != 200) {
@@ -169,8 +166,12 @@ internal fun parseNeteasePlaylistDetailSummary(
     }
     val playlist = root.optJSONObject("playlist") ?: root.optJSONObject("result")
     return playlist?.let(::parseNeteasePlaylistSummary)
-        ?: fallback
 }
+
+internal fun parseNeteasePlaylistDetailSummary(
+    raw: String,
+    fallback: PlaylistSummary
+): PlaylistSummary = parseNeteasePlaylistDetailSummaryOrNull(raw) ?: fallback
 
 internal suspend fun loadNeteaseRadarPlaylistSummaries(
     definitions: List<NeteaseRadarPlaylistDefinition>,
@@ -183,7 +184,9 @@ internal suspend fun loadNeteaseRadarPlaylistSummaries(
             val summary = try {
                 val raw = loadMetadata(definition.id)
                 currentCoroutineContext().ensureActive()
-                parseNeteasePlaylistDetailSummary(raw, definition)
+                parseNeteasePlaylistDetailSummaryOrNull(raw)
+                    ?.takeIf { summary -> summary.id == definition.id }
+                    ?: definition.toPlaylistSummary()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

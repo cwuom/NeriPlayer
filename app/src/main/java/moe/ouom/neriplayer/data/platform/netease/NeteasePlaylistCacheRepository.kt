@@ -66,6 +66,7 @@ data class CachedNeteasePlaylistDetail(
     val header: CachedNeteasePlaylistHeader,
     val recentTrackSignature: String,
     val tracks: List<CachedNeteasePlaylistTrack>,
+    val radarCacheContext: String? = null,
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
@@ -91,13 +92,23 @@ class NeteasePlaylistCacheRepository private constructor(
         cacheDir = cacheDir
     )
 
-    fun read(playlistId: Long): CachedNeteasePlaylistDetail? {
-        val cacheKey = playlistId.toString()
+    fun read(
+        playlistId: Long,
+        radarCacheContext: String? = null
+    ): CachedNeteasePlaylistDetail? {
+        val cacheKey = neteaseRadarPlaylistCacheKey(playlistId, radarCacheContext)
         readRoom(cacheKey)?.toNeteasePlaylistDetail()?.let { return it }
         val file = cacheFile(playlistId)
         if (!file.exists()) return null
         return runCatching {
-            readLegacyFile(file, playlistId)?.also(::saveRoomAndDeleteLegacy)
+            readLegacyFile(file, playlistId)
+                ?.takeIf { cache ->
+                    neteaseRadarPlaylistCacheKey(
+                        playlistId = cache.playlistId,
+                        radarCacheContext = cache.radarCacheContext
+                    ) == cacheKey
+                }
+                ?.also(::saveRoomAndDeleteLegacy)
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to read NetEase playlist cache: playlistId=$playlistId", error)
         }.getOrNull()
@@ -112,10 +123,24 @@ class NeteasePlaylistCacheRepository private constructor(
         }
     }
 
-    fun clear(playlistId: Long) {
+    fun saveIfNewer(cache: CachedNeteasePlaylistDetail) {
         runCatching {
-            clearRoom(playlistId.toString())
-            cacheFile(playlistId).delete()
+            saveRoomIfNewer(cache)
+            deleteLegacyFile(cacheFile(cache.playlistId))
+        }.onFailure { error ->
+            NPLogger.w(TAG, "Failed to update NetEase playlist cache: playlistId=${cache.playlistId}", error)
+        }
+    }
+
+    fun clear(
+        playlistId: Long,
+        radarCacheContext: String? = null
+    ) {
+        runCatching {
+            clearRoom(neteaseRadarPlaylistCacheKey(playlistId, radarCacheContext))
+            if (radarCacheContext.isNullOrBlank()) {
+                cacheFile(playlistId).delete()
+            }
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to clear NetEase playlist cache: playlistId=$playlistId", error)
         }
@@ -200,7 +225,7 @@ class NeteasePlaylistCacheRepository private constructor(
     private fun CachedNeteasePlaylistDetail.toRecord(): PlatformPlaylistCacheRecord {
         return PlatformPlaylistCacheRecord(
             platform = PLATFORM,
-            cacheKey = playlistId.toString(),
+            cacheKey = neteaseRadarPlaylistCacheKey(playlistId, radarCacheContext),
             sourceId = playlistId,
             title = header.name,
             coverUrl = header.coverUrl,
@@ -208,6 +233,7 @@ class NeteasePlaylistCacheRepository private constructor(
             trackCount = header.trackCount,
             totalCount = tracks.size,
             signaturePrimary = recentTrackSignature,
+            signatureSecondary = radarCacheContext,
             savedAtMs = savedAtMs,
             tracks = tracks.map { track ->
                 PlatformPlaylistCacheTrackRecord(
@@ -243,6 +269,7 @@ class NeteasePlaylistCacheRepository private constructor(
                 trackCount = trackCount
             ),
             recentTrackSignature = signaturePrimary.orEmpty(),
+            radarCacheContext = signatureSecondary,
             tracks = tracks.map { track ->
                 CachedNeteasePlaylistTrack(
                     id = track.itemId ?: 0L,

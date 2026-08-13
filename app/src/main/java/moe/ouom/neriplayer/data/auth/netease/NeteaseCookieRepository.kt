@@ -183,6 +183,7 @@ internal fun evaluateNeteaseAuthHealth(
 }
 
 class NeteaseCookieRepository(private val context: Context) {
+    private val mutationLock = Any()
     private var encryptedPrefs: SharedPreferences
     private val _authFlow: MutableStateFlow<NeteaseAuthBundle>
     private val _cookieFlow: MutableStateFlow<Map<String, String>>
@@ -206,6 +207,23 @@ class NeteaseCookieRepository(private val context: Context) {
 
     fun getCookiesOnce(): Map<String, String> = _cookieFlow.value
 
+    fun <T> withCurrentCookies(action: (Map<String, String>) -> T): T {
+        return synchronized(mutationLock) {
+            action(_cookieFlow.value)
+        }
+    }
+
+    fun withCurrentCookiesIfMatches(
+        expectedCookies: Map<String, String>,
+        action: (Map<String, String>) -> Unit
+    ): Boolean {
+        return synchronized(mutationLock) {
+            if (_cookieFlow.value != expectedCookies) return@synchronized false
+            action(_cookieFlow.value)
+            true
+        }
+    }
+
     fun getAuthHealthOnce(): SavedCookieAuthHealth = _authHealthFlow.value
 
     fun getAuthHealth(
@@ -219,6 +237,27 @@ class NeteaseCookieRepository(private val context: Context) {
     fun saveCookies(
         cookies: Map<String, String>,
         savedAt: Long = System.currentTimeMillis()
+    ): Boolean {
+        return synchronized(mutationLock) {
+            saveCookiesLocked(cookies, savedAt)
+        }
+    }
+
+    /** only applies a session update when the account snapshot is still current */
+    fun saveCookiesIfCurrent(
+        expectedCookies: Map<String, String>,
+        cookies: Map<String, String>,
+        savedAt: Long = System.currentTimeMillis()
+    ): Boolean {
+        return synchronized(mutationLock) {
+            if (_cookieFlow.value != expectedCookies) return@synchronized false
+            saveCookiesLocked(cookies, savedAt)
+        }
+    }
+
+    private fun saveCookiesLocked(
+        cookies: Map<String, String>,
+        savedAt: Long
     ): Boolean {
         val validation = validateCookies(cookies)
         if (!validation.isAccepted) {
@@ -246,14 +285,16 @@ class NeteaseCookieRepository(private val context: Context) {
     }
 
     fun clear() {
-        encryptedPrefs.edit {
-            remove(KEY_NETEASE_AUTH_BUNDLE)
+        synchronized(mutationLock) {
+            encryptedPrefs.edit {
+                remove(KEY_NETEASE_AUTH_BUNDLE)
+            }
+            val cleared = NeteaseAuthBundle()
+            _authFlow.value = cleared
+            _cookieFlow.value = cleared.cookies
+            _authHealthFlow.value = evaluateNeteaseAuthHealth(cleared)
+            NPLogger.d("NERI-CookieRepo", "Cleared all saved cookies.")
         }
-        val cleared = NeteaseAuthBundle()
-        _authFlow.value = cleared
-        _cookieFlow.value = cleared.cookies
-        _authHealthFlow.value = evaluateNeteaseAuthHealth(cleared)
-        NPLogger.d("NERI-CookieRepo", "Cleared all saved cookies.")
     }
 
     fun refreshHealth(now: Long = System.currentTimeMillis()) {

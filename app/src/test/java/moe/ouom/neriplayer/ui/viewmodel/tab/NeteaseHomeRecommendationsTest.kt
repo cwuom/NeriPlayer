@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.coroutineContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.api.netease.mergeNeteaseSessionCookies
@@ -156,6 +157,42 @@ class NeteaseHomeRecommendationsTest {
         assertEquals("为你定制的乐迷雷达", detail.name)
         assertEquals("https://p1.music.126.net/account-radar.jpg", detail.picUrl)
         assertEquals(42L, detail.playCount)
+    }
+
+    @Test
+    fun parsePlaylistDetailOrNull_rejectsEmptySuccessfulResponse() {
+        assertNull(parseNeteasePlaylistDetailSummaryOrNull("""{"code":200}"""))
+    }
+
+    @Test
+    fun radarPlaylistSummaries_keepDefaultMetadataForEmptyOrMismatchedResponse() = runTest {
+        val first = NeteaseRadarPlaylistDefinitions[0]
+        val second = NeteaseRadarPlaylistDefinitions[1]
+
+        val summaries = loadNeteaseRadarPlaylistSummaries(
+            definitions = listOf(first, second),
+            loadMetadata = { playlistId ->
+                if (playlistId == first.id) {
+                    """{"code":200}"""
+                } else {
+                    """
+                        {
+                          "code": 200,
+                          "result": {
+                            "id": ${first.id},
+                            "name": "wrong radar",
+                            "coverImgUrl": "https://example.com/wrong.jpg"
+                          }
+                        }
+                    """.trimIndent()
+                }
+            }
+        )
+
+        assertEquals(listOf(first.id, second.id), summaries.map { it.id })
+        assertEquals(first.name, summaries[0].name)
+        assertEquals(second.name, summaries[1].name)
+        assertTrue(summaries.all { it.picUrl.isEmpty() })
     }
 
     @Test
@@ -334,6 +371,69 @@ class NeteaseHomeRecommendationsTest {
             shouldRefreshNeteaseHome(
                 loginChanged = false,
                 recommendationsBootstrapped = true
+            )
+        )
+        assertTrue(
+            shouldRefreshNeteaseHome(
+                loginChanged = false,
+                recommendationsBootstrapped = true,
+                accountContextChanged = true
+            )
+        )
+    }
+
+    @Test
+    fun initialCookieEmissionOnlySkipsTheUnchangedConstructionSnapshot() {
+        val accountA = mapOf("MUSIC_U" to "account-a")
+        val accountB = mapOf("MUSIC_U" to "account-b")
+
+        assertFalse(
+            shouldHandleInitialNeteaseHomeCookieEmission(
+                isFirstEmission = true,
+                initialCookies = accountA,
+                emittedCookies = accountA
+            )
+        )
+        assertTrue(
+            shouldHandleInitialNeteaseHomeCookieEmission(
+                isFirstEmission = true,
+                initialCookies = accountA,
+                emittedCookies = accountB
+            )
+        )
+        assertTrue(
+            shouldHandleInitialNeteaseHomeCookieEmission(
+                isFirstEmission = false,
+                initialCookies = accountA,
+                emittedCookies = accountA
+            )
+        )
+    }
+
+    @Test
+    fun radarPlaylistLoadRejectsOlderGenerationAndAccountContext() {
+        assertTrue(
+            shouldAcceptNeteaseRadarPlaylistLoadResult(
+                requestGeneration = 2L,
+                activeGeneration = 2L,
+                requestRadarCacheContext = "account-a",
+                activeRadarCacheContext = "account-a"
+            )
+        )
+        assertFalse(
+            shouldAcceptNeteaseRadarPlaylistLoadResult(
+                requestGeneration = 1L,
+                activeGeneration = 2L,
+                requestRadarCacheContext = "account-a",
+                activeRadarCacheContext = "account-a"
+            )
+        )
+        assertFalse(
+            shouldAcceptNeteaseRadarPlaylistLoadResult(
+                requestGeneration = 2L,
+                activeGeneration = 2L,
+                requestRadarCacheContext = "account-a",
+                activeRadarCacheContext = "account-b"
             )
         )
     }

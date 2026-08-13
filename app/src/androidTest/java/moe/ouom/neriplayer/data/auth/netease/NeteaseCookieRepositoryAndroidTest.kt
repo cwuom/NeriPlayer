@@ -9,10 +9,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -98,6 +100,45 @@ class NeteaseCookieRepositoryAndroidTest {
 
         val recreatedRepository = NeteaseCookieRepository(context)
         assertEquals("legacy-cookie", recreatedRepository.getCookiesOnce()["MUSIC_U"])
+    }
+
+    @Test
+    fun saveCookiesIfCurrent_rejectsAnObsoleteAccountSnapshot() {
+        val repository = NeteaseCookieRepository(context)
+        assertTrue(repository.saveCookies(mapOf("MUSIC_U" to "account-a")))
+        val accountASnapshot = repository.getCookiesOnce()
+
+        assertTrue(repository.saveCookies(mapOf("MUSIC_U" to "account-b")))
+        assertFalse(
+            repository.saveCookiesIfCurrent(
+                expectedCookies = accountASnapshot,
+                cookies = accountASnapshot + ("__csrf" to "old-session")
+            )
+        )
+        assertEquals("account-b", repository.getCookiesOnce()["MUSIC_U"])
+        assertNull(repository.getCookiesOnce()["__csrf"])
+    }
+
+    @Test
+    fun withCurrentCookiesIfMatches_doesNotReactivateAnObsoleteClientSession() {
+        val repository = NeteaseCookieRepository(context)
+        val client = NeteaseClient()
+        assertTrue(repository.saveCookies(mapOf("MUSIC_U" to "account-a")))
+        val accountA = repository.getCookiesOnce()
+
+        assertTrue(repository.saveCookies(mapOf("MUSIC_U" to "account-b")))
+        assertTrue(
+            repository.withCurrentCookiesIfMatches(repository.getCookiesOnce()) { cookies ->
+                client.setPersistedCookies(cookies)
+            }
+        )
+        assertFalse(
+            repository.withCurrentCookiesIfMatches(accountA) { cookies ->
+                client.setPersistedCookies(cookies)
+            }
+        )
+
+        assertEquals("account-b", client.getNeteaseRequestCookies()["MUSIC_U"])
     }
 
     private fun clearStorage() {
