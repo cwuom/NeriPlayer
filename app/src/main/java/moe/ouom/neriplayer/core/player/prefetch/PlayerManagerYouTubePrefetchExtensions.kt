@@ -17,12 +17,12 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
+import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.buildYouTubePlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.url.buildYouTubeRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.hasCompleteExoPlayerCache
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedPlaybackDescriptor
-import moe.ouom.neriplayer.core.player.url.persistCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
+import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeImmediatePlaybackWarmupTargets
 import moe.ouom.neriplayer.core.player.policy.command.resolveYouTubeWarmupTargets
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
@@ -265,8 +265,11 @@ private fun PlayerManager.canRunYouTubePrefetch(source: String): Boolean {
     return false
 }
 
-private suspend fun PlayerManager.shouldStartMediaCachePrefetch(cacheKey: String): Boolean {
-    return when (prepareExoPlayerCacheForPrefetch(cacheKey)) {
+private suspend fun PlayerManager.shouldStartMediaCachePrefetch(
+    cacheKey: String,
+    shouldApplyMutation: () -> Boolean = { true }
+): Boolean {
+    return when (prepareExoPlayerCacheForPrefetch(cacheKey, shouldApplyMutation)) {
         CachePrefetchReadiness.COMPLETE -> false
         CachePrefetchReadiness.READY_FOR_PREFETCH -> true
         CachePrefetchReadiness.UNAVAILABLE -> {
@@ -307,7 +310,11 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
         )
         return
     }
-    if (!shouldStartMediaCachePrefetch(cacheKey)) {
+    if (!shouldStartMediaCachePrefetch(
+            cacheKey = cacheKey,
+            shouldApplyMutation = { !playbackDemandArbiter.shouldYieldPrefetch(cacheKey) }
+        )
+    ) {
         return
     }
     val existingJob = youtubeStreamWarmupJobs[cacheKey]
@@ -328,21 +335,9 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             preferM4a = false,
             isPrefetch = true
         ) ?: return
-        invalidateMismatchedCachedResource(
-            cacheKey = cacheKey,
-            expectedContentLength = playableAudio.contentLength,
-            shouldApplyMutation = {
-                !playbackDemandArbiter.shouldYieldPrefetch(cacheKey)
-            }
-        )
         val playbackAudioInfo = buildYouTubePlaybackAudioInfo(playableAudio) { it.toString() }
-        val representationIdentity = listOf(
-            playableAudio.mimeType.orEmpty(),
-            playableAudio.bitrateKbps?.toString().orEmpty(),
-            playableAudio.sampleRateHz?.toString().orEmpty(),
-            playableAudio.streamType.name
-        ).joinToString(separator = "|")
-        invalidateMismatchedCachedPlaybackDescriptor(
+        val representationIdentity = buildYouTubeRepresentationIdentity(playableAudio)
+        val synchronization = synchronizeCachedPlaybackDescriptor(
             cacheKey = cacheKey,
             audioInfo = playbackAudioInfo,
             expectedContentLength = playableAudio.contentLength,
@@ -351,12 +346,14 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
                 !playbackDemandArbiter.shouldYieldPrefetch(cacheKey)
             }
         )
-        persistCachedPlaybackDescriptor(
-            cacheKey = cacheKey,
-            audioInfo = playbackAudioInfo,
-            expectedContentLength = playableAudio.contentLength,
-            representationIdentity = representationIdentity
-        )
+        if (!synchronization.allowsCustomCacheKey()) {
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "skip YouTube media prefetch because cache descriptor was not synchronized: " +
+                    "key=$cacheKey, result=$synchronization"
+            )
+            return
+        }
         if (playbackDemandArbiter.shouldYieldPrefetch(cacheKey)) {
             NPLogger.d(
                 "NERI-PlayerManager",
@@ -364,7 +361,11 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             )
             return
         }
-        if (!shouldStartMediaCachePrefetch(cacheKey)) {
+        if (!shouldStartMediaCachePrefetch(
+                cacheKey = cacheKey,
+                shouldApplyMutation = { !playbackDemandArbiter.shouldYieldPrefetch(cacheKey) }
+            )
+        ) {
             return
         }
         if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {

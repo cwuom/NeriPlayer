@@ -25,10 +25,9 @@ import moe.ouom.neriplayer.core.player.policy.refresh.YouTubePlaybackRecoveryStr
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_STABLE_RECOVERY_QUALITY
 import moe.ouom.neriplayer.core.player.url.currentPlaybackCacheKeyForRecovery
 import moe.ouom.neriplayer.core.player.url.invalidateCachedResourceForPlaybackRecovery
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedPlaybackDescriptor
+import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.offlineCacheKeyFromUrl
-import moe.ouom.neriplayer.core.player.url.persistCachedPlaybackDescriptor
+import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -379,30 +378,28 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     ) {
         invalidateCachedResourceForPlaybackRecovery(
             cacheKey = staleCacheKey.orEmpty(),
-            reason = recoveryReason
+            reason = recoveryReason,
+            shouldApplyMutation = { requestToken == playbackRequestToken }
         )
     }
     if (requestToken != playbackRequestToken) return
-    invalidateMismatchedCachedResource(
-        cacheKey = cacheKey,
-        expectedContentLength = candidate.expectedContentLength
-    )
-    invalidateMismatchedCachedPlaybackDescriptor(
+    val cacheSynchronization = synchronizeCachedPlaybackDescriptor(
         cacheKey = cacheKey,
         audioInfo = candidate.audioInfo,
         expectedContentLength = candidate.expectedContentLength,
-        representationIdentity = candidate.representationIdentity
+        representationIdentity = candidate.representationIdentity,
+        shouldApplyMutation = { requestToken == playbackRequestToken }
     )
     if (requestToken != playbackRequestToken) return
-    persistCachedPlaybackDescriptor(
-        cacheKey = cacheKey,
-        audioInfo = candidate.audioInfo,
-        expectedContentLength = candidate.expectedContentLength,
-        representationIdentity = candidate.representationIdentity
-    )
     _currentPlaybackAudioInfo.value = candidate.audioInfo
     updateAudioOffloadPreferences("playback_candidate_source")
-    val mediaItem = buildMediaItem(song, candidate.url, cacheKey, candidate.mimeType)
+    val mediaItem = buildMediaItem(
+        song = song,
+        url = candidate.url,
+        cacheKey = cacheKey,
+        mimeType = candidate.mimeType,
+        allowCustomCacheKey = cacheSynchronization.allowsCustomCacheKey()
+    )
     preparePlayerForManagedStart(resolvePlaybackStartPlan(shouldFadeIn = false, fadeDurationMs = 0L))
     resetTrackEndDeduplicationState()
     applyWakeModeForPlaybackUrl(candidate.url)

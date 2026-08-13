@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.player.model.PlaybackUrlCandidate
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.url.buildBiliPlaybackAudioInfo
+import moe.ouom.neriplayer.core.player.url.buildBiliRepresentationIdentity
 import moe.ouom.neriplayer.core.player.url.inferBiliQualityKey
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.data.model.SongItem
@@ -186,12 +187,7 @@ private suspend fun PlayerManager.resolveNeteaseAutoBiliCandidate(
         audioInfo = buildBiliPlaybackAudioInfo(selectedStream, availableStreams) {
             getLocalizedString(it)
         },
-        representationIdentity = listOf(
-            selectedStream.id?.toString().orEmpty(),
-            selectedStream.qualityTag.orEmpty(),
-            selectedStream.mimeType.trim().lowercase(),
-            selectedStream.bitrateKbps.toString()
-        ).joinToString(separator = "|"),
+        representationIdentity = buildBiliRepresentationIdentity(selectedStream),
         cacheKeyOverride = buildNeteaseAutoBiliCacheKey(
             bvid = videoInfo.bvid,
             cid = pageMatch.page.cid,

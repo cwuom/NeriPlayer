@@ -14,11 +14,23 @@ import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.security.MessageDigest
 
-internal const val CACHED_PLAYBACK_DESCRIPTOR_VERSION = 1
+internal const val CACHED_PLAYBACK_DESCRIPTOR_VERSION = 2
 internal const val CACHED_PLAYBACK_DESCRIPTOR_METADATA_KEY =
     "${ContentMetadata.KEY_CUSTOM_PREFIX}neriplayer_playback_descriptor"
+internal const val CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY =
+    "${ContentMetadata.KEY_CUSTOM_PREFIX}neriplayer_playback_cache_unsafe"
+
+private const val CACHED_PLAYBACK_CACHE_UNSAFE_VALUE = "1"
+
+internal enum class CachedPlaybackDescriptorSynchronizationResult {
+    APPLIED,
+    NO_METADATA,
+    SKIPPED,
+    CACHE_UNUSABLE
+}
 
 internal data class CachedPlaybackDescriptor(
     val version: Int,
@@ -96,10 +108,6 @@ internal fun CachedPlaybackDescriptor.matches(
     )
     return version == CACHED_PLAYBACK_DESCRIPTOR_VERSION &&
         representationFingerprint == fingerprint() &&
-        representationFingerprint == expected.representationFingerprint &&
-        (representationIdentity == null ||
-            expected.representationIdentity == null ||
-            representationIdentity == expected.representationIdentity) &&
         source == expected.source &&
         qualityKey == expected.qualityKey &&
         mimeType == expected.mimeType &&
@@ -108,15 +116,19 @@ internal fun CachedPlaybackDescriptor.matches(
         sampleRateHz == expected.sampleRateHz &&
         bitDepth == expected.bitDepth &&
         channelCount == expected.channelCount &&
-        (expected.expectedContentLength == null ||
-            expectedContentLength == null ||
-            expected.expectedContentLength == this.expectedContentLength)
+        this.representationIdentity == expected.representationIdentity &&
+        expected.expectedContentLength == this.expectedContentLength
 }
 
 internal fun CachedPlaybackDescriptor.matchesCachedContentLength(
     cachedContentLength: Long
 ): Boolean {
     return expectedContentLength == null || expectedContentLength == cachedContentLength
+}
+
+internal fun CachedPlaybackDescriptorSynchronizationResult.allowsCustomCacheKey(): Boolean {
+    return this == CachedPlaybackDescriptorSynchronizationResult.APPLIED ||
+        this == CachedPlaybackDescriptorSynchronizationResult.NO_METADATA
 }
 
 internal fun CachedPlaybackDescriptor.toPlaybackAudioInfo(
@@ -238,71 +250,265 @@ internal fun Cache.writeCachedPlaybackDescriptor(
 ) {
     applyContentMetadataMutations(
         cacheKey,
-        ContentMetadataMutations().set(
-            CACHED_PLAYBACK_DESCRIPTOR_METADATA_KEY,
-            encodeCachedPlaybackDescriptor(descriptor)
-        )
+        ContentMetadataMutations()
+            .set(
+                CACHED_PLAYBACK_DESCRIPTOR_METADATA_KEY,
+                encodeCachedPlaybackDescriptor(descriptor)
+            )
+            .remove(CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY)
     )
 }
 
-internal suspend fun PlayerManager.invalidateMismatchedCachedPlaybackDescriptor(
-    cacheKey: String,
-    audioInfo: PlaybackAudioInfo?,
-    expectedContentLength: Long?,
-    representationIdentity: String?,
-    shouldApplyMutation: () -> Boolean = { true }
-): Boolean = withContext(Dispatchers.IO) {
-    if (cacheKey.isBlank() || audioInfo == null || audioInfo.source == PlaybackAudioSource.LOCAL) {
-        return@withContext false
-    }
-    val mediaCache = cache ?: return@withContext false
-    runCatching {
-        if (mediaCache.getCachedSpans(cacheKey).isEmpty()) return@runCatching false
-        val existing = mediaCache.readCachedPlaybackDescriptor(cacheKey)
-        val matches = existing?.matches(
-            audioInfo = audioInfo,
-            expectedContentLength = expectedContentLength,
-            representationIdentity = representationIdentity
-        ) == true
-        if (matches || !shouldApplyMutation()) return@runCatching false
-        mediaCache.removeResource(cacheKey)
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "缓存表示描述符不匹配，移除旧资源: key=$cacheKey, source=${audioInfo.source}"
-        )
-        true
-    }.getOrElse { error ->
-        NPLogger.w(
-            "NERI-PlayerManager",
-            "检查缓存表示描述符失败: key=$cacheKey, error=${error.message}"
-        )
-        false
-    }
+private fun Cache.isCachedPlaybackResourceUnsafe(cacheKey: String): Boolean {
+    if (cacheKey.isBlank()) return false
+    return runCatching {
+        getContentMetadata(cacheKey).get(
+            CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY,
+            null as String?
+        ) == CACHED_PLAYBACK_CACHE_UNSAFE_VALUE
+    }.getOrDefault(false)
 }
 
-internal suspend fun PlayerManager.persistCachedPlaybackDescriptor(
-    cacheKey: String,
-    audioInfo: PlaybackAudioInfo?,
-    expectedContentLength: Long?,
-    representationIdentity: String?
-) = withContext(Dispatchers.IO) {
-    if (cacheKey.isBlank() || audioInfo == null || audioInfo.source == PlaybackAudioSource.LOCAL) {
-        return@withContext
-    }
-    val mediaCache = cache ?: return@withContext
+private fun Cache.markCachedPlaybackResourceUnsafe(cacheKey: String) {
     runCatching {
-        mediaCache.writeCachedPlaybackDescriptor(
-            cacheKey = cacheKey,
-            descriptor = cachedPlaybackDescriptorFromAudioInfo(
-                audioInfo = audioInfo,
-                expectedContentLength = expectedContentLength,
-                representationIdentity = representationIdentity
+        applyContentMetadataMutations(
+            cacheKey,
+            ContentMetadataMutations().set(
+                CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY,
+                CACHED_PLAYBACK_CACHE_UNSAFE_VALUE
             )
         )
     }.onFailure { error ->
         NPLogger.w(
             "NERI-PlayerManager",
-            "写入播放缓存描述符失败: key=$cacheKey, error=${error.message}"
+            "标记异常播放缓存失败: key=$cacheKey, error=${error.message}"
         )
+    }
+}
+
+private fun Cache.clearCachedPlaybackResourceUnsafe(cacheKey: String): Boolean {
+    if (cacheKey.isBlank()) return true
+    return runCatching {
+        if (!getContentMetadata(cacheKey).contains(CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY)) {
+            return@runCatching true
+        }
+        applyContentMetadataMutations(
+            cacheKey,
+            ContentMetadataMutations().remove(CACHED_PLAYBACK_CACHE_UNSAFE_METADATA_KEY)
+        )
+        true
+    }.getOrElse { error ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "清除异常播放缓存标记失败: key=$cacheKey, error=${error.message}"
+        )
+        false
+    }
+}
+
+private object PlaybackCacheSafetyTracker {
+    private val lock = Any()
+    private var cacheOwner: WeakReference<Cache>? = null
+    private val unsafeKeys = mutableSetOf<String>()
+
+    fun markUnsafe(cache: Cache, cacheKey: String) {
+        synchronized(lock) {
+            resetFor(cache)
+            unsafeKeys += cacheKey
+        }
+    }
+
+    fun clearUnsafe(cache: Cache, cacheKey: String) {
+        synchronized(lock) {
+            resetFor(cache)
+            unsafeKeys -= cacheKey
+        }
+    }
+
+    fun isUnsafe(cache: Cache?, cacheKey: String): Boolean {
+        if (cache == null || cacheKey.isBlank()) return false
+        return synchronized(lock) {
+            resetFor(cache)
+            cacheKey in unsafeKeys
+        }
+    }
+
+    private fun resetFor(cache: Cache) {
+        if (cacheOwner?.get() !== cache) {
+            cacheOwner = WeakReference(cache)
+            unsafeKeys.clear()
+        }
+    }
+}
+
+internal fun PlayerManager.markPlaybackCacheKeyUnsafe(
+    mediaCache: Cache,
+    cacheKey: String
+) {
+    if (cache !== mediaCache || cacheKey.isBlank()) return
+    PlaybackCacheSafetyTracker.markUnsafe(mediaCache, cacheKey)
+    mediaCache.markCachedPlaybackResourceUnsafe(cacheKey)
+}
+
+internal fun PlayerManager.clearPlaybackCacheKeyUnsafe(
+    mediaCache: Cache,
+    cacheKey: String
+): Boolean {
+    if (cacheKey.isBlank()) return true
+    if (cache !== mediaCache) return false
+    return if (mediaCache.clearCachedPlaybackResourceUnsafe(cacheKey)) {
+        if (cache !== mediaCache) return false
+        PlaybackCacheSafetyTracker.clearUnsafe(mediaCache, cacheKey)
+        true
+    } else {
+        if (cache === mediaCache) {
+            PlaybackCacheSafetyTracker.markUnsafe(mediaCache, cacheKey)
+        }
+        false
+    }
+}
+
+internal fun PlayerManager.isPlaybackCacheKeyUnsafe(cacheKey: String): Boolean {
+    return PlaybackCacheSafetyTracker.isUnsafe(cache, cacheKey)
+}
+
+private fun PlayerManager.loadPersistedPlaybackCacheKeySafety(
+    mediaCache: Cache,
+    cacheKey: String
+): Boolean {
+    if (cache !== mediaCache) return false
+    if (!mediaCache.isCachedPlaybackResourceUnsafe(cacheKey)) return false
+    if (cache !== mediaCache) return false
+    PlaybackCacheSafetyTracker.markUnsafe(mediaCache, cacheKey)
+    return true
+}
+
+internal suspend fun PlayerManager.loadPlaybackCacheKeySafety(cacheKey: String): Boolean {
+    return withContext(Dispatchers.IO) {
+        val mediaCache = cache ?: return@withContext false
+        PlaybackCacheSafetyTracker.isUnsafe(mediaCache, cacheKey) ||
+            loadPersistedPlaybackCacheKeySafety(mediaCache, cacheKey)
+    }
+}
+
+internal fun PlayerManager.safeCustomPlaybackCacheKey(cacheKey: String): String? {
+    return cacheKey.takeIf {
+        it.isNotBlank() &&
+            !PlaybackCacheSafetyTracker.isUnsafe(cache, it)
+    }
+}
+
+internal suspend fun PlayerManager.synchronizeCachedPlaybackDescriptor(
+    cacheKey: String,
+    audioInfo: PlaybackAudioInfo?,
+    expectedContentLength: Long?,
+    representationIdentity: String?,
+    shouldApplyMutation: () -> Boolean = { true }
+): CachedPlaybackDescriptorSynchronizationResult = withContext(Dispatchers.IO) {
+    if (cacheKey.isBlank()) {
+        return@withContext CachedPlaybackDescriptorSynchronizationResult.NO_METADATA
+    }
+    val mediaCache = cache
+        ?: return@withContext CachedPlaybackDescriptorSynchronizationResult.NO_METADATA
+    if (cache !== mediaCache) {
+        return@withContext CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+    }
+    loadPersistedPlaybackCacheKeySafety(mediaCache, cacheKey)
+    val remoteAudioInfo = audioInfo
+        ?.takeUnless { it.source == PlaybackAudioSource.LOCAL }
+        ?: return@withContext CachedPlaybackDescriptorSynchronizationResult.NO_METADATA
+    val descriptor = cachedPlaybackDescriptorFromAudioInfo(
+        audioInfo = remoteAudioInfo,
+        expectedContentLength = expectedContentLength,
+        representationIdentity = representationIdentity
+    )
+    val expectedLength = expectedContentLength?.takeIf { it > 0L }
+
+    runCatching<CachedPlaybackDescriptorSynchronizationResult> {
+        fun canMutate(): Boolean = cache === mediaCache && shouldApplyMutation()
+
+        if (!canMutate()) {
+            return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
+
+        val cachedSpans = mediaCache.getCachedSpans(cacheKey)
+        if (cache !== mediaCache) {
+            return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
+        val hasCachedData = cachedSpans.isNotEmpty()
+        val cachedContentLength = if (hasCachedData) {
+            ContentMetadata.getContentLength(mediaCache.getContentMetadata(cacheKey))
+        } else {
+            0L
+        }
+        val existingDescriptor = if (hasCachedData) {
+            mediaCache.readCachedPlaybackDescriptor(cacheKey)
+        } else {
+            null
+        }
+        if (cache !== mediaCache) {
+            return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
+        val shouldReplaceForLength = expectedLength != null &&
+            hasCachedData &&
+            shouldReplaceCachedPreviewResource(cachedContentLength, expectedLength)
+        val shouldReplaceForDescriptor = hasCachedData &&
+            existingDescriptor?.matches(
+                audioInfo = remoteAudioInfo,
+                expectedContentLength = expectedContentLength,
+                representationIdentity = representationIdentity
+            ) != true
+        val shouldReplaceUnsafeResource = hasCachedData &&
+            PlaybackCacheSafetyTracker.isUnsafe(mediaCache, cacheKey)
+
+        if (
+            shouldReplaceForLength ||
+                shouldReplaceForDescriptor ||
+                shouldReplaceUnsafeResource
+        ) {
+            if (!canMutate()) {
+                return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+            }
+            mediaCache.removeResource(cacheKey)
+            if (cache !== mediaCache) {
+                return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+            }
+            if (mediaCache.getCachedSpans(cacheKey).isNotEmpty()) {
+                markPlaybackCacheKeyUnsafe(mediaCache, cacheKey)
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "缓存资源未完全移除，保留旧描述符: key=$cacheKey"
+                )
+                return@runCatching CachedPlaybackDescriptorSynchronizationResult.CACHE_UNUSABLE
+            }
+            NPLogger.w(
+                "NERI-PlayerManager",
+                "缓存表示不匹配，移除旧资源: key=$cacheKey, " +
+                    "source=${remoteAudioInfo.source}, lengthMismatch=$shouldReplaceForLength"
+            )
+        }
+
+        if (!canMutate()) {
+            return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
+        mediaCache.writeCachedPlaybackDescriptor(cacheKey, descriptor)
+        if (cache !== mediaCache) {
+            return@runCatching CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
+        PlaybackCacheSafetyTracker.clearUnsafe(mediaCache, cacheKey)
+        CachedPlaybackDescriptorSynchronizationResult.APPLIED
+    }.getOrElse { error ->
+        if (cache === mediaCache) {
+            markPlaybackCacheKeyUnsafe(mediaCache, cacheKey)
+        }
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "同步播放缓存描述符失败: key=$cacheKey, error=${error.message}"
+        )
+        if (cache === mediaCache) {
+            CachedPlaybackDescriptorSynchronizationResult.CACHE_UNUSABLE
+        } else {
+            CachedPlaybackDescriptorSynchronizationResult.SKIPPED
+        }
     }
 }
