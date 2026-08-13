@@ -57,14 +57,16 @@ class GitHubSyncWorker(
         private const val DEFAULT_DELAY_MS = 5_000L
 
         /**
-         * 调度延迟同步(5秒后执行)
+         * 调度延迟同步
          * @param triggerByUserAction 是否由用户操作触发 (如果是, 则忽略自动同步开关)
+         * @param appendToCurrentWork 是否需要在当前同步完成后追加一次补偿同步
          */
         fun scheduleDelayedSync(
             context: Context,
             triggerByUserAction: Boolean = false,
             markMutation: Boolean = false,
-            initialDelayMs: Long = DEFAULT_DELAY_MS
+            initialDelayMs: Long = DEFAULT_DELAY_MS,
+            appendToCurrentWork: Boolean = false
         ) {
             if (markMutation) {
                 SecureTokenStorage(context).markSyncMutation()
@@ -75,18 +77,39 @@ class GitHubSyncWorker(
                     return
                 }
             }
-            val syncRequest = OneTimeWorkRequestBuilder<GitHubSyncWorker>()
-                .setInitialDelay(initialDelayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
-                .addTag(WORK_NAME)
-                .setInputData(workDataOf("trigger_by_user_action" to triggerByUserAction))
-                .build()
+            val syncRequest = buildDelayedSyncRequest(
+                triggerByUserAction = triggerByUserAction,
+                initialDelayMs = initialDelayMs
+            )
 
             WorkManager.getInstance(context)
                 .enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
+                    delayedSyncWorkPolicy(triggerByUserAction, appendToCurrentWork),
                     syncRequest
                 )
+        }
+
+        internal fun delayedSyncWorkPolicy(
+            triggerByUserAction: Boolean,
+            appendToCurrentWork: Boolean
+        ): ExistingWorkPolicy {
+            return if (appendToCurrentWork || triggerByUserAction) {
+                ExistingWorkPolicy.APPEND_OR_REPLACE
+            } else {
+                ExistingWorkPolicy.KEEP
+            }
+        }
+
+        internal fun buildDelayedSyncRequest(
+            triggerByUserAction: Boolean,
+            initialDelayMs: Long
+        ): OneTimeWorkRequest {
+            return OneTimeWorkRequestBuilder<GitHubSyncWorker>()
+                .setInitialDelay(initialDelayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+                .addTag(WORK_NAME)
+                .setInputData(workDataOf("trigger_by_user_action" to triggerByUserAction))
+                .build()
         }
 
         /**

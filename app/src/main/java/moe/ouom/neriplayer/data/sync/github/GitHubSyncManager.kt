@@ -234,7 +234,8 @@ class GitHubSyncManager private constructor(context: Context) {
                     GitHubSyncWorker.scheduleDelayedSync(
                         appContext,
                         triggerByUserAction = false,
-                        markMutation = false
+                        markMutation = false,
+                        appendToCurrentWork = true
                     )
                     return@withContext Result.success(
                         SyncResult(
@@ -271,7 +272,8 @@ class GitHubSyncManager private constructor(context: Context) {
                 GitHubSyncWorker.scheduleDelayedSync(
                     appContext,
                     triggerByUserAction = false,
-                    markMutation = false
+                    markMutation = false,
+                    appendToCurrentWork = true
                 )
             } else {
                 storage.saveLastSyncTime(System.currentTimeMillis())
