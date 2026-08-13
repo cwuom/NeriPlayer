@@ -85,6 +85,22 @@ class NeteaseLocalSourceFallbackSettingAndroidTest {
     }
 
     @Test
+    fun disabledValueSurvivesStaleSnapshotMirror() {
+        runBlocking {
+            repository.setNeteaseLocalSourceFallback(false)
+            context.getSharedPreferences(TestPlaybackSnapshotPrefs, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("ready", true)
+                .putInt("schema_version", 5)
+                .putBoolean("netease_local_source_fallback", true)
+                .commit()
+
+            assertFalse(readPlaybackPreferenceSnapshot(context).neteaseLocalSourceFallback)
+            assertFalse(readPlaybackPreferenceSnapshotCached(context)!!.neteaseLocalSourceFallback)
+        }
+    }
+
+    @Test
     fun disablingDoesNotDisturbTheAutoSourceSwitch() {
         runBlocking {
             repository.setNeteaseAutoSourceSwitch(true)

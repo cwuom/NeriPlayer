@@ -225,12 +225,10 @@ data class PlaybackPreferenceSnapshot(
 }
 
 suspend fun readPlaybackPreferenceSnapshot(context: Context): PlaybackPreferenceSnapshot {
-    readCachedPlaybackPreferenceSnapshot(context)?.let { return it }
-
     return runCatching {
         context.dataStore.data.first().toPlaybackPreferenceSnapshot()
     }.getOrElse {
-        PlaybackPreferenceSnapshot()
+        readCachedPlaybackPreferenceSnapshot(context) ?: PlaybackPreferenceSnapshot()
     }.also { snapshot ->
         persistPlaybackPreferenceSnapshot(context, snapshot)
     }
@@ -272,8 +270,11 @@ internal suspend fun updatePlaybackPreferenceSnapshot(
     context: Context,
     transform: (PlaybackPreferenceSnapshot) -> PlaybackPreferenceSnapshot
 ) {
-    val currentSnapshot = readCachedPlaybackPreferenceSnapshot(context)
-        ?: context.dataStore.data.first().toPlaybackPreferenceSnapshot()
+    val currentSnapshot = runCatching {
+        context.dataStore.data.first().toPlaybackPreferenceSnapshot()
+    }.getOrElse {
+        readCachedPlaybackPreferenceSnapshot(context) ?: PlaybackPreferenceSnapshot()
+    }
     persistPlaybackPreferenceSnapshot(context, transform(currentSnapshot))
 }
 
