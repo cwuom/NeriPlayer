@@ -54,6 +54,12 @@ internal val NeteaseRadarPlaylistDefinitions = listOf(
     NeteaseRadarPlaylistDefinition(id = 5_341_776_086L, name = "神秘雷达")
 )
 
+internal fun isNeteaseRadarPlaylist(playlistId: Long): Boolean {
+    return NeteaseRadarPlaylistDefinitions.any { definition ->
+        definition.id == playlistId
+    }
+}
+
 internal val NeteaseHomeTrendingSongSources = listOf(
     NeteaseHomeSongSource.TOP_SOARING,
     NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS,
@@ -150,35 +156,37 @@ internal fun parseNeteaseHomePlaylists(
 internal fun parseNeteasePlaylistDetailSummary(
     raw: String,
     fallback: NeteaseRadarPlaylistDefinition
-): PlaylistSummary {
+): PlaylistSummary = parseNeteasePlaylistDetailSummary(raw, fallback.toPlaylistSummary())
+
+internal fun parseNeteasePlaylistDetailSummaryOrNull(raw: String): PlaylistSummary? {
     val root = JSONObject(raw)
     val code = root.optInt("code", 200)
     if (code != 200) {
         throw ApiCodeException(code)
     }
-    val playlist = root.optJSONObject("playlist")
+    val playlist = root.optJSONObject("playlist") ?: root.optJSONObject("result")
     return playlist?.let(::parseNeteasePlaylistSummary)
-        ?: fallback.toPlaylistSummary()
 }
+
+internal fun parseNeteasePlaylistDetailSummary(
+    raw: String,
+    fallback: PlaylistSummary
+): PlaylistSummary = parseNeteasePlaylistDetailSummaryOrNull(raw) ?: fallback
 
 internal suspend fun loadNeteaseRadarPlaylistSummaries(
     definitions: List<NeteaseRadarPlaylistDefinition>,
-    fanRadarSummary: PlaylistSummary?,
-    loadDetail: suspend (playlistId: Long, n: Int, s: Int) -> String,
+    loadMetadata: suspend (playlistId: Long) -> String,
     onLoadFailure: (NeteaseRadarPlaylistDefinition, Throwable) -> Unit = { _, _ -> }
 ): List<PlaylistSummary> {
     return buildList(definitions.size) {
         definitions.forEach { definition ->
             currentCoroutineContext().ensureActive()
-            if (definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID && fanRadarSummary != null) {
-                add(fanRadarSummary)
-                return@forEach
-            }
-
             val summary = try {
-                val raw = loadDetail(definition.id, 1, 0)
+                val raw = loadMetadata(definition.id)
                 currentCoroutineContext().ensureActive()
-                parseNeteasePlaylistDetailSummary(raw, definition)
+                parseNeteasePlaylistDetailSummaryOrNull(raw)
+                    ?.takeIf { summary -> summary.id == definition.id }
+                    ?: definition.toPlaylistSummary()
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

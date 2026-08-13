@@ -44,6 +44,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.auth.youtube.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.IOException
@@ -68,8 +69,25 @@ internal fun homeSongFetchAttemptCount(source: NeteaseHomeSongSource): Int {
 
 internal fun shouldRefreshNeteaseHome(
     loginChanged: Boolean,
-    recommendationsBootstrapped: Boolean
-): Boolean = loginChanged || !recommendationsBootstrapped
+    recommendationsBootstrapped: Boolean,
+    accountContextChanged: Boolean = false
+): Boolean = loginChanged || accountContextChanged || !recommendationsBootstrapped
+
+internal fun shouldAcceptNeteaseRadarPlaylistLoadResult(
+    requestGeneration: Long,
+    activeGeneration: Long,
+    requestRadarCacheContext: String,
+    activeRadarCacheContext: String
+): Boolean {
+    return requestGeneration == activeGeneration &&
+        requestRadarCacheContext == activeRadarCacheContext
+}
+
+internal fun shouldHandleInitialNeteaseHomeCookieEmission(
+    isFirstEmission: Boolean,
+    initialCookies: Map<String, String>,
+    emittedCookies: Map<String, String>
+): Boolean = !isFirstEmission || initialCookies != emittedCookies
 
 data class HomeSectionState<T>(
     val items: List<T> = emptyList(),
@@ -104,8 +122,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val client = AppContainer.neteaseClient
     private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
 
-    private val initialRecommendCookies = repo.getCookiesOnce().toMutableMap().apply {
-        putIfAbsent("os", "pc")
+    private val initialRecommendCookies = repo.withCurrentCookies { cookies ->
+        client.setPersistedCookies(cookies)
+        cookies
     }
     private var hasRecommendLogin = !initialRecommendCookies["MUSIC_U"].isNullOrBlank()
     private val _uiState = MutableStateFlow(createHomeUiState(hasRecommendLogin, loading = true))
@@ -121,6 +140,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var ytMusicHomeFeedRefreshPending = false
     private var homeRecommendationsBootstrapped = false
     private var lastYouTubeAuthFingerprint: String? = null
+    private var lastNeteaseRadarCacheContext = neteaseRadarCacheContext(repo.getCookiesOnce())
+    private var radarPlaylistLoadGeneration: Long = 0L
     private var offlineMode = false
 
     private fun localizedAppContext() = LanguageManager.applyLanguage(getApplication())
@@ -228,7 +249,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        client.setPersistedCookies(initialRecommendCookies)
         lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
 
         // 观察国际化设置变化, 切换推荐源
@@ -289,18 +309,44 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         // 登录后自动刷新首页推荐歌单
         viewModelScope.launch {
-            repo.cookieFlow.drop(1).collect { raw ->
-                val cookies = raw.toMutableMap()
-                if (!cookies.containsKey("os")) cookies["os"] = "pc"
-                NPLogger.d(TAG, "cookieFlow updated: keys=${cookies.keys.joinToString()}")
-                client.setPersistedCookies(cookies)
-                val nextHasLogin = !cookies["MUSIC_U"].isNullOrBlank()
+            var isFirstCookieEmission = true
+            repo.cookieFlow.collect { raw ->
+                if (!repo.withCurrentCookiesIfMatches(raw) { currentCookies ->
+                        client.setPersistedCookies(currentCookies)
+                    }
+                ) {
+                    return@collect
+                }
+                val shouldHandleEmission = shouldHandleInitialNeteaseHomeCookieEmission(
+                    isFirstEmission = isFirstCookieEmission,
+                    initialCookies = initialRecommendCookies,
+                    emittedCookies = raw
+                )
+                isFirstCookieEmission = false
+                if (!shouldHandleEmission) return@collect
+                NPLogger.d(TAG, "cookieFlow updated: keys=${raw.keys.joinToString()}")
+                val nextHasLogin = !raw["MUSIC_U"].isNullOrBlank()
+                val nextRadarCacheContext = neteaseRadarCacheContext(raw)
+                val accountContextChanged =
+                    lastNeteaseRadarCacheContext != nextRadarCacheContext
+                lastNeteaseRadarCacheContext = nextRadarCacheContext
                 val loginChanged = hasRecommendLogin != nextHasLogin
                 hasRecommendLogin = nextHasLogin
                 if (loginChanged) {
                     _uiState.value = _uiState.value.copy(hasLogin = nextHasLogin)
                 }
-                if (shouldRefreshNeteaseHome(loginChanged, homeRecommendationsBootstrapped)) {
+                if (accountContextChanged) {
+                    _uiState.update { state ->
+                        state.copy(radarPlaylists = HomeSectionState())
+                    }
+                }
+                if (
+                    shouldRefreshNeteaseHome(
+                        loginChanged = loginChanged,
+                        recommendationsBootstrapped = homeRecommendationsBootstrapped,
+                        accountContextChanged = accountContextChanged
+                    )
+                ) {
                     homeRecommendationsBootstrapped = true
                     refreshNeteaseHome()
                 }
@@ -493,21 +539,30 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         NPLogger.d(TAG, "refreshRadarPlaylists start")
         radarPlaylistsJob?.cancel()
+        radarPlaylistLoadGeneration += 1L
+        val loadGeneration = radarPlaylistLoadGeneration
+        val requestRadarCacheContext = lastNeteaseRadarCacheContext
         val previous = _uiState.value.radarPlaylists
         _uiState.value = _uiState.value.copy(
             radarPlaylists = previous.copy(loading = true, error = null)
         )
         radarPlaylistsJob = viewModelScope.launch {
             when (val result = fetchWithRetry("refreshRadarPlaylists") {
-                loadRadarPlaylistSummaries()
+                loadRadarPlaylistSummaries(requestRadarCacheContext)
             }) {
                 is RetryLoadResult.Success -> {
+                    if (!isCurrentRadarPlaylistLoad(loadGeneration, requestRadarCacheContext)) {
+                        return@launch
+                    }
                     NPLogger.d(TAG, "refreshRadarPlaylists success: count=${result.items.size}")
                     _uiState.value = _uiState.value.copy(
                         radarPlaylists = HomeSectionState(items = result.items)
                     )
                 }
                 is RetryLoadResult.Failure -> {
+                    if (!isCurrentRadarPlaylistLoad(loadGeneration, requestRadarCacheContext)) {
+                        return@launch
+                    }
                     NPLogger.e(TAG, "refreshRadarPlaylists failed", result.throwable)
                     _uiState.value = _uiState.value.copy(
                         radarPlaylists = HomeSectionState(
@@ -517,6 +572,18 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    private fun isCurrentRadarPlaylistLoad(
+        loadGeneration: Long,
+        requestRadarCacheContext: String
+    ): Boolean {
+        return shouldAcceptNeteaseRadarPlaylistLoadResult(
+            requestGeneration = loadGeneration,
+            activeGeneration = radarPlaylistLoadGeneration,
+            requestRadarCacheContext = requestRadarCacheContext,
+            activeRadarCacheContext = neteaseRadarCacheContext(repo.getCookiesOnce())
+        )
     }
 
     /** 拉取 YouTube Music 歌单 */
@@ -880,30 +947,29 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return parseRecommendOnWorker(raw)
     }
 
-    private suspend fun loadRadarPlaylistSummaries(): List<PlaylistSummary> {
+    private suspend fun loadRadarPlaylistSummaries(
+        expectedRadarCacheContext: String
+    ): List<PlaylistSummary> {
         val hasLogin = hasRecommendLogin
-        val fanRadarSummary = if (hasLogin) {
-            loadLoggedInFanRadarSummary()
-        } else {
-            null
+        if (hasLogin) {
+            prepareNeteaseRadarSession()
         }
         val summaries = loadNeteaseRadarPlaylistSummaries(
             definitions = NeteaseRadarPlaylistDefinitions,
-            fanRadarSummary = fanRadarSummary,
-            loadDetail = { playlistId, n, s ->
-                client.getPlaylistDetailCancellable(playlistId, n, s)
+            loadMetadata = { playlistId ->
+                client.getRadarPlaylistMetadataCancellable(playlistId)
             },
             onLoadFailure = { definition, error ->
                 NPLogger.w(TAG, "radar metadata failed: playlistId=${definition.id}, error=${error.message}")
             }
         )
         if (hasLogin) {
-            persistNeteaseRadarSessionCookies()
+            persistNeteaseRadarSessionCookies(expectedRadarCacheContext)
         }
         return summaries
     }
 
-    private suspend fun loadLoggedInFanRadarSummary(): PlaylistSummary? {
+    private suspend fun prepareNeteaseRadarSession() {
         try {
             withContext(Dispatchers.IO) {
                 client.ensurePersonalizedSession()
@@ -913,33 +979,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         } catch (error: Exception) {
             NPLogger.w(TAG, "radar session preheat failed: ${error.message}")
         }
-        val fallback = NeteaseRadarPlaylistDefinitions.first { definition ->
-            definition.id == NETEASE_FAN_RADAR_PLAYLIST_ID
-        }
-        return try {
-            parseNeteasePlaylistDetailSummary(
-                raw = client.getPlaylistDetailCancellable(
-                    NETEASE_FAN_RADAR_PLAYLIST_ID,
-                    n = 1,
-                    s = 0
-                ),
-                fallback = fallback
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(TAG, "fan radar metadata preheat failed: ${error.message}")
-            null
-        }
     }
 
-    private fun persistNeteaseRadarSessionCookies() {
+    private fun persistNeteaseRadarSessionCookies(expectedRadarCacheContext: String) {
         val persisted = repo.getCookiesOnce()
+        if (neteaseRadarCacheContext(persisted) != expectedRadarCacheContext) return
         val updated = mergeNeteaseSessionCookies(
             persistedCookies = persisted,
             runtimeCookies = client.getNeteaseRequestCookies()
         )
-        if (updated != persisted && repo.saveCookies(updated)) {
+        if (
+            updated != persisted &&
+                repo.saveCookiesIfCurrent(
+                    expectedCookies = persisted,
+                    cookies = updated
+                )
+        ) {
             NPLogger.d(TAG, "persisted NetEase radar session context")
         }
     }

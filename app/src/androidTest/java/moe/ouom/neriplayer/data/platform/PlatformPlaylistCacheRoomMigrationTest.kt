@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistDetail
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistHeader
 import moe.ouom.neriplayer.data.platform.netease.CachedNeteasePlaylistTrack
 import moe.ouom.neriplayer.data.platform.netease.NeteasePlaylistCacheRepository
+import moe.ouom.neriplayer.data.platform.netease.neteaseRadarPlaylistCacheKey
 import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.platform.youtube.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.platform.youtube.YouTubeMusicPlaylistCacheRepository
@@ -39,6 +40,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlatformPlaylistCacheRoomMigrationTest {
     private val gson = Gson()
+
+    private companion object {
+        const val RADAR_PLAYLIST_ID = 5_320_167_908L
+    }
 
     @Test
     fun roomStoreRoundTripsHeaderTracksAndArtists() = runTest {
@@ -142,7 +147,10 @@ class PlatformPlaylistCacheRoomMigrationTest {
             val biliArchiveDir = File(root, "bili_archive_cache").apply { mkdirs() }
             val youtubeDir = File(root, "youtube_music_playlist_cache").apply { mkdirs() }
 
-            val neteaseCache = neteaseCache()
+            val neteaseCache = neteaseCache(
+                playlistId = RADAR_PLAYLIST_ID,
+                radarCacheContext = "radar-account-fingerprint"
+            )
             val biliFavoriteCache = biliFavoriteCache()
             val biliArchiveCache = biliArchiveCache()
             val youtubeCache = youtubeCache()
@@ -178,21 +186,34 @@ class PlatformPlaylistCacheRoomMigrationTest {
             assertFalse(biliFavoriteFile.exists())
             assertFalse(biliArchiveFile.exists())
             assertFalse(youtubeFile.exists())
-            assertEquals(neteaseCache, neteaseRepo.read(neteaseCache.playlistId))
+            assertEquals(
+                neteaseCache,
+                neteaseRepo.read(neteaseCache.playlistId, neteaseCache.radarCacheContext)
+            )
             assertEquals(biliFavoriteCache, biliFavoriteRepo.read(biliFavoriteCache.mediaId))
             assertEquals(
                 biliArchiveCache,
                 biliArchiveRepo.read(biliArchiveCache.mediaId, biliArchiveCache.kind)
             )
             assertEquals(youtubeCache, youtubeRepo.read(youtubeCache.browseId))
-            assertNotNull(database.platformPlaylistCacheDao().getCache("netease", "42"))
+            val neteaseRecord = database.platformPlaylistCacheDao().getCache(
+                "netease",
+                neteaseRadarPlaylistCacheKey(
+                    neteaseCache.playlistId,
+                    neteaseCache.radarCacheContext
+                )
+            )
+            assertNotNull(neteaseRecord)
+            assertEquals("radar-account-fingerprint", neteaseRecord?.signatureSecondary)
 
-            neteaseRepo.clear(neteaseCache.playlistId)
+            neteaseRepo.clear(neteaseCache.playlistId, neteaseCache.radarCacheContext)
             biliFavoriteRepo.clear(biliFavoriteCache.mediaId)
             biliArchiveRepo.clear(biliArchiveCache.mediaId, biliArchiveCache.kind)
             youtubeRepo.clear(youtubeCache.browseId)
 
-            assertNull(neteaseRepo.read(neteaseCache.playlistId))
+            assertNull(
+                neteaseRepo.read(neteaseCache.playlistId, neteaseCache.radarCacheContext)
+            )
             assertNull(biliFavoriteRepo.read(biliFavoriteCache.mediaId))
             assertNull(biliArchiveRepo.read(biliArchiveCache.mediaId, biliArchiveCache.kind))
             assertNull(youtubeRepo.read(youtubeCache.browseId))
@@ -234,6 +255,70 @@ class PlatformPlaylistCacheRoomMigrationTest {
         }
     }
 
+    @Test
+    fun neteaseRepositoryDoesNotReplaceNewerRoomCache() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = inMemoryDatabase(context)
+        val root = File(context.cacheDir, "platform-cache-current-${System.nanoTime()}")
+        try {
+            val repo = NeteasePlaylistCacheRepository(context, database, root)
+            val newerCache = neteaseCache(
+                playlistName = "new room cache",
+                savedAtMs = 500L
+            )
+            val staleCache = neteaseCache(
+                playlistName = "stale response cache",
+                savedAtMs = 100L
+            )
+
+            repo.save(newerCache)
+            repo.saveIfNewer(staleCache)
+
+            assertEquals(newerCache, repo.read(newerCache.playlistId))
+        } finally {
+            database.close()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun neteaseRepositorySeparatesRadarCachesByAccountContext() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = inMemoryDatabase(context)
+        val root = File(context.cacheDir, "platform-cache-radar-${System.nanoTime()}")
+        try {
+            val repo = NeteasePlaylistCacheRepository(context, database, root)
+            val accountACache = neteaseCache(
+                playlistId = RADAR_PLAYLIST_ID,
+                playlistName = "account A radar",
+                radarCacheContext = "account-a-context",
+                savedAtMs = 200L
+            )
+            val accountBCache = neteaseCache(
+                playlistId = RADAR_PLAYLIST_ID,
+                playlistName = "account B radar",
+                radarCacheContext = "account-b-context",
+                savedAtMs = 100L
+            )
+
+            repo.saveIfNewer(accountBCache)
+            repo.saveIfNewer(accountACache)
+
+            assertEquals(
+                accountACache,
+                repo.read(RADAR_PLAYLIST_ID, accountACache.radarCacheContext)
+            )
+            assertEquals(
+                accountBCache,
+                repo.read(RADAR_PLAYLIST_ID, accountBCache.radarCacheContext)
+            )
+            assertNull(repo.read(RADAR_PLAYLIST_ID, "account-c-context"))
+        } finally {
+            database.close()
+            root.deleteRecursively()
+        }
+    }
+
     private fun inMemoryDatabase(context: Context): NeriUserDataDatabase {
         return Room.inMemoryDatabaseBuilder(
             context,
@@ -263,13 +348,15 @@ class PlatformPlaylistCacheRoomMigrationTest {
     }
 
     private fun neteaseCache(
+        playlistId: Long = 42L,
         playlistName: String = "NetEase Mix",
+        radarCacheContext: String? = null,
         savedAtMs: Long = 100L
     ): CachedNeteasePlaylistDetail {
         return CachedNeteasePlaylistDetail(
-            playlistId = 42L,
+            playlistId = playlistId,
             header = CachedNeteasePlaylistHeader(
-                id = 42L,
+                id = playlistId,
                 name = playlistName,
                 coverUrl = "https://img.example/netease.jpg",
                 playCount = 88L,
@@ -290,6 +377,7 @@ class PlatformPlaylistCacheRoomMigrationTest {
                     addedAt = 11L
                 )
             ),
+            radarCacheContext = radarCacheContext,
             savedAtMs = savedAtMs
         )
     }
