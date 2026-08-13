@@ -356,6 +356,16 @@ internal object ManagedDownloadArtifactPlanner {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): String? = ManagedDownloadArtifactPlannerDelegate.indexedLyricText(context, audio, songId, translated, snapshot)
 
+    fun indexedRomanizedLyricReference(
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? = ManagedDownloadArtifactPlannerDelegate.indexedRomanizedLyricReference(
+        audio = audio,
+        songId = songId,
+        snapshot = snapshot
+    )
+
     fun indexedCoverReference(
         audio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot

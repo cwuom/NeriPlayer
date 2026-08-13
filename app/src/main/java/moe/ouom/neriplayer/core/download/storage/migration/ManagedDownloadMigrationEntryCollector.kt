@@ -88,12 +88,17 @@ internal object ManagedDownloadMigrationEntryCollector {
                 ManagedDownloadStorageNaming.buildLyricCandidateNames(
                     songId = songId,
                     candidateBaseNames = candidateBaseNames,
-                    translated = false
+                    kind = ManagedDownloadStorageNaming.LyricKind.ORIGINAL
                 ).forEach(::add)
                 ManagedDownloadStorageNaming.buildLyricCandidateNames(
                     songId = songId,
                     candidateBaseNames = candidateBaseNames,
-                    translated = true
+                    kind = ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+                ).forEach(::add)
+                ManagedDownloadStorageNaming.buildLyricCandidateNames(
+                    songId = songId,
+                    candidateBaseNames = candidateBaseNames,
+                    kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED
                 ).forEach(::add)
             }
         }

@@ -61,6 +61,28 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `romanized lyric download only piggybacks on an existing lyric request`() {
+        assertFalse(
+            AudioDownloadManager.shouldFetchRomanizedLyricForDownload(
+                shouldFetchPrimaryLyric = false,
+                shouldFetchTranslatedLyric = false
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldFetchRomanizedLyricForDownload(
+                shouldFetchPrimaryLyric = true,
+                shouldFetchTranslatedLyric = false
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldFetchRomanizedLyricForDownload(
+                shouldFetchPrimaryLyric = false,
+                shouldFetchTranslatedLyric = true
+            )
+        )
+    }
+
+    @Test
     fun `resolveLocalLyricForDownload keeps explicit lyrics and preserves cleared state separately`() {
         assertEquals(null, AudioDownloadManager.resolveLocalLyricForDownload(null))
         assertEquals(null, AudioDownloadManager.resolveLocalLyricForDownload(""))

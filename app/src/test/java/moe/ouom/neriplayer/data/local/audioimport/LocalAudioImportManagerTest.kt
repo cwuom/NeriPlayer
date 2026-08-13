@@ -124,6 +124,23 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `copyNearbySidecars preserves romanized lyric sidecar`() {
+        val sourceDir = tempFolder.newFolder("source-romanized-lyrics")
+        val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(File(sourceDir, "Lyrics").apply { mkdirs() }, "song_roma.lrc")
+            .writeText("romanized")
+
+        val targetDir = tempFolder.newFolder("imports-romanized-lyrics")
+        val targetAudio = File(targetDir, "imported_song.flac").apply { writeText("audio") }
+
+        LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
+
+        val copiedRomanized = File(targetDir, "imported_song_roma.lrc")
+        assertTrue(copiedRomanized.exists())
+        assertEquals("romanized", copiedRomanized.readText())
+    }
+
+    @Test
     fun `copyNearbySidecars preserves source directory lyric selection priority`() {
         val sourceDir = tempFolder.newFolder("source-lyrics-priority")
         val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }

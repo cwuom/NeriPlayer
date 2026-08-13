@@ -179,6 +179,18 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyLyricFiles discovers romanized sidecar in Lyrics directory`() {
+        val sourceDir = tempFolder.newFolder("nearby-romanized-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        val romanized = File(lyricsDir, "song_roma.lrc").apply { writeText("romanized") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(romanized.canonicalPath, found.romanized?.canonicalPath)
+    }
+
+    @Test
     fun `resolveEffectiveLocalLyricContent falls back to embedded lyrics for blank sidecar`() {
         assertEquals(
             "[00:00.00]embedded",

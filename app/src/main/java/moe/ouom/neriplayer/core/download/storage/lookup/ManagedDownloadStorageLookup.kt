@@ -21,6 +21,12 @@ internal object ManagedDownloadStorageLookup {
     ): ManagedDownloadAudioLookupResult? {
         val identity = song.identity()
         val stableKey = identity.stableKey()
+        val localReferences = listOfNotNull(song.localFilePath, song.mediaUri)
+            .filter { it.startsWith("/" ) || it.startsWith("content://", ignoreCase = true) }
+            .distinct()
+        localReferences.firstNotNullOfOrNull { reference ->
+            snapshot.audioEntriesByLookupKey[reference]
+        }?.let { return ManagedDownloadAudioLookupResult(it, "localReference") }
         val remoteTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
             song.channelId,
             song.audioId,

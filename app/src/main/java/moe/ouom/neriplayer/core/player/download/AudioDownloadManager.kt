@@ -379,23 +379,28 @@ object AudioDownloadManager {
         val coverReference: String? = null,
         val lyricReference: String? = null,
         val translatedLyricReference: String? = null,
+        val romanizedLyricReference: String? = null,
         val createdCover: Boolean = false,
         val createdLyric: Boolean = false,
-        val createdTranslatedLyric: Boolean = false
+        val createdTranslatedLyric: Boolean = false,
+        val createdRomanizedLyric: Boolean = false
     ) {
         val isEmpty: Boolean
             get() = coverReference.isNullOrBlank() &&
                 lyricReference.isNullOrBlank() &&
-                translatedLyricReference.isNullOrBlank()
+                translatedLyricReference.isNullOrBlank() &&
+                romanizedLyricReference.isNullOrBlank()
 
         fun retainCreatedOnly(): DownloadedSidecarReferences {
             return DownloadedSidecarReferences(
                 coverReference = coverReference.takeIf { createdCover },
                 lyricReference = lyricReference.takeIf { createdLyric },
                 translatedLyricReference = translatedLyricReference.takeIf { createdTranslatedLyric },
+                romanizedLyricReference = romanizedLyricReference.takeIf { createdRomanizedLyric },
                 createdCover = createdCover && !coverReference.isNullOrBlank(),
                 createdLyric = createdLyric && !lyricReference.isNullOrBlank(),
-                createdTranslatedLyric = createdTranslatedLyric && !translatedLyricReference.isNullOrBlank()
+                createdTranslatedLyric = createdTranslatedLyric && !translatedLyricReference.isNullOrBlank(),
+                createdRomanizedLyric = createdRomanizedLyric && !romanizedLyricReference.isNullOrBlank()
             )
         }
     }
@@ -996,6 +1001,14 @@ object AudioDownloadManager {
                 existingCreated = existing?.createdTranslatedLyric ?: false,
                 incomingReference = incoming?.translatedLyricReference,
                 incomingCreated = incoming?.createdTranslatedLyric ?: false
+            ),
+            romanizedLyricReference = incoming?.romanizedLyricReference
+                ?: existing?.romanizedLyricReference,
+            createdRomanizedLyric = mergeSidecarCreatedFlag(
+                existingReference = existing?.romanizedLyricReference,
+                existingCreated = existing?.createdRomanizedLyric ?: false,
+                incomingReference = incoming?.romanizedLyricReference,
+                incomingCreated = incoming?.createdRomanizedLyric ?: false
             )
         )
     }
@@ -1605,7 +1618,8 @@ object AudioDownloadManager {
             DownloadedSidecarReferences(
                 coverReference = coverReference,
                 lyricReference = lyricReferences.lyricReference,
-                translatedLyricReference = lyricReferences.translatedLyricReference
+                translatedLyricReference = lyricReferences.translatedLyricReference,
+                romanizedLyricReference = lyricReferences.romanizedLyricReference
             )
         } else {
             coroutineScope {
@@ -1638,7 +1652,8 @@ object AudioDownloadManager {
                 DownloadedSidecarReferences(
                     coverReference = coverReference,
                     lyricReference = lyricReferences.lyricReference,
-                    translatedLyricReference = lyricReferences.translatedLyricReference
+                    translatedLyricReference = lyricReferences.translatedLyricReference,
+                    romanizedLyricReference = lyricReferences.romanizedLyricReference
                 )
             }
         }
@@ -2423,6 +2438,13 @@ object AudioDownloadManager {
         return rawLyric == null
     }
 
+    internal fun shouldFetchRomanizedLyricForDownload(
+        shouldFetchPrimaryLyric: Boolean,
+        shouldFetchTranslatedLyric: Boolean
+    ): Boolean {
+        return shouldFetchPrimaryLyric || shouldFetchTranslatedLyric
+    }
+
     /** 下载歌词文件 */
     private suspend fun downloadLyrics(
         context: Context,
@@ -2435,6 +2457,7 @@ object AudioDownloadManager {
     ): DownloadedSidecarReferences {
         var lyricReference: String? = null
         var translatedLyricReference: String? = null
+        var romanizedLyricReference: String? = null
         try {
             ensureSongDownloadNotCancelled(
                 songKey = songKey,
@@ -2445,9 +2468,14 @@ object AudioDownloadManager {
             )
             var lyricText = resolveLocalLyricForDownload(song.matchedLyric)
             var translatedText = resolveLocalLyricForDownload(song.matchedTranslatedLyric)
+            var romanizedText: String? = null
             val shouldFetchPrimaryLyric = shouldFetchRemoteLyricForDownload(song.matchedLyric)
             val shouldFetchTranslatedLyric =
                 shouldFetchRemoteLyricForDownload(song.matchedTranslatedLyric)
+            val shouldFetchRomanizedLyric = shouldFetchRomanizedLyricForDownload(
+                shouldFetchPrimaryLyric = shouldFetchPrimaryLyric,
+                shouldFetchTranslatedLyric = shouldFetchTranslatedLyric
+            )
             if (lyricText != null) {
                 NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
             }
@@ -2465,13 +2493,17 @@ object AudioDownloadManager {
                     val downloaded = downloadNeteaseLyrics(
                         song = song,
                         shouldFetchPrimaryLyric = shouldFetchPrimaryLyric && lyricText == null,
-                        shouldFetchTranslatedLyric = shouldFetchTranslatedLyric && translatedText == null
+                        shouldFetchTranslatedLyric = shouldFetchTranslatedLyric && translatedText == null,
+                        shouldFetchRomanizedLyric = shouldFetchRomanizedLyric && romanizedText == null
                     )
                     if (lyricText == null && shouldFetchPrimaryLyric) {
                         lyricText = downloaded.lyricText
                     }
                     if (translatedText == null && shouldFetchTranslatedLyric) {
                         translatedText = downloaded.translatedText
+                    }
+                    if (romanizedText == null && shouldFetchRomanizedLyric) {
+                        romanizedText = downloaded.romanizedText
                     }
                 }
             }
@@ -2528,6 +2560,24 @@ object AudioDownloadManager {
                     NPLogger.d(TAG, "翻译歌词写入完成: song=${song.name}, reference=$reference")
                 }
             }
+            romanizedText?.takeIf { it.isNotBlank() }?.let { lyric ->
+                romanizedLyricReference = ManagedDownloadStorage.writeRomanizedLyrics(
+                    context = context,
+                    songId = song.id,
+                    baseName = baseName,
+                    content = lyric
+                )
+                romanizedLyricReference?.let { reference ->
+                    rememberPartialSidecarReferences(
+                        songKey,
+                        DownloadedSidecarReferences(
+                            romanizedLyricReference = reference,
+                            createdRomanizedLyric = true
+                        )
+                    )
+                    NPLogger.d(TAG, "音译歌词写入完成: song=${song.name}, reference=$reference")
+                }
+            }
         } catch (cancellation: java.util.concurrent.CancellationException) {
             NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")
             throw cancellation
@@ -2537,8 +2587,10 @@ object AudioDownloadManager {
         return DownloadedSidecarReferences(
             lyricReference = lyricReference,
             translatedLyricReference = translatedLyricReference,
+            romanizedLyricReference = romanizedLyricReference,
             createdLyric = !lyricReference.isNullOrBlank(),
-            createdTranslatedLyric = !translatedLyricReference.isNullOrBlank()
+            createdTranslatedLyric = !translatedLyricReference.isNullOrBlank(),
+            createdRomanizedLyric = !romanizedLyricReference.isNullOrBlank()
         )
     }
 
@@ -2591,21 +2643,31 @@ object AudioDownloadManager {
     private fun downloadNeteaseLyrics(
         song: SongItem,
         shouldFetchPrimaryLyric: Boolean = true,
-        shouldFetchTranslatedLyric: Boolean = true
+        shouldFetchTranslatedLyric: Boolean = true,
+        shouldFetchRomanizedLyric: Boolean = true
     ): DownloadedLyrics {
-        if (!shouldFetchPrimaryLyric && !shouldFetchTranslatedLyric) {
+        if (!shouldFetchPrimaryLyric && !shouldFetchTranslatedLyric && !shouldFetchRomanizedLyric) {
             return DownloadedLyrics()
         }
 
-        if (!shouldFetchPrimaryLyric) {
+        if (!shouldFetchPrimaryLyric && !shouldFetchRomanizedLyric) {
             try {
                 val lyrics = AppContainer.neteaseClient.getLyricNew(song.id)
                 val root = JSONObject(lyrics)
                 if (root.optInt("code") == 200) {
                     val tlyric: String = root.optJSONObject("tlyric")?.optString("lyric").orEmpty()
+                    val romalrc = root.optJSONObject("romalrc")?.optString("lyric").orEmpty()
                     if (shouldFetchTranslatedLyric && tlyric.isNotBlank()) {
                         NPLogger.d(TAG, "翻译歌词保存: ${song.name}")
-                        return DownloadedLyrics(translatedText = tlyric)
+                        return DownloadedLyrics(
+                            translatedText = tlyric,
+                            romanizedText = romalrc.takeIf {
+                                shouldFetchRomanizedLyric && it.isNotBlank()
+                            }
+                        )
+                    }
+                    if (shouldFetchRomanizedLyric && romalrc.isNotBlank()) {
+                        return DownloadedLyrics(romanizedText = romalrc)
                     }
                 }
             } catch (e: Exception) {
@@ -2622,6 +2684,7 @@ object AudioDownloadManager {
             val yrc: String = root.optJSONObject("yrc")?.optString("lyric") ?: ""
             val lrc: String = root.optJSONObject("lrc")?.optString("lyric") ?: ""
             val translated: String = root.optJSONObject("tlyric")?.optString("lyric") ?: ""
+            val romanized: String = root.optJSONObject("romalrc")?.optString("lyric") ?: ""
             val preferredLyric = if (shouldFetchPrimaryLyric) {
                 yrc.takeIf { it.isNotBlank() } ?: lrc.takeIf { it.isNotBlank() }
             } else {
@@ -2640,6 +2703,9 @@ object AudioDownloadManager {
                 lyricText = preferredLyric,
                 translatedText = translated.takeIf {
                     shouldFetchTranslatedLyric && it.isNotBlank()
+                },
+                romanizedText = romanized.takeIf {
+                    shouldFetchRomanizedLyric && it.isNotBlank()
                 }
             )
         } catch (e: Exception) {
@@ -2768,6 +2834,10 @@ object AudioDownloadManager {
 
     fun getTranslatedLyricContent(context: Context, song: SongItem): String? {
         return ManagedDownloadStorage.readLyrics(context, song, translated = true)
+    }
+
+    fun getRomanizedLyricContent(context: Context, song: SongItem): String? {
+        return ManagedDownloadStorage.readRomanizedLyrics(context, song)
     }
 
     // 解析网易云直链
@@ -2942,7 +3012,8 @@ object AudioDownloadManager {
 
     private data class DownloadedLyrics(
         val lyricText: String? = null,
-        val translatedText: String? = null
+        val translatedText: String? = null,
+        val romanizedText: String? = null
     )
 
     private fun ensureHttps(url: String): String = if (url.startsWith("http://")) url.replaceFirst("http://", "https://") else url

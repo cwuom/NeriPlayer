@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 
 internal object ManagedDownloadArtifactPlanner {
     fun collectArtifactReferences(
@@ -26,6 +27,7 @@ internal object ManagedDownloadArtifactPlanner {
         val lyricReferences = buildList {
             trustedMetadataReference(metadata?.lyricPath, snapshot)?.let(::add)
             trustedMetadataReference(metadata?.translatedLyricPath, snapshot)?.let(::add)
+            trustedMetadataReference(metadata?.romanizedLyricPath, snapshot)?.let(::add)
             addAll(
                 allIndexedLyricReferences(
                     candidateBaseNames = candidateBaseNames,
@@ -39,6 +41,14 @@ internal object ManagedDownloadArtifactPlanner {
                     candidateBaseNames = candidateBaseNames,
                     songId = resolvedSongId,
                     translated = true,
+                    snapshot = snapshot
+                )
+            )
+            addAll(
+                allIndexedLyricReferences(
+                    candidateBaseNames = candidateBaseNames,
+                    songId = resolvedSongId,
+                    kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED,
                     snapshot = snapshot
                 )
             )
@@ -96,6 +106,19 @@ internal object ManagedDownloadArtifactPlanner {
             translated = translated,
             snapshot = snapshot
         )
+    }
+
+    fun indexedRomanizedLyricReference(
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        return allIndexedLyricReferences(
+            candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
+            songId = songId,
+            kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED,
+            snapshot = snapshot
+        ).firstOrNull()
     }
 
     suspend fun indexedLyricText(
@@ -172,10 +195,32 @@ internal object ManagedDownloadArtifactPlanner {
         translated: Boolean,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): List<String> {
+        return allIndexedLyricReferences(
+            candidateBaseNames = candidateBaseNames,
+            songId = songId,
+            kind = if (translated) {
+                ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+            } else {
+                ManagedDownloadStorageNaming.LyricKind.ORIGINAL
+            },
+            snapshot = snapshot
+        )
+    }
+
+    private fun allIndexedLyricReferences(
+        candidateBaseNames: List<String>,
+        songId: Long?,
+        kind: ManagedDownloadStorageNaming.LyricKind,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): List<String> {
         val candidates = ManagedDownloadStorage.buildLyricCandidateNames(
             songId = songId,
             candidateBaseNames = candidateBaseNames,
-            translated = translated
+            kind = when (kind) {
+                ManagedDownloadStorageNaming.LyricKind.ORIGINAL -> ManagedDownloadStorage.LyricKind.ORIGINAL
+                ManagedDownloadStorageNaming.LyricKind.TRANSLATED -> ManagedDownloadStorage.LyricKind.TRANSLATED
+                ManagedDownloadStorageNaming.LyricKind.ROMANIZED -> ManagedDownloadStorage.LyricKind.ROMANIZED
+            }
         )
         return candidates
             .mapNotNull { candidate -> snapshot.lyricEntriesByName[candidate]?.reference }
@@ -287,7 +332,8 @@ internal object ManagedDownloadArtifactPlanner {
                 listOfNotNull(
                     metadata.coverPath,
                     metadata.lyricPath,
-                    metadata.translatedLyricPath
+                    metadata.translatedLyricPath,
+                    metadata.romanizedLyricPath
                 ).contains(reference)
         }
     }

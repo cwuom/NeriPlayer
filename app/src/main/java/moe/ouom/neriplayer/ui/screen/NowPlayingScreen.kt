@@ -229,6 +229,7 @@ import moe.ouom.neriplayer.core.player.model.forSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.media.isLocalSong
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -1886,17 +1887,24 @@ fun NowPlayingScreen(
     var showVolumeSheet by remember { mutableStateOf(false) }
     val volumeSheetState = rememberModalBottomSheetState()
 
-    var lyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var translatedLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var rawLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
-    var rawTranslatedLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
-    var rawPhoneticLyricsText by remember(currentSong?.id) { mutableStateOf<String?>(null) }
-    var remotePhoneticLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var plainLyrics by remember(currentSong?.id) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var plainTranslatedLyrics by remember(currentSong?.id) {
+    val currentLyricSourceKey = Triple(
+        currentSong?.id,
+        currentSong?.mediaUri,
+        currentSong?.localFilePath
+    )
+    var lyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var translatedLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var rawLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
+    var rawTranslatedLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
+    var rawPhoneticLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
+    var remotePhoneticLyrics by remember(currentLyricSourceKey) {
         mutableStateOf<List<LyricEntry>>(emptyList())
     }
-    var embeddedPhoneticLyrics by remember(currentSong?.id) {
+    var plainLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    var plainTranslatedLyrics by remember(currentLyricSourceKey) {
+        mutableStateOf<List<LyricEntry>>(emptyList())
+    }
+    var embeddedPhoneticLyrics by remember(currentLyricSourceKey) {
         mutableStateOf<List<LyricEntry>>(emptyList())
     }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
@@ -2054,10 +2062,27 @@ fun NowPlayingScreen(
         currentSong?.matchedSongId,
         currentSong?.matchedLyricSource,
         currentSong?.album,
+        currentSong?.mediaUri,
+        currentSong?.localFilePath,
         currentMediaUrl
     ) {
         val song = currentSong
         val loadedLyricsState = withContext(Dispatchers.IO) {
+            val localDetails = if (song?.isLocalSong() == true) {
+                runCatching { LocalMediaSupport.inspect(context, song) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NowPlayingLyrics",
+                            "本地歌词旁车读取失败: ${error.message}"
+                        )
+                    }
+                    .getOrNull()
+            } else {
+                null
+            }
+            val localRawLyrics = localDetails?.lyricContent
+            val localRawTranslatedLyrics = localDetails?.translatedLyricContent
+            val localRawPhoneticLyrics = localDetails?.romanizedLyricContent
             val storedRawLyrics = resolveStoredLyricText(
                 currentLyric = song?.matchedLyric,
                 legacyLyric = song?.originalLyric
@@ -2068,33 +2093,38 @@ fun NowPlayingScreen(
             )
             val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
             val preferredNeteaseLyric = runCatching {
-                if (storedRawLyrics == null && preferredSongId != null) {
+                if (localRawLyrics == null && storedRawLyrics == null && preferredSongId != null) {
                     PlayerManager.getPreferredNeteaseLyricContent(preferredSongId)
                 } else {
                     ""
                 }
             }.getOrNull().orEmpty()
             val rawNeteasePhoneticLyric = runCatching {
-                if (preferredSongId != null) {
+                if (localRawPhoneticLyrics == null && preferredSongId != null) {
                     PlayerManager.getPreferredNeteaseRomanizedLyricContent(preferredSongId)
                 } else {
                     ""
                 }
             }.getOrNull().orEmpty()
             val effectiveRawLyrics = resolvePreferredLyricContent(
-                matchedLyric = song?.matchedLyric,
+                matchedLyric = localRawLyrics ?: song?.matchedLyric,
                 preferredNeteaseLyric = preferredNeteaseLyric,
                 legacyLyric = song?.originalLyric
             )
+            val effectiveRawTranslatedLyrics = localRawTranslatedLyrics
+                ?: storedRawTranslatedLyrics
             val bypassStoredRawLyrics = shouldBypassCollapsedStoredLyric(effectiveRawLyrics)
             val bypassStoredTranslatedLyrics = shouldBypassCollapsedStoredLyric(
-                storedRawTranslatedLyrics
+                effectiveRawTranslatedLyrics
             )
             val shouldDelayOnlineLyrics =
                 song != null &&
                     extractYouTubeMusicVideoId(song.mediaUri) != null &&
                     currentMediaUrl.isNullOrBlank()
             val resolvedLyrics = when {
+                localRawLyrics != null && song != null -> {
+                    PlayerManager.getLyrics(song)
+                }
                 bypassStoredRawLyrics && song != null -> {
                     PlayerManager.getLyrics(song)
                 }
@@ -2126,15 +2156,18 @@ fun NowPlayingScreen(
 
             val resolvedTranslatedLyrics = try {
                 when {
-                    storedRawTranslatedLyrics != null -> {
-                        if (storedRawTranslatedLyrics.isBlank()) {
+                    localRawTranslatedLyrics != null && song != null -> {
+                        PlayerManager.getTranslatedLyrics(song)
+                    }
+                    effectiveRawTranslatedLyrics != null -> {
+                        if (effectiveRawTranslatedLyrics.isBlank()) {
                             emptyList()
                         } else if (bypassStoredTranslatedLyrics && song != null) {
                             PlayerManager.getTranslatedLyrics(song)
                         } else if (bypassStoredTranslatedLyrics) {
                             emptyList()
                         } else {
-                            parseNeteaseLyricsAuto(storedRawTranslatedLyrics)
+                            parseNeteaseLyricsAuto(effectiveRawTranslatedLyrics)
                         }
                     }
                     song != null -> {
@@ -2147,6 +2180,9 @@ fun NowPlayingScreen(
             }
             val resolvedPhoneticLyrics = try {
                 when {
+                    localRawPhoneticLyrics != null && song != null -> {
+                        PlayerManager.getRomanizedLyrics(song)
+                    }
                     rawNeteasePhoneticLyric.isNotBlank() -> {
                         parseNeteaseLyricsAuto(rawNeteasePhoneticLyric)
                     }
@@ -2160,10 +2196,11 @@ fun NowPlayingScreen(
             }
             LoadedLyricsState(
                 rawLyrics = effectiveRawLyrics.takeUnless { bypassStoredRawLyrics },
-                rawTranslatedLyrics = storedRawTranslatedLyrics.takeUnless {
+                rawTranslatedLyrics = effectiveRawTranslatedLyrics.takeUnless {
                     bypassStoredTranslatedLyrics
                 },
-                rawPhoneticLyrics = rawNeteasePhoneticLyric.takeIf { it.isNotBlank() },
+                rawPhoneticLyrics = localRawPhoneticLyrics
+                    ?: rawNeteasePhoneticLyric.takeIf { it.isNotBlank() },
                 lyrics = resolvedLyrics,
                 translatedLyrics = resolvedTranslatedLyrics,
                 phoneticLyrics = resolvedPhoneticLyrics,

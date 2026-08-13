@@ -86,6 +86,19 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `shouldTreatAudioAsManaged keeps romanized lyric sidecar audio in custom directory`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldTreatAudioAsManaged(
+                audioName = "Artist - Song.mp3",
+                metadataAudioNames = emptySet(),
+                coverEntryNames = emptySet(),
+                lyricEntryNames = setOf("Artist - Song_roma.lrc"),
+                allowMetadataLessAudio = false
+            )
+        )
+    }
+
+    @Test
     fun `shouldTreatAudioAsManaged skips foreign audio in custom directory`() {
         assertFalse(
             ManagedDownloadStorage.shouldTreatAudioAsManaged(
@@ -111,6 +124,31 @@ class ManagedDownloadStorageMigrationCompatTest {
                 songId = 42L,
                 candidateBaseNames = listOf("Artist - Song"),
                 translated = false
+            )
+        )
+    }
+
+    @Test
+    fun `buildLyricCandidateNames recognizes romanized lyric compatibility names`() {
+        assertEquals(
+            listOf(
+                "42_roma.lrc",
+                "42_roma.lrc.txt",
+                "42_romalrc.lrc",
+                "42_romalrc.lrc.txt",
+                "42_romanized.lrc",
+                "42_romanized.lrc.txt",
+                "Artist - Song_roma.lrc",
+                "Artist - Song_roma.lrc.txt",
+                "Artist - Song_romalrc.lrc",
+                "Artist - Song_romalrc.lrc.txt",
+                "Artist - Song_romanized.lrc",
+                "Artist - Song_romanized.lrc.txt"
+            ),
+            ManagedDownloadStorage.buildLyricCandidateNames(
+                songId = 42L,
+                candidateBaseNames = listOf("Artist - Song"),
+                kind = ManagedDownloadStorage.LyricKind.ROMANIZED
             )
         )
     }

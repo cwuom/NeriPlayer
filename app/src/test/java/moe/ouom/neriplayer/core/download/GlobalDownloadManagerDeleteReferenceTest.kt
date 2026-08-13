@@ -78,6 +78,52 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `artifact planner keeps romanized lyric owned by other download`() {
+        val sharedRomanizedReference = "content://downloads/lyrics/shared_roma.lrc"
+        val currentAudio = ManagedDownloadStorage.StoredEntry(
+            name = "artist - current.mp3",
+            reference = "content://downloads/audio/current.mp3",
+            mediaUri = "content://downloads/audio/current.mp3",
+            localFilePath = null,
+            sizeBytes = 1024L,
+            lastModifiedMs = 1L
+        )
+        val currentMetadataReference = ManagedDownloadStorage.metadataReferenceForAudio(currentAudio)
+            ?: error("missing current metadata reference")
+        val currentMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "${currentAudio.name}.npmeta.json",
+            reference = currentMetadataReference,
+            mediaUri = currentMetadataReference,
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
+            metadataByAudioName = mapOf(
+                "artist - other.mp3" to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    romanizedLyricPath = sharedRomanizedReference
+                )
+            ),
+            knownReferences = setOf(
+                currentAudio.reference,
+                currentMetadataReference,
+                sharedRomanizedReference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+            snapshot = snapshot,
+            storedAudio = currentAudio,
+            songId = 1L,
+            candidateBaseNames = listOf("artist - current"),
+            explicitReferences = listOf(sharedRomanizedReference)
+        )
+
+        assertEquals(setOf(currentAudio.reference, currentMetadataReference), references)
+    }
+
+    @Test
     fun `download deletion result retains songs whose required audio was not deleted`() {
         val deletedSong = downloadedSong(id = 1L, name = "deleted")
         val retainedSong = downloadedSong(id = 2L, name = "retained")

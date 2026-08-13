@@ -78,6 +78,24 @@ class AudioDownloadManagerSidecarReferenceTest {
     }
 
     @Test
+    fun `retainCreatedOnly keeps only created romanized lyric`() {
+        val created = AudioDownloadManager.DownloadedSidecarReferences(
+            romanizedLyricReference = "content://lyrics/song_roma.lrc",
+            createdRomanizedLyric = true
+        )
+        val existing = AudioDownloadManager.DownloadedSidecarReferences(
+            romanizedLyricReference = "content://library/song_roma.lrc",
+            createdRomanizedLyric = false
+        )
+
+        assertEquals(created, created.retainCreatedOnly())
+        assertEquals(
+            AudioDownloadManager.DownloadedSidecarReferences(),
+            existing.retainCreatedOnly()
+        )
+    }
+
+    @Test
     fun `mergeDownloadedSidecarReferences uses incoming ownership when reference changes`() {
         val existing = AudioDownloadManager.DownloadedSidecarReferences(
             coverReference = "content://covers/old.jpg",

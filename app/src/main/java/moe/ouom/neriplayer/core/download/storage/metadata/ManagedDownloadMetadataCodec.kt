@@ -17,6 +17,7 @@ internal object ManagedDownloadMetadataCodec {
         rewriteMetadataReferenceField(root, "coverPath", referenceMap)
         rewriteMetadataReferenceField(root, "lyricPath", referenceMap)
         rewriteMetadataReferenceField(root, "translatedLyricPath", referenceMap)
+        rewriteMetadataReferenceField(root, "romanizedLyricPath", referenceMap)
         rewriteMetadataReferenceField(root, "coverUrl", referenceMap)
         rewriteMetadataReferenceField(root, "originalCoverUrl", referenceMap)
         rewriteMetadataReferenceField(root, "mediaUri", referenceMap)

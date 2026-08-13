@@ -37,6 +37,7 @@ internal class DownloadedAudioMetadataStore(
             coverReference = sidecars.coverReference,
             lyricReference = sidecars.lyricReference,
             translatedLyricReference = sidecars.translatedLyricReference,
+            romanizedLyricReference = sidecars.romanizedLyricReference,
             downloadFinalized = downloadFinalized
         )
 
@@ -48,7 +49,7 @@ internal class DownloadedAudioMetadataStore(
             if (result.getOrDefault(false)) {
                 NPLogger.d(
                     loggerTag,
-                    "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, finalized=$downloadFinalized, lyricPath=${sidecars.lyricReference}, translatedLyricPath=${sidecars.translatedLyricReference}, coverPath=${sidecars.coverReference}"
+                    "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, finalized=$downloadFinalized, lyricPath=${sidecars.lyricReference}, translatedLyricPath=${sidecars.translatedLyricReference}, romanizedLyricPath=${sidecars.romanizedLyricReference}, coverPath=${sidecars.coverReference}"
                 )
                 return true
             }
@@ -90,7 +91,8 @@ internal class DownloadedAudioMetadataStore(
             return DownloadedMetadataSidecarReferences(
                 coverReference = sidecarReferences?.coverReference,
                 lyricReference = sidecarReferences?.lyricReference,
-                translatedLyricReference = sidecarReferences?.translatedLyricReference
+                translatedLyricReference = sidecarReferences?.translatedLyricReference,
+                romanizedLyricReference = sidecarReferences?.romanizedLyricReference
             )
         }
 
@@ -117,6 +119,12 @@ internal class DownloadedAudioMetadataStore(
                     songId = song.id,
                     candidateBaseNames = candidateBaseNames,
                     translated = true
+                ),
+            romanizedLyricReference = sidecarReferences?.romanizedLyricReference
+                ?: ManagedDownloadStorage.findRomanizedLyricLocation(
+                    context = context,
+                    songId = song.id,
+                    candidateBaseNames = candidateBaseNames
                 )
         )
     }
@@ -126,6 +134,7 @@ internal class DownloadedAudioMetadataStore(
         coverReference: String?,
         lyricReference: String?,
         translatedLyricReference: String?,
+        romanizedLyricReference: String?,
         downloadFinalized: Boolean
     ): JSONObject {
         val identity = song.identity()
@@ -157,6 +166,7 @@ internal class DownloadedAudioMetadataStore(
             put("coverPath", coverReference)
             put("lyricPath", lyricReference)
             put("translatedLyricPath", translatedLyricReference)
+            put("romanizedLyricPath", romanizedLyricReference)
             put("durationMs", song.durationMs)
             put("downloadFinalized", downloadFinalized)
         }
@@ -165,7 +175,8 @@ internal class DownloadedAudioMetadataStore(
     private data class DownloadedMetadataSidecarReferences(
         val coverReference: String?,
         val lyricReference: String?,
-        val translatedLyricReference: String?
+        val translatedLyricReference: String?,
+        val romanizedLyricReference: String?
     )
 }
 

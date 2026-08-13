@@ -37,6 +37,7 @@ import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import android.system.Os
 import androidx.core.content.FileProvider
 import com.kyant.taglib.Picture
@@ -131,12 +132,20 @@ data class LocalMediaDetails(
     val originalArtist: String?,
     val embeddedCover: Boolean,
     val sourceStableKey: String? = null,
-    val translatedLyricContent: String? = null
+    val translatedLyricContent: String? = null,
+    val romanizedLyricContent: String? = null
 )
 
 internal data class NearbyLyricFiles(
     val original: File?,
-    val translated: File?
+    val translated: File?,
+    val romanized: File? = null
+)
+
+internal data class NearbyLyricReferences(
+    val original: String?,
+    val translated: String?,
+    val romanized: String?
 )
 
 internal enum class EditableCoverMutation {
@@ -1252,10 +1261,29 @@ object LocalMediaSupport {
         )
         val nearbyCover = findNearbyCover(file)
         val nearbyLyricFiles = findNearbyLyricFiles(file)
-        val nearbyLyricContent = readNearbyLyricContent(nearbyLyricFiles.original, "lyric")
+        val nearbyLyricReferences = findNearbyLyricReferences(
+            context = context,
+            uri = uri,
+            file = file,
+            displayName = displayName
+        )
+        val nearbyLyricContent = readNearbyLyricContent(
+            context = context,
+            reference = nearbyLyricReferences.original
+                ?: nearbyLyricFiles.original?.absolutePath,
+            label = "lyric"
+        )
         val nearbyTranslatedLyricContent = readNearbyLyricContent(
-            nearbyLyricFiles.translated,
-            "translated lyric"
+            context = context,
+            reference = nearbyLyricReferences.translated
+                ?: nearbyLyricFiles.translated?.absolutePath,
+            label = "translated lyric"
+        )
+        val nearbyRomanizedLyricContent = readNearbyLyricContent(
+            context = context,
+            reference = nearbyLyricReferences.romanized
+                ?: nearbyLyricFiles.romanized?.absolutePath,
+            label = "romanized lyric"
         )
         val hasEffectiveExternalLyric = !nearbyLyricContent.isNullOrBlank()
         val effectiveLyricContent = resolveEffectiveLocalLyricContent(
@@ -1266,6 +1294,8 @@ object LocalMediaSupport {
             sidecarContent = nearbyTranslatedLyricContent,
             embeddedContent = tagLibMetadata?.translatedLyrics
         )
+        val effectiveRomanizedLyricContent = nearbyRomanizedLyricContent
+            ?.takeIf(String::isNotBlank)
 
         val retriever = MediaMetadataRetriever()
         return try {
@@ -1398,13 +1428,15 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
+                lyricPath = nearbyLyricReferences.original
+                    ?: nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
                 lyricSource = when {
                     hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
                 translatedLyricContent = effectiveTranslatedLyricContent,
+                romanizedLyricContent = effectiveRomanizedLyricContent,
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist ?: containerMetadata?.artist ?: queried.artist ?: artist,
                 embeddedCover = embeddedCover || tagLibCoverUri != null,
@@ -1464,13 +1496,15 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
+                lyricPath = nearbyLyricReferences.original
+                    ?: nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
                 lyricSource = when {
                     hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
                     else -> null
                 },
                 translatedLyricContent = effectiveTranslatedLyricContent,
+                romanizedLyricContent = effectiveRomanizedLyricContent,
                 originalTitle = title,
                 originalArtist = tagLibMetadata?.artist
                     ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
@@ -1570,7 +1604,8 @@ object LocalMediaSupport {
             lyricSource = null,
             originalTitle = selectedMetadata.title,
             originalArtist = selectedMetadata.artist,
-            embeddedCover = false
+            embeddedCover = false,
+            romanizedLyricContent = null
         )
     }
 
@@ -3029,8 +3064,8 @@ object LocalMediaSupport {
         file: File?,
         extensions: List<String> = lyricExtensions
     ): NearbyLyricFiles {
-        val actualFile = file ?: return NearbyLyricFiles(null, null)
-        val parent = actualFile.parentFile ?: return NearbyLyricFiles(null, null)
+        val actualFile = file ?: return NearbyLyricFiles(null, null, null)
+        val parent = actualFile.parentFile ?: return NearbyLyricFiles(null, null, null)
         val baseName = actualFile.nameWithoutExtension
         val searchDirectories = listOf(parent, File(parent, "Lyrics"))
             .filter(File::isDirectory)
@@ -3040,7 +3075,7 @@ object LocalMediaSupport {
                 searchDirectories = searchDirectories,
                 fileNames = lyricSidecarNames(
                     baseName = baseName,
-                    translated = false,
+                    kind = LyricKind.ORIGINAL,
                     extensions = extensions
                 )
             ),
@@ -3048,21 +3083,186 @@ object LocalMediaSupport {
                 searchDirectories = searchDirectories,
                 fileNames = lyricSidecarNames(
                     baseName = baseName,
-                    translated = true,
+                    kind = LyricKind.TRANSLATED,
+                    extensions = extensions
+                )
+            ),
+            romanized = findFirstLyricSidecar(
+                searchDirectories = searchDirectories,
+                fileNames = lyricSidecarNames(
+                    baseName = baseName,
+                    kind = LyricKind.ROMANIZED,
                     extensions = extensions
                 )
             )
         )
     }
 
-    private fun readNearbyLyricContent(file: File?, label: String): String? {
-        return file?.let {
-            readTextFile(it)
+    private fun readNearbyLyricContent(
+        context: Context,
+        reference: String?,
+        label: String
+    ): String? {
+        return reference?.let {
+            readTextContent(context, it)
                 ?: run {
-                    NPLogger.w(TAG, "read $label failed for ${it.absolutePath}")
+                    NPLogger.w(TAG, "read $label failed for $it")
                     null
                 }
         }
+    }
+
+    private fun findNearbyLyricReferences(
+        context: Context,
+        uri: Uri,
+        file: File?,
+        displayName: String
+    ): NearbyLyricReferences {
+        val localFiles = findNearbyLyricFiles(file)
+        if (!uri.scheme.equals("content", ignoreCase = true)) {
+            return NearbyLyricReferences(
+                original = localFiles.original?.absolutePath,
+                translated = localFiles.translated?.absolutePath,
+                romanized = localFiles.romanized?.absolutePath
+            )
+        }
+
+        val treeDocumentId = runCatching {
+            DocumentsContract.getTreeDocumentId(uri)
+        }.getOrNull()
+        val documentId = runCatching {
+            DocumentsContract.getDocumentId(uri)
+        }.getOrNull()
+        val treeUri = runCatching {
+            val authority = uri.authority ?: return@runCatching null
+            DocumentsContract.buildTreeDocumentUri(
+                authority,
+                DocumentsContract.getTreeDocumentId(uri)
+            )
+        }.getOrNull() ?: uri
+        val slashDelimitedParentId = documentId
+            ?.substringBeforeLast('/', missingDelimiterValue = "")
+            ?.takeIf { it.isNotBlank() && it != documentId }
+        val documentUri = if (treeDocumentId != null && documentId != null) {
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        } else {
+            uri
+        }
+        val parentDocumentId = slashDelimitedParentId
+            ?: findDocumentParentId(context, documentUri)
+            ?: treeDocumentId
+        val parentChildren = queryDocumentChildren(context, treeUri, parentDocumentId)
+        val audioBaseName = displayName.substringBeforeLast('.', displayName)
+        val directReferences = resolveDocumentLyricReferences(
+            children = parentChildren,
+            baseName = audioBaseName
+        )
+        val lyricsDirectory = parentChildren.firstOrNull {
+            it.isDirectory && it.displayName.equals("Lyrics", ignoreCase = true)
+        }
+        val nestedReferences = resolveDocumentLyricReferences(
+            children = lyricsDirectory?.let {
+                queryDocumentChildren(context, treeUri, it.documentId)
+            }.orEmpty(),
+            baseName = audioBaseName
+        )
+        return NearbyLyricReferences(
+            original = directReferences.original ?: nestedReferences.original
+                ?: localFiles.original?.absolutePath,
+            translated = directReferences.translated ?: nestedReferences.translated
+                ?: localFiles.translated?.absolutePath,
+            romanized = directReferences.romanized ?: nestedReferences.romanized
+                ?: localFiles.romanized?.absolutePath
+        )
+    }
+
+    private fun findDocumentParentId(context: Context, documentUri: Uri): String? {
+        return runCatching {
+            DocumentsContract.findDocumentPath(context.contentResolver, documentUri)
+                ?.path
+                ?.dropLast(1)
+                ?.lastOrNull()
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull()
+    }
+
+    private fun resolveDocumentLyricReferences(
+        children: Collection<DocumentChild>,
+        baseName: String
+    ): NearbyLyricReferences {
+        fun find(kind: LyricKind): String? {
+            val names = lyricSidecarNames(baseName, kind, lyricExtensions)
+            return names.firstNotNullOfOrNull { expectedName ->
+                children.firstOrNull { child ->
+                    !child.isDirectory && child.displayName == expectedName
+                }?.uri
+            }
+        }
+        return NearbyLyricReferences(
+            original = find(LyricKind.ORIGINAL),
+            translated = find(LyricKind.TRANSLATED),
+            romanized = find(LyricKind.ROMANIZED)
+        )
+    }
+
+    private data class DocumentChild(
+        val documentId: String,
+        val displayName: String,
+        val isDirectory: Boolean,
+        val uri: String
+    )
+
+    private fun queryDocumentChildren(
+        context: Context,
+        treeUri: Uri,
+        parentDocumentId: String?
+    ): List<DocumentChild> {
+        val resolvedParentId = parentDocumentId?.takeIf { it.isNotBlank() } ?: return emptyList()
+        val childrenUri = runCatching {
+            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, resolvedParentId)
+        }.getOrNull() ?: return emptyList()
+        return runCatching {
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
+                    return@use emptyList()
+                }
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val childId = cursor.getString(idIndex)?.takeIf { it.isNotBlank() }
+                            ?: continue
+                        val childName = cursor.getString(nameIndex)?.takeIf { it.isNotBlank() }
+                            ?: continue
+                        val mimeType = cursor.getString(mimeIndex).orEmpty()
+                        add(
+                            DocumentChild(
+                                documentId = childId,
+                                displayName = childName,
+                                isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
+                                uri = DocumentsContract.buildDocumentUriUsingTree(
+                                    treeUri,
+                                    childId
+                                ).toString()
+                            )
+                        )
+                    }
+                }
+            }.orEmpty()
+        }.onFailure {
+            NPLogger.w(TAG, "query document lyric children failed for $treeUri: ${it.message}")
+        }.getOrDefault(emptyList())
     }
 
     internal fun resolveEffectiveLocalLyricContent(
@@ -3084,18 +3284,34 @@ object LocalMediaSupport {
 
     private fun lyricSidecarNames(
         baseName: String,
-        translated: Boolean,
+        kind: LyricKind,
         extensions: List<String>
     ): List<String> {
-        val prefix = if (translated) "${baseName}_trans" else baseName
+        val prefixes = when (kind) {
+            LyricKind.ORIGINAL -> listOf(baseName)
+            LyricKind.TRANSLATED -> listOf("${baseName}_trans")
+            LyricKind.ROMANIZED -> listOf(
+                "${baseName}_roma",
+                "${baseName}_romalrc",
+                "${baseName}_romanized"
+            )
+        }
         return buildList {
-            extensions.forEach { extension ->
-                add("$prefix.$extension")
-            }
-            if ("lrc" in extensions) {
-                add("$prefix.lrc.txt")
+            prefixes.forEach { prefix ->
+                extensions.forEach { extension ->
+                    add("$prefix.$extension")
+                }
+                if ("lrc" in extensions) {
+                    add("$prefix.lrc.txt")
+                }
             }
         }
+    }
+
+    private enum class LyricKind {
+        ORIGINAL,
+        TRANSLATED,
+        ROMANIZED
     }
 
     internal fun findNearbyCover(file: File?): File? {

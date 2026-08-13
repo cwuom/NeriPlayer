@@ -72,6 +72,7 @@ internal object ManagedDownloadSnapshotRoomMapper {
                     coverPath = metadata.coverPath,
                     lyricPath = metadata.lyricPath,
                     translatedLyricPath = metadata.translatedLyricPath,
+                    romanizedLyricPath = metadata.romanizedLyricPath,
                     durationMs = metadata.durationMs,
                     downloadFinalized = metadata.downloadFinalized
                 )
@@ -159,6 +160,7 @@ internal object ManagedDownloadSnapshotRoomMapper {
             coverPath = coverPath,
             lyricPath = lyricPath,
             translatedLyricPath = translatedLyricPath,
+            romanizedLyricPath = romanizedLyricPath,
             durationMs = durationMs,
             downloadFinalized = downloadFinalized
         )

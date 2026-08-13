@@ -949,6 +949,7 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(song: SongItem): List
 internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<LyricEntry> {
     return PlayerLyricsProvider.getRomanizedLyrics(
         song = song,
+        application = application,
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         biliSourceTag = BILI_SOURCE_TAG
