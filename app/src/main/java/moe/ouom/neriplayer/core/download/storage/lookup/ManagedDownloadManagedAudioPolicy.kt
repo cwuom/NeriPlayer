@@ -29,12 +29,17 @@ internal object ManagedDownloadManagedAudioPolicy {
         return ManagedDownloadStorageNaming.buildLyricCandidateNames(
             songId = null,
             candidateBaseNames = candidateBaseNames,
-            translated = false
+            kind = ManagedDownloadStorageNaming.LyricKind.ORIGINAL
         ).any(lyricEntryNames::contains) ||
             ManagedDownloadStorageNaming.buildLyricCandidateNames(
                 songId = null,
                 candidateBaseNames = candidateBaseNames,
-                translated = true
+                kind = ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+            ).any(lyricEntryNames::contains) ||
+            ManagedDownloadStorageNaming.buildLyricCandidateNames(
+                songId = null,
+                candidateBaseNames = candidateBaseNames,
+                kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED
             ).any(lyricEntryNames::contains)
     }
 }

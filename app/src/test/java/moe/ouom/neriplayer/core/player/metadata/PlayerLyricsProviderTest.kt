@@ -24,6 +24,42 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `resolveLocalFirstLyricText keeps local blank override ahead of stored and downloaded text`() {
+        assertEquals(
+            "[00:01.00]local",
+            resolveLocalFirstLyricText(
+                localLyric = "[00:01.00]local",
+                storedLyric = "[00:01.00]stored",
+                downloadedLyric = "[00:01.00]downloaded"
+            )
+        )
+        assertEquals(
+            "",
+            resolveLocalFirstLyricText(
+                localLyric = "",
+                storedLyric = "[00:01.00]stored",
+                downloadedLyric = "[00:01.00]downloaded"
+            )
+        )
+        assertEquals(
+            "[00:01.00]downloaded",
+            resolveLocalFirstLyricText(
+                localLyric = null,
+                storedLyric = null,
+                downloadedLyric = "[00:01.00]downloaded"
+            )
+        )
+        assertEquals(
+            "[00:01.00]stored",
+            resolveLocalFirstLyricText(
+                localLyric = null,
+                storedLyric = "[00:01.00]stored",
+                downloadedLyric = "[00:01.00]downloaded"
+            )
+        )
+    }
+
+    @Test
     fun `isTransientHttp2StreamReset detects cancel and refused stream failures`() {
         assertTrue(IOException("stream was reset: CANCEL").isTransientHttp2StreamReset())
 

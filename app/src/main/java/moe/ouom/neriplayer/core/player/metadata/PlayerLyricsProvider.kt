@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
@@ -100,6 +101,14 @@ internal fun resolveLocalLyricOverrideState(rawLyric: String?): LocalLyricOverri
         rawLyric.isBlank() -> LocalLyricOverrideState.CLEARED
         else -> LocalLyricOverrideState.PRESENT
     }
+}
+
+internal fun resolveLocalFirstLyricText(
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?
+): String? {
+    return localLyric ?: storedLyric ?: downloadedLyric
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -367,46 +376,18 @@ internal object PlayerLyricsProvider {
         return convertPlainLyricsToEntries(rawLyric, durationMs)
     }
 
-    private fun loadOnDemandLocalLyrics(
+    private fun inspectLocalLyricDetails(
         application: Application,
         song: SongItem
-    ): List<LyricEntry>? {
+    ): LocalMediaDetails? {
         if (!song.isLocalSong()) {
             return null
         }
-
-        val localLyric = runCatching {
-            LocalMediaSupport.inspect(application, song)?.lyricContent
-        }.onFailure {
-            NPLogger.w("NERI-PlayerManager", "本地歌词懒加载失败: ${it.message}")
-        }.getOrNull()
-
-        return parseLocalLyricOverride(
-            rawLyric = localLyric,
-            durationMs = song.durationMs,
-            logPrefix = "本地歌词解析失败"
-        )
-    }
-
-    private fun loadOnDemandLocalTranslatedLyrics(
-        application: Application,
-        song: SongItem
-    ): List<LyricEntry>? {
-        if (!song.isLocalSong()) {
-            return null
-        }
-
-        val localTranslatedLyric = runCatching {
-            LocalMediaSupport.inspect(application, song)?.translatedLyricContent
-        }.onFailure {
-            NPLogger.w("NERI-PlayerManager", "本地翻译歌词懒加载失败: ${it.message}")
-        }.getOrNull()
-
-        return parseLocalLyricOverride(
-            rawLyric = localTranslatedLyric,
-            durationMs = song.durationMs,
-            logPrefix = "本地翻译歌词解析失败"
-        )
+        return runCatching { LocalMediaSupport.inspect(application, song) }
+            .onFailure {
+                NPLogger.w("NERI-PlayerManager", "本地歌词旁车读取失败: ${it.message}")
+            }
+            .getOrNull()
     }
 
     suspend fun getNeteaseLyrics(
@@ -500,26 +481,38 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
+            val localDetails = inspectLocalLyricDetails(application, song)
+            val localTranslatedLyric = localDetails?.translatedLyricContent
             val storedTranslatedLyric = resolveStoredLyricText(
                 currentLyric = song.matchedTranslatedLyric,
                 legacyLyric = song.originalTranslatedLyric
+            )
+            val downloadedTranslatedLyric = AudioDownloadManager.getTranslatedLyricContent(application, song)
+            val selectedTranslatedLyric = resolveLocalFirstLyricText(
+                localLyric = localTranslatedLyric,
+                storedLyric = storedTranslatedLyric,
+                downloadedLyric = downloadedTranslatedLyric
             )
             val deferredStoredTranslation = if (isYouTubeMusicTrack) {
                 storedTranslatedLyric?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
             } else {
                 null
             }
-            if (deferredStoredTranslation == null) {
+            if (localTranslatedLyric != null) {
                 parseLocalLyricOverride(
-                    rawLyric = storedTranslatedLyric,
+                    rawLyric = localTranslatedLyric,
+                    durationMs = song.durationMs,
+                    logPrefix = "本地翻译歌词解析失败"
+                )?.let { return@withContext it }
+            } else if (deferredStoredTranslation == null) {
+                parseLocalLyricOverride(
+                    rawLyric = selectedTranslatedLyric,
                     durationMs = song.durationMs,
                     logPrefix = "本地翻译歌词解析失败"
                 )?.let { return@withContext it }
             } else {
                 NPLogger.w("NERI-PlayerManager", "已忽略 YouTube 全零翻译时间轴: ${song.name}")
             }
-
-            val downloadedTranslatedLyric = AudioDownloadManager.getTranslatedLyricContent(application, song)
             val deferredDownloadedTranslation = if (isYouTubeMusicTrack) {
                 downloadedTranslatedLyric?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
             } else {
@@ -533,13 +526,6 @@ internal object PlayerLyricsProvider {
                 )?.let { return@withContext it }
             } else {
                 NPLogger.w("NERI-PlayerManager", "已忽略下载的 YouTube 全零翻译时间轴: ${song.name}")
-            }
-
-            loadOnDemandLocalTranslatedLyrics(application, song)?.let { entries ->
-                if (entries.isEmpty()) {
-                    return@withContext emptyList()
-                }
-                return@withContext entries
             }
 
             if (isYouTubeMusicTrack) {
@@ -593,11 +579,28 @@ internal object PlayerLyricsProvider {
 
     suspend fun getRomanizedLyrics(
         song: SongItem,
+        application: Application,
         neteaseClient: NeteaseClient,
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
+            val localRomanizedLyric = inspectLocalLyricDetails(application, song)
+                ?.romanizedLyricContent
+            localRomanizedLyric?.let { rawLyric ->
+                parseLocalLyricOverride(
+                    rawLyric = rawLyric,
+                    durationMs = song.durationMs,
+                    logPrefix = "本地音译歌词读取失败"
+                )?.let { return@withContext it }
+            }
+            AudioDownloadManager.getRomanizedLyricContent(application, song)?.let { rawLyric ->
+                parseLocalLyricOverride(
+                    rawLyric = rawLyric,
+                    durationMs = song.durationMs,
+                    logPrefix = "本地音译歌词读取失败"
+                )?.let { return@withContext it }
+            }
             if (isYouTubeMusicSong(song)) {
                 return@withContext emptyList()
             }
@@ -647,16 +650,23 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
+            val localLyric = inspectLocalLyricDetails(application, song)?.lyricContent
             val storedLyric = resolveStoredLyricText(
                 currentLyric = song.matchedLyric,
                 legacyLyric = song.originalLyric
             )
+            val downloadedLyric = AudioDownloadManager.getLyricContent(application, song)
+            val selectedLyric = resolveLocalFirstLyricText(
+                localLyric = localLyric,
+                storedLyric = storedLyric,
+                downloadedLyric = downloadedLyric
+            )
             var deferredCollapsedLyrics: String? = null
-            when (resolveLocalLyricOverrideState(storedLyric)) {
+            when (resolveLocalLyricOverrideState(selectedLyric)) {
                 LocalLyricOverrideState.CLEARED -> return@withContext emptyList()
                 LocalLyricOverrideState.PRESENT -> {
                     val recoveredPlainLyrics = if (isYouTubeMusicTrack) {
-                        extractPlainLyricsFromCollapsedTimedLyrics(storedLyric!!)
+                        extractPlainLyricsFromCollapsedTimedLyrics(selectedLyric!!)
                     } else {
                         null
                     }
@@ -665,7 +675,7 @@ internal object PlayerLyricsProvider {
                         NPLogger.w("NERI-PlayerManager", "已暂缓 YouTube 全零歌词时间轴: ${song.name}")
                     } else {
                         parseLocalLyricOverride(
-                            rawLyric = storedLyric,
+                            rawLyric = selectedLyric,
                             durationMs = song.durationMs,
                             logPrefix = "匹配歌词解析失败"
                         )?.let { entries ->
@@ -675,8 +685,6 @@ internal object PlayerLyricsProvider {
                 }
                 LocalLyricOverrideState.ABSENT -> Unit
             }
-
-            val downloadedLyric = AudioDownloadManager.getLyricContent(application, song)
             val recoveredDownloadedPlainLyrics = if (isYouTubeMusicTrack) {
                 downloadedLyric?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
             } else {
@@ -697,13 +705,6 @@ internal object PlayerLyricsProvider {
                     return@withContext entries
                 }
             }
-            loadOnDemandLocalLyrics(application, song)?.let { entries ->
-                if (entries.isEmpty()) {
-                    return@withContext emptyList()
-                }
-                return@withContext entries
-            }
-
             if (isYouTubeMusicTrack) {
                 return@withContext getYouTubeMusicLyrics(
                     song = song,

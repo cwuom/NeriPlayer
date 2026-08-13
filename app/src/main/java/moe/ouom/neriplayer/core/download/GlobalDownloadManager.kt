@@ -1041,7 +1041,8 @@ object GlobalDownloadManager {
             ManagedDownloadStorage.metadataReferenceForAudio(storedAudio),
             sidecarReferences?.coverReference,
             sidecarReferences?.lyricReference,
-            sidecarReferences?.translatedLyricReference
+            sidecarReferences?.translatedLyricReference,
+            sidecarReferences?.romanizedLyricReference
         )
         runCatching {
             removeManagedDownloadArtifacts(
@@ -1074,7 +1075,8 @@ object GlobalDownloadManager {
         val references = listOfNotNull(
             sidecarReferences?.coverReference,
             sidecarReferences?.lyricReference,
-            sidecarReferences?.translatedLyricReference
+            sidecarReferences?.translatedLyricReference,
+            sidecarReferences?.romanizedLyricReference
         )
         if (references.isEmpty()) {
             return
@@ -1785,7 +1787,8 @@ object GlobalDownloadManager {
             resolvedStoredAudio?.let(ManagedDownloadStorage::metadataReferenceForAudio),
             sidecarReferences?.coverReference,
             sidecarReferences?.lyricReference,
-            sidecarReferences?.translatedLyricReference
+            sidecarReferences?.translatedLyricReference,
+            sidecarReferences?.romanizedLyricReference
         )
 
         NPLogger.d(

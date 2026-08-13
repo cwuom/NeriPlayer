@@ -5,5 +5,10 @@
             android:authorities="moe.ouom.neriplayer.test.stagedmetadataprovider"
             android:exported="true"
             android:grantUriPermissions="true" />
+        <provider
+            android:name="moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider"
+            android:authorities="moe.ouom.neriplayer.test.issue339lyrics"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

@@ -407,6 +407,12 @@ internal object ManagedDownloadStorage {
         LYRIC
     }
 
+    internal enum class LyricKind {
+        ORIGINAL,
+        TRANSLATED,
+        ROMANIZED
+    }
+
     data class DownloadedAudioMetadata(
         val stableKey: String? = null,
         val songId: Long? = null,
@@ -435,6 +441,7 @@ internal object ManagedDownloadStorage {
         val coverPath: String? = null,
         val lyricPath: String? = null,
         val translatedLyricPath: String? = null,
+        val romanizedLyricPath: String? = null,
         val durationMs: Long = 0L,
         val downloadFinalized: Boolean? = null
     )
@@ -1494,6 +1501,17 @@ internal object ManagedDownloadStorage {
         return overwriteLyric(context, fileNameByName, content)
     }
 
+    internal fun writeRomanizedLyrics(
+        context: Context,
+        songId: Long,
+        baseName: String,
+        content: String
+    ): String? {
+        val fileName = ManagedDownloadLyricStore.romanizedLyricFileName(baseName)
+        NPLogger.d(TAG, "写入音译歌词文件: fileName=$fileName, songId=$songId")
+        return overwriteLyric(context, fileName, content)
+    }
+
     fun readLyrics(context: Context, song: SongItem, translated: Boolean): String? {
         val snapshot = buildDownloadLibrarySnapshotBlocking(context)
         val resolvedAudio = findAudioEntry(snapshot, song)
@@ -1516,6 +1534,39 @@ internal object ManagedDownloadStorage {
             return readTextInternal(context, reference)
         }
         return ManagedDownloadLyricStore.fallbackEmbeddedLyric(resolvedMetadata, translated)
+    }
+
+    fun readRomanizedLyrics(context: Context, song: SongItem): String? {
+        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
+        val resolvedAudio = findAudioEntry(snapshot, song)
+        val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
+        val reference = ManagedDownloadLyricStore.resolveManagedRomanizedLyricReference(
+            context = context,
+            snapshot = snapshot,
+            song = song,
+            resolvedAudio = resolvedAudio,
+            resolvedMetadata = resolvedMetadata,
+            fileNameTemplate = settings.fileNameTemplate,
+            exists = ::existsInternal
+        )
+        if (reference != null) {
+            return readTextInternal(context, reference)
+        }
+        return null
+    }
+
+    internal fun findRomanizedLyricLocation(
+        context: Context,
+        songId: Long,
+        candidateBaseNames: List<String>
+    ): String? {
+        val snapshot = resolveSnapshotForIndexedLookup(context)
+            ?: buildDownloadLibrarySnapshotBlocking(context)
+        return ManagedDownloadLyricStore.findRomanizedLyricLocation(
+            snapshot = snapshot,
+            songId = songId,
+            candidateBaseNames = candidateBaseNames
+        )
     }
 
     fun toPlayableUri(reference: String?): String? {
@@ -1618,6 +1669,22 @@ internal object ManagedDownloadStorage {
             songId = songId,
             candidateBaseNames = candidateBaseNames,
             translated = translated
+        )
+    }
+
+    internal fun buildLyricCandidateNames(
+        songId: Long?,
+        candidateBaseNames: List<String>,
+        kind: LyricKind
+    ): List<String> {
+        return ManagedDownloadStorageNaming.buildLyricCandidateNames(
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            kind = when (kind) {
+                LyricKind.ORIGINAL -> ManagedDownloadStorageNaming.LyricKind.ORIGINAL
+                LyricKind.TRANSLATED -> ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+                LyricKind.ROMANIZED -> ManagedDownloadStorageNaming.LyricKind.ROMANIZED
+            }
         )
     }
 

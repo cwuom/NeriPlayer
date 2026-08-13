@@ -78,6 +78,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             coverPath = coverEntry.reference,
             lyricPath = lyricEntry.reference,
             translatedLyricPath = "/music/Lyrics/Artist - Song_trans.lrc",
+            romanizedLyricPath = "/music/Lyrics/Artist - Song_roma.lrc",
             durationMs = 5000L,
             downloadFinalized = false
         )
@@ -150,6 +151,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             mediaUri = "https://example.com/room.flac",
             channelId = "netease",
             audioId = "44",
+            romanizedLyricPath = "/music/Lyrics/Artist - Room Song_roma.lrc",
             durationMs = 240_000L,
             downloadFinalized = true
         )
@@ -182,6 +184,10 @@ class ManagedDownloadStorageSnapshotCacheTest {
 
         assertEquals(snapshot.audioEntries, restored.audioEntries)
         assertEquals(metadata, restored.metadataByAudioName[audioEntry.name])
+        assertEquals(
+            "/music/Lyrics/Artist - Room Song_roma.lrc",
+            restored.metadataByAudioName[audioEntry.name]?.romanizedLyricPath
+        )
         assertEquals(listOf(audioEntry), restored.audioEntriesByStableKey["room-stable"])
         assertEquals(listOf(audioEntry), restored.audioEntriesByRemoteTrackKey["netease|44|"])
         assertTrue(restored.knownReferences.contains(metadataEntry.reference))
@@ -282,6 +288,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
             put("coverPath", "old-cover")
             put("lyricPath", "old-lyric")
             put("translatedLyricPath", "old-translated")
+            put("romanizedLyricPath", "old-romanized")
         }.toString()
 
         val rewritten = ManagedDownloadStorage.rewriteManagedMetadataReferences(
@@ -289,7 +296,8 @@ class ManagedDownloadStorageSnapshotCacheTest {
             referenceMap = mapOf(
                 "old-cover" to "new-cover",
                 "old-lyric" to "new-lyric",
-                "old-translated" to "new-translated"
+                "old-translated" to "new-translated",
+                "old-romanized" to "new-romanized"
             )
         )
         val root = JSONObject(rewritten)
@@ -297,6 +305,7 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals("new-cover", root.getString("coverPath"))
         assertEquals("new-lyric", root.getString("lyricPath"))
         assertEquals("new-translated", root.getString("translatedLyricPath"))
+        assertEquals("new-romanized", root.getString("romanizedLyricPath"))
     }
 
     @Test

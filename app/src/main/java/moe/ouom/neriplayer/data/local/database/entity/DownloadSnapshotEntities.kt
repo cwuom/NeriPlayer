@@ -124,6 +124,8 @@ internal data class DownloadSnapshotMetadataEntity(
     val lyricPath: String?,
     @ColumnInfo(name = "translated_lyric_path")
     val translatedLyricPath: String?,
+    @ColumnInfo(name = "romanized_lyric_path")
+    val romanizedLyricPath: String?,
     @ColumnInfo(name = "duration_ms")
     val durationMs: Long,
     @ColumnInfo(name = "download_finalized")

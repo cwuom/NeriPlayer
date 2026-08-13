@@ -21,12 +21,12 @@ class NeriUserDataDatabaseMigrationTest {
     )
 
     @Test
-    fun migrateFromVersion1ToVersion14() {
+    fun migrateFromVersion1ToVersion15() {
         helper.createDatabase(TEST_DATABASE_NAME, 1).close()
 
         helper.runMigrationsAndValidate(
             TEST_DATABASE_NAME,
-            14,
+            15,
             true,
             NeriUserDataDatabase.MIGRATION_1_2,
             NeriUserDataDatabase.MIGRATION_2_3,
@@ -40,12 +40,13 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_10_11,
             NeriUserDataDatabase.MIGRATION_11_12,
             NeriUserDataDatabase.MIGRATION_12_13,
-            NeriUserDataDatabase.MIGRATION_13_14
+            NeriUserDataDatabase.MIGRATION_13_14,
+            NeriUserDataDatabase.MIGRATION_14_15
         ).close()
     }
 
     @Test
-    fun migrateFromVersion1ToVersion14KeepsExistingLocalPlaylistRows() {
+    fun migrateFromVersion1ToVersion15KeepsExistingLocalPlaylistRows() {
         helper.createDatabase(TEST_DATABASE_WITH_DATA_NAME, 1).apply {
             insertVersion1LocalPlaylistFixture()
             close()
@@ -53,7 +54,7 @@ class NeriUserDataDatabaseMigrationTest {
 
         val migrated = helper.runMigrationsAndValidate(
             TEST_DATABASE_WITH_DATA_NAME,
-            14,
+            15,
             true,
             NeriUserDataDatabase.MIGRATION_1_2,
             NeriUserDataDatabase.MIGRATION_2_3,
@@ -67,7 +68,8 @@ class NeriUserDataDatabaseMigrationTest {
             NeriUserDataDatabase.MIGRATION_10_11,
             NeriUserDataDatabase.MIGRATION_11_12,
             NeriUserDataDatabase.MIGRATION_12_13,
-            NeriUserDataDatabase.MIGRATION_13_14
+            NeriUserDataDatabase.MIGRATION_13_14,
+            NeriUserDataDatabase.MIGRATION_14_15
         )
 
         try {
@@ -109,6 +111,46 @@ class NeriUserDataDatabaseMigrationTest {
                 migrated.stringFor(
                     "SELECT value FROM migration_metadata " +
                         "WHERE key = 'local_playlist_cutover_state'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion14ToVersion15KeepsSnapshotMetadata() {
+        helper.createDatabase(TEST_DATABASE_VERSION_14_NAME, 14).apply {
+            execSQL(
+                """
+                INSERT INTO download_snapshot_metadata (
+                  root_key, audio_name, user_lyric_offset_ms, duration_ms
+                ) VALUES ('root', 'song.flac', 0, 180000)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_14_NAME,
+            15,
+            true,
+            NeriUserDataDatabase.MIGRATION_14_15
+        )
+
+        try {
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM download_snapshot_metadata " +
+                        "WHERE root_key = 'root' AND audio_name = 'song.flac'"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('download_snapshot_metadata') " +
+                        "WHERE name = 'romanized_lyric_path'"
                 )
             )
         } finally {
@@ -212,5 +254,6 @@ class NeriUserDataDatabaseMigrationTest {
     private companion object {
         const val TEST_DATABASE_NAME = "neri-user-data-migration-test"
         const val TEST_DATABASE_WITH_DATA_NAME = "neri-user-data-migration-with-data-test"
+        const val TEST_DATABASE_VERSION_14_NAME = "neri-user-data-migration-v14-test"
     }
 }

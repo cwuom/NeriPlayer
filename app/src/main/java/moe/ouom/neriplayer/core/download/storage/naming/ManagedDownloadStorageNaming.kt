@@ -3,6 +3,12 @@ package moe.ouom.neriplayer.core.download.storage.naming
 import moe.ouom.neriplayer.core.download.storage.imageExtensions
 
 internal object ManagedDownloadStorageNaming {
+    internal enum class LyricKind {
+        ORIGINAL,
+        TRANSLATED,
+        ROMANIZED
+    }
+
     fun buildSidecarCandidateNames(candidateBaseNames: List<String>): List<String> {
         return buildList {
             candidateBaseNames.forEach { baseName ->
@@ -23,14 +29,32 @@ internal object ManagedDownloadStorageNaming {
         candidateBaseNames: List<String>,
         translated: Boolean
     ): List<String> {
+        return buildLyricCandidateNames(
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            kind = if (translated) LyricKind.TRANSLATED else LyricKind.ORIGINAL
+        )
+    }
+
+    fun buildLyricCandidateNames(
+        songId: Long?,
+        candidateBaseNames: List<String>,
+        kind: LyricKind
+    ): List<String> {
         val names = linkedSetOf<String>()
         fun addLyricNames(baseName: String) {
-            if (translated) {
-                names += "${baseName}_trans.lrc"
-                names += "${baseName}_trans.lrc.txt"
-            } else {
-                names += "$baseName.lrc"
-                names += "$baseName.lrc.txt"
+            val prefixes = when (kind) {
+                LyricKind.ORIGINAL -> listOf(baseName)
+                LyricKind.TRANSLATED -> listOf("${baseName}_trans")
+                LyricKind.ROMANIZED -> listOf(
+                    "${baseName}_roma",
+                    "${baseName}_romalrc",
+                    "${baseName}_romanized"
+                )
+            }
+            prefixes.forEach { prefix ->
+                names += "$prefix.lrc"
+                names += "$prefix.lrc.txt"
             }
         }
 

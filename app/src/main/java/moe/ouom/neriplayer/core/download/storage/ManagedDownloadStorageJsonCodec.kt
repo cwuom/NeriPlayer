@@ -196,6 +196,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("coverPath", coverPath)
             put("lyricPath", lyricPath)
             put("translatedLyricPath", translatedLyricPath)
+            put("romanizedLyricPath", romanizedLyricPath)
             put("durationMs", durationMs)
             put("downloadFinalized", downloadFinalized)
         }
@@ -371,6 +372,7 @@ internal object ManagedDownloadStorageJsonCodec {
             coverPath = optString("coverPath").takeIf(String::isNotBlank),
             lyricPath = optString("lyricPath").takeIf(String::isNotBlank),
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
+            romanizedLyricPath = optString("romanizedLyricPath").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs"),
             downloadFinalized = optOptionalBoolean("downloadFinalized")
         )

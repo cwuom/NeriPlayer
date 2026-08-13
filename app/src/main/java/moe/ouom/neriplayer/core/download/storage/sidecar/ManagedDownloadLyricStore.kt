@@ -12,6 +12,8 @@ internal object ManagedDownloadLyricStore {
         return if (translated) "${baseName}_trans.lrc" else "$baseName.lrc"
     }
 
+    fun romanizedLyricFileName(baseName: String): String = "${baseName}_roma.lrc"
+
     fun findLyricLocation(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         songId: Long,
@@ -23,6 +25,45 @@ internal object ManagedDownloadLyricStore {
             songId = songId.takeIf { it > 0L },
             candidateBaseNames = candidateBaseNames,
             translated = translated
+        )
+    }
+
+    fun findRomanizedLyricLocation(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        songId: Long,
+        candidateBaseNames: List<String>
+    ): String? {
+        return findIndexedLyricReference(
+            snapshot = snapshot,
+            songId = songId.takeIf { it > 0L },
+            candidateBaseNames = candidateBaseNames,
+            kind = ManagedDownloadStorageNaming.LyricKind.ROMANIZED
+        )
+    }
+
+    fun resolveManagedRomanizedLyricReference(
+        context: Context,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        song: SongItem,
+        resolvedAudio: ManagedDownloadStorage.StoredEntry?,
+        resolvedMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        fileNameTemplate: String?,
+        exists: (Context, String?) -> Boolean
+    ): String? {
+        resolvedMetadata?.romanizedLyricPath
+            ?.takeIf { exists(context, it) }
+            ?.let { return it }
+        resolvedAudio?.let { audio ->
+            findRomanizedLyricLocation(
+                snapshot = snapshot,
+                songId = resolvedMetadata?.songId ?: song.id,
+                candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
+            )?.let { return it }
+        }
+        return findRomanizedLyricLocation(
+            snapshot = snapshot,
+            songId = song.id,
+            candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         )
     }
 
@@ -50,7 +91,11 @@ internal object ManagedDownloadLyricStore {
                 snapshot = snapshot,
                 songId = resolvedMetadata?.songId ?: song.id.takeIf { it > 0L },
                 candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension),
-                translated = translated
+                kind = if (translated) {
+                    ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+                } else {
+                    ManagedDownloadStorageNaming.LyricKind.ORIGINAL
+                }
             )?.let { return it }
         }
 
@@ -58,7 +103,11 @@ internal object ManagedDownloadLyricStore {
             snapshot = snapshot,
             songId = song.id.takeIf { it > 0L },
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate),
-            translated = translated
+            kind = if (translated) {
+                ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+            } else {
+                ManagedDownloadStorageNaming.LyricKind.ORIGINAL
+            }
         )
     }
 
@@ -90,11 +139,29 @@ internal object ManagedDownloadLyricStore {
         candidateBaseNames: List<String>,
         translated: Boolean
     ): String? {
+        return findIndexedLyricReference(
+            snapshot = snapshot,
+            songId = songId,
+            candidateBaseNames = candidateBaseNames,
+            kind = if (translated) {
+                ManagedDownloadStorageNaming.LyricKind.TRANSLATED
+            } else {
+                ManagedDownloadStorageNaming.LyricKind.ORIGINAL
+            }
+        )
+    }
+
+    private fun findIndexedLyricReference(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        songId: Long?,
+        candidateBaseNames: List<String>,
+        kind: ManagedDownloadStorageNaming.LyricKind
+    ): String? {
         return ManagedDownloadStorageLookup.findIndexedEntryByNames(
             names = ManagedDownloadStorageNaming.buildLyricCandidateNames(
                 songId = songId,
                 candidateBaseNames = candidateBaseNames,
-                translated = translated
+                kind = kind
             ),
             entriesByName = snapshot.lyricEntriesByName
         )?.reference

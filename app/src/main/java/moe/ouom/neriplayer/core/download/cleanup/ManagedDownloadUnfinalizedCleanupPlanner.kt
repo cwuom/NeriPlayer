@@ -61,7 +61,12 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
         metadata: ManagedDownloadStorage.DownloadedAudioMetadata,
         managedSidecarReferences: Set<String>
     ): List<String> {
-        return listOf(metadata.coverPath, metadata.lyricPath, metadata.translatedLyricPath)
+        return listOf(
+            metadata.coverPath,
+            metadata.lyricPath,
+            metadata.translatedLyricPath,
+            metadata.romanizedLyricPath
+        )
             .mapNotNull { reference -> reference?.takeIf(String::isNotBlank) }
             .filter(managedSidecarReferences::contains)
     }

@@ -76,7 +76,11 @@ internal data class QuickImportedSongSeed(
     val durationMs: Long?,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
-    val sourceStableKey: String? = null
+    val sourceStableKey: String? = null,
+    val matchedLyric: String? = null,
+    val matchedTranslatedLyric: String? = null,
+    val originalLyric: String? = null,
+    val originalTranslatedLyric: String? = null
 )
 
 private data class QuickImportedAudioInfo(
@@ -135,19 +139,18 @@ internal fun buildNearbySidecarCopyPlans(
             extensions = lyricExtensions
         )
 
-        fun addSelectedLyricSidecar(source: File?, translated: Boolean) {
+        fun addSelectedLyricSidecar(source: File?) {
             source ?: return
-            val sourcePrefix = if (translated) "${sourceBase}_trans" else sourceBase
-            val targetPrefix = if (translated) "${targetBase}_trans" else targetBase
             val suffix = source.name
-                .removePrefix(sourcePrefix)
-                .takeIf { it.startsWith('.') }
+                .removePrefix(sourceBase)
+                .takeIf { it.startsWith('.') || it.startsWith('_') }
                 ?: return
-            addIfExists(source, File(targetDir, "$targetPrefix$suffix"))
+            addIfExists(source, File(targetDir, "$targetBase$suffix"))
         }
 
-        addSelectedLyricSidecar(nearbyLyricFiles.original, translated = false)
-        addSelectedLyricSidecar(nearbyLyricFiles.translated, translated = true)
+        addSelectedLyricSidecar(nearbyLyricFiles.original)
+        addSelectedLyricSidecar(nearbyLyricFiles.translated)
+        addSelectedLyricSidecar(nearbyLyricFiles.romanized)
 
         imageExtensions.forEach { extension ->
             addIfExists(File(sourceDir, "$sourceBase.$extension"), File(targetDir, "$targetBase.$extension"))
@@ -251,7 +254,7 @@ object LocalAudioImportManager {
         val scanStartedAt = SystemClock.elapsedRealtime()
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
         val root = DocumentFile.fromTreeUri(context, folderUri)
-        if (root == null || !root.canRead()) {
+        if (root == null) {
             NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
             return@withContext LocalAudioImportResult(
                 songs = emptyList(),
@@ -509,6 +512,10 @@ object LocalAudioImportManager {
             originalName = resolvedTitle,
             originalArtist = resolvedArtist,
             originalCoverUrl = seed.nearbyCoverUri,
+            matchedLyric = seed.matchedLyric,
+            matchedTranslatedLyric = seed.matchedTranslatedLyric,
+            originalLyric = seed.originalLyric,
+            originalTranslatedLyric = seed.originalTranslatedLyric,
             localFileName = resolvedDisplayName.ifBlank { null },
             localFilePath = seed.localFile?.absolutePath,
             channelId = "local",
@@ -736,7 +743,11 @@ object LocalAudioImportManager {
                 durationMs = details.durationMs,
                 localFile = details.filePath?.let(::File)?.takeIf(File::exists),
                 nearbyCoverUri = details.coverUri,
-                sourceStableKey = details.sourceStableKey
+                sourceStableKey = details.sourceStableKey,
+                matchedLyric = details.lyricContent,
+                matchedTranslatedLyric = details.translatedLyricContent,
+                originalLyric = details.lyricContent,
+                originalTranslatedLyric = details.translatedLyricContent
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )
@@ -874,6 +885,11 @@ object LocalAudioImportManager {
         } else {
             null
         }
+        val lyrics = runCatching {
+            LocalMediaSupport.inspectLyricsForScan(context, uri)
+        }.onFailure {
+            NPLogger.w(TAG, "quick local lyrics inspection failed for $uri: ${it.message}")
+        }.getOrNull()
 
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(
@@ -884,7 +900,11 @@ object LocalAudioImportManager {
                 album = queryInfo.album,
                 durationMs = queryInfo.durationMs,
                 localFile = resolvedFile,
-                nearbyCoverUri = nearbyCoverUri
+                nearbyCoverUri = nearbyCoverUri,
+                matchedLyric = lyrics?.lyric,
+                matchedTranslatedLyric = lyrics?.translatedLyric,
+                originalLyric = lyrics?.lyric,
+                originalTranslatedLyric = lyrics?.translatedLyric
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )
@@ -990,6 +1010,12 @@ object LocalAudioImportManager {
         resolveSourceFile(context, uri)?.let { sourceFile ->
             copyNearbySidecars(sourceFile, targetFile)
         }
+        LocalMediaSupport.copyNearbyLyricSidecars(
+            context = context,
+            sourceUri = uri,
+            sourceDisplayName = displayName ?: targetFile.name,
+            targetFile = targetFile
+        )
 
         return Uri.fromFile(targetFile)
     }

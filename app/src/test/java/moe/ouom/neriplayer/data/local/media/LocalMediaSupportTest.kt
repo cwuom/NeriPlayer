@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
 import java.io.File
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -179,6 +180,18 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyLyricFiles discovers romanized sidecar in Lyrics directory`() {
+        val sourceDir = tempFolder.newFolder("nearby-romanized-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        val romanized = File(lyricsDir, "song_roma.lrc").apply { writeText("romanized") }
+
+        val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+
+        assertEquals(romanized.canonicalPath, found.romanized?.canonicalPath)
+    }
+
+    @Test
     fun `resolveEffectiveLocalLyricContent falls back to embedded lyrics for blank sidecar`() {
         assertEquals(
             "[00:00.00]embedded",
@@ -204,6 +217,33 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `resolveEffectiveLocalLyricPath hides unreadable sidecar references`() {
+        assertNull(
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/empty",
+                content = "  \n"
+            )
+        )
+        assertEquals(
+            "content://lyrics/readable",
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/readable",
+                content = "[00:01.00]line"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveEffectiveLocalLyricPath ignores embedded fallback content`() {
+        assertNull(
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/empty",
+                content = null
+            )
+        )
+    }
+
+    @Test
     fun `findNearbyLyricFiles keeps source directory priority over Lyrics fallback`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
@@ -217,5 +257,58 @@ class LocalMediaSupportTest {
 
         assertEquals(original.canonicalPath, found.original?.canonicalPath)
         assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
+
+    @Test
+    fun `local metadata sidecar keeps fields independent and preserves existing values`() {
+        val existing = """
+            {"matchedLyric":"matched","originalLyric":"original",
+             "matchedRomanizedLyric":"romanized","custom":"keep"}
+        """.trimIndent()
+        val updated = LocalMediaSupport.buildLocalLyricsMetadataJson(
+            existingRaw = existing,
+            song = SongItem(
+                id = 1L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                matchedLyric = "new matched",
+                matchedTranslatedLyric = "new translated"
+            )
+        )
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar("/tmp/song.npmeta.json", updated)
+
+        assertEquals("new matched", parsed?.matchedLyric)
+        assertEquals("original", parsed?.originalLyric)
+        assertEquals("new translated", parsed?.matchedTranslatedLyric)
+        assertEquals(null, parsed?.originalTranslatedLyric)
+        assertEquals("romanized", parsed?.matchedRomanizedLyric)
+        assertEquals(true, org.json.JSONObject(updated).has("custom"))
+    }
+
+    @Test
+    fun `local metadata sidecar accepts explicit blank lyric overrides`() {
+        val updated = LocalMediaSupport.buildLocalLyricsMetadataJson(
+            existingRaw = "{\"matchedLyric\":\"old\",\"originalLyric\":\"base\"}",
+            song = SongItem(
+                id = 2L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                matchedLyric = "",
+                matchedTranslatedLyric = ""
+            )
+        )
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar("/tmp/song.npmeta.json", updated)
+
+        assertEquals("", parsed?.matchedLyric)
+        assertEquals("base", parsed?.originalLyric)
+        assertEquals("", parsed?.matchedTranslatedLyric)
     }
 }
