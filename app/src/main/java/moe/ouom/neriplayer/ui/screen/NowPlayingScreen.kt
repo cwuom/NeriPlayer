@@ -209,6 +209,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.core.api.lyrics.defaultEditableLyricMatchSources
@@ -5879,6 +5880,16 @@ private fun buildLyricMatchMetaText(result: RankedEditableLyricMatch): String {
         }
         append(" · ")
         append(stringResource(R.string.lyrics_match_score, result.score))
+        append(" · ")
+        append(
+            stringResource(
+                when (result.confidence) {
+                    EditableLyricMatchConfidence.HIGH -> R.string.lyrics_match_confidence_high
+                    EditableLyricMatchConfidence.MEDIUM -> R.string.lyrics_match_confidence_medium
+                    EditableLyricMatchConfidence.LOW -> R.string.lyrics_match_confidence_low
+                }
+            )
+        )
     }
 }
 
@@ -5901,20 +5912,21 @@ private fun filterCachedLyricMatchResults(
         .filter { it in selectedSources }
         .flatMap { source -> resultsBySource[source].orEmpty().asSequence() }
         .sortedWith(
-            compareByDescending<RankedEditableLyricMatch> { it.score }
-                .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
+            compareByDescending<RankedEditableLyricMatch> { it.confidence.rank }
                 .thenBy { lyricMatchSelectableSources.indexOf(it.candidate.source) }
+                .thenByDescending { it.score }
+                .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
                 .thenBy { it.candidate.title }
         )
         .toList()
 }
 
 private val lyricMatchSelectableSources = listOf(
-    EditableLyricMatchSource.AMLL_TTML,
-    EditableLyricMatchSource.CLOUD_MUSIC,
     EditableLyricMatchSource.KUGOU,
+    EditableLyricMatchSource.CLOUD_MUSIC,
     EditableLyricMatchSource.QQ_MUSIC,
     EditableLyricMatchSource.LRCLIB,
+    EditableLyricMatchSource.AMLL_TTML,
     EditableLyricMatchSource.YOUTUBE_MUSIC
 )
 

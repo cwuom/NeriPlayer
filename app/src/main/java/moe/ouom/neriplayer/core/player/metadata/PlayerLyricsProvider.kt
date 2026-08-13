@@ -32,8 +32,11 @@ import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
+import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricsMatcher
 import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
+import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
+import moe.ouom.neriplayer.core.api.lyrics.editableLyricMatchSourcePriority
 import moe.ouom.neriplayer.core.api.lyrics.extractPlainLyricsFromCollapsedTimedLyrics
 import moe.ouom.neriplayer.core.api.lyrics.hasLrcTimestamp
 import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
@@ -118,7 +121,10 @@ internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean 
 internal data class YouTubeMusicLyricsCacheEntry(
     val lyrics: List<LyricEntry>,
     val translatedLyrics: List<LyricEntry> = emptyList(),
-    val translationLookupComplete: Boolean = false
+    val translationLookupComplete: Boolean = false,
+    val externalMatchCacheKey: String? = null,
+    val externalMatchSource: EditableLyricMatchSource? = null,
+    val externalMatchDurationDeltaMs: Long = 0L
 )
 
 internal data class DurationMatchedExternalLyrics(
@@ -185,6 +191,22 @@ internal object PlayerLyricsProvider {
 
     private fun buildYouTubeMusicLyricsCacheKey(song: SongItem): String {
         return "${song.id}:external-lyrics-v4"
+    }
+
+    internal fun buildYouTubeMusicExternalLyricMatchCacheKey(song: SongItem): String {
+        return buildString {
+            append(song.stableKey())
+            append('|')
+            append(song.name.trim())
+            append('|')
+            append(song.artist.trim())
+            append('|')
+            append(song.album.trim())
+            append('|')
+            append(song.durationMs)
+            append("|sources=")
+            append(automaticYouTubeExternalLyricSourceOrder.joinToString(",") { it.name })
+        }
     }
 
     private fun getUsableYouTubeMusicLyricsCacheEntry(
@@ -747,17 +769,47 @@ internal object PlayerLyricsProvider {
         fallbackPlainLyrics: String?
     ): List<LyricEntry> {
         val cacheKey = buildYouTubeMusicLyricsCacheKey(song)
+        val externalMatchCacheKey = buildYouTubeMusicExternalLyricMatchCacheKey(song)
         getUsableYouTubeMusicLyricsCacheEntry(cacheKey, ytMusicLyricsCache)?.let { cached ->
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "Using cached YT Music lyrics for '" + song.name + "'"
-            )
-            return cached.lyrics
+            if (
+                cached.externalMatchCacheKey != null &&
+                cached.externalMatchCacheKey != externalMatchCacheKey
+            ) {
+                ytMusicLyricsCache.remove(cacheKey)
+            } else {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Using cached YT Music lyrics for '" + song.name + "'"
+                )
+                return cached.lyrics
+            }
         }
 
         val videoId = extractYouTubeMusicVideoId(song.mediaUri)
         return withContext(Dispatchers.IO) {
             try {
+                val externalLyrics = loadDurationMatchedExternalLyrics(
+                    song = song,
+                    editableLyricsMatcher = editableLyricsMatcher,
+                    ytMusicLyricsCache = ytMusicLyricsCache,
+                    cacheKey = cacheKey,
+                    externalMatchCacheKey = externalMatchCacheKey
+                )
+                if (externalLyrics != null) {
+                    ytMusicLyricsCache.put(
+                        cacheKey,
+                        YouTubeMusicLyricsCacheEntry(
+                            lyrics = externalLyrics.lyrics,
+                            translatedLyrics = externalLyrics.translatedLyrics,
+                            translationLookupComplete = true,
+                            externalMatchCacheKey = externalMatchCacheKey,
+                            externalMatchSource = externalLyrics.source,
+                            externalMatchDurationDeltaMs = externalLyrics.durationDeltaMs
+                        )
+                    )
+                    return@withContext externalLyrics.lyrics
+                }
+
                 val lrcLibResult = try {
                     val durationSeconds = song.durationMs / 1_000L
                     lrcLibClient.getLyrics(
@@ -792,7 +844,8 @@ internal object PlayerLyricsProvider {
                             cacheKey,
                             YouTubeMusicLyricsCacheEntry(
                                 lyrics = entries,
-                                translationLookupComplete = true
+                                translationLookupComplete = true,
+                                externalMatchCacheKey = null
                             )
                         )
                         return@withContext entries
@@ -817,27 +870,12 @@ internal object PlayerLyricsProvider {
                             cacheKey,
                             YouTubeMusicLyricsCacheEntry(
                                 lyrics = entries,
-                                translationLookupComplete = true
+                                translationLookupComplete = true,
+                                externalMatchCacheKey = null
                             )
                         )
                         return@withContext entries
                     }
-                }
-
-                val externalLyrics = loadDurationMatchedExternalLyrics(
-                    song = song,
-                    editableLyricsMatcher = editableLyricsMatcher
-                )
-                if (externalLyrics != null) {
-                    ytMusicLyricsCache.put(
-                        cacheKey,
-                        YouTubeMusicLyricsCacheEntry(
-                            lyrics = externalLyrics.lyrics,
-                            translatedLyrics = externalLyrics.translatedLyrics,
-                            translationLookupComplete = true
-                        )
-                    )
-                    return@withContext externalLyrics.lyrics
                 }
 
                 if (!videoId.isNullOrBlank()) {
@@ -868,7 +906,8 @@ internal object PlayerLyricsProvider {
                                 cacheKey,
                                 YouTubeMusicLyricsCacheEntry(
                                     lyrics = entries,
-                                    translationLookupComplete = true
+                                    translationLookupComplete = true,
+                                    externalMatchCacheKey = null
                                 )
                             )
                             return@withContext entries
@@ -916,35 +955,73 @@ internal object PlayerLyricsProvider {
         val cacheKey = buildYouTubeMusicLyricsCacheKey(song)
         val cached = getUsableYouTubeMusicLyricsCacheEntry(cacheKey, ytMusicLyricsCache)
         if (cached != null) {
-            val resolvedCacheEntry = resolveYouTubeMusicTranslationCacheEntry(
-                cached = cached,
-                externalLyrics = null
-            )!!
-            if (resolvedCacheEntry != cached) {
-                ytMusicLyricsCache.put(cacheKey, resolvedCacheEntry)
+            val externalMatchCacheKey = buildYouTubeMusicExternalLyricMatchCacheKey(song)
+            if (cached.externalMatchCacheKey == externalMatchCacheKey) {
+                return cached.translatedLyrics
             }
-            return resolvedCacheEntry.translatedLyrics
+            if (cached.externalMatchCacheKey != null) {
+                ytMusicLyricsCache.remove(cacheKey)
+            } else {
+                val resolvedCacheEntry = resolveYouTubeMusicTranslationCacheEntry(
+                    cached = cached,
+                    externalLyrics = null
+                )!!
+                if (resolvedCacheEntry != cached) {
+                    ytMusicLyricsCache.put(cacheKey, resolvedCacheEntry)
+                }
+                return resolvedCacheEntry.translatedLyrics
+            }
         }
 
+        val externalMatchCacheKey = buildYouTubeMusicExternalLyricMatchCacheKey(song)
         val externalLyrics = loadDurationMatchedExternalLyrics(
             song = song,
-            editableLyricsMatcher = editableLyricsMatcher
+            editableLyricsMatcher = editableLyricsMatcher,
+            ytMusicLyricsCache = ytMusicLyricsCache,
+            cacheKey = cacheKey,
+            externalMatchCacheKey = externalMatchCacheKey
         )
         val resolvedCacheEntry = resolveYouTubeMusicTranslationCacheEntry(
             cached = null,
             externalLyrics = externalLyrics
         ) ?: return emptyList()
-        ytMusicLyricsCache.put(cacheKey, resolvedCacheEntry)
+        ytMusicLyricsCache.put(
+            cacheKey,
+            if (externalLyrics == null) {
+                resolvedCacheEntry
+            } else {
+                resolvedCacheEntry.copy(
+                    externalMatchCacheKey = externalMatchCacheKey,
+                    externalMatchSource = externalLyrics.source,
+                    externalMatchDurationDeltaMs = externalLyrics.durationDeltaMs
+                )
+            }
+        )
         return resolvedCacheEntry.translatedLyrics
     }
 
     private suspend fun loadDurationMatchedExternalLyrics(
         song: SongItem,
-        editableLyricsMatcher: EditableLyricsMatcher
+        editableLyricsMatcher: EditableLyricsMatcher,
+        ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>,
+        cacheKey: String,
+        externalMatchCacheKey: String
     ): DurationMatchedExternalLyrics? {
         if (song.durationMs <= 0L) {
             return null
         }
+        getUsableYouTubeMusicLyricsCacheEntry(cacheKey, ytMusicLyricsCache)
+            ?.let { cached ->
+                val cachedMatch = resolveCachedYouTubeExternalLyricMatch(
+                    cached = cached,
+                    externalMatchCacheKey = externalMatchCacheKey
+                ) ?: return@let
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Using cached external lyrics match for '" + song.name + "'"
+                )
+                return cachedMatch
+            }
         val request = EditableLyricMatchRequest(
             keyword = listOf(song.name, song.artist)
                 .filter { it.isNotBlank() }
@@ -953,23 +1030,17 @@ internal object PlayerLyricsProvider {
             artistName = song.artist,
             albumName = song.album,
             durationMs = song.durationMs,
-            sources = setOf(
-                EditableLyricMatchSource.KUGOU,
-                EditableLyricMatchSource.CLOUD_MUSIC,
-                EditableLyricMatchSource.QQ_MUSIC
-            )
+            sources = automaticYouTubeExternalLyricSources
         )
-        val candidates = editableLyricsMatcher.matchLyrics(request)
-            .asSequence()
-            .map { it.candidate }
-            .toList()
-        val selectedLyrics = selectDurationMatchedExternalLyrics(
+        val resolvedLyrics = loadFirstUsableAutomaticExternalLyrics(
+            request = request,
             expectedDurationMs = song.durationMs,
             expectedTitle = song.name,
-            expectedArtist = song.artist,
-            candidates = candidates
-        )
-        selectedLyrics?.let { matchedLyrics ->
+            expectedArtist = song.artist
+        ) { source ->
+            editableLyricsMatcher.matchHighConfidenceLyricsForSource(request, source)
+        }
+        resolvedLyrics?.let { matchedLyrics ->
             NPLogger.d(
                 "NERI-PlayerManager",
                 "Using " + matchedLyrics.source + " lyrics for '" + song.name +
@@ -977,7 +1048,45 @@ internal object PlayerLyricsProvider {
                     ", hasTranslation=" + matchedLyrics.translatedLyrics.isNotEmpty()
             )
         }
-        return selectedLyrics
+        return resolvedLyrics
+    }
+
+    internal suspend fun loadFirstUsableAutomaticExternalLyrics(
+        request: EditableLyricMatchRequest,
+        expectedDurationMs: Long,
+        expectedTitle: String,
+        expectedArtist: String,
+        sourceLoader: suspend (EditableLyricMatchSource) -> List<RankedEditableLyricMatch>
+    ): DurationMatchedExternalLyrics? {
+        for (source in automaticYouTubeExternalLyricSourceOrder) {
+            if (source !in request.sources) continue
+            val selectedLyrics = selectFirstUsableAutomaticExternalLyrics(
+                expectedDurationMs = expectedDurationMs,
+                expectedTitle = expectedTitle,
+                expectedArtist = expectedArtist,
+                matches = sourceLoader(source)
+            )
+            if (selectedLyrics != null) {
+                return selectedLyrics
+            }
+        }
+        return null
+    }
+
+    internal fun resolveCachedYouTubeExternalLyricMatch(
+        cached: YouTubeMusicLyricsCacheEntry,
+        externalMatchCacheKey: String
+    ): DurationMatchedExternalLyrics? {
+        if (cached.externalMatchCacheKey != externalMatchCacheKey) {
+            return null
+        }
+        val source = cached.externalMatchSource ?: return null
+        return DurationMatchedExternalLyrics(
+            lyrics = cached.lyrics,
+            translatedLyrics = cached.translatedLyrics,
+            source = source,
+            durationDeltaMs = cached.externalMatchDurationDeltaMs
+        )
     }
 
     internal fun selectDurationMatchedExternalLyrics(
@@ -986,6 +1095,32 @@ internal object PlayerLyricsProvider {
         expectedArtist: String,
         candidates: List<EditableLyricMatchCandidate>
     ): DurationMatchedExternalLyrics? {
+        val matches = candidates.map { candidate ->
+            RankedEditableLyricMatch(
+                candidate = candidate,
+                score = 0,
+                durationDeltaMs = if (expectedDurationMs > 0L && candidate.durationMs > 0L) {
+                    kotlin.math.abs(expectedDurationMs - candidate.durationMs)
+                } else {
+                    null
+                },
+                confidence = EditableLyricMatchConfidence.HIGH
+            )
+        }
+        return selectRankedDurationMatchedExternalLyrics(
+            expectedDurationMs = expectedDurationMs,
+            expectedTitle = expectedTitle,
+            expectedArtist = expectedArtist,
+            matches = matches
+        )
+    }
+
+    internal fun selectRankedDurationMatchedExternalLyrics(
+        expectedDurationMs: Long,
+        expectedTitle: String,
+        expectedArtist: String,
+        matches: List<RankedEditableLyricMatch>
+    ): DurationMatchedExternalLyrics? {
         if (
             expectedDurationMs <= 0L ||
             expectedTitle.isBlank() ||
@@ -993,7 +1128,32 @@ internal object PlayerLyricsProvider {
         ) {
             return null
         }
-        for (candidate in candidates) {
+        return selectFirstUsableAutomaticExternalLyrics(
+            expectedDurationMs = expectedDurationMs,
+            expectedTitle = expectedTitle,
+            expectedArtist = expectedArtist,
+            matches = matches.sortedWith(automaticExternalLyricMatchComparator())
+        )
+    }
+
+    internal fun selectFirstUsableAutomaticExternalLyrics(
+        expectedDurationMs: Long,
+        expectedTitle: String,
+        expectedArtist: String,
+        matches: List<RankedEditableLyricMatch>
+    ): DurationMatchedExternalLyrics? {
+        if (
+            expectedDurationMs <= 0L ||
+            expectedTitle.isBlank() ||
+            expectedArtist.isBlank()
+        ) {
+            return null
+        }
+        for (match in matches) {
+            if (match.confidence != EditableLyricMatchConfidence.HIGH) {
+                continue
+            }
+            val candidate = match.candidate
             if (
                 candidate.durationMs <= 0L ||
                 !isExternalLyricDurationCompatible(expectedDurationMs, candidate.durationMs)
@@ -1042,4 +1202,23 @@ internal object PlayerLyricsProvider {
         }
         return null
     }
+}
+
+private val automaticYouTubeExternalLyricSourceOrder = listOf(
+    EditableLyricMatchSource.KUGOU,
+    EditableLyricMatchSource.CLOUD_MUSIC,
+    EditableLyricMatchSource.QQ_MUSIC,
+    EditableLyricMatchSource.LRCLIB
+)
+
+private val automaticYouTubeExternalLyricSources = automaticYouTubeExternalLyricSourceOrder.toSet()
+
+private fun automaticExternalLyricMatchComparator(): Comparator<RankedEditableLyricMatch> {
+    return compareByDescending<RankedEditableLyricMatch> {
+        editableLyricMatchSourcePriority(it.candidate.source)
+    }
+        .thenByDescending { it.confidence.rank }
+        .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
+        .thenByDescending { it.score }
+        .thenBy { it.candidate.title }
 }

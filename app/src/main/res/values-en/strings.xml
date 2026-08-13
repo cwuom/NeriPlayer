@@ -332,6 +332,9 @@
     <string name="lyrics_match_empty">No usable lyrics found</string>
     <string name="lyrics_match_error">Match failed: %s</string>
     <string name="lyrics_match_score">Match %1$d</string>
+    <string name="lyrics_match_confidence_high">High confidence</string>
+    <string name="lyrics_match_confidence_medium">Medium confidence</string>
+    <string name="lyrics_match_confidence_low">Low confidence, please verify</string>
     <string name="lyrics_match_duration_delta">delta %s</string>
     <string name="lyrics_match_source_kugou">Kugou</string>
     <string name="lyrics_match_source_cloud_music">NetEase</string>

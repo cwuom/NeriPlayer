@@ -11,10 +11,10 @@ class EditableLyricMatchPolicyTest {
     fun `youtube music editable lyric matching defaults to external lyric sources`() {
         assertEquals(
             setOf(
-                EditableLyricMatchSource.LRCLIB,
                 EditableLyricMatchSource.KUGOU,
                 EditableLyricMatchSource.CLOUD_MUSIC,
-                EditableLyricMatchSource.QQ_MUSIC
+                EditableLyricMatchSource.QQ_MUSIC,
+                EditableLyricMatchSource.LRCLIB
             ),
             defaultEditableLyricMatchSources(isYouTubeMusicTrack = true)
         )
@@ -29,6 +29,105 @@ class EditableLyricMatchPolicyTest {
                 EditableLyricMatchSource.KUGOU
             ),
             defaultEditableLyricMatchSources()
+        )
+    }
+
+    @Test
+    fun `domestic lyric search converts traditional Chinese to simplified`() {
+        assertEquals(
+            "搁浅 周杰伦",
+            toSimplifiedChineseForDomesticSearch("擱淺 周杰倫")
+        )
+    }
+
+    @Test
+    fun `rankEditableLyricMatches keeps a title alias with matching artist and duration`() {
+        val ranked = rankEditableLyricMatches(
+            request = EditableLyricMatchRequest(
+                keyword = "擱淺 周杰倫",
+                trackName = "擱淺",
+                artistName = "周杰倫",
+                durationMs = 248_000L,
+                preferWordTimed = false
+            ),
+            candidates = listOf(
+                candidate(
+                    id = "alias",
+                    title = "搁浅 (官方版)",
+                    artist = "周杰伦",
+                    durationMs = 249_000L,
+                    format = EditableLyricFormat.LRC,
+                    lyrics = "[00:01.00]可信歌词"
+                )
+            )
+        )
+
+        assertEquals(listOf("alias"), ranked.map { it.candidate.id })
+        assertEquals(EditableLyricMatchConfidence.HIGH, ranked.single().confidence)
+    }
+
+    @Test
+    fun `rankEditableLyricMatches rejects unrelated candidate even with matching duration`() {
+        val ranked = rankEditableLyricMatches(
+            request = EditableLyricMatchRequest(
+                keyword = "擱淺 周杰倫",
+                trackName = "擱淺",
+                artistName = "周杰倫",
+                durationMs = 248_000L,
+                preferWordTimed = false
+            ),
+            candidates = listOf(
+                candidate(
+                    id = "average",
+                    title = "平均",
+                    artist = "其他歌手",
+                    durationMs = 248_000L,
+                    lyrics = "[00:01.00]不相关歌词"
+                )
+            )
+        )
+
+        assertTrue(ranked.isEmpty())
+    }
+
+    @Test
+    fun `lyric match signal keeps a platform result for low confidence display`() {
+        val request = EditableLyricMatchRequest(
+            keyword = "Signal Artist One",
+            trackName = "Signal",
+            artistName = "Artist One",
+            durationMs = 180_000L
+        )
+        val candidate = candidate(
+            id = "platform-alias",
+            title = "Signal performance",
+            artist = "",
+            durationMs = 0L,
+            sourceScore = 0
+        )
+
+        assertTrue(hasLyricMatchSignal(request, candidate))
+    }
+
+    @Test
+    fun `plausible identity accepts a platform title alias with primary artist`() {
+        assertTrue(
+            isPlausibleLyricMatchIdentity(
+                expectedTitle = "擱淺",
+                expectedArtist = "周杰倫",
+                candidateTitle = "搁浅 官方版",
+                candidateArtist = "周杰伦",
+                durationCompatible = true
+            )
+        )
+        assertFalse(
+            isPlausibleLyricMatchIdentity(
+                expectedTitle = "擱淺",
+                expectedArtist = "周杰倫",
+                candidateTitle = "平均",
+                candidateArtist = "其他歌手",
+                durationCompatible = true
+            )
         )
     }
 
@@ -108,6 +207,78 @@ class EditableLyricMatchPolicyTest {
                 expectedArtist = "Artist One",
                 candidateTitle = "Signal (Live)",
                 candidateArtist = "Artist One"
+            )
+        )
+    }
+
+    @Test
+    fun `isReliableLyricMatchIdentity keeps release variants distinct`() {
+        assertTrue(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal (Remastered)",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal (Remaster)",
+                candidateArtist = "Artist One"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal (Remastered)",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal (Radio Edit)",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal (Extended)",
+                candidateArtist = "Artist One"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal (Explicit)",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal (Clean)",
+                candidateArtist = "Artist One"
+            )
+        )
+    }
+
+    @Test
+    fun `isReliableLyricMatchIdentity requires the expected primary artist`() {
+        assertTrue(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One feat. Guest"
+            )
+        )
+        assertTrue(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One and Guest"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Guest"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One feat. Guest",
+                candidateTitle = "Signal",
+                candidateArtist = "Guest"
             )
         )
     }
@@ -288,6 +459,20 @@ class EditableLyricMatchPolicyTest {
         )
 
         assertEquals(listOf("qt", "晴天 周杰伦", "晴天"), queries)
+    }
+
+    @Test
+    fun `editableLyricMatchDomesticSearchQueries never sends traditional Chinese`() {
+        val queries = editableLyricMatchDomesticSearchQueries(
+            EditableLyricMatchRequest(
+                keyword = "擱淺 周杰倫",
+                trackName = "擱淺",
+                artistName = "周杰倫"
+            )
+        )
+
+        assertEquals(listOf("搁浅 周杰伦", "搁浅"), queries)
+        assertTrue(queries.none { it.contains('擱') || it.contains('淺') || it.contains('傑') })
     }
 
     private fun candidate(
