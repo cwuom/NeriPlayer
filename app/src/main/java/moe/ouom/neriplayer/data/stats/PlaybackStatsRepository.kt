@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomSnapshot
 import moe.ouom.neriplayer.data.local.database.store.PlaybackStatsRoomStore
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.sync.github.SecureTokenStorage
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatMapper
 import moe.ouom.neriplayer.data.sync.github.SyncPlaybackStatsMergePolicy
@@ -76,6 +77,7 @@ private data class PlaybackStatsMetadata(
 )
 
 private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
+internal const val PLAYBACK_STATS_SYNC_DELAY_MS = 60_000L
 
 class PlaybackStatsRepository private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -434,16 +436,20 @@ class PlaybackStatsRepository private constructor(private val app: Context) {
     }
 
     private fun triggerSync() {
+        // 播放统计先本地落盘, 延后同步给切歌首帧和重缓冲留出资源
         runCatching {
+            SecureTokenStorage(app).markSyncMutation()
             GitHubSyncWorker.scheduleDelayedSync(
                 app,
                 triggerByUserAction = false,
-                markMutation = true
+                markMutation = false,
+                initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS
             )
             WebDavSyncWorker.scheduleDelayedSync(
                 app,
                 triggerByUserAction = false,
-                markMutation = true
+                markMutation = false,
+                initialDelayMs = PLAYBACK_STATS_SYNC_DELAY_MS
             )
         }
     }

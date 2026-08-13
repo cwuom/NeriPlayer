@@ -37,7 +37,8 @@ class WebDavSyncWorker(
         fun scheduleDelayedSync(
             context: Context,
             triggerByUserAction: Boolean = false,
-            markMutation: Boolean = false
+            markMutation: Boolean = false,
+            initialDelayMs: Long = DEFAULT_DELAY_MS
         ) {
             if (markMutation) {
                 SecureTokenStorage(context).markSyncMutation()
@@ -49,7 +50,7 @@ class WebDavSyncWorker(
                 }
             }
             val syncRequest = OneTimeWorkRequestBuilder<WebDavSyncWorker>()
-                .setInitialDelay(DEFAULT_DELAY_MS, TimeUnit.MILLISECONDS)
+                .setInitialDelay(initialDelayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
                 .addTag(WORK_NAME)
                 .setInputData(workDataOf("trigger_by_user_action" to triggerByUserAction))
                 .build()

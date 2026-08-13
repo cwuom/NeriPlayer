@@ -156,10 +156,11 @@ private fun PlayerManager.startupWatchdogTimeoutMs(): Long {
 }
 
 private fun PlayerManager.startupEarlyWatchdogTimeoutMs(timeoutMs: Long): Long {
-    val earlyTimeoutMs = if (usbExclusivePlaybackEnabled) {
-        STARTUP_STALL_USB_EARLY_TIMEOUT_MS
-    } else {
-        STARTUP_STALL_READY_EARLY_TIMEOUT_MS
+    val earlyTimeoutMs = when {
+        usbExclusivePlaybackEnabled -> STARTUP_STALL_USB_EARLY_TIMEOUT_MS
+        player.playbackState == Player.STATE_BUFFERING ->
+            STARTUP_STALL_BUFFERING_EARLY_TIMEOUT_MS
+        else -> STARTUP_STALL_READY_EARLY_TIMEOUT_MS
     }
     return earlyTimeoutMs.coerceAtMost(timeoutMs)
 }
@@ -170,7 +171,30 @@ private fun PlayerManager.isEarlyStartupPlaybackStalled(startPositionMs: Long): 
     val advancedMs = currentPositionMs - startPositionMs.coerceAtLeast(0L)
     if (advancedMs > STARTUP_STALL_POSITION_TOLERANCE_MS) return false
     if (usbExclusivePlaybackEnabled && isUsbExclusiveStartupOutputPathActive()) return true
-    return player.playbackState == Player.STATE_READY && player.playWhenReady
+    return shouldRecoverFromEarlyStartupStall(
+        playbackState = player.playbackState,
+        playWhenReady = player.playWhenReady,
+        advancedMs = advancedMs,
+        bufferedDurationMs = runCatching { player.totalBufferedDuration }
+            .getOrDefault(0L)
+    )
+}
+
+internal fun shouldRecoverFromEarlyStartupStall(
+    playbackState: Int,
+    playWhenReady: Boolean,
+    advancedMs: Long,
+    bufferedDurationMs: Long
+): Boolean {
+    if (!playWhenReady || advancedMs > PlayerManager.STARTUP_STALL_POSITION_TOLERANCE_MS) {
+        return false
+    }
+    return when (playbackState) {
+        Player.STATE_READY -> true
+        Player.STATE_BUFFERING ->
+            bufferedDurationMs < PlayerManager.STARTUP_STALL_BUFFERING_GRACE_MS
+        else -> false
+    }
 }
 
 private fun PlayerManager.isUsbExclusiveStartupOutputPathActive(): Boolean {

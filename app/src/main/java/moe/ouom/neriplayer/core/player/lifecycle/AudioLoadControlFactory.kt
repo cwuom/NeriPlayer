@@ -9,8 +9,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 internal data class AudioLoadControlPolicy(
     val minBufferMs: Int = 15_000,
     val maxBufferMs: Int = 30_000,
-    val bufferForPlaybackMs: Int = 800,
-    val bufferForPlaybackAfterRebufferMs: Int = 800,
+    val bufferForPlaybackMs: Int = 1_000,
+    val bufferForPlaybackAfterRebufferMs: Int = 3_000,
     /**
      * 往回拖进度条时留着已经下过的那段
      *
