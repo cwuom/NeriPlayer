@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +51,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,7 +68,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
-import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorDetail
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItem
@@ -72,8 +75,8 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorItemType
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.BlurTransformation
+import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -110,6 +113,18 @@ internal fun preserveYouTubeMusicCreatorName(
     )
 }
 
+internal fun youtubeMusicCreatorSectionScrollStateKey(
+    creatorBrowseId: String,
+    section: YouTubeMusicCreatorSection,
+    sectionIndex: Int
+): String {
+    return "$creatorBrowseId|${youtubeMusicCreatorSectionKey(section)}|$sectionIndex"
+}
+
+internal fun youtubeMusicCreatorDetailViewModelKey(creatorBrowseId: String): String {
+    return "youtube_music_creator_detail_view_model_$creatorBrowseId"
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YouTubeMusicCreatorDetailScreen(
@@ -119,19 +134,26 @@ fun YouTubeMusicCreatorDetailScreen(
     onPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     onSectionMoreClick: (YouTubeMusicCreatorSection) -> Unit = {},
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    detailViewModelFactory: androidx.lifecycle.ViewModelProvider.Factory? = null
 ) {
     val context = LocalContext.current
-    val viewModel: YouTubeMusicCreatorDetailViewModel = viewModel(
-        factory = viewModelFactory {
-            initializer {
-                YouTubeMusicCreatorDetailViewModel(context.applicationContext as Application)
-            }
+    val resolvedViewModelFactory = detailViewModelFactory ?: viewModelFactory {
+        initializer {
+            YouTubeMusicCreatorDetailViewModel(context.applicationContext as Application)
         }
+    }
+    val viewModel: YouTubeMusicCreatorDetailViewModel = viewModel(
+        key = youtubeMusicCreatorDetailViewModelKey(creator.browseId),
+        factory = resolvedViewModelFactory
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val isTabletLayout = currentWindowWidthDp() >= 720.dp
+    val listState = rememberSaveable(creator.browseId, saver = LazyListState.Saver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
+    val sectionStateHolder = rememberSaveableStateHolder()
 
     LaunchedEffect(creator.browseId) {
         viewModel.start(creator)
@@ -168,6 +190,9 @@ fun YouTubeMusicCreatorDetailScreen(
             )
             YouTubeMusicCreatorDetailContent(
                 uiState = uiState,
+                listState = listState,
+                creatorBrowseId = creator.browseId,
+                sectionStateHolder = sectionStateHolder,
                 miniPlayerHeight = miniPlayerHeight,
                 offlineMode = offlineMode,
                 onRetry = viewModel::retry,
@@ -185,8 +210,11 @@ fun YouTubeMusicCreatorDetailScreen(
 }
 
 @Composable
-private fun YouTubeMusicCreatorDetailContent(
+internal fun YouTubeMusicCreatorDetailContent(
     uiState: YouTubeMusicCreatorDetailUiState,
+    listState: LazyListState,
+    creatorBrowseId: String,
+    sectionStateHolder: SaveableStateHolder,
     miniPlayerHeight: androidx.compose.ui.unit.Dp,
     offlineMode: Boolean,
     onRetry: () -> Unit,
@@ -238,6 +266,7 @@ private fun YouTubeMusicCreatorDetailContent(
             }
             else -> {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .widthIn(max = 1080.dp)
                         .fillMaxSize(),
@@ -292,9 +321,12 @@ private fun YouTubeMusicCreatorDetailContent(
                     itemsIndexed(
                         items = detail.sections,
                         key = { index, section -> "creator-section-$index-${section.title}" }
-                    ) { _, section ->
+                    ) { sectionIndex, section ->
                         YouTubeMusicCreatorSection(
                             section = section,
+                            creatorBrowseId = creatorBrowseId,
+                            sectionIndex = sectionIndex,
+                            stateHolder = sectionStateHolder,
                             offlineMode = offlineMode,
                             isPlaybackQueueLoading =
                                 uiState.playbackQueueLoadingSectionKey ==
@@ -469,6 +501,9 @@ private fun YouTubeMusicCreatorHeader(
 @Composable
 private fun YouTubeMusicCreatorSection(
     section: YouTubeMusicCreatorSection,
+    creatorBrowseId: String,
+    sectionIndex: Int,
+    stateHolder: SaveableStateHolder,
     offlineMode: Boolean,
     isPlaybackQueueLoading: Boolean,
     playbackQueueError: String?,
@@ -543,21 +578,33 @@ private fun YouTubeMusicCreatorSection(
                 )
             }
         } else {
-            LazyRow(
-                contentPadding = PaddingValues(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            stateHolder.SaveableStateProvider(
+                key = youtubeMusicCreatorSectionScrollStateKey(
+                    creatorBrowseId = creatorBrowseId,
+                    section = section,
+                    sectionIndex = sectionIndex
+                )
             ) {
-                itemsIndexed(
-                    items = section.items,
-                    key = { index, item -> "${item.type}-${item.browseId}-${item.videoId}-$index" }
-                ) { _, item ->
-                    CreatorSectionCard(
-                        item = item,
-                        offlineMode = offlineMode,
-                        onSongClick = onSongClick,
-                        onPlaylistClick = onPlaylistClick,
-                        onCreatorClick = onCreatorClick
-                    )
+                val listState = rememberSaveable(saver = LazyListState.Saver) {
+                    LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+                }
+                LazyRow(
+                    state = listState,
+                    contentPadding = PaddingValues(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    itemsIndexed(
+                        items = section.items,
+                        key = { index, item -> "${item.type}-${item.browseId}-${item.videoId}-$index" }
+                    ) { _, item ->
+                        CreatorSectionCard(
+                            item = item,
+                            offlineMode = offlineMode,
+                            onSongClick = onSongClick,
+                            onPlaylistClick = onPlaylistClick,
+                            onCreatorClick = onCreatorClick
+                        )
+                    }
                 }
             }
         }

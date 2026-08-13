@@ -7,10 +7,56 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeMusicCreatorDetailScreenTest {
+
+    @Test
+    fun creatorDetailStateKeys_areScopedToCreatorAndSection() {
+        val section = YouTubeMusicCreatorSection(
+            title = "Albums",
+            items = emptyList(),
+            moreEndpoint = YouTubeMusicCreatorBrowseEndpoint(
+                browseId = "UCdemoCreator",
+                params = "albums"
+            )
+        )
+
+        assertEquals(
+            "UCdemoCreator|UCdemoCreator|albums|Albums|0",
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 0
+            )
+        )
+        assertNotEquals(
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 0
+            ),
+            youtubeMusicCreatorSectionScrollStateKey(
+                creatorBrowseId = "UCdemoCreator",
+                section = section,
+                sectionIndex = 1
+            )
+        )
+    }
+
+    @Test
+    fun creatorDetailViewModelKeys_areStableAndIsolatedByCreator() {
+        assertEquals(
+            youtubeMusicCreatorDetailViewModelKey("UCdemoCreator"),
+            youtubeMusicCreatorDetailViewModelKey("UCdemoCreator")
+        )
+        assertTrue(
+            youtubeMusicCreatorDetailViewModelKey("UCparent") !=
+                youtubeMusicCreatorDetailViewModelKey("UCchild")
+        )
+    }
 
     @Test
     fun sectionMore_isShownForPlayableTopSongs() {

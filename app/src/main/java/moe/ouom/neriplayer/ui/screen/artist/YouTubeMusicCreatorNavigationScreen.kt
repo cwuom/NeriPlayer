@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
@@ -23,6 +24,7 @@ fun YouTubeMusicCreatorNavigationScreen(
     var selectedSection by remember(creator.browseId) {
         mutableStateOf<YouTubeMusicCreatorSection?>(null)
     }
+    val stateHolder = rememberSaveableStateHolder()
     BackHandler(enabled = selectedSection != null) {
         selectedSection = null
     }
@@ -37,14 +39,16 @@ fun YouTubeMusicCreatorNavigationScreen(
             offlineMode = offlineMode
         )
     } else {
-        YouTubeMusicCreatorDetailScreen(
-            creator = creator,
-            onBack = onBack,
-            onSongClick = onSongClick,
-            onPlaylistClick = onPlaylistClick,
-            onCreatorClick = onCreatorClick,
-            onSectionMoreClick = { selectedSection = it },
-            offlineMode = offlineMode
-        )
+        stateHolder.SaveableStateProvider("creator_detail") {
+            YouTubeMusicCreatorDetailScreen(
+                creator = creator,
+                onBack = onBack,
+                onSongClick = onSongClick,
+                onPlaylistClick = onPlaylistClick,
+                onCreatorClick = onCreatorClick,
+                onSectionMoreClick = { selectedSection = it },
+                offlineMode = offlineMode
+            )
+        }
     }
 }

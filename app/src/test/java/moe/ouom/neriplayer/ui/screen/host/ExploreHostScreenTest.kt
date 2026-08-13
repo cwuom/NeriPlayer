@@ -8,6 +8,21 @@ import org.junit.Test
 class ExploreHostScreenTest {
 
     @Test
+    fun `creator detail state key is scoped to creator browse id`() {
+        val creator = YouTubeMusicCreatorSummary(
+            browseId = "UCdemoCreator",
+            title = "Demo Creator",
+            subtitle = "Artist",
+            coverUrl = ""
+        )
+
+        assertEquals(
+            "youtube_music_creator_detail_UCdemoCreator",
+            youtubeMusicCreatorDetailStateKey(creator)
+        )
+    }
+
+    @Test
     fun `creator album back returns to the creator page`() {
         val creator = YouTubeMusicCreatorSummary(
             browseId = "UCdemoCreator",

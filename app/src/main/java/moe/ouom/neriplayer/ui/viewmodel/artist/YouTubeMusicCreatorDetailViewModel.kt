@@ -35,8 +35,13 @@ data class YouTubeMusicCreatorDetailUiState(
     val playbackQueueError: String? = null
 )
 
-class YouTubeMusicCreatorDetailViewModel(application: Application) : AndroidViewModel(application) {
-    private val client = AppContainer.youtubeMusicClient
+class YouTubeMusicCreatorDetailViewModel(
+    application: Application,
+    private val loadDetail: suspend (YouTubeMusicCreatorSummary) -> YouTubeMusicCreatorDetail = {
+        creator -> AppContainer.youtubeMusicClient.getCreatorDetail(creator)
+    }
+) : AndroidViewModel(application) {
+    private val client by lazy { AppContainer.youtubeMusicClient }
     private val _uiState = MutableStateFlow(YouTubeMusicCreatorDetailUiState())
     val uiState: StateFlow<YouTubeMusicCreatorDetailUiState> = _uiState
     private val _playbackRequests = MutableSharedFlow<YouTubeMusicCreatorPlaybackQueue>()
@@ -67,7 +72,7 @@ class YouTubeMusicCreatorDetailViewModel(application: Application) : AndroidView
         loadJob = viewModelScope.launch {
             try {
                 val detail = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getCreatorDetail(creator)
+                    loadDetail(creator)
                 }
                 if (currentCreator?.browseId != creator.browseId) {
                     return@launch
