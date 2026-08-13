@@ -69,6 +69,50 @@ class EditableLyricMatchPolicyTest {
     }
 
     @Test
+    fun `rankEditableLyricMatches rejects same duration with unrelated identity`() {
+        val request = EditableLyricMatchRequest(
+            keyword = "Signal Artist One",
+            trackName = "Signal",
+            artistName = "Artist One",
+            durationMs = 180_000L
+        )
+
+        val ranked = rankEditableLyricMatches(
+            request = request,
+            candidates = listOf(
+                candidate(
+                    id = "same-duration-wrong-song",
+                    title = "Average",
+                    artist = "Other Artist",
+                    durationMs = 180_000L
+                )
+            )
+        )
+
+        assertTrue(ranked.isEmpty())
+    }
+
+    @Test
+    fun `isReliableLyricMatchIdentity accepts featured artist and matching version`() {
+        assertTrue(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal (Remix)",
+                expectedArtist = "Artist One feat. Guest",
+                candidateTitle = "Signal - Remix",
+                candidateArtist = "Artist One & Guest"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal (Live)",
+                candidateArtist = "Artist One"
+            )
+        )
+    }
+
+    @Test
     fun `rankEditableLyricMatches uses artist signal before lyric quality`() {
         val request = EditableLyricMatchRequest(
             keyword = "Signal Artist One",
@@ -98,8 +142,7 @@ class EditableLyricMatchPolicyTest {
             )
         )
 
-        assertEquals("plain-right-artist", ranked.first().candidate.id)
-        assertTrue(ranked.first().score > ranked.last().score)
+        assertEquals(listOf("plain-right-artist"), ranked.map { it.candidate.id })
     }
 
     @Test

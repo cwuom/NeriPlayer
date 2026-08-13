@@ -19,6 +19,11 @@ internal data class PendingSeekAction(
     val persistPositionMs: Long
 )
 
+internal data class SeekExecutionAction(
+    val seekPlayerNow: Boolean,
+    val refreshUrlInBackground: Boolean
+)
+
 internal data class PendingPauseAction(
     val resumePlaybackRequested: Boolean,
     val resumePlaybackAfterLoad: Boolean,
@@ -86,6 +91,16 @@ internal fun resolvePendingSeekAction(
         pendingSeekPositionMs = if (pendingLoadActive) positionMs else null,
         exposedPositionMs = positionMs,
         persistPositionMs = positionMs
+    )
+}
+
+internal fun resolveSeekExecutionAction(
+    pendingLoadActive: Boolean,
+    urlRefreshRequested: Boolean
+): SeekExecutionAction {
+    return SeekExecutionAction(
+        seekPlayerNow = !pendingLoadActive,
+        refreshUrlInBackground = urlRefreshRequested && !pendingLoadActive
     )
 }
 

@@ -238,6 +238,8 @@ class PlayerLyricsProviderTest {
     fun selectDurationMatchedExternalLyricsKeepsOriginalAndTranslationFromOneCandidate() {
         val selected = PlayerLyricsProvider.selectDurationMatchedExternalLyrics(
             expectedDurationMs = 240_000L,
+            expectedTitle = "Correct song",
+            expectedArtist = "Correct artist",
             candidates = listOf(
                 EditableLyricMatchCandidate(
                     id = "correct",
@@ -261,6 +263,27 @@ class PlayerLyricsProviderTest {
 
         assertEquals("Correct original", selected?.lyrics?.single()?.text)
         assertTrue(selected?.translatedLyrics.isNullOrEmpty())
+    }
+
+    @Test
+    fun selectDurationMatchedExternalLyricsRejectsSameDurationWrongSong() {
+        val selected = PlayerLyricsProvider.selectDurationMatchedExternalLyrics(
+            expectedDurationMs = 240_000L,
+            expectedTitle = "Signal",
+            expectedArtist = "Artist One",
+            candidates = listOf(
+                EditableLyricMatchCandidate(
+                    id = "wrong",
+                    source = EditableLyricMatchSource.CLOUD_MUSIC,
+                    title = "Average",
+                    artist = "Other Artist",
+                    durationMs = 240_000L,
+                    lyrics = "[00:01.00]Wrong song lyrics"
+                )
+            )
+        )
+
+        assertNull(selected)
     }
 
     @Test

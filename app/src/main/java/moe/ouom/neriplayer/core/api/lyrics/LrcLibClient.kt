@@ -70,34 +70,34 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     ): LrcLibResult? = withContext(Dispatchers.IO) {
         if (durationSeconds <= 0L) return@withContext null
         try {
-            val encodedTrack = URLEncoder.encode(trackName, "UTF-8")
-            val encodedArtist = URLEncoder.encode(artistName, "UTF-8")
-            val url = "$BASE_URL/get?track_name=$encodedTrack&artist_name=$encodedArtist&duration=$durationSeconds"
+            val lookupVariants = lrcLibLookupVariants(trackName, artistName)
+            for ((lookupTrackName, lookupArtistName) in lookupVariants) {
+                val encodedTrack = URLEncoder.encode(lookupTrackName, "UTF-8")
+                val encodedArtist = URLEncoder.encode(lookupArtistName, "UTF-8")
+                val url = "$BASE_URL/get?track_name=$encodedTrack&artist_name=$encodedArtist&duration=$durationSeconds"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
 
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .get()
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    NPLogger.d(TAG, "LRCLIB get returned ${response.code} for '$trackName' by '$artistName'")
-                    return@withContext null
+                val result = okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        NPLogger.d(
+                            TAG,
+                            "LRCLIB get returned ${response.code} for " +
+                                "'$lookupTrackName' by '$lookupArtistName'"
+                        )
+                        null
+                    } else {
+                        parseResult(JSONObject(response.body.string()))
+                    }
                 }
-
-                val body = response.body.string()
-                val json = JSONObject(body)
-
-                parseResult(json)?.takeIf {
-                    isLrcLibResultCompatible(
-                        result = it,
-                        trackName = trackName,
-                        artistName = artistName,
-                        durationSeconds = durationSeconds
-                    )
+                if (result != null && isLrcLibResultCompatible(result, trackName, artistName, durationSeconds)) {
+                    return@withContext result
                 }
             }
+            null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -120,45 +120,38 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     ): LrcLibResult? = withContext(Dispatchers.IO) {
         if (durationSeconds <= 0L) return@withContext null
         try {
-            val query = "$trackName $artistName".trim()
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = "$BASE_URL/search?q=$encodedQuery"
-
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .get()
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    NPLogger.d(TAG, "LRCLIB search returned ${response.code} for '$query'")
-                    return@withContext null
-                }
-
-                val body = response.body.string()
-                val arr = org.json.JSONArray(body)
-                buildList {
-                    for (index in 0 until arr.length()) {
-                        val result = arr.optJSONObject(index)
-                            ?.let(::parseResult)
-                            ?: continue
-                        if (
-                            isLrcLibResultCompatible(
-                                result = result,
-                                trackName = trackName,
-                                artistName = artistName,
-                                durationSeconds = durationSeconds
-                            )
-                        ) {
-                            add(result)
+            for (query in lrcLibLookupQueries(trackName, artistName)) {
+                val encodedQuery = URLEncoder.encode(query, "UTF-8")
+                val url = "$BASE_URL/search?q=$encodedQuery"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
+                val matches = okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        NPLogger.d(TAG, "LRCLIB search returned ${response.code} for '$query'")
+                        emptyList()
+                    } else {
+                        val arr = org.json.JSONArray(response.body.string())
+                        buildList {
+                            for (index in 0 until arr.length()) {
+                                val result = arr.optJSONObject(index)
+                                    ?.let(::parseResult)
+                                    ?: continue
+                                if (isLrcLibResultCompatible(result, trackName, artistName, durationSeconds)) {
+                                    add(result)
+                                }
+                            }
                         }
                     }
-                }.sortedWith(
+                }
+                matches.sortedWith(
                     compareByDescending<LrcLibResult> { !it.syncedLyrics.isNullOrBlank() }
                         .thenBy { absDurationDeltaSeconds(it.durationSeconds, durationSeconds) }
-                ).firstOrNull()
+                ).firstOrNull()?.let { return@withContext it }
             }
+            null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -238,19 +231,64 @@ internal fun isLrcLibResultCompatible(
     artistName: String,
     durationSeconds: Long
 ): Boolean {
-    val normalizedTrackName = normalizeLrcLibMatchText(trackName)
-    val normalizedArtistNames = normalizeLrcLibArtistNames(artistName)
-    val candidateTrackName = normalizeLrcLibMatchText(result.trackName)
-    val candidateArtistNames = normalizeLrcLibArtistNames(result.artistName)
     val candidateDurationSeconds = result.durationSeconds ?: return false
-    return normalizedTrackName.isNotBlank() &&
-        normalizedArtistNames.isNotEmpty() &&
-        candidateTrackName == normalizedTrackName &&
-        candidateArtistNames == normalizedArtistNames &&
+    return isReliableLyricMatchIdentity(
+        expectedTitle = trackName,
+        expectedArtist = artistName,
+        candidateTitle = result.trackName,
+        candidateArtist = result.artistName
+    ) &&
         isExternalLyricDurationCompatible(
             expectedDurationMs = durationSeconds * 1_000L,
             candidateDurationMs = candidateDurationSeconds * 1_000L
         )
+}
+
+private fun lrcLibLookupVariants(trackName: String, artistName: String): List<Pair<String, String>> {
+    val cleanedTrackName = cleanLrcLibTrackName(trackName)
+    val cleanedArtistName = cleanLrcLibArtistName(artistName)
+    return listOf(
+        cleanedTrackName to cleanedArtistName,
+        trackName.trim() to artistName.trim()
+    ).filter { (track, artist) -> track.isNotBlank() && artist.isNotBlank() }
+        .distinctBy { (track, artist) ->
+            "${normalizeLrcLibMatchText(track)}|${normalizeLrcLibMatchText(artist)}"
+        }
+}
+
+private fun lrcLibLookupQueries(trackName: String, artistName: String): List<String> {
+    val variants = lrcLibLookupVariants(trackName, artistName)
+    return (variants.map { (track, artist) -> "$track $artist" } +
+        variants.map { it.first } +
+        listOf(trackName.trim()))
+        .filter(String::isNotBlank)
+        .distinctBy(::normalizeLrcLibMatchText)
+}
+
+private fun cleanLrcLibTrackName(value: String): String {
+    return value.trim()
+        .replace(
+            Regex(
+                """\s*(?:\(.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k).*?\)|\[.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k).*?\]|【.*?】)""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        )
+        .replace(
+            Regex("\\s*-\\s*(official|video|audio|lyrics?)$", RegexOption.IGNORE_CASE),
+            ""
+        )
+        .trim()
+}
+
+private fun cleanLrcLibArtistName(value: String): String {
+    return value.trim().split(
+        Regex(
+            "\\s+(?:feat\\.?|ft\\.?|featuring|with)\\s+|\\s+[xX]\\s+|\\s*&\\s*|\\s+and\\s+",
+            RegexOption.IGNORE_CASE
+        ),
+        limit = 2
+    ).firstOrNull().orEmpty().trim()
 }
 
 private fun normalizeLrcLibMatchText(value: String): String {
@@ -259,18 +297,6 @@ private fun normalizeLrcLibMatchText(value: String): String {
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         .trim()
         .replace(Regex("\\s+"), " ")
-}
-
-private fun normalizeLrcLibArtistNames(value: String): Set<String> {
-    return value.split(
-        Regex(
-            "[/,，、&+]|\\b(?:feat\\.?|ft\\.?|featuring)\\b|\\s+[xX]\\s+",
-            RegexOption.IGNORE_CASE
-        )
-    ).asSequence()
-        .map(::normalizeLrcLibMatchText)
-        .filter { it.isNotBlank() }
-        .toSet()
 }
 
 private fun absDurationDeltaSeconds(candidateDuration: Long?, expectedDuration: Long): Long {

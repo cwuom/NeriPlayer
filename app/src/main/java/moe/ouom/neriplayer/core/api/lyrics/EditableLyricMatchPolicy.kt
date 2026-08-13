@@ -53,6 +53,8 @@ data class RankedEditableLyricMatch(
 )
 
 private const val MIN_EDITABLE_LYRIC_MATCH_SCORE = 35
+private const val MIN_RELIABLE_LYRIC_TITLE_SCORE = 52
+private const val MIN_RELIABLE_LYRIC_ARTIST_SCORE = 24
 
 private val lyricMatchWhitespaceRegex = Regex("\\s+")
 private val lyricMatchArtistSeparatorRegex = Regex(
@@ -93,8 +95,18 @@ fun rankEditableLyricMatches(
             val qualityScore = scoreLyricMatchQuality(candidate)
             val wordTimingScore = scoreLyricMatchWordTiming(request, candidate)
             val keywordScore = scoreLyricMatchKeyword(request.keyword, candidate)
-            val hasMetadataSignal = titleScore > 0 || artistScore > 0 || durationScore > 0 || keywordScore > 0
-            if (!hasMetadataSignal) {
+            val hasReliableIdentity = isReliableLyricMatchIdentity(
+                expectedTitle = request.trackName,
+                expectedArtist = request.artistName,
+                candidateTitle = candidate.title,
+                candidateArtist = candidate.artist
+            )
+            val canUseKeywordFallback = hasPlaceholderLyricMetadata(request.trackName) ||
+                hasPlaceholderLyricMetadata(request.artistName)
+            if (
+                !hasReliableIdentity &&
+                !(canUseKeywordFallback && (keywordScore > 0 || titleScore >= MIN_RELIABLE_LYRIC_TITLE_SCORE))
+            ) {
                 return@mapNotNull null
             }
             val score = titleScore +
@@ -175,6 +187,34 @@ fun scoreLyricMatchArtist(expected: String, candidate: String): Int {
     }
 }
 
+fun isReliableLyricMatchIdentity(
+    expectedTitle: String,
+    expectedArtist: String,
+    candidateTitle: String,
+    candidateArtist: String
+): Boolean {
+    if (
+        expectedTitle.isBlank() ||
+        expectedArtist.isBlank() ||
+        candidateTitle.isBlank() ||
+        candidateArtist.isBlank()
+    ) {
+        return false
+    }
+    if (!hasCompatibleLyricVersion(expectedTitle, candidateTitle)) {
+        return false
+    }
+    val expectedPrimaryArtist = splitLyricMatchArtists(expectedArtist).firstOrNull()
+    val candidateArtists = splitLyricMatchArtists(candidateArtist)
+    val primaryArtistMatches = expectedPrimaryArtist != null && candidateArtists.any { candidateArtistName ->
+        candidateArtistName == expectedPrimaryArtist
+    }
+    return primaryArtistMatches &&
+        canonicalLyricMatchTitle(expectedTitle) == canonicalLyricMatchTitle(candidateTitle) &&
+        scoreLyricMatchTitle(expectedTitle, candidateTitle) >= MIN_RELIABLE_LYRIC_TITLE_SCORE &&
+        scoreLyricMatchArtist(expectedArtist, candidateArtist) >= MIN_RELIABLE_LYRIC_ARTIST_SCORE
+}
+
 fun scoreLyricMatchDuration(expectedDurationMs: Long, candidateDurationMs: Long): Int {
     if (expectedDurationMs <= 0L || candidateDurationMs <= 0L) return 0
     val deltaMs = abs(expectedDurationMs - candidateDurationMs)
@@ -204,6 +244,43 @@ fun normalizeLyricMatchText(value: String): String {
         .trim()
         .replace(lyricMatchWhitespaceRegex, " ")
 }
+
+private fun hasPlaceholderLyricMetadata(value: String): Boolean {
+    return normalizeLyricMatchText(value) in setOf(
+        "unknown",
+        "unknown artist",
+        "unknown song",
+        "unknown title",
+        "未知",
+        "未知歌手",
+        "未知歌曲",
+        "未知标题"
+    )
+}
+
+private fun hasCompatibleLyricVersion(expectedTitle: String, candidateTitle: String): Boolean {
+    val expectedModifiers = lyricVersionModifierRegex.findAll(
+        normalizeLyricMatchText(expectedTitle)
+    ).map { it.value }.toSet()
+    val candidateModifiers = lyricVersionModifierRegex.findAll(
+        normalizeLyricMatchText(candidateTitle)
+    ).map { it.value }.toSet()
+    return expectedModifiers == candidateModifiers
+}
+
+private fun canonicalLyricMatchTitle(value: String): String {
+    return normalizeLyricMatchText(value)
+        .replace(
+            Regex("(?:\\s+|^)(?:official|audio|video|lyrics?|visualizer|hd|hq|4k)(?:\\s+(?:official|audio|video|lyrics?|visualizer|hd|hq|4k))*$"),
+            " "
+        )
+        .replace(lyricMatchWhitespaceRegex, " ")
+        .trim()
+}
+
+private val lyricVersionModifierRegex = Regex(
+    "\\b(?:remix|live|acoustic|instrumental|karaoke|demo|cover|rework|slowed|sped up)\\b"
+)
 
 private fun scoreLyricMatchAlbum(expected: String, candidate: String): Int {
     val expectedAlbum = normalizeLyricMatchText(expected)

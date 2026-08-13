@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.core.api.lyrics.LrcLibClient
 import moe.ouom.neriplayer.core.api.lyrics.extractPlainLyricsFromCollapsedTimedLyrics
 import moe.ouom.neriplayer.core.api.lyrics.hasLrcTimestamp
 import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
+import moe.ouom.neriplayer.core.api.lyrics.isReliableLyricMatchIdentity
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
@@ -964,6 +965,8 @@ internal object PlayerLyricsProvider {
             .toList()
         val selectedLyrics = selectDurationMatchedExternalLyrics(
             expectedDurationMs = song.durationMs,
+            expectedTitle = song.name,
+            expectedArtist = song.artist,
             candidates = candidates
         )
         selectedLyrics?.let { matchedLyrics ->
@@ -979,9 +982,15 @@ internal object PlayerLyricsProvider {
 
     internal fun selectDurationMatchedExternalLyrics(
         expectedDurationMs: Long,
+        expectedTitle: String,
+        expectedArtist: String,
         candidates: List<EditableLyricMatchCandidate>
     ): DurationMatchedExternalLyrics? {
-        if (expectedDurationMs <= 0L) {
+        if (
+            expectedDurationMs <= 0L ||
+            expectedTitle.isBlank() ||
+            expectedArtist.isBlank()
+        ) {
             return null
         }
         for (candidate in candidates) {
@@ -989,6 +998,21 @@ internal object PlayerLyricsProvider {
                 candidate.durationMs <= 0L ||
                 !isExternalLyricDurationCompatible(expectedDurationMs, candidate.durationMs)
             ) {
+                continue
+            }
+            if (!isReliableLyricMatchIdentity(
+                    expectedTitle = expectedTitle,
+                    expectedArtist = expectedArtist,
+                    candidateTitle = candidate.title,
+                    candidateArtist = candidate.artist
+                )
+            ) {
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "Rejected duration-compatible lyrics with mismatched identity: " +
+                        "expected='$expectedTitle' by '$expectedArtist', " +
+                        "candidate='${candidate.title}' by '${candidate.artist}'"
+                )
                 continue
             }
             val entries = parseMatchedExternalLyricEntries(

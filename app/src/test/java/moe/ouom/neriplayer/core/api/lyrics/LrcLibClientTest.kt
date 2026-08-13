@@ -66,6 +66,28 @@ class LrcLibClientTest {
     }
 
     @Test
+    fun `getLyrics accepts cleaned display suffix and primary artist metadata`() = runTest {
+        val client = clientResponding(
+            """
+            {
+              "trackName": "Signal",
+              "artistName": "Artist One",
+              "duration": 180,
+              "syncedLyrics": "[00:00.00]matched"
+            }
+            """.trimIndent()
+        )
+
+        val result = client.getLyrics(
+            trackName = "Signal (Official Video)",
+            artistName = "Artist One feat. Guest",
+            durationSeconds = 180L
+        )
+
+        assertEquals("[00:00.00]matched", result?.syncedLyrics)
+    }
+
+    @Test
     fun `getLyrics keeps plain lyrics when synced lyrics has no timeline progress`() = runTest {
         val client = clientResponding(
             """
