@@ -211,7 +211,8 @@ class WebDavSyncManager private constructor(context: Context) {
                     WebDavSyncWorker.scheduleDelayedSync(
                         appContext,
                         triggerByUserAction = false,
-                        markMutation = false
+                        markMutation = false,
+                        appendToCurrentWork = true
                     )
                     return@withContext Result.success(
                         SyncResult(
@@ -247,7 +248,8 @@ class WebDavSyncManager private constructor(context: Context) {
                 WebDavSyncWorker.scheduleDelayedSync(
                     appContext,
                     triggerByUserAction = false,
-                    markMutation = false
+                    markMutation = false,
+                    appendToCurrentWork = true
                 )
             } else {
                 webDavStorage.saveLastSyncTime(System.currentTimeMillis())

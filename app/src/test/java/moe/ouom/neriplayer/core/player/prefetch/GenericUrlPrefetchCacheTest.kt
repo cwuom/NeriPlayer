@@ -10,6 +10,38 @@ import org.junit.Test
 
 class GenericUrlPrefetchCacheTest {
     @Test
+    fun `generic media prefetch follows the final playback cache key`() {
+        val genericKey = "song-generic"
+        val overrideKey = "song-final-representation"
+
+        assertEquals(
+            overrideKey,
+            resolveGenericMediaPrefetchCacheKey(
+                genericKey,
+                SongUrlResult.Success(url = "https://example.test/audio", cacheKeyOverride = overrideKey)
+            )
+        )
+        assertEquals(
+            genericKey,
+            resolveGenericMediaPrefetchCacheKey(
+                genericKey,
+                SongUrlResult.Success(url = "https://example.test/audio")
+            )
+        )
+    }
+
+    @Test
+    fun `generic media prefetch stays bounded and never becomes a tiny request`() {
+        assertEquals(256L * 1024L, resolveGenericMediaPrefetchBytes(128L * 1024L))
+        assertEquals(512L * 1024L, resolveGenericMediaPrefetchBytes(512L * 1024L))
+        assertEquals(GENERIC_MEDIA_PREFETCH_BYTES, resolveGenericMediaPrefetchBytes(null))
+        assertEquals(
+            GENERIC_MEDIA_PREFETCH_BYTES,
+            resolveGenericMediaPrefetchBytes(GENERIC_MEDIA_PREFETCH_BYTES * 2L)
+        )
+    }
+
+    @Test
     fun durationBasedTtlCoversTheCurrentTrackWithAnUpperBound() {
         assertEquals(210_000L, resolveGenericUrlPrefetchTtlMs(180_000L))
         assertEquals(GENERIC_URL_PREFETCH_MAX_TTL_MS, resolveGenericUrlPrefetchTtlMs(900_000L))

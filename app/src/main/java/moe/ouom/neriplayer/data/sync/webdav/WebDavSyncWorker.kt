@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -37,7 +38,9 @@ class WebDavSyncWorker(
         fun scheduleDelayedSync(
             context: Context,
             triggerByUserAction: Boolean = false,
-            markMutation: Boolean = false
+            markMutation: Boolean = false,
+            initialDelayMs: Long = DEFAULT_DELAY_MS,
+            appendToCurrentWork: Boolean = false
         ) {
             if (markMutation) {
                 SecureTokenStorage(context).markSyncMutation()
@@ -48,14 +51,39 @@ class WebDavSyncWorker(
                     return
                 }
             }
-            val syncRequest = OneTimeWorkRequestBuilder<WebDavSyncWorker>()
-                .setInitialDelay(DEFAULT_DELAY_MS, TimeUnit.MILLISECONDS)
+            val syncRequest = buildDelayedSyncRequest(
+                triggerByUserAction = triggerByUserAction,
+                initialDelayMs = initialDelayMs
+            )
+
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(
+                    WORK_NAME,
+                    delayedSyncWorkPolicy(triggerByUserAction, appendToCurrentWork),
+                    syncRequest
+                )
+        }
+
+        internal fun delayedSyncWorkPolicy(
+            triggerByUserAction: Boolean,
+            appendToCurrentWork: Boolean
+        ): ExistingWorkPolicy {
+            return if (appendToCurrentWork || triggerByUserAction) {
+                ExistingWorkPolicy.APPEND_OR_REPLACE
+            } else {
+                ExistingWorkPolicy.KEEP
+            }
+        }
+
+        internal fun buildDelayedSyncRequest(
+            triggerByUserAction: Boolean,
+            initialDelayMs: Long
+        ): OneTimeWorkRequest {
+            return OneTimeWorkRequestBuilder<WebDavSyncWorker>()
+                .setInitialDelay(initialDelayMs.coerceAtLeast(0L), TimeUnit.MILLISECONDS)
                 .addTag(WORK_NAME)
                 .setInputData(workDataOf("trigger_by_user_action" to triggerByUserAction))
                 .build()
-
-            WorkManager.getInstance(context)
-                .enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, syncRequest)
         }
 
         fun schedulePeriodicSync(context: Context) {

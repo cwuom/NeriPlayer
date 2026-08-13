@@ -478,10 +478,12 @@ object PlayerManager {
     internal const val PENDING_SEEK_POSITION_TOLERANCE_MS = 1_500L
     internal const val STARTUP_STALL_POSITION_TOLERANCE_MS = 500L
     internal const val STARTUP_STALL_LOCAL_TIMEOUT_MS = 5_000L
-    internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 12_000L
+    internal const val STARTUP_STALL_REMOTE_TIMEOUT_MS = 10_000L
     internal const val STARTUP_STALL_YOUTUBE_TIMEOUT_MS = 25_000L
     internal const val STARTUP_STALL_YOUTUBE_DEEP_SEEK_TIMEOUT_MS = 5_000L
     internal const val STARTUP_STALL_READY_EARLY_TIMEOUT_MS = 5_000L
+    internal const val STARTUP_STALL_BUFFERING_EARLY_TIMEOUT_MS = 5_000L
+    internal const val STARTUP_STALL_BUFFERING_GRACE_MS = 2_000L
     internal const val STARTUP_STALL_USB_EARLY_TIMEOUT_MS = 4_000L
     internal const val STARTUP_STALL_MAX_RECOVERY_ATTEMPTS = 3
     internal const val QUALITY_CHANGE_REFRESH_DEBOUNCE_MS = 0L

@@ -759,7 +759,9 @@ internal fun PlayerManager.playAtIndex(
             "nextToken=${playbackRequestToken + 1}, stack=[${debugStackHint()}]"
     )
     replacePlaybackDemandCacheKey(
-        cacheKey = if (isYouTubeMusicTrack(song)) computeCacheKey(song) else null,
+        cacheKey = song
+            .takeUnless { isLocalSong(it) || isDirectStreamUrl(it.streamUrl) }
+            ?.let(::computeCacheKey),
         reason = "play_at_index_request"
     )
     kickoffYouTubePlaybackIntentWarmup(song, source = "play_at_index")
@@ -872,7 +874,9 @@ internal fun PlayerManager.playAtIndex(
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = result.cacheKeyOverride ?: computeCacheKey(song)
                     replacePlaybackDemandCacheKey(
-                        cacheKey = if (isYouTubeMusicTrack(song)) cacheKey else null,
+                        cacheKey = cacheKey.takeUnless {
+                            isLocalSong(song) || isDirectStreamUrl(song.streamUrl)
+                        },
                         reason = "play_at_index_resolved"
                     )
                     configureActivePlaybackCandidates(

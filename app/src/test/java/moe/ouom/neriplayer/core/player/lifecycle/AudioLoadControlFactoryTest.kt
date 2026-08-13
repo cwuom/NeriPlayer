@@ -19,19 +19,19 @@ class AudioLoadControlFactoryTest {
     private val mediaPeriodId = MediaPeriodId("audio-load-control-period")
 
     @Test
-    fun `audio playback starts after 800 milliseconds`() {
+    fun `audio playback starts after one second`() {
         val loadControl = buildAudioLoadControl()
 
-        assertFalse(loadControl.shouldStart(bufferedDurationMs = 799))
-        assertTrue(loadControl.shouldStart(bufferedDurationMs = 800))
+        assertFalse(loadControl.shouldStart(bufferedDurationMs = 999))
+        assertTrue(loadControl.shouldStart(bufferedDurationMs = 1_000))
     }
 
     @Test
-    fun `audio playback resumes after 800 milliseconds`() {
+    fun `audio playback resumes after three seconds`() {
         val loadControl = buildAudioLoadControl()
 
-        assertFalse(loadControl.shouldStart(bufferedDurationMs = 799, rebuffering = true))
-        assertTrue(loadControl.shouldStart(bufferedDurationMs = 800, rebuffering = true))
+        assertFalse(loadControl.shouldStart(bufferedDurationMs = 2_999, rebuffering = true))
+        assertTrue(loadControl.shouldStart(bufferedDurationMs = 3_000, rebuffering = true))
     }
 
     @Test
@@ -60,8 +60,8 @@ class AudioLoadControlFactoryTest {
 
         assertEquals(0L, loadControl.getBackBufferDurationUs(playerId))
         // 回退缓冲越界不该连带把调好的启播时延也打回默认值
-        assertFalse(loadControl.shouldStart(799))
-        assertTrue(loadControl.shouldStart(800))
+        assertFalse(loadControl.shouldStart(999))
+        assertTrue(loadControl.shouldStart(1_000))
     }
 
     @Test

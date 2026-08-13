@@ -9,8 +9,12 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.model.SongUrlResult
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshResolverSideEffects
 import moe.ouom.neriplayer.core.player.policy.refresh.RefreshSideEffectGate
+import moe.ouom.neriplayer.core.player.url.CachePrefetchReadiness
 import moe.ouom.neriplayer.core.player.url.OFFLINE_CACHE_URL_PREFIX
+import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
+import moe.ouom.neriplayer.core.player.url.prepareExoPlayerCacheForPrefetch
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
+import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 
@@ -23,6 +27,27 @@ internal fun resolveGenericUrlPrefetchTtlMs(
         .takeIf { it > 0L }
         ?.plus(30_000L)
     return (durationBasedTtl ?: defaultTtlMs).coerceIn(1L, maxTtlMs)
+}
+
+internal const val GENERIC_MEDIA_PREFETCH_BYTES = 1_536L * 1024L
+private const val GENERIC_MEDIA_PREFETCH_MIN_BYTES = 256L * 1024L
+
+internal fun resolveGenericMediaPrefetchBytes(expectedContentLength: Long?): Long {
+    return expectedContentLength
+        ?.takeIf { it > 0L }
+        ?.coerceAtMost(GENERIC_MEDIA_PREFETCH_BYTES)
+        ?.coerceAtLeast(GENERIC_MEDIA_PREFETCH_MIN_BYTES)
+        ?: GENERIC_MEDIA_PREFETCH_BYTES
+}
+
+internal fun resolveGenericMediaPrefetchCacheKey(
+    genericCacheKey: String,
+    result: SongUrlResult.Success
+): String {
+    return result.cacheKeyOverride
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: genericCacheKey
 }
 
 internal fun PlayerManager.prefetchNextGenericTrackUrl() {
@@ -81,6 +106,13 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
                         )
                     )
                 )
+                if (isDirectStreamUrl(result.url)) {
+                    prefetchGenericTrackMedia(
+                        result = result,
+                        cacheKey = cacheKey,
+                        song = nextSong
+                    )
+                }
                 NPLogger.d(
                     "NERI-PlayerManager",
                     "generic URL prefetch completed: song=${nextSong.name}, key=$cacheKey"
@@ -103,6 +135,61 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
             currentGenericUrlPrefetchKey = null
         }
     }
+}
+
+private suspend fun PlayerManager.prefetchGenericTrackMedia(
+    result: SongUrlResult.Success,
+    cacheKey: String,
+    song: SongItem
+) {
+    val mediaCacheKey = resolveGenericMediaPrefetchCacheKey(cacheKey, result)
+    if (result.audioInfo == null) return
+    if (playbackDemandArbiter.shouldYieldPrefetch(mediaCacheKey)) return
+    val descriptorResult = synchronizeCachedPlaybackDescriptor(
+        cacheKey = mediaCacheKey,
+        audioInfo = result.audioInfo,
+        expectedContentLength = result.expectedContentLength,
+        representationIdentity = result.representationIdentity,
+        shouldApplyMutation = { !playbackDemandArbiter.shouldYieldPrefetch(mediaCacheKey) }
+    )
+    if (!descriptorResult.allowsCustomCacheKey()) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "skip generic media prefetch because cache descriptor was not synchronized: " +
+                "song=${song.name}, key=$mediaCacheKey, result=$descriptorResult"
+        )
+        return
+    }
+    when (
+        prepareExoPlayerCacheForPrefetch(
+            cacheKey = mediaCacheKey,
+            shouldApplyMutation = { !playbackDemandArbiter.shouldYieldPrefetch(mediaCacheKey) }
+        )
+    ) {
+        CachePrefetchReadiness.COMPLETE -> return
+        CachePrefetchReadiness.UNAVAILABLE -> return
+        CachePrefetchReadiness.READY_FOR_PREFETCH -> Unit
+    }
+    val prefetchedBytes = runCatching {
+        prefetchIntoPlayerCache(
+            url = result.url,
+            cacheKey = mediaCacheKey,
+            targetBytes = resolveGenericMediaPrefetchBytes(result.expectedContentLength)
+        )
+    }.getOrElse { error ->
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "generic media prefetch failed: song=${song.name}, key=$mediaCacheKey, " +
+            "error=${error.message}"
+        )
+        return
+    }
+    NPLogger.d(
+        "NERI-PlayerManager",
+        "generic media prefetch finished: song=${song.name}, key=$mediaCacheKey, " +
+            "prefetchedBytes=$prefetchedBytes, targetBytes=" +
+            resolveGenericMediaPrefetchBytes(result.expectedContentLength)
+    )
 }
 
 internal fun PlayerManager.cancelGenericUrlPrefetch(reason: String) {
