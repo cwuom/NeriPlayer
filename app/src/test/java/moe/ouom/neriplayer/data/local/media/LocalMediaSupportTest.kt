@@ -216,6 +216,33 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `resolveEffectiveLocalLyricPath hides unreadable sidecar references`() {
+        assertNull(
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/empty",
+                content = "  \n"
+            )
+        )
+        assertEquals(
+            "content://lyrics/readable",
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/readable",
+                content = "[00:01.00]line"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveEffectiveLocalLyricPath ignores embedded fallback content`() {
+        assertNull(
+            LocalMediaSupport.resolveEffectiveLocalLyricPath(
+                reference = "content://lyrics/empty",
+                content = null
+            )
+        )
+    }
+
+    @Test
     fun `findNearbyLyricFiles keeps source directory priority over Lyrics fallback`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }

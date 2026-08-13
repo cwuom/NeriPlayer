@@ -49,6 +49,14 @@ class PlayerLyricsProviderTest {
                 downloadedLyric = "[00:01.00]downloaded"
             )
         )
+        assertEquals(
+            "[00:01.00]stored",
+            resolveLocalFirstLyricText(
+                localLyric = null,
+                storedLyric = "[00:01.00]stored",
+                downloadedLyric = "[00:01.00]downloaded"
+            )
+        )
     }
 
     @Test

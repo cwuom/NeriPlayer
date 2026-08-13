@@ -1428,8 +1428,11 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricReferences.original
-                    ?: nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
+                lyricPath = resolveEffectiveLocalLyricPath(
+                    reference = nearbyLyricReferences.original
+                        ?: nearbyLyricFiles.original?.absolutePath,
+                    content = nearbyLyricContent
+                ),
                 lyricSource = when {
                     hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
@@ -1496,8 +1499,11 @@ object LocalMediaSupport {
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
-                lyricPath = nearbyLyricReferences.original
-                    ?: nearbyLyricFiles.original?.absolutePath?.takeIf { hasEffectiveExternalLyric },
+                lyricPath = resolveEffectiveLocalLyricPath(
+                    reference = nearbyLyricReferences.original
+                        ?: nearbyLyricFiles.original?.absolutePath,
+                    content = nearbyLyricContent
+                ),
                 lyricSource = when {
                     hasEffectiveExternalLyric -> context.getString(R.string.local_song_lyric_external)
                     !effectiveLyricContent.isNullOrBlank() -> context.getString(R.string.local_song_lyric_embedded)
@@ -2413,7 +2419,7 @@ object LocalMediaSupport {
         audioExtension: String?
     ): Array<Picture> {
         if (usesRolelessEditableCoverPictures(audioExtension)) {
-            return replacementPicture?.let(::arrayOf) ?: emptyArray()
+            return replacementPicture?.let { arrayOf<Picture>(it) } ?: emptyArray<Picture>()
         }
         val retainedPictures = existingPictures.filterNot(::isFrontCoverPicture)
         return if (replacementPicture == null) {
@@ -3135,15 +3141,14 @@ object LocalMediaSupport {
         }.getOrNull()
         val treeUri = runCatching {
             val authority = uri.authority ?: return@runCatching null
-            DocumentsContract.buildTreeDocumentUri(
-                authority,
-                DocumentsContract.getTreeDocumentId(uri)
-            )
-        }.getOrNull() ?: uri
+            treeDocumentId?.let { documentId ->
+                DocumentsContract.buildTreeDocumentUri(authority, documentId)
+            }
+        }.getOrNull()
         val slashDelimitedParentId = documentId
             ?.substringBeforeLast('/', missingDelimiterValue = "")
             ?.takeIf { it.isNotBlank() && it != documentId }
-        val documentUri = if (treeDocumentId != null && documentId != null) {
+        val documentUri = if (treeUri != null && documentId != null) {
             DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
         } else {
             uri
@@ -3151,7 +3156,11 @@ object LocalMediaSupport {
         val parentDocumentId = slashDelimitedParentId
             ?: findDocumentParentId(context, documentUri)
             ?: treeDocumentId
-        val parentChildren = queryDocumentChildren(context, treeUri, parentDocumentId)
+        val parentChildren = queryDocumentChildren(
+            context = context,
+            baseUri = treeUri ?: uri,
+            parentDocumentId = parentDocumentId
+        )
         val audioBaseName = displayName.substringBeforeLast('.', displayName)
         val directReferences = resolveDocumentLyricReferences(
             children = parentChildren,
@@ -3162,7 +3171,11 @@ object LocalMediaSupport {
         }
         val nestedReferences = resolveDocumentLyricReferences(
             children = lyricsDirectory?.let {
-                queryDocumentChildren(context, treeUri, it.documentId)
+                queryDocumentChildren(
+                    context = context,
+                    baseUri = treeUri ?: uri,
+                    parentDocumentId = it.documentId
+                )
             }.orEmpty(),
             baseName = audioBaseName
         )
@@ -3214,12 +3227,19 @@ object LocalMediaSupport {
 
     private fun queryDocumentChildren(
         context: Context,
-        treeUri: Uri,
+        baseUri: Uri,
         parentDocumentId: String?
     ): List<DocumentChild> {
         val resolvedParentId = parentDocumentId?.takeIf { it.isNotBlank() } ?: return emptyList()
         val childrenUri = runCatching {
-            DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, resolvedParentId)
+            if (DocumentsContract.isTreeUri(baseUri)) {
+                DocumentsContract.buildChildDocumentsUriUsingTree(baseUri, resolvedParentId)
+            } else {
+                DocumentsContract.buildChildDocumentsUri(
+                    baseUri.authority ?: return@runCatching null,
+                    resolvedParentId
+                )
+            }
         }.getOrNull() ?: return emptyList()
         return runCatching {
             context.contentResolver.query(
@@ -3251,18 +3271,26 @@ object LocalMediaSupport {
                                 documentId = childId,
                                 displayName = childName,
                                 isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
-                                uri = DocumentsContract.buildDocumentUriUsingTree(
-                                    treeUri,
-                                    childId
-                                ).toString()
+                                uri = buildDocumentReferenceUri(baseUri, childId).toString()
                             )
                         )
                     }
                 }
             }.orEmpty()
         }.onFailure {
-            NPLogger.w(TAG, "query document lyric children failed for $treeUri: ${it.message}")
+            NPLogger.w(TAG, "query document lyric children failed for $baseUri: ${it.message}")
         }.getOrDefault(emptyList())
+    }
+
+    private fun buildDocumentReferenceUri(baseUri: Uri, documentId: String): Uri {
+        return if (DocumentsContract.isTreeUri(baseUri)) {
+            DocumentsContract.buildDocumentUriUsingTree(baseUri, documentId)
+        } else {
+            DocumentsContract.buildDocumentUri(
+                baseUri.authority ?: error("Document URI has no authority: $baseUri"),
+                documentId
+            )
+        }
     }
 
     internal fun resolveEffectiveLocalLyricContent(
@@ -3271,6 +3299,13 @@ object LocalMediaSupport {
     ): String? {
         return sidecarContent?.takeIf(String::isNotBlank)
             ?: embeddedContent?.takeIf(String::isNotBlank)
+    }
+
+    internal fun resolveEffectiveLocalLyricPath(
+        reference: String?,
+        content: String?
+    ): String? {
+        return reference?.takeIf { !content.isNullOrBlank() }
     }
 
     private fun findFirstLyricSidecar(

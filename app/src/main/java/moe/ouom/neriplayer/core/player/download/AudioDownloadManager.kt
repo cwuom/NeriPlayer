@@ -2561,6 +2561,13 @@ object AudioDownloadManager {
                 }
             }
             romanizedText?.takeIf { it.isNotBlank() }?.let { lyric ->
+                ensureSongDownloadNotCancelled(
+                    songKey = songKey,
+                    stage = "lyrics_romanized_write",
+                    batchSessionId = batchSessionId,
+                    attemptId = attemptId,
+                    requireActiveAttempt = requireActiveAttempt
+                )
                 romanizedLyricReference = ManagedDownloadStorage.writeRomanizedLyrics(
                     context = context,
                     songId = song.id,

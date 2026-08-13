@@ -38,6 +38,30 @@ class LocalMediaSupportSafLyricsTest {
         assertEquals("content", Uri.parse(details.lyricPath).scheme)
     }
 
+    @Test
+    fun inspectPlainDocumentReadsLyricsDirectorySidecars() {
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+
+        val details = LocalMediaSupport.inspect(targetContext, audioUri)
+
+        assertEquals(
+            "[00:00.10]original from Lyrics",
+            details.lyricContent
+        )
+        assertEquals(
+            "[00:00.10]translated from Lyrics",
+            details.translatedLyricContent
+        )
+        assertEquals(
+            "[00:00.10]romanized from Lyrics",
+            details.romanizedLyricContent
+        )
+        assertNotNull(details.lyricPath)
+    }
+
     private val treeUri = DocumentsContract.buildTreeDocumentUri(
         Issue339LyricsTestDocumentProvider.AUTHORITY,
         Issue339LyricsTestDocumentProvider.ROOT_ID
