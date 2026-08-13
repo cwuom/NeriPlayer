@@ -335,6 +335,14 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
             preferM4a = false,
             isPrefetch = true
         ) ?: return
+        if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "skip media prefetch for non-direct YouTube stream: " +
+                    "videoId=${spec.videoId}, type=${playableAudio.streamType}, source=${spec.source}"
+            )
+            return
+        }
         val playbackAudioInfo = buildYouTubePlaybackAudioInfo(playableAudio) { it.toString() }
         val representationIdentity = buildYouTubeRepresentationIdentity(playableAudio)
         val synchronization = synchronizeCachedPlaybackDescriptor(
@@ -366,13 +374,6 @@ private suspend fun PlayerManager.prefetchYouTubePlayableAudio(spec: YouTubePref
                 shouldApplyMutation = { !playbackDemandArbiter.shouldYieldPrefetch(cacheKey) }
             )
         ) {
-            return
-        }
-        if (playableAudio.streamType != YouTubePlayableStreamType.DIRECT) {
-            NPLogger.d(
-                "NERI-PlayerManager",
-                "skip media prefetch for non-direct YouTube stream: videoId=${spec.videoId}, type=${playableAudio.streamType}, source=${spec.source}"
-            )
             return
         }
         val targetBytes = resolveYouTubeWarmupPrefetchBytes(

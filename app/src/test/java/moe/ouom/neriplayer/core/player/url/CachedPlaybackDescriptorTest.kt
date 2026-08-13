@@ -33,6 +33,7 @@ class CachedPlaybackDescriptorTest {
     @After
     fun clearCacheReference() {
         PlayerManager.cache = null
+        clearPlaybackCacheSafetyForTesting()
     }
 
     @Test
@@ -201,7 +202,7 @@ class CachedPlaybackDescriptorTest {
     }
 
     @Test
-    fun `descriptor rejects a current representation with missing content length`() {
+    fun `descriptor match allows a current representation with missing content length`() {
         val audioInfo = PlaybackAudioInfo(
             source = PlaybackAudioSource.BILIBILI,
             qualityKey = "high",
@@ -214,10 +215,28 @@ class CachedPlaybackDescriptorTest {
             representationIdentity = "new-representation"
         )
 
-        assertFalse(
+        assertTrue(
             descriptor.matches(
                 audioInfo = audioInfo,
                 expectedContentLength = null,
+                representationIdentity = "new-representation"
+            )
+        )
+    }
+
+    @Test
+    fun `descriptor match allows a cached representation with missing content length`() {
+        val audioInfo = biliAudioInfo()
+        val descriptor = cachedPlaybackDescriptorFromAudioInfo(
+            audioInfo = audioInfo,
+            expectedContentLength = null,
+            representationIdentity = "new-representation"
+        )
+
+        assertTrue(
+            descriptor.matches(
+                audioInfo = audioInfo,
+                expectedContentLength = 2_000_000L,
                 representationIdentity = "new-representation"
             )
         )

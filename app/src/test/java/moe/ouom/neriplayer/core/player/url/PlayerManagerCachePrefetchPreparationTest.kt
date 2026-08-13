@@ -26,6 +26,7 @@ class PlayerManagerCachePrefetchPreparationTest {
     @After
     fun clearCacheReference() {
         PlayerManager.cache = null
+        clearPlaybackCacheSafetyForTesting()
     }
 
     @Test

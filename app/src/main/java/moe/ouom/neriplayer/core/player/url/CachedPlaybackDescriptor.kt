@@ -2,6 +2,7 @@
 
 package moe.ouom.neriplayer.core.player.url
 
+import androidx.annotation.VisibleForTesting
 import androidx.media3.datasource.cache.ContentMetadata
 import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.cache.Cache
@@ -117,7 +118,11 @@ internal fun CachedPlaybackDescriptor.matches(
         bitDepth == expected.bitDepth &&
         channelCount == expected.channelCount &&
         this.representationIdentity == expected.representationIdentity &&
-        expected.expectedContentLength == this.expectedContentLength
+        (
+            this.expectedContentLength == null ||
+                expected.expectedContentLength == null ||
+                expected.expectedContentLength == this.expectedContentLength
+            )
 }
 
 internal fun CachedPlaybackDescriptor.matchesCachedContentLength(
@@ -333,12 +338,25 @@ private object PlaybackCacheSafetyTracker {
         }
     }
 
+    @VisibleForTesting
+    fun clearForTesting() {
+        synchronized(lock) {
+            cacheOwner = null
+            unsafeKeys.clear()
+        }
+    }
+
     private fun resetFor(cache: Cache) {
         if (cacheOwner?.get() !== cache) {
             cacheOwner = WeakReference(cache)
             unsafeKeys.clear()
         }
     }
+}
+
+@VisibleForTesting
+internal fun clearPlaybackCacheSafetyForTesting() {
+    PlaybackCacheSafetyTracker.clearForTesting()
 }
 
 internal fun PlayerManager.markPlaybackCacheKeyUnsafe(
