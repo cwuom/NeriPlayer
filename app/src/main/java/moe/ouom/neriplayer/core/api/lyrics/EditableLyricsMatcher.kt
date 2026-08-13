@@ -464,6 +464,12 @@ private fun List<SongSearchInfo>.rankSearchApiForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<SongSearchInfo> {
     return asSequence()
+        .filter { searchInfo ->
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = request.durationMs,
+                candidateDurationMs = parseDurationMs(searchInfo.duration)
+            )
+        }
         .sortedWith(
             compareByDescending<SongSearchInfo> {
                 val candidateDurationMs = parseDurationMs(it.duration)
@@ -482,6 +488,12 @@ private fun List<KugouSongSearchResult>.rankKugouForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<KugouSongSearchResult> {
     return asSequence()
+        .filter { song ->
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = request.durationMs,
+                candidateDurationMs = song.durationMs
+            )
+        }
         .sortedWith(
             compareByDescending<KugouSongSearchResult> {
                 request.durationMs > 0L && it.durationMs > 0L &&
@@ -493,6 +505,15 @@ private fun List<KugouSongSearchResult>.rankKugouForDetailLookup(
         )
         .take(MAX_DETAIL_RESULTS)
         .toList()
+}
+
+internal fun isLyricDetailLookupDurationAllowed(
+    expectedDurationMs: Long,
+    candidateDurationMs: Long
+): Boolean {
+    return expectedDurationMs <= 0L ||
+        candidateDurationMs <= 0L ||
+        isExternalLyricDurationCompatible(expectedDurationMs, candidateDurationMs)
 }
 
 private fun List<YouTubeMusicSearchResult>.rankYouTubeForDetailLookup(

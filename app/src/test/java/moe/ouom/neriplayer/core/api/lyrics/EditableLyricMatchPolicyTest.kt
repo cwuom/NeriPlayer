@@ -346,6 +346,45 @@ class EditableLyricMatchPolicyTest {
     }
 
     @Test
+    fun `rankEditableLyricMatches lets score beat source priority within the same confidence`() {
+        val request = EditableLyricMatchRequest(
+            keyword = "爱你 陈芳语",
+            trackName = "爱你",
+            artistName = "陈芳语",
+            durationMs = 206_000L
+        )
+
+        val ranked = rankEditableLyricMatches(
+            request = request,
+            candidates = listOf(
+                candidate(
+                    id = "source-priority-lrc",
+                    source = EditableLyricMatchSource.KUGOU,
+                    durationMs = 206_000L,
+                    lyrics = "[00:00.00]爱你",
+                    format = EditableLyricFormat.LRC
+                ),
+                candidate(
+                    id = "word-timed-ttml",
+                    source = EditableLyricMatchSource.AMLL_TTML,
+                    durationMs = 206_000L,
+                    lyrics = """
+                        <tt xmlns="http://www.w3.org/ns/ttml">
+                            <body><div><p begin="00:01.000" end="00:02.000">
+                                <span begin="00:01.000" end="00:01.500">爱</span>
+                                <span begin="00:01.500" end="00:02.000">你</span>
+                            </p></div></body>
+                        </tt>
+                    """.trimIndent(),
+                    format = EditableLyricFormat.TTML
+                )
+            )
+        )
+
+        assertEquals(listOf("word-timed-ttml", "source-priority-lrc"), ranked.map { it.candidate.id })
+    }
+
+    @Test
     fun `rankEditableLyricMatches keeps line timed lyrics when no word timed result exists`() {
         val request = EditableLyricMatchRequest(
             keyword = "爱你 陈芳语",
@@ -473,6 +512,61 @@ class EditableLyricMatchPolicyTest {
 
         assertEquals(listOf("搁浅 周杰伦", "搁浅"), queries)
         assertTrue(queries.none { it.contains('擱') || it.contains('淺') || it.contains('傑') })
+    }
+
+    @Test
+    fun `artist matching does not split band names that contain with or and`() {
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Keeper",
+                expectedArtist = "With Confidence",
+                candidateTitle = "Keeper",
+                candidateArtist = "Confidence"
+            )
+        )
+
+        val ranked = rankEditableLyricMatches(
+            request = EditableLyricMatchRequest(
+                keyword = "Keeper With Confidence",
+                trackName = "Keeper",
+                artistName = "With Confidence",
+                durationMs = 210_000L,
+                preferWordTimed = false
+            ),
+            candidates = listOf(
+                candidate(
+                    id = "wrong-band",
+                    title = "Keeper",
+                    artist = "Confidence",
+                    durationMs = 210_000L,
+                    lyrics = "[00:01.00]Wrong artist"
+                )
+            )
+        )
+
+        assertTrue(ranked.isEmpty())
+    }
+
+    @Test
+    fun `lyric detail lookup keeps unknown durations and filters known incompatible durations`() {
+        assertTrue(
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = 180_000L,
+                candidateDurationMs = 0L
+            )
+        )
+        assertTrue(
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = 180_000L,
+                candidateDurationMs = 185_000L
+            )
+        )
+        assertFalse(
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = 180_000L,
+                candidateDurationMs = 250_000L
+            )
+        )
     }
 
     private fun candidate(

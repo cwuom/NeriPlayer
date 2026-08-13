@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.api.lyrics
 
+import java.lang.reflect.Method
+
 private val traditionalToSimplifiedFallback = mapOf(
     '愛' to '爱',
     '樂' to '乐',
@@ -118,11 +120,22 @@ private val traditionalToSimplifiedFallback = mapOf(
     '輯' to '辑'
 )
 
-private val traditionalToSimplifiedTransliterator: Any? by lazy {
+private data class ChineseTransliterator(
+    val instance: Any,
+    val transliterate: Method
+)
+
+private val traditionalToSimplifiedTransliterator: ChineseTransliterator? by lazy {
     runCatching {
-        Class.forName("android.icu.text.Transliterator")
+        val transliteratorClass = Class.forName("android.icu.text.Transliterator")
+        val instance = transliteratorClass
             .getMethod("getInstance", String::class.java)
             .invoke(null, "Traditional-Simplified")
+            ?: return@runCatching null
+        ChineseTransliterator(
+            instance = instance,
+            transliterate = transliteratorClass.getMethod("transliterate", String::class.java)
+        )
     }.getOrNull()
 }
 
@@ -130,9 +143,7 @@ internal fun toSimplifiedChineseForDomesticSearch(value: String): String {
     if (value.isBlank()) return value
     return traditionalToSimplifiedTransliterator?.let { transliterator ->
         runCatching {
-            transliterator.javaClass
-                .getMethod("transliterate", String::class.java)
-                .invoke(transliterator, value) as? String
+            transliterator.transliterate.invoke(transliterator.instance, value) as? String
         }.getOrNull()
     } ?: value.map { traditionalToSimplifiedFallback[it] ?: it }.joinToString("")
 }

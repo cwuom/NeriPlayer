@@ -54,6 +54,8 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
         private const val TAG = "LrcLibClient"
         private const val BASE_URL = "https://lrclib.net/api"
         private const val USER_AGENT = "NeriPlayer/1.0 (https://github.com/cwuom/NeriPlayer)"
+        private const val MAX_GET_LOOKUP_VARIANTS = 1
+        private const val MAX_SEARCH_LOOKUP_QUERIES = 2
     }
 
     /**
@@ -71,7 +73,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
         if (durationSeconds <= 0L) return@withContext null
         try {
             val lookupVariants = lrcLibLookupVariants(trackName, artistName)
-            for ((lookupTrackName, lookupArtistName) in lookupVariants) {
+            for ((lookupTrackName, lookupArtistName) in lookupVariants.take(MAX_GET_LOOKUP_VARIANTS)) {
                 val encodedTrack = URLEncoder.encode(lookupTrackName, "UTF-8")
                 val encodedArtist = URLEncoder.encode(lookupArtistName, "UTF-8")
                 val url = "$BASE_URL/get?track_name=$encodedTrack&artist_name=$encodedArtist&duration=$durationSeconds"
@@ -120,7 +122,7 @@ class LrcLibClient(private val okHttpClient: OkHttpClient) {
     ): LrcLibResult? = withContext(Dispatchers.IO) {
         if (durationSeconds <= 0L) return@withContext null
         try {
-            for (query in lrcLibLookupQueries(trackName, artistName)) {
+            for (query in lrcLibLookupQueries(trackName, artistName).take(MAX_SEARCH_LOOKUP_QUERIES)) {
                 val encodedQuery = URLEncoder.encode(query, "UTF-8")
                 val url = "$BASE_URL/search?q=$encodedQuery"
                 val request = Request.Builder()

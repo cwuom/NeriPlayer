@@ -213,6 +213,7 @@ import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
 import moe.ouom.neriplayer.core.api.lyrics.RankedEditableLyricMatch
 import moe.ouom.neriplayer.core.api.lyrics.defaultEditableLyricMatchSources
+import moe.ouom.neriplayer.core.api.lyrics.editableLyricMatchResultComparator
 import moe.ouom.neriplayer.core.api.lyrics.hasCollapsedTimedLyricTimeline
 import moe.ouom.neriplayer.core.api.lyrics.normalizeLyricMatchText
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
@@ -5912,11 +5913,13 @@ private fun filterCachedLyricMatchResults(
         .filter { it in selectedSources }
         .flatMap { source -> resultsBySource[source].orEmpty().asSequence() }
         .sortedWith(
-            compareByDescending<RankedEditableLyricMatch> { it.confidence.rank }
-                .thenBy { lyricMatchSelectableSources.indexOf(it.candidate.source) }
-                .thenByDescending { it.score }
-                .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
-                .thenBy { it.candidate.title }
+            editableLyricMatchResultComparator(
+                sourceRank = { source ->
+                    val index = lyricMatchSelectableSources.indexOf(source)
+                    if (index >= 0) lyricMatchSelectableSources.size - index else 0
+                },
+                sourceFallbackRank = lyricMatchSelectableSources::indexOf
+            )
         )
         .toList()
 }

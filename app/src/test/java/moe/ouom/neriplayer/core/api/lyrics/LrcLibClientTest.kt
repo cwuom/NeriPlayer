@@ -159,9 +159,39 @@ class LrcLibClientTest {
         assertEquals(syncedLyrics, result?.syncedLyrics)
     }
 
-    private fun clientResponding(body: String): LrcLibClient {
+    @Test
+    fun `searchLyrics caps lookup query variants`() = runTest {
+        val requestedQueries = mutableListOf<String>()
+        val client = clientResponding(
+            body = "[]",
+            requestedQueries = requestedQueries
+        )
+
+        val result = client.searchLyrics(
+            trackName = "Signal (Official Video)",
+            artistName = "Artist One feat. Guest",
+            durationSeconds = 180L
+        )
+
+        assertNull(result)
+        assertEquals(
+            listOf(
+                "Signal Artist One",
+                "Signal (Official Video) Artist One feat. Guest"
+            ),
+            requestedQueries
+        )
+    }
+
+    private fun clientResponding(
+        body: String,
+        requestedQueries: MutableList<String>? = null
+    ): LrcLibClient {
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor { chain ->
+                chain.request().url.queryParameter("q")?.let { query ->
+                    requestedQueries?.add(query)
+                }
                 Response.Builder()
                     .request(chain.request())
                     .protocol(Protocol.HTTP_1_1)

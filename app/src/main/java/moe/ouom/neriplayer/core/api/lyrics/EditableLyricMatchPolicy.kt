@@ -70,8 +70,9 @@ private const val AMLL_TTML_LYRIC_SOURCE_PRIORITY = 1
 private const val YOUTUBE_MUSIC_LYRIC_SOURCE_PRIORITY = 0
 
 private val lyricMatchWhitespaceRegex = Regex("\\s+")
-private val lyricMatchArtistSeparatorRegex = Regex(
-    "[/,，、&+]|\\b(?:feat\\.?|ft\\.?|featuring|and|with)\\b|\\s+[xX]\\s+",
+private val lyricMatchHardArtistSeparatorRegex = Regex("[/,，、&+]|\\s+[xX]\\s+")
+private val lyricMatchFeaturedArtistSeparatorRegex = Regex(
+    "\\b(?:feat\\.?|ft\\.?|featuring)\\b",
     RegexOption.IGNORE_CASE
 )
 
@@ -156,14 +157,24 @@ fun rankEditableLyricMatches(
             )
         }
         .sortedWith(
-            compareByDescending<RankedEditableLyricMatch> { it.confidence.rank }
-                .thenByDescending { editableLyricMatchSourcePriority(it.candidate.source) }
-                .thenByDescending { it.score }
-                .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
-                .thenBy { it.candidate.source.ordinal }
-                .thenBy { normalizeLyricMatchText(it.candidate.title) }
+            editableLyricMatchResultComparator(
+                sourceRank = ::editableLyricMatchSourcePriority,
+                sourceFallbackRank = { it.ordinal }
+            )
         )
         .toList()
+}
+
+internal fun editableLyricMatchResultComparator(
+    sourceRank: (EditableLyricMatchSource) -> Int,
+    sourceFallbackRank: (EditableLyricMatchSource) -> Int = { it.ordinal }
+): Comparator<RankedEditableLyricMatch> {
+    return compareByDescending<RankedEditableLyricMatch> { it.confidence.rank }
+        .thenByDescending { it.score }
+        .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
+        .thenByDescending { sourceRank(it.candidate.source) }
+        .thenBy { sourceFallbackRank(it.candidate.source) }
+        .thenBy { normalizeLyricMatchText(it.candidate.title) }
 }
 
 internal fun hasLyricMatchSignal(
@@ -222,10 +233,18 @@ fun scoreLyricMatchArtist(expected: String, candidate: String): Int {
     return expectedArtists.maxOf { expectedArtist ->
         candidateArtists.maxOf { candidateArtist ->
             when {
-                candidateArtist.contains(expectedArtist) || expectedArtist.contains(candidateArtist) -> 24
+                hasAlignedLyricMatchArtistContainment(expectedArtist, candidateArtist) -> 24
                 else -> (tokenOverlapRatio(expectedArtist, candidateArtist) * 20).roundToInt()
             }
         }
+    }
+}
+
+private fun hasAlignedLyricMatchArtistContainment(left: String, right: String): Boolean {
+    return when {
+        left == right -> true
+        right.startsWith("$left ") -> true
+        else -> false
     }
 }
 
@@ -246,10 +265,10 @@ fun isReliableLyricMatchIdentity(
     if (!hasCompatibleLyricVersion(expectedTitle, candidateTitle)) {
         return false
     }
-    val expectedPrimaryArtist = splitLyricMatchArtists(expectedArtist).firstOrNull()
+    val expectedPrimaryArtist = primaryLyricMatchArtist(expectedArtist)
     val candidateArtists = splitLyricMatchArtists(candidateArtist)
     val primaryArtistMatches = expectedPrimaryArtist != null && candidateArtists.any { candidateArtistName ->
-        candidateArtistName == expectedPrimaryArtist
+        candidateArtistName == expectedPrimaryArtist || candidateArtistName.startsWith("$expectedPrimaryArtist ")
     }
     return primaryArtistMatches &&
         canonicalLyricMatchTitle(expectedTitle) == canonicalLyricMatchTitle(candidateTitle) &&
@@ -380,16 +399,28 @@ private fun scoreLyricMatchQuality(candidate: EditableLyricMatchCandidate): Int 
 }
 
 private fun splitLyricMatchArtists(value: String): Set<String> {
-    return lyricMatchArtistSeparatorRegex.split(value)
-        .asSequence()
-        .map(::normalizeLyricMatchText)
+    val wholeName = normalizeLyricMatchText(value)
+    val segments = lyricMatchArtistSegments(value)
+    return (listOf(wholeName) + segments)
         .filter { it.isNotBlank() }
         .toSet()
 }
 
 private fun hasPrimaryLyricMatchArtist(expected: String, candidate: String): Boolean {
-    val expectedPrimary = splitLyricMatchArtists(expected).firstOrNull() ?: return false
+    val expectedPrimary = primaryLyricMatchArtist(expected) ?: return false
     return splitLyricMatchArtists(candidate).any { it == expectedPrimary }
+}
+
+private fun primaryLyricMatchArtist(value: String): String? {
+    return lyricMatchArtistSegments(value).firstOrNull()
+}
+
+private fun lyricMatchArtistSegments(value: String): List<String> {
+    return lyricMatchFeaturedArtistSeparatorRegex
+        .split(value)
+        .flatMap { segment -> lyricMatchHardArtistSeparatorRegex.split(segment) }
+        .map(::normalizeLyricMatchText)
+        .filter { it.isNotBlank() }
 }
 
 internal fun editableLyricMatchSourcePriority(source: EditableLyricMatchSource): Int {
