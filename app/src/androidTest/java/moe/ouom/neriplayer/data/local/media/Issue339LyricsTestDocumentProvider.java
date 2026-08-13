@@ -6,13 +6,14 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
-
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.File;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -24,16 +25,19 @@ import java.util.List;
 public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String AUTHORITY = "moe.ouom.neriplayer.test.issue339lyrics";
     public static final String ROOT_ID = "root-issue339";
-    public static final String MUSIC_ID = "folder-issue339";
-    public static final String AUDIO_ID = "audio-issue339";
-    public static final String LYRICS_ID = "lyrics-issue339";
-    public static final String ORIGINAL_ID = "original-issue339";
-    public static final String TRANSLATED_ID = "translated-issue339";
-    public static final String ROMANIZED_ID = "romanized-issue339";
+    public static final String MUSIC_ID = "opaque/folder-issue339";
+    // document IDs are opaque provider values and may contain slash characters
+    public static final String AUDIO_ID = "opaque/audio-issue339";
+    public static final String LYRICS_ID = "opaque/lyrics-issue339";
+    public static final String ORIGINAL_ID = "opaque/original-issue339";
+    public static final String TRANSLATED_ID = "opaque/translated-issue339";
+    public static final String ROMANIZED_ID = "opaque/romanized-issue339";
+    public static final String METADATA_ID = "opaque/metadata-issue339";
     public static final String AUDIO_NAME = "netease - 茶太 - だんご大家族.wav";
     public static final String ORIGINAL_NAME = "netease - 茶太 - だんご大家族.lrc";
     public static final String TRANSLATED_NAME = "netease - 茶太 - だんご大家族_trans.lrc";
     public static final String ROMANIZED_NAME = "netease - 茶太 - だんご大家族_roma.lrc";
+    public static final String METADATA_NAME = AUDIO_NAME + ".npmeta.json";
 
     private static final long FIXTURE_LAST_MODIFIED = 1_700_000_000_000L;
     private static final String[] DEFAULT_DOCUMENT_COLUMNS = {
@@ -52,6 +56,10 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final byte[] ROMANIZED_CONTENT =
         "[00:00.10]romanized from Lyrics".getBytes(StandardCharsets.UTF_8);
     private static final byte[] AUDIO_CONTENT = buildWaveContent();
+    private static final String METADATA_DIRECTORY_NAME = "issue339-metadata";
+    private static final String EXTRA_URI = "uri";
+    private static final int DIRECTORY_FLAGS =
+        DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE;
 
     @Override
     public boolean onCreate() {
@@ -85,6 +93,23 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+        if (METADATA_ID.equals(documentId(uri))) {
+            try {
+                File file = metadataFile();
+                int flags = mode.contains("w")
+                    ? ParcelFileDescriptor.MODE_READ_WRITE
+                        | ParcelFileDescriptor.MODE_CREATE
+                        | ParcelFileDescriptor.MODE_TRUNCATE
+                    : ParcelFileDescriptor.MODE_READ_ONLY;
+                return ParcelFileDescriptor.open(file, flags);
+            } catch (IOException error) {
+                FileNotFoundException failure = new FileNotFoundException(
+                    "Unable to open Issue #339 metadata: " + uri
+                );
+                failure.initCause(error);
+                throw failure;
+            }
+        }
         if (!mode.contains("r")) {
             throw new FileNotFoundException("read-only test provider");
         }
@@ -110,6 +135,9 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
+        if (METADATA_ID.equals(documentId(uri))) {
+            return metadataFile().delete() ? 1 : 0;
+        }
         return 0;
     }
 
@@ -128,6 +156,32 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             );
             return result;
         }
+        if ("android:createDocument".equals(method)) {
+            Bundle result = new Bundle();
+            result.putParcelable(
+                EXTRA_URI,
+                DocumentsContract.buildDocumentUri(
+                    AUTHORITY,
+                    METADATA_ID
+                )
+            );
+            return result;
+        }
+        if ("android:deleteDocument".equals(method)) {
+            Uri target = null;
+            if (extras != null) {
+                Object rawTarget = Build.VERSION.SDK_INT >= 33
+                    ? extras.getParcelable(EXTRA_URI, Uri.class)
+                    : extras.get(EXTRA_URI);
+                if (rawTarget instanceof Uri) {
+                    target = (Uri) rawTarget;
+                }
+            }
+            if (target != null && METADATA_ID.equals(documentId(target))) {
+                metadataFile().delete();
+            }
+            return new Bundle();
+        }
         return super.call(method, arg, extras);
     }
 
@@ -139,7 +193,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         }
     }
 
-    private static Object[] documentRow(String[] columns, String documentId) {
+    private Object[] documentRow(String[] columns, String documentId) {
         Object[] row = new Object[columns.length];
         for (int index = 0; index < columns.length; index++) {
             String column = columns[index];
@@ -152,7 +206,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
                 || MediaStore.MediaColumns.MIME_TYPE.equals(column)) {
                 row[index] = mimeTypeFor(documentId);
             } else if (DocumentsContract.Document.COLUMN_FLAGS.equals(column)) {
-                row[index] = 0;
+                row[index] = isDirectory(documentId) ? DIRECTORY_FLAGS : 0;
             } else if (DocumentsContract.Document.COLUMN_SIZE.equals(column)
                 || OpenableColumns.SIZE.equals(column)) {
                 row[index] = contentFor(documentId).length;
@@ -164,11 +218,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         return row;
     }
 
-    private static List<String> childrenFor(String parentDocumentId) {
+    private List<String> childrenFor(String parentDocumentId) {
         if (ROOT_ID.equals(parentDocumentId)) {
             return Collections.singletonList(MUSIC_ID);
         }
         if (MUSIC_ID.equals(parentDocumentId)) {
+            if (metadataFile().isFile()) {
+                return Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID);
+            }
             return Arrays.asList(AUDIO_ID, LYRICS_ID);
         }
         if (LYRICS_ID.equals(parentDocumentId)) {
@@ -203,23 +260,48 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_NAME;
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_NAME;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_NAME;
+        if (METADATA_ID.equals(documentId)) return METADATA_NAME;
         return documentId;
     }
 
     private static String mimeTypeFor(String documentId) {
-        if (ROOT_ID.equals(documentId) || LYRICS_ID.equals(documentId)) {
+        if (ROOT_ID.equals(documentId) || MUSIC_ID.equals(documentId) ||
+            LYRICS_ID.equals(documentId)) {
             return DocumentsContract.Document.MIME_TYPE_DIR;
         }
         if (AUDIO_ID.equals(documentId)) return "audio/wav";
+        if (METADATA_ID.equals(documentId)) return "application/json";
         return "text/plain";
     }
 
-    private static byte[] contentFor(String documentId) {
+    private static boolean isDirectory(String documentId) {
+        return DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeTypeFor(documentId));
+    }
+
+    private byte[] contentFor(String documentId) {
         if (AUDIO_ID.equals(documentId)) return AUDIO_CONTENT;
         if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
+        if (METADATA_ID.equals(documentId)) {
+            try {
+                return java.nio.file.Files.readAllBytes(metadataFile().toPath());
+            } catch (IOException ignored) {
+                return EMPTY_CONTENT;
+            }
+        }
         return EMPTY_CONTENT;
+    }
+
+    private File metadataFile() {
+        if (getContext() == null) {
+            throw new IllegalStateException("Provider context is unavailable");
+        }
+        File directory = new File(getContext().getCacheDir(), METADATA_DIRECTORY_NAME);
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IllegalStateException("Unable to create metadata fixture directory");
+        }
+        return new File(directory, METADATA_NAME);
     }
 
     private static byte[] buildWaveContent() {

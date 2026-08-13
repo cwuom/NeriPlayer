@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.media
 
 import java.io.File
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -256,5 +257,58 @@ class LocalMediaSupportTest {
 
         assertEquals(original.canonicalPath, found.original?.canonicalPath)
         assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+    }
+
+    @Test
+    fun `local metadata sidecar keeps fields independent and preserves existing values`() {
+        val existing = """
+            {"matchedLyric":"matched","originalLyric":"original",
+             "matchedRomanizedLyric":"romanized","custom":"keep"}
+        """.trimIndent()
+        val updated = LocalMediaSupport.buildLocalLyricsMetadataJson(
+            existingRaw = existing,
+            song = SongItem(
+                id = 1L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                matchedLyric = "new matched",
+                matchedTranslatedLyric = "new translated"
+            )
+        )
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar("/tmp/song.npmeta.json", updated)
+
+        assertEquals("new matched", parsed?.matchedLyric)
+        assertEquals("original", parsed?.originalLyric)
+        assertEquals("new translated", parsed?.matchedTranslatedLyric)
+        assertEquals(null, parsed?.originalTranslatedLyric)
+        assertEquals("romanized", parsed?.matchedRomanizedLyric)
+        assertEquals(true, org.json.JSONObject(updated).has("custom"))
+    }
+
+    @Test
+    fun `local metadata sidecar accepts explicit blank lyric overrides`() {
+        val updated = LocalMediaSupport.buildLocalLyricsMetadataJson(
+            existingRaw = "{\"matchedLyric\":\"old\",\"originalLyric\":\"base\"}",
+            song = SongItem(
+                id = 2L,
+                name = "Song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                matchedLyric = "",
+                matchedTranslatedLyric = ""
+            )
+        )
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar("/tmp/song.npmeta.json", updated)
+
+        assertEquals("", parsed?.matchedLyric)
+        assertEquals("base", parsed?.originalLyric)
+        assertEquals("", parsed?.matchedTranslatedLyric)
     }
 }
