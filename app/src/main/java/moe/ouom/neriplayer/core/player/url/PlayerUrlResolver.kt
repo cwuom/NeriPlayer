@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.url
 
 import android.net.Uri
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableAudio
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlaybackQualityOption
@@ -11,6 +12,7 @@ import moe.ouom.neriplayer.core.player.model.estimateBitrateKbps
 import moe.ouom.neriplayer.core.player.model.inferYouTubeQualityKeyFromBitrate
 import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
+import java.net.URLDecoder
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -167,6 +169,41 @@ internal fun buildYouTubePlaybackAudioInfo(
         sampleRateHz = playableAudio.sampleRateHz
     )
 }
+
+internal fun buildBiliRepresentationIdentity(stream: BiliAudioStreamInfo): String {
+    return listOf(
+        stream.id?.toString().orEmpty(),
+        stream.qualityTag.orEmpty().trim().lowercase(),
+        stream.mimeType.trim().lowercase(),
+        stream.bitrateKbps.toString()
+    ).joinToString(separator = "|")
+}
+
+internal fun buildYouTubeRepresentationIdentity(playableAudio: YouTubePlayableAudio): String {
+    return listOf(
+        extractYouTubeRepresentationItag(playableAudio.url).orEmpty(),
+        playableAudio.mimeType.orEmpty().trim().lowercase(),
+        playableAudio.bitrateKbps?.toString().orEmpty(),
+        playableAudio.sampleRateHz?.toString().orEmpty(),
+        playableAudio.streamType.name
+    ).joinToString(separator = "|")
+}
+
+private fun extractYouTubeRepresentationItag(url: String): String? {
+    val decodedUrl = runCatching {
+        URLDecoder.decode(url, Charsets.UTF_8.name())
+    }.getOrElse { url }
+    return youtubeItagQueryPattern.findAll(decodedUrl)
+        .lastOrNull()
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: youtubeItagPathPattern.find(decodedUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+}
+
+private val youtubeItagQueryPattern = Regex("""(?:^|[;/?&])itag=(\d+)""")
+private val youtubeItagPathPattern = Regex("""/itag/(\d+)""")
 
 internal fun buildYouTubeOfflineCacheAudioInfo(
     preferredQualityKey: String,

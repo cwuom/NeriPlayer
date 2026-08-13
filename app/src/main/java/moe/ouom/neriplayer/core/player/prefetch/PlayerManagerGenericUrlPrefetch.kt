@@ -62,7 +62,8 @@ internal fun PlayerManager.prefetchNextGenericTrackUrl() {
             val result = resolveSongUrl(
                 song = nextSong,
                 allowGenericPrefetchCache = false,
-                sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false })
+                sideEffects = RefreshResolverSideEffects(RefreshSideEffectGate { false }),
+                shouldApplyCacheMutation = { false }
             )
             // 本地兜底命中的受限歌曲同样值得预取, 否则消费方会白等一个不落盘的任务
             if (result is SongUrlResult.Success &&

@@ -29,6 +29,7 @@ internal data class PlaybackUrlCandidate(
     val mimeType: String? = null,
     val expectedContentLength: Long? = null,
     val audioInfo: PlaybackAudioInfo? = null,
+    val representationIdentity: String? = null,
     val cacheKeyOverride: String? = null
 ) {
     fun playbackUrls(): List<String> = buildList {
@@ -48,6 +49,7 @@ internal sealed class SongUrlResult {
         val noticeMessage: String? = null,
         val expectedContentLength: Long? = null,
         val audioInfo: PlaybackAudioInfo? = null,
+        val representationIdentity: String? = null,
         val cacheKeyOverride: String? = null,
         val isNeteaseLocalFallback: Boolean = false,
         val fallbackCandidates: List<PlaybackUrlCandidate> = emptyList()
@@ -66,6 +68,7 @@ internal sealed class SongUrlResult {
                     mimeType = mimeType,
                     expectedContentLength = expectedContentLength,
                     audioInfo = audioInfo,
+                    representationIdentity = representationIdentity,
                     cacheKeyOverride = cacheKeyOverride
                 )
             }

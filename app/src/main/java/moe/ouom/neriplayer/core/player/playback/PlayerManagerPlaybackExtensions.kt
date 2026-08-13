@@ -65,9 +65,10 @@ import moe.ouom.neriplayer.core.player.prefetch.replacePlaybackDemandCacheKey
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
-import moe.ouom.neriplayer.core.player.url.invalidateMismatchedCachedResource
+import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
+import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
@@ -818,7 +819,10 @@ internal fun PlayerManager.playAtIndex(
         ) {
             resolveSongUrl(
                 song = song,
-                playbackRequestTokenOverride = requestToken
+                playbackRequestTokenOverride = requestToken,
+                shouldApplyCacheMutation = {
+                    shouldApplyResolvedMedia(requestToken, playbackRequestToken) && isActive
+                }
             )
         }
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
@@ -878,23 +882,47 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val selectedCandidate = currentPlaybackCandidate()
                     val selectedUrl = selectedCandidate?.url ?: result.url
+                    val selectedAudioInfo = selectedCandidate?.audioInfo ?: result.audioInfo
+                    val selectedMimeType = selectedCandidate?.mimeType ?: result.mimeType
+                    val selectedExpectedContentLength =
+                        selectedCandidate?.expectedContentLength ?: result.expectedContentLength
+                    val selectedRepresentationIdentity =
+                        selectedCandidate?.representationIdentity ?: result.representationIdentity
                     NPLogger.d(
                         "NERI-PlayerManager",
                         "Using custom cache key: $cacheKey for song: ${song.name}"
                     )
-                    invalidateMismatchedCachedResource(
+                    val cacheSynchronization = synchronizeCachedPlaybackDescriptor(
                         cacheKey = cacheKey,
-                        expectedContentLength = result.expectedContentLength
+                        audioInfo = selectedAudioInfo,
+                        expectedContentLength = selectedExpectedContentLength,
+                        representationIdentity = selectedRepresentationIdentity,
+                        shouldApplyMutation = {
+                            shouldApplyResolvedMediaSideEffects(
+                                requestGeneration = requestToken,
+                                currentRequestGeneration = playbackRequestToken,
+                                requestActive = true
+                            )
+                        }
                     )
+                    if (!shouldApplyResolvedMediaSideEffects(
+                            requestGeneration = requestToken,
+                            currentRequestGeneration = playbackRequestToken,
+                            requestActive = isActive
+                        )
+                    ) {
+                        return@withContext
+                    }
                     val mediaItem = buildMediaItem(
                         _currentSongFlow.value ?: song,
                         selectedUrl,
                         cacheKey,
-                        result.mimeType
+                        selectedMimeType,
+                        allowCustomCacheKey = cacheSynchronization.allowsCustomCacheKey()
                     )
                     syncLyriconSong(_currentSongFlow.value ?: song)
                     _currentMediaUrl.value = selectedUrl
-                    _currentPlaybackAudioInfo.value = result.audioInfo
+                    _currentPlaybackAudioInfo.value = selectedAudioInfo
                     updateAudioOffloadPreferences("resolved_stream_source")
                     currentMediaUrlResolvedAtMs = SystemClock.elapsedRealtime()
                     scheduleStatePersist(

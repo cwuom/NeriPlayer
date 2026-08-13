@@ -198,6 +198,7 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
 import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
+import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -2340,7 +2341,8 @@ object PlayerManager {
         song: SongItem,
         url: String,
         cacheKey: String,
-        mimeType: String? = null
+        mimeType: String? = null,
+        allowCustomCacheKey: Boolean = true
     ): MediaItem {
         val isLocalFile =
             url.startsWith("file://") ||
@@ -2355,8 +2357,8 @@ object PlayerManager {
                     setMimeType(mimeType)
                 }
                 // Local files do not need a custom cache key.
-                if (!isLocalFile) {
-                    setCustomCacheKey(cacheKey)
+                if (!isLocalFile && allowCustomCacheKey) {
+                    safeCustomPlaybackCacheKey(cacheKey)?.let(::setCustomCacheKey)
                 }
             }
             .build()
