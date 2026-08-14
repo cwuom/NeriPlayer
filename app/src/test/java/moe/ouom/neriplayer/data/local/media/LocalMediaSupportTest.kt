@@ -169,6 +169,20 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyCover retries when artwork appears after an empty lookup`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-retry")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val originalDirectoryModified = sourceDir.lastModified()
+
+        assertNull(LocalMediaSupport.findNearbyCover(audioFile))
+
+        val coverFile = File(sourceDir, "song.jpg").apply { writeText("cover") }
+        sourceDir.setLastModified(originalDirectoryModified)
+
+        assertEquals(coverFile.canonicalPath, LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath)
+    }
+
+    @Test
     fun `fast lyric inspection reads direct file sidecars without content resolver`() {
         val sourceDir = tempFolder.newFolder("fast-lyrics")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }

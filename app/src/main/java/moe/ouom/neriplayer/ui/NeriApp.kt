@@ -4574,7 +4574,8 @@ private fun NeriAppContent(
                                     showNowPlayingTitle = showNowPlayingTitle,
                                     offlineMode = offlineMode,
                                     resolvedCoverUrl = displayCoverUrl,
-                                    visualCoverUrl = playbackVisualCoverUrl
+                                    visualCoverUrl = playbackVisualCoverUrl,
+                                    playbackSongKey = currentSongKey
                                 )
                             }
                         }

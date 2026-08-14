@@ -3543,8 +3543,22 @@ object LocalMediaSupport {
 
     private fun cachedLocalCoverLookup(cacheKey: String): LocalCoverCacheHit? {
         synchronized(localCoverLookupCache) {
-            return localCoverLookupCache[cacheKey]?.let(::LocalCoverCacheHit)
+            val coverUri = localCoverLookupCache[cacheKey] ?: return null
+            if (!isUsableCachedCoverUri(coverUri)) {
+                localCoverLookupCache.remove(cacheKey)
+                return null
+            }
+            return LocalCoverCacheHit(coverUri)
         }
+    }
+
+    private fun isUsableCachedCoverUri(coverUri: String): Boolean {
+        val uri = runCatching { coverUri.toUri() }.getOrNull() ?: return false
+        if (!uri.scheme.equals("file", ignoreCase = true)) {
+            return true
+        }
+        val path = uri.path ?: return false
+        return File(path).isFile && File(path).length() > 0L
     }
 
     private fun rememberLocalCoverLookup(cacheKey: String, coverUri: String?) {
@@ -4074,27 +4088,27 @@ object LocalMediaSupport {
 
     private fun cachedNearbyCover(cacheKey: String): FilePathCacheHit? {
         synchronized(nearbyCoverLookupCache) {
-            if (!nearbyCoverLookupCache.containsKey(cacheKey)) return null
-            return FilePathCacheHit(nearbyCoverLookupCache[cacheKey])
+            return nearbyCoverLookupCache[cacheKey]?.let(::FilePathCacheHit)
         }
     }
 
     private fun rememberNearbyCover(cacheKey: String, cover: File?) {
+        val coverPath = cover?.absolutePath ?: return
         synchronized(nearbyCoverLookupCache) {
-            nearbyCoverLookupCache[cacheKey] = cover?.absolutePath
+            nearbyCoverLookupCache[cacheKey] = coverPath
         }
     }
 
     private fun cachedDirectoryCover(cacheKey: String): FilePathCacheHit? {
         synchronized(directoryCoverLookupCache) {
-            if (!directoryCoverLookupCache.containsKey(cacheKey)) return null
-            return FilePathCacheHit(directoryCoverLookupCache[cacheKey])
+            return directoryCoverLookupCache[cacheKey]?.let(::FilePathCacheHit)
         }
     }
 
     private fun rememberDirectoryCover(cacheKey: String, cover: File?) {
+        val coverPath = cover?.absolutePath ?: return
         synchronized(directoryCoverLookupCache) {
-            directoryCoverLookupCache[cacheKey] = cover?.absolutePath
+            directoryCoverLookupCache[cacheKey] = coverPath
         }
     }
 

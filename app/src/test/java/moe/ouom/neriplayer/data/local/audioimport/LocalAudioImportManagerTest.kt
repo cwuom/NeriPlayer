@@ -397,6 +397,30 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `mergeImportedSongMetadata adopts cover discovered after a coverless quick scan`() {
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://tree/music/document/demo.flac",
+                displayName = "demo.flac",
+                title = "Demo",
+                artist = "Artist",
+                album = null,
+                durationMs = 180_000L
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+        val detailedSong = quickSong.copy(
+            coverUrl = "file:///data/local_audio_covers/demo.jpg",
+            originalCoverUrl = "file:///data/local_audio_covers/demo.jpg"
+        )
+
+        val merged = LocalAudioImportManager.mergeImportedSongMetadata(quickSong, detailedSong)
+
+        assertEquals("file:///data/local_audio_covers/demo.jpg", merged.coverUrl)
+        assertEquals("file:///data/local_audio_covers/demo.jpg", merged.originalCoverUrl)
+    }
+
+    @Test
     fun `mergeImportedSongMetadata adopts resolved local path when quick scan only had content uri`() {
         val resolvedFile = tempFolder.newFile("resolved_demo.mp3")
         val quickSong = LocalAudioImportManager.buildQuickImportedSong(

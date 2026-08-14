@@ -326,7 +326,6 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
-import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
@@ -370,6 +369,7 @@ internal fun resolveDisplayedNowPlayingCoverUrl(
 @Composable
 private fun StableNowPlayingCoverImage(
     coverUrl: String?,
+    songKey: String?,
     context: Context,
     coverRequestSizePx: Int,
     offlineMode: Boolean,
@@ -377,7 +377,7 @@ private fun StableNowPlayingCoverImage(
     modifier: Modifier = Modifier
 ) {
     val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    var displayedCoverUrl by remember { mutableStateOf<String?>(null) }
+    var displayedCoverUrl by remember(songKey) { mutableStateOf(requestedCoverUrl) }
     val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
 
     LaunchedEffect(requestedCoverUrl) {
@@ -389,14 +389,18 @@ private fun StableNowPlayingCoverImage(
     }
 
     Box(modifier = modifier) {
-        val targetDisplayedCoverUrl = if (requestedCoverUrl == null) {
-            null
-        } else {
-            displayedCoverUrl
+        val targetDisplayedCoverUrl = when {
+            requestedCoverUrl == null -> null
+            displayedCoverUrl == null -> requestedCoverUrl
+            else -> displayedCoverUrl
         }
         Crossfade(
             targetState = targetDisplayedCoverUrl,
-            animationSpec = tween(durationMillis = NowPlayingCoverImageCrossfadeMs),
+            animationSpec = if (targetDisplayedCoverUrl == null) {
+                snap()
+            } else {
+                tween(durationMillis = NowPlayingCoverImageCrossfadeMs)
+            },
             label = "NowPlayingCoverImage"
         ) { displayedCover ->
             if (displayedCover.isNullOrBlank()) {
@@ -1780,6 +1784,7 @@ fun NowPlayingScreen(
     offlineMode: Boolean = false,
     resolvedCoverUrl: String? = null,
     visualCoverUrl: String? = null,
+    playbackSongKey: String? = null,
 ) {
     val coverLyricFontScale = lyricFontScales.coverLyric
     val coverTranslationFontScale = lyricFontScales.coverTranslation
@@ -1884,9 +1889,9 @@ fun NowPlayingScreen(
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val rememberedCoverUrl = rememberSongDisplayCoverUrl(currentSong)
-    val actualCoverUrl = resolvedCoverUrl ?: rememberedCoverUrl
+    val actualCoverUrl = resolvedCoverUrl ?: visualCoverUrl
     val currentCoverUrl = visualCoverUrl ?: actualCoverUrl
+    val coverSongKey = playbackSongKey ?: currentSong?.stableKey()
     val coverPreviewOnTapEnabled = shouldOpenNowPlayingCoverPreviewOnTap(currentSong)
     val coverPreviewOnLongPressEnabled =
         shouldOpenNowPlayingCoverPreviewOnLongPress(currentSong)
@@ -3017,6 +3022,7 @@ fun NowPlayingScreen(
                             ) {
                                 StableNowPlayingCoverImage(
                                     coverUrl = currentCoverUrl,
+                                    songKey = coverSongKey,
                                     context = context,
                                     coverRequestSizePx = coverRequestSizePx,
                                     offlineMode = offlineMode,
