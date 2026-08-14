@@ -293,6 +293,40 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `embedded active lyric reserves horizontal room for its scaled glyphs`() {
+        assertEquals(
+            5f,
+            resolveEmbeddedLyricHorizontalOverflowPadding(
+                maxTextWidth = 400.dp,
+                maxLineScale = resolveEmbeddedLyricScale(isActive = true)
+            ).value,
+            0.001f
+        )
+        assertEquals(
+            0f,
+            resolveEmbeddedLyricHorizontalOverflowPadding(
+                maxTextWidth = 400.dp,
+                maxLineScale = 1f
+            ).value,
+            0f
+        )
+    }
+
+    @Test
+    fun `active lyric reveal clip keeps horizontal glyph bleed inside bounds`() {
+        val bounds = resolveLyricRevealClipBounds(
+            lineLeft = 8f,
+            lineRight = 92f,
+            horizontalBleedPx = 4f,
+            containerWidth = 100f
+        )
+
+        assertEquals(4f, bounds.left, 0f)
+        assertEquals(96f, bounds.right, 0f)
+        assertEquals(4f, resolveActiveLyricRevealHorizontalPadding().value, 0f)
+    }
+
+    @Test
     fun `manual lyric presentation transitions between playback and clear states`() {
         assertEquals(1f, resolveLyricClearPresentationTarget(true), 0f)
         assertEquals(0f, resolveLyricClearPresentationTarget(false), 0f)

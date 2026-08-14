@@ -128,9 +128,15 @@ private const val MANUAL_LYRIC_PRESENTATION_DURATION_MS = 280
 private const val JAPANESE_LYRIC_TRANSLATION_EXTRA_GAP_DP = 3f
 private const val LYRIC_LINE_HEIGHT_MULTIPLIER = 1.18f
 private const val LYRIC_TRANSLATION_LINE_HEIGHT_MULTIPLIER = 1.12f
+private val ACTIVE_LYRIC_REVEAL_HORIZONTAL_PADDING = 4.dp
 
 private data class LyricInkMetrics(
     val coverage: Float
+)
+
+internal data class LyricRevealClipBounds(
+    val left: Float,
+    val right: Float
 )
 
 internal fun shouldAnimateLyricItemPlacement(): Boolean {
@@ -201,6 +207,38 @@ internal fun resolveLyricScrollSessionKey(
 
 internal fun resolveEmbeddedLyricScale(isActive: Boolean): Float {
     return if (isActive) EMBEDDED_ACTIVE_LINE_SCALE else EMBEDDED_INACTIVE_LINE_SCALE
+}
+
+internal fun resolveEmbeddedLyricHorizontalOverflowPadding(
+    maxTextWidth: Dp,
+    maxLineScale: Float
+): Dp {
+    val width = maxTextWidth.value
+    if (!width.isFinite() || width <= 0f || !maxLineScale.isFinite() || maxLineScale <= 1f) {
+        return 0.dp
+    }
+    return (width * (maxLineScale - 1f) / 2f).dp
+}
+
+internal fun resolveActiveLyricRevealHorizontalPadding(): Dp {
+    return ACTIVE_LYRIC_REVEAL_HORIZONTAL_PADDING
+}
+
+internal fun resolveLyricRevealClipBounds(
+    lineLeft: Float,
+    lineRight: Float,
+    horizontalBleedPx: Float,
+    containerWidth: Float
+): LyricRevealClipBounds {
+    val safeContainerWidth = containerWidth.takeIf { it.isFinite() && it > 0f }
+        ?: lineRight.coerceAtLeast(lineLeft)
+    val safeBleed = horizontalBleedPx.takeIf { it.isFinite() && it > 0f } ?: 0f
+    val safeLeft = lineLeft.coerceIn(0f, safeContainerWidth)
+    val safeRight = lineRight.coerceIn(safeLeft, safeContainerWidth)
+    return LyricRevealClipBounds(
+        left = (safeLeft - safeBleed).coerceAtLeast(0f),
+        right = (safeRight + safeBleed).coerceAtMost(safeContainerWidth)
+    )
 }
 
 internal fun resolveEmbeddedTranslationTransformOrigin(): TransformOrigin {
@@ -824,6 +862,16 @@ fun SyncedLyricsView(
     ) {
         val centerPad = maxHeight / 2.5f
         val maxTextWidth = (maxWidth - 48.dp).coerceAtLeast(0.dp)
+        val embeddedOverflowPadding = resolveEmbeddedLyricHorizontalOverflowPadding(
+            maxTextWidth = maxTextWidth,
+            maxLineScale = if (visualEffectsEnabled) {
+                1f
+            } else {
+                resolveEmbeddedLyricScale(isActive = true)
+            }
+        )
+        val constrainedTextWidth = (maxTextWidth - embeddedOverflowPadding * 2)
+            .coerceAtLeast(0.dp)
         val density = LocalDensity.current
 
         LazyColumn(
@@ -857,7 +905,8 @@ fun SyncedLyricsView(
                                 Modifier.animateItem(placementSpec = null)
                             }
                         )
-                        .widthIn(max = maxTextWidth),
+                        .padding(horizontal = embeddedOverflowPadding)
+                        .widthIn(max = constrainedTextWidth),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     val distance = abs(index - currentIndex)
@@ -1319,7 +1368,8 @@ internal fun Modifier.multilineGradientReveal(
     fadeWidth: Dp,
     line: LyricEntry? = null,
     interpolatedPositionState: InterpolatedPlaybackPositionState? = null,
-    lyricOffsetMs: Long = 0L
+    lyricOffsetMs: Long = 0L,
+    horizontalContentInset: Dp = 0.dp
 ): Modifier = this
     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
     .drawWithContent {
@@ -1346,18 +1396,27 @@ internal fun Modifier.multilineGradientReveal(
 
         val safeChars = effectiveRevealOffsetChars.coerceIn(0f, textLength.toFloat())
         val totalLines = layout.lineCount
+        val horizontalInsetPx = horizontalContentInset.toPx()
 
         // 遍历所有行, 分三种情况处理, 已完成行, 当前行, 未开始行
         for (lineIndex in 0 until totalLines) {
             val lineStartIdx = layout.getLineStart(lineIndex) // 该行第一个字符的索引
             val lineEndIdx = layout.getLineEnd(lineIndex, true) // 该行最后一个字符的索引 (含换行符)
+            val rawLineLeft = layout.getLineLeft(lineIndex) + horizontalInsetPx
+            val rawLineRight = layout.getLineRight(lineIndex) + horizontalInsetPx
+            val lineClipBounds = resolveLyricRevealClipBounds(
+                lineLeft = rawLineLeft,
+                lineRight = rawLineRight,
+                horizontalBleedPx = horizontalInsetPx,
+                containerWidth = size.width
+            )
 
             // 进度超过该行最后一个字符, 直接绘制全高亮
             if (safeChars >= lineEndIdx) {
                 clipRect(
-                    left = layout.getLineLeft(lineIndex),
+                    left = lineClipBounds.left,
                     top = layout.getLineTop(lineIndex),
-                    right = layout.getLineRight(lineIndex),
+                    right = lineClipBounds.right,
                     bottom = layout.getLineBottom(lineIndex)
                 ) {
                     this@drawWithContent.drawContent()
@@ -1372,9 +1431,12 @@ internal fun Modifier.multilineGradientReveal(
                 // 计算当前字符和下一个字符的X坐标
                 // 使用 getBoundingBox 获取更准确的字符边界, 避免字体渲染偏移
                 val x0 = try {
-                    layout.getBoundingBox(currentCharIdx).left
+                    layout.getBoundingBox(currentCharIdx).left + horizontalInsetPx
                 } catch (e: Exception) {
-                    layout.getHorizontalPosition(currentCharIdx, usePrimaryDirection = true)
+                    layout.getHorizontalPosition(
+                        currentCharIdx,
+                        usePrimaryDirection = true
+                    ) + horizontalInsetPx
                 }
                 val nextCharIdx = if (currentCharIdx >= lineEndIdx - 1) {
                     lineEndIdx // 该行最后一个字符，下一个字符指向行尾
@@ -1382,18 +1444,21 @@ internal fun Modifier.multilineGradientReveal(
                     currentCharIdx + 1
                 }
                 val x1 = if (currentCharIdx >= lineEndIdx - 1) {
-                    layout.getLineRight(lineIndex) // 该行最后一个字符，X1取行右边界
+                    rawLineRight // 该行最后一个字符，X1取行右边界
                 } else {
                     try {
-                        layout.getBoundingBox(nextCharIdx).left
+                        layout.getBoundingBox(nextCharIdx).left + horizontalInsetPx
                     } catch (e: Exception) {
-                        layout.getHorizontalPosition(nextCharIdx, usePrimaryDirection = true)
+                        layout.getHorizontalPosition(
+                            nextCharIdx,
+                            usePrimaryDirection = true
+                        ) + horizontalInsetPx
                     }
                 }
 
                 // 确保X坐标在当前行范围内
-                val lineLeft = layout.getLineLeft(lineIndex)
-                val lineRight = layout.getLineRight(lineIndex)
+                val lineLeft = lineClipBounds.left
+                val lineRight = lineClipBounds.right
                 val x = (x0 + (x1 - x0) * frac).coerceIn(lineLeft, lineRight)
 
                 // 计算渐变范围
@@ -1516,11 +1581,13 @@ fun SyncedLyricsActiveLine(
     )
 
     val effectiveFadeWidth = if (line.words.isNullOrEmpty()) fadeWidth else 0.dp
+    val revealHorizontalPadding = resolveActiveLyricRevealHorizontalPadding()
 
     Box {
         // 底版文本
         Text(
             text = line.text,
+            modifier = Modifier.padding(horizontal = revealHorizontalPadding),
             style = textStyle.copy(color = inactiveColor),
             maxLines = Int.MAX_VALUE,
             softWrap = true,
@@ -1539,19 +1606,22 @@ fun SyncedLyricsActiveLine(
                 style = textStyle.copy(color = activeColor),
                 maxLines = Int.MAX_VALUE,
                 softWrap = true,
-                modifier = Modifier.multilineGradientReveal(
-                    layout = layout,
-                    revealOffsetChars = revealOffsetChars,
-                    textLength = line.text.length,
-                    fadeWidth = effectiveFadeWidth,
-                    line = line,
-                    interpolatedPositionState = if (interpolatePlaybackPosition) {
-                        interpolatedPositionState
-                    } else {
-                        null
-                    },
-                    lyricOffsetMs = lyricOffsetMs
-                )
+                modifier = Modifier
+                    .multilineGradientReveal(
+                        layout = layout,
+                        revealOffsetChars = revealOffsetChars,
+                        textLength = line.text.length,
+                        fadeWidth = effectiveFadeWidth,
+                        line = line,
+                        interpolatedPositionState = if (interpolatePlaybackPosition) {
+                            interpolatedPositionState
+                        } else {
+                            null
+                        },
+                        lyricOffsetMs = lyricOffsetMs,
+                        horizontalContentInset = revealHorizontalPadding
+                    )
+                    .padding(horizontal = revealHorizontalPadding)
             )
         }
     }
