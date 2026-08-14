@@ -15,16 +15,18 @@ import moe.ouom.neriplayer.ui.component.lyrics.toEditableLyricsText
 
 private const val TAG = "EditableLyricsMatcher"
 private const val MAX_SOURCE_RESULTS = 5
-private const val MAX_DETAIL_RESULTS = 2
+private const val MAX_DETAIL_RESULTS = 4
 private const val MAX_RESULTS = 20
 private val matchSourceOrder = listOf(
-    EditableLyricMatchSource.AMLL_TTML,
-    EditableLyricMatchSource.CLOUD_MUSIC,
     EditableLyricMatchSource.KUGOU,
+    EditableLyricMatchSource.CLOUD_MUSIC,
     EditableLyricMatchSource.QQ_MUSIC,
     EditableLyricMatchSource.LRCLIB,
+    EditableLyricMatchSource.AMLL_TTML,
     EditableLyricMatchSource.YOUTUBE_MUSIC
 )
+
+private val domesticLyricSearchLabels = setOf("kugou", "netease", "qq")
 
 class EditableLyricsMatcher(
     private val cloudMusicSearchApi: SearchApi,
@@ -62,15 +64,88 @@ class EditableLyricsMatcher(
                 )
             }
         }
-        return rankEditableLyricMatches(
-            normalizedRequest,
-            candidates.map(::sanitizeEditableLyricMatchCandidate)
-        )
+        val sanitizedCandidates = candidates.map(::sanitizeEditableLyricMatchCandidate)
+        val rankedMatches = rankEditableLyricMatches(normalizedRequest, sanitizedCandidates)
+        val rankedKeys = rankedMatches.mapTo(HashSet()) { it.candidate.matchIdentityKey() }
+        val lowConfidenceMatches = sanitizedCandidates
+            .filter {
+                it.lyrics.isNotBlank() &&
+                    !hasCollapsedTimedLyricTimeline(it.lyrics) &&
+                    hasLyricMatchSignal(normalizedRequest, it)
+            }
+            .filterNot { it.matchIdentityKey() in rankedKeys }
+            .map { candidate ->
+                RankedEditableLyricMatch(
+                    candidate = candidate,
+                    score = scoreLyricMatchTitle(normalizedRequest.trackName, candidate.title) +
+                        scoreLyricMatchArtist(normalizedRequest.artistName, candidate.artist) +
+                        scoreLyricMatchDuration(
+                            normalizedRequest.durationMs,
+                            candidate.durationMs
+                        ) +
+                        scoreLyricMatchKeyword(normalizedRequest.keyword, candidate) +
+                        candidate.sourceScore.coerceIn(0, 20),
+                    durationDeltaMs = normalizedRequest.durationMs.takeIf { it > 0L }?.let { expected ->
+                        candidate.durationMs.takeIf { it > 0L }?.let { actual ->
+                            kotlin.math.abs(expected - actual)
+                        }
+                    },
+                    confidence = EditableLyricMatchConfidence.LOW
+                )
+            }
+            .sortedWith(
+                compareByDescending<RankedEditableLyricMatch> { it.score }
+                    .thenBy { it.durationDeltaMs ?: Long.MAX_VALUE }
+            )
+        return (rankedMatches + lowConfidenceMatches)
             .distinctBy { result ->
-                "${result.candidate.source}:${normalizeLyricMatchText(result.candidate.title)}:" +
-                    "${normalizeLyricMatchText(result.candidate.artist)}:${result.candidate.lyrics.hashCode()}"
+                result.candidate.matchIdentityKey()
             }
             .take(MAX_RESULTS)
+    }
+
+    suspend fun matchHighConfidenceLyricsForSource(
+        request: EditableLyricMatchRequest,
+        source: EditableLyricMatchSource
+    ): List<RankedEditableLyricMatch> {
+        val normalizedRequest = request.copy(
+            keyword = request.keyword.trim(),
+            trackName = request.trackName.trim(),
+            artistName = request.artistName.trim()
+        )
+        if (normalizedRequest.keyword.isBlank()) {
+            return emptyList()
+        }
+        if (normalizedRequest.sources.isEmpty()) {
+            return emptyList()
+        }
+        if (source !in normalizedRequest.sources) {
+            return emptyList()
+        }
+        return rankEditableLyricMatches(
+            normalizedRequest,
+            searchSource(source, normalizedRequest)
+                .map(::sanitizeEditableLyricMatchCandidate)
+        )
+            .filter { it.confidence == EditableLyricMatchConfidence.HIGH }
+    }
+
+    private fun EditableLyricMatchCandidate.matchIdentityKey(): String {
+        return "${source}:${normalizeLyricMatchText(title)}:${normalizeLyricMatchText(artist)}:${lyrics.hashCode()}"
+    }
+
+    private suspend fun searchSource(
+        source: EditableLyricMatchSource,
+        request: EditableLyricMatchRequest
+    ): List<EditableLyricMatchCandidate> {
+        return when (source) {
+            EditableLyricMatchSource.KUGOU -> searchKugou(request)
+            EditableLyricMatchSource.CLOUD_MUSIC -> searchCloudMusic(request)
+            EditableLyricMatchSource.QQ_MUSIC -> searchQqMusic(request)
+            EditableLyricMatchSource.AMLL_TTML -> searchAmllTtml(request)
+            EditableLyricMatchSource.LRCLIB -> searchLrcLib(request)
+            EditableLyricMatchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(request)
+        }
     }
 
     private suspend fun searchKugou(request: EditableLyricMatchRequest): List<EditableLyricMatchCandidate> {
@@ -307,7 +382,12 @@ class EditableLyricsMatcher(
         search: suspend (String) -> List<T>
     ): List<T> {
         val results = linkedMapOf<String, T>()
-        for (query in editableLyricMatchSearchQueries(request)) {
+        val queries = if (label in domesticLyricSearchLabels) {
+            editableLyricMatchDomesticSearchQueries(request)
+        } else {
+            editableLyricMatchSearchQueries(request)
+        }
+        for (query in queries) {
             val items = try {
                 search(query)
             } catch (error: CancellationException) {
@@ -373,22 +453,34 @@ fun editableLyricMatchSearchQueries(request: EditableLyricMatchRequest): List<St
         .distinctBy(::normalizeLyricMatchText)
 }
 
+fun editableLyricMatchDomesticSearchQueries(request: EditableLyricMatchRequest): List<String> {
+    return editableLyricMatchSearchQueries(request)
+        .map(::toSimplifiedChineseForDomesticSearch)
+        .filter { it.isNotBlank() }
+        .distinctBy(::normalizeLyricMatchText)
+}
+
 private fun List<SongSearchInfo>.rankSearchApiForDetailLookup(
     request: EditableLyricMatchRequest
 ): List<SongSearchInfo> {
     return asSequence()
         .filter { searchInfo ->
-            val candidateDurationMs = parseDurationMs(searchInfo.duration)
-            request.durationMs <= 0L ||
-                candidateDurationMs <= 0L ||
-                isExternalLyricDurationCompatible(request.durationMs, candidateDurationMs)
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = request.durationMs,
+                candidateDurationMs = parseDurationMs(searchInfo.duration)
+            )
         }
         .sortedWith(
-            compareByDescending<SongSearchInfo> { scoreLyricMatchTitle(request.trackName, it.songName) }
+            compareByDescending<SongSearchInfo> {
+                val candidateDurationMs = parseDurationMs(it.duration)
+                request.durationMs > 0L && candidateDurationMs > 0L &&
+                    isExternalLyricDurationCompatible(request.durationMs, candidateDurationMs)
+            }
+                .thenByDescending { scoreLyricMatchTitle(request.trackName, it.songName) }
                 .thenByDescending { scoreLyricMatchArtist(request.artistName, it.singer) }
                 .thenByDescending { scoreLyricMatchDuration(request.durationMs, parseDurationMs(it.duration)) }
         )
-        .take(2)
+        .take(MAX_DETAIL_RESULTS)
         .toList()
 }
 
@@ -397,17 +489,31 @@ private fun List<KugouSongSearchResult>.rankKugouForDetailLookup(
 ): List<KugouSongSearchResult> {
     return asSequence()
         .filter { song ->
-            request.durationMs <= 0L ||
-                song.durationMs <= 0L ||
-                isExternalLyricDurationCompatible(request.durationMs, song.durationMs)
+            isLyricDetailLookupDurationAllowed(
+                expectedDurationMs = request.durationMs,
+                candidateDurationMs = song.durationMs
+            )
         }
         .sortedWith(
-            compareByDescending<KugouSongSearchResult> { scoreLyricMatchTitle(request.trackName, it.title) }
+            compareByDescending<KugouSongSearchResult> {
+                request.durationMs > 0L && it.durationMs > 0L &&
+                    isExternalLyricDurationCompatible(request.durationMs, it.durationMs)
+            }
+                .thenByDescending { scoreLyricMatchTitle(request.trackName, it.title) }
                 .thenByDescending { scoreLyricMatchArtist(request.artistName, it.artist) }
                 .thenByDescending { scoreLyricMatchDuration(request.durationMs, it.durationMs) }
         )
-        .take(2)
+        .take(MAX_DETAIL_RESULTS)
         .toList()
+}
+
+internal fun isLyricDetailLookupDurationAllowed(
+    expectedDurationMs: Long,
+    candidateDurationMs: Long
+): Boolean {
+    return expectedDurationMs <= 0L ||
+        candidateDurationMs <= 0L ||
+        isExternalLyricDurationCompatible(expectedDurationMs, candidateDurationMs)
 }
 
 private fun List<YouTubeMusicSearchResult>.rankYouTubeForDetailLookup(

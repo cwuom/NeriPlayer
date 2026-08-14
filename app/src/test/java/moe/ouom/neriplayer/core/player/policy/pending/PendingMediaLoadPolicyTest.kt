@@ -130,6 +130,28 @@ class PendingMediaLoadPolicyTest {
     }
 
     @Test
+    fun `seek without pending media load stays immediate while url refresh runs separately`() {
+        val action = resolveSeekExecutionAction(
+            pendingLoadActive = false,
+            urlRefreshRequested = true
+        )
+
+        assertTrue(action.seekPlayerNow)
+        assertTrue(action.refreshUrlInBackground)
+    }
+
+    @Test
+    fun `seek during pending media load does not touch stale player or refresh url`() {
+        val action = resolveSeekExecutionAction(
+            pendingLoadActive = true,
+            urlRefreshRequested = true
+        )
+
+        assertFalse(action.seekPlayerNow)
+        assertFalse(action.refreshUrlInBackground)
+    }
+
+    @Test
     fun `pause during pending load suppresses pending autoplay`() {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,
