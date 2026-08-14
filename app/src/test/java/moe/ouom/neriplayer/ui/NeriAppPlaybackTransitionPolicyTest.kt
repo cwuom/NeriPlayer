@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.ui
 
+import moe.ouom.neriplayer.ui.component.playback.resolveMiniPlayerDisplayedCoverUrl
+import moe.ouom.neriplayer.ui.screen.resolveDisplayedNowPlayingCoverUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -107,6 +109,73 @@ class NeriAppPlaybackTransitionPolicyTest {
                 previousVisualCoverUrl = "old-cover",
                 hasCurrentSong = true,
                 clearDelayElapsed = false
+            )
+        )
+    }
+
+    @Test
+    fun `cover image keeps the displayed cover until the new request succeeds`() {
+        assertEquals(
+            "old-cover",
+            resolveDisplayedNowPlayingCoverUrl(
+                requestedCoverUrl = "new-cover",
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = false
+            )
+        )
+        assertEquals(
+            "new-cover",
+            resolveDisplayedNowPlayingCoverUrl(
+                requestedCoverUrl = "new-cover",
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = true
+            )
+        )
+    }
+
+    @Test
+    fun `cover image clears when the requested cover is absent`() {
+        assertNull(
+            resolveDisplayedNowPlayingCoverUrl(
+                requestedCoverUrl = "  ",
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = false
+            )
+        )
+    }
+
+    @Test
+    fun `mini player keeps its cover while a newly resolved cover loads`() {
+        assertEquals(
+            "old-cover",
+            resolveMiniPlayerDisplayedCoverUrl(
+                requestedCoverUrl = "new-cover",
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = false
+            )
+        )
+        assertEquals(
+            "new-cover",
+            resolveMiniPlayerDisplayedCoverUrl(
+                requestedCoverUrl = "new-cover",
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = true
+            )
+        )
+        assertEquals(
+            "old-cover",
+            resolveMiniPlayerDisplayedCoverUrl(
+                requestedCoverUrl = null,
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = false
+            )
+        )
+        assertNull(
+            resolveMiniPlayerDisplayedCoverUrl(
+                requestedCoverUrl = null,
+                displayedCoverUrl = "old-cover",
+                requestSucceeded = false,
+                clearDelayElapsed = true
             )
         )
     }

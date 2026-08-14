@@ -3160,9 +3160,11 @@ private fun NeriAppContent(
                                             neteaseLyricsCache = PlayerManager.neteaseLyricsCache,
                                             ytMusicLyricsCache = PlayerManager.ytMusicLyricsCache
                                         )
-                                        PlayerLyricsProvider.clearPersistentLyricCache(
-                                            AppContainer.applicationContext
-                                        )
+                                        withContext(Dispatchers.IO) {
+                                            PlayerLyricsProvider.clearPersistentLyricCache(
+                                                AppContainer.applicationContext
+                                            )
+                                        }
                                     }
                                     val result = clearExtraStorageCaches(context, options)
                                     messages += when {

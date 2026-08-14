@@ -27,6 +27,8 @@ import android.app.Application
 import android.util.LruCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.api.lyrics.AmllTtmlClient
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
@@ -63,6 +65,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantReadWriteLock
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
     val payload: JSONObject = JSONObject(rawResponse)
@@ -198,9 +201,27 @@ internal fun sanitizeYouTubeMusicLyricsCacheEntry(
 }
 
 internal object PlayerLyricsProvider {
+    internal interface NeteaseLyricsCacheStore {
+        fun get(songId: Long): NeteaseLyricsCacheEntry?
+
+        fun put(songId: Long, entry: NeteaseLyricsCacheEntry)
+    }
+
+    private class LruNeteaseLyricsCacheStore(
+        private val cache: LruCache<Long, NeteaseLyricsCacheEntry>
+    ) : NeteaseLyricsCacheStore {
+        override fun get(songId: Long): NeteaseLyricsCacheEntry? = cache.get(songId)
+
+        override fun put(songId: Long, entry: NeteaseLyricsCacheEntry) {
+            cache.put(songId, entry)
+        }
+    }
+
     private val amllLyricsCache = LruCache<String, List<LyricEntry>>(40)
     private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
+    private val neteaseColdLoadLocks = ConcurrentHashMap<Long, Mutex>()
     private val lyricsCacheGeneration = AtomicLong(0L)
+    private val lyricsCacheStateLock = ReentrantReadWriteLock()
 
     private fun parseBestLyricEntries(rawLyric: String): List<LyricEntry> {
         return parseNeteaseLyricsAuto(rawLyric)
@@ -211,27 +232,59 @@ internal object PlayerLyricsProvider {
     }
 
     internal fun clearLyricsCaches() {
-        lyricsCacheGeneration.incrementAndGet()
-        amllLyricsCache.evictAll()
-        LocalMediaSupport.clearLyricsLookupCache()
+        withLyricsCacheWriteLock {
+            lyricsCacheGeneration.incrementAndGet()
+            amllLyricsCache.evictAll()
+            LocalMediaSupport.clearLyricsLookupCache()
+        }
     }
 
     internal fun clearLyricsCaches(
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>
     ) {
-        clearLyricsCaches()
-        neteaseLyricsCache.evictAll()
-        ytMusicLyricsCache.evictAll()
+        withLyricsCacheWriteLock {
+            lyricsCacheGeneration.incrementAndGet()
+            amllLyricsCache.evictAll()
+            LocalMediaSupport.clearLyricsLookupCache()
+            neteaseLyricsCache.evictAll()
+            ytMusicLyricsCache.evictAll()
+        }
     }
 
     internal fun clearPersistentLyricCache(application: Application) {
-        lyricsCacheGeneration.incrementAndGet()
-        runCatching {
-            lyricsCacheDirectory(application).deleteRecursively()
-        }.onFailure {
-            NPLogger.w("NERI-PlayerManager", "清理歌词缓存失败: ${it.message}")
+        withLyricsCacheWriteLock {
+            lyricsCacheGeneration.incrementAndGet()
+            runCatching {
+                lyricsCacheDirectory(application).deleteRecursively()
+            }.onFailure {
+                NPLogger.w("NERI-PlayerManager", "清理歌词缓存失败: ${it.message}")
+            }
         }
+    }
+
+    private fun <T> withLyricsCacheReadLock(block: () -> T): T {
+        val lock = lyricsCacheStateLock.readLock()
+        lock.lock()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    private fun <T> withLyricsCacheWriteLock(block: () -> T): T {
+        val lock = lyricsCacheStateLock.writeLock()
+        lock.lock()
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    private fun currentLyricsCacheGeneration(): Long {
+        return withLyricsCacheReadLock { lyricsCacheGeneration.get() }
     }
 
     private fun buildYouTubeMusicLyricsCacheKey(song: SongItem): String {
@@ -363,30 +416,70 @@ internal object PlayerLyricsProvider {
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         loader: suspend (Long) -> String
     ): NeteaseLyricsCacheEntry {
+        return getOrLoadNeteaseLyricsCacheEntry(
+            songId = songId,
+            neteaseLyricsCache = LruNeteaseLyricsCacheStore(neteaseLyricsCache),
+            loader = loader
+        )
+    }
+
+    internal suspend fun getOrLoadNeteaseLyricsCacheEntry(
+        songId: Long,
+        neteaseLyricsCache: NeteaseLyricsCacheStore,
+        loader: suspend (Long) -> String
+    ): NeteaseLyricsCacheEntry {
         neteaseLyricsCache.get(songId)?.let { cached ->
             NPLogger.d("NERI-PlayerManager", "Using cached NetEase lyrics for songId=$songId")
             scheduleNeteaseLyricsRefresh(songId, cached, neteaseLyricsCache, loader)
             return cached
         }
 
-        val persisted = readPersistedNeteaseLyricsEntry(songId)
-        if (persisted != null) {
-            neteaseLyricsCache.put(songId, persisted)
-            NPLogger.d("NERI-PlayerManager", "Using persisted NetEase lyrics for songId=$songId")
-            scheduleNeteaseLyricsRefresh(songId, persisted, neteaseLyricsCache, loader)
-            return persisted
-        }
+        val loadLock = neteaseColdLoadLocks.computeIfAbsent(songId) { Mutex() }
+        return try {
+            loadLock.withLock {
+                neteaseLyricsCache.get(songId)?.let { return@withLock it }
 
-        val entry = buildNeteaseLyricsCacheEntry(loader(songId))
-        neteaseLyricsCache.put(songId, entry)
-        persistNeteaseLyricsEntry(songId, entry)
-        return entry
+                val persistedGeneration = currentLyricsCacheGeneration()
+                val persisted = readPersistedNeteaseLyricsEntry(songId)
+                if (
+                    persisted != null &&
+                    currentLyricsCacheGeneration() == persistedGeneration &&
+                    writeNeteaseLyricsEntryIfCurrent(
+                        songId = songId,
+                        cache = neteaseLyricsCache,
+                        entry = persisted,
+                        expectedGeneration = persistedGeneration
+                    )
+                ) {
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Using persisted NetEase lyrics for songId=$songId"
+                    )
+                    scheduleNeteaseLyricsRefresh(songId, persisted, neteaseLyricsCache, loader)
+                    return@withLock persisted
+                }
+
+                val generation = currentLyricsCacheGeneration()
+                val entry = buildNeteaseLyricsCacheEntry(loader(songId))
+                writeNeteaseLyricsEntryIfCurrent(
+                    songId = songId,
+                    cache = neteaseLyricsCache,
+                    entry = entry,
+                    expectedGeneration = generation
+                )
+                entry
+            }
+        } finally {
+            if (!loadLock.isLocked) {
+                neteaseColdLoadLocks.remove(songId, loadLock)
+            }
+        }
     }
 
     private fun scheduleNeteaseLyricsRefresh(
         songId: Long,
         cached: NeteaseLyricsCacheEntry,
-        cache: LruCache<Long, NeteaseLyricsCacheEntry>,
+        cache: NeteaseLyricsCacheStore,
         loader: suspend (Long) -> String
     ) {
         if (!AppContainer.isInitialized()) {
@@ -395,20 +488,26 @@ internal object PlayerLyricsProvider {
         if (!neteaseRefreshInFlight.add(songId)) {
             return
         }
-        val generation = lyricsCacheGeneration.get()
+        val generation = currentLyricsCacheGeneration()
         AppContainer.launchBackgroundIo {
             try {
                 val refreshed = buildNeteaseLyricsCacheEntry(loader(songId))
                 if (
-                    lyricsCacheGeneration.get() == generation &&
                     !sameNeteaseLyrics(cached, refreshed)
                 ) {
-                    cache.put(songId, refreshed)
-                    persistNeteaseLyricsEntry(songId, refreshed)
-                    NPLogger.d(
-                        "NERI-PlayerManager",
-                        "Updated NetEase lyric cache for songId=$songId"
-                    )
+                    if (
+                        writeNeteaseLyricsEntryIfCurrent(
+                            songId = songId,
+                            cache = cache,
+                            entry = refreshed,
+                            expectedGeneration = generation
+                        )
+                    ) {
+                        NPLogger.d(
+                            "NERI-PlayerManager",
+                            "Updated NetEase lyric cache for songId=$songId"
+                        )
+                    }
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -436,19 +535,38 @@ internal object PlayerLyricsProvider {
         return File(lyricsCacheDirectory(AppContainer.applicationContext), "netease_$songId.json")
     }
 
+    private fun writeNeteaseLyricsEntryIfCurrent(
+        songId: Long,
+        cache: NeteaseLyricsCacheStore,
+        entry: NeteaseLyricsCacheEntry,
+        expectedGeneration: Long
+    ): Boolean {
+        return withLyricsCacheWriteLock {
+            if (lyricsCacheGeneration.get() != expectedGeneration) {
+                false
+            } else {
+                cache.put(songId, entry)
+                persistNeteaseLyricsEntry(songId, entry)
+                true
+            }
+        }
+    }
+
     private fun readPersistedNeteaseLyricsEntry(songId: Long): NeteaseLyricsCacheEntry? {
         if (!AppContainer.isInitialized()) {
             return null
         }
-        val file = persistedNeteaseLyricsFile(songId)
-        if (!file.isFile || file.length() <= 0L) {
-            return null
+        return withLyricsCacheReadLock {
+            val file = persistedNeteaseLyricsFile(songId)
+            if (!file.isFile || file.length() <= 0L) {
+                return@withLyricsCacheReadLock null
+            }
+            runCatching {
+                buildNeteaseLyricsCacheEntry(file.readText(Charsets.UTF_8))
+            }.onFailure {
+                NPLogger.w("NERI-PlayerManager", "读取持久化歌词缓存失败: ${it.message}")
+            }.getOrNull()
         }
-        return runCatching {
-            buildNeteaseLyricsCacheEntry(file.readText(Charsets.UTF_8))
-        }.onFailure {
-            NPLogger.w("NERI-PlayerManager", "读取持久化歌词缓存失败: ${it.message}")
-        }.getOrNull()
     }
 
     private fun persistNeteaseLyricsEntry(

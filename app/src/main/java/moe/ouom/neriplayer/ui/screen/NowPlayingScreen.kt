@@ -353,6 +353,109 @@ private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val NowPlayingMainControlsMinimumSpacing = 4.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
+internal fun resolveDisplayedNowPlayingCoverUrl(
+    requestedCoverUrl: String?,
+    displayedCoverUrl: String?,
+    requestSucceeded: Boolean
+): String? {
+    val requested = requestedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val displayed = displayedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    return when {
+        requested == null -> null
+        requested == displayed || requestSucceeded -> requested
+        else -> displayed
+    }
+}
+
+@Composable
+private fun StableNowPlayingCoverImage(
+    coverUrl: String?,
+    context: Context,
+    coverRequestSizePx: Int,
+    offlineMode: Boolean,
+    contentDescription: String?,
+    modifier: Modifier = Modifier
+) {
+    val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    var displayedCoverUrl by remember { mutableStateOf<String?>(null) }
+    val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
+
+    LaunchedEffect(requestedCoverUrl) {
+        if (requestedCoverUrl == null) {
+            displayedCoverUrl = null
+        } else if (displayedCoverUrl == requestedCoverUrl) {
+            displayedCoverUrl = requestedCoverUrl
+        }
+    }
+
+    Box(modifier = modifier) {
+        Crossfade(
+            targetState = displayedCoverUrl,
+            animationSpec = tween(durationMillis = NowPlayingCoverImageCrossfadeMs),
+            label = "NowPlayingCoverImage"
+        ) { displayedCover ->
+            if (displayedCover.isNullOrBlank()) {
+                Box(modifier = Modifier.fillMaxSize())
+            } else {
+                AsyncImage(
+                    model = remember(
+                        context,
+                        displayedCover,
+                        coverRequestSizePx,
+                        offlineMode
+                    ) {
+                        offlineCachedImageRequest(
+                            context = context,
+                            data = displayedCover,
+                            sizePx = coverRequestSizePx,
+                            allowHardware = false,
+                            crossfade = false,
+                            offlineMode = offlineMode
+                        )
+                    },
+                    contentDescription = contentDescription,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        if (requestedCoverUrl != null && requestedCoverUrl != displayedCoverUrl) {
+            AsyncImage(
+                model = remember(
+                    context,
+                    requestedCoverUrl,
+                    coverRequestSizePx,
+                    offlineMode
+                ) {
+                    offlineCachedImageRequest(
+                        context = context,
+                        data = requestedCoverUrl,
+                        sizePx = coverRequestSizePx,
+                        allowHardware = false,
+                        crossfade = false,
+                        offlineMode = offlineMode
+                    )
+                },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0f },
+                onSuccess = {
+                    if (latestRequestedCoverUrl == requestedCoverUrl) {
+                        displayedCoverUrl = resolveDisplayedNowPlayingCoverUrl(
+                            requestedCoverUrl = requestedCoverUrl,
+                            displayedCoverUrl = displayedCoverUrl,
+                            requestSucceeded = true
+                        )
+                    }
+                }
+            )
+        }
+    }
+}
+
 internal enum class NowPlayingWideLyricsMode {
     NO_LYRICS,
     ADVANCED,
@@ -2907,33 +3010,16 @@ fun NowPlayingScreen(
                                         }
                                     )
                             ) {
-                                Crossfade(
-                                    targetState = currentCoverUrl,
-                                    animationSpec = tween(
-                                        durationMillis = NowPlayingCoverImageCrossfadeMs
-                                    ),
-                                    label = "NowPlayingCoverImage"
-                                ) { cover ->
-                                    if (cover.isNullOrBlank()) {
-                                        Box(modifier = Modifier.fillMaxSize())
-                                        return@Crossfade
-                                    }
-                                    AsyncImage(
-                                        model = remember(context, cover, coverRequestSizePx, offlineMode) {
-                                            offlineCachedImageRequest(
-                                                context = context,
-                                                data = cover,
-                                                sizePx = coverRequestSizePx,
-                                                allowHardware = false,
-                                                crossfade = false,
-                                                offlineMode = offlineMode
-                                            )
-                                        },
-                                        contentDescription = currentSong?.customName ?: currentSong?.name ?: "",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
+                                StableNowPlayingCoverImage(
+                                    coverUrl = currentCoverUrl,
+                                    context = context,
+                                    coverRequestSizePx = coverRequestSizePx,
+                                    offlineMode = offlineMode,
+                                    contentDescription = currentSong?.customName
+                                        ?: currentSong?.name
+                                        ?: "",
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
 
                             val coverPageSourceBadgeScale by animateFloatAsState(

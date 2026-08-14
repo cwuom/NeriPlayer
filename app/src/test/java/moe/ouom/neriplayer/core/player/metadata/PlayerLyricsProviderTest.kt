@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
@@ -19,6 +22,19 @@ import org.junit.Test
 import java.io.IOException
 
 class PlayerLyricsProviderTest {
+    private class TestLyricsCache : PlayerLyricsProvider.NeteaseLyricsCacheStore {
+        private val values = mutableMapOf<Long, NeteaseLyricsCacheEntry>()
+
+        override fun get(songId: Long): NeteaseLyricsCacheEntry? = values[songId]
+
+        override fun put(songId: Long, entry: NeteaseLyricsCacheEntry) {
+            values[songId] = entry
+        }
+
+        fun clear() {
+            values.clear()
+        }
+    }
 
     @Test
     fun `resolveLocalLyricOverrideState keeps blank local override as cleared`() {
@@ -242,6 +258,56 @@ class PlayerLyricsProviderTest {
         assertEquals("hard to forget", entry.translatedLyricEntries.single().text)
         assertEquals("[00:12.58]na n yi wang ji", entry.romanizedLyricText)
         assertEquals("na n yi wang ji", entry.romanizedLyricEntries.single().text)
+    }
+
+    @Test
+    fun `cold NetEase lyric loads are deduplicated per song`() = runTest {
+        val cache = TestLyricsCache()
+        val releaseLoader = CompletableDeferred<Unit>()
+        var loadCount = 0
+        val loader: suspend (Long) -> String = {
+            loadCount += 1
+            releaseLoader.await()
+            """{"lrc":{"lyric":"[00:01.00]line"}}"""
+        }
+
+        val first = async {
+            PlayerLyricsProvider.getOrLoadNeteaseLyricsCacheEntry(11L, cache, loader)
+        }
+        val second = async {
+            PlayerLyricsProvider.getOrLoadNeteaseLyricsCacheEntry(11L, cache, loader)
+        }
+        yield()
+
+        assertEquals(1, loadCount)
+        releaseLoader.complete(Unit)
+        val firstEntry = first.await()
+        assertNotNull(cache.get(11L))
+        assertEquals(firstEntry, second.await())
+        assertEquals(1, loadCount)
+    }
+
+    @Test
+    fun `cold NetEase lyric load does not repopulate cache after clearing`() = runTest {
+        val cache = TestLyricsCache()
+        val loaderStarted = CompletableDeferred<Unit>()
+        val releaseLoader = CompletableDeferred<Unit>()
+        val loader: suspend (Long) -> String = {
+            loaderStarted.complete(Unit)
+            releaseLoader.await()
+            """{"lrc":{"lyric":"[00:01.00]line"}}"""
+        }
+
+        val request = async {
+            PlayerLyricsProvider.getOrLoadNeteaseLyricsCacheEntry(12L, cache, loader)
+        }
+        loaderStarted.await()
+        cache.clear()
+        PlayerLyricsProvider.clearLyricsCaches()
+        releaseLoader.complete(Unit)
+        request.await()
+
+        assertNull(cache.get(12L))
     }
 
     @Test

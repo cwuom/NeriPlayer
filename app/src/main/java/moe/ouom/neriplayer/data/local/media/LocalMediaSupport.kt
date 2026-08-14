@@ -631,14 +631,6 @@ object LocalMediaSupport {
             translatedLyric = song.matchedTranslatedLyric ?: song.originalTranslatedLyric,
             romanizedLyric = null
         )
-        if (
-            song.matchedLyric != null ||
-            song.originalLyric != null ||
-            song.matchedTranslatedLyric != null ||
-            song.originalTranslatedLyric != null
-        ) {
-            return stored
-        }
 
         val source = song.localMediaUri()
         val cacheKey = buildLocalLyricsCacheKey(song, source)
@@ -655,7 +647,7 @@ object LocalMediaSupport {
                 ?.path
                 ?.let(::File)
                 ?.takeIf(File::isFile)
-        val result = if (directFile != null) {
+        val scanned = if (directFile != null) {
             runCatching {
                 inspectLyricsFromDirectFile(
                     file = directFile
@@ -668,6 +660,11 @@ object LocalMediaSupport {
             // SAF 歌词引用在导入阶段已写入 SongItem, 首屏不再同步查询文档树
             LocalLyricsScanMetadata(null, null, null)
         }
+        val result = LocalLyricsScanMetadata(
+            lyric = stored.lyric ?: scanned.lyric,
+            translatedLyric = stored.translatedLyric ?: scanned.translatedLyric,
+            romanizedLyric = scanned.romanizedLyric
+        )
         synchronized(localLyricsLookupCache) {
             localLyricsLookupCache[cacheKey] = result
         }
