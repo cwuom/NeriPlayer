@@ -65,12 +65,14 @@ class SecureTokenStorage(private val context: Context) {
         private const val KEY_DELETED_PLAYLIST_IDS = "deleted_playlist_ids"
         private const val KEY_DELETED_PLAYLIST_TIMESTAMPS = "deleted_playlist_timestamps"
         private const val KEY_RECENT_PLAY_DELETIONS = "recent_play_deletions"
+        private const val KEY_PLAYLIST_USAGE_DELETIONS = "playlist_usage_deletions"
         private const val KEY_PLAYLIST_SONG_DELETIONS = "playlist_song_deletions"
         private const val KEY_TOKEN_WARNING_DISMISSED = "token_warning_dismissed"
         private const val KEY_DATA_SAVER_MODE = "data_saver_mode"
         private const val KEY_SYNC_MUTATION_VERSION = "sync_mutation_version"
         private const val KEY_SYNC_CAUSAL_COUNTER = "sync_causal_counter"
         private const val MAX_RECENT_PLAY_DELETIONS = 500
+        private const val MAX_PLAYLIST_USAGE_DELETIONS = 500
         private val syncMutationLock = Any()
         private val syncCausalTokenLock = Any()
     }
@@ -479,6 +481,51 @@ class SecureTokenStorage(private val context: Context) {
         }
     }
 
+    fun getPlaylistUsageDeletions(): Map<String, Long> {
+        return synchronized(syncMutationLock) {
+            val raw = encryptedPrefs.getString(KEY_PLAYLIST_USAGE_DELETIONS, null).orEmpty()
+            if (raw.isBlank()) {
+                return@synchronized emptyMap()
+            }
+            val parsed = runCatching {
+                val type = object : TypeToken<Map<String?, Long?>>() {}.type
+                gson.fromJson<Map<String?, Long?>>(raw, type).orEmpty()
+            }.getOrElse { emptyMap() }
+            val parsedWithNonNullKeys = parsed.mapNotNull { (key, value) ->
+                key?.let { it to value }
+            }.toMap()
+            runCatching { normalizePlaylistUsageDeletions(parsedWithNonNullKeys) }
+                .getOrDefault(emptyMap())
+        }
+    }
+
+    fun addPlaylistUsageDeletion(playlistKey: String, deletedAt: Long = System.currentTimeMillis()) {
+        val normalizedKey = playlistKey.trim()
+        if (normalizedKey.isEmpty()) {
+            return
+        }
+        synchronized(syncMutationLock) {
+            val current = getPlaylistUsageDeletions().toMutableMap()
+            val normalizedTimestamp = deletedAt.coerceAtLeast(1L)
+            current[normalizedKey] = maxOf(current[normalizedKey] ?: 0L, normalizedTimestamp)
+            persistPlaylistUsageDeletionsLocked(current, bumpVersion = true)
+        }
+    }
+
+    fun removePlaylistUsageDeletion(playlistKey: String, bumpVersion: Boolean = true) {
+        val normalizedKey = playlistKey.trim()
+        if (normalizedKey.isEmpty()) {
+            return
+        }
+        synchronized(syncMutationLock) {
+            val current = getPlaylistUsageDeletions().toMutableMap()
+            if (current.remove(normalizedKey) == null) {
+                return
+            }
+            persistPlaylistUsageDeletionsLocked(current, bumpVersion)
+        }
+    }
+
     fun getPlaylistSongDeletions(): List<SyncPlaylistSongDeletion> {
         return synchronized(syncMutationLock) {
             val raw = encryptedPrefs.getString(KEY_PLAYLIST_SONG_DELETIONS, null).orEmpty()
@@ -655,6 +702,25 @@ class SecureTokenStorage(private val context: Context) {
         ) { "Failed to persist playlist deletion state" }
     }
 
+    private fun persistPlaylistUsageDeletionsLocked(
+        deletions: Map<String, Long>,
+        bumpVersion: Boolean
+    ) {
+        val normalized = normalizePlaylistUsageDeletions(deletions)
+        check(
+            encryptedPrefs.commitEdit {
+                if (normalized.isEmpty()) {
+                    remove(KEY_PLAYLIST_USAGE_DELETIONS)
+                } else {
+                    putString(KEY_PLAYLIST_USAGE_DELETIONS, gson.toJson(normalized))
+                }
+                if (bumpVersion) {
+                    bumpSyncMutationVersion(this)
+                }
+            }
+        ) { "Failed to persist playlist usage deletion state" }
+    }
+
     fun snapshot(): GitHubSyncConfigSnapshot {
         return GitHubSyncConfigSnapshot(
             token = getToken().orEmpty(),
@@ -702,6 +768,27 @@ class SecureTokenStorage(private val context: Context) {
         deletions: List<SyncPlaylistSongDeletion>
     ): List<SyncPlaylistSongDeletion> {
         return SyncPlaylistDeletionPolicy.limitDeletions(deletions)
+    }
+
+    private fun normalizePlaylistUsageDeletions(
+        deletions: Map<String, Long?>
+    ): Map<String, Long> {
+        val normalized = mutableMapOf<String, Long>()
+        deletions.forEach { (key, timestamp) ->
+            val normalizedKey = key.trim()
+            if (normalizedKey.isNullOrEmpty() || timestamp == null) {
+                return@forEach
+            }
+            val normalizedTimestamp = timestamp.coerceAtLeast(1L)
+            normalized[normalizedKey] = maxOf(
+                normalized[normalizedKey] ?: 0L,
+                normalizedTimestamp
+            )
+        }
+        return normalized.entries
+            .sortedByDescending { it.value }
+            .take(MAX_PLAYLIST_USAGE_DELETIONS)
+            .associate { it.key to it.value }
     }
 }
 
