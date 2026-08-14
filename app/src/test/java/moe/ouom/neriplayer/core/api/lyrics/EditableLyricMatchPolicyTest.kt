@@ -284,6 +284,34 @@ class EditableLyricMatchPolicyTest {
     }
 
     @Test
+    fun `isReliableLyricMatchIdentity rejects plain artist name suffixes`() {
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One Tribute"
+            )
+        )
+        assertFalse(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One Band"
+            )
+        )
+        assertTrue(
+            isReliableLyricMatchIdentity(
+                expectedTitle = "Signal",
+                expectedArtist = "Artist One",
+                candidateTitle = "Signal",
+                candidateArtist = "Artist One with Guest"
+            )
+        )
+    }
+
+    @Test
     fun `rankEditableLyricMatches uses artist signal before lyric quality`() {
         val request = EditableLyricMatchRequest(
             keyword = "Signal Artist One",

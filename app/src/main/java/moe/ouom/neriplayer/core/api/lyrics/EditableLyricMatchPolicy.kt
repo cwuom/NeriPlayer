@@ -268,7 +268,8 @@ fun isReliableLyricMatchIdentity(
     val expectedPrimaryArtist = primaryLyricMatchArtist(expectedArtist)
     val candidateArtists = splitLyricMatchArtists(candidateArtist)
     val primaryArtistMatches = expectedPrimaryArtist != null && candidateArtists.any { candidateArtistName ->
-        candidateArtistName == expectedPrimaryArtist || candidateArtistName.startsWith("$expectedPrimaryArtist ")
+        candidateArtistName == expectedPrimaryArtist ||
+            hasCollaboratorLyricMatchArtistSuffix(candidateArtistName, expectedPrimaryArtist)
     }
     return primaryArtistMatches &&
         canonicalLyricMatchTitle(expectedTitle) == canonicalLyricMatchTitle(candidateTitle) &&
@@ -410,6 +411,27 @@ private fun hasPrimaryLyricMatchArtist(expected: String, candidate: String): Boo
     val expectedPrimary = primaryLyricMatchArtist(expected) ?: return false
     return splitLyricMatchArtists(candidate).any { it == expectedPrimary }
 }
+
+/**
+ * Accepts a candidate artist that extends the expected primary artist only through an explicit
+ * collaboration connective (for example "Artist One and Guest"). Plain suffixes such as
+ * "Artist One Tribute" must not be treated as the same primary artist.
+ */
+private fun hasCollaboratorLyricMatchArtistSuffix(
+    candidateArtistName: String,
+    expectedPrimaryArtist: String
+): Boolean {
+    if (!candidateArtistName.startsWith("$expectedPrimaryArtist ")) return false
+    val connective = candidateArtistName
+        .removePrefix("$expectedPrimaryArtist ")
+        .trimStart()
+        .substringBefore(' ')
+    return connective in lyricMatchArtistCollaborationConnectives
+}
+
+private val lyricMatchArtistCollaborationConnectives = setOf(
+    "and", "with", "x", "vs", "versus", "和", "与"
+)
 
 private fun primaryLyricMatchArtist(value: String): String? {
     return lyricMatchArtistSegments(value).firstOrNull()
