@@ -69,6 +69,8 @@ class SettingsStorageCacheSectionTest {
                     onClearDownloadStagingCacheChange = {},
                     clearSharedMediaCache = false,
                     onClearSharedMediaCacheChange = {},
+                    clearLyricsCache = false,
+                    onClearLyricsCacheChange = {},
                     clearNeteasePlaylistCache = false,
                     onClearNeteasePlaylistCacheChange = {},
                     clearBiliFavoriteCache = false,

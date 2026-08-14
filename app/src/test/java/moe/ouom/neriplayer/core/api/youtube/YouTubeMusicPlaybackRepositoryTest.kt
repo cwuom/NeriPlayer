@@ -4259,12 +4259,20 @@ class YouTubeMusicPlaybackRepositoryTest {
         assertNotNull(playableAudio)
         assertEquals("3", webRemixRequest.header("X-Goog-AuthUser"))
         assertTrue(webRemixRequest.header("Cookie").orEmpty().contains("refreshed-sap-value"))
+        val authorization = requireNotNull(webRemixRequest.header("Authorization"))
+        val authorizationEpochSeconds = Regex("^SAPISIDHASH (\\d+)_")
+            .find(authorization)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+        assertNotNull(authorizationEpochSeconds)
         assertEquals(
             refreshedAuth.resolveAuthorizationHeader(
                 origin = YOUTUBE_MUSIC_ORIGIN,
+                nowEpochSeconds = authorizationEpochSeconds!!,
                 userSessionId = "user-session-123"
             ),
-            webRemixRequest.header("Authorization")
+            authorization
         )
     }
 
