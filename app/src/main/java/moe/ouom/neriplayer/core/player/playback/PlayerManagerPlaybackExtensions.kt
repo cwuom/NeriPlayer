@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingMediaLoadEnt
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPauseAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingPlayAction
 import moe.ouom.neriplayer.core.player.policy.pending.resolvePendingSeekAction
+import moe.ouom.neriplayer.core.player.policy.pending.resolveSeekExecutionAction
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMedia
 import moe.ouom.neriplayer.core.player.policy.pending.shouldApplyResolvedMediaSideEffects
 import moe.ouom.neriplayer.core.player.policy.progress.LONG_FORM_PLAYBACK_MIN_DURATION_MS
@@ -1573,9 +1574,12 @@ internal fun PlayerManager.seekToImpl(
     val shouldRefreshYouTubeUrlBeforeSeek =
         YouTubeSeekRefreshPolicy.shouldRefreshUrlBeforeSeek(currentSong, currentUrl) ||
             shouldExpediteYouTubeSeekRecovery
+    val pendingLoadActive = isPendingMediaLoadActive()
     // 正在装载新媒体时交给现有 pending-load 流程，避免替旧媒体启动一条并行刷新
-    val shouldPreemptivelyRefreshYouTubeUrl =
-        shouldRefreshYouTubeUrlBeforeSeek && !isPendingMediaLoadActive()
+    val seekExecutionAction = resolveSeekExecutionAction(
+        pendingLoadActive = pendingLoadActive,
+        urlRefreshRequested = shouldRefreshYouTubeUrlBeforeSeek
+    )
     if (shouldRefreshYouTubeUrlBeforeSeek) {
         rememberPendingSeekPosition(resolvedPositionMs)
         expeditedYouTubeSeekRecoveryPending = shouldExpediteYouTubeSeekRecovery
@@ -1583,12 +1587,12 @@ internal fun PlayerManager.seekToImpl(
         clearPendingSeekPosition()
     }
     val pendingSeekAction = resolvePendingSeekAction(
-        pendingLoadActive = isPendingMediaLoadActive(),
+        pendingLoadActive = pendingLoadActive,
         requestedPositionMs = resolvedPositionMs
     )
     pendingSeekAction.pendingSeekPositionMs?.let(::rememberPendingSeekPosition)
     pendingMediaLoadPositionMs = pendingSeekAction.exposedPositionMs
-    if (pendingSeekAction.seekPlayerNow && !shouldPreemptivelyRefreshYouTubeUrl) {
+    if (seekExecutionAction.seekPlayerNow) {
         player.seekTo(resolvedPositionMs)
     }
     if (lyriconEnabled) {
@@ -1614,7 +1618,7 @@ internal fun PlayerManager.seekToImpl(
         positionMs = resolvedPositionMs,
         currentIndex = currentIndex
     )
-    if (shouldPreemptivelyRefreshYouTubeUrl) {
+    if (seekExecutionAction.refreshUrlInBackground) {
         refreshCurrentSongUrl(
             resumePositionMs = resolvedPositionMs,
             allowFallback = false,

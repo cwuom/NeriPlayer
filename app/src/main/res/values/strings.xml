@@ -332,6 +332,9 @@
     <string name="lyrics_match_empty">没有找到可用歌词</string>
     <string name="lyrics_match_error">匹配失败：%s</string>
     <string name="lyrics_match_score">匹配 %1$d</string>
+    <string name="lyrics_match_confidence_high">高置信度</string>
+    <string name="lyrics_match_confidence_medium">中置信度</string>
+    <string name="lyrics_match_confidence_low">低置信度，请核对</string>
     <string name="lyrics_match_duration_delta">相差 %s</string>
     <string name="lyrics_match_source_kugou">酷狗</string>
     <string name="lyrics_match_source_cloud_music">网易云</string>
