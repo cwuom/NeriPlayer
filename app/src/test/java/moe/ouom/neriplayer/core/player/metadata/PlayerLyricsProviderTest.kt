@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchCandidate
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchSource
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
@@ -57,6 +58,38 @@ class PlayerLyricsProviderTest {
                 downloadedLyric = "[00:01.00]downloaded"
             )
         )
+    }
+
+    @Test
+    fun `local songs never load remote lyrics`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Local",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/tmp/local.mp3"
+        )
+
+        assertFalse(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
+    fun `remote songs keep remote lyric loading enabled`() {
+        val song = SongItem(
+            id = 2L,
+            name = "Remote",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "https://example.com/audio.mp3"
+        )
+
+        assertTrue(shouldLoadRemoteLyrics(song))
     }
 
     @Test

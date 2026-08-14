@@ -114,6 +114,8 @@ internal fun SettingsStorageCacheSection(
     onClearDownloadStagingCacheChange: (Boolean) -> Unit,
     clearSharedMediaCache: Boolean,
     onClearSharedMediaCacheChange: (Boolean) -> Unit,
+    clearLyricsCache: Boolean,
+    onClearLyricsCacheChange: (Boolean) -> Unit,
     clearNeteasePlaylistCache: Boolean,
     onClearNeteasePlaylistCacheChange: (Boolean) -> Unit,
     clearBiliFavoriteCache: Boolean,
@@ -504,6 +506,16 @@ internal fun SettingsStorageCacheSection(
                         onCheckedChange = onClearSharedMediaCacheChange
                     )
                     CacheTypeRow(
+                        checked = clearLyricsCache,
+                        title = stringResource(R.string.storage_type_lyrics_cache),
+                        description = cacheTypeDescription(
+                            storageDetails = storageDetails,
+                            kind = StorageCacheKind.Lyrics,
+                            fallback = stringResource(R.string.storage_desc_lyrics_cache)
+                        ),
+                        onCheckedChange = onClearLyricsCacheChange
+                    )
+                    CacheTypeRow(
                         checked = clearNeteasePlaylistCache,
                         title = stringResource(R.string.storage_type_netease_playlist_cache),
                         description = cacheTypeDescription(
@@ -571,6 +583,7 @@ internal fun SettingsStorageCacheSection(
                     imageCache = clearImageCache,
                     downloadStaging = clearDownloadStagingCache && downloadStagingClearEnabled,
                     sharedMedia = clearSharedMediaCache,
+                    lyricsCache = clearLyricsCache,
                     neteasePlaylistCache = clearNeteasePlaylistCache,
                     biliFavoriteCache = clearBiliFavoriteCache,
                     biliArchiveCache = clearBiliArchiveCache,

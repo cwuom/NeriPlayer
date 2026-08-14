@@ -169,6 +169,36 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `fast lyric inspection reads direct file sidecars without content resolver`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.lrc").writeText("[00:01.00]local")
+        val song = SongItem(
+            id = 7L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+
+        val nearby = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+        assertEquals(
+            File(sourceDir, "song.lrc").canonicalPath,
+            nearby.original?.canonicalPath
+        )
+        assertEquals("[00:01.00]local", LocalMediaSupport.readTextFile(nearby.original!!))
+        val lyrics = LocalMediaSupport.inspectLyricsFast(song)
+
+        assertEquals("[00:01.00]local", lyrics.lyric)
+    }
+
+    @Test
     fun `findNearbyLyricFiles keeps lrc txt compatibility for translated sidecars`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-lrc-txt")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }

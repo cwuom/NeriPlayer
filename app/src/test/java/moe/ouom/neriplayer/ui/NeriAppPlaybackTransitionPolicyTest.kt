@@ -64,6 +64,19 @@ class NeriAppPlaybackTransitionPolicyTest {
     }
 
     @Test
+    fun `local playback keeps previous visual cover while its cover resolves`() {
+        assertEquals(
+            "remote-cover",
+            resolvePlaybackVisualCoverUrl(
+                currentCoverUrl = null,
+                previousVisualCoverUrl = "remote-cover",
+                hasCurrentSong = true,
+                clearDelayElapsed = false
+            )
+        )
+    }
+
+    @Test
     fun `visual cover clears after grace period or when playback stops`() {
         assertEquals(
             null,

@@ -37,6 +37,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -323,6 +324,7 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
@@ -336,6 +338,7 @@ private const val LyricsPageTransitionDurationMs = 300
 private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
+private const val NowPlayingCoverImageCrossfadeMs = 220
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
 private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
@@ -1665,6 +1668,8 @@ fun NowPlayingScreen(
     showLyricTranslation: Boolean = true,
     showNowPlayingTitle: Boolean = true,
     offlineMode: Boolean = false,
+    resolvedCoverUrl: String? = null,
+    visualCoverUrl: String? = null,
 ) {
     val coverLyricFontScale = lyricFontScales.coverLyric
     val coverTranslationFontScale = lyricFontScales.coverTranslation
@@ -1769,9 +1774,9 @@ fun NowPlayingScreen(
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val currentCoverUrl = remember(currentSong, context, downloadPresenceVersion) {
-        currentSong?.displayCoverUrl(context)
-    }
+    val rememberedCoverUrl = rememberSongDisplayCoverUrl(currentSong)
+    val actualCoverUrl = resolvedCoverUrl ?: rememberedCoverUrl
+    val currentCoverUrl = visualCoverUrl ?: actualCoverUrl
     val coverPreviewOnTapEnabled = shouldOpenNowPlayingCoverPreviewOnTap(currentSong)
     val coverPreviewOnLongPressEnabled =
         shouldOpenNowPlayingCoverPreviewOnLongPress(currentSong)
@@ -1825,7 +1830,7 @@ fun NowPlayingScreen(
 
     val downloadCurrentCover: () -> Unit = {
         val song = currentSong
-        if (song == null || currentCoverUrl.isNullOrBlank()) {
+        if (song == null || actualCoverUrl.isNullOrBlank()) {
             screenScope.launch {
                 snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.cover_download_unavailable)
@@ -1835,7 +1840,7 @@ fun NowPlayingScreen(
             screenScope.launch {
                 saveCoverToPictures(
                     context = context,
-                    imageUrl = currentCoverUrl,
+                    imageUrl = actualCoverUrl,
                     suggestedName = "${song.displayArtist()} - ${song.displayName()} 封面"
                 ).onSuccess { fileName ->
                     snackbarHostState.showNeriSnackbar(
@@ -2071,22 +2076,23 @@ fun NowPlayingScreen(
     ) {
         val song = currentSong
         val loadedLyricsState = withContext(Dispatchers.IO) {
-            val localDetails = if (song?.isLocalSong() == true) {
-                runCatching { LocalMediaSupport.inspect(context, song) }
+            val isLocalSong = song?.isLocalSong() == true
+            val localLyrics = if (isLocalSong) {
+                runCatching { LocalMediaSupport.inspectLyricsFast(song) }
                     .onFailure { error ->
                         NPLogger.w(
                             "NowPlayingLyrics",
-                            "本地歌词旁车读取失败: ${error.message}"
+                            "本地歌词快速读取失败: ${error.message}"
                         )
                     }
                     .getOrNull()
             } else {
                 null
             }
-            val localRawLyrics = localDetails?.lyricContent
-            val localRawTranslatedLyrics = localDetails?.translatedLyricContent
-            val localRawPhoneticLyrics = localDetails?.romanizedLyricContent
-            val downloadedRawLyrics = song?.let { downloadedSong ->
+            val localRawLyrics = localLyrics?.lyric
+            val localRawTranslatedLyrics = localLyrics?.translatedLyric
+            val localRawPhoneticLyrics = localLyrics?.romanizedLyric
+            val downloadedRawLyrics = song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -2096,7 +2102,8 @@ fun NowPlayingScreen(
                     )
                 }.getOrNull()
             }
-            val downloadedRawTranslatedLyrics = song?.let { downloadedSong ->
+            val downloadedRawTranslatedLyrics =
+                song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getTranslatedLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -2106,7 +2113,8 @@ fun NowPlayingScreen(
                     )
                 }.getOrNull()
             }
-            val downloadedRawPhoneticLyrics = song?.let { downloadedSong ->
+            val downloadedRawPhoneticLyrics =
+                song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getRomanizedLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -2127,6 +2135,7 @@ fun NowPlayingScreen(
             val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
             val preferredNeteaseLyric = runCatching {
                 if (
+                    !isLocalSong &&
                     localRawLyrics == null &&
                     storedRawLyrics == null &&
                     downloadedRawLyrics == null &&
@@ -2139,6 +2148,7 @@ fun NowPlayingScreen(
             }.getOrNull().orEmpty()
             val rawNeteasePhoneticLyric = runCatching {
                 if (
+                    !isLocalSong &&
                     localRawPhoneticLyrics == null &&
                     downloadedRawPhoneticLyrics == null &&
                     preferredSongId != null
@@ -2178,6 +2188,12 @@ fun NowPlayingScreen(
             val resolvedLyrics = when {
                 localRawLyrics != null && song != null -> {
                     PlayerManager.getLyrics(song)
+                }
+                isLocalSong && !effectiveRawLyrics.isNullOrBlank() -> {
+                    parseNeteaseLyricsAuto(effectiveRawLyrics)
+                }
+                isLocalSong -> {
+                    emptyList()
                 }
                 bypassStoredRawLyrics && song != null -> {
                     PlayerManager.getLyrics(song)
@@ -2224,6 +2240,9 @@ fun NowPlayingScreen(
                             parseNeteaseLyricsAuto(effectiveRawTranslatedLyrics)
                         }
                     }
+                    isLocalSong -> {
+                        emptyList()
+                    }
                     song != null -> {
                         PlayerManager.getTranslatedLyrics(song)
                     }
@@ -2242,6 +2261,9 @@ fun NowPlayingScreen(
                     }
                     rawNeteasePhoneticLyric.isNotBlank() -> {
                         parseNeteaseLyricsAuto(rawNeteasePhoneticLyric)
+                    }
+                    isLocalSong -> {
+                        emptyList()
                     }
                     song != null -> {
                         PlayerManager.getRomanizedLyrics(song)
@@ -2445,7 +2467,7 @@ fun NowPlayingScreen(
         }
     }
 
-    val previewCoverUrl = currentCoverUrl
+    val previewCoverUrl = actualCoverUrl
     if (showCoverPreview && !previewCoverUrl.isNullOrBlank()) {
         NowPlayingCoverPreviewDialog(
             coverUrl = previewCoverUrl,
@@ -2849,7 +2871,7 @@ fun NowPlayingScreen(
                                             Modifier.combinedClickable(
                                                 onClick = {
                                                     if (coverPreviewOnTapEnabled) {
-                                                        if (currentCoverUrl.isNullOrBlank()) {
+                                                        if (actualCoverUrl.isNullOrBlank()) {
                                                             screenScope.launch {
                                                                 snackbarHostState.showNeriSnackbar(
                                                                     composeResources.getString(
@@ -2864,7 +2886,7 @@ fun NowPlayingScreen(
                                                 },
                                                 onLongClick = {
                                                     if (coverPreviewOnLongPressEnabled) {
-                                                        if (currentCoverUrl.isNullOrBlank()) {
+                                                        if (actualCoverUrl.isNullOrBlank()) {
                                                             screenScope.launch {
                                                                 snackbarHostState.showNeriSnackbar(
                                                                     composeResources.getString(
@@ -2883,7 +2905,17 @@ fun NowPlayingScreen(
                                         }
                                     )
                             ) {
-                                currentCoverUrl?.let { cover ->
+                                Crossfade(
+                                    targetState = currentCoverUrl,
+                                    animationSpec = tween(
+                                        durationMillis = NowPlayingCoverImageCrossfadeMs
+                                    ),
+                                    label = "NowPlayingCoverImage"
+                                ) { cover ->
+                                    if (cover.isNullOrBlank()) {
+                                        Box(modifier = Modifier.fillMaxSize())
+                                        return@Crossfade
+                                    }
                                     AsyncImage(
                                         model = remember(context, cover, coverRequestSizePx, offlineMode) {
                                             offlineCachedImageRequest(
@@ -2891,6 +2923,7 @@ fun NowPlayingScreen(
                                                 data = cover,
                                                 sizePx = coverRequestSizePx,
                                                 allowHardware = false,
+                                                crossfade = false,
                                                 offlineMode = offlineMode
                                             )
                                         },
@@ -4752,20 +4785,21 @@ fun EditSongInfoSheet(
                     coroutineScope.launch {
                         try {
                             val loadedLyricsResult: Pair<String, String> = withContext(Dispatchers.IO) {
-                                val localDetails = if (actualSong.isLocalSong()) {
-                                    runCatching { LocalMediaSupport.inspect(context, actualSong) }
+                                val isLocalSong = actualSong.isLocalSong()
+                                val localLyrics = if (isLocalSong) {
+                                    runCatching { LocalMediaSupport.inspectLyricsFast(actualSong) }
                                         .onFailure { error ->
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
-                                                "编辑器读取本地歌词旁车失败: ${error.message}"
+                                                "编辑器读取本地歌词快速失败: ${error.message}"
                                             )
                                         }
                                         .getOrNull()
                                 } else {
                                     null
                                 }
-                                val localRawLyrics = localDetails?.lyricContent
-                                val localRawTranslatedLyrics = localDetails?.translatedLyricContent
+                                val localRawLyrics = localLyrics?.lyric
+                                val localRawTranslatedLyrics = localLyrics?.translatedLyric
                                 val storedRawLyrics = resolveStoredLyricText(
                                     currentLyric = actualSong.matchedLyric,
                                     legacyLyric = actualSong.originalLyric
@@ -4774,22 +4808,36 @@ fun EditSongInfoSheet(
                                     currentLyric = actualSong.matchedTranslatedLyric,
                                     legacyLyric = actualSong.originalTranslatedLyric
                                 )
-                                val downloadedRawLyrics = runCatching {
-                                    AudioDownloadManager.getLyricContent(context, actualSong)
-                                }.onFailure { error ->
-                                    NPLogger.w(
-                                        "NowPlayingLyrics",
-                                        "编辑器读取下载原文歌词失败: ${error.message}"
-                                    )
-                                }.getOrNull()
-                                val downloadedRawTranslatedLyrics = runCatching {
-                                    AudioDownloadManager.getTranslatedLyricContent(context, actualSong)
-                                }.onFailure { error ->
-                                    NPLogger.w(
-                                        "NowPlayingLyrics",
-                                        "编辑器读取下载翻译歌词失败: ${error.message}"
-                                    )
-                                }.getOrNull()
+                                val downloadedRawLyrics = actualSong
+                                    .takeUnless { isLocalSong }
+                                    ?.let { downloadedSong ->
+                                        runCatching {
+                                            AudioDownloadManager.getLyricContent(
+                                                context,
+                                                downloadedSong
+                                            )
+                                        }.onFailure { error ->
+                                            NPLogger.w(
+                                                "NowPlayingLyrics",
+                                                "编辑器读取下载原文歌词失败: ${error.message}"
+                                            )
+                                        }.getOrNull()
+                                    }
+                                val downloadedRawTranslatedLyrics = actualSong
+                                    .takeUnless { isLocalSong }
+                                    ?.let { downloadedSong ->
+                                        runCatching {
+                                            AudioDownloadManager.getTranslatedLyricContent(
+                                                context,
+                                                downloadedSong
+                                            )
+                                        }.onFailure { error ->
+                                            NPLogger.w(
+                                                "NowPlayingLyrics",
+                                                "编辑器读取下载翻译歌词失败: ${error.message}"
+                                            )
+                                        }.getOrNull()
+                                    }
                                 val selectedRawLyrics = resolveLocalFirstLyricText(
                                     localLyric = localRawLyrics,
                                     storedLyric = storedRawLyrics,
@@ -4802,7 +4850,11 @@ fun EditSongInfoSheet(
                                 )
                                 val rawNeteaseLyric = runCatching {
                                     val preferredSongId = resolvePreferredNeteaseLyricSongId(actualSong)
-                                    if (selectedRawLyrics == null && preferredSongId != null) {
+                                    if (
+                                        !isLocalSong &&
+                                        selectedRawLyrics == null &&
+                                        preferredSongId != null
+                                    ) {
                                         PlayerManager.getPreferredNeteaseLyricContent(preferredSongId)
                                     } else {
                                         null
@@ -4811,14 +4863,14 @@ fun EditSongInfoSheet(
                                 val displayedLyricsText = displayedLyricsSnapshot.toEditableLyricsText()
 
                                 // 把歌词准备挪到后台, 避免打开编辑器时把主线程卡住
-                                val fallbackLyricsText = run {
-                                    val lyricEntries = PlayerManager.getLyrics(actualSong)
-                                    if (lyricEntries.isNotEmpty()) {
-                                        lyricEntries.toEditableLyricsText()
-                                    } else {
-                                        null
+                                val fallbackLyricsText = actualSong
+                                    .takeUnless { isLocalSong }
+                                    ?.let {
+                                        val lyricEntries = PlayerManager.getLyrics(actualSong)
+                                        lyricEntries
+                                            .takeIf { it.isNotEmpty() }
+                                            ?.toEditableLyricsText()
                                     }
-                                }
                                 val lyrics = resolveLyricsEditorInitialText(
                                     matchedLyric = selectedRawLyrics,
                                     preferredNeteaseLyric = rawNeteaseLyric,
@@ -4833,6 +4885,8 @@ fun EditSongInfoSheet(
                                         val translatedEntries =
                                             if (displayedTranslatedLyricsSnapshot.isNotEmpty()) {
                                                 displayedTranslatedLyricsSnapshot
+                                            } else if (isLocalSong) {
+                                                emptyList()
                                             } else {
                                                 PlayerManager.getTranslatedLyrics(actualSong)
                                             }

@@ -40,9 +40,9 @@ import moe.ouom.neriplayer.core.api.lyrics.isExternalLyricDurationCompatible
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicClient
+import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
-import moe.ouom.neriplayer.data.local.media.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
@@ -52,9 +52,13 @@ import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.resolveStoredLyricText
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.storage.lyricsCacheDirectory
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.network.isTransientHttp2StreamReset
 import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 internal fun extractPreferredNeteaseLyricContent(rawResponse: String): String {
     val payload: JSONObject = JSONObject(rawResponse)
@@ -83,10 +87,12 @@ internal fun extractRomanizedNeteaseLyricContent(rawResponse: String): String {
 
 internal data class NeteaseLyricsCacheEntry(
     val preferredLyricText: String,
+    val translatedLyricText: String = "",
     val romanizedLyricText: String,
     val preferredLyricEntries: List<LyricEntry>,
     val translatedLyricEntries: List<LyricEntry>,
-    val romanizedLyricEntries: List<LyricEntry>
+    val romanizedLyricEntries: List<LyricEntry>,
+    val rawResponse: String = ""
 )
 
 internal enum class LocalLyricOverrideState {
@@ -109,6 +115,10 @@ internal fun resolveLocalFirstLyricText(
     downloadedLyric: String?
 ): String? {
     return localLyric ?: storedLyric ?: downloadedLyric
+}
+
+internal fun shouldLoadRemoteLyrics(song: SongItem): Boolean {
+    return !song.isLocalSong()
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -182,6 +192,8 @@ internal fun sanitizeYouTubeMusicLyricsCacheEntry(
 
 internal object PlayerLyricsProvider {
     private val amllLyricsCache = LruCache<String, List<LyricEntry>>(40)
+    private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
+    private val lyricsCacheGeneration = AtomicLong(0L)
 
     private fun parseBestLyricEntries(rawLyric: String): List<LyricEntry> {
         return parseNeteaseLyricsAuto(rawLyric)
@@ -189,6 +201,30 @@ internal object PlayerLyricsProvider {
 
     internal fun clearAmllLyricsCache() {
         amllLyricsCache.evictAll()
+    }
+
+    internal fun clearLyricsCaches() {
+        lyricsCacheGeneration.incrementAndGet()
+        amllLyricsCache.evictAll()
+        LocalMediaSupport.clearLyricsLookupCache()
+    }
+
+    internal fun clearLyricsCaches(
+        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
+        ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>
+    ) {
+        clearLyricsCaches()
+        neteaseLyricsCache.evictAll()
+        ytMusicLyricsCache.evictAll()
+    }
+
+    internal fun clearPersistentLyricCache(application: Application) {
+        lyricsCacheGeneration.incrementAndGet()
+        runCatching {
+            lyricsCacheDirectory(application).deleteRecursively()
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "清理歌词缓存失败: ${it.message}")
+        }
     }
 
     private fun buildYouTubeMusicLyricsCacheKey(song: SongItem): String {
@@ -281,6 +317,7 @@ internal object PlayerLyricsProvider {
         val romanizedLyric = extractRomanizedNeteaseLyricContent(rawResponse)
         return NeteaseLyricsCacheEntry(
             preferredLyricText = preferredLyric,
+            translatedLyricText = translatedLyric,
             romanizedLyricText = romanizedLyric,
             preferredLyricEntries = parseRemoteLyricEntriesOrEmpty(
                 rawLyric = preferredLyric,
@@ -293,7 +330,8 @@ internal object PlayerLyricsProvider {
             romanizedLyricEntries = parseRemoteLyricEntriesOrEmpty(
                 rawLyric = romanizedLyric,
                 logPrefix = "网易云音译歌词解析失败"
-            )
+            ),
+            rawResponse = rawResponse
         )
     }
 
@@ -304,12 +342,111 @@ internal object PlayerLyricsProvider {
     ): NeteaseLyricsCacheEntry {
         neteaseLyricsCache.get(songId)?.let { cached ->
             NPLogger.d("NERI-PlayerManager", "Using cached NetEase lyrics for songId=$songId")
+            scheduleNeteaseLyricsRefresh(songId, cached, neteaseLyricsCache, loader)
             return cached
+        }
+
+        val persisted = readPersistedNeteaseLyricsEntry(songId)
+        if (persisted != null) {
+            neteaseLyricsCache.put(songId, persisted)
+            NPLogger.d("NERI-PlayerManager", "Using persisted NetEase lyrics for songId=$songId")
+            scheduleNeteaseLyricsRefresh(songId, persisted, neteaseLyricsCache, loader)
+            return persisted
         }
 
         val entry = buildNeteaseLyricsCacheEntry(loader(songId))
         neteaseLyricsCache.put(songId, entry)
+        persistNeteaseLyricsEntry(songId, entry)
         return entry
+    }
+
+    private fun scheduleNeteaseLyricsRefresh(
+        songId: Long,
+        cached: NeteaseLyricsCacheEntry,
+        cache: LruCache<Long, NeteaseLyricsCacheEntry>,
+        loader: suspend (Long) -> String
+    ) {
+        if (!AppContainer.isInitialized()) {
+            return
+        }
+        if (!neteaseRefreshInFlight.add(songId)) {
+            return
+        }
+        val generation = lyricsCacheGeneration.get()
+        AppContainer.launchBackgroundIo {
+            try {
+                val refreshed = buildNeteaseLyricsCacheEntry(loader(songId))
+                if (
+                    lyricsCacheGeneration.get() == generation &&
+                    !sameNeteaseLyrics(cached, refreshed)
+                ) {
+                    cache.put(songId, refreshed)
+                    persistNeteaseLyricsEntry(songId, refreshed)
+                    NPLogger.d(
+                        "NERI-PlayerManager",
+                        "Updated NetEase lyric cache for songId=$songId"
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logNeteaseLyricLoadFailure("refreshNeteaseLyrics", error)
+            } finally {
+                neteaseRefreshInFlight.remove(songId)
+            }
+        }
+    }
+
+    private fun sameNeteaseLyrics(
+        first: NeteaseLyricsCacheEntry,
+        second: NeteaseLyricsCacheEntry
+    ): Boolean {
+        return first.preferredLyricText == second.preferredLyricText &&
+            first.translatedLyricText == second.translatedLyricText &&
+            first.romanizedLyricText == second.romanizedLyricText &&
+            first.preferredLyricEntries == second.preferredLyricEntries &&
+            first.translatedLyricEntries == second.translatedLyricEntries &&
+            first.romanizedLyricEntries == second.romanizedLyricEntries
+    }
+
+    private fun persistedNeteaseLyricsFile(songId: Long): File {
+        return File(lyricsCacheDirectory(AppContainer.applicationContext), "netease_$songId.json")
+    }
+
+    private fun readPersistedNeteaseLyricsEntry(songId: Long): NeteaseLyricsCacheEntry? {
+        if (!AppContainer.isInitialized()) {
+            return null
+        }
+        val file = persistedNeteaseLyricsFile(songId)
+        if (!file.isFile || file.length() <= 0L) {
+            return null
+        }
+        return runCatching {
+            buildNeteaseLyricsCacheEntry(file.readText(Charsets.UTF_8))
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "读取持久化歌词缓存失败: ${it.message}")
+        }.getOrNull()
+    }
+
+    private fun persistNeteaseLyricsEntry(
+        songId: Long,
+        entry: NeteaseLyricsCacheEntry
+    ) {
+        if (entry.rawResponse.isBlank() || !AppContainer.isInitialized()) {
+            return
+        }
+        runCatching {
+            val target = persistedNeteaseLyricsFile(songId)
+            target.parentFile?.mkdirs()
+            val temporary = File(target.parentFile, ".${target.name}.tmp")
+            temporary.writeText(entry.rawResponse, Charsets.UTF_8)
+            if (!temporary.renameTo(target)) {
+                target.writeText(entry.rawResponse, Charsets.UTF_8)
+                temporary.delete()
+            }
+        }.onFailure {
+            NPLogger.w("NERI-PlayerManager", "写入持久化歌词缓存失败: ${it.message}")
+        }
     }
 
     private suspend fun getCachedNeteaseLyricsEntry(
@@ -374,20 +511,6 @@ internal object PlayerLyricsProvider {
             return emptyList()
         }
         return convertPlainLyricsToEntries(rawLyric, durationMs)
-    }
-
-    private fun inspectLocalLyricDetails(
-        application: Application,
-        song: SongItem
-    ): LocalMediaDetails? {
-        if (!song.isLocalSong()) {
-            return null
-        }
-        return runCatching { LocalMediaSupport.inspect(application, song) }
-            .onFailure {
-                NPLogger.w("NERI-PlayerManager", "本地歌词旁车读取失败: ${it.message}")
-            }
-            .getOrNull()
     }
 
     suspend fun getNeteaseLyrics(
@@ -481,13 +604,21 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val localDetails = inspectLocalLyricDetails(application, song)
-            val localTranslatedLyric = localDetails?.translatedLyricContent
+        val localLyrics = if (song.isLocalSong()) {
+            LocalMediaSupport.inspectLyricsFast(song)
+        } else {
+            null
+        }
+        val localTranslatedLyric = localLyrics?.translatedLyric
             val storedTranslatedLyric = resolveStoredLyricText(
                 currentLyric = song.matchedTranslatedLyric,
                 legacyLyric = song.originalTranslatedLyric
             )
-            val downloadedTranslatedLyric = AudioDownloadManager.getTranslatedLyricContent(application, song)
+            val downloadedTranslatedLyric = if (song.isLocalSong()) {
+                null
+            } else {
+                AudioDownloadManager.getTranslatedLyricContent(application, song)
+            }
             val selectedTranslatedLyric = resolveLocalFirstLyricText(
                 localLyric = localTranslatedLyric,
                 storedLyric = storedTranslatedLyric,
@@ -513,6 +644,9 @@ internal object PlayerLyricsProvider {
             } else {
                 NPLogger.w("NERI-PlayerManager", "已忽略 YouTube 全零翻译时间轴: ${song.name}")
             }
+            if (!shouldLoadRemoteLyrics(song)) {
+                return@withContext emptyList()
+            }
             val deferredDownloadedTranslation = if (isYouTubeMusicTrack) {
                 downloadedTranslatedLyric?.let(::extractPlainLyricsFromCollapsedTimedLyrics)
             } else {
@@ -528,12 +662,19 @@ internal object PlayerLyricsProvider {
                 NPLogger.w("NERI-PlayerManager", "已忽略下载的 YouTube 全零翻译时间轴: ${song.name}")
             }
 
+            if (!shouldLoadRemoteLyrics(song)) {
+                return@withContext emptyList()
+            }
             if (isYouTubeMusicTrack) {
                 val storedLyric = resolveStoredLyricText(
                     currentLyric = song.matchedLyric,
                     legacyLyric = song.originalLyric
                 )
-                val downloadedLyric = AudioDownloadManager.getLyricContent(application, song)
+                val downloadedLyric = if (song.isLocalSong()) {
+                    null
+                } else {
+                    AudioDownloadManager.getLyricContent(application, song)
+                }
                 if (
                     shouldBlockExternalYouTubeMusicTranslation(storedLyric) ||
                     shouldBlockExternalYouTubeMusicTranslation(downloadedLyric)
@@ -585,8 +726,11 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
-            val localRomanizedLyric = inspectLocalLyricDetails(application, song)
-                ?.romanizedLyricContent
+            val localRomanizedLyric = if (song.isLocalSong()) {
+                LocalMediaSupport.inspectLyricsFast(song).romanizedLyric
+            } else {
+                null
+            }
             localRomanizedLyric?.let { rawLyric ->
                 parseLocalLyricOverride(
                     rawLyric = rawLyric,
@@ -594,12 +738,20 @@ internal object PlayerLyricsProvider {
                     logPrefix = "本地音译歌词读取失败"
                 )?.let { return@withContext it }
             }
-            AudioDownloadManager.getRomanizedLyricContent(application, song)?.let { rawLyric ->
+            val downloadedRomanizedLyric = if (song.isLocalSong()) {
+                null
+            } else {
+                AudioDownloadManager.getRomanizedLyricContent(application, song)
+            }
+            downloadedRomanizedLyric?.let { rawLyric ->
                 parseLocalLyricOverride(
                     rawLyric = rawLyric,
                     durationMs = song.durationMs,
                     logPrefix = "本地音译歌词读取失败"
                 )?.let { return@withContext it }
+            }
+            if (!shouldLoadRemoteLyrics(song)) {
+                return@withContext emptyList()
             }
             if (isYouTubeMusicSong(song)) {
                 return@withContext emptyList()
@@ -650,12 +802,20 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val localLyric = inspectLocalLyricDetails(application, song)?.lyricContent
+            val localLyric = if (song.isLocalSong()) {
+                LocalMediaSupport.inspectLyricsFast(song).lyric
+            } else {
+                null
+            }
             val storedLyric = resolveStoredLyricText(
                 currentLyric = song.matchedLyric,
                 legacyLyric = song.originalLyric
             )
-            val downloadedLyric = AudioDownloadManager.getLyricContent(application, song)
+            val downloadedLyric = if (song.isLocalSong()) {
+                null
+            } else {
+                AudioDownloadManager.getLyricContent(application, song)
+            }
             val selectedLyric = resolveLocalFirstLyricText(
                 localLyric = localLyric,
                 storedLyric = storedLyric,
@@ -704,6 +864,9 @@ internal object PlayerLyricsProvider {
                     }
                     return@withContext entries
                 }
+            }
+            if (song.isLocalSong()) {
+                return@withContext emptyList()
             }
             if (isYouTubeMusicTrack) {
                 return@withContext getYouTubeMusicLyrics(

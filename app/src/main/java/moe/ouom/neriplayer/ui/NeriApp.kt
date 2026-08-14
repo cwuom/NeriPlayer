@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
@@ -3154,6 +3155,15 @@ private fun NeriAppContent(
                                     messages += message
                                 }
                                 if (options.needsExtraCacheClear) {
+                                    if (options.lyricsCache) {
+                                        PlayerLyricsProvider.clearLyricsCaches(
+                                            neteaseLyricsCache = PlayerManager.neteaseLyricsCache,
+                                            ytMusicLyricsCache = PlayerManager.ytMusicLyricsCache
+                                        )
+                                        PlayerLyricsProvider.clearPersistentLyricCache(
+                                            AppContainer.applicationContext
+                                        )
+                                    }
                                     val result = clearExtraStorageCaches(context, options)
                                     messages += when {
                                         !result.success -> composeResources.getString(
@@ -4545,7 +4555,9 @@ private fun NeriAppContent(
                                     showCoverSourceBadge = showCoverSourceBadge,
                                     showLyricTranslation = showLyricTranslation,
                                     showNowPlayingTitle = showNowPlayingTitle,
-                                    offlineMode = offlineMode
+                                    offlineMode = offlineMode,
+                                    resolvedCoverUrl = displayCoverUrl,
+                                    visualCoverUrl = playbackVisualCoverUrl
                                 )
                             }
                         }
