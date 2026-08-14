@@ -1646,6 +1646,7 @@
     <string name="storage_type_image_cache">Image Cache</string>
     <string name="storage_type_download_staging">Download Staging</string>
     <string name="storage_type_shared_media">Share Staging</string>
+    <string name="storage_type_lyrics_cache">Online Lyrics Cache</string>
     <string name="storage_type_netease_playlist_cache">NetEase Playlist Cache</string>
     <string name="storage_type_bili_favorite_cache">Bilibili Favorites Cache</string>
     <string name="storage_type_bili_archive_cache">Bilibili Collection/Series Cache</string>
@@ -1667,6 +1668,7 @@
     <string name="storage_desc_image_cache">Covers, avatars, and blurred background images that can be loaded again</string>
     <string name="storage_desc_download_staging">Incomplete downloads, resume metadata, and HLS checkpoints</string>
     <string name="storage_desc_shared_media">Temporary copies created when sharing local music</string>
+    <string name="storage_desc_lyrics_cache">Local copies of online lyrics that can be checked for updates</string>
     <string name="storage_desc_netease_playlist_cache">Room cache for NetEase playlist details, apportioned by SQLite pages and safe to fetch again</string>
     <string name="storage_desc_bili_favorite_cache">Room cache for Bilibili favorite details, apportioned by SQLite pages and safe to fetch again</string>
     <string name="storage_desc_bili_archive_cache">Room cache for Bilibili collection and series details, apportioned by SQLite pages and safe to fetch again</string>

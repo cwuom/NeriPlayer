@@ -554,6 +554,7 @@ private fun StorageUsageItemKind.toStorageIcon(): ImageVector {
         StorageUsageItemKind.ImageCache -> Icons.Outlined.PictureInPictureAlt
         StorageUsageItemKind.DownloadStaging -> Icons.Outlined.CloudDownload
         StorageUsageItemKind.SharedMedia -> Icons.Outlined.Share
+        StorageUsageItemKind.LyricsCache -> Icons.Outlined.Subtitles
         StorageUsageItemKind.NeteasePlaylistCache -> Icons.Outlined.LibraryMusic
         StorageUsageItemKind.BiliFavoriteCache -> Icons.Outlined.Favorite
         StorageUsageItemKind.BiliArchiveCache -> Icons.Outlined.VideoLibrary

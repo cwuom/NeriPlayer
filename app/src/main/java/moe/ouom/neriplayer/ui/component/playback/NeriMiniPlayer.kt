@@ -46,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
@@ -79,6 +81,24 @@ import kotlin.math.sign
 
 object NeriMiniPlayerDefaults {
     val Height = 64.dp
+}
+
+private const val MINI_PLAYER_COVER_CLEAR_DELAY_MS = 900L
+
+internal fun resolveMiniPlayerDisplayedCoverUrl(
+    requestedCoverUrl: String?,
+    displayedCoverUrl: String?,
+    requestSucceeded: Boolean,
+    clearDelayElapsed: Boolean = false
+): String? {
+    val requested = requestedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val displayed = displayedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    return when {
+        requested == null && clearDelayElapsed -> null
+        requested == null -> displayed
+        requested == displayed || requestSucceeded -> requested
+        else -> displayed
+    }
 }
 
 @Composable
@@ -98,6 +118,10 @@ fun NeriMiniPlayer(
     isPlaybackWaiting: Boolean = false
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    val context = LocalContext.current
+    val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    var displayedCoverUrl by remember { mutableStateOf(requestedCoverUrl) }
+    val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnNext by rememberUpdatedState(onNext)
     val swipeOffset = remember { Animatable(0f) }
@@ -124,6 +148,20 @@ fun NeriMiniPlayer(
                 animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
             )
             onComplete()
+        }
+    }
+
+    LaunchedEffect(requestedCoverUrl) {
+        if (requestedCoverUrl == null) {
+            delay(MINI_PLAYER_COVER_CLEAR_DELAY_MS)
+            if (latestRequestedCoverUrl == null) {
+                displayedCoverUrl = resolveMiniPlayerDisplayedCoverUrl(
+                    requestedCoverUrl = null,
+                    displayedCoverUrl = displayedCoverUrl,
+                    requestSucceeded = false,
+                    clearDelayElapsed = true
+                )
+            }
         }
     }
 
@@ -212,7 +250,7 @@ fun NeriMiniPlayer(
                     modifier = Modifier
                         .size(40.dp)
                         .background(
-                            color = if (coverUrl != null) {
+                            color = if (displayedCoverUrl != null || requestedCoverUrl != null) {
                                 Color.Transparent
                             } else {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -220,12 +258,11 @@ fun NeriMiniPlayer(
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
-                    if (coverUrl != null) {
-                        val context = LocalContext.current
+                    if (displayedCoverUrl != null) {
                         AsyncImage(
                             model = fastScrollableImageRequest(
                                 context = context,
-                                data = coverUrl,
+                                data = displayedCoverUrl,
                                 sizePx = 128,
                                 crossfade = false,
                                 offlineMode = offlineMode
@@ -236,7 +273,33 @@ fun NeriMiniPlayer(
                                 .matchParentSize()
                                 .clip(RoundedCornerShape(8.dp))
                         )
-                    } else {
+                    }
+
+                    if (requestedCoverUrl != null && requestedCoverUrl != displayedCoverUrl) {
+                        AsyncImage(
+                            model = fastScrollableImageRequest(
+                                context = context,
+                                data = requestedCoverUrl,
+                                sizePx = 128,
+                                crossfade = false,
+                                offlineMode = offlineMode
+                            ),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .matchParentSize()
+                                .graphicsLayer { alpha = 0f },
+                            onSuccess = {
+                                if (latestRequestedCoverUrl == requestedCoverUrl) {
+                                    displayedCoverUrl = resolveMiniPlayerDisplayedCoverUrl(
+                                        requestedCoverUrl = requestedCoverUrl,
+                                        displayedCoverUrl = displayedCoverUrl,
+                                        requestSucceeded = true
+                                    )
+                                }
+                            }
+                        )
+                    } else if (displayedCoverUrl == null) {
                         Box(
                             modifier = Modifier.matchParentSize(),
                             contentAlignment = Alignment.Center

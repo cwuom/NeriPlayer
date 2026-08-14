@@ -1646,6 +1646,7 @@
     <string name="storage_type_image_cache">图片缓存</string>
     <string name="storage_type_download_staging">下载暂存</string>
     <string name="storage_type_shared_media">分享暂存</string>
+    <string name="storage_type_lyrics_cache">在线歌词缓存</string>
     <string name="storage_type_netease_playlist_cache">网易云歌单缓存</string>
     <string name="storage_type_bili_favorite_cache">哔哩哔哩收藏夹缓存</string>
     <string name="storage_type_bili_archive_cache">哔哩哔哩合集/系列缓存</string>
@@ -1667,6 +1668,7 @@
     <string name="storage_desc_image_cache">封面、头像和模糊背景图缓存，可重新加载</string>
     <string name="storage_desc_download_staging">未完成下载、断点续传和 HLS 检查点</string>
     <string name="storage_desc_shared_media">分享本地音乐时临时复制出的文件</string>
+    <string name="storage_desc_lyrics_cache">在线歌词的本地副本，可重新从网络校验更新</string>
     <string name="storage_desc_netease_playlist_cache">网易云歌单详情的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>
     <string name="storage_desc_bili_favorite_cache">哔哩哔哩收藏夹详情的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>
     <string name="storage_desc_bili_archive_cache">哔哩哔哩合集和系列的 Room 缓存，按 SQLite 页面分摊统计，清理后可重新获取</string>

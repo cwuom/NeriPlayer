@@ -638,6 +638,7 @@ fun SettingsScreen(
     var clearImageCache by remember { mutableStateOf(true) }
     var clearDownloadStagingCache by remember { mutableStateOf(false) }
     var clearSharedMediaCache by remember { mutableStateOf(false) }
+    var clearLyricsCache by remember { mutableStateOf(false) }
     var clearNeteasePlaylistCache by remember { mutableStateOf(false) }
     var clearBiliFavoriteCache by remember { mutableStateOf(false) }
     var clearBiliArchiveCache by remember { mutableStateOf(false) }
@@ -1992,6 +1993,8 @@ fun SettingsScreen(
                                 onClearDownloadStagingCacheChange = { clearDownloadStagingCache = it },
                                 clearSharedMediaCache = clearSharedMediaCache,
                                 onClearSharedMediaCacheChange = { clearSharedMediaCache = it },
+                                clearLyricsCache = clearLyricsCache,
+                                onClearLyricsCacheChange = { clearLyricsCache = it },
                                 clearNeteasePlaylistCache = clearNeteasePlaylistCache,
                                 onClearNeteasePlaylistCacheChange = { clearNeteasePlaylistCache = it },
                                 clearBiliFavoriteCache = clearBiliFavoriteCache,

@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.metadata.PlayerLyricsProvider
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackOnForeground
 import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundState
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
@@ -835,12 +836,14 @@ internal fun resolvePlaybackVisualCoverUrl(
     currentCoverUrl: String?,
     previousVisualCoverUrl: String?,
     hasCurrentSong: Boolean,
-    clearDelayElapsed: Boolean
+    clearDelayElapsed: Boolean,
+    preservePreviousVisualCover: Boolean = true
 ): String? {
     val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
     return when {
         normalizedCoverUrl != null -> normalizedCoverUrl
         !hasCurrentSong || clearDelayElapsed -> null
+        !preservePreviousVisualCover -> null
         else -> previousVisualCoverUrl
     }
 }
@@ -860,14 +863,19 @@ private fun rememberPlaybackVisualCoverUrl(
             )
         )
     }
+    var lastObservedSongKey by remember { mutableStateOf(currentSongKey) }
+    val songChangedSinceLastObservation = currentSongKey != lastObservedSongKey
 
     LaunchedEffect(coverUrl, currentSongKey) {
+        val preservePreviousVisualCover = currentSongKey == lastObservedSongKey
         visualCoverUrl = resolvePlaybackVisualCoverUrl(
             currentCoverUrl = coverUrl,
             previousVisualCoverUrl = visualCoverUrl,
             hasCurrentSong = currentSongKey != null,
-            clearDelayElapsed = false
+            clearDelayElapsed = false,
+            preservePreviousVisualCover = preservePreviousVisualCover
         )
+        lastObservedSongKey = currentSongKey
 
         if (coverUrl.isNullOrBlank() && currentSongKey != null && visualCoverUrl != null) {
             delay(PLAYBACK_VISUAL_COVER_CLEAR_DELAY_MS)
@@ -880,7 +888,13 @@ private fun rememberPlaybackVisualCoverUrl(
         }
     }
 
-    return visualCoverUrl
+    val normalizedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
+    return when {
+        normalizedCoverUrl != null -> normalizedCoverUrl
+        currentSongKey == null -> null
+        songChangedSinceLastObservation -> null
+        else -> visualCoverUrl
+    }
 }
 
 @Composable
@@ -2121,7 +2135,6 @@ private fun NeriAppContent(
             startIndex = index,
             source = "ui_click_before_play"
         )
-        showNowPlaying = true
         // 播放队列可能包含歌词等大字段, 避免通过 Binder 传整份歌单导致崩溃
         val localPlaylistId = localPlaylistIdFromSourceRoute(sourceRoute)
         if (localPlaylistId == null) {
@@ -2133,6 +2146,8 @@ private fun NeriAppContent(
                 startIndex = index
             )
         }
+        // 先提交当前歌曲, 播放页首帧不能继续绘制上一首封面
+        showNowPlaying = true
         scheduleAudioServiceStart(
             "play_songs_and_open_now_playing",
             true
@@ -2148,8 +2163,9 @@ private fun NeriAppContent(
             startIndex = 0,
             source = "ui_click_preserve_queue_before_play"
         )
-        showNowPlaying = true
         PlayerManager.replaceCurrentInQueueAndPlay(song)
+        // 先提交当前歌曲, 播放页首帧不能继续绘制上一首封面
+        showNowPlaying = true
         scheduleAudioServiceStart(
             "play_search_result_preserve_queue",
             true
@@ -2182,9 +2198,9 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = sourceRoute
-        showNowPlaying = true
         NPLogger.d("NERI-App", "Playing audio from Bili video: ${videos[index].title}")
         PlayerManager.playBiliVideoAsAudio(videos, index)
+        showNowPlaying = true
         ensureAudioServiceStarted(source = "play_bili_audio_and_open_now_playing")
     }
 
@@ -2197,9 +2213,9 @@ private fun NeriAppContent(
         restoreLyricsAfterAlbumBack = false
         lyricsAlbumRouteObserved = false
         currentPlaybackSourceRoute = sourceRoute
-        showNowPlaying = true
         NPLogger.d("NERI-App", "Playing parts from Bili video: ${videoInfo.title}")
         PlayerManager.playBiliVideoParts(videoInfo, index, coverUrl)
+        showNowPlaying = true
         ensureAudioServiceStarted(source = "play_bili_parts_and_open_now_playing")
     }
 
@@ -3154,6 +3170,17 @@ private fun NeriAppContent(
                                     messages += message
                                 }
                                 if (options.needsExtraCacheClear) {
+                                    if (options.lyricsCache) {
+                                        PlayerLyricsProvider.clearLyricsCaches(
+                                            neteaseLyricsCache = PlayerManager.neteaseLyricsCache,
+                                            ytMusicLyricsCache = PlayerManager.ytMusicLyricsCache
+                                        )
+                                        withContext(Dispatchers.IO) {
+                                            PlayerLyricsProvider.clearPersistentLyricCache(
+                                                AppContainer.applicationContext
+                                            )
+                                        }
+                                    }
                                     val result = clearExtraStorageCaches(context, options)
                                     messages += when {
                                         !result.success -> composeResources.getString(
@@ -4545,7 +4572,10 @@ private fun NeriAppContent(
                                     showCoverSourceBadge = showCoverSourceBadge,
                                     showLyricTranslation = showLyricTranslation,
                                     showNowPlayingTitle = showNowPlayingTitle,
-                                    offlineMode = offlineMode
+                                    offlineMode = offlineMode,
+                                    resolvedCoverUrl = displayCoverUrl,
+                                    visualCoverUrl = playbackVisualCoverUrl,
+                                    playbackSongKey = currentSongKey
                                 )
                             }
                         }

@@ -169,6 +169,78 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyCover retries when artwork appears after an empty lookup`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-retry")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val originalDirectoryModified = sourceDir.lastModified()
+
+        assertNull(LocalMediaSupport.findNearbyCover(audioFile))
+
+        val coverFile = File(sourceDir, "song.jpg").apply { writeText("cover") }
+        sourceDir.setLastModified(originalDirectoryModified)
+
+        assertEquals(coverFile.canonicalPath, LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath)
+    }
+
+    @Test
+    fun `fast lyric inspection reads direct file sidecars without content resolver`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.lrc").writeText("[00:01.00]local")
+        val song = SongItem(
+            id = 7L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+
+        val nearby = LocalMediaSupport.findNearbyLyricFiles(audioFile)
+        assertEquals(
+            File(sourceDir, "song.lrc").canonicalPath,
+            nearby.original?.canonicalPath
+        )
+        assertEquals("[00:01.00]local", LocalMediaSupport.readTextFile(nearby.original!!))
+        val lyrics = LocalMediaSupport.inspectLyricsFast(song)
+
+        assertEquals("[00:01.00]local", lyrics.lyric)
+    }
+
+    @Test
+    fun `fast lyric inspection keeps stored text and fills missing sidecar variants`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-variants")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song_trans.lrc").writeText("[00:02.00]translated")
+        File(sourceDir, "song_roma.lrc").writeText("[00:03.00]romanized")
+        val song = SongItem(
+            id = 8L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            matchedLyric = "[00:01.00]stored",
+            channelId = "local"
+        )
+
+        val lyrics = LocalMediaSupport.inspectLyricsFast(song)
+
+        assertEquals("[00:01.00]stored", lyrics.lyric)
+        assertEquals("[00:02.00]translated", lyrics.translatedLyric)
+        assertEquals("[00:03.00]romanized", lyrics.romanizedLyric)
+    }
+
+    @Test
     fun `findNearbyLyricFiles keeps lrc txt compatibility for translated sidecars`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-lrc-txt")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }

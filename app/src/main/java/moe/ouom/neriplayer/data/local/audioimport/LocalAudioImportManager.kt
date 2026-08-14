@@ -533,7 +533,9 @@ object LocalAudioImportManager {
             ?: quickSong.name
         val resolvedArtist = detailedSong.artist.takeIf { it.isNotBlank() } ?: quickSong.artist
         val resolvedAlbum = detailedSong.album.takeIf { it.isNotBlank() } ?: quickSong.album
-        val resolvedCoverUrl = detailedSong.coverUrl ?: quickSong.coverUrl
+        val resolvedCoverUrl = quickSong.coverUrl
+            ?.takeIf { it.isNotBlank() }
+            ?: detailedSong.coverUrl
         val quickLocalPath = quickSong.localFilePath?.takeIf { it.isNotBlank() }
         val detailedLocalPath = detailedSong.localFilePath?.takeIf { it.isNotBlank() }
         val resolvedLocalPath = quickLocalPath ?: detailedLocalPath

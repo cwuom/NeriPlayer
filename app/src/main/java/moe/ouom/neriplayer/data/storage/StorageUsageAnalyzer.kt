@@ -47,6 +47,7 @@ enum class StorageCacheKind {
     Image,
     DownloadStaging,
     SharedMedia,
+    Lyrics,
     NeteasePlaylist,
     BiliFavorite,
     BiliArchive,
@@ -60,6 +61,7 @@ enum class StorageUsageItemKind {
     ImageCache,
     DownloadStaging,
     SharedMedia,
+    LyricsCache,
     NeteasePlaylistCache,
     BiliFavoriteCache,
     BiliArchiveCache,
@@ -83,6 +85,7 @@ data class StorageCacheClearOptions(
     val imageCache: Boolean = true,
     val downloadStaging: Boolean = false,
     val sharedMedia: Boolean = false,
+    val lyricsCache: Boolean = false,
     val neteasePlaylistCache: Boolean = false,
     val biliFavoriteCache: Boolean = false,
     val biliArchiveCache: Boolean = false,
@@ -92,14 +95,14 @@ data class StorageCacheClearOptions(
 ) {
     val hasSelection: Boolean
         get() = audioCache || imageCache || downloadStaging || sharedMedia ||
-            hasPlatformCacheSelection || logFiles || crashLogs
+            lyricsCache || hasPlatformCacheSelection || logFiles || crashLogs
 
     val needsPlayerCacheClear: Boolean
         get() = audioCache || imageCache
 
     val needsExtraCacheClear: Boolean
         get() = downloadStaging || sharedMedia || hasPlatformCacheSelection ||
-            logFiles || crashLogs
+            lyricsCache || logFiles || crashLogs
 
     val hasPlatformCacheSelection: Boolean
         get() = neteasePlaylistCache || biliFavoriteCache || biliArchiveCache ||
@@ -184,6 +187,7 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     val imageCacheDir = File(cacheDir, DIR_IMAGE_CACHE)
     val downloadStagingDirs = downloadStagingDirs(filesDir, cacheDir)
     val sharedMediaDir = File(cacheDir, DIR_SHARED_MEDIA_EXPORTS)
+    val lyricsCacheDir = File(filesDir, LYRICS_CACHE_DIRECTORY_NAME)
     val platformCacheDirs = platformCacheDirs(filesDir)
     val databaseFiles = databaseFiles(appContext)
     val localCoverDir = File(filesDir, DIR_LOCAL_AUDIO_COVERS)
@@ -251,7 +255,8 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
     val cacheKnownRoots = listOf(
         mediaCacheDir,
         imageCacheDir,
-        sharedMediaDir
+        sharedMediaDir,
+        lyricsCacheDir
     ) + downloadStagingDirs
     val filesKnownRoots = knownAppDataRoots(
         platformCacheDirs = platformCacheDirs,
@@ -263,7 +268,7 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
         logDir = logDir,
         crashDir = crashDir,
         downloadedStorageFiles = scanInputs.downloadLibraryUsage.localFiles
-    )
+    ) + lyricsCacheDir
 
     StorageUsageSummary(
         sections = listOf(
@@ -301,6 +306,14 @@ suspend fun analyzeStorageUsage(context: Context): StorageUsageSummary = withCon
                         file = sharedMediaDir,
                         kind = StorageUsageItemKind.SharedMedia,
                         cacheKind = StorageCacheKind.SharedMedia
+                    ),
+                    usageItem(
+                        context = appContext,
+                        titleRes = R.string.storage_type_lyrics_cache,
+                        descriptionRes = R.string.storage_desc_lyrics_cache,
+                        file = lyricsCacheDir,
+                        kind = StorageUsageItemKind.LyricsCache,
+                        cacheKind = StorageCacheKind.Lyrics
                     ),
                     usageItem(
                         context = appContext,
@@ -515,6 +528,7 @@ suspend fun clearExtraStorageCaches(
     val targets = buildList {
         if (options.downloadStaging) addAll(downloadStagingDirs(appContext.filesDir, appContext.cacheDir))
         if (options.sharedMedia) add(File(appContext.cacheDir, DIR_SHARED_MEDIA_EXPORTS))
+        if (options.lyricsCache) add(File(appContext.filesDir, LYRICS_CACHE_DIRECTORY_NAME))
         if (options.logFiles) add(File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, DIR_LOGS))
         if (options.crashLogs) {
             add(File(appContext.getExternalFilesDir(null) ?: appContext.filesDir, DIR_CRASHES))
