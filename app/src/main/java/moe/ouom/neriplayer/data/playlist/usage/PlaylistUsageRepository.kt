@@ -179,6 +179,8 @@ class PlaylistUsageRepository internal constructor(
     private val mutationLock = Any()
     private val persistenceMutex = Mutex()
     private var persistenceGeneration = 0L
+    private val manuallyRemovedUsageKeys = mutableMapOf<String, Long>()
+    private var manuallyRemovedUsageKeysLoaded = false
     @Volatile
     private var roomStorageEnabled = roomStore != null
     private val initialEntries = load()
@@ -311,6 +313,7 @@ class PlaylistUsageRepository internal constructor(
         val out = synchronized(mutationLock) {
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
+            clearManualRemovalLocked(targetKey)
             val idx = data.indexOfFirst { it.usageKey() == targetKey }
             val updated = if (idx >= 0) {
                 data[idx].copy(
@@ -362,9 +365,18 @@ class PlaylistUsageRepository internal constructor(
 
     fun applyMergedStats(stats: List<SyncPlaylistUsageStat>) {
         val out = synchronized(mutationLock) {
+            val manualRemovals = manualRemovalTimestampsLocked()
+            val localStats = _flow.value
+                .filter { entry ->
+                    !isManuallyRemoved(entry.usageKey(), entry.lastOpened, manualRemovals)
+                }
+                .map(UsageEntry::toSyncPlaylistUsageStat)
+            val remoteStats = stats.filter { stat ->
+                !isManuallyRemoved(stat.playlistKey.trim(), stat.lastOpenedAt, manualRemovals)
+            }
             val merged = SyncPlaylistUsageStatsMergePolicy.mergePlaylistUsageStats(
-                local = _flow.value.map(UsageEntry::toSyncPlaylistUsageStat),
-                remote = stats
+                local = localStats,
+                remote = remoteStats
             )
             normalizeUsageEntries(merged.map(SyncPlaylistUsageStat::toUsageEntry))
                 .also { _flow.value = it }
@@ -396,6 +408,7 @@ class PlaylistUsageRepository internal constructor(
         val out = synchronized(mutationLock) {
             val data = _flow.value.toMutableList()
             val targetKey = playlistUsageKey(source, id, subtype)
+            clearManualRemovalLocked(targetKey)
             val idx = data.indexOfFirst { it.usageKey() == targetKey }
             if (idx >= 0) {
                 val old = data[idx]
@@ -546,7 +559,18 @@ class PlaylistUsageRepository internal constructor(
 
     /** 从继续播放列表中移除指定项 */
     fun removeEntry(id: Long, source: String, subtype: String? = null) {
-        removeEntryIfPresent(id, source, subtype)
+        val targetKey = playlistUsageKey(source, id, subtype)
+        val out = synchronized(mutationLock) {
+            rememberManualRemovalLocked(targetKey)
+            val data = _flow.value.toMutableList()
+            val removed = data.removeAll { it.usageKey() == targetKey }
+            if (!removed) {
+                return@synchronized null
+            }
+            normalizeUsageEntries(data).also { _flow.value = it }
+        }
+        out?.let(::saveAsync)
+        triggerSync()
     }
 
     private fun removeEntryIfPresent(id: Long, source: String, subtype: String? = null) {
@@ -563,6 +587,62 @@ class PlaylistUsageRepository internal constructor(
     private fun syncCounterDeviceId(): String {
         return runCatching { syncStorage.getOrCreateDeviceId() }
             .getOrDefault(fallbackCounterDeviceId)
+    }
+
+    private fun manualRemovalTimestampsLocked(): MutableMap<String, Long> {
+        if (!manuallyRemovedUsageKeysLoaded) {
+            val persisted = runCatching { syncStorage.getPlaylistUsageDeletions() }
+                .getOrDefault(emptyMap())
+            manuallyRemovedUsageKeys.putAll(persisted)
+            manuallyRemovedUsageKeysLoaded = true
+        }
+        return manuallyRemovedUsageKeys
+    }
+
+    private fun rememberManualRemovalLocked(
+        playlistKey: String,
+        deletedAt: Long = System.currentTimeMillis()
+    ) {
+        val removals = manualRemovalTimestampsLocked()
+        val normalizedTimestamp = deletedAt.coerceAtLeast(1L)
+        if (normalizedTimestamp <= (removals[playlistKey] ?: 0L)) {
+            return
+        }
+        removals[playlistKey] = normalizedTimestamp
+        runCatching {
+            syncStorage.addPlaylistUsageDeletion(playlistKey, normalizedTimestamp)
+        }.onFailure { error ->
+            NPLogger.w(
+                "PlaylistUsageRepo",
+                "Failed to persist manually removed playlist usage",
+                error
+            )
+        }
+    }
+
+    private fun clearManualRemovalLocked(playlistKey: String) {
+        val removals = manualRemovalTimestampsLocked()
+        if (removals.remove(playlistKey) == null) {
+            return
+        }
+        runCatching {
+            syncStorage.removePlaylistUsageDeletion(playlistKey)
+        }.onFailure { error ->
+            NPLogger.w(
+                "PlaylistUsageRepo",
+                "Failed to clear manually removed playlist usage",
+                error
+            )
+        }
+    }
+
+    private fun isManuallyRemoved(
+        playlistKey: String,
+        openedAt: Long,
+        removals: Map<String, Long>
+    ): Boolean {
+        val removedAt = removals[playlistKey] ?: return false
+        return openedAt <= removedAt
     }
 
     private fun triggerSync() {

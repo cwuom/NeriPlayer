@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistUsageStat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -200,6 +201,63 @@ class PlaylistUsageRepositoryTest {
         assertEquals("已加载歌单", entry.name)
         assertEquals(8, entry.trackCount)
         assertEquals(200L, entry.lastOpened)
+    }
+
+    @Test
+    fun `manual removal stays hidden when stale usage stats are merged`() {
+        val repo = PlaylistUsageRepository(mockContext())
+
+        repo.recordOpen(
+            id = 42L,
+            name = "歌单",
+            picUrl = null,
+            trackCount = 3,
+            source = "netease",
+            now = 100L
+        )
+        repo.removeEntry(id = 42L, source = "netease")
+        repo.applyMergedStats(
+            listOf(
+                SyncPlaylistUsageStat(
+                    playlistKey = "netease:42",
+                    source = "netease",
+                    id = 42L,
+                    name = "歌单",
+                    trackCount = 3,
+                    lastOpenedAt = 100L,
+                    firstOpenedAt = 100L,
+                    openCount = 1
+                )
+            )
+        )
+
+        assertTrue(repo.frequentPlaylistsFlow.value.isEmpty())
+    }
+
+    @Test
+    fun `opening a manually removed playlist clears its hidden state`() {
+        val repo = PlaylistUsageRepository(mockContext())
+
+        repo.recordOpen(
+            id = 42L,
+            name = "歌单",
+            picUrl = null,
+            trackCount = 3,
+            source = "netease",
+            now = 100L
+        )
+        repo.removeEntry(id = 42L, source = "netease")
+        repo.recordOpen(
+            id = 42L,
+            name = "歌单",
+            picUrl = null,
+            trackCount = 3,
+            source = "netease",
+            now = 300L
+        )
+
+        assertEquals(1, repo.frequentPlaylistsFlow.value.size)
+        assertEquals(300L, repo.frequentPlaylistsFlow.value.single().lastOpened)
     }
 
     @Test
