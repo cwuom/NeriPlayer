@@ -389,8 +389,13 @@ private fun StableNowPlayingCoverImage(
     }
 
     Box(modifier = modifier) {
+        val targetDisplayedCoverUrl = if (requestedCoverUrl == null) {
+            null
+        } else {
+            displayedCoverUrl
+        }
         Crossfade(
-            targetState = displayedCoverUrl,
+            targetState = targetDisplayedCoverUrl,
             animationSpec = tween(durationMillis = NowPlayingCoverImageCrossfadeMs),
             label = "NowPlayingCoverImage"
         ) { displayedCover ->

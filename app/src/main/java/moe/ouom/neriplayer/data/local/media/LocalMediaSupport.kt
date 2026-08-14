@@ -338,7 +338,7 @@ object LocalMediaSupport {
     private val lyricExtensions = listOf("lrc", "txt")
     private val coverFileNames = listOf("cover", "folder", "front")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
-    private data class LocalCoverCacheHit(val coverUri: String?)
+    private data class LocalCoverCacheHit(val coverUri: String)
     private data class FilePathCacheHit(val path: String?)
     private val localLyricsLookupCache = object : LinkedHashMap<String, LocalLyricsScanMetadata>(
         LOCAL_LYRICS_LOOKUP_CACHE_LIMIT,
@@ -351,12 +351,12 @@ object LocalMediaSupport {
             return size > LOCAL_LYRICS_LOOKUP_CACHE_LIMIT
         }
     }
-    private val localCoverLookupCache = object : LinkedHashMap<String, String?>(
+    private val localCoverLookupCache = object : LinkedHashMap<String, String>(
         LOCAL_COVER_LOOKUP_CACHE_LIMIT,
         0.75f,
         true
     ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
             return size > LOCAL_COVER_LOOKUP_CACHE_LIMIT
         }
     }
@@ -1489,6 +1489,11 @@ object LocalMediaSupport {
             file = file,
             displayName = resolved.displayName
         )
+        val coverUri = runCatching {
+            resolveCoverUri(context, uri)
+        }.onFailure {
+            NPLogger.w(TAG, "resolve metadata-only cover failed for $uri: ${it.message}")
+        }.getOrNull()
 
         return LocalMediaDetails(
             sourceUri = uri,
@@ -1527,7 +1532,7 @@ object LocalMediaSupport {
             sizeBytes = queried.sizeBytes ?: file?.length(),
             lastModifiedMs = queried.lastModifiedMs ?: file?.lastModified(),
             filePath = file?.absolutePath ?: queried.filePath,
-            coverUri = null,
+            coverUri = coverUri,
             coverSource = null,
             lyricContent = localMetadata?.lyric,
             lyricPath = null,
@@ -3538,14 +3543,17 @@ object LocalMediaSupport {
 
     private fun cachedLocalCoverLookup(cacheKey: String): LocalCoverCacheHit? {
         synchronized(localCoverLookupCache) {
-            if (!localCoverLookupCache.containsKey(cacheKey)) return null
-            return LocalCoverCacheHit(localCoverLookupCache[cacheKey])
+            return localCoverLookupCache[cacheKey]?.let(::LocalCoverCacheHit)
         }
     }
 
     private fun rememberLocalCoverLookup(cacheKey: String, coverUri: String?) {
+        val normalizedCoverUri = coverUri
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return
         synchronized(localCoverLookupCache) {
-            localCoverLookupCache[cacheKey] = coverUri
+            localCoverLookupCache[cacheKey] = normalizedCoverUri
         }
     }
 

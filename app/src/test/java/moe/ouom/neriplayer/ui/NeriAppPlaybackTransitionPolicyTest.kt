@@ -79,6 +79,19 @@ class NeriAppPlaybackTransitionPolicyTest {
     }
 
     @Test
+    fun `visual cover clears previous image when a new song cover is unresolved`() {
+        assertNull(
+            resolvePlaybackVisualCoverUrl(
+                currentCoverUrl = null,
+                previousVisualCoverUrl = "previous-song-cover",
+                hasCurrentSong = true,
+                clearDelayElapsed = false,
+                preservePreviousVisualCover = false
+            )
+        )
+    }
+
+    @Test
     fun `visual cover clears after grace period or when playback stops`() {
         assertEquals(
             null,
