@@ -38,13 +38,27 @@ import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.compactedSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.model.expandedLegacyCompatibleSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.model.requireCausalTokenRangeCapacity
 import moe.ouom.neriplayer.data.sync.model.sanitizeLocalCoverUrls
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.util.Base64
+import java.util.zip.Deflater
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
+
+/**
+ * 共享快照的写入能力
+ *
+ * LEGACY_SAFE 是默认值, 因为旧 Android 和旧 Desktop 会忽略 counterEnd,
+ * 但不会理解它代表的完整区间。RANGE_V1 只能在显式能力协商后使用。
+ */
+enum class SyncSerializationCompatibility {
+    LEGACY_SAFE,
+    RANGE_V1
+}
 
 /**
  * 同步数据序列化工具
@@ -79,9 +93,17 @@ object SyncDataSerializer {
      * @param useDataSaver 是否使用省流模式
      * @return useDataSaver=true 时为原始 GZIP(ProtoBuf) 字节; 否则为 UTF-8 JSON 字节
      */
-    fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
-        val sanitizedData = data.sanitizeLocalCoverUrls().compactCausalTokenRanges()
-        ensureCausalTokenCapacity(sanitizedData)
+    fun serialize(
+        data: SyncData,
+        useDataSaver: Boolean,
+        compatibility: SyncSerializationCompatibility = SyncSerializationCompatibility.LEGACY_SAFE
+    ): ByteArray {
+        val compactedData = data.sanitizeLocalCoverUrls().compactCausalTokenRanges()
+        ensureCausalTokenCapacity(compactedData)
+        val sanitizedData = when (compatibility) {
+            SyncSerializationCompatibility.LEGACY_SAFE -> compactedData.expandCausalTokenRanges()
+            SyncSerializationCompatibility.RANGE_V1 -> compactedData
+        }
         val content = if (useDataSaver) {
             val protoBytes = protoBuf.encodeToByteArray(sanitizedData)
             require(protoBytes.size <= MAX_DECOMPRESSED_BYTES) {
@@ -148,6 +170,45 @@ object SyncDataSerializer {
                         .compactedSyncCausalTokens()
                 )
             }.let { SyncPlaylistDeletionPolicy.limitDeletions(it) }
+        )
+    }
+
+    private fun SyncData.expandCausalTokenRanges(): SyncData {
+        return copy(
+            playlists = playlists.map { playlist ->
+                playlist.copy(
+                    songs = playlist.songs.map { song ->
+                        song.copy(
+                            syncMembershipTokens = song.syncMembershipTokens
+                                .expandedLegacyCompatibleSyncCausalTokens()
+                        )
+                    }
+                )
+            },
+            favoritePlaylists = favoritePlaylists.map { playlist ->
+                playlist.copy(
+                    songs = playlist.songs.map { song ->
+                        song.copy(
+                            syncMembershipTokens = song.syncMembershipTokens
+                                .expandedLegacyCompatibleSyncCausalTokens()
+                        )
+                    }
+                )
+            },
+            recentPlays = recentPlays.map { recentPlay ->
+                recentPlay.copy(
+                    song = recentPlay.song.copy(
+                        syncMembershipTokens = recentPlay.song.syncMembershipTokens
+                            .expandedLegacyCompatibleSyncCausalTokens()
+                    )
+                )
+            },
+            playlistSongDeletions = playlistSongDeletions.map { deletion ->
+                deletion.copy(
+                    removedMembershipTokens = deletion.removedMembershipTokens
+                        .expandedLegacyCompatibleSyncCausalTokens()
+                )
+            }
         )
     }
 
@@ -257,10 +318,24 @@ object SyncDataSerializer {
      */
     private fun compress(data: ByteArray): ByteArray {
         val outputStream = ByteArrayOutputStream()
-        GZIPOutputStream(outputStream).use { gzip ->
+        val level = if (data.size >= BEST_COMPRESSION_THRESHOLD_BYTES) {
+            Deflater.BEST_COMPRESSION
+        } else {
+            Deflater.DEFAULT_COMPRESSION
+        }
+        TunedGzipOutputStream(outputStream, level).use { gzip ->
             gzip.write(data)
         }
         return outputStream.toByteArray()
+    }
+
+    private class TunedGzipOutputStream(
+        outputStream: OutputStream,
+        level: Int
+    ) : GZIPOutputStream(outputStream) {
+        init {
+            def.setLevel(level)
+        }
     }
 
     /**
@@ -338,6 +413,7 @@ object SyncDataSerializer {
     private const val RAW_BINARY_FILE_NAME = "backup-raw.bin"
     private const val LEGACY_BINARY_FILE_NAME = "backup.bin"
     private const val JSON_FILE_NAME = "backup.json"
+    private const val BEST_COMPRESSION_THRESHOLD_BYTES = 256 * 1024
 
     /**
      * 兼容旧/错误字段编号的 schema (mediaUri 插入到 addedAt 之前的版本)

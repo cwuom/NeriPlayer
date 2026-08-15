@@ -47,6 +47,7 @@ data class SyncCausalToken(
 }
 
 internal const val MAX_CAUSAL_TOKEN_RANGES_PER_ENTITY = 64
+internal const val MAX_LEGACY_TOKEN_POINTS_PER_ENTITY = 8_192
 
 /**
  * 归一化 token 列表: 先丢弃非法 token (空 deviceId 或 counter<=0) , 再去重并按确定性顺序排序
@@ -85,6 +86,37 @@ internal fun Iterable<SyncCausalToken>?.compactedSyncCausalTokens(): List<SyncCa
         }
     }
     return compacted
+}
+
+/**
+ * 展开为旧客户端可理解的单点令牌, 不改变区间代表的计数集合
+ *
+ * 旧客户端会忽略 counterEnd, 所以共享快照默认不能只写区间起点
+ */
+internal fun Iterable<SyncCausalToken>?.expandedLegacyCompatibleSyncCausalTokens(
+    maxPoints: Int = MAX_LEGACY_TOKEN_POINTS_PER_ENTITY
+): List<SyncCausalToken> {
+    require(maxPoints >= 0) { "Legacy token point capacity must not be negative" }
+    val compacted = compactedSyncCausalTokens()
+    val expanded = ArrayList<SyncCausalToken>(minOf(compacted.size, maxPoints))
+    compacted.forEach { token ->
+        val end = token.endCounter()
+        val count = if (end == Long.MAX_VALUE) {
+            Long.MAX_VALUE
+        } else {
+            end - token.counter + 1L
+        }
+        require(count <= maxPoints.toLong() - expanded.size) {
+            "Legacy token expansion capacity exceeded: ${expanded.size + count} > $maxPoints"
+        }
+        var counter = token.counter
+        while (true) {
+            expanded += token.copy(counter = counter, counterEnd = 0L)
+            if (counter == end) break
+            counter++
+        }
+    }
+    return expanded
 }
 
 internal fun requireCausalTokenRangeCapacity(

@@ -101,7 +101,7 @@ class SyncDataSerializerBinaryStreamTest {
     }
 
     @Test
-    fun `causal ranges round trip in both transports`() {
+    fun `legacy safe serialization expands ranges for old clients`() {
         val data = SyncData(
             deviceId = "device",
             deviceName = "test",
@@ -129,10 +129,50 @@ class SyncDataSerializerBinaryStreamTest {
                 SyncDataSerializer.serialize(data, useDataSaver)
             )
             assertEquals(
-                listOf(SyncCausalToken("device", 1L, counterEnd = 3L)),
+                listOf(
+                    SyncCausalToken("device", 1L),
+                    SyncCausalToken("device", 2L),
+                    SyncCausalToken("device", 3L)
+                ),
                 decoded.playlists.single().songs.single().syncMembershipTokens
             )
         }
+    }
+
+    @Test
+    fun `range capable serialization keeps compact range explicitly`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken("device", 1L),
+                                SyncCausalToken("device", 2L),
+                                SyncCausalToken("device", 3L)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        val decoded = SyncDataSerializer.deserialize(
+            SyncDataSerializer.serialize(
+                data,
+                useDataSaver = true,
+                compatibility = SyncSerializationCompatibility.RANGE_V1
+            )
+        )
+
+        assertEquals(
+            listOf(SyncCausalToken("device", 1L, counterEnd = 3L)),
+            decoded.playlists.single().songs.single().syncMembershipTokens
+        )
     }
 
     @Test
@@ -172,6 +212,37 @@ class SyncDataSerializerBinaryStreamTest {
                     song = SyncSong(id = 1L, syncMembershipTokens = tokens),
                     playedAt = 1L,
                     deviceId = "device"
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `legacy expansion rejects an unbounded range before either upload format`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken(
+                                    deviceId = "device",
+                                    counter = 1L,
+                                    counterEnd = 8_193L
+                                )
+                            )
+                        )
+                    )
                 )
             )
         )
