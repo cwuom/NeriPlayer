@@ -65,3 +65,14 @@ internal fun shouldRequestListenTogetherControllerLink(
 ): Boolean {
     return force || !controllerLinkUnavailable
 }
+
+internal fun shouldDeferControllerLinkResolution(
+    playbackResolutionPending: Boolean,
+    currentTrackStableKey: String?,
+    requestedStableKey: String
+): Boolean {
+    if (!playbackResolutionPending) return false
+    val current = currentTrackStableKey?.trim().orEmpty()
+    val requested = requestedStableKey.trim()
+    return current.isNotEmpty() && requested.isNotEmpty() && current == requested
+}

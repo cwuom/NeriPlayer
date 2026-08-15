@@ -824,7 +824,9 @@ internal fun PlayerManager.playAtIndex(
     playJob = ioScope.launch {
         try {
         val result = resolveSongUrlOrWaitForAuthoritativeStream(
-            shouldWaitForAuthoritativeStream = shouldAwaitAuthoritativeStream
+            shouldWaitForAuthoritativeStream = {
+                shouldWaitForListenTogetherAuthoritativeStream(song)
+            }
         ) {
             resolveSongUrl(
                 song = song,
@@ -865,6 +867,7 @@ internal fun PlayerManager.playAtIndex(
                 }
 
                 var appliedResolvedMedia = false
+                var switchedToAuthoritativeStreamWait = false
                 withContext(Dispatchers.Main) {
                     if (!shouldApplyResolvedMediaSideEffects(
                             requestGeneration = requestToken,
@@ -874,9 +877,19 @@ internal fun PlayerManager.playAtIndex(
                     ) {
                         return@withContext
                     }
+                    if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
+                        switchedToAuthoritativeStreamWait = true
+                        stopCurrentPlaybackForListenTogetherAwaitingStream()
+                        return@withContext
+                    }
                     consecutivePlayFailures = 0
                     result.noticeMessage?.let { message ->
-                        postPlayerEvent(PlayerEvent.ShowError(message))
+                        if (
+                            !result.isPreviewClip ||
+                            !shouldWaitForListenTogetherAuthoritativeStream(song)
+                        ) {
+                            postPlayerEvent(PlayerEvent.ShowError(message))
+                        }
                     }
                     maybeUpdateSongDuration(song, result.durationMs ?: 0L)
                     val cacheKey = result.cacheKeyOverride ?: computeCacheKey(song)
@@ -977,12 +990,24 @@ internal fun PlayerManager.playAtIndex(
                     PlaybackTransitionWakeLock.release(requestToken, "media_started")
                     appliedResolvedMedia = true
                 }
+                if (switchedToAuthoritativeStreamWait) {
+                    scheduleStatePersist(
+                        positionMs = resolvedResumePositionMs,
+                        shouldResumePlayback = true
+                    )
+                    return@launch
+                }
                 if (!appliedResolvedMedia) {
                     return@launch
                 }
                 maybeWarmNextYouTubeMusicAfterCurrentResolved()
             }
             SongUrlResult.WaitingForAuthoritativeStream -> {
+                if (!shouldAwaitAuthoritativeStream) {
+                    withContext(Dispatchers.Main) {
+                        stopCurrentPlaybackForListenTogetherAwaitingStream()
+                    }
+                }
                 NPLogger.d(
                     "NERI-PlayerManager",
                     "Waiting for authoritative listen-together stream: song=${song.name}, stableKey=${song.listenTogetherStableKeyOrNull()}"

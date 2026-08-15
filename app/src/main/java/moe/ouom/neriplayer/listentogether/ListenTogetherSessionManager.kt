@@ -63,6 +63,7 @@ import moe.ouom.neriplayer.listentogether.playback.requestedStableKey
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.shouldWaitForListenTogetherAuthoritativeStreamPlayback
 import moe.ouom.neriplayer.listentogether.playback.shouldRequestListenTogetherControllerLink
+import moe.ouom.neriplayer.listentogether.playback.shouldDeferControllerLinkResolution
 import moe.ouom.neriplayer.listentogether.playback.targetSongItem
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
@@ -2670,6 +2671,27 @@ class ListenTogetherSessionManager(
         }
     }
 
+    private fun isControllerPlaybackResolutionPending(stableKey: String): Boolean {
+        val currentStableKey = PlayerManager.currentSongFlow.value
+            ?.toListenTogetherTrackOrNull()
+            ?.stableKey
+        return shouldDeferControllerLinkResolution(
+            playbackResolutionPending = PlayerManager.isPendingMediaLoadActive(),
+            currentTrackStableKey = currentStableKey,
+            requestedStableKey = stableKey
+        )
+    }
+
+    private suspend fun awaitControllerPlaybackResolution(stableKey: String): Boolean {
+        repeat(CONTROLLER_PLAYBACK_RESOLUTION_POLL_COUNT) {
+            if (!isControllerPlaybackResolutionPending(stableKey)) {
+                return true
+            }
+            delay(CONTROLLER_PLAYBACK_RESOLUTION_POLL_MS)
+        }
+        return !isControllerPlaybackResolutionPending(stableKey)
+    }
+
     private fun resolveAndPublishControllerLink(
         stableKey: String,
         reason: String
@@ -2705,6 +2727,30 @@ class ListenTogetherSessionManager(
         controllerLinkResolveStableKey = stableKey
         controllerLinkResolveJob = scope.launch {
             try {
+                if (!awaitControllerPlaybackResolution(stableKey)) {
+                    NPLogger.d(
+                        TAG,
+                        "resolveAndPublishControllerLink(): defer until controller playback resolution settles, stableKey=$stableKey, reason=$reason"
+                    )
+                    return@launch
+                }
+                val currentStableKey = PlayerManager.currentSongFlow.value
+                    ?.toListenTogetherTrackOrNull()
+                    ?.stableKey
+                if (currentStableKey != stableKey) {
+                    NPLogger.d(
+                        TAG,
+                        "resolveAndPublishControllerLink(): skip after playback resolution because current stableKey mismatch, expected=$stableKey, actual=$currentStableKey, reason=$reason"
+                    )
+                    return@launch
+                }
+                if (publishControllerLinkReadyIfPossible(
+                        stableKey = stableKey,
+                        reason = "playback_resolved:$reason"
+                    )
+                ) {
+                    return@launch
+                }
                 NPLogger.d(
                     TAG,
                     "resolveAndPublishControllerLink(): resolving shareable stream, stableKey=$stableKey, reason=$reason"
@@ -2715,6 +2761,13 @@ class ListenTogetherSessionManager(
                         TAG,
                         "resolveAndPublishControllerLink(): no shareable stream resolved, stableKey=$stableKey, previewOnly=${resolution.isPreviewOnly}, reason=$reason"
                     )
+                    if (isControllerPlaybackResolutionPending(stableKey)) {
+                        NPLogger.d(
+                            TAG,
+                            "resolveAndPublishControllerLink(): defer unavailable result while controller playback is resolving, stableKey=$stableKey, reason=$reason"
+                        )
+                        return@launch
+                    }
                     publishControllerLinkUnavailable(
                         stableKey = stableKey,
                         reason = if (resolution.isPreviewOnly) {
@@ -2746,10 +2799,6 @@ class ListenTogetherSessionManager(
                 NPLogger.w(
                     TAG,
                     "resolveAndPublishControllerLink(): failed, stableKey=$stableKey, reason=$reason, error=${e.message}"
-                )
-                publishControllerLinkUnavailable(
-                    stableKey = stableKey,
-                    reason = "resolve_failed:$reason"
                 )
             } finally {
                 if (controllerLinkResolveStableKey == stableKey) {
@@ -2914,6 +2963,8 @@ class ListenTogetherSessionManager(
         private const val PENDING_MEMBER_CONTROL_REQUEST_MAX_ATTEMPTS = 4
         private const val PENDING_MEMBER_SEEK_SATISFIED_DRIFT_MS = 1_500L
         private const val TRACK_FINISHED_LEGACY_FALLBACK_TTL_MS = 15_000L
+        private const val CONTROLLER_PLAYBACK_RESOLUTION_POLL_MS = 200L
+        private const val CONTROLLER_PLAYBACK_RESOLUTION_POLL_COUNT = 40
         private const val SOFT_SYNC_MIN_DRIFT_MS = 600L
         private const val SOFT_SYNC_FAST_DRIFT_MS = 1_500L
         private const val CLOCK_SYNC_MAX_RTT_MS = 30_000L

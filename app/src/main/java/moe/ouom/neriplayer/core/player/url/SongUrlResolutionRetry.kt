@@ -26,12 +26,17 @@ internal suspend fun retrySongUrlResolution(
 }
 
 internal suspend fun resolveSongUrlOrWaitForAuthoritativeStream(
-    shouldWaitForAuthoritativeStream: Boolean,
+    shouldWaitForAuthoritativeStream: () -> Boolean,
     resolve: suspend () -> SongUrlResult
 ): SongUrlResult {
-    return if (shouldWaitForAuthoritativeStream) {
+    if (shouldWaitForAuthoritativeStream()) {
+        return SongUrlResult.WaitingForAuthoritativeStream
+    }
+
+    val result = resolve()
+    return if (shouldWaitForAuthoritativeStream()) {
         SongUrlResult.WaitingForAuthoritativeStream
     } else {
-        resolve()
+        result
     }
 }

@@ -138,6 +138,31 @@ class ListenTogetherAuthoritativeStreamTest {
         )
     }
 
+    @Test
+    fun `controller does not declare link unavailable while matching playback resolves`() {
+        assertTrue(
+            shouldDeferControllerLinkResolution(
+                playbackResolutionPending = true,
+                currentTrackStableKey = "netease:current",
+                requestedStableKey = "netease:current"
+            )
+        )
+        assertFalse(
+            shouldDeferControllerLinkResolution(
+                playbackResolutionPending = true,
+                currentTrackStableKey = "netease:other",
+                requestedStableKey = "netease:current"
+            )
+        )
+        assertFalse(
+            shouldDeferControllerLinkResolution(
+                playbackResolutionPending = false,
+                currentTrackStableKey = "netease:current",
+                requestedStableKey = "netease:current"
+            )
+        )
+    }
+
     private fun track(stableKey: String, streamUrl: String): ListenTogetherTrack {
         return ListenTogetherTrack(
             stableKey = stableKey,
