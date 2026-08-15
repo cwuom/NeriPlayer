@@ -48,7 +48,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,6 +61,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -597,8 +597,6 @@ fun ExploreScreen(
         ) {
             vm.search(effectiveSearchKeyword, displayQuery = displayQuery)
         }
-        delay(EXPLORE_HISTORY_RECORD_DEBOUNCE_MS - SEARCH_INPUT_DEBOUNCE_MS)
-        queueExploreSearchRecord(searchQuery)
     }
 
     LaunchedEffect(ui.selectedSearchSource) {
@@ -1354,11 +1352,11 @@ private fun ExploreSearchHistoryRow(
                     }
                 }
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                history.forEach { item ->
+                itemsIndexed(history) { _, item ->
                     ExploreSearchHistoryChip(
                         text = item,
                         onClick = { onHistoryClick(item) }
@@ -1532,15 +1530,14 @@ internal fun ExploreSearchTypeBar(
     ) { displayedSource ->
         when (displayedSource) {
             SearchSource.NETEASE -> {
-                FlowRow(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .testTag(EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    NeteaseExploreSearchType.entries.forEach { type ->
+                    itemsIndexed(NeteaseExploreSearchType.entries) { _, type ->
                         ExploreTagChip(
                             label = neteaseSearchTypeLabel(type),
                             icon = neteaseSearchTypeIcon(type),
@@ -1559,15 +1556,14 @@ internal fun ExploreSearchTypeBar(
             }
 
             SearchSource.YOUTUBE_MUSIC -> {
-                FlowRow(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .testTag(EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    YouTubeExploreSearchType.entries.forEach { type ->
+                    itemsIndexed(YouTubeExploreSearchType.entries) { _, type ->
                         ExploreTagChip(
                             label = youtubeSearchTypeLabel(type),
                             icon = youtubeSearchTypeIcon(type),
@@ -1591,7 +1587,6 @@ internal fun ExploreSearchTypeBar(
 }
 
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
-private const val EXPLORE_HISTORY_RECORD_DEBOUNCE_MS = 1_200L
 private val EXPLORE_SEARCH_TYPE_BAR_SOURCES = setOf(
     SearchSource.NETEASE,
     SearchSource.YOUTUBE_MUSIC
@@ -1637,14 +1632,13 @@ private fun NeteaseDefaultContent(
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth()) {
-                val displayCount = if (ui.expanded) tagKeys.size else 12
-                val displayKeys = tagKeys.take(displayCount)
-                val displayLabels = tagLabels.take(displayCount)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                val displayKeys = tagKeys
+                val displayLabels = tagLabels
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    displayKeys.forEachIndexed { index, tagKey ->
+                    itemsIndexed(displayKeys) { index, tagKey ->
                         val selected = (ui.selectedTag == tagKey)
                         ExploreTagChip(
                             label = displayLabels[index],
@@ -1654,11 +1648,6 @@ private fun NeteaseDefaultContent(
                             unselectedAlpha = tagChipUnselectedAlpha,
                             borderAlpha = tagChipBorderAlpha
                         )
-                    }
-                }
-                Box(Modifier.fillMaxWidth(), Alignment.Center) {
-                    HapticTextButton(onClick = { vm.toggleExpanded() }) {
-                        Text(if (ui.expanded) stringResource(R.string.explore_collapse) else stringResource(R.string.explore_expand))
                     }
                 }
                 Box(
