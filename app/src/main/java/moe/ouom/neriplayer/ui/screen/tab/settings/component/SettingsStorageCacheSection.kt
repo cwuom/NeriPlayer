@@ -103,6 +103,20 @@ private val DOWNLOAD_FILE_NAME_PLACEHOLDERS = listOf(
     "%hash%"
 )
 
+internal fun buildDownloadFileNameTemplatePreview(template: String?): String {
+    return renderManagedDownloadBaseName(
+        title = "晴天",
+        artist = "周杰伦",
+        album = "叶惠美",
+        source = "网易云",
+        songId = "123456",
+        audioId = "456789",
+        subAudioId = "789012",
+        template = normalizeDownloadFileNameTemplate(template)
+            ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+    )
+}
+
 internal fun insertDownloadFileNamePlaceholder(
     value: TextFieldValue,
     placeholder: String
@@ -196,13 +210,7 @@ internal fun SettingsStorageCacheSection(
         pendingDownloadFileNameTemplate = TextFieldValue(currentSavedTemplate)
         showDownloadFileNameDialog.value = false
     }
-    val samplePreview = renderManagedDownloadBaseName(
-        title = "晴天",
-        artist = "周杰伦",
-        album = "叶惠美",
-        source = "网易云",
-        template = effectiveTemplate
-    )
+    val samplePreview = buildDownloadFileNameTemplatePreview(effectiveTemplate)
     val canApplyDownloadFileNameTemplate = effectiveTemplate != currentSavedTemplate
     fun shouldShowCard(index: Int): Boolean = cardIndex == null || cardIndex == index
 

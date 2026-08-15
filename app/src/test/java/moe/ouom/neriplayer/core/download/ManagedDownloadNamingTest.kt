@@ -9,7 +9,7 @@ import org.junit.Test
 class ManagedDownloadNamingTest {
 
     @Test
-    fun `renderManagedDownloadBaseName uses default template`() {
+    fun `renderManagedDownloadBaseName uses readable default template`() {
         val result = renderManagedDownloadBaseName(
             title = "晴天",
             artist = "周杰伦",
@@ -17,7 +17,7 @@ class ManagedDownloadNamingTest {
             source = "netease"
         )
 
-        assertTrue(result.matches(Regex("晴天 - 周杰伦 \\[[0-9a-f]{12}]")))
+        assertEquals("晴天 - 周杰伦 - 叶惠美 - netease", result)
     }
 
     @Test
@@ -35,10 +35,11 @@ class ManagedDownloadNamingTest {
         )
 
         assertEquals(
-            "爱我别走 - 张震岳 [${managedDownloadIdentityHash(song)}]",
+            "爱我别走 - 张震岳 - 某张专辑 - youtubeMusic",
             renderManagedDownloadBaseName(song)
         )
         val candidates = candidateManagedDownloadBaseNames(song)
+        assertTrue(candidates.contains("爱我别走 - 张震岳 - 某张专辑 - youtubeMusic"))
         assertTrue(candidates.contains("爱我别走 - 张震岳 [${managedDownloadIdentityHash(song)}]"))
         assertTrue(candidates.contains("youtubeMusic - 张震岳 - 爱我别走"))
         assertTrue(candidates.contains("netease - 张震岳 - 爱我别走"))
@@ -128,7 +129,7 @@ class ManagedDownloadNamingTest {
 
         val result = renderManagedDownloadBaseName(song, template = "%title%")
 
-        assertTrue(result.matches(Regex("A - Artist \\[[0-9a-f]{12}]")))
+        assertEquals("A - Artist - Album - netease", result)
     }
 
     @Test
@@ -194,7 +195,7 @@ class ManagedDownloadNamingTest {
     }
 
     @Test
-    fun `default name keeps same title and artist tracks distinct by identity hash`() {
+    fun `default name uses album and source to distinguish readable names`() {
         val first = SongItem(
             id = 1L,
             name = "同名歌曲",
@@ -206,10 +207,68 @@ class ManagedDownloadNamingTest {
             channelId = "netease",
             audioId = "remote-a"
         )
-        val second = first.copy(id = 2L, audioId = "remote-b")
+        val second = first.copy(id = 2L, audioId = "remote-b", album = "另一张专辑")
 
-        assertTrue(managedDownloadIdentityHash(first) != managedDownloadIdentityHash(second))
         assertTrue(renderManagedDownloadBaseName(first) != renderManagedDownloadBaseName(second))
+    }
+
+    @Test
+    fun `candidate names keep the previous hash default`() {
+        val song = SongItem(
+            id = 42L,
+            name = "歌曲",
+            artist = "歌手",
+            album = "专辑",
+            albumId = 7L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+
+        assertTrue(
+            candidateManagedDownloadBaseNames(song).contains(
+                "歌曲 - 歌手 [${managedDownloadIdentityHash(song)}]"
+            )
+        )
+    }
+
+    @Test
+    fun `renderManagedDownloadBaseName bounds UTF8 bytes without splitting code points`() {
+        val title = "a".repeat(196) + "\uD83D\uDE00" + "超过长度的尾部"
+
+        val result = renderManagedDownloadBaseName(
+            title = title,
+            artist = "",
+            album = "",
+            source = "",
+            template = "%title%"
+        )
+
+        assertEquals(
+            MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES,
+            result.toByteArray(Charsets.UTF_8).size
+        )
+        assertTrue(result.endsWith("\uD83D\uDE00"))
+    }
+
+    @Test
+    fun `candidate names preserve untruncated historical hash names`() {
+        val title = "a".repeat(MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES + 32)
+        val song = SongItem(
+            id = 42L,
+            name = title,
+            artist = "歌手",
+            album = "专辑",
+            albumId = 7L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val historicalName = "$title - 歌手 [${managedDownloadIdentityHash(song)}]"
+
+        assertTrue(candidateManagedDownloadBaseNames(song).contains(historicalName))
     }
 
     @Test

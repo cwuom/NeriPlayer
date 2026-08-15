@@ -77,6 +77,8 @@ internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE
+internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES =
+    moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES
 
 internal fun sanitizeManagedDownloadFileName(name: String): String =
     sanitizeManagedDownloadFileNameDelegate(name)

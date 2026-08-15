@@ -7,9 +7,11 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 
-internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% [%hash%]"
-internal const val PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
+internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% - %album% - %source%"
+internal const val PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %artist% [%hash%]"
+internal const val PREVIOUS_SOURCE_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"
+internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES = 200
 private const val MIN_MANAGED_DOWNLOAD_BASE_NAME_CODE_POINTS = 2
 private const val MANAGED_DOWNLOAD_IDENTITY_HASH_LENGTH = 12
 private const val YOUTUBE_MUSIC_DOWNLOAD_SOURCE = "youtubeMusic"
@@ -64,6 +66,30 @@ internal fun sanitizeManagedDownloadFileName(name: String): String {
     return normalized.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "audio" }
 }
 
+private fun truncateManagedDownloadBaseName(name: String): String {
+    if (name.toByteArray(Charsets.UTF_8).size <= MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES) {
+        return name
+    }
+
+    val truncated = StringBuilder()
+    var offset = 0
+    var byteCount = 0
+    while (offset < name.length) {
+        val codePoint = name.codePointAt(offset)
+        val codePointLength = Character.charCount(codePoint)
+        val codePointBytes = name.substring(offset, offset + codePointLength)
+            .toByteArray(Charsets.UTF_8)
+            .size
+        if (byteCount + codePointBytes > MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES) {
+            break
+        }
+        truncated.appendCodePoint(codePoint)
+        byteCount += codePointBytes
+        offset += codePointLength
+    }
+    return truncated.toString().trimEnd().ifBlank { "audio" }
+}
+
 internal fun normalizeDownloadFileNameTemplate(template: String?): String? {
     return template?.trim()?.takeIf { it.isNotEmpty() }
 }
@@ -73,6 +99,7 @@ internal fun candidateManagedDownloadFileNameTemplates(activeTemplate: String? =
         normalizeDownloadFileNameTemplate(activeTemplate)?.let(::add)
         add(DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
         add(PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
+        add(PREVIOUS_SOURCE_DOWNLOAD_FILE_NAME_TEMPLATE)
         add(LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE)
     }.toList()
 }
@@ -100,7 +127,7 @@ internal fun renderManagedDownloadBaseName(
             audioId = audioId,
             subAudioId = subAudioId
         )
-    val rendered = renderManagedDownloadBaseNameExact(
+    val rendered = truncateManagedDownloadBaseName(renderManagedDownloadBaseNameExact(
         title = title,
         artist = artist,
         album = album,
@@ -110,7 +137,7 @@ internal fun renderManagedDownloadBaseName(
         subAudioId = subAudioId,
         identityHash = resolvedIdentityHash,
         template = effectiveTemplate
-    )
+    ))
     if (
         rendered.hasEnoughManagedDownloadBaseNameLength() ||
         effectiveTemplate == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
@@ -118,7 +145,7 @@ internal fun renderManagedDownloadBaseName(
         return rendered
     }
     // 某些 ROM / SAF 提供方会拒绝过短文件名，这里回退到稳定的默认模板
-    return renderManagedDownloadBaseNameExact(
+    return truncateManagedDownloadBaseName(renderManagedDownloadBaseNameExact(
         title = title,
         artist = artist,
         album = album,
@@ -128,7 +155,7 @@ internal fun renderManagedDownloadBaseName(
         subAudioId = subAudioId,
         identityHash = resolvedIdentityHash,
         template = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-    )
+    ))
 }
 
 private fun renderManagedDownloadBaseNameExact(
@@ -269,36 +296,23 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
     template: String?
 ) {
     val normalizedTemplate = normalizeDownloadFileNameTemplate(template)
-    add(
-        renderManagedDownloadBaseName(
-            title = title,
-            artist = artist,
-            album = album,
-            source = source,
-            songId = songId,
-            audioId = audioId,
-            subAudioId = subAudioId,
-            identityHash = identityHash,
-            template = normalizedTemplate
-        )
+    val renderedExact = renderManagedDownloadBaseNameExact(
+        title = title,
+        artist = artist,
+        album = album,
+        source = source,
+        songId = songId,
+        audioId = audioId,
+        subAudioId = subAudioId,
+        identityHash = identityHash,
+        template = normalizedTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     )
+    add(truncateManagedDownloadBaseName(renderedExact))
     if (
         normalizedTemplate != null &&
         normalizedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     ) {
-        add(
-            renderManagedDownloadBaseNameExact(
-                title = title,
-                artist = artist,
-                album = album,
-                source = source,
-                songId = songId,
-                audioId = audioId,
-                subAudioId = subAudioId,
-                identityHash = identityHash,
-                template = normalizedTemplate
-            )
-        )
+        add(renderedExact)
     }
 }
 
