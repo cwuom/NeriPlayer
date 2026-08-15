@@ -44,7 +44,9 @@ fun SongItem.displayCoverUrl(
         AudioDownloadManager.getLocalCoverUri(
             context = context,
             song = this,
-            resolveLocalMediaFallback = true
+            // local media support below owns the media-file fallback. Keeping it out of
+            // the download lookup prevents two embedded-cover probes for one song.
+            resolveLocalMediaFallback = false
         )
     } else {
         null

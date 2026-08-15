@@ -2774,6 +2774,15 @@ object AudioDownloadManager {
         return resolveReadableDownloadedPlaybackUri(context, song) != null
     }
 
+    /**
+     * 只读取已驻留下载索引，供滚动列表恢复已有封面，避免触发目录扫描
+     */
+    fun peekLocalCoverUri(song: SongItem): String? {
+        val localAudio = ManagedDownloadStorage.peekDownloadedAudio(song) ?: return null
+        val coverReference = ManagedDownloadStorage.peekCoverReference(localAudio) ?: return null
+        return ManagedDownloadStorage.toPlayableUri(coverReference) ?: coverReference
+    }
+
     /** 解析下载歌曲对应的本地封面, 供离线 UI 兜底使用 */
     fun getLocalCoverUri(
         context: Context,

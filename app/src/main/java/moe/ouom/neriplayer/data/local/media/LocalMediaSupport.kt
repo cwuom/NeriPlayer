@@ -87,6 +87,8 @@ private const val NEARBY_COVER_LOOKUP_CACHE_LIMIT = 2048
 private const val DIRECTORY_COVER_LOOKUP_CACHE_LIMIT = 256
 private const val LOCAL_LYRICS_LOOKUP_CACHE_LIMIT = 768
 private const val MAX_EDITABLE_COVER_BYTES = 8L * 1024L * 1024L
+private const val MAX_EMBEDDED_COVER_CACHE_BYTES = 1024 * 1024
+private const val MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX = 512
 private const val FRONT_COVER_PICTURE_TYPE = "Front Cover"
 private val ROLELESS_COVER_PICTURE_EXTENSIONS = setOf(
     "3g2", "m4a", "m4b", "m4p", "m4r", "m4v", "mp4"
@@ -338,7 +340,7 @@ object LocalMediaSupport {
     private val lyricExtensions = listOf("lrc", "txt")
     private val coverFileNames = listOf("cover", "folder", "front")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
-    private data class LocalCoverCacheHit(val coverUri: String)
+    private data class LocalCoverCacheHit(val coverUri: String?)
     private data class FilePathCacheHit(val path: String?)
     private val localLyricsLookupCache = object : LinkedHashMap<String, LocalLyricsScanMetadata>(
         LOCAL_LYRICS_LOOKUP_CACHE_LIMIT,
@@ -351,12 +353,12 @@ object LocalMediaSupport {
             return size > LOCAL_LYRICS_LOOKUP_CACHE_LIMIT
         }
     }
-    private val localCoverLookupCache = object : LinkedHashMap<String, String>(
+    private val localCoverLookupCache = object : LinkedHashMap<String, String?>(
         LOCAL_COVER_LOOKUP_CACHE_LIMIT,
         0.75f,
         true
     ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
             return size > LOCAL_COVER_LOOKUP_CACHE_LIMIT
         }
     }
@@ -1573,6 +1575,32 @@ object LocalMediaSupport {
         return resolveCoverUri(context, uri)
     }
 
+    /**
+     * 列表恢复时只检查已经生成的缩略图, 避免重新打开音频并解析内嵌图片
+     */
+    fun peekCachedEmbeddedCoverUri(context: Context, song: SongItem): String? {
+        return embeddedCoverCacheLookupKeys(song)
+            .asSequence()
+            .flatMap { key -> sequenceOf(key, "$key#taglib") }
+            .mapNotNull { key -> findCachedEmbeddedCover(context, key) }
+            .firstOrNull()
+    }
+
+    internal fun embeddedCoverCacheLookupKeys(song: SongItem): List<String> {
+        val localUri = song.localMediaUri()
+        return listOfNotNull(
+            song.localFilePath,
+            localUri
+                ?.takeIf { uri -> uri.scheme.equals("file", ignoreCase = true) }
+                ?.path,
+            song.mediaUri,
+            localUri?.toString()
+        )
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+    }
+
     fun resolveCoverUri(context: Context, uri: Uri): String? {
         val resolved = runCatching {
             resolveInspectableLocalMedia(
@@ -1585,7 +1613,17 @@ object LocalMediaSupport {
             return null
         }
         val cacheKey = localCoverLookupKey(uri, resolved)
-        cachedLocalCoverLookup(cacheKey)?.let { return it.coverUri }
+        cachedLocalCoverLookup(cacheKey)?.let { cached ->
+            cached.coverUri?.let { return it }
+
+            // Do not retain an empty nearby-cover result. A user can add artwork
+            // beside an unchanged audio file without restarting the app.
+            findNearbyCover(resolved.file)?.toURI()?.toString()?.let { nearbyCover ->
+                rememberLocalCoverLookup(cacheKey, nearbyCover)
+                return nearbyCover
+            }
+            return null
+        }
 
         val resolvedCover = findNearbyCover(resolved.file)?.toURI()?.toString()
             ?: findCachedEmbeddedCover(context, resolved.resolvedPath ?: uri.toString())
@@ -3561,8 +3599,9 @@ object LocalMediaSupport {
 
     private fun cachedLocalCoverLookup(cacheKey: String): LocalCoverCacheHit? {
         synchronized(localCoverLookupCache) {
-            val coverUri = localCoverLookupCache[cacheKey] ?: return null
-            if (!isUsableCachedCoverUri(coverUri)) {
+            if (!localCoverLookupCache.containsKey(cacheKey)) return null
+            val coverUri = localCoverLookupCache[cacheKey]
+            if (coverUri != null && !isUsableCachedCoverUri(coverUri)) {
                 localCoverLookupCache.remove(cacheKey)
                 return null
             }
@@ -3583,7 +3622,6 @@ object LocalMediaSupport {
         val normalizedCoverUri = coverUri
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?: return
         synchronized(localCoverLookupCache) {
             localCoverLookupCache[cacheKey] = normalizedCoverUri
         }
@@ -3678,7 +3716,7 @@ object LocalMediaSupport {
     }
 
     private fun embeddedCoverFile(context: Context, uriKey: String): File {
-        val coverDir = File(context.filesDir, "local_audio_covers").apply { mkdirs() }
+        val coverDir = File(context.filesDir, "local_audio_covers")
         return File(coverDir, "${stableKey(uriKey)}.jpg")
     }
 
@@ -3688,13 +3726,81 @@ object LocalMediaSupport {
         if (file.isFile && file.length() > 0L) {
             return file.toURI().toString()
         }
+        val parent = file.parentFile ?: return null
+        if (!parent.isDirectory && !parent.mkdirs()) {
+            NPLogger.w(TAG, "create embedded cover cache directory failed: ${parent.path}")
+            return null
+        }
+        val cacheBytes = compactEmbeddedCoverForCache(embeddedPicture) ?: return null
         val tempFile = File(file.parentFile ?: context.filesDir, ".${file.name}.tmp")
-        tempFile.writeBytes(embeddedPicture)
+        tempFile.writeBytes(cacheBytes)
         if (!tempFile.renameTo(file)) {
-            file.writeBytes(embeddedPicture)
+            file.writeBytes(cacheBytes)
             tempFile.delete()
         }
         return file.toURI().toString()
+    }
+
+    private fun compactEmbeddedCoverForCache(sourceBytes: ByteArray): ByteArray? {
+        if (sourceBytes.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) return sourceBytes
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var targetDimension = MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX
+        repeat(3) {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = embeddedCoverCacheSampleSize(
+                    width = bounds.outWidth,
+                    height = bounds.outHeight,
+                    targetDimension = targetDimension
+                )
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val bitmap = BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, options)
+                ?: return null
+            try {
+                encodeEmbeddedCoverForCache(bitmap)?.let { return it }
+            } finally {
+                bitmap.recycle()
+            }
+            targetDimension = (targetDimension / 2).coerceAtLeast(1)
+        }
+        return null
+    }
+
+    internal fun embeddedCoverCacheSampleSize(
+        width: Int,
+        height: Int,
+        targetDimension: Int = MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX
+    ): Int {
+        if (width <= 0 || height <= 0 || targetDimension <= 0) return 1
+
+        var sampleSize = 1
+        while (
+            width.toLong() / sampleSize > targetDimension ||
+                height.toLong() / sampleSize > targetDimension
+        ) {
+            sampleSize = sampleSize shl 1
+        }
+        return sampleSize
+    }
+
+    private fun encodeEmbeddedCoverForCache(bitmap: Bitmap): ByteArray? {
+        return ByteArrayOutputStream().use { output ->
+            EDITABLE_COVER_JPEG_QUALITIES.forEach { quality ->
+                output.reset()
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                    return@forEach
+                }
+                val encoded = output.toByteArray()
+                if (encoded.isNotEmpty() && encoded.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) {
+                    return@use encoded
+                }
+            }
+            null
+        }
     }
 
     internal fun findNearbyLyricFiles(

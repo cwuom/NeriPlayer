@@ -37,6 +37,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,6 +47,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
@@ -180,6 +182,14 @@ private fun normalizeLocalScanMetadataText(value: String): String {
 }
 
 private val LOCAL_SCAN_METADATA_WHITESPACE = Regex("\\s+")
+
+internal fun shouldThrottleScanMetadataHydration(
+    workerSlot: Int,
+    playbackIntentActive: Boolean
+): Boolean = playbackIntentActive && workerSlot >= SCAN_METADATA_HYDRATION_PLAYBACK_PARALLELISM
+
+private const val SCAN_METADATA_HYDRATION_PLAYBACK_PARALLELISM = 1
+private const val SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS = 80L
 
 private class LocalScanDuplicateIndex(songs: List<SongItem>) {
     private val identities = HashSet<SongIdentity>(songs.size)
@@ -698,44 +708,66 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         val hydrationDispatcher = Dispatchers.IO.limitedParallelism(
             SCAN_METADATA_HYDRATION_PARALLELISM
         )
-        return coroutineScope {
-            songs.map { song ->
+        val hydratedSongs = arrayOfNulls<SongItem>(totalCount)
+        val nextSongIndex = AtomicInteger(0)
+        coroutineScope {
+            (0 until SCAN_METADATA_HYDRATION_PARALLELISM).map { workerSlot ->
                 async(hydrationDispatcher) {
-                    ensureActive()
-                    val hydratedSong = runCatching {
-                        LocalAudioImportManager.hydrateLocalSongTextMetadata(
-                            context = app,
-                            song = song,
-                            resolveCoverFallback = false
-                        )
-                    }.onFailure {
-                        NPLogger.w(
-                            TAG,
-                            "scan metadata hydration failed for ${song.name}: ${it.message}"
-                        )
-                    }.getOrDefault(song)
-                    val processed = processedCount.incrementAndGet()
-                    if (scanSessionId == sessionId) {
-                        _scanPreviewState.update { current ->
-                            if (scanSessionId != sessionId) {
-                                current
-                            } else {
-                                current.copy(
-                                    isScanning = true,
-                                    scanProgress = LocalAudioScanProgress(
-                                        phase = LocalAudioScanPhase.HYDRATING_METADATA,
-                                        processed = processed,
-                                        total = totalCount,
-                                        discoveredSongs = totalCount,
-                                        elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                    while (true) {
+                        ensureActive()
+                        awaitPlaybackSafeMetadataHydrationSlot(workerSlot)
+                        ensureActive()
+                        val songIndex = nextSongIndex.getAndIncrement()
+                        if (songIndex >= totalCount) break
+                        val song = songs[songIndex]
+
+                        val hydratedSong = runCatching {
+                            LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                context = app,
+                                song = song,
+                                resolveCoverFallback = false
+                            )
+                        }.onFailure {
+                            NPLogger.w(
+                                TAG,
+                                "scan metadata hydration failed for ${song.name}: ${it.message}"
+                            )
+                        }.getOrDefault(song)
+                        val processed = processedCount.incrementAndGet()
+                        if (scanSessionId == sessionId) {
+                            _scanPreviewState.update { current ->
+                                if (scanSessionId != sessionId) {
+                                    current
+                                } else {
+                                    current.copy(
+                                        isScanning = true,
+                                        scanProgress = LocalAudioScanProgress(
+                                            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+                                            processed = processed,
+                                            total = totalCount,
+                                            discoveredSongs = totalCount,
+                                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
+                        hydratedSongs[songIndex] = hydratedSong
                     }
-                    hydratedSong
                 }
             }.awaitAll()
+        }
+        return hydratedSongs.mapIndexed { index, hydratedSong -> hydratedSong ?: songs[index] }
+    }
+
+    private suspend fun awaitPlaybackSafeMetadataHydrationSlot(workerSlot: Int) {
+        while (
+            shouldThrottleScanMetadataHydration(
+                workerSlot = workerSlot,
+                playbackIntentActive = PlayerManager.playbackControlPlayingFlow.value
+            )
+        ) {
+            delay(SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS)
         }
     }
 

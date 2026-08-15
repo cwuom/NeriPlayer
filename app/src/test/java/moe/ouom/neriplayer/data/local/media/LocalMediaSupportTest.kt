@@ -80,6 +80,52 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `embedded cover cache sampling bounds oversized images`() {
+        assertEquals(
+            8,
+            LocalMediaSupport.embeddedCoverCacheSampleSize(
+                width = 4096,
+                height = 3072
+            )
+        )
+    }
+
+    @Test
+    fun `embedded cover cache sampling keeps small images unchanged`() {
+        assertEquals(
+            1,
+            LocalMediaSupport.embeddedCoverCacheSampleSize(
+                width = 512,
+                height = 320
+            )
+        )
+    }
+
+    @Test
+    fun `embedded cover cache lookup keeps both local path and SAF source`() {
+        val song = SongItem(
+            id = 12L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            localFilePath = "/storage/emulated/0/Music/song.flac",
+            mediaUri = "content://com.example.documents/document/song.flac",
+            channelId = "local"
+        )
+
+        assertEquals(
+            listOf(
+                "/storage/emulated/0/Music/song.flac",
+                "content://com.example.documents/document/song.flac"
+            ),
+            LocalMediaSupport.embeddedCoverCacheLookupKeys(song)
+        )
+    }
+
+    @Test
     fun `resolveContentShareFallbackReference prefers explicit media content uri`() {
         val fallbackUri = resolveContentShareFallbackReference(
             localUri = "file:///storage/emulated/0/Music/song.flac",
