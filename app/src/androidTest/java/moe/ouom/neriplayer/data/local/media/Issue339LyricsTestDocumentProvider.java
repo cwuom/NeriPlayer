@@ -18,9 +18,12 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String AUTHORITY = "moe.ouom.neriplayer.test.issue339lyrics";
@@ -58,6 +61,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final byte[] AUDIO_CONTENT = buildWaveContent();
     private static final String METADATA_DIRECTORY_NAME = "issue339-metadata";
     private static final String EXTRA_URI = "uri";
+    private static final String LARGE_AUDIO_PREFIX = "large-audio-";
+    private static final String CONFIGURE_LARGE_SCAN = "test:configureLargeScan";
+    private static final String QUERY_LARGE_SCAN_COUNT = "test:queryLargeScanCount";
+    private static final String RESET_LARGE_SCAN = "test:resetLargeScan";
+    private static final String COUNT_EXTRA = "count";
+    private static final String RESULT_EXTRA = "result";
+    private static volatile int configuredAudioCount = 1;
+    private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
     private static final int DIRECTORY_FLAGS =
         DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE;
 
@@ -79,6 +90,9 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         String[] selectionArgs,
         String sortOrder
     ) {
+        if (!isChildDocumentsUri(uri) && isLargeAudioDocument(documentId(uri))) {
+            largeAudioDocumentQueryCount.incrementAndGet();
+        }
         String[] columns = projection == null ? DEFAULT_DOCUMENT_COLUMNS : projection;
         MatrixCursor cursor = new MatrixCursor(columns);
         if (isChildDocumentsUri(uri)) {
@@ -148,6 +162,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
+        if (CONFIGURE_LARGE_SCAN.equals(method)) {
+            int count = extras == null ? 1 : extras.getInt(COUNT_EXTRA, 1);
+            configuredAudioCount = Math.max(1, count);
+            largeAudioDocumentQueryCount.set(0);
+            return new Bundle();
+        }
+        if (QUERY_LARGE_SCAN_COUNT.equals(method)) {
+            Bundle result = new Bundle();
+            result.putInt(RESULT_EXTRA, largeAudioDocumentQueryCount.get());
+            return result;
+        }
+        if (RESET_LARGE_SCAN.equals(method)) {
+            configuredAudioCount = 1;
+            largeAudioDocumentQueryCount.set(0);
+            return new Bundle();
+        }
         if ("android:findDocumentPath".equals(method)) {
             Bundle result = new Bundle();
             result.putParcelable(
@@ -223,6 +253,17 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return Collections.singletonList(MUSIC_ID);
         }
         if (MUSIC_ID.equals(parentDocumentId)) {
+            if (configuredAudioCount > 1) {
+                List<String> children = new ArrayList<>(configuredAudioCount + 2);
+                for (int index = 0; index < configuredAudioCount; index++) {
+                    children.add(largeAudioId(index));
+                }
+                children.add(LYRICS_ID);
+                if (metadataFile().isFile()) {
+                    children.add(METADATA_ID);
+                }
+                return children;
+            }
             if (metadataFile().isFile()) {
                 return Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID);
             }
@@ -261,6 +302,15 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_NAME;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_NAME;
         if (METADATA_ID.equals(documentId)) return METADATA_NAME;
+        if (isLargeAudioDocument(documentId)) {
+            int index = largeAudioIndex(documentId);
+            return String.format(
+                Locale.ROOT,
+                "Artist %04d - Track %04d.mp3",
+                index,
+                index
+            );
+        }
         return documentId;
     }
 
@@ -270,6 +320,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return DocumentsContract.Document.MIME_TYPE_DIR;
         }
         if (AUDIO_ID.equals(documentId)) return "audio/wav";
+        if (isLargeAudioDocument(documentId)) return "audio/mpeg";
         if (METADATA_ID.equals(documentId)) return "application/json";
         return "text/plain";
     }
@@ -280,6 +331,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     private byte[] contentFor(String documentId) {
         if (AUDIO_ID.equals(documentId)) return AUDIO_CONTENT;
+        if (isLargeAudioDocument(documentId)) return AUDIO_CONTENT;
         if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
@@ -291,6 +343,18 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             }
         }
         return EMPTY_CONTENT;
+    }
+
+    private static String largeAudioId(int index) {
+        return LARGE_AUDIO_PREFIX + index;
+    }
+
+    private static boolean isLargeAudioDocument(String documentId) {
+        return documentId != null && documentId.startsWith(LARGE_AUDIO_PREFIX);
+    }
+
+    private static int largeAudioIndex(String documentId) {
+        return Integer.parseInt(documentId.substring(LARGE_AUDIO_PREFIX.length()));
     }
 
     private File metadataFile() {

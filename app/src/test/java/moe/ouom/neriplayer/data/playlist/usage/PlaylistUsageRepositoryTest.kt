@@ -425,6 +425,30 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `sync local entries clears stale cover when local files becomes empty`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val knownCoverUrl = "file:///covers/stale-local.jpg"
+        val emptyLocalFiles = LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf()
+        )
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = knownCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(playlists = listOf(emptyLocalFiles))
+
+        assertTrue(repo.frequentPlaylistsFlow.value.isEmpty())
+    }
+
+    @Test
     fun `opening local playlist without cover does not clear known cover`() {
         val repo = PlaylistUsageRepository(mockContext())
         val knownCoverUrl = "file:///covers/known-local.jpg"

@@ -21,6 +21,28 @@ import kotlin.math.pow
 class NowPlayingScreenTest {
 
     @Test
+    fun `empty refresh for the same song keeps existing lyrics`() {
+        assertFalse(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = true,
+                loadedHasLyrics = false
+            )
+        )
+        assertTrue(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = true,
+                loadedHasLyrics = true
+            )
+        )
+        assertTrue(
+            shouldReplaceLyricsAfterRefresh(
+                sameSong = false,
+                loadedHasLyrics = false
+            )
+        )
+    }
+
+    @Test
     fun `collapsed stored lyrics bypass direct renderer parsing`() {
         val collapsedLyrics = """
             [00:00.00]First line

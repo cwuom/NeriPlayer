@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.download.storage.migration
 
 import android.content.Context
 import java.io.IOException
+import java.io.InputStream
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -11,6 +13,7 @@ import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -20,6 +23,13 @@ internal class ManagedDownloadMigrationFinalizer(
     private val rewriteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val deleteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val readText: (Context, String) -> String?,
+    private val openInputStream: (Context, ManagedDownloadStorage.StoredEntry) -> InputStream?,
+    private val parseDownloadedMetadata: (String) -> ManagedDownloadStorage.DownloadedAudioMetadata?,
+    private val findRootEntryByName: (
+        Context,
+        ManagedDownloadRootHandle,
+        String
+    ) -> ManagedDownloadStorage.StoredEntry?,
     private val writeRootText: (Context, ManagedDownloadRootHandle, String, String) -> ManagedDownloadStorage.StoredEntry?,
     private val deleteReference: (Context, String, ManagedDownloadRootHandle) -> Boolean,
     private val rewriteMetadataReferences: (String, Map<String, String>) -> String
@@ -52,6 +62,7 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: ManagedDownloadRootHandle,
+        targetRoot: ManagedDownloadRootHandle,
         progressTracker: ManagedMigrationProgressReporter? = null
     ): Int = coroutineScope {
         if (copiedEntries.isEmpty()) return@coroutineScope 0
@@ -59,7 +70,15 @@ internal class ManagedDownloadMigrationFinalizer(
         copiedEntries.map { migrationEntry ->
             async(Dispatchers.IO) {
                 cleanupLimiter.withPermit {
-                    cleanupMigratedEntry(context, copiedEntries.size, migrationEntry, sourceRoot, progressTracker)
+                    cleanupMigratedEntry(
+                        context = context,
+                        totalEntries = copiedEntries.size,
+                        migrationEntry = migrationEntry,
+                        copiedEntries = copiedEntries,
+                        sourceRoot = sourceRoot,
+                        targetRoot = targetRoot,
+                        progressTracker = progressTracker
+                    )
                 }
             }
         }.awaitAll().sum()
@@ -121,16 +140,25 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         totalEntries: Int,
         migrationEntry: CopiedMigrationEntry,
+        copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: ManagedDownloadRootHandle,
+        targetRoot: ManagedDownloadRootHandle,
         progressTracker: ManagedMigrationProgressReporter?
     ): Int {
         progressTracker?.startCleanup(totalEntries, migrationEntry.original.entry.name)
         val sourceSize = migrationEntry.original.entry.sizeBytes
         val copiedSize = migrationEntry.copiedEntry.sizeBytes
-        if (shouldKeepSourceForSizeMismatch(sourceSize, copiedSize)) {
+        val shouldKeepSource = shouldKeepSourceForMigrationSize(sourceSize, copiedSize) ||
+            !isMigrationTargetVerified(
+                context = context,
+                migrationEntry = migrationEntry,
+                copiedEntries = copiedEntries,
+                targetRoot = targetRoot
+            )
+        if (shouldKeepSource) {
             NPLogger.w(
                 tag,
-                "迁移后目标大小不匹配，跳过删除源文件: ${migrationEntry.original.entry.name}, source=$sourceSize, copied=$copiedSize"
+                "迁移后目标校验失败，跳过删除源文件: ${migrationEntry.original.entry.name}, source=$sourceSize, copied=$copiedSize"
             )
             progressTracker?.finishCleanup(migrationEntry.original.entry.name)
             return 1
@@ -142,6 +170,70 @@ internal class ManagedDownloadMigrationFinalizer(
         }.getOrDefault(false)
         progressTracker?.finishCleanup(migrationEntry.original.entry.name)
         return if (deleted) 0 else 1
+    }
+
+    private fun isMigrationTargetVerified(
+        context: Context,
+        migrationEntry: CopiedMigrationEntry,
+        copiedEntries: List<CopiedMigrationEntry>,
+        targetRoot: ManagedDownloadRootHandle
+    ): Boolean {
+        val sourceEntry = migrationEntry.original.entry
+        if (sourceEntry.extension !in audioExtensions) {
+            return true
+        }
+        val sourceDigest = sha256ForEntry(context, sourceEntry) ?: return false
+        val targetDigest = sha256ForEntry(context, migrationEntry.copiedEntry) ?: return false
+        if (sourceDigest != targetDigest) {
+            return false
+        }
+        val sourceMetadataEntry = copiedEntries.firstOrNull { candidate ->
+            candidate.original.subdirectory == null &&
+                candidate.original.entry.name == sourceEntry.name + METADATA_SUFFIX
+        } ?: return true
+        val plannedTargetMetadataEntry = copiedEntries.firstOrNull { candidate ->
+            candidate.original.subdirectory == null &&
+                candidate.copiedEntry.name == migrationEntry.copiedEntry.name + METADATA_SUFFIX
+        } ?: return false
+        val sourceMetadata = parseDownloadedMetadata(
+            readText(context, sourceMetadataEntry.original.entry.reference) ?: return false
+        ) ?: return false
+        val targetMetadata = parseDownloadedMetadata(
+            readText(
+                context,
+                findRootEntryByName(
+                    context,
+                    targetRoot,
+                    plannedTargetMetadataEntry.copiedEntry.name
+                )?.reference ?: plannedTargetMetadataEntry.copiedEntry.reference
+            ) ?: return false
+        ) ?: return false
+        return hasCompatibleStableKeys(
+            sourceStableKey = sourceMetadata.stableKey,
+            targetStableKey = targetMetadata.stableKey,
+            sourceReferences = sourceEntry.referencesForStableKeyVerification(),
+            targetReferences = migrationEntry.copiedEntry.referencesForStableKeyVerification()
+        )
+    }
+
+    private fun sha256ForEntry(
+        context: Context,
+        entry: ManagedDownloadStorage.StoredEntry
+    ): String? {
+        return runCatching {
+            openInputStream(context, entry)?.use(::sha256Hex)
+                ?: throw IOException("无法读取迁移校验文件: ${entry.name}")
+        }.onFailure { error ->
+            NPLogger.w(tag, "迁移文件 hash 校验失败: ${entry.reference}, ${error.message}")
+        }.getOrNull()
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.referencesForStableKeyVerification(): Set<String> {
+        return buildSet {
+            reference.takeIf(String::isNotBlank)?.let(::add)
+            mediaUri.takeIf(String::isNotBlank)?.let(::add)
+            localFilePath?.takeIf(String::isNotBlank)?.let(::add)
+        }
     }
 
     private fun rollbackMigratedEntry(
@@ -177,5 +269,49 @@ internal class ManagedDownloadMigrationFinalizer(
                 toleranceBytes = SAF_COMMITTED_SIZE_TOLERANCE_BYTES
             )
         }
+
+        internal fun shouldKeepSourceForMigrationSize(sourceSize: Long, copiedSize: Long): Boolean {
+            if (copiedSize <= 0L) {
+                return true
+            }
+            return sourceSize > 0L && shouldKeepSourceForSizeMismatch(sourceSize, copiedSize)
+        }
+
+        internal fun sha256Hex(input: InputStream): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(HASH_BUFFER_SIZE_BYTES)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) {
+                    return digest.digest().joinToString(separator = "") { byte ->
+                        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+                    }
+                }
+                if (count > 0) {
+                    digest.update(buffer, 0, count)
+                }
+            }
+        }
+
+        internal fun hasCompatibleStableKeys(
+            sourceStableKey: String?,
+            targetStableKey: String?,
+            sourceReferences: Set<String>,
+            targetReferences: Set<String>
+        ): Boolean {
+            val sourceKey = sourceStableKey?.trim()?.takeIf(String::isNotBlank)
+            val targetKey = targetStableKey?.trim()?.takeIf(String::isNotBlank)
+            if (sourceKey == targetKey) {
+                return true
+            }
+            if (sourceKey == null || targetKey == null) {
+                return false
+            }
+            val sourceContainsLocalReference = sourceReferences.any(sourceKey::contains)
+            val targetContainsLocalReference = targetReferences.any(targetKey::contains)
+            return sourceContainsLocalReference && targetContainsLocalReference
+        }
+
+        private const val HASH_BUFFER_SIZE_BYTES = 64 * 1024
     }
 }

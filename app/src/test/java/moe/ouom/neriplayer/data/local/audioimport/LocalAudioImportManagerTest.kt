@@ -307,6 +307,32 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `quick SAF scan keeps display name metadata without local file resolution`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate("%artist% - %title%")
+        try {
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = "content://tree/music/document/track-42",
+                    displayName = "Artist - Track 42.mp3",
+                    title = null,
+                    artist = null,
+                    album = null,
+                    durationMs = null
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("Track 42", song.name)
+            assertEquals("Artist", song.artist)
+            assertEquals("content://tree/music/document/track-42", song.mediaUri)
+            assertEquals("Artist - Track 42.mp3", song.localFileName)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
     fun `buildQuickImportedSong keeps cheap query metadata and nearby cover`() {
         val importedFile = tempFolder.newFile("cover_demo.mp3")
         val nearbyCover = File(importedFile.parentFile, "cover_demo.jpg").apply {

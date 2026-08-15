@@ -535,12 +535,22 @@ object LocalMediaSupport {
         return null
     }
 
-    fun inspectMetadataOnly(context: Context, song: SongItem): LocalMediaDetails? {
+    fun inspectMetadataOnly(
+        context: Context,
+        song: SongItem,
+        resolveCoverFallback: Boolean = true
+    ): LocalMediaDetails? {
         for (uri in song.localMediaUriCandidates()) {
             if (!uri.isSupportedLocalMediaUri()) {
                 continue
             }
-            runCatching { inspectMetadataOnly(context, uri) }
+            runCatching {
+                inspectMetadataOnly(
+                    context = context,
+                    uri = uri,
+                    resolveCoverFallback = resolveCoverFallback
+                )
+            }
                 .onSuccess { return it }
                 .onFailure {
                     NPLogger.w(TAG, "inspect metadata-only candidate failed for $uri: ${it.message}")
@@ -1446,7 +1456,11 @@ object LocalMediaSupport {
         )
     }
 
-    fun inspectMetadataOnly(context: Context, uri: Uri): LocalMediaDetails {
+    fun inspectMetadataOnly(
+        context: Context,
+        uri: Uri,
+        resolveCoverFallback: Boolean = true
+    ): LocalMediaDetails {
         val resolved = resolveInspectableLocalMedia(
             context = context,
             uri = uri,
@@ -1489,11 +1503,15 @@ object LocalMediaSupport {
             file = file,
             displayName = resolved.displayName
         )
-        val coverUri = runCatching {
-            resolveCoverUri(context, uri)
-        }.onFailure {
-            NPLogger.w(TAG, "resolve metadata-only cover failed for $uri: ${it.message}")
-        }.getOrNull()
+        val coverUri = if (resolveCoverFallback) {
+            runCatching {
+                resolveCoverUri(context, uri)
+            }.onFailure {
+                NPLogger.w(TAG, "resolve metadata-only cover failed for $uri: ${it.message}")
+            }.getOrNull()
+        } else {
+            null
+        }
 
         return LocalMediaDetails(
             sourceUri = uri,

@@ -17,7 +17,7 @@ class ManagedDownloadNamingTest {
             source = "netease"
         )
 
-        assertEquals("netease - 周杰伦 - 晴天", result)
+        assertTrue(result.matches(Regex("晴天 - 周杰伦 \\[[0-9a-f]{12}]")))
     }
 
     @Test
@@ -35,10 +35,11 @@ class ManagedDownloadNamingTest {
         )
 
         assertEquals(
-            "youtubeMusic - 张震岳 - 爱我别走",
+            "爱我别走 - 张震岳 [${managedDownloadIdentityHash(song)}]",
             renderManagedDownloadBaseName(song)
         )
         val candidates = candidateManagedDownloadBaseNames(song)
+        assertTrue(candidates.contains("爱我别走 - 张震岳 [${managedDownloadIdentityHash(song)}]"))
         assertTrue(candidates.contains("youtubeMusic - 张震岳 - 爱我别走"))
         assertTrue(candidates.contains("netease - 张震岳 - 爱我别走"))
     }
@@ -127,7 +128,7 @@ class ManagedDownloadNamingTest {
 
         val result = renderManagedDownloadBaseName(song, template = "%title%")
 
-        assertEquals("netease - Artist - A", result)
+        assertTrue(result.matches(Regex("A - Artist \\[[0-9a-f]{12}]")))
     }
 
     @Test
@@ -190,5 +191,44 @@ class ManagedDownloadNamingTest {
 
         assertTrue(candidates.contains("netease - 原歌手 - 原标题 (1)"))
         assertTrue(candidates.contains("netease - 原歌手 - 原标题"))
+    }
+
+    @Test
+    fun `default name keeps same title and artist tracks distinct by identity hash`() {
+        val first = SongItem(
+            id = 1L,
+            name = "同名歌曲",
+            artist = "同一歌手",
+            album = "专辑",
+            albumId = 10L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "remote-a"
+        )
+        val second = first.copy(id = 2L, audioId = "remote-b")
+
+        assertTrue(managedDownloadIdentityHash(first) != managedDownloadIdentityHash(second))
+        assertTrue(renderManagedDownloadBaseName(first) != renderManagedDownloadBaseName(second))
+    }
+
+    @Test
+    fun `hash placeholder renders the stable identity hash`() {
+        val song = SongItem(
+            id = 42L,
+            name = "歌曲",
+            artist = "歌手",
+            album = "专辑",
+            albumId = 7L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+
+        assertEquals(
+            managedDownloadIdentityHash(song),
+            renderManagedDownloadBaseName(song, template = "%hash%")
+        )
     }
 }

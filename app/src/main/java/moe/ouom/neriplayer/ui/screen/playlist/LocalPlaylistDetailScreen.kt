@@ -170,6 +170,8 @@ import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -1370,6 +1372,7 @@ fun LocalPlaylistDetailScreen(
             if (scanPreviewState.visible) {
                 LocalScanPreviewScreen(
                     isScanning = scanPreviewState.isScanning,
+                    scanProgress = scanPreviewState.scanProgress,
                     songs = scanPreviewState.songs,
                     query = scanPreviewState.query,
                     onQueryChange = vm::updateScanPreviewQuery,
@@ -1383,6 +1386,7 @@ fun LocalPlaylistDetailScreen(
                     onHideDuplicateMetadataSongsChange =
                         vm::updateScanPreviewHideDuplicateMetadataSongs,
                     duplicateMetadataKeys = scanPreviewState.duplicateMetadataKeys,
+                    metadataPendingKeys = scanPreviewState.metadataPendingKeys,
                     selectedKeys = scanPreviewState.selectedKeys,
                     onSelectedKeysChange = vm::updateScanPreviewSelection,
                     snackbarHostState = snackbarHostState,
@@ -2897,6 +2901,7 @@ private fun LocalMetadataProcessingCard(state: LocalMetadataProcessingState) {
 private data class LocalScanPreviewItem(
     val song: SongItem,
     val stableKey: String,
+    val rowKey: String,
     val title: String,
     val fileName: String,
     val filePath: String,
@@ -2905,7 +2910,10 @@ private data class LocalScanPreviewItem(
     val searchText: String
 )
 
-private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewItem {
+private fun SongItem.toLocalScanPreviewItem(
+    context: Context,
+    metadataPending: Boolean = false
+): LocalScanPreviewItem {
     val resolvedPath = localFilePath
         ?.takeIf { it.isNotBlank() }
         ?: mediaUri?.takeIf { it.startsWith("/") }
@@ -2919,7 +2927,7 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
         ?.name
         ?: localFileName?.takeIf { it.isNotBlank() }
         ?: displayName
-    val hasMetadata = hasMeaningfulPreviewMetadata(context, resolvedFileName)
+    val hasMetadata = metadataPending || hasMeaningfulPreviewMetadata(context, resolvedFileName)
     val subtitle = buildList {
         displayArtist.takeIf { it.isNotBlank() }?.let(::add)
         displayAlbum.takeIf { it.isNotBlank() }?.let(::add)
@@ -2929,6 +2937,7 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
     return LocalScanPreviewItem(
         song = this,
         stableKey = stableKey(),
+        rowKey = scanPreviewRowKey(),
         title = displayName,
         fileName = resolvedFileName,
         filePath = resolvedPath,
@@ -2937,6 +2946,14 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
         searchText = listOf(resolvedFileName, resolvedPath, displayName, displayArtist, displayAlbum)
             .joinToString("\n")
     )
+}
+
+private fun SongItem.scanPreviewRowKey(): String {
+    val source = mediaUri
+        ?.takeIf(String::isNotBlank)
+        ?: localFilePath?.takeIf(String::isNotBlank)
+        ?: localFileName?.takeIf(String::isNotBlank)
+    return source?.let { "local-scan:$it" } ?: "local-scan:${stableKey()}"
 }
 
 private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
@@ -2957,6 +2974,7 @@ private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: St
 @Composable
 private fun LocalScanPreviewScreen(
     isScanning: Boolean,
+    scanProgress: LocalAudioScanProgress = LocalAudioScanProgress(),
     songs: List<SongItem>,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -2968,6 +2986,7 @@ private fun LocalScanPreviewScreen(
     hideDuplicateMetadataSongs: Boolean = false,
     onHideDuplicateMetadataSongsChange: ((Boolean) -> Unit)? = null,
     duplicateMetadataKeys: Set<String> = emptySet(),
+    metadataPendingKeys: Set<String> = emptySet(),
     selectedKeys: Set<String>,
     onSelectedKeysChange: (Set<String>) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -2986,10 +3005,16 @@ private fun LocalScanPreviewScreen(
     val previewItems by produceState<List<LocalScanPreviewItem>>(
         initialValue = emptyList(),
         songs,
+        metadataPendingKeys,
         appContext
     ) {
         value = withContext(Dispatchers.Default) {
-            songs.map { it.toLocalScanPreviewItem(appContext) }
+            songs.map {
+                it.toLocalScanPreviewItem(
+                    context = appContext,
+                    metadataPending = it.stableKey() in metadataPendingKeys
+                )
+            }
         }
     }
     val listState = rememberLazyListState()
@@ -3019,33 +3044,6 @@ private fun LocalScanPreviewScreen(
             SearchTextMatcher.filterAndRank(query, candidates) { item ->
                 listOf(item.title, item.fileName, item.filePath, item.subtitle, item.searchText)
             }
-        }
-    }
-    LaunchedEffect(
-        metadataOnly,
-        hideExistingLocalPlaylistSongs,
-        existingLocalPlaylistKeys,
-        hideDuplicateMetadataSongs,
-        duplicateMetadataKeys,
-        previewItems
-    ) {
-        val hiddenKeys = buildSet {
-            if (metadataOnly) {
-                previewItems
-                    .asSequence()
-                    .filterNot { it.hasMetadata }
-                    .forEach { add(it.stableKey) }
-            }
-            if (hideExistingLocalPlaylistSongs) {
-                addAll(existingLocalPlaylistKeys)
-            }
-            if (hideDuplicateMetadataSongs) {
-                addAll(duplicateMetadataKeys)
-            }
-        }
-        val nextSelectedKeys = selectedKeys - hiddenKeys
-        if (nextSelectedKeys != selectedKeys) {
-            onSelectedKeysChange(nextSelectedKeys)
         }
     }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -3203,7 +3201,7 @@ private fun LocalScanPreviewScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .padding(bottom = LocalMiniPlayerHeight.current)
                 ) {
-                    if (isScanning && songs.isEmpty()) {
+                    if (isScanning) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(10.dp))
                     }
@@ -3247,7 +3245,7 @@ private fun LocalScanPreviewScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (isScanning && songs.isEmpty()) {
+            if (isScanning) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -3257,10 +3255,35 @@ private fun LocalScanPreviewScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         CircularProgressIndicator()
-                        Text(
-                            text = stringResource(R.string.download_scanning),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = stringResource(R.string.download_scanning),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = when (scanProgress.phase) {
+                                    LocalAudioScanPhase.TRAVERSING -> stringResource(
+                                        R.string.local_playlist_scan_progress_traversing,
+                                        scanProgress.visitedDirectories,
+                                        scanProgress.discoveredSongs
+                                    )
+                                    LocalAudioScanPhase.HYDRATING_METADATA -> stringResource(
+                                        R.string.local_playlist_scan_progress_metadata,
+                                        scanProgress.processed,
+                                        scanProgress.total
+                                    )
+                                    LocalAudioScanPhase.BUILDING_ENTRIES,
+                                    LocalAudioScanPhase.COMPLETED -> stringResource(
+                                        R.string.local_playlist_scan_progress_building,
+                                        scanProgress.processed,
+                                        scanProgress.total
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {
@@ -3334,7 +3357,7 @@ private fun LocalScanPreviewScreen(
                     ) {
                         itemsIndexed(
                             items = displayedItems,
-                            key = { _, item -> item.stableKey },
+                            key = { _, item -> item.rowKey },
                             contentType = { _, _ -> "local_scan_preview_song" }
                         ) { _, item ->
                             val selected = item.stableKey in selectedKeys

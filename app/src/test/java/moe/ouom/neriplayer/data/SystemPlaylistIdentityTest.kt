@@ -121,6 +121,28 @@ class SystemPlaylistIdentityTest {
     }
 
     @Test
+    fun `local files merge enriches the retained copy with a cover`() {
+        val remoteSong = remoteNeteaseSong()
+        val firstCopy = downloadedLocalCopy(remoteSong)
+        val secondCopy = downloadedLocalCopy(remoteSong).copy(
+            coverUrl = "content://downloads/Covers/song.jpg",
+            mediaUri = "/storage/emulated/0/Music/song-copy.mp3",
+            localFilePath = "/storage/emulated/0/Music/song-copy.mp3"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(firstCopy, secondCopy)
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals(1, merged.songs.size)
+        assertEquals(firstCopy.mediaUri, merged.songs.single().mediaUri)
+        assertEquals(secondCopy.coverUrl, merged.songs.single().coverUrl)
+    }
+
+    @Test
     fun `local files merge skips metadata fallback duplicates`() {
         val firstLocalSong = localFileSong(
             id = 1L,
@@ -140,6 +162,21 @@ class SystemPlaylistIdentityTest {
 
         assertEquals(1, merged.songs.size)
         assertEquals(firstLocalSong, merged.songs.single())
+    }
+
+    @Test
+    fun `empty local files merge does not retain a stale custom cover`() {
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(),
+            customCoverUrl = "file:///covers/stale-local.jpg"
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals(0, merged.songs.size)
+        assertEquals(null, merged.customCoverUrl)
     }
 
     private fun remoteNeteaseSong(): SongItem {

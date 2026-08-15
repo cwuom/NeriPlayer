@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
 import android.net.Uri
+import android.os.Bundle
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -11,6 +13,7 @@ import moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,7 +48,7 @@ class LocalAudioImportSafLyricsTest {
     }
 
     @Test
-    fun scanFolderCarriesLyricsDirectorySidecarsIntoSongItem() = runBlocking {
+    fun scanFolderReturnsFastEntriesAndHydratesLyricsAfterImport() = runBlocking {
         val treeUri = DocumentsContract.buildTreeDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
             Issue339LyricsTestDocumentProvider.ROOT_ID
@@ -54,17 +57,91 @@ class LocalAudioImportSafLyricsTest {
         val result = LocalAudioImportManager.scanFolderSongs(targetContext, treeUri)
 
         assertEquals(0, result.failedCount)
+        assertTrue(result.metadataDeferred)
         val song = result.songs.single()
+        assertNull(song.matchedLyric)
+        val hydratedSong = LocalAudioImportManager.hydrateLocalSongTextMetadata(
+            context = targetContext,
+            song = song
+        )
+        assertEquals("[00:00.10]original from Lyrics", hydratedSong.matchedLyric)
+        assertEquals("[00:00.10]translated from Lyrics", hydratedSong.matchedTranslatedLyric)
+    }
+
+    @Test
+    fun largeFolderScanUsesDirectoryRowsWithoutPerAudioQueries() = runBlocking {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioCount = 2_000
+        targetContext.contentResolver.call(
+            providerUri,
+            "test:configureLargeScan",
+            null,
+            Bundle().apply { putInt("count", audioCount) }
+        )
+
+        val startedAt = SystemClock.elapsedRealtime()
+        try {
+            val result = LocalAudioImportManager.scanFolderSongs(
+                targetContext,
+                DocumentsContract.buildTreeDocumentUri(
+                    Issue339LyricsTestDocumentProvider.AUTHORITY,
+                    Issue339LyricsTestDocumentProvider.ROOT_ID
+                )
+            )
+            val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+            val queryCount = targetContext.contentResolver.call(
+                providerUri,
+                "test:queryLargeScanCount",
+                null,
+                null
+            )?.getInt("result", -1)
+
+            assertEquals(0, result.failedCount)
+            assertEquals(audioCount, result.songs.size)
+            assertEquals(0, queryCount)
+            assertTrue(
+                "large SAF scan took ${elapsedMs}ms",
+                elapsedMs < 3_000L
+            )
+        } finally {
+            targetContext.contentResolver.call(providerUri, "test:resetLargeScan", null, null)
+        }
+    }
+
+    @Test
+    fun quickSafSongHydratesLyricsAfterImport() {
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = audioUri.toString(),
+                displayName = Issue339LyricsTestDocumentProvider.AUDIO_NAME,
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        val hydratedSong = LocalAudioImportManager.hydrateLocalSongTextMetadata(
+            context = targetContext,
+            song = quickSong
+        )
+
         assertEquals(
             "[00:00.10]original from Lyrics",
-            song.matchedLyric
+            hydratedSong.matchedLyric
         )
         assertEquals(
             "[00:00.10]translated from Lyrics",
-            song.matchedTranslatedLyric
+            hydratedSong.matchedTranslatedLyric
         )
-        assertEquals(song.matchedLyric, song.originalLyric)
-        assertEquals(song.matchedTranslatedLyric, song.originalTranslatedLyric)
     }
 
     @Test

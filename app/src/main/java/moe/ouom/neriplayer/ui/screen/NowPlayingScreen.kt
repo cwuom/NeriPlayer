@@ -1757,6 +1757,11 @@ private data class LoadedLyricsState(
     val embeddedPhoneticLyrics: List<LyricEntry>
 )
 
+internal fun shouldReplaceLyricsAfterRefresh(
+    sameSong: Boolean,
+    loadedHasLyrics: Boolean
+): Boolean = !sameSong || loadedHasLyrics
+
 internal fun shouldBypassCollapsedStoredLyric(rawLyric: String?): Boolean {
     return rawLyric?.let(::hasCollapsedTimedLyricTimeline) == true
 }
@@ -2009,11 +2014,7 @@ fun NowPlayingScreen(
     var showVolumeSheet by remember { mutableStateOf(false) }
     val volumeSheetState = rememberModalBottomSheetState()
 
-    val currentLyricSourceKey = Triple(
-        currentSong?.id,
-        currentSong?.mediaUri,
-        currentSong?.localFilePath
-    )
+    val currentLyricSourceKey = currentSong?.stableKey()
     var lyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var translatedLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
     var rawLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
@@ -2405,15 +2406,27 @@ fun NowPlayingScreen(
                 )
             )
         }
-        rawLyricsText = loadedLyricsState.rawLyrics
-        rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
-        rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
-        lyrics = loadedLyricsState.lyrics
-        translatedLyrics = loadedLyricsState.translatedLyrics
-        remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
-        plainLyrics = loadedLyricsState.plainLyrics
-        plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
-        embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+        if (song != null && currentSong?.sameIdentityAs(song) != true) {
+            return@LaunchedEffect
+        }
+        val loadedHasLyrics = loadedLyricsState.rawLyrics?.isNotBlank() == true ||
+            loadedLyricsState.rawTranslatedLyrics?.isNotBlank() == true ||
+            loadedLyricsState.rawPhoneticLyrics?.isNotBlank() == true ||
+            loadedLyricsState.lyrics.isNotEmpty() ||
+            loadedLyricsState.translatedLyrics.isNotEmpty() ||
+            loadedLyricsState.phoneticLyrics.isNotEmpty()
+        val sameSong = song != null
+        if (song == null || shouldReplaceLyricsAfterRefresh(sameSong, loadedHasLyrics)) {
+            rawLyricsText = loadedLyricsState.rawLyrics
+            rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
+            rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
+            lyrics = loadedLyricsState.lyrics
+            translatedLyrics = loadedLyricsState.translatedLyrics
+            remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
+            plainLyrics = loadedLyricsState.plainLyrics
+            plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
+            embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+        }
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics

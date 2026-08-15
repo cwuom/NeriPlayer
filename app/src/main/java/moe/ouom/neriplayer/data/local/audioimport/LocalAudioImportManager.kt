@@ -33,20 +33,20 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
+import androidx.annotation.RequiresApi
 import androidx.documentfile.provider.DocumentFile
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.model.identity
@@ -54,12 +54,75 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.coroutineContext
+
+enum class LocalAudioScanPhase {
+    TRAVERSING,
+    BUILDING_ENTRIES,
+    HYDRATING_METADATA,
+    COMPLETED
+}
+
+data class LocalAudioScanProgress(
+    val phase: LocalAudioScanPhase = LocalAudioScanPhase.COMPLETED,
+    val processed: Int = 0,
+    val total: Int = 0,
+    val discoveredSongs: Int = 0,
+    val visitedDirectories: Int = 0,
+    val elapsedMs: Long = 0L
+) {
+    val fraction: Float?
+        get() = total.takeIf { it > 0 }?.let {
+            (processed.toFloat() / it).coerceIn(0f, 1f)
+        }
+}
+
+private class LocalAudioScanProgressEmitter(
+    private val startedAt: Long,
+    private val onProgress: (LocalAudioScanProgress) -> Unit
+) {
+    private var lastReportedAt = 0L
+
+    fun emit(
+        phase: LocalAudioScanPhase,
+        processed: Int,
+        total: Int,
+        discoveredSongs: Int,
+        visitedDirectories: Int,
+        force: Boolean = false
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastReportedAt < PROGRESS_REPORT_INTERVAL_MS) {
+            return
+        }
+        lastReportedAt = now
+        runCatching {
+            onProgress(
+                LocalAudioScanProgress(
+                    phase = phase,
+                    processed = processed,
+                    total = total,
+                    discoveredSongs = discoveredSongs,
+                    visitedDirectories = visitedDirectories,
+                    elapsedMs = now - startedAt
+                )
+            )
+        }.onFailure {
+            NPLogger.w(TAG, "scan progress callback failed: ${it.message}")
+        }
+    }
+
+    private companion object {
+        const val PROGRESS_REPORT_INTERVAL_MS = 50L
+        const val TAG = "LocalAudioScanProgress"
+    }
+}
 
 data class LocalAudioImportResult(
     val songs: List<SongItem>,
     val failedCount: Int,
-    val completed: Boolean = true
+    val completed: Boolean = true,
+    val metadataDeferred: Boolean = false
 )
 
 internal data class SidecarCopyPlan(
@@ -97,7 +160,8 @@ private data class ExternalAudioCopyInfo(
 )
 
 private data class FolderScanCandidate(
-    val uri: Uri
+    val uri: Uri,
+    val displayName: String? = null
 )
 
 private data class FolderTraversalResult(
@@ -105,6 +169,11 @@ private data class FolderTraversalResult(
     val visitedDirectoryCount: Int,
     val failedCount: Int,
     val mode: String
+)
+
+internal data class ExternalStorageFolderMediaStoreScope(
+    val volumeName: String,
+    val relativePath: String
 )
 
 private data class QueriedFolderChild(
@@ -174,8 +243,9 @@ internal fun buildNearbySidecarCopyPlans(
 
 object LocalAudioImportManager {
     private const val TAG = "LocalAudioImport"
-    private const val FOLDER_SCAN_METADATA_PARALLELISM = 8
-    private const val FOLDER_SCAN_DEEP_METADATA_LIMIT = 120
+    private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+        "com.android.externalstorage.documents"
+    private const val EXTERNAL_STORAGE_PRIMARY_VOLUME_ID = "primary"
     private const val SCAN_NEARBY_COVER_LIMIT = 120
     private const val SCAN_PROGRESS_LOG_INTERVAL = 200
     private const val SLOW_SCAN_ITEM_THRESHOLD_MS = 120L
@@ -250,9 +320,21 @@ object LocalAudioImportManager {
         )
     }
 
-    suspend fun scanFolderSongs(context: Context, folderUri: Uri): LocalAudioImportResult = withContext(Dispatchers.IO) {
+    suspend fun scanFolderSongs(
+        context: Context,
+        folderUri: Uri,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val scanStartedAt = SystemClock.elapsedRealtime()
+        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            scanExternalStorageFolderWithMediaStore(context, folderUri, progress)?.let { result ->
+                return@withContext result
+            }
+        }
+
         val root = DocumentFile.fromTreeUri(context, folderUri)
         if (root == null) {
             NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
@@ -265,11 +347,11 @@ object LocalAudioImportManager {
 
         val traversalStartedAt = SystemClock.elapsedRealtime()
         val traversalResult = runCatching {
-            collectFolderCandidatesWithDocumentsContract(context, folderUri)
+            collectFolderCandidatesWithDocumentsContract(context, folderUri, progress)
         }.onFailure {
             NPLogger.w(TAG, "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${it.message}")
         }.getOrElse {
-            collectFolderCandidatesWithDocumentFile(root)
+            collectFolderCandidatesWithDocumentFile(root, progress)
         }
         val traversalElapsedMs = SystemClock.elapsedRealtime() - traversalStartedAt
         NPLogger.d(
@@ -277,70 +359,257 @@ object LocalAudioImportManager {
             "scanFolderSongs traversal finished: mode=${traversalResult.mode}, directories=${traversalResult.visitedDirectoryCount}, audioCandidates=${traversalResult.candidates.size}, failed=${traversalResult.failedCount}, elapsed=${traversalElapsedMs}ms"
         )
 
-        val metadataStartedAt = SystemClock.elapsedRealtime()
-        val processedCount = AtomicInteger(0)
-        val slowItemCount = AtomicInteger(0)
-        val useDeepMetadata = traversalResult.candidates.size <= FOLDER_SCAN_DEEP_METADATA_LIMIT
-        if (!useDeepMetadata) {
-            NPLogger.d(
-                TAG,
-                "scanFolderSongs uses quick metadata: candidates=${traversalResult.candidates.size}, deepLimit=$FOLDER_SCAN_DEEP_METADATA_LIMIT"
-            )
+        val candidateCount = traversalResult.candidates.size
+        progress.emit(
+            phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+            processed = 0,
+            total = candidateCount,
+            discoveredSongs = candidateCount,
+            visitedDirectories = traversalResult.visitedDirectoryCount,
+            force = true
+        )
+        NPLogger.d(
+            TAG,
+            "scanFolderSongs builds filename index: candidates=$candidateCount"
+        )
+        val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
+        val songs = buildList {
+            traversalResult.candidates.forEachIndexed { index, candidate ->
+                coroutineContext.ensureActive()
+                runCatching {
+                    buildQuickFolderScannedSong(
+                        candidate = candidate,
+                        unknownArtistLabel = unknownArtistLabel
+                    )
+                }.onFailure {
+                    NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
+                }.getOrNull()?.let(::add)
+                val processed = index + 1
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = processed,
+                    total = candidateCount,
+                    discoveredSongs = size,
+                    visitedDirectories = traversalResult.visitedDirectoryCount,
+                    force = processed == candidateCount
+                )
+            }
         }
-        val songs = coroutineScope {
-            val scanDispatcher = Dispatchers.IO.limitedParallelism(FOLDER_SCAN_METADATA_PARALLELISM)
-            traversalResult.candidates.map { candidate ->
-                async(scanDispatcher) {
-                    val itemStartedAt = SystemClock.elapsedRealtime()
-                    runCatching {
-                        if (useDeepMetadata) {
-                            buildFolderScannedSong(context, candidate.uri)
-                        } else {
-                            buildQuickImportedSong(
-                                context = context,
-                                uri = candidate.uri,
-                                resolveNearbyCover = false
-                            )
-                        }
-                    }.onFailure {
-                        NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
-                    }.also {
-                        val processed = processedCount.incrementAndGet()
-                        val costMs = SystemClock.elapsedRealtime() - itemStartedAt
-                        if (costMs >= SLOW_SCAN_ITEM_THRESHOLD_MS) {
-                            slowItemCount.incrementAndGet()
-                            NPLogger.d(TAG, "scanFolderSongs slow item: cost=${costMs}ms, uri=${candidate.uri}")
-                        }
-                        if (processed % SCAN_PROGRESS_LOG_INTERVAL == 0 || processed == traversalResult.candidates.size) {
-                            NPLogger.d(
-                                TAG,
-                                "scanFolderSongs metadata progress: processed=$processed/${traversalResult.candidates.size}, slowItems=${slowItemCount.get()}, elapsed=${SystemClock.elapsedRealtime() - metadataStartedAt}ms"
-                            )
-                        }
-                    }.getOrNull()
-                }
-            }.awaitAll()
-        }
-        val failed = traversalResult.failedCount + songs.count { it == null }
-        val metadataElapsedMs = SystemClock.elapsedRealtime() - metadataStartedAt
+        val failed = traversalResult.failedCount + (candidateCount - songs.size)
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.count { it != null }}, failed=$failed, slowItems=${slowItemCount.get()}, metadataElapsed=${metadataElapsedMs}ms, totalElapsed=${totalElapsedMs}ms"
+            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.size}, failed=$failed, metadataDeferred=${songs.isNotEmpty()}, totalElapsed=${totalElapsedMs}ms"
+        )
+
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = candidateCount,
+            total = candidateCount,
+            discoveredSongs = songs.size,
+            visitedDirectories = traversalResult.visitedDirectoryCount,
+            force = true
         )
 
         LocalAudioImportResult(
-            songs = songs.filterNotNull().distinctBy { it.identity() },
+            songs = songs.distinctBy { it.identity() },
             failedCount = failed,
-            completed = true
+            completed = true,
+            metadataDeferred = songs.isNotEmpty()
         )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private suspend fun scanExternalStorageFolderWithMediaStore(
+        context: Context,
+        folderUri: Uri,
+        progress: LocalAudioScanProgressEmitter
+    ): LocalAudioImportResult? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            return null
+        }
+        val scope = resolveExternalStorageFolderMediaStoreScope(context, folderUri) ?: return null
+        val audioUri = MediaStore.Audio.Media.getContentUri(scope.volumeName)
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.MediaColumns.DISPLAY_NAME
+        )
+        val selection = if (scope.relativePath.isBlank()) {
+            null
+        } else {
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? ESCAPE '\\'"
+        }
+        val selectionArgs = scope.relativePath
+            .takeIf(String::isNotBlank)
+            ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
+
+        return runCatching {
+            context.contentResolver.query(
+                audioUri,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val totalCount = cursor.count
+                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val displayNameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
+                val songs = ArrayList<SongItem>(totalCount.coerceAtLeast(0))
+
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = 0,
+                    total = totalCount,
+                    discoveredSongs = 0,
+                    visitedDirectories = 0,
+                    force = true
+                )
+                while (cursor.moveToNext()) {
+                    coroutineContext.ensureActive()
+                    val contentUri = Uri.withAppendedPath(
+                        audioUri,
+                        cursor.getLong(idIndex).toString()
+                    )
+                    val displayName = displayNameIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getString)
+                        ?.takeIf(String::isNotBlank)
+                        ?: contentUri.lastPathSegment
+                        ?: contentUri.toString()
+                    songs += buildQuickImportedSong(
+                        seed = QuickImportedSongSeed(
+                            sourceRef = contentUri.toString(),
+                            displayName = displayName,
+                            title = titleIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            artist = artistIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            album = albumIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getString),
+                            durationMs = durationIndex
+                                .takeIf { !cursor.isNull(it) }
+                                ?.let(cursor::getLong)
+                        ),
+                        unknownArtistLabel = unknownArtistLabel
+                    )
+                    val processed = songs.size
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = processed,
+                        total = totalCount,
+                        discoveredSongs = processed,
+                        visitedDirectories = 0,
+                        force = processed == totalCount
+                    )
+                }
+                progress.emit(
+                    phase = LocalAudioScanPhase.COMPLETED,
+                    processed = songs.size,
+                    total = totalCount,
+                    discoveredSongs = songs.size,
+                    visitedDirectories = 0,
+                    force = true
+                )
+                NPLogger.d(
+                    TAG,
+                    "scanFolderSongs MediaStore finished: volume=${scope.volumeName}, " +
+                        "relativePath=${scope.relativePath}, songs=${songs.size}"
+                )
+                LocalAudioImportResult(
+                    songs = songs.distinctBy { it.identity() },
+                    failedCount = 0,
+                    completed = true,
+                    metadataDeferred = false
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w(
+                TAG,
+                "scanFolderSongs MediaStore fast path unavailable for $folderUri: ${error.message}"
+            )
+        }.getOrNull()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun resolveExternalStorageFolderMediaStoreScope(
+        context: Context,
+        folderUri: Uri
+    ): ExternalStorageFolderMediaStoreScope? {
+        if (folderUri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) {
+            return null
+        }
+        val documentId = runCatching {
+            DocumentsContract.getTreeDocumentId(folderUri)
+        }.getOrElse {
+            runCatching { DocumentsContract.getDocumentId(folderUri) }.getOrNull()
+        } ?: return null
+        return parseExternalStorageFolderMediaStoreScope(
+            documentId = documentId,
+            knownVolumeNames = MediaStore.getExternalVolumeNames(context)
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    internal fun parseExternalStorageFolderMediaStoreScope(
+        documentId: String,
+        knownVolumeNames: Set<String>
+    ): ExternalStorageFolderMediaStoreScope? {
+        val separatorIndex = documentId.indexOf(':')
+        if (separatorIndex <= 0) {
+            return null
+        }
+        val volumeId = documentId.substring(0, separatorIndex)
+            .trim()
+            .takeIf(String::isNotBlank)
+            ?: return null
+        val volumeName = if (volumeId.equals(EXTERNAL_STORAGE_PRIMARY_VOLUME_ID, ignoreCase = true)) {
+            MediaStore.VOLUME_EXTERNAL_PRIMARY
+        } else {
+            knownVolumeNames.firstOrNull { knownName ->
+                knownName.equals(volumeId, ignoreCase = true)
+            }
+        } ?: return null
+        val relativePath = documentId
+            .substring(separatorIndex + 1)
+            .trim()
+            .trim('/')
+            .takeIf(String::isNotBlank)
+            ?.plus('/')
+            .orEmpty()
+        return ExternalStorageFolderMediaStoreScope(
+            volumeName = volumeName,
+            relativePath = relativePath
+        )
+    }
+
+    private fun escapeMediaStoreLikeValue(value: String): String {
+        return value
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
     }
 
     /**
      * 全盘扫描设备上的本地音频 (常见音乐格式)
      */
-    suspend fun scanDeviceSongs(context: Context): LocalAudioImportResult = withContext(Dispatchers.IO) {
+    suspend fun scanDeviceSongs(
+        context: Context,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val scanStartedAt = SystemClock.elapsedRealtime()
+        val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
         NPLogger.d(TAG, "scanDeviceSongs start")
         val songs = mutableListOf<SongItem>()
         var failed = 0
@@ -390,6 +659,13 @@ object LocalAudioImportManager {
                     coroutineContext.ensureActive()
                     val itemStartedAt = SystemClock.elapsedRealtime()
                     rawRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = rawRowCount,
+                        total = cursor.count,
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
                     val id = cursor.getLong(idxId)
                     val duration = cursor.getLong(idxDuration)
                     val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
@@ -435,6 +711,14 @@ object LocalAudioImportManager {
                     }
                 }
                 completed = true
+                progress.emit(
+                    phase = LocalAudioScanPhase.COMPLETED,
+                    processed = rawRowCount,
+                    total = rawRowCount,
+                    discoveredSongs = songs.size,
+                    visitedDirectories = 0,
+                    force = true
+                )
             }
         }.onFailure {
             NPLogger.e(TAG, "scanDeviceSongs failed: ${it.message}", it)
@@ -606,19 +890,49 @@ object LocalAudioImportManager {
         )
     }
 
-    fun hydrateLocalSongTextMetadata(context: Context, song: SongItem): SongItem {
+    fun hydrateLocalSongTextMetadata(
+        context: Context,
+        song: SongItem,
+        resolveCoverFallback: Boolean = true
+    ): SongItem {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
         }
         val details = runCatching {
-            LocalMediaSupport.inspectMetadataOnly(context, song)
+            LocalMediaSupport.inspectMetadataOnly(
+                context = context,
+                song = song,
+                resolveCoverFallback = resolveCoverFallback
+            )
         }.onFailure {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         }.getOrNull() ?: return song
+        val lyricMetadata = song.localMediaUri()?.let { sourceUri ->
+            runCatching {
+                LocalMediaSupport.inspectLyricsForScan(context, sourceUri)
+            }.onFailure {
+                NPLogger.w(
+                    TAG,
+                    "hydrate local text sidecars failed for ${song.name}: ${it.message}"
+                )
+            }.getOrNull()
+        }
+        val detailedSong = LocalMediaSupport.toSongItem(details).let { embeddedSong ->
+            val resolvedLyric = lyricMetadata?.lyric ?: embeddedSong.matchedLyric
+            val resolvedTranslatedLyric = lyricMetadata?.translatedLyric
+                ?: embeddedSong.matchedTranslatedLyric
+            embeddedSong.copy(
+                matchedLyric = resolvedLyric,
+                matchedTranslatedLyric = resolvedTranslatedLyric,
+                originalLyric = resolvedLyric ?: embeddedSong.originalLyric,
+                originalTranslatedLyric = resolvedTranslatedLyric
+                    ?: embeddedSong.originalTranslatedLyric
+            )
+        }
 
         return mergeImportedSongMetadata(
             quickSong = song,
-            detailedSong = LocalMediaSupport.toSongItem(details)
+            detailedSong = detailedSong
         )
     }
 
@@ -757,7 +1071,8 @@ object LocalAudioImportManager {
 
     private fun collectFolderCandidatesWithDocumentsContract(
         context: Context,
-        folderUri: Uri
+        folderUri: Uri,
+        progress: LocalAudioScanProgressEmitter
     ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
@@ -767,6 +1082,13 @@ object LocalAudioImportManager {
         while (pendingDirectories.isNotEmpty()) {
             val directoryUri = pendingDirectories.removeFirst()
             visitedDirectoryCount++
+            progress.emit(
+                phase = LocalAudioScanPhase.TRAVERSING,
+                processed = visitedDirectoryCount,
+                total = 0,
+                discoveredSongs = candidates.size,
+                visitedDirectories = visitedDirectoryCount
+            )
             val children = queryFolderChildren(context, directoryUri)
             if (children == null) {
                 failed++
@@ -775,7 +1097,12 @@ object LocalAudioImportManager {
             for (child in children) {
                 when {
                     child.isDirectory -> pendingDirectories.add(child.documentUri)
-                    child.isSupportedAudioDocument() -> candidates += FolderScanCandidate(child.documentUri)
+                    child.isSupportedAudioDocument() -> {
+                        candidates += FolderScanCandidate(
+                            uri = child.documentUri,
+                            displayName = child.displayName
+                        )
+                    }
                 }
             }
         }
@@ -788,7 +1115,10 @@ object LocalAudioImportManager {
         )
     }
 
-    private fun collectFolderCandidatesWithDocumentFile(root: DocumentFile): FolderTraversalResult {
+    private fun collectFolderCandidatesWithDocumentFile(
+        root: DocumentFile,
+        progress: LocalAudioScanProgressEmitter
+    ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
         var visitedDirectoryCount = 0
@@ -797,6 +1127,13 @@ object LocalAudioImportManager {
         while (pendingDirectories.isNotEmpty()) {
             val directory = pendingDirectories.removeFirst()
             visitedDirectoryCount++
+            progress.emit(
+                phase = LocalAudioScanPhase.TRAVERSING,
+                processed = visitedDirectoryCount,
+                total = 0,
+                discoveredSongs = candidates.size,
+                visitedDirectories = visitedDirectoryCount
+            )
             val children = runCatching { directory.listFiles() }
                 .onFailure {
                     failed++
@@ -809,7 +1146,10 @@ object LocalAudioImportManager {
                 when {
                     child.isDirectory -> pendingDirectories.add(child)
                     child.isFile && child.isSupportedAudioDocument() -> {
-                        candidates += FolderScanCandidate(child.uri)
+                        candidates += FolderScanCandidate(
+                            uri = child.uri,
+                            displayName = child.name
+                        )
                     }
                 }
             }
@@ -869,6 +1209,26 @@ object LocalAudioImportManager {
     private fun resolveDocumentId(uri: Uri): String? {
         return runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
             ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+    }
+
+    private fun buildQuickFolderScannedSong(
+        candidate: FolderScanCandidate,
+        unknownArtistLabel: String
+    ): SongItem {
+        return buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = candidate.uri.toString(),
+                displayName = candidate.displayName
+                    ?.takeIf(String::isNotBlank)
+                    ?: candidate.uri.lastPathSegment
+                    ?: candidate.uri.toString(),
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null
+            ),
+            unknownArtistLabel = unknownArtistLabel
+        )
     }
 
     private fun buildQuickImportedSong(
@@ -1050,7 +1410,12 @@ object LocalAudioImportManager {
     private fun shouldCopyExternalAudio(targetFile: File, expectedBytes: Long?): Boolean {
         if (!targetFile.exists()) return true
         if (!targetFile.isFile) return true
-        return expectedBytes != null && targetFile.length() != expectedBytes
+        if (targetFile.length() <= 0L) return true
+        return expectedBytes != null &&
+            !ManagedDownloadSizePolicy.isTransferSizeComplete(
+                expectedSizeBytes = expectedBytes,
+                actualSizeBytes = targetFile.length()
+            )
     }
 
     private fun copyExternalAudioToTarget(
@@ -1081,7 +1446,7 @@ object LocalAudioImportManager {
                     output.fd.sync()
                 }
             } ?: error("Unable to open external audio stream")
-            if (expectedBytes != null && copiedBytes != expectedBytes) {
+            if (!ManagedDownloadSizePolicy.isTransferSizeComplete(expectedBytes, copiedBytes)) {
                 error("External audio copy size mismatch: expected=$expectedBytes actual=$copiedBytes")
             }
             if (targetFile.exists() && !targetFile.delete()) {

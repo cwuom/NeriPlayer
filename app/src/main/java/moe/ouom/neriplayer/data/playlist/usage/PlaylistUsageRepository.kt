@@ -486,19 +486,23 @@ class PlaylistUsageRepository internal constructor(
                     playlistName = playlist.name,
                     context = localizedContext
                 )?.currentName ?: playlist.name
-                val refreshedPicUrl = playlist.displayCoverUrl(
-                    context = localizedContext,
-                    resolveLocalMetadataFallback = true,
-                    additionalCoverCandidates = if (LocalFilesPlaylist.isSystemPlaylist(
-                            playlist,
-                            localizedContext
-                        )
-                    ) {
-                        localFilesCoverCandidates
-                    } else {
-                        emptyList()
-                    }
-                )?.takeIf { it.isNotBlank() } ?: entry.picUrl
+                val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(
+                    playlist,
+                    localizedContext
+                )
+                val refreshedPicUrl = if (isLocalFilesPlaylist && playlist.songs.isEmpty()) {
+                    null
+                } else {
+                    playlist.displayCoverUrl(
+                        context = localizedContext,
+                        resolveLocalMetadataFallback = true,
+                        additionalCoverCandidates = if (isLocalFilesPlaylist) {
+                            localFilesCoverCandidates
+                        } else {
+                            emptyList()
+                        }
+                    )?.takeIf { it.isNotBlank() } ?: entry.picUrl
+                }
                 val refreshedTrackCount = playlist.songs.size
                 if (
                     entry.name == refreshedName &&

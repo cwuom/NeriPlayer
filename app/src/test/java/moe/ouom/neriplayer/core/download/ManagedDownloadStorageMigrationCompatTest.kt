@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -374,6 +375,77 @@ class ManagedDownloadStorageMigrationCompatTest {
                 sourceSize = 0L,
                 copiedSize = 1L
             )
+        )
+    }
+
+    @Test
+    fun `migration verifies content with streaming sha256`() {
+        assertEquals(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ManagedDownloadMigrationFinalizer.sha256Hex(
+                ByteArrayInputStream("abc".toByteArray())
+            )
+        )
+    }
+
+    @Test
+    fun `migration requires matching remote stable identity before source cleanup`() {
+        assertTrue(
+            ManagedDownloadMigrationFinalizer.hasCompatibleStableKeys(
+                sourceStableKey = "netease:track-a",
+                targetStableKey = "netease:track-a",
+                sourceReferences = setOf("/old/track-a.flac"),
+                targetReferences = setOf("/new/track-a.flac")
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationFinalizer.hasCompatibleStableKeys(
+                sourceStableKey = "netease:track-a",
+                targetStableKey = "netease:track-b",
+                sourceReferences = setOf("/old/track-a.flac"),
+                targetReferences = setOf("/new/track-b.flac")
+            )
+        )
+    }
+
+    @Test
+    fun `migration accepts rewritten local stable references only for matching local paths`() {
+        assertTrue(
+            ManagedDownloadMigrationFinalizer.hasCompatibleStableKeys(
+                sourceStableKey = "1|local|/old/track.flac",
+                targetStableKey = "1|local|/new/track.flac",
+                sourceReferences = setOf("/old/track.flac"),
+                targetReferences = setOf("/new/track.flac")
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationFinalizer.hasCompatibleStableKeys(
+                sourceStableKey = "1|local|/old/track.flac",
+                targetStableKey = "1|local|different-target",
+                sourceReferences = setOf("/old/track.flac"),
+                targetReferences = setOf("/new/track.flac")
+            )
+        )
+    }
+
+    @Test
+    fun `migration hashes source when its provider does not report a size`() {
+        assertFalse(
+            ManagedDownloadMigrationFinalizer.shouldKeepSourceForMigrationSize(
+                sourceSize = 0L,
+                copiedSize = 100L
+            )
+        )
+    }
+
+    @Test
+    fun `migration cannot switch directory while source cleanup remains incomplete`() {
+        assertFalse(
+            ManagedDownloadStorage.MigrationResult(
+                movedFiles = 2,
+                skippedFiles = 0,
+                cleanupFailedFiles = 1
+            ).canSwitchDirectory
         )
     }
 

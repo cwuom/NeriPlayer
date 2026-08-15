@@ -71,12 +71,19 @@ object LocalFilesPlaylist {
             deduper.addAll(playlist.songs)
         }
 
+        val songs = deduper.takeSongs()
         return LocalPlaylist(
             id = SYSTEM_ID,
             name = currentName(context),
-            songs = deduper.takeSongs(),
+            songs = songs,
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
-            customCoverUrl = playlists.lastOrNull { !it.customCoverUrl.isNullOrBlank() }?.customCoverUrl,
+            customCoverUrl = songs
+                .takeIf { it.isNotEmpty() }
+                ?.let {
+                    playlists.lastOrNull { playlist ->
+                        !playlist.customCoverUrl.isNullOrBlank()
+                    }?.customCoverUrl
+                },
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
         )
     }

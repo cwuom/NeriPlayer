@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -93,13 +94,23 @@ fun rememberPlaylistDisplayCoverUrl(
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val playlistKey = remember(playlist, resolveLocalFallback, additionalCoverCandidates) {
-        playlist?.coverResolutionKey(resolveLocalFallback)
+    val effectivePlaylist = remember(playlist, appContext) {
+        playlist?.takeUnless {
+            it.songs.isEmpty() && LocalFilesPlaylist.isSystemPlaylist(it, appContext)
+        }
+    }
+    val effectiveCoverCandidates = if (effectivePlaylist == null) {
+        emptyList()
+    } else {
+        additionalCoverCandidates
+    }
+    val playlistKey = remember(effectivePlaylist, resolveLocalFallback, effectiveCoverCandidates) {
+        effectivePlaylist?.coverResolutionKey(resolveLocalFallback)
     }
     var coverUrl by remember(playlistKey, downloadPresenceVersion) {
         mutableStateOf(
             cachedResolvedCover(playlistKey)
-                ?: playlist?.displayCoverUrl(additionalCoverCandidates)
+                ?: effectivePlaylist?.displayCoverUrl(effectiveCoverCandidates)
         )
     }
 
@@ -110,12 +121,12 @@ fun rememberPlaylistDisplayCoverUrl(
         resolveLocalFallback,
         additionalCoverCandidates
     ) {
-        if (playlist == null) {
+        if (effectivePlaylist == null) {
             coverUrl = null
             return@LaunchedEffect
         }
 
-        val immediateCover = playlist.displayCoverUrl(additionalCoverCandidates)
+        val immediateCover = effectivePlaylist.displayCoverUrl(effectiveCoverCandidates)
         cachedResolvedCover(playlistKey)?.let { cachedCover ->
             coverUrl = cachedCover
         }
@@ -130,10 +141,10 @@ fun rememberPlaylistDisplayCoverUrl(
         }
 
         val resolvedCover = withContext(coverResolutionDispatcher) {
-            playlist.displayCoverUrl(
+            effectivePlaylist.displayCoverUrl(
                 context = appContext,
                 resolveLocalMetadataFallback = resolveLocalFallback,
-                additionalCoverCandidates = additionalCoverCandidates
+                additionalCoverCandidates = effectiveCoverCandidates
             )
         }
         if (!resolvedCover.isNullOrBlank()) {

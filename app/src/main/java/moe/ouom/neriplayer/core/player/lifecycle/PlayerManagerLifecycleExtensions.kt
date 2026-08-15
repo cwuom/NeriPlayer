@@ -932,6 +932,7 @@ internal fun PlayerManager.initializeImpl(
                 } else {
                     lyriconUpdateJob?.cancel()
                     lyriconUpdateJob = null
+                    lyriconSong = null
                 }
             }
         }
@@ -1277,6 +1278,7 @@ internal fun PlayerManager.initializeImpl(
         }
         runCatching {
             LyriconManager.release()
+            lyriconSong = null
             NPLogger.d("NERI-PlayerManager", "initialize(): rollback released lyricon")
         }.onFailure {
             NPLogger.w("NERI-PlayerManager", "initialize(): rollback release lyricon failed: ${it.message}")
@@ -3799,6 +3801,7 @@ internal fun PlayerManager.releaseImpl() {
         genericUrlPrefetchCache.clear()
         lyriconUpdateJob?.cancel()
         lyriconUpdateJob = null
+        lyriconSong = null
         externalBluetoothLyricsLoadJob?.cancel()
         externalBluetoothLyricsLoadJob = null
         externalBluetoothTranslationLoadJob?.cancel()

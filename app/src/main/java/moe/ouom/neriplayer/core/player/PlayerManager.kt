@@ -314,6 +314,7 @@ object PlayerManager {
     internal var mainScope = newMainScope()
     internal var progressJob: Job? = null
     internal var lyriconUpdateJob: Job? = null
+    internal var lyriconSong: SongItem? = null
     internal var externalBluetoothLyricsLoadJob: Job? = null
     internal var externalBluetoothTranslationLoadJob: Job? = null
     internal var volumeFadeJob: Job? = null
@@ -792,24 +793,34 @@ object PlayerManager {
     }
 
     internal fun syncLyriconSong(song: SongItem?) {
+        val previousLyriconSong = lyriconSong
+        val sameSong = previousLyriconSong?.sameIdentityAs(song) == true
         lyriconUpdateJob?.cancel()
         if (!lyriconEnabled) {
             lyriconUpdateJob = null
+            lyriconSong = null
             LyriconManager.setPlaybackState(false)
             return
         }
         if (song == null) {
             lyriconUpdateJob = null
+            lyriconSong = null
             LyriconManager.setPlaybackState(false)
             LyriconManager.setPosition(0L)
             return
         }
-        LyriconManager.updateSong(song, lyrics = null, translatedLyrics = null)
+        lyriconSong = song
+        if (!sameSong) {
+            LyriconManager.updateSong(song, lyrics = null, translatedLyrics = null)
+        }
         lyriconUpdateJob = ioScope.launch {
             val lyrics = getLyrics(song)
             val translatedLyrics = getTranslatedLyrics(song)
             if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
-                LyriconManager.updateSong(song, lyrics, translatedLyrics)
+                val hasLoadedLyrics = lyrics.isNotEmpty() || translatedLyrics.isNotEmpty()
+                if (!sameSong || hasLoadedLyrics) {
+                    LyriconManager.updateSong(song, lyrics, translatedLyrics)
+                }
             }
         }
     }

@@ -21,36 +21,68 @@ internal object ManagedDownloadStorageLookup {
     ): ManagedDownloadAudioLookupResult? {
         val identity = song.identity()
         val stableKey = identity.stableKey()
-        val localReferences = listOfNotNull(song.localFilePath, song.mediaUri)
-            .filter { it.startsWith("/" ) || it.startsWith("content://", ignoreCase = true) }
-            .distinct()
-        localReferences.firstNotNullOfOrNull { reference ->
-            snapshot.audioEntriesByLookupKey[reference]
-        }?.let { return ManagedDownloadAudioLookupResult(it, "localReference") }
         val remoteTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
             song.channelId,
             song.audioId,
             song.subAudioId
         )
+        val requiresVerifiedRemoteIdentity = song.requiresVerifiedRemoteDownloadIdentity(
+            remoteTrackKey = remoteTrackKey
+        )
 
-        snapshot.audioEntriesByStableKey[stableKey]
-            ?.let { matches ->
-                pickBestAudioEntry(matches, song, fileNameTemplate)
-                    ?.let { return ManagedDownloadAudioLookupResult(it, "stableKey") }
-            }
+        val localReferences = listOfNotNull(song.localFilePath, song.mediaUri)
+            .filter { it.startsWith("/") || it.startsWith("content://", ignoreCase = true) }
+            .distinct()
+        localReferences.firstNotNullOfOrNull { reference ->
+            snapshot.audioEntriesByLookupKey[reference]
+        }?.let { return ManagedDownloadAudioLookupResult(it, "localReference") }
 
-        remoteTrackKey?.let { key ->
-            snapshot.audioEntriesByRemoteTrackKey[key]
+        if (requiresVerifiedRemoteIdentity) {
+            snapshot.audioEntriesByStableKey[stableKey]
                 ?.let { matches ->
                     pickBestAudioEntry(matches, song, fileNameTemplate)
-                        ?.let { return ManagedDownloadAudioLookupResult(it, "remoteTrackKey") }
+                        ?.let { return ManagedDownloadAudioLookupResult(it, "stableKey") }
                 }
+
+            remoteTrackKey?.let { key ->
+                snapshot.audioEntriesByRemoteTrackKey[key]
+                    ?.let { matches ->
+                        pickBestAudioEntry(matches, song, fileNameTemplate)
+                            ?.let { return ManagedDownloadAudioLookupResult(it, "remoteTrackKey") }
+                    }
+            }
+        }
+
+        if (!requiresVerifiedRemoteIdentity) {
+            snapshot.audioEntriesByStableKey[stableKey]
+                ?.let { matches ->
+                    pickBestAudioEntry(matches, song, fileNameTemplate)
+                        ?.let { return ManagedDownloadAudioLookupResult(it, "stableKey") }
+                }
+        }
+
+        if (!requiresVerifiedRemoteIdentity) {
+            remoteTrackKey?.let { key ->
+                snapshot.audioEntriesByRemoteTrackKey[key]
+                    ?.let { matches ->
+                        pickBestAudioEntry(matches, song, fileNameTemplate)
+                            ?.let { return ManagedDownloadAudioLookupResult(it, "remoteTrackKey") }
+                    }
+            }
         }
 
         identity.mediaUri?.let { mediaUri ->
             snapshot.audioEntriesByMediaUri[mediaUri]
                 ?.let { matches ->
                     pickBestAudioEntry(matches, song, fileNameTemplate)
+                        ?.takeIf { entry ->
+                            !requiresVerifiedRemoteIdentity || entryMatchesRemoteIdentity(
+                                snapshot = snapshot,
+                                entry = entry,
+                                stableKey = stableKey,
+                                remoteTrackKey = remoteTrackKey
+                            )
+                        }
                         ?.let { return ManagedDownloadAudioLookupResult(it, "mediaUri") }
                 }
         }
@@ -59,10 +91,21 @@ internal object ManagedDownloadStorageLookup {
             snapshot.audioEntriesBySongId[songId]
                 ?.let { matches ->
                     pickBestAudioEntry(matches, song, fileNameTemplate)
+                        ?.takeIf { entry ->
+                            !requiresVerifiedRemoteIdentity || entryMatchesRemoteIdentity(
+                                snapshot = snapshot,
+                                entry = entry,
+                                stableKey = stableKey,
+                                remoteTrackKey = remoteTrackKey
+                            )
+                        }
                         ?.let { return ManagedDownloadAudioLookupResult(it, "songId") }
                 }
         }
 
+        if (requiresVerifiedRemoteIdentity) {
+            return null
+        }
         val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         return findAudioEntry(snapshot.audioEntriesWithoutMetadata, baseNames)
             ?.let { ManagedDownloadAudioLookupResult(it, "legacyNameFallback") }
@@ -107,5 +150,34 @@ internal object ManagedDownloadStorageLookup {
         val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         return findAudioEntry(audioEntries, baseNames)
             ?: audioEntries.maxByOrNull(ManagedDownloadStorage.StoredEntry::lastModifiedMs)
+    }
+
+    private fun SongItem.requiresVerifiedRemoteDownloadIdentity(remoteTrackKey: String?): Boolean {
+        val sourceIdentity = sourceStableKey?.trim()?.takeIf(String::isNotBlank)
+        if (sourceIdentity != null || remoteTrackKey != null) {
+            return true
+        }
+        val sourceChannel = channelId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+        return sourceChannel != null && id > 0L
+    }
+
+    private fun entryMatchesRemoteIdentity(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        entry: ManagedDownloadStorage.StoredEntry,
+        stableKey: String,
+        remoteTrackKey: String?
+    ): Boolean {
+        val metadata = snapshot.metadataByAudioName[entry.name] ?: return false
+        if (metadata.stableKey == stableKey) {
+            return true
+        }
+        val entryRemoteTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
+            metadata.channelId,
+            metadata.audioId,
+            metadata.subAudioId
+        )
+        return remoteTrackKey != null && remoteTrackKey == entryRemoteTrackKey
     }
 }

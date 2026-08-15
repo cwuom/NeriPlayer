@@ -57,6 +57,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -436,7 +437,10 @@ object AudioDownloadManager {
     }
 
     internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean {
-        return expectedBytes == null || expectedBytes <= 0L || actualBytes == expectedBytes
+        return ManagedDownloadSizePolicy.isTransferSizeComplete(
+            expectedSizeBytes = expectedBytes,
+            actualSizeBytes = actualBytes
+        )
     }
 
     internal fun resolveDownloadTransportKind(
@@ -3189,7 +3193,8 @@ object AudioDownloadManager {
         )
         return@withContext DownloadedPayloadSummary(
             actualBytes = downloadedBytes,
-            expectedBytes = totalBytesHint.takeIf { it > 0L }
+            // hls segments can drop transport ID3 frames, so the source hint is only progress metadata
+            expectedBytes = null
         )
     }
 

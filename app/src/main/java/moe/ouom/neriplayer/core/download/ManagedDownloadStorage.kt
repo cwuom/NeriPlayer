@@ -166,6 +166,11 @@ internal object ManagedDownloadStorage {
         rewriteParallelism = ::migrationRewriteParallelism,
         deleteParallelism = ::migrationDeleteParallelism,
         readText = { context, reference -> readTextInternal(context, reference) },
+        openInputStream = { context, entry -> openStoredEntryInputStream(context, entry) },
+        parseDownloadedMetadata = ::parseDownloadedAudioMetadataJson,
+        findRootEntryByName = { context, root, name ->
+            listChildren(context, root).firstOrNull { entry -> entry.name == name }
+        },
         writeRootText = { context, root, displayName, content ->
             writeRootText(
                 context = context,
@@ -314,7 +319,7 @@ internal object ManagedDownloadStorage {
         val cleanupFailedFiles: Int = 0
     ) {
         val canSwitchDirectory: Boolean
-            get() = skippedFiles == 0
+            get() = skippedFiles == 0 && cleanupFailedFiles == 0
     }
 
     enum class MigrationStage {
@@ -612,6 +617,7 @@ internal object ManagedDownloadStorage {
                 context = context,
                 copiedEntries = copiedEntries,
                 sourceRoot = sourceRoot,
+                targetRoot = targetRoot,
                 progressTracker = progressTracker
             )
             progressTracker.finishAll()
@@ -906,6 +912,31 @@ internal object ManagedDownloadStorage {
             ?.takeIf { refreshedEntry -> isReferenceAccessible(context, refreshedEntry.playbackUri) }
     }
 
+    suspend fun refreshStoredEntry(
+        context: Context,
+        reference: String?
+    ): StoredEntry? = withContext(Dispatchers.IO) {
+        val target = reference?.takeIf { it.isNotBlank() } ?: return@withContext null
+        val cachedEntry = buildDownloadLibrarySnapshotBlocking(context)
+            .audioEntriesByLookupKey[target]
+        val directEntry = refreshStoredEntryDirect(
+            context = context,
+            reference = target,
+            cachedEntry = cachedEntry
+        )
+        if (directEntry != null) {
+            updateSnapshotCacheAfterStoredEntryWrite(
+                context = context,
+                storedEntry = directEntry,
+                bucket = SnapshotEntryBucket.AUDIO
+            )
+            return@withContext directEntry
+        }
+        buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
+            .audioEntriesByLookupKey[target]
+            ?.takeIf { refreshedEntry -> isReferenceAccessible(context, refreshedEntry.playbackUri) }
+    }
+
     suspend fun listDownloadedAudio(context: Context): List<StoredEntry> = withContext(Dispatchers.IO) {
         buildDownloadLibrarySnapshotBlocking(context).audioEntries
     }
@@ -935,6 +966,28 @@ internal object ManagedDownloadStorage {
             return null
         }
         return findDownloadedAudioBlocking(context, song, forceRefresh = true)
+    }
+
+    private fun refreshStoredEntryDirect(
+        context: Context,
+        reference: String,
+        cachedEntry: StoredEntry?
+    ): StoredEntry? {
+        if (reference.startsWith("/")) {
+            return File(reference)
+                .takeIf { file -> file.exists() && file.isFile }
+                ?.toStoredEntry()
+        }
+        val uri = runCatching { reference.toUri() }.getOrNull() ?: return null
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            return uri.path
+                ?.let(::File)
+                ?.takeIf { file -> file.exists() && file.isFile }
+                ?.toStoredEntry()
+        }
+        return ManagedDownloadReferenceIo.resolveDocumentFile(context, uri)
+            ?.takeIf { document -> document.exists() && document.isFile }
+            ?.toStoredEntry(knownName = cachedEntry?.name)
     }
 
     private fun buildDownloadLibrarySnapshotBlocking(
@@ -1037,12 +1090,14 @@ internal object ManagedDownloadStorage {
         context: Context,
         copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: RootHandle,
+        targetRoot: RootHandle,
         progressTracker: ManagedMigrationProgressReporter? = null
     ): Int {
         return migrationFinalizer.cleanupMigratedEntries(
             context = context,
             copiedEntries = copiedEntries,
             sourceRoot = sourceRoot,
+            targetRoot = targetRoot,
             progressTracker = progressTracker
         )
     }
@@ -1243,7 +1298,16 @@ internal object ManagedDownloadStorage {
         seedMetadataJson: String?
     ): StoredEntry {
         val actualSizeBytes = tempFile.length().coerceAtLeast(0L)
-        if (expectedSizeBytes != null && expectedSizeBytes > 0L && actualSizeBytes != expectedSizeBytes) {
+        if (actualSizeBytes <= 0L) {
+            throw IOException("下载文件为空: ${tempFile.name}")
+        }
+        if (
+            expectedSizeBytes != null &&
+            !ManagedDownloadSizePolicy.isTransferSizeComplete(
+                expectedSizeBytes = expectedSizeBytes,
+                actualSizeBytes = actualSizeBytes
+            )
+        ) {
             throw IOException("下载文件大小不匹配: $actualSizeBytes/$expectedSizeBytes")
         }
         val storedEntry = when (val root = resolveRootBlocking(context)) {

@@ -241,6 +241,35 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `clearing lyric lookup cache observes sidecar created after an empty lookup`() {
+        val sourceDir = tempFolder.newFolder("download-lyrics-cache")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val song = SongItem(
+            id = 9L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+
+        LocalMediaSupport.clearLyricsLookupCache()
+        assertNull(LocalMediaSupport.inspectLyricsFast(song).lyric)
+        File(sourceDir, "song.lrc").writeText("[00:01.00]downloaded")
+        LocalMediaSupport.clearLyricsLookupCache()
+
+        assertEquals(
+            "[00:01.00]downloaded",
+            LocalMediaSupport.inspectLyricsFast(song).lyric
+        )
+    }
+
+    @Test
     fun `findNearbyLyricFiles keeps lrc txt compatibility for translated sidecars`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-lrc-txt")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }

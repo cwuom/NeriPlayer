@@ -581,6 +581,9 @@
     <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
     <string name="local_playlist_scan_existing_empty">没有未添加的本地音频</string>
     <string name="local_playlist_scan_filtered_empty">没有符合筛选条件的本地音频</string>
+    <string name="local_playlist_scan_progress_traversing">已访问 %1$d 个目录，发现 %2$d 首歌曲</string>
+    <string name="local_playlist_scan_progress_building">正在建立歌曲索引（%1$d/%2$d）</string>
+    <string name="local_playlist_scan_progress_metadata">正在整理元信息（%1$d/%2$d）</string>
     <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
     <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
     <string name="local_playlist_metadata_processing_title">正在处理歌曲信息</string>
@@ -1294,7 +1297,7 @@
     <string name="settings_download_directory_reset_desc">改回应用自己的下载位置</string>
     <string name="settings_download_file_name_format">保存文件名格式</string>
     <string name="settings_download_file_name_format_desc">自定义本地文件名</string>
-    <string name="settings_download_file_name_format_supported" formatted="false">支持占位符：%artist% 、%title% 、%album% 、%source% 、%id% 、%audioId% 、%subAudioId%</string>
+    <string name="settings_download_file_name_format_supported">可用占位符</string>
     <string name="settings_download_file_name_format_preview">预览：%1$s</string>
     <string name="settings_download_metadata_post_processing">元信息后处理</string>
     <string name="settings_download_metadata_post_processing_desc">写入标签、歌词和封面；关闭后仍可管理</string>

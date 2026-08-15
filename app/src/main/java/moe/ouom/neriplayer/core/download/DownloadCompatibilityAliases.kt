@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as DownloadedAudioTagWriterDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames as candidateManagedDownloadBaseNamesDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates as candidateManagedDownloadFileNameTemplatesDelegate
+import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash as managedDownloadIdentityHashDelegate
 import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplateDelegate
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName as parseManagedDownloadBaseNameDelegate
 import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName as renderManagedDownloadBaseNameDelegate
@@ -95,7 +96,16 @@ internal fun renderManagedDownloadBaseName(
     audioId: String = "",
     subAudioId: String = "",
     template: String? = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-): String = renderManagedDownloadBaseNameDelegate(title, artist, album, source, songId, audioId, subAudioId, template)
+): String = renderManagedDownloadBaseNameDelegate(
+    title = title,
+    artist = artist,
+    album = album,
+    source = source,
+    songId = songId,
+    audioId = audioId,
+    subAudioId = subAudioId,
+    template = template
+)
 
 internal fun renderManagedDownloadBaseName(
     song: SongItem,
@@ -114,6 +124,9 @@ internal fun candidateManagedDownloadBaseNames(
 
 internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String): List<String> =
     candidateManagedDownloadBaseNamesDelegate(fileNameWithoutExtension)
+
+internal fun managedDownloadIdentityHash(song: SongItem): String =
+    managedDownloadIdentityHashDelegate(song)
 
 internal fun shouldRunInitialDownloadScan(catalogReady: Boolean, hasRecoveredEntries: Boolean = false): Boolean =
     shouldRunInitialDownloadScanDelegate(catalogReady, hasRecoveredEntries)

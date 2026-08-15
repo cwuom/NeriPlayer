@@ -735,14 +735,17 @@ object GlobalDownloadManager {
         _downloadedSongs.value = songs
         downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
         downloadedSongCatalogReady = true
-        _downloadPresenceVersion.value = _downloadPresenceVersion.value + 1
+        // 下载音频和歌词侧车可能在同一收尾阶段写入, 让本地歌词查找重新读取文件
+        LocalMediaSupport.clearLyricsLookupCache()
+        _downloadPresenceVersion.value += 1
         if (persistCatalog) {
             scheduleDownloadedSongsCatalogPersist(context, songs)
         }
     }
 
     private fun notifyDownloadPresenceChanged() {
-        _downloadPresenceVersion.value = _downloadPresenceVersion.value + 1
+        LocalMediaSupport.clearLyricsLookupCache()
+        _downloadPresenceVersion.value += 1
     }
 
     private fun scheduleDownloadedSongsCatalogPersist(
@@ -903,7 +906,7 @@ object GlobalDownloadManager {
         publishCompletedDownloadOptimistically(
             context = context,
             song = song,
-            storedAudio = resolvedStoredAudio,
+            storedAudio = finalization.storedAudio ?: resolvedStoredAudio,
             sidecarReferences = finalization.sidecarReferences
         )
         updateTaskStatus(
@@ -920,6 +923,7 @@ object GlobalDownloadManager {
 
     private data class CompletedDownloadMetadataFinalizationResult(
         val finalized: Boolean,
+        val storedAudio: ManagedDownloadStorage.StoredEntry? = null,
         val sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences =
             AudioDownloadManager.DownloadedSidecarReferences()
     )
@@ -933,8 +937,19 @@ object GlobalDownloadManager {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
         var sidecarReferences = initialSidecarReferences ?: AudioDownloadManager.DownloadedSidecarReferences()
+        var finalizedAudio = storedAudio
         return try {
-            if (!ManagedDownloadStorage.exists(appContext, storedAudio.reference)) {
+            finalizedAudio = ManagedDownloadStorage.refreshStoredEntry(
+                context = appContext,
+                reference = storedAudio.reference
+            ) ?: return CompletedDownloadMetadataFinalizationResult(
+                finalized = false,
+                sidecarReferences = sidecarReferences.retainCreatedOnly()
+            )
+            if (
+                finalizedAudio.sizeBytes <= 0L ||
+                !ManagedDownloadStorage.exists(appContext, finalizedAudio.reference)
+            ) {
                 NPLogger.w(TAG, "下载收尾发现音频已不可读: song=${song.name}, reference=${storedAudio.reference}")
                 return CompletedDownloadMetadataFinalizationResult(
                     finalized = false,
@@ -946,7 +961,7 @@ object GlobalDownloadManager {
                 AudioDownloadManager.downloadSidecarsForCompletedAudio(
                     context = appContext,
                     song = song,
-                    storedAudio = storedAudio
+                    storedAudio = finalizedAudio
                 )
             )
             if (isSongCancelled(songKey)) {
@@ -964,7 +979,7 @@ object GlobalDownloadManager {
             val postProcessingEnabled = isDownloadMetadataPostProcessingEnabled(appContext)
             val metadataSeedWritten = persistDownloadedMetadata(
                 context = appContext,
-                audio = storedAudio,
+                audio = finalizedAudio,
                 song = song,
                 sidecarReferences = sidecarReferences,
                 downloadFinalized = !postProcessingEnabled,
@@ -981,7 +996,7 @@ object GlobalDownloadManager {
             if (postProcessingEnabled) {
                 val tagWritten = runDownloadedAudioMetadataPostProcessing(
                     context = appContext,
-                    audio = storedAudio,
+                    audio = finalizedAudio,
                     song = song,
                     sidecarReferences = sidecarReferences
                 )
@@ -992,9 +1007,26 @@ object GlobalDownloadManager {
                         sidecarReferences = sidecarReferences.retainCreatedOnly()
                     )
                 }
+                finalizedAudio = ManagedDownloadStorage.refreshStoredEntry(
+                    context = appContext,
+                    reference = finalizedAudio.reference
+                ) ?: return CompletedDownloadMetadataFinalizationResult(
+                    finalized = false,
+                    sidecarReferences = sidecarReferences.retainCreatedOnly()
+                )
+                if (
+                    finalizedAudio.sizeBytes <= 0L ||
+                    !ManagedDownloadStorage.exists(appContext, finalizedAudio.reference)
+                ) {
+                    NPLogger.w(TAG, "标签写入后音频校验失败，保持未完成状态: ${song.name}")
+                    return CompletedDownloadMetadataFinalizationResult(
+                        finalized = false,
+                        sidecarReferences = sidecarReferences.retainCreatedOnly()
+                    )
+                }
                 val finalizedMetadataWritten = persistDownloadedMetadata(
                     context = appContext,
-                    audio = storedAudio,
+                    audio = finalizedAudio,
                     song = song,
                     sidecarReferences = sidecarReferences,
                     downloadFinalized = true,
@@ -1010,8 +1042,12 @@ object GlobalDownloadManager {
             }
 
             CompletedDownloadMetadataFinalizationResult(
-                finalized = !isSongCancelled(songKey) &&
-                    ManagedDownloadStorage.exists(appContext, storedAudio.reference),
+                finalized = !isSongCancelled(songKey) && verifyFinalizedDownloadedAudio(
+                    context = appContext,
+                    audio = finalizedAudio,
+                    song = song
+                ),
+                storedAudio = finalizedAudio,
                 sidecarReferences = sidecarReferences
             )
         } catch (error: CancellationException) {
@@ -1028,6 +1064,21 @@ object GlobalDownloadManager {
                 sidecarReferences = sidecarReferences.retainCreatedOnly()
             )
         }
+    }
+
+    private suspend fun verifyFinalizedDownloadedAudio(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        song: SongItem
+    ): Boolean {
+        if (
+            audio.sizeBytes <= 0L ||
+            !ManagedDownloadStorage.exists(context, audio.reference)
+        ) {
+            return false
+        }
+        val metadata = readDownloadedMetadata(context, audio) ?: return false
+        return metadata.downloadFinalized == true && metadata.stableKey == song.stableKey()
     }
 
     private suspend fun rollbackFailedCompletedDownloadFinalization(
@@ -1116,12 +1167,10 @@ object GlobalDownloadManager {
                 attempt < METADATA_POST_PROCESSING_MAX_ATTEMPTS - 1 && !isSongCancelled(songKey)
             when (tagPostProcessingAction(writeResult.getOrNull(), hasRemainingAttempts)) {
                 TagPostProcessingAction.FINALIZE_TAGGED -> return true
-                // 音频已完整: 容器不支持或持续写不进标签 (如 SAF 打不开可写 fd) 都保留音频
-                // 仅按无内嵌标签完成, 避免回滚删掉完整文件并反复重下耗流量
                 TagPostProcessingAction.FINALIZE_UNTAGGED -> {
                     val reason = writeResult.exceptionOrNull()?.message
                         ?: writeResult.getOrNull()?.name
-                    NPLogger.w(TAG, "保留音频并按无内嵌标签完成: ${audio.name} - $reason")
+                    NPLogger.w(TAG, "容器不支持标签写入，按无内嵌标签完成: ${audio.name} - $reason")
                     return true
                 }
                 TagPostProcessingAction.RETRY -> {
@@ -1133,11 +1182,16 @@ object GlobalDownloadManager {
                     )
                     delay(METADATA_POST_PROCESSING_RETRY_DELAY_MS * (attempt + 1))
                 }
+                TagPostProcessingAction.PRESERVE_UNFINALIZED -> {
+                    val reason = writeResult.exceptionOrNull()?.message
+                        ?: writeResult.getOrNull()?.name
+                    NPLogger.w(TAG, "标签写入持续失败，保留音频等待收尾重试: ${audio.name} - $reason")
+                    return false
+                }
             }
         }
 
-        // 兜底: 最后一轮已返回 FINALIZE_UNTAGGED, 此处理论不可达; 仍保留音频不删除
-        return true
+        return false
     }
 
     private suspend fun isDownloadMetadataPostProcessingEnabled(context: Context): Boolean {
