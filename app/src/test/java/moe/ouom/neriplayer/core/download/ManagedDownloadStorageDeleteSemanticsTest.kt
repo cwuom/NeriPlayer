@@ -212,4 +212,30 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             )
         )
     }
+
+    @Test
+    fun `saf delete guard accepts opaque child ids when the tree token matches`() {
+        val managedTree = "content://documents.test/tree/root-opaque-id"
+        val managedChild =
+            "content://documents.test/tree/root-opaque-id/document/child-opaque-id"
+        val foreignTreeChild =
+            "content://documents.test/tree/other-opaque-id/document/child-opaque-id"
+
+        assertTrue(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = managedChild,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = foreignTreeChild,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+    }
 }

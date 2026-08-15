@@ -150,17 +150,18 @@ fun DownloadManagerScreen(
                         modifier = Modifier.padding(end = 8.dp)
                     )
                     // 全选/取消全选按钮
-                    val allSongKeys = remember(downloadedSongs) {
-                        downloadedSongs.map(DownloadedSong::deletionIdentity).toSet()
-                    }
-                    val allSelected = selectedSongKeys.size == allSongKeys.size && allSongKeys.isNotEmpty()
+                    val allSelected = isAllDownloadedSongsSelected(
+                        selectedSongKeys = selectedSongKeys,
+                        downloadedSongs = downloadedSongs
+                    )
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
                             selectedSongKeys = if (allSelected) {
                                 emptySet()
                             } else {
-                                allSongKeys
+                                downloadedSongs
+                                    .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
                             }
                         }
                     ) {
@@ -728,6 +729,15 @@ internal fun captureSongsPendingDelete(
     return downloadedSongs
         .filter { song -> selectedSongKeys.contains(song.deletionIdentity()) }
         .distinctBy(DownloadedSong::deletionIdentity)
+}
+
+internal fun isAllDownloadedSongsSelected(
+    selectedSongKeys: Set<String>,
+    downloadedSongs: List<DownloadedSong>
+): Boolean {
+    val availableSongKeys = downloadedSongs
+        .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+    return availableSongKeys.isNotEmpty() && selectedSongKeys == availableSongKeys
 }
 
 internal data class DownloadSelectionState(

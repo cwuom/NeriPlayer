@@ -72,7 +72,8 @@ internal object ManagedDownloadReferenceIo {
     fun isContentReferenceGone(context: Context, uri: Uri): Boolean {
         val document = resolveDocumentFile(context, uri)
         if (document != null) {
-            return runCatching { !document.exists() }.getOrDefault(false)
+            return runCatching { !document.exists() }
+                .getOrElse(::isMissingDocumentFailure)
         }
         return runCatching {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { false } ?: false

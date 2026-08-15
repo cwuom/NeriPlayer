@@ -85,9 +85,27 @@ internal object ManagedDownloadDirectoryIdentity {
         val rootDocumentId = extractDirectoryDocumentId(managedTreeUri, "/tree/")
             ?: extractDirectoryDocumentId(managedTreeUri, "/document/")
             ?: return false
+        val referenceTreeDocumentId = extractDirectoryDocumentId(reference, "/tree/")
+        if (referenceTreeDocumentId != null) {
+            if (referenceTreeDocumentId != rootDocumentId) {
+                return false
+            }
+            val referenceDocumentId = extractDirectoryDocumentId(reference, "/document/")
+                ?: return false
+            return isDocumentIdInsideManagedRoot(
+                documentId = referenceDocumentId,
+                rootDocumentId = rootDocumentId
+            ) || hasOpaqueDocumentIdScope(
+                documentId = referenceDocumentId,
+                rootDocumentId = rootDocumentId
+            )
+        }
         val referenceDocumentId = extractDirectoryDocumentId(reference, "/document/")
             ?: return false
         return isDocumentIdInsideManagedRoot(
+            documentId = referenceDocumentId,
+            rootDocumentId = rootDocumentId
+        ) || hasOpaqueDocumentIdScope(
             documentId = referenceDocumentId,
             rootDocumentId = rootDocumentId
         )
@@ -102,5 +120,14 @@ internal object ManagedDownloadDirectoryIdentity {
         }
         val prefix = if (rootDocumentId.endsWith("/")) rootDocumentId else "$rootDocumentId/"
         return documentId.startsWith(prefix)
+    }
+
+    private fun hasOpaqueDocumentIdScope(documentId: String, rootDocumentId: String): Boolean {
+        if (documentId == rootDocumentId) {
+            return false
+        }
+        val rootLooksStructured = rootDocumentId.contains('/') || rootDocumentId.endsWith(':')
+        val documentLooksStructured = documentId.contains('/') || documentId.endsWith(':')
+        return !rootLooksStructured || !documentLooksStructured
     }
 }

@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.cleanup.requiresManagedDownloadDeleteSnapshotRefresh
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalDownloadManagerDeleteReferenceTest {
@@ -165,6 +168,32 @@ class GlobalDownloadManagerDeleteReferenceTest {
     }
 
     @Test
+    fun `complete catalog selection is required before active downloads are cancelled`() {
+        val firstSong = downloadedSong(id = 1L, name = "first")
+        val secondSong = downloadedSong(id = 2L, name = "second")
+        val availableSongs = listOf(firstSong, secondSong)
+
+        assertTrue(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = availableSongs,
+                availableSongs = availableSongs
+            )
+        )
+        assertFalse(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = listOf(firstSong),
+                availableSongs = availableSongs
+            )
+        )
+        assertFalse(
+            isCompleteDownloadedSongSelection(
+                selectedSongs = listOf(firstSong, downloadedSong(id = 3L, name = "stale")),
+                availableSongs = availableSongs
+            )
+        )
+    }
+
+    @Test
     fun `downloaded song creates a playback item from its managed media reference`() {
         val downloaded = downloadedSong(id = 42L, name = "managed").copy(
             filePath = "content://downloads/audio/managed.mp3",
@@ -180,6 +209,36 @@ class GlobalDownloadManagerDeleteReferenceTest {
         assertEquals(downloaded.stableKey, playbackItem.sourceStableKey)
         assertEquals("managed.mp3", playbackItem.localFileName)
         assertNull(playbackItem.localFilePath)
+    }
+
+    @Test
+    fun `delete planner refreshes a snapshot that misses a selected download`() {
+        val downloaded = downloadedSong(id = 42L, name = "managed")
+        val emptySnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+        val storedAudio = ManagedDownloadStorage.StoredEntry(
+            name = "managed.mp3",
+            reference = downloaded.filePath,
+            mediaUri = downloaded.filePath,
+            localFilePath = downloaded.filePath,
+            sizeBytes = downloaded.fileSize,
+            lastModifiedMs = downloaded.downloadTime
+        )
+        val matchingSnapshot = emptySnapshot.copy(
+            audioEntriesByLookupKey = mapOf(downloaded.filePath to storedAudio)
+        )
+
+        assertTrue(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = emptySnapshot,
+                songs = listOf(downloaded)
+            )
+        )
+        assertFalse(
+            requiresManagedDownloadDeleteSnapshotRefresh(
+                snapshot = matchingSnapshot,
+                songs = listOf(downloaded)
+            )
+        )
     }
 
     private fun downloadedSong(

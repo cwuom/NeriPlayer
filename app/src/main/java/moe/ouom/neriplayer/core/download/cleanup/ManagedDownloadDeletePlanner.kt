@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.cleanup
 import android.content.Context
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference
 
 internal class ManagedDownloadDeletePlanner {
 
@@ -13,8 +14,14 @@ internal class ManagedDownloadDeletePlanner {
         if (songs.isEmpty()) {
             return emptyList()
         }
-        val snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
-            ?: ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+        var snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
+            ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
+        if (requiresManagedDownloadDeleteSnapshotRefresh(snapshot, songs)) {
+            snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }
         val deleteContexts = songs.map { song ->
             ManagedDownloadArtifactPlanner.buildDeleteContext(
                 song = song,
@@ -97,5 +104,17 @@ internal class ManagedDownloadDeletePlanner {
             requestedReferences = referencesToDelete,
             deletedReferences = deletedReferences
         )
+    }
+}
+
+internal fun requiresManagedDownloadDeleteSnapshotRefresh(
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+    songs: List<DownloadedSong>
+): Boolean {
+    return songs.any { song ->
+        val playbackReference = resolveDownloadedSongPlaybackReference(song)
+            ?.takeIf(String::isNotBlank)
+            ?: return@any false
+        snapshot.audioEntriesByLookupKey[playbackReference] == null
     }
 }

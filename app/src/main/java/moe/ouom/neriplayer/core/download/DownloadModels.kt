@@ -53,6 +53,20 @@ data class DownloadedSong(
     }
 }
 
+internal fun isCompleteDownloadedSongSelection(
+    selectedSongs: Collection<DownloadedSong>,
+    availableSongs: Collection<DownloadedSong>
+): Boolean {
+    val availableIdentities = availableSongs
+        .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+    if (availableIdentities.isEmpty()) {
+        return false
+    }
+    val selectedIdentities = selectedSongs
+        .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+    return selectedIdentities == availableIdentities
+}
+
 internal fun DownloadedSong.remoteSourceIdentityOrNull(): SongIdentity? {
     stableKey.toRemoteSourceIdentityOrNull()?.let { return it }
     return rebuildRemoteSourceIdentity()

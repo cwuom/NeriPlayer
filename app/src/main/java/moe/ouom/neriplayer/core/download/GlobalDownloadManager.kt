@@ -1052,11 +1052,28 @@ object GlobalDownloadManager {
                 sidecarReferences = sidecarReferences
             )
         } catch (error: CancellationException) {
-            cleanupOrphanedCompletedSidecars(
-                context = appContext,
-                song = song,
-                sidecarReferences = sidecarReferences.retainCreatedOnly()
-            )
+            if (isSongCancelled(songKey)) {
+                runCatching {
+                    rollbackCancelledDownload(
+                        context = appContext,
+                        song = song,
+                        storedAudio = finalizedAudio,
+                        sidecarReferences = sidecarReferences.retainCreatedOnly()
+                    )
+                }.onFailure { rollbackError ->
+                    NPLogger.e(
+                        TAG,
+                        "下载收尾取消后的回滚失败: ${song.name}, ${rollbackError.message}",
+                        rollbackError
+                    )
+                }
+            } else {
+                cleanupOrphanedCompletedSidecars(
+                    context = appContext,
+                    song = song,
+                    sidecarReferences = sidecarReferences.retainCreatedOnly()
+                )
+            }
             throw error
         } catch (error: Throwable) {
             NPLogger.w(TAG, "下载元信息收尾失败，保持未完成状态: ${song.name}, ${error.message}")
@@ -1124,19 +1141,21 @@ object GlobalDownloadManager {
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
     ) {
-        val references = listOfNotNull(
-            sidecarReferences?.coverReference,
-            sidecarReferences?.lyricReference,
-            sidecarReferences?.translatedLyricReference,
-            sidecarReferences?.romanizedLyricReference
-        )
-        if (references.isEmpty()) {
-            return
-        }
-        runCatching {
-            ManagedDownloadStorage.deleteReferences(context.applicationContext, references)
-        }.onFailure { error ->
-            NPLogger.e(TAG, "清理孤立下载关联文件失败: ${song.name}, ${error.message}", error)
+        runNonCancellableDownloadRollback {
+            val references = listOfNotNull(
+                sidecarReferences?.coverReference,
+                sidecarReferences?.lyricReference,
+                sidecarReferences?.translatedLyricReference,
+                sidecarReferences?.romanizedLyricReference
+            )
+            if (references.isEmpty()) {
+                return@runNonCancellableDownloadRollback
+            }
+            runCatching {
+                ManagedDownloadStorage.deleteReferences(context.applicationContext, references)
+            }.onFailure { error ->
+                NPLogger.e(TAG, "清理孤立下载关联文件失败: ${song.name}, ${error.message}", error)
+            }
         }
     }
 
@@ -1281,13 +1300,19 @@ object GlobalDownloadManager {
 
     private suspend fun cleanupCancelledDownloadArtifacts(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        keepCancellationMarker: Boolean = false,
+        scheduleRecovery: Boolean = true
     ) {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
         ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
-        ManagedDownloadStorage.removeCancelledDownloadKeys(appContext, setOf(songKey))
-        scheduleCancelledArtifactRecovery(appContext, listOf(song))
+        if (!keepCancellationMarker) {
+            ManagedDownloadStorage.removeCancelledDownloadKeys(appContext, setOf(songKey))
+        }
+        if (scheduleRecovery) {
+            scheduleCancelledArtifactRecovery(appContext, listOf(song))
+        }
     }
 
     private suspend fun recoverUnfinalizedDownloadArtifact(
@@ -1913,6 +1938,17 @@ object GlobalDownloadManager {
     ): DownloadedSongDeleteResult {
         val startedAtMs = System.currentTimeMillis()
         val previousSongs = _downloadedSongs.value
+        val deletesEntireCatalog = isCompleteDownloadedSongSelection(
+            selectedSongs = targetSongs,
+            availableSongs = previousSongs
+        )
+        if (deletesEntireCatalog) {
+            NPLogger.d(
+                TAG,
+                "全选删除下载目录，先取消活动下载并保留清理标记直到收敛: songs=${targetSongs.size}"
+            )
+            cancelAllDownloadTasks()
+        }
         val optimisticKeys = targetSongs.mapTo(mutableSetOf()) { it.deletionIdentity() }
         val optimisticSongs = previousSongs.filterNot { candidate ->
             optimisticKeys.contains(candidate.deletionIdentity())
@@ -2038,9 +2074,10 @@ object GlobalDownloadManager {
                 scheduleDownloadedPlaybackReferenceValidation(appContext, song, playbackReference)
                 val hydratedStoredAudio = storedAudio
                     ?: resolveStoredAudioFromCache(appContext, playbackReference)
+                    ?: resolveStoredAudio(appContext, playbackReference)
                 val refreshedSong = hydratedStoredAudio?.let {
                     val hydrationSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(appContext)
-                        ?: ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+                        ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(appContext)
                     buildDownloadedSong(
                         context = appContext,
                         storedAudio = it,
@@ -3273,6 +3310,7 @@ object GlobalDownloadManager {
             cancelDownloadTasksInBackground(
                 context = appContext,
                 tasks = activeTasks,
+                batchJobs = batchJobs,
                 cancelledSongKeysSnapshot = activeSongKeys,
                 cancellationGenerations = cancellationGenerations
             )
@@ -3405,6 +3443,7 @@ object GlobalDownloadManager {
     private suspend fun cancelDownloadTasksInBackground(
         context: Context,
         tasks: Collection<DownloadTask>,
+        batchJobs: Collection<Job>,
         additionalSongKeys: Collection<String> = emptySet(),
         cancelledSongKeysSnapshot: Collection<String> = emptySet(),
         cancellationGenerations: Map<String, Long?> = emptyMap()
@@ -3434,6 +3473,9 @@ object GlobalDownloadManager {
             }
         }
         awaitDownloadCancellationsSettled(activeDownloadTaskKeys)
+        batchJobs.forEach { batchJob ->
+            batchJob.join()
+        }
         val focusedCleanupKeys = mutableSetOf<String>()
         tasks.forEach { task ->
             val songKey = task.song.stableKey()
@@ -3443,7 +3485,12 @@ object GlobalDownloadManager {
                     NPLogger.d(TAG, "跳过过期批量取消清理: song=${task.song.name}, songKey=$songKey")
                     return@withSongExecutionLock
                 }
-                cleanupCancelledDownloadArtifacts(appContext, task.song)
+                cleanupCancelledDownloadArtifacts(
+                    context = appContext,
+                    song = task.song,
+                    keepCancellationMarker = true,
+                    scheduleRecovery = false
+                )
                 focusedCleanupKeys += songKey
             }
         }
@@ -3457,6 +3504,18 @@ object GlobalDownloadManager {
             appContext,
             batchCleanupKeys
         )
+        val recoverySongs = tasks
+            .filter { task ->
+                isCancellationCleanupStillCurrent(
+                    songKey = task.song.stableKey(),
+                    cancellationGeneration = cancellationGenerations[task.song.stableKey()]
+                )
+            }
+            .map { task -> task.song }
+            .distinctBy { song -> song.stableKey() }
+        if (recoverySongs.isNotEmpty()) {
+            recoverCancelledArtifacts(appContext, recoverySongs)
+        }
         val releasableCancelledKeys = activeKeys
             .filter { songKey ->
                 isCancellationCleanupStillCurrent(songKey, cancellationGenerations[songKey])

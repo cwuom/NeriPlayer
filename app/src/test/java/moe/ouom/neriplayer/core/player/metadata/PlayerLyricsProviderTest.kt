@@ -97,6 +97,34 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `managed local downloads still read downloaded lyrics before remote fallback`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/song.mp3"
+        )
+
+        assertTrue(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = true
+            )
+        )
+        assertFalse(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = false
+            )
+        )
+        assertFalse(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
     fun `remote songs keep remote lyric loading enabled`() {
         val song = SongItem(
             id = 2L,

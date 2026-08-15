@@ -227,6 +227,7 @@ import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.metadata.resolveLocalFirstLyricText
+import moe.ouom.neriplayer.core.player.metadata.shouldReadManagedDownloadLyrics
 import moe.ouom.neriplayer.core.player.playback.BiliVideoSkipPlaybackController
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioInfo
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
@@ -2193,6 +2194,18 @@ fun NowPlayingScreen(
         val song = currentSong
         val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
+            val isManagedLocalDownload = song?.let { candidate ->
+                candidate.isLocalSong() && (
+                    GlobalDownloadManager.hasDownloadedSongCached(candidate) ||
+                        ManagedDownloadStorage.peekDownloadedAudio(candidate) != null
+                    )
+            } == true
+            val canReadManagedDownloadLyrics = song?.let { candidate ->
+                shouldReadManagedDownloadLyrics(
+                    song = candidate,
+                    isManagedLocalDownload = isManagedLocalDownload
+                )
+            } == true
             val localLyrics = if (isLocalSong) {
                 runCatching { LocalMediaSupport.inspectLyricsFast(song) }
                     .onFailure { error ->
@@ -2208,7 +2221,7 @@ fun NowPlayingScreen(
             val localRawLyrics = localLyrics?.lyric
             val localRawTranslatedLyrics = localLyrics?.translatedLyric
             val localRawPhoneticLyrics = localLyrics?.romanizedLyric
-            val downloadedRawLyrics = song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
+            val downloadedRawLyrics = song?.takeIf { canReadManagedDownloadLyrics }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -2219,7 +2232,7 @@ fun NowPlayingScreen(
                 }.getOrNull()
             }
             val downloadedRawTranslatedLyrics =
-                song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
+                song?.takeIf { canReadManagedDownloadLyrics }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getTranslatedLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -2230,7 +2243,7 @@ fun NowPlayingScreen(
                 }.getOrNull()
             }
             val downloadedRawPhoneticLyrics =
-                song?.takeUnless { it.isLocalSong() }?.let { downloadedSong ->
+                song?.takeIf { canReadManagedDownloadLyrics }?.let { downloadedSong ->
                 runCatching {
                     AudioDownloadManager.getRomanizedLyricContent(context, downloadedSong)
                 }.onFailure { error ->
@@ -4898,6 +4911,14 @@ fun EditSongInfoSheet(
                         try {
                             val loadedLyricsResult: Pair<String, String> = withContext(Dispatchers.IO) {
                                 val isLocalSong = actualSong.isLocalSong()
+                                val isManagedLocalDownload = isLocalSong && (
+                                    GlobalDownloadManager.hasDownloadedSongCached(actualSong) ||
+                                        ManagedDownloadStorage.peekDownloadedAudio(actualSong) != null
+                                    )
+                                val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
+                                    song = actualSong,
+                                    isManagedLocalDownload = isManagedLocalDownload
+                                )
                                 val localLyrics = if (isLocalSong) {
                                     runCatching { LocalMediaSupport.inspectLyricsFast(actualSong) }
                                         .onFailure { error ->
@@ -4921,7 +4942,7 @@ fun EditSongInfoSheet(
                                     legacyLyric = actualSong.originalTranslatedLyric
                                 )
                                 val downloadedRawLyrics = actualSong
-                                    .takeUnless { isLocalSong }
+                                    .takeIf { canReadManagedDownloadLyrics }
                                     ?.let { downloadedSong ->
                                         runCatching {
                                             AudioDownloadManager.getLyricContent(
@@ -4934,9 +4955,9 @@ fun EditSongInfoSheet(
                                                 "编辑器读取下载原文歌词失败: ${error.message}"
                                             )
                                         }.getOrNull()
-                                    }
+                                }
                                 val downloadedRawTranslatedLyrics = actualSong
-                                    .takeUnless { isLocalSong }
+                                    .takeIf { canReadManagedDownloadLyrics }
                                     ?.let { downloadedSong ->
                                         runCatching {
                                             AudioDownloadManager.getTranslatedLyricContent(
@@ -4976,7 +4997,7 @@ fun EditSongInfoSheet(
 
                                 // 把歌词准备挪到后台, 避免打开编辑器时把主线程卡住
                                 val fallbackLyricsText = actualSong
-                                    .takeUnless { isLocalSong }
+                                    .takeIf { canReadManagedDownloadLyrics }
                                     ?.let {
                                         val lyricEntries = PlayerManager.getLyrics(actualSong)
                                         lyricEntries
@@ -4997,7 +5018,7 @@ fun EditSongInfoSheet(
                                         val translatedEntries =
                                             if (displayedTranslatedLyricsSnapshot.isNotEmpty()) {
                                                 displayedTranslatedLyricsSnapshot
-                                            } else if (isLocalSong) {
+                                            } else if (isLocalSong && !isManagedLocalDownload) {
                                                 emptyList()
                                             } else {
                                                 PlayerManager.getTranslatedLyrics(actualSong)
