@@ -127,8 +127,10 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
+import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.playlist.usage.UsageEntry
+import moe.ouom.neriplayer.data.playlist.usage.buildLocalPlaylistUsageLookup
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
@@ -147,6 +149,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
+import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
@@ -278,6 +281,9 @@ fun HomeScreen(
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
             ?.songs
             .orEmpty()
+    }
+    val localPlaylistUsageLookup = remember(localPlaylists, context) {
+        buildLocalPlaylistUsageLookup(localPlaylists, context)
     }
 
     val hasLocalUsage = remember(usageEntries) {
@@ -497,6 +503,8 @@ fun HomeScreen(
                             if (usageLoaded) {
                                 ContinueSection(
                                     items = usageEntries.take(12),
+                                    localPlaylistLookup = localPlaylistUsageLookup,
+                                    localFilesCoverCandidates = downloadedPlaybackCoverCandidates,
                                     onClick = { entry -> onOpenRecent(entry) },
                                     offlineMode = offlineMode
                                 )
@@ -1895,6 +1903,8 @@ private fun LazyGridScope.addYouTubeMusicSongShelfSection(
 @Composable
 private fun ContinueSection(
     items: List<UsageEntry>,
+    localPlaylistLookup: Map<Long, LocalPlaylist>,
+    localFilesCoverCandidates: List<SongItem>,
     onClick: (UsageEntry) -> Unit,
     offlineMode: Boolean,
     modifier: Modifier = Modifier
@@ -1932,8 +1942,17 @@ private fun ContinueSection(
                         if (entry == null) {
                             Spacer(Modifier.width(cardWidth))
                         } else {
+                            val localPlaylist = if (
+                                entry.source == PlaylistUsageRepository.SOURCE_LOCAL
+                            ) {
+                                localPlaylistLookup[entry.id]
+                            } else {
+                                null
+                            }
                             ContinueCard(
                                 entry = entry,
+                                localPlaylist = localPlaylist,
+                                localFilesCoverCandidates = localFilesCoverCandidates,
                                 onClick = { onClick(entry) },
                                 onRemove = {
                                     AppContainer.launchBackgroundIo {
@@ -1959,6 +1978,8 @@ private fun ContinueSection(
 @Composable
 private fun ContinueCard(
     entry: UsageEntry,
+    localPlaylist: LocalPlaylist?,
+    localFilesCoverCandidates: List<SongItem>,
     onClick: () -> Unit,
     onRemove: () -> Unit,
     offlineMode: Boolean,
@@ -1971,6 +1992,19 @@ private fun ContinueCard(
     val displayName = remember(entry.id, entry.name, entry.source, configuration) {
         SystemLocalPlaylists.resolve(entry.id, entry.name, context)?.currentName ?: entry.name
     }
+    val resolvedLocalCoverUrl = if (localPlaylist != null) {
+        rememberPlaylistDisplayCoverUrl(
+            playlist = localPlaylist,
+            additionalCoverCandidates = if (localPlaylist.id == LocalFilesPlaylist.SYSTEM_ID) {
+                localFilesCoverCandidates
+            } else {
+                emptyList()
+            }
+        )
+    } else {
+        null
+    }
+    val coverUrl = resolvedLocalCoverUrl ?: entry.picUrl
 
     Column(
         modifier = modifier
@@ -1986,7 +2020,7 @@ private fun ContinueCard(
         AsyncImage(
             model = fastScrollableImageRequest(
                 context = context,
-                data = entry.picUrl,
+                data = coverUrl,
                 sizePx = 384,
                 offlineMode = offlineMode
             ),

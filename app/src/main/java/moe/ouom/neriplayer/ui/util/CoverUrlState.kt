@@ -87,25 +87,35 @@ fun rememberSongDisplayCoverUrl(
 @Composable
 fun rememberPlaylistDisplayCoverUrl(
     playlist: LocalPlaylist?,
-    resolveLocalFallback: Boolean = true
+    resolveLocalFallback: Boolean = true,
+    additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val playlistKey = remember(playlist, resolveLocalFallback) {
+    val playlistKey = remember(playlist, resolveLocalFallback, additionalCoverCandidates) {
         playlist?.coverResolutionKey(resolveLocalFallback)
     }
     var coverUrl by remember(playlistKey, downloadPresenceVersion) {
-        mutableStateOf(cachedResolvedCover(playlistKey) ?: playlist?.displayCoverUrl())
+        mutableStateOf(
+            cachedResolvedCover(playlistKey)
+                ?: playlist?.displayCoverUrl(additionalCoverCandidates)
+        )
     }
 
-    LaunchedEffect(playlistKey, appContext, downloadPresenceVersion, resolveLocalFallback) {
+    LaunchedEffect(
+        playlistKey,
+        appContext,
+        downloadPresenceVersion,
+        resolveLocalFallback,
+        additionalCoverCandidates
+    ) {
         if (playlist == null) {
             coverUrl = null
             return@LaunchedEffect
         }
 
-        val immediateCover = playlist.displayCoverUrl()
+        val immediateCover = playlist.displayCoverUrl(additionalCoverCandidates)
         cachedResolvedCover(playlistKey)?.let { cachedCover ->
             coverUrl = cachedCover
         }
@@ -120,7 +130,11 @@ fun rememberPlaylistDisplayCoverUrl(
         }
 
         val resolvedCover = withContext(coverResolutionDispatcher) {
-            playlist.displayCoverUrl(appContext, resolveLocalFallback)
+            playlist.displayCoverUrl(
+                context = appContext,
+                resolveLocalMetadataFallback = resolveLocalFallback,
+                additionalCoverCandidates = additionalCoverCandidates
+            )
         }
         if (!resolvedCover.isNullOrBlank()) {
             rememberResolvedCover(playlistKey, resolvedCover)
