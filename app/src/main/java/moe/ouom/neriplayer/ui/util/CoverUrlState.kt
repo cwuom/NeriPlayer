@@ -173,7 +173,9 @@ fun rememberPlaylistDisplayCoverUrl(
         additionalCoverCandidates
     }
     val playlistKey = remember(effectivePlaylist, effectiveCoverCandidates) {
-        effectivePlaylist?.coverResolutionKey()
+        effectivePlaylist?.let { playlist ->
+            playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates)
+        }
     }
     var coverUrl by remember(playlistKey, downloadPresenceVersion) {
         mutableStateOf(
@@ -334,15 +336,34 @@ private fun SongItem.coverResolutionKey(): String {
     ).joinToString("|")
 }
 
-internal fun SongItem.coverDisplayCacheKey(): String = "song:${stableKey()}"
+internal fun SongItem.coverDisplayCacheKey(): String {
+    return listOf(
+        "song",
+        stableKey(),
+        customCoverUrl.orEmpty(),
+        coverUrl.orEmpty(),
+        originalCoverUrl.orEmpty()
+    ).joinToString(":")
+}
 
-private fun LocalPlaylist.coverResolutionKey(): String {
+internal fun playlistCoverResolutionCacheKey(
+    playlist: LocalPlaylist,
+    additionalCoverCandidates: List<SongItem> = emptyList()
+): String {
+    return playlist.coverResolutionKey(additionalCoverCandidates)
+}
+
+private fun LocalPlaylist.coverResolutionKey(
+    additionalCoverCandidates: List<SongItem>
+): String {
     return listOf(
         id.toString(),
         modifiedAt.toString(),
         customCoverUrl.orEmpty(),
         songs.size.toString(),
-        playlistCoverResolutionSignature(songs).toString()
+        playlistCoverResolutionSignature(songs).toString(),
+        additionalCoverCandidates.size.toString(),
+        playlistCoverResolutionSignature(additionalCoverCandidates).toString()
     ).joinToString("|")
 }
 

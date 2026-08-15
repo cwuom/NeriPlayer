@@ -134,7 +134,9 @@ class ManagedDownloadNamingTest {
             audioId = "123"
         )
 
-        assertEquals("歌曲 - 歌手 - netease", renderManagedDownloadBaseName(song))
+        assertEquals("歌曲 - 歌手 -  - netease", renderManagedDownloadBaseName(song))
+        assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - netease"))
+        assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 -  - netease"))
         assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - netease"))
         assertTrue(
             candidateManagedDownloadBaseNames(song).contains(
@@ -142,10 +144,27 @@ class ManagedDownloadNamingTest {
             )
         )
 
-        val parsed = parseManagedDownloadBaseName("歌曲 - 歌手 - netease")
+        val parsed = parseManagedDownloadBaseName("歌曲 - 歌手 -  - netease")
         assertEquals("歌曲", parsed?.title)
         assertEquals("歌手", parsed?.artist)
         assertNull(parsed?.album)
+        assertEquals("netease", parsed?.source)
+    }
+
+    @Test
+    fun `default template preserves a blank artist slot before album metadata`() {
+        val baseName = renderManagedDownloadBaseName(
+            title = "歌曲",
+            artist = "",
+            album = "专辑",
+            source = "netease"
+        )
+
+        assertEquals("歌曲 -  - 专辑 - netease", baseName)
+        val parsed = parseManagedDownloadBaseName(baseName)
+        assertEquals("歌曲", parsed?.title)
+        assertNull(parsed?.artist)
+        assertEquals("专辑", parsed?.album)
         assertEquals("netease", parsed?.source)
     }
 

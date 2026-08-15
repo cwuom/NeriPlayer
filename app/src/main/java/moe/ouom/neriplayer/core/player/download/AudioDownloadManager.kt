@@ -437,8 +437,12 @@ object AudioDownloadManager {
     }
 
     internal fun isTransferSizeComplete(expectedBytes: Long?, actualBytes: Long): Boolean {
+        val expectedSize = expectedBytes?.takeIf { it > 0L }
+        if (expectedSize != null && actualBytes < expectedSize) {
+            return false
+        }
         return ManagedDownloadSizePolicy.isTransferSizeComplete(
-            expectedSizeBytes = expectedBytes,
+            expectedSizeBytes = expectedSize,
             actualSizeBytes = actualBytes
         )
     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.util
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -103,6 +104,30 @@ class CoverUrlStateTest {
         assertEquals(
             quickSong.coverDisplayCacheKey(),
             hydratedSong.coverDisplayCacheKey()
+        )
+    }
+
+    @Test
+    fun `song cover cache key changes when the explicit cover changes`() {
+        val original = song(coverUrl = "https://example.com/old.jpg")
+        val updated = original.copy(coverUrl = "https://example.com/new.jpg")
+
+        assertNotEquals(original.coverDisplayCacheKey(), updated.coverDisplayCacheKey())
+    }
+
+    @Test
+    fun `playlist cover cache key changes when additional candidates change`() {
+        val playlist = LocalPlaylist(
+            id = 7L,
+            name = "playlist",
+            songs = mutableListOf()
+        )
+        val withoutCover = song(coverUrl = null)
+        val withCover = withoutCover.copy(coverUrl = "file:///music/cover.jpg")
+
+        assertNotEquals(
+            playlistCoverResolutionCacheKey(playlist, listOf(withoutCover)),
+            playlistCoverResolutionCacheKey(playlist, listOf(withCover))
         )
     }
 

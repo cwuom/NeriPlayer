@@ -322,7 +322,7 @@ internal object ManagedDownloadStorage {
         val cleanupFailedFiles: Int = 0
     ) {
         val canSwitchDirectory: Boolean
-            get() = skippedFiles == 0 && cleanupFailedFiles == 0
+            get() = skippedFiles == 0
     }
 
     enum class MigrationStage {
@@ -1023,7 +1023,8 @@ internal object ManagedDownloadStorage {
                     canReuseCachedDownloadedMetadata(
                         cachedEntry = cachedEntry,
                         currentEntry = entry,
-                        cachedMetadata = cachedMetadata
+                        cachedMetadata = cachedMetadata,
+                        allowCachedMetadataReuse = !forceRefresh
                     )
                 ) {
                     reusedMetadataCount++
@@ -1077,9 +1078,11 @@ internal object ManagedDownloadStorage {
     internal fun canReuseCachedDownloadedMetadata(
         cachedEntry: StoredEntry?,
         currentEntry: StoredEntry,
-        cachedMetadata: DownloadedAudioMetadata?
+        cachedMetadata: DownloadedAudioMetadata?,
+        allowCachedMetadataReuse: Boolean = true
     ): Boolean {
-        return cachedMetadata != null &&
+        return allowCachedMetadataReuse &&
+            cachedMetadata != null &&
             cachedEntry != null &&
             cachedEntry.reference == currentEntry.reference &&
             cachedEntry.sizeBytes == currentEntry.sizeBytes &&

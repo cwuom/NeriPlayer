@@ -188,6 +188,13 @@ internal fun shouldThrottleScanMetadataHydration(
     playbackIntentActive: Boolean
 ): Boolean = playbackIntentActive && workerSlot >= SCAN_METADATA_HYDRATION_PLAYBACK_PARALLELISM
 
+internal fun claimNextScanMetadataHydrationIndex(
+    nextSongIndex: AtomicInteger,
+    totalCount: Int
+): Int? {
+    return nextSongIndex.getAndIncrement().takeIf { it < totalCount }
+}
+
 private const val SCAN_METADATA_HYDRATION_PLAYBACK_PARALLELISM = 1
 private const val SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS = 80L
 
@@ -715,10 +722,12 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 async(hydrationDispatcher) {
                     while (true) {
                         ensureActive()
+                        val songIndex = claimNextScanMetadataHydrationIndex(
+                            nextSongIndex = nextSongIndex,
+                            totalCount = totalCount
+                        ) ?: break
                         awaitPlaybackSafeMetadataHydrationSlot(workerSlot)
                         ensureActive()
-                        val songIndex = nextSongIndex.getAndIncrement()
-                        if (songIndex >= totalCount) break
                         val song = songs[songIndex]
 
                         val hydratedSong = runCatching {

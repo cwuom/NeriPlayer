@@ -238,4 +238,21 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             )
         )
     }
+
+    @Test
+    fun `saf delete guard rejects opaque pure document references without a matching tree token`() {
+        val managedTree =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FNeriPlayer"
+        val outsideDocument =
+            "content://com.android.externalstorage.documents/document/primary%3ADCIM"
+
+        assertFalse(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = outsideDocument,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+    }
 }

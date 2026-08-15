@@ -179,6 +179,55 @@ class SystemPlaylistIdentityTest {
         assertEquals(null, merged.customCoverUrl)
     }
 
+    @Test
+    fun `local files merge ignores covers from empty legacy playlists`() {
+        val song = localFileSong(
+            id = 1L,
+            mediaUri = "content://media/external/audio/media/1"
+        )
+        val current = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(song),
+            customCoverUrl = "file:///covers/current.jpg"
+        )
+        val staleEmpty = LocalPlaylist(
+            id = -13L,
+            name = "Local Files",
+            songs = mutableListOf(),
+            customCoverUrl = "file:///covers/stale.jpg"
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(current, staleEmpty), inertContext)
+
+        assertEquals("file:///covers/current.jpg", merged.customCoverUrl)
+    }
+
+    @Test
+    fun `local files merge replaces blank duplicate cover metadata`() {
+        val remoteSong = remoteNeteaseSong()
+        val firstCopy = downloadedLocalCopy(remoteSong).copy(
+            customCoverUrl = "",
+            originalCoverUrl = ""
+        )
+        val secondCopy = firstCopy.copy(
+            customCoverUrl = "file:///covers/current.jpg",
+            originalCoverUrl = "https://example.com/original.jpg",
+            mediaUri = "/storage/emulated/0/Music/song-copy.mp3",
+            localFilePath = "/storage/emulated/0/Music/song-copy.mp3"
+        )
+        val legacyLocalFiles = LocalPlaylist(
+            id = -12L,
+            name = "本地文件",
+            songs = mutableListOf(firstCopy, secondCopy)
+        )
+
+        val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
+
+        assertEquals("file:///covers/current.jpg", merged.songs.single().customCoverUrl)
+        assertEquals("https://example.com/original.jpg", merged.songs.single().originalCoverUrl)
+    }
+
     private fun remoteNeteaseSong(): SongItem {
         return SongItem(
             id = 42L,

@@ -105,9 +105,6 @@ internal object ManagedDownloadDirectoryIdentity {
         return isDocumentIdInsideManagedRoot(
             documentId = referenceDocumentId,
             rootDocumentId = rootDocumentId
-        ) || hasOpaqueDocumentIdScope(
-            documentId = referenceDocumentId,
-            rootDocumentId = rootDocumentId
         )
     }
 

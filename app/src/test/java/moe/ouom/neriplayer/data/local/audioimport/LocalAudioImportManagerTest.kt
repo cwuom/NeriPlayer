@@ -4,6 +4,7 @@ import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -16,6 +17,38 @@ class LocalAudioImportManagerTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Test
+    fun `empty media store result falls back to SAF traversal`() {
+        val indexedSong = SongItem(
+            id = 1L,
+            name = "song",
+            artist = "artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertFalse(
+            shouldUseMediaStoreScanResult(
+                LocalAudioImportResult(
+                    songs = emptyList(),
+                    failedCount = 0,
+                    completed = true
+                )
+            )
+        )
+        assertTrue(
+            shouldUseMediaStoreScanResult(
+                LocalAudioImportResult(
+                    songs = listOf(indexedSong),
+                    failedCount = 0,
+                    completed = true
+                )
+            )
+        )
+    }
 
     @Test
     fun `copyNearbySidecars keeps track specific cover ahead of generic folder art`() {

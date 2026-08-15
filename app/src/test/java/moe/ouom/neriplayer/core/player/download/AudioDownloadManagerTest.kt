@@ -295,12 +295,12 @@ class AudioDownloadManagerTest {
     }
 
     @Test
-    fun `transfer size completeness accepts bounded size drift and rejects mismatched payloads`() {
+    fun `transfer size completeness rejects short payloads while allowing bounded provider drift`() {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 256L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 257L))
-        assertTrue(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 999_000L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 999_000L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 1_001_000L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(null, 0L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 258L))

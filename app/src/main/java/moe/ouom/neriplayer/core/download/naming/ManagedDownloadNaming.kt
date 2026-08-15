@@ -191,7 +191,6 @@ private fun renderManagedDownloadBaseNameExact(
 ): String {
     val rendered = if (template == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE) {
         listOf(title, artist, album, source)
-            .filter(String::isNotBlank)
             .joinToString(" - ")
     } else {
         template
@@ -205,6 +204,19 @@ private fun renderManagedDownloadBaseNameExact(
             .replace("%hash%", identityHash)
     }
     return sanitizeManagedDownloadFileName(rendered)
+}
+
+private fun renderLegacyFilteredDefaultManagedDownloadBaseName(
+    title: String,
+    artist: String,
+    album: String,
+    source: String
+): String {
+    return sanitizeManagedDownloadFileName(
+        listOf(title, artist, album, source)
+            .filter(String::isNotBlank)
+            .joinToString(" - ")
+    )
 }
 
 internal fun renderManagedDownloadBaseName(
@@ -329,6 +341,7 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
     template: String?
 ) {
     val normalizedTemplate = normalizeDownloadFileNameTemplate(template)
+    val effectiveTemplate = normalizedTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
     val renderedExact = renderManagedDownloadBaseNameExact(
         title = title,
         artist = artist,
@@ -338,9 +351,21 @@ private fun MutableSet<String>.addRenderedManagedDownloadBaseNames(
         audioId = audioId,
         subAudioId = subAudioId,
         identityHash = identityHash,
-        template = normalizedTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
+        template = effectiveTemplate
     )
     add(truncateManagedDownloadBaseName(renderedExact))
+    if (effectiveTemplate == DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE) {
+        add(
+            truncateManagedDownloadBaseName(
+                renderLegacyFilteredDefaultManagedDownloadBaseName(
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    source = source
+                )
+            )
+        )
+    }
     if (
         normalizedTemplate != null &&
         normalizedTemplate != DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE

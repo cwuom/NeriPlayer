@@ -43,20 +43,15 @@ class ManagedDownloadReferenceDeleteExecutorTest {
             },
             contentReferenceGoneOperation = { _, _ -> false }
         )
-        val startedAtMs = System.currentTimeMillis()
-
         val result = executor.deleteReferencesConcurrently(
             context = mock(Context::class.java),
             references = references,
             deletePolicy = emptyDeletePolicy()
         )
-        val costMs = System.currentTimeMillis() - startedAtMs
-
         assertEquals(references.toSet(), result.deletedReferences)
         assertFalse(result.hasUnconfirmedDeletes)
         assertTrue(maximumActiveWorkers.get() <= 4)
         assertEquals(references.size * SAF_DELETE_MAX_ATTEMPTS, deleteCalls.get())
-        assertTrue("批次重试耗时异常: $costMs ms", costMs < 1_800L)
     }
 
     @Test

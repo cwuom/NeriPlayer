@@ -81,7 +81,8 @@ object LocalFilesPlaylist {
                 .takeIf { it.isNotEmpty() }
                 ?.let {
                     playlists.lastOrNull { playlist ->
-                        !playlist.customCoverUrl.isNullOrBlank()
+                        playlist.songs.isNotEmpty() &&
+                            !playlist.customCoverUrl.isNullOrBlank()
                     }?.customCoverUrl
                 },
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION

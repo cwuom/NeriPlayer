@@ -806,6 +806,86 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `downloaded song catalog keeps legacy remote entries without source identity`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `downloaded song catalog keeps a legacy local stable key entry for its remote song`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = "42|__local_files__|/music/song.flac"
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `catalog upsert replaces a legacy entry when the local file reference is unchanged`() {
+        val legacy = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+        val refreshed = legacy.copy(
+            sourceChannelId = "netease",
+            sourceAudioId = "42",
+            downloadTime = 20L
+        )
+
+        assertTrue(matchesDownloadedSongCatalogEntry(legacy, refreshed))
+        assertEquals(listOf(refreshed), upsertDownloadedSongCatalog(listOf(legacy), refreshed))
+    }
+
+    @Test
     fun `matchesDownloadedSongCatalogEntry keeps legacy media uri entries aligned`() {
         val legacy = DownloadedSong(
             id = 1L,

@@ -29,7 +29,9 @@ internal data class DownloadedSongCatalogIndex(
                     downloadedSong.matchesVerifiedRemoteIdentity(song)
                 }
                 ?.let { return it }
-            return null
+            return songsByLegacyIdentityKey[
+                downloadedSongCatalogIdentityKey(song.id, song.name, song.artist)
+            ]?.takeIf(DownloadedSong::isLegacyRemoteIdentityMissing)
         }
         val localCandidates = listOfNotNull(
             song.localFilePath?.takeIf(String::isNotBlank),
@@ -83,17 +85,16 @@ internal fun buildDownloadedSongCatalogIndex(
                     songsByStableIdentityKey[stableIdentityKey] = song
                 }
             }
-            ?: run {
-                val legacyIdentityKey = downloadedSongCatalogIdentityKey(
-                    song.id,
-                    song.name,
-                    song.artist
-                )
-                if (legacyIdentityKey !in songsByLegacyIdentityKey) {
-                    songsByLegacyIdentityKey[legacyIdentityKey] = song
-                }
+        if (song.isLegacyRemoteIdentityMissing()) {
+            val legacyIdentityKey = downloadedSongCatalogIdentityKey(
+                song.id,
+                song.name,
+                song.artist
+            )
+            if (legacyIdentityKey !in songsByLegacyIdentityKey) {
+                songsByLegacyIdentityKey[legacyIdentityKey] = song
             }
-    }
+        }
     return DownloadedSongCatalogIndex(
         songsByLocalReference = songsByLocalReference,
         songsByStableIdentityKey = songsByStableIdentityKey,
@@ -106,7 +107,13 @@ internal fun matchesDownloadedSong(
     downloadedSong: DownloadedSong
 ): Boolean {
     if (song.requiresVerifiedRemoteDownloadIdentity()) {
-        return downloadedSong.matchesVerifiedRemoteIdentity(song)
+        return downloadedSong.matchesVerifiedRemoteIdentity(song) ||
+            (
+                downloadedSong.isLegacyRemoteIdentityMissing() &&
+                    song.id == downloadedSong.id &&
+                    song.name == downloadedSong.name &&
+                    song.artist == downloadedSong.artist
+                )
     }
     val localCandidates = listOfNotNull(
         song.localFilePath?.takeIf(String::isNotBlank),
@@ -141,16 +148,16 @@ internal fun matchesDownloadedSongCatalogEntry(
     existing: DownloadedSong,
     target: DownloadedSong
 ): Boolean {
+    val existingReference = resolveDownloadedSongPlaybackReference(existing)
+    val targetReference = resolveDownloadedSongPlaybackReference(target)
+    if (!existingReference.isNullOrBlank() && existingReference == targetReference) {
+        return true
+    }
     if (
         existing.requiresVerifiedRemoteDownloadIdentity() ||
         target.requiresVerifiedRemoteDownloadIdentity()
     ) {
         return existing.matchesVerifiedRemoteIdentity(target)
-    }
-    val existingReference = resolveDownloadedSongPlaybackReference(existing)
-    val targetReference = resolveDownloadedSongPlaybackReference(target)
-    if (!existingReference.isNullOrBlank() && existingReference == targetReference) {
-        return true
     }
     val targetMediaUri = target.mediaUri
         ?.takeIf(String::isNotBlank)
@@ -443,6 +450,10 @@ private fun DownloadedSong.requiresVerifiedRemoteDownloadIdentity(): Boolean {
             !sourceSubAudioId.isNullOrBlank() ||
             id > 0L
         )
+}
+
+private fun DownloadedSong.isLegacyRemoteIdentityMissing(): Boolean {
+    return remoteSourceStableKeyOrNull() == null && !requiresVerifiedRemoteDownloadIdentity()
 }
 
 private fun DownloadedSong.matchesVerifiedRemoteIdentity(song: SongItem): Boolean {

@@ -42,6 +42,27 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `force refresh bypasses metadata reuse even when the entry fingerprint is unchanged`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+
+        assertFalse(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = entry,
+                currentEntry = entry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L),
+                allowCachedMetadataReuse = false
+            )
+        )
+    }
+
+    @Test
     fun `metadata refresh reparses entries without a stable fingerprint`() {
         val cachedEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song.mp3.npmeta.json",

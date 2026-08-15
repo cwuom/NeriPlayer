@@ -1,17 +1,23 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Context
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
+import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 
 class ManagedDownloadStorageMigrationCompatTest {
 
@@ -439,14 +445,73 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
-    fun `migration cannot switch directory while source cleanup remains incomplete`() {
-        assertFalse(
+    fun `migration switches directory after copies succeed even when source cleanup needs retry`() {
+        assertTrue(
             ManagedDownloadStorage.MigrationResult(
                 movedFiles = 2,
                 skippedFiles = 0,
                 cleanupFailedFiles = 1
             ).canSwitchDirectory
         )
+    }
+
+    @Test
+    fun `migration keeps unknown size non-audio source when copied content differs`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-sidecar-migration").toFile()
+        try {
+            val sourceFile = File(directory, "source-cover.jpg").apply {
+                writeText("original-cover")
+            }
+            val targetFile = File(directory, "target-cover.jpg").apply {
+                writeText("cut")
+            }
+            val sourceEntry = ManagedDownloadStorage.StoredEntry(
+                name = sourceFile.name,
+                reference = sourceFile.absolutePath,
+                mediaUri = sourceFile.toURI().toString(),
+                localFilePath = sourceFile.absolutePath,
+                sizeBytes = 0L,
+                lastModifiedMs = 1L
+            )
+            val targetEntry = ManagedDownloadStorage.StoredEntry(
+                name = targetFile.name,
+                reference = targetFile.absolutePath,
+                mediaUri = targetFile.toURI().toString(),
+                localFilePath = targetFile.absolutePath,
+                sizeBytes = targetFile.length(),
+                lastModifiedMs = 2L
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                parseDownloadedMetadata = { null },
+                findRootEntryByName = { _, _, _ -> null },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, reference, _ -> File(reference).delete() },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+
+            val cleanupFailures = finalizer.cleanupMigratedEntries(
+                context = mock(Context::class.java),
+                copiedEntries = listOf(
+                    CopiedMigrationEntry(
+                        original = ManagedMigrationEntry(null, sourceEntry),
+                        copiedEntry = targetEntry,
+                        createdNew = true
+                    )
+                ),
+                sourceRoot = ManagedDownloadRootHandle.FileRoot(directory),
+                targetRoot = ManagedDownloadRootHandle.FileRoot(directory)
+            )
+
+            assertEquals(1, cleanupFailures)
+            assertTrue(sourceFile.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 
     @Test

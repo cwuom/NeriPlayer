@@ -125,6 +125,10 @@ data class LocalAudioImportResult(
     val metadataDeferred: Boolean = false
 )
 
+internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boolean {
+    return result?.songs?.isNotEmpty() == true
+}
+
 internal data class SidecarCopyPlan(
     val source: File,
     val target: File
@@ -330,7 +334,9 @@ object LocalAudioImportManager {
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            scanExternalStorageFolderWithMediaStore(context, folderUri, progress)?.let { result ->
+            val mediaStoreResult = scanExternalStorageFolderWithMediaStore(context, folderUri, progress)
+            if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
+                val result = requireNotNull(mediaStoreResult)
                 return@withContext result
             }
         }

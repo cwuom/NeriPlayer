@@ -13,7 +13,6 @@ import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
-import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -179,9 +178,6 @@ internal class ManagedDownloadMigrationFinalizer(
         targetRoot: ManagedDownloadRootHandle
     ): Boolean {
         val sourceEntry = migrationEntry.original.entry
-        if (sourceEntry.extension !in audioExtensions) {
-            return true
-        }
         val sourceDigest = sha256ForEntry(context, sourceEntry) ?: return false
         val targetDigest = sha256ForEntry(context, migrationEntry.copiedEntry) ?: return false
         if (sourceDigest != targetDigest) {

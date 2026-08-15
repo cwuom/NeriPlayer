@@ -90,8 +90,10 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
             durationMs = existing.durationMs.takeIf { it > 0L } ?: candidate.durationMs,
             coverUrl = existing.coverUrl.takeIf { !it.isNullOrBlank() } ?: candidate.coverUrl,
             customCoverUrl = existing.customCoverUrl
+                .takeIf { !it.isNullOrBlank() }
                 ?: candidate.customCoverUrl,
             originalCoverUrl = existing.originalCoverUrl
+                .takeIf { !it.isNullOrBlank() }
                 ?: candidate.originalCoverUrl,
             matchedLyric = existing.matchedLyric ?: candidate.matchedLyric,
             matchedTranslatedLyric = existing.matchedTranslatedLyric

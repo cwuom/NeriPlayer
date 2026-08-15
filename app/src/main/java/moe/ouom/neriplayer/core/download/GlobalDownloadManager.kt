@@ -1946,7 +1946,7 @@ object GlobalDownloadManager {
                 TAG,
                 "全选删除下载目录，先取消活动下载并保留清理标记直到收敛: songs=${targetSongs.size}"
             )
-            cancelAllDownloadTasks()
+            cancelAllDownloadTasksAndWait()
         }
         val optimisticKeys = targetSongs.mapTo(mutableSetOf()) { it.deletionIdentity() }
         val optimisticSongs = previousSongs.filterNot { candidate ->
@@ -3268,6 +3268,10 @@ object GlobalDownloadManager {
     }
 
     fun cancelAllDownloadTasks() {
+        requestAllDownloadTaskCancellation()
+    }
+
+    private fun requestAllDownloadTaskCancellation(): Job? {
         clearCompletedTasks()
         val appContext = AppContainer.applicationContext
         val batchJobs = activeBatchDownloadJobs.toList()
@@ -3288,7 +3292,7 @@ object GlobalDownloadManager {
             clearPendingDownloadQueue(appContext)
             clearCancelledDownloadKeys(appContext)
             NPLogger.d(TAG, "取消全部下载任务: 无活动任务，已直接清空持久化队列与取消标记")
-            return
+            return null
         }
 
         val activeSongKeys = activeTasks.mapTo(persistedQueuedKeysBefore) { it.song.stableKey() }
@@ -3307,7 +3311,7 @@ object GlobalDownloadManager {
             job.cancel(CancellationException("cancel all download tasks"))
         }
         AudioDownloadManager.cancelDownload()
-        scope.launch {
+        return scope.launch {
             cancelDownloadTasksInBackground(
                 context = appContext,
                 tasks = activeTasks,
@@ -3316,6 +3320,10 @@ object GlobalDownloadManager {
                 cancellationGenerations = cancellationGenerations
             )
         }
+    }
+
+    private suspend fun cancelAllDownloadTasksAndWait() {
+        requestAllDownloadTaskCancellation()?.join()
     }
 
     private fun cleanupPendingWorkingDownloadArtifactsAfterCancellation(
