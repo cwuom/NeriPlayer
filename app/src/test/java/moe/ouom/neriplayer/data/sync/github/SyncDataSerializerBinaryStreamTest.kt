@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.data.sync.github
 
 import moe.ouom.neriplayer.data.sync.model.SyncData
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
+import moe.ouom.neriplayer.data.sync.model.SyncPlaylistSongDeletion
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertArrayEquals
@@ -96,6 +98,130 @@ class SyncDataSerializerBinaryStreamTest {
         assertThrowsAny {
             SyncDataSerializer.serialize(data, useDataSaver = true)
         }
+    }
+
+    @Test
+    fun `causal ranges round trip in both transports`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    name = "playlist",
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            name = "song",
+                            syncMembershipTokens = listOf(
+                                SyncCausalToken("device", 1L),
+                                SyncCausalToken("device", 2L),
+                                SyncCausalToken("device", 3L)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            val decoded = SyncDataSerializer.deserialize(
+                SyncDataSerializer.serialize(data, useDataSaver)
+            )
+            assertEquals(
+                listOf(SyncCausalToken("device", 1L, counterEnd = 3L)),
+                decoded.playlists.single().songs.single().syncMembershipTokens
+            )
+        }
+    }
+
+    @Test
+    fun `fragmented causal ranges fail before either upload format`() {
+        val tokens = (1L..65L).map { counter ->
+            SyncCausalToken("device", counter * 2L)
+        }
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(SyncSong(id = 1L, syncMembershipTokens = tokens))
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `fragmented recent play causal ranges fail before either upload format`() {
+        val tokens = (1L..65L).map { counter ->
+            SyncCausalToken("device", counter * 2L)
+        }
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            recentPlays = listOf(
+                SyncRecentPlay(
+                    songId = 1L,
+                    song = SyncSong(id = 1L, syncMembershipTokens = tokens),
+                    playedAt = 1L,
+                    deviceId = "device"
+                )
+            )
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `too many playlist deletion records fail before either upload format`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlistSongDeletions = (0L..5_000L).map { songId ->
+                SyncPlaylistSongDeletion(
+                    playlistId = 1L,
+                    songId = songId,
+                    album = "netease",
+                    deletedAt = songId,
+                    deviceId = "device"
+                )
+            }
+        )
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `oversized remote body fails before parsing`() {
+        val oversizedJson = ("{" + "x".repeat(8 * 1024 * 1024) + "}")
+            .toByteArray(Charsets.UTF_8)
+
+        assertThrowsAny {
+            SyncDataSerializer.deserialize(oversizedJson)
+        }
+    }
+
+    @Test
+    fun `json with utf8 bom is decoded after format detection`() {
+        val json = SyncDataSerializer.serialize(sampleData(), useDataSaver = false)
+        val withBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + json
+
+        assertMatchesSample(SyncDataSerializer.deserialize(withBom))
     }
 
     // 二进制通道必须保留原始 GZIP 字节, 不能将其转成 UTF-8 文本

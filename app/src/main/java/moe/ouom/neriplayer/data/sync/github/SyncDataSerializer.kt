@@ -37,6 +37,8 @@ import moe.ouom.neriplayer.data.sync.model.SyncLogEntry
 import moe.ouom.neriplayer.data.sync.model.SyncPlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
+import moe.ouom.neriplayer.data.sync.model.compactedSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.model.requireCausalTokenRangeCapacity
 import moe.ouom.neriplayer.data.sync.model.sanitizeLocalCoverUrls
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -78,7 +80,8 @@ object SyncDataSerializer {
      * @return useDataSaver=true 时为原始 GZIP(ProtoBuf) 字节; 否则为 UTF-8 JSON 字节
      */
     fun serialize(data: SyncData, useDataSaver: Boolean): ByteArray {
-        val sanitizedData = data.sanitizeLocalCoverUrls()
+        val sanitizedData = data.sanitizeLocalCoverUrls().compactCausalTokenRanges()
+        ensureCausalTokenCapacity(sanitizedData)
         val content = if (useDataSaver) {
             val protoBytes = protoBuf.encodeToByteArray(sanitizedData)
             require(protoBytes.size <= MAX_DECOMPRESSED_BYTES) {
@@ -90,6 +93,62 @@ object SyncDataSerializer {
         }
         ensureUploadContentSize(content, useDataSaver)
         return content
+    }
+
+    private fun ensureCausalTokenCapacity(data: SyncData) {
+        data.playlists.forEach { playlist ->
+            playlist.songs.forEach { song ->
+                requireCausalTokenRangeCapacity(song.syncMembershipTokens)
+            }
+        }
+        data.favoritePlaylists.forEach { playlist ->
+            playlist.songs.forEach { song ->
+                requireCausalTokenRangeCapacity(song.syncMembershipTokens)
+            }
+        }
+        data.recentPlays.forEach { recentPlay ->
+            requireCausalTokenRangeCapacity(recentPlay.song.syncMembershipTokens)
+        }
+        data.playlistSongDeletions.forEach { deletion ->
+            requireCausalTokenRangeCapacity(deletion.removedMembershipTokens)
+        }
+    }
+
+    private fun SyncData.compactCausalTokenRanges(): SyncData {
+        return copy(
+            playlists = playlists.map { playlist ->
+                playlist.copy(
+                    songs = playlist.songs.map { song ->
+                        song.copy(
+                            syncMembershipTokens = song.syncMembershipTokens.compactedSyncCausalTokens()
+                        )
+                    }
+                )
+            },
+            favoritePlaylists = favoritePlaylists.map { playlist ->
+                playlist.copy(
+                    songs = playlist.songs.map { song ->
+                        song.copy(
+                            syncMembershipTokens = song.syncMembershipTokens.compactedSyncCausalTokens()
+                        )
+                    }
+                )
+            },
+            recentPlays = recentPlays.map { recentPlay ->
+                recentPlay.copy(
+                    song = recentPlay.song.copy(
+                        syncMembershipTokens = recentPlay.song.syncMembershipTokens
+                            .compactedSyncCausalTokens()
+                    )
+                )
+            },
+            playlistSongDeletions = playlistSongDeletions.map { deletion ->
+                deletion.copy(
+                    removedMembershipTokens = deletion.removedMembershipTokens
+                        .compactedSyncCausalTokens()
+                )
+            }.let { SyncPlaylistDeletionPolicy.limitDeletions(it) }
+        )
     }
 
     private fun ensureUploadContentSize(content: ByteArray, useDataSaver: Boolean) {
@@ -107,6 +166,7 @@ object SyncDataSerializer {
      * 3. 旧 Base64(GZIP(ProtoBuf)) 文本 (旧 backup.bin)
      */
     fun deserialize(content: ByteArray): SyncData {
+        ensureRemoteContentSize(content)
         if (looksLikeGzip(content)) {
             return decodeGzipProto(content)
         }
@@ -138,10 +198,11 @@ object SyncDataSerializer {
      * JSON反序列化
      */
     private fun deserializeJson(content: String): SyncData {
-        require(content.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) {
+        val normalizedContent = content.removePrefix("\uFEFF")
+        require(normalizedContent.toByteArray(Charsets.UTF_8).size <= MAX_JSON_BYTES) {
             "JSON sync data is too large"
         }
-        return json.decodeFromString(content)
+        return json.decodeFromString(normalizedContent)
     }
 
     /**
