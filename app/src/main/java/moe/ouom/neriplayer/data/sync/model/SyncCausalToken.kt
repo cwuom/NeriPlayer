@@ -119,6 +119,24 @@ internal fun Iterable<SyncCausalToken>?.expandedLegacyCompatibleSyncCausalTokens
     return expanded
 }
 
+internal fun Iterable<SyncCausalToken>?.legacyCompatibleSyncCausalTokenPointCount(): Long {
+    var total = 0L
+    compactedSyncCausalTokens().forEach { token ->
+        val end = token.endCounter()
+        val count = if (end == Long.MAX_VALUE) {
+            Long.MAX_VALUE
+        } else {
+            end - token.counter + 1L
+        }
+        total = if (count > Long.MAX_VALUE - total) {
+            Long.MAX_VALUE
+        } else {
+            total + count
+        }
+    }
+    return total
+}
+
 internal fun requireCausalTokenRangeCapacity(
     tokens: Iterable<SyncCausalToken>,
     maxRanges: Int = MAX_CAUSAL_TOKEN_RANGES_PER_ENTITY

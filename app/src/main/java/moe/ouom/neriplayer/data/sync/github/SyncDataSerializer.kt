@@ -31,6 +31,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.protobuf.ProtoBuf
 import kotlinx.serialization.protobuf.ProtoNumber
 import moe.ouom.neriplayer.data.sync.model.SyncAction
+import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import moe.ouom.neriplayer.data.sync.model.SyncData
 import moe.ouom.neriplayer.data.sync.model.SyncFavoritePlaylist
 import moe.ouom.neriplayer.data.sync.model.SyncLogEntry
@@ -39,6 +40,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncRecentPlay
 import moe.ouom.neriplayer.data.sync.model.SyncSong
 import moe.ouom.neriplayer.data.sync.model.compactedSyncCausalTokens
 import moe.ouom.neriplayer.data.sync.model.expandedLegacyCompatibleSyncCausalTokens
+import moe.ouom.neriplayer.data.sync.model.legacyCompatibleSyncCausalTokenPointCount
 import moe.ouom.neriplayer.data.sync.model.requireCausalTokenRangeCapacity
 import moe.ouom.neriplayer.data.sync.model.sanitizeLocalCoverUrls
 import java.io.ByteArrayInputStream
@@ -99,7 +101,10 @@ object SyncDataSerializer {
         compatibility: SyncSerializationCompatibility = SyncSerializationCompatibility.LEGACY_SAFE
     ): ByteArray {
         val compactedData = data.sanitizeLocalCoverUrls().compactCausalTokenRanges()
-        ensureCausalTokenCapacity(compactedData)
+        ensureCausalTokenCapacity(
+            data = compactedData,
+            requireLegacyExpansionBudget = compatibility == SyncSerializationCompatibility.LEGACY_SAFE
+        )
         val sanitizedData = when (compatibility) {
             SyncSerializationCompatibility.LEGACY_SAFE -> compactedData.expandCausalTokenRanges()
             SyncSerializationCompatibility.RANGE_V1 -> compactedData
@@ -117,22 +122,43 @@ object SyncDataSerializer {
         return content
     }
 
-    private fun ensureCausalTokenCapacity(data: SyncData) {
+    private fun ensureCausalTokenCapacity(
+        data: SyncData,
+        requireLegacyExpansionBudget: Boolean
+    ) {
+        var legacyPointCount = 0L
+
+        fun checkTokens(tokens: Iterable<SyncCausalToken>) {
+            requireCausalTokenRangeCapacity(tokens)
+            if (!requireLegacyExpansionBudget) return
+
+            val points = tokens.legacyCompatibleSyncCausalTokenPointCount()
+            legacyPointCount = if (points > Long.MAX_VALUE - legacyPointCount) {
+                Long.MAX_VALUE
+            } else {
+                legacyPointCount + points
+            }
+            require(legacyPointCount <= MAX_LEGACY_TOKEN_POINTS_PER_SNAPSHOT) {
+                "Legacy token snapshot budget exceeded: " +
+                    "$legacyPointCount > $MAX_LEGACY_TOKEN_POINTS_PER_SNAPSHOT"
+            }
+        }
+
         data.playlists.forEach { playlist ->
             playlist.songs.forEach { song ->
-                requireCausalTokenRangeCapacity(song.syncMembershipTokens)
+                checkTokens(song.syncMembershipTokens)
             }
         }
         data.favoritePlaylists.forEach { playlist ->
             playlist.songs.forEach { song ->
-                requireCausalTokenRangeCapacity(song.syncMembershipTokens)
+                checkTokens(song.syncMembershipTokens)
             }
         }
         data.recentPlays.forEach { recentPlay ->
-            requireCausalTokenRangeCapacity(recentPlay.song.syncMembershipTokens)
+            checkTokens(recentPlay.song.syncMembershipTokens)
         }
         data.playlistSongDeletions.forEach { deletion ->
-            requireCausalTokenRangeCapacity(deletion.removedMembershipTokens)
+            checkTokens(deletion.removedMembershipTokens)
         }
     }
 
@@ -369,8 +395,12 @@ object SyncDataSerializer {
     /**
      * 获取数据大小 (用于统计) , 返回实际上传的原始字节数
      */
-    fun getDataSize(data: SyncData, useDataSaver: Boolean): Int {
-        return serialize(data, useDataSaver).size
+    fun getDataSize(
+        data: SyncData,
+        useDataSaver: Boolean,
+        compatibility: SyncSerializationCompatibility = SyncSerializationCompatibility.LEGACY_SAFE
+    ): Int {
+        return serialize(data, useDataSaver, compatibility).size
     }
 
     /**
@@ -414,6 +444,7 @@ object SyncDataSerializer {
     private const val LEGACY_BINARY_FILE_NAME = "backup.bin"
     private const val JSON_FILE_NAME = "backup.json"
     private const val BEST_COMPRESSION_THRESHOLD_BYTES = 256 * 1024
+    private const val MAX_LEGACY_TOKEN_POINTS_PER_SNAPSHOT = 262_144L
 
     /**
      * 兼容旧/错误字段编号的 schema (mediaUri 插入到 addedAt 之前的版本)

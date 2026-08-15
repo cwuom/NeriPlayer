@@ -176,6 +176,65 @@ class SyncDataSerializerBinaryStreamTest {
     }
 
     @Test
+    fun `legacy expansion rejects a snapshot over the global point budget`() {
+        val data = largeContiguousTokenSnapshot()
+
+        listOf(false, true).forEach { useDataSaver ->
+            assertThrowsAny {
+                SyncDataSerializer.serialize(data, useDataSaver)
+            }
+        }
+    }
+
+    @Test
+    fun `range mode bypasses the legacy point budget without expansion`() {
+        val body = SyncDataSerializer.serialize(
+            largeContiguousTokenSnapshot(),
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.RANGE_V1
+        )
+
+        assertEquals(
+            33,
+            SyncDataSerializer.deserialize(body).playlists.single().songs.size
+        )
+    }
+
+    @Test
+    fun `explicit range size audit reports compact output`() {
+        val data = SyncData(
+            deviceId = "device",
+            deviceName = "test",
+            playlists = listOf(
+                SyncPlaylist(
+                    id = 1L,
+                    songs = listOf(
+                        SyncSong(
+                            id = 1L,
+                            syncMembershipTokens = (1L..256L).map { counter ->
+                                SyncCausalToken("device", counter)
+                            }
+                        )
+                    )
+                )
+            )
+        )
+
+        val legacySize = SyncDataSerializer.getDataSize(
+            data,
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.LEGACY_SAFE
+        )
+        val compactSize = SyncDataSerializer.getDataSize(
+            data,
+            useDataSaver = true,
+            compatibility = SyncSerializationCompatibility.RANGE_V1
+        )
+
+        assertTrue("explicit range output should be smaller", compactSize < legacySize)
+    }
+
+    @Test
     fun `fragmented causal ranges fail before either upload format`() {
         val tokens = (1L..65L).map { counter ->
             SyncCausalToken("device", counter * 2L)
@@ -338,6 +397,28 @@ class SyncDataSerializerBinaryStreamTest {
 
     private fun isGzip(bytes: ByteArray): Boolean =
         bytes.size >= 2 && bytes[0] == gzipMagic0 && bytes[1] == gzipMagic1
+
+    private fun largeContiguousTokenSnapshot(): SyncData = SyncData(
+        deviceId = "device",
+        deviceName = "test",
+        playlists = listOf(
+            SyncPlaylist(
+                id = 1L,
+                songs = (1..33).map { songId ->
+                    SyncSong(
+                        id = songId.toLong(),
+                        syncMembershipTokens = listOf(
+                            SyncCausalToken(
+                                deviceId = "device",
+                                counter = 1L,
+                                counterEnd = 8_192L
+                            )
+                        )
+                    )
+                }
+            )
+        )
+    )
 
     private fun assertThrowsAny(block: () -> Unit) {
         var threw = false
