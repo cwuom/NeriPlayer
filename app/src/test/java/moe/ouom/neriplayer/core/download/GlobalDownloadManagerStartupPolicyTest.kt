@@ -1338,7 +1338,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `lyric only downloaded playback hydration is deferred`() {
+    fun `lyric only downloaded playback hydration is immediate`() {
         val originalSong = SongItem(
             id = 1L,
             name = "Song",
@@ -1363,7 +1363,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             )
         )
         assertEquals(
-            4_000L,
+            0L,
             resolveDownloadedPlaybackHydrationDelayMs(
                 originalSong = originalSong,
                 hydratedSong = hydratedSong

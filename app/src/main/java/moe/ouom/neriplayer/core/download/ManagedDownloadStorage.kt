@@ -998,11 +998,12 @@ internal object ManagedDownloadStorage {
         forceRefresh: Boolean = false
     ): DownloadLibrarySnapshot = synchronized(snapshotBuildLock) {
         val cacheKey = snapshotCacheStore.currentKey(context)
+        val cachedSnapshot = snapshotCacheStore.cachedSnapshot(
+            context = context,
+            restorePersisted = true
+        )
         if (!forceRefresh) {
-            snapshotCacheStore.cachedSnapshot(context, restorePersisted = false)
-                ?.let { return@synchronized it }
-            snapshotCacheStore.restorePersisted(context, expectedKey = cacheKey)
-                ?.let { return@synchronized it }
+            cachedSnapshot?.let { return@synchronized it }
         }
 
         val root = resolveRootBlocking(context)
@@ -1012,11 +1013,35 @@ internal object ManagedDownloadStorage {
         val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
             entry.name.removeSuffix(METADATA_SUFFIX)
         }
-        val metadataByAudioName = metadataEntries.mapNotNull { entry ->
-            parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
-                entry.name.removeSuffix(METADATA_SUFFIX) to metadata
+        var reusedMetadataCount = 0
+        val metadataByAudioName = buildMap {
+            metadataEntries.forEach { entry ->
+                val audioName = entry.name.removeSuffix(METADATA_SUFFIX)
+                val cachedEntry = cachedSnapshot?.metadataEntriesByAudioName?.get(audioName)
+                val cachedMetadata = cachedSnapshot?.metadataByAudioName?.get(audioName)
+                val metadata = if (
+                    canReuseCachedDownloadedMetadata(
+                        cachedEntry = cachedEntry,
+                        currentEntry = entry,
+                        cachedMetadata = cachedMetadata
+                    )
+                ) {
+                    reusedMetadataCount++
+                    cachedMetadata
+                } else {
+                    parseDownloadedAudioMetadata(context, entry)
+                }
+                if (metadata != null) {
+                    put(audioName, metadata)
+                }
             }
-        }.toMap()
+        }
+        if (forceRefresh && reusedMetadataCount > 0) {
+            NPLogger.d(
+                TAG,
+                "刷新下载目录复用未变化 metadata: reused=$reusedMetadataCount, total=${metadataEntries.size}"
+            )
+        }
         val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
         val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
@@ -1047,6 +1072,19 @@ internal object ManagedDownloadStorage {
         ).also { snapshot ->
             snapshotCacheStore.putSnapshot(context, cacheKey, snapshot)
         }
+    }
+
+    internal fun canReuseCachedDownloadedMetadata(
+        cachedEntry: StoredEntry?,
+        currentEntry: StoredEntry,
+        cachedMetadata: DownloadedAudioMetadata?
+    ): Boolean {
+        return cachedMetadata != null &&
+            cachedEntry != null &&
+            cachedEntry.reference == currentEntry.reference &&
+            cachedEntry.sizeBytes == currentEntry.sizeBytes &&
+            cachedEntry.lastModifiedMs > 0L &&
+            cachedEntry.lastModifiedMs == currentEntry.lastModifiedMs
     }
 
     private fun composeSnapshot(

@@ -244,4 +244,35 @@ class DownloadedSongSourceMetadataTest {
         assertEquals(remoteSong.id, syncSong?.id)
         assertEquals(remoteSong.identity(), syncSong?.identity())
     }
+
+    @Test
+    fun `cached download metadata supplies lyrics without reading sidecars`() {
+        val downloadedSong = DownloadedSong(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "Local Files",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            matchedLyric = "[00:01.00]cached lyric",
+            matchedTranslatedLyric = "[00:01.00]cached translation",
+            originalLyric = "[00:01.00]original lyric",
+            originalTranslatedLyric = "[00:01.00]original translation"
+        )
+
+        val playbackSong = downloadedSong
+            .withCachedDownloadedLyrics(metadata)
+            .toPlaybackSongItem()
+
+        assertEquals("[00:01.00]cached lyric", playbackSong.matchedLyric)
+        assertEquals("[00:01.00]cached translation", playbackSong.matchedTranslatedLyric)
+        assertEquals("[00:01.00]original lyric", playbackSong.originalLyric)
+        assertEquals(
+            "[00:01.00]original translation",
+            playbackSong.originalTranslatedLyric
+        )
+    }
 }

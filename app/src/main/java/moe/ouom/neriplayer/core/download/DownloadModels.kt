@@ -81,6 +81,23 @@ internal fun DownloadedSong.withRecoveredRemoteSourceStableKey(): DownloadedSong
     return if (stableKey == recoveredStableKey) this else copy(stableKey = recoveredStableKey)
 }
 
+internal fun DownloadedSong.withCachedDownloadedLyrics(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): DownloadedSong {
+    if (metadata == null) return this
+    return copy(
+        matchedLyric = metadata.matchedLyric ?: matchedLyric,
+        matchedTranslatedLyric = metadata.matchedTranslatedLyric ?: matchedTranslatedLyric,
+        matchedLyricSource = metadata.matchedLyricSource ?: matchedLyricSource,
+        matchedSongId = metadata.matchedSongId ?: matchedSongId,
+        userLyricOffsetMs = metadata.userLyricOffsetMs.takeIf { it != 0L }
+            ?: userLyricOffsetMs,
+        originalLyric = metadata.originalLyric ?: originalLyric,
+        originalTranslatedLyric = metadata.originalTranslatedLyric
+            ?: originalTranslatedLyric
+    )
+}
+
 private fun String?.toRemoteSourceIdentityOrNull(): SongIdentity? {
     val sourceStableKey = this?.trim()?.takeIf(String::isNotBlank) ?: return null
     return SongItem(

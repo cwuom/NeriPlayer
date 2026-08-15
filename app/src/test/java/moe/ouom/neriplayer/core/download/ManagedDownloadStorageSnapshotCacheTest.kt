@@ -22,6 +22,53 @@ import org.mockito.Mockito
 class ManagedDownloadStorageSnapshotCacheTest {
 
     @Test
+    fun `unchanged metadata entry reuses its parsed snapshot value`() {
+        val cachedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 100L
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry,
+                currentEntry = cachedEntry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+    }
+
+    @Test
+    fun `metadata refresh reparses entries without a stable fingerprint`() {
+        val cachedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 512L,
+            lastModifiedMs = 0L
+        )
+
+        assertFalse(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry,
+                currentEntry = cachedEntry,
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.canReuseCachedDownloadedMetadata(
+                cachedEntry = cachedEntry.copy(lastModifiedMs = 100L),
+                currentEntry = cachedEntry.copy(lastModifiedMs = 101L),
+                cachedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+            )
+        )
+    }
+
+    @Test
     fun `snapshot cache payload round trips entries and metadata`() {
         val audioEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song.mp3",

@@ -344,6 +344,10 @@ internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): Strin
     return headerCover?.trim()?.takeIf { it.isNotEmpty() } ?: BLANK_COVER_MODEL
 }
 
+internal fun shouldResolveLocalPlaylistHeaderCoverFallback(
+    isListArtworkIdle: Boolean
+): Boolean = isListArtworkIdle
+
 internal fun resolveDisplayedLocalPlaylistDetailState(
     uiState: LocalPlaylistDetailUiState,
     requestedPlaylistId: Long
@@ -1187,10 +1191,13 @@ fun LocalPlaylistDetailScreen(
             val displayOrderPlaylistForCover = remember(playlist, tabSongs) {
                 playlist.copy(songs = tabSongs.toMutableList())
             }
+            val resolveHeaderCoverFallback = shouldResolveLocalPlaylistHeaderCoverFallback(
+                isListArtworkIdle
+            )
             val headerCover = rememberPlaylistDisplayCoverUrl(
                 playlist = displayOrderPlaylistForCover,
-                resolveLocalFallback = false,
-                allowEmbeddedCoverFallback = false
+                resolveLocalFallback = resolveHeaderCoverFallback,
+                allowEmbeddedCoverFallback = resolveHeaderCoverFallback
             )
             LaunchedEffect(headerCover, offlineMode, isListArtworkIdle) {
                 if (!isListArtworkIdle) return@LaunchedEffect

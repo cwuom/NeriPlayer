@@ -171,7 +171,13 @@ internal fun resolveDownloadedPlaybackHydrationDelayMs(
     originalSong: SongItem,
     hydratedSong: SongItem
 ): Long {
-    return if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
+    val lyricsChanged = originalSong.matchedLyric != hydratedSong.matchedLyric ||
+        originalSong.matchedTranslatedLyric != hydratedSong.matchedTranslatedLyric ||
+        originalSong.originalLyric != hydratedSong.originalLyric ||
+        originalSong.originalTranslatedLyric != hydratedSong.originalTranslatedLyric
+    return if (lyricsChanged) {
+        0L
+    } else if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
         GlobalDownloadManager.PLAYBACK_METADATA_HYDRATION_DELAY_MS
     } else {
         GlobalDownloadManager.LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS

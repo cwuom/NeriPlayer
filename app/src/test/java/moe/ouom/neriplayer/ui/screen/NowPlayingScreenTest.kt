@@ -60,6 +60,21 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `fast lyrics state renders normal LRC before enhanced hydration`() {
+        val state = buildNowPlayingFastLyricsState(
+            rawLyrics = "[00:01.00]first line\n[00:02.00]second line",
+            rawTranslatedLyrics = "[00:01.00]translated line",
+            rawPhoneticLyrics = null
+        )
+
+        assertEquals(2, state.lyrics.size)
+        assertEquals("first line", state.lyrics.first().text)
+        assertEquals(1, state.translatedLyrics.size)
+        assertEquals("translated line", state.translatedLyrics.first().text)
+        assertEquals(state.lyrics, state.plainLyrics)
+    }
+
+    @Test
     fun `wide lyrics use synced renderer when advanced lyrics are disabled`() {
         assertEquals(
             NowPlayingWideLyricsMode.SYNCED,

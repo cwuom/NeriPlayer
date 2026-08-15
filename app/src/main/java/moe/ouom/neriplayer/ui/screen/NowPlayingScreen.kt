@@ -1746,7 +1746,7 @@ private fun seekToLyricSafely(
     resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
 }
 
-private data class LoadedLyricsState(
+internal data class LoadedLyricsState(
     val rawLyrics: String?,
     val rawTranslatedLyrics: String?,
     val rawPhoneticLyrics: String?,
@@ -1757,6 +1757,41 @@ private data class LoadedLyricsState(
     val plainTranslatedLyrics: List<LyricEntry>,
     val embeddedPhoneticLyrics: List<LyricEntry>
 )
+
+internal fun buildNowPlayingFastLyricsState(
+    rawLyrics: String?,
+    rawTranslatedLyrics: String?,
+    rawPhoneticLyrics: String?
+): LoadedLyricsState {
+    val bypassRawLyrics = shouldBypassCollapsedStoredLyric(rawLyrics)
+    val bypassTranslatedLyrics = shouldBypassCollapsedStoredLyric(rawTranslatedLyrics)
+    val lyrics = rawLyrics
+        ?.takeIf { it.isNotBlank() && !bypassRawLyrics }
+        ?.let(::parseNeteaseLyricsAuto)
+        .orEmpty()
+    val translatedLyrics = rawTranslatedLyrics
+        ?.takeIf { it.isNotBlank() && !bypassTranslatedLyrics }
+        ?.let(::parseNeteaseLyricsAuto)
+        .orEmpty()
+    val phoneticLyrics = rawPhoneticLyrics
+        ?.takeIf(String::isNotBlank)
+        ?.let(::parseNeteaseLyricsAuto)
+        .orEmpty()
+    return LoadedLyricsState(
+        rawLyrics = rawLyrics.takeUnless { bypassRawLyrics },
+        rawTranslatedLyrics = rawTranslatedLyrics.takeUnless { bypassTranslatedLyrics },
+        rawPhoneticLyrics = rawPhoneticLyrics,
+        lyrics = lyrics,
+        translatedLyrics = translatedLyrics,
+        phoneticLyrics = phoneticLyrics,
+        plainLyrics = lyrics.flattenWordTimedEntries(),
+        plainTranslatedLyrics = translatedLyrics.flattenWordTimedEntries(),
+        embeddedPhoneticLyrics = buildPhoneticLyricEntries(
+            rawLyrics = rawLyrics,
+            lyrics = lyrics
+        )
+    )
+}
 
 internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,
@@ -2192,6 +2227,89 @@ fun NowPlayingScreen(
         currentMediaUrl
     ) {
         val song = currentSong
+        fun publishLoadedLyricsState(loadedLyricsState: LoadedLyricsState) {
+            if (song != null && currentSong?.sameIdentityAs(song) != true) {
+                return
+            }
+            val loadedHasLyrics = loadedLyricsState.rawLyrics?.isNotBlank() == true ||
+                loadedLyricsState.rawTranslatedLyrics?.isNotBlank() == true ||
+                loadedLyricsState.rawPhoneticLyrics?.isNotBlank() == true ||
+                loadedLyricsState.lyrics.isNotEmpty() ||
+                loadedLyricsState.translatedLyrics.isNotEmpty() ||
+                loadedLyricsState.phoneticLyrics.isNotEmpty()
+            val sameSong = song != null
+            if (song == null || shouldReplaceLyricsAfterRefresh(sameSong, loadedHasLyrics)) {
+                rawLyricsText = loadedLyricsState.rawLyrics
+                rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
+                rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
+                lyrics = loadedLyricsState.lyrics
+                translatedLyrics = loadedLyricsState.translatedLyrics
+                remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
+                plainLyrics = loadedLyricsState.plainLyrics
+                plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
+                embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
+            }
+        }
+        val fastLoadedLyricsState = withContext(Dispatchers.IO) {
+            val isManagedLocalDownload = song?.let { candidate ->
+                candidate.isLocalSong() && hasCachedLocalDownload(candidate)
+            } == true
+            val canReadManagedDownloadLyrics = song?.let { candidate ->
+                shouldReadManagedDownloadLyrics(
+                    song = candidate,
+                    isManagedLocalDownload = isManagedLocalDownload
+                )
+            } == true
+            val localLyrics = song?.takeIf { candidate -> candidate.isLocalSong() }?.let { localSong ->
+                runCatching { LocalMediaSupport.inspectLyricsFast(localSong) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "NowPlayingLyrics",
+                            "本地歌词首屏读取失败: ${error.message}"
+                        )
+                    }
+                    .getOrNull()
+            }
+            val storedRawLyrics = resolveStoredLyricText(
+                currentLyric = song?.matchedLyric,
+                legacyLyric = song?.originalLyric
+            )
+            val downloadedRawLyrics = song?.takeIf {
+                canReadManagedDownloadLyrics &&
+                    localLyrics?.lyric == null &&
+                    storedRawLyrics == null &&
+                    ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+                        context = context,
+                        restorePersisted = false
+                    ) != null
+            }?.let { downloadedSong ->
+                runCatching {
+                    AudioDownloadManager.getLyricContent(context, downloadedSong)
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "NowPlayingLyrics",
+                        "下载原文歌词首屏读取失败: ${error.message}"
+                    )
+                }.getOrNull()
+            }
+            buildNowPlayingFastLyricsState(
+                rawLyrics = resolveLocalFirstLyricText(
+                    localLyric = localLyrics?.lyric,
+                    storedLyric = storedRawLyrics,
+                    downloadedLyric = downloadedRawLyrics
+                ),
+                rawTranslatedLyrics = resolveLocalFirstLyricText(
+                    localLyric = localLyrics?.translatedLyric,
+                    storedLyric = resolveStoredLyricText(
+                        currentLyric = song?.matchedTranslatedLyric,
+                        legacyLyric = song?.originalTranslatedLyric
+                    ),
+                    downloadedLyric = null
+                ),
+                rawPhoneticLyrics = localLyrics?.romanizedLyric
+            )
+        }
+        publishLoadedLyricsState(fastLoadedLyricsState)
         val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
             val isManagedLocalDownload = song?.let { candidate ->
@@ -2419,27 +2537,7 @@ fun NowPlayingScreen(
                 )
             )
         }
-        if (song != null && currentSong?.sameIdentityAs(song) != true) {
-            return@LaunchedEffect
-        }
-        val loadedHasLyrics = loadedLyricsState.rawLyrics?.isNotBlank() == true ||
-            loadedLyricsState.rawTranslatedLyrics?.isNotBlank() == true ||
-            loadedLyricsState.rawPhoneticLyrics?.isNotBlank() == true ||
-            loadedLyricsState.lyrics.isNotEmpty() ||
-            loadedLyricsState.translatedLyrics.isNotEmpty() ||
-            loadedLyricsState.phoneticLyrics.isNotEmpty()
-        val sameSong = song != null
-        if (song == null || shouldReplaceLyricsAfterRefresh(sameSong, loadedHasLyrics)) {
-            rawLyricsText = loadedLyricsState.rawLyrics
-            rawTranslatedLyricsText = loadedLyricsState.rawTranslatedLyrics
-            rawPhoneticLyricsText = loadedLyricsState.rawPhoneticLyrics
-            lyrics = loadedLyricsState.lyrics
-            translatedLyrics = loadedLyricsState.translatedLyrics
-            remotePhoneticLyrics = loadedLyricsState.phoneticLyrics
-            plainLyrics = loadedLyricsState.plainLyrics
-            plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
-            embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
-        }
+        publishLoadedLyricsState(loadedLyricsState)
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics

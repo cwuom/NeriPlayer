@@ -1438,8 +1438,7 @@ object GlobalDownloadManager {
 
     fun refreshDownloadedSongsForManager(context: Context) {
         val appContext = context.applicationContext
-        scanLocalFiles(appContext, forceRefresh = false)
-        scheduleCatalogReconcile(appContext, forceRefresh = true)
+        scanLocalFiles(appContext, forceRefresh = true)
     }
 
     private fun consumePendingRefreshRequest(): Boolean? = synchronized(this) {
@@ -2059,7 +2058,9 @@ object GlobalDownloadManager {
                 val playbackUri = storedAudio?.playbackUri
                     ?: ManagedDownloadStorage.toPlayableUri(playbackReference)
                     ?: playbackReference
-                val quickSong = song.toPlaybackSongItem(
+                val quickSong = song.withCachedDownloadedLyrics(
+                    storedAudio?.let { snapshot?.metadataByAudioName?.get(it.name) }
+                ).toPlaybackSongItem(
                     playbackUri = playbackUri,
                     localFileName = storedAudio?.name
                         ?: song.filePath.substringAfterLast('/').takeIf(String::isNotBlank),
