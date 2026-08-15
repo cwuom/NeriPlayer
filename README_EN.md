@@ -283,9 +283,11 @@ Current positioning:
   track. When session candidate sharing is enabled, Durable Objects temporarily
   cache the controller's current playback candidates so listeners can retrieve them
   without waiting for another controller response. A current track keeps at most
-  three validated candidates; listeners always resolve with their own quality policy first
-  and use those session-only candidates only
-  after local resolution fails, so they never enter song or offline caches. Reconnecting
+  three validated candidates; listeners always resolve with their own quality policy first,
+  try those local candidates first, and keep the session-only candidates as isolated startup
+  fallbacks, so they never enter song or offline caches. Valid playback-mode queue snapshots
+  reuse the requester's real shuffle or restored order without reloading the current track.
+  Mode commits re-anchor projected position with the previous repeat semantics. Reconnecting
   with the same member credential does not trigger member-change auto-pause, and both
   roles keep their WebSocket connection alive. Explicitly leaving a room removes the
   member and broadcasts the departure, while a transport-only disconnect remains
@@ -539,10 +541,12 @@ For release build and signing details, see
   its current track. When sharing is enabled, the Worker caches and exposes only the current
   controller URL; disabling sharing clears that cache. The Worker keeps at most three
   deduplicated HTTP(S) candidates for the current track; listeners resolve their own quality
-  policy first and use candidates only as a session-scoped fallback after local resolution fails.
-  Candidates are never written to normal song or offline caches. Room position is projected from
-  track duration, and single-track repeat wraps it by that duration. Outdated client control events
-  are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
+  policy first, try local candidates first, and retain shared candidates as session-scoped startup
+  fallbacks. Candidates are never written to normal song or offline caches. Shuffle requests reuse
+  the requester's validated real queue order, disabling shuffle restores that order without
+  reloading the current song, and playback-mode commits re-anchor room position. Single-track
+  repeat wraps position by track duration. Outdated client control events are filtered, and
+  `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size (separate cover and

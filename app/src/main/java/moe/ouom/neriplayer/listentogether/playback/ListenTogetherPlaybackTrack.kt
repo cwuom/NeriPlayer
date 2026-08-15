@@ -66,16 +66,26 @@ internal fun shouldApplyListenTogetherQueueUpdateWithoutReload(
 ): Boolean {
     if (!isListenTogetherQueueUpdateCause(causeType)) return false
     val incomingCurrentSong = incomingQueue.getOrNull(incomingCurrentIndex) ?: return false
-    return currentQueue.isNotEmpty() && currentSong?.sameTrackAs(incomingCurrentSong) == true
+    if (currentQueue.isEmpty() || currentSong?.sameTrackAs(incomingCurrentSong) != true) {
+        return false
+    }
+    return causeType !in LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES ||
+        currentQueue.hasSameTrackMultisetAs(incomingQueue)
 }
 
 internal fun isListenTogetherQueueUpdateCause(causeType: String?): Boolean {
-    return causeType in LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES
+    return causeType in LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES ||
+        causeType in LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES
 }
 
 private val LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES = setOf(
     "SET_QUEUE",
     "REQUEST_SET_QUEUE"
+)
+
+private val LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES = setOf(
+    "PLAYBACK_MODE",
+    "REQUEST_PLAYBACK_MODE"
 )
 
 internal fun List<SongItem>.indexOfTrack(track: SongItem?): Int {

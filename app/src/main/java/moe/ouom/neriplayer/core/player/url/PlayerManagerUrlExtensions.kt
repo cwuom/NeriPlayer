@@ -150,7 +150,13 @@ internal suspend fun PlayerManager.resolveSongUrl(
         "NERI-PlayerManager",
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
-    if (!forceRefresh && isDirectStreamUrl(song.streamUrl)) {
+    val initialListenTogetherFallback = listenTogetherFallbackResult(song)
+    if (
+        shouldUseDirectStreamShortcut(
+            forceRefresh = forceRefresh,
+            hasListenTogetherFallback = initialListenTogetherFallback != null
+        ) && isDirectStreamUrl(song.streamUrl)
+    ) {
         prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
@@ -279,7 +285,6 @@ internal suspend fun PlayerManager.resolveSongUrl(
             return prefetchedResult
         }
     }
-    val initialListenTogetherFallback = listenTogetherFallbackResult(song)
     val resolverSideEffects = if (initialListenTogetherFallback != null) {
         RefreshResolverSideEffects(RefreshSideEffectGate { false })
     } else {
@@ -316,22 +321,27 @@ internal suspend fun PlayerManager.resolveSongUrl(
         }
     }
 
-    val listenTogetherFallback = if (
-        result is SongUrlResult.Failure || result is SongUrlResult.RequiresLogin
-    ) {
-        listenTogetherFallbackResult(song)
-    } else {
-        null
-    }
+    val listenTogetherFallback = listenTogetherFallbackResult(song)
+    val resolvedResult = mergeListenTogetherFallbackResult(
+        localResult = result,
+        listenTogetherFallback = listenTogetherFallback
+    )
     if (listenTogetherFallback != null) {
+        val localCandidateCount = (result as? SongUrlResult.Success)
+            ?.playbackCandidates()
+            ?.size
+            ?: 0
+        val fallbackCandidateCount = listenTogetherFallback.playbackCandidates().size
+        val action = if (result is SongUrlResult.Success) "append" else "use"
         NPLogger.w(
             "NERI-PlayerManager",
-            "resolveSongUrl: local resolution failed, use isolated listen-together fallback: song=${song.name}, candidates=${listenTogetherFallback.playbackCandidates().size}"
+            "resolveSongUrl: $action isolated listen-together fallback candidates: " +
+                "song=${song.name}, localCandidates=$localCandidateCount, " +
+                "fallbackCandidates=$fallbackCandidateCount"
         )
-        return listenTogetherFallback
     }
 
-    return if (result is SongUrlResult.Failure && hasCachedData) {
+    return if (resolvedResult is SongUrlResult.Failure && hasCachedData) {
         NPLogger.d("NERI-PlayerManager", "远端解析失败但缓存完整，回退到离线缓存地址: $cacheKey")
         val fallbackDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
         val fallbackAudioInfo = fallbackDescriptor?.toPlaybackAudioInfo {
@@ -347,7 +357,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             durationMs = song.durationMs.takeIf { it > 0L }
         )
     } else {
-        result
+        resolvedResult
     }
 }
 

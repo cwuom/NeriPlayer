@@ -183,6 +183,18 @@ class ListenTogetherControlHardeningTest {
     }
 
     @Test
+    fun `single repeat mode snapshot wraps an exact track end to zero`() {
+        assertEquals(
+            0L,
+            wrapListenTogetherSingleTrackRepeatPosition(
+                positionMs = 60_000L,
+                repeatMode = 1,
+                durationMs = 60_000L
+            )
+        )
+    }
+
+    @Test
     fun `expected position for paused returns base position`() {
         val playback = ListenTogetherPlaybackState(
             state = "paused",

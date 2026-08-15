@@ -496,6 +496,71 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `playback mode reorder updates the queue without reloading the current song`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val originalQueue = listOf(first, current, last)
+        val reorderedQueue = listOf(current, last, first)
+
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `playback mode update cannot add remove or switch the current song`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val added = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "4")
+        val originalQueue = listOf(first, current, last)
+
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(current, last, added, first),
+                incomingCurrentIndex = 0
+            )
+        )
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(current, last),
+                incomingCurrentIndex = 0
+            )
+        )
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(first, current, last),
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
     fun `queue update applies additions and removals without reloading the current song`() {
         val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
         val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")

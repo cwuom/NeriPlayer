@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.listentogether.playback.mergeCurrentTrack
 import moe.ouom.neriplayer.listentogether.playback.normalizedDirectStreamUrl
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
+import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
@@ -144,9 +145,12 @@ internal class ListenTogetherEventFactory(
         repeatMode: Int,
         shuffleEnabled: Boolean
     ): ListenTogetherEvent {
+        val positionMs = playbackModePositionSnapshot(
+            PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
+        )
         return playbackSnapshotEvent(
             type = if (isControllerProvider()) "PLAYBACK_MODE" else "REQUEST_PLAYBACK_MODE",
-            positionMs = PlayerManager.playbackPositionFlow.value.coerceAtLeast(0L)
+            positionMs = positionMs
         ).copy(
             repeatMode = repeatMode,
             shuffleEnabled = shuffleEnabled
@@ -341,7 +345,12 @@ internal class ListenTogetherEventFactory(
         val requestType = message.causedBy?.type ?: return null
         val commitType = requestType.removePrefix("REQUEST_")
         if (commitType == requestType) return null
-        val positionMs = message.positionMs ?: message.expectedPositionMs ?: 0L
+        val rawPositionMs = message.positionMs ?: message.expectedPositionMs ?: 0L
+        val positionMs = if (commitType == "PLAYBACK_MODE") {
+            playbackModePositionSnapshot(rawPositionMs)
+        } else {
+            rawPositionMs
+        }
         return ListenTogetherEvent(
             type = commitType,
             eventId = eventIdFactory(),
@@ -357,6 +366,23 @@ internal class ListenTogetherEventFactory(
             repeatMode = message.repeatMode,
             shuffleEnabled = message.shuffleEnabled,
             requestTrackStableKey = message.requestTrackStableKey
+        )
+    }
+
+    private fun playbackModePositionSnapshot(positionMs: Long): Long {
+        val roomState = roomStateProvider()
+        val currentTrack = roomState?.let { state ->
+            state.track ?: state.queue.getOrNull(state.currentIndex)
+        }
+        val durationMs = currentTrack?.durationMs
+            ?: PlayerManager.currentSongFlow.value?.durationMs
+            ?: 0L
+        val previousRepeatMode = roomState?.playback?.repeatMode
+            ?: PlayerManager.repeatModeFlow.value
+        return wrapListenTogetherSingleTrackRepeatPosition(
+            positionMs = positionMs,
+            repeatMode = previousRepeatMode,
+            durationMs = durationMs
         )
     }
 

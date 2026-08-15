@@ -57,6 +57,29 @@ internal fun PlayerManager.listenTogetherFallbackResult(song: SongItem): SongUrl
     )
 }
 
+internal fun mergeListenTogetherFallbackResult(
+    localResult: SongUrlResult,
+    listenTogetherFallback: SongUrlResult.Success?
+): SongUrlResult {
+    listenTogetherFallback ?: return localResult
+    return when (localResult) {
+        is SongUrlResult.Success -> localResult.copy(
+            fallbackCandidates = localResult.fallbackCandidates +
+                listenTogetherFallback.playbackCandidates()
+        )
+        SongUrlResult.Failure,
+        SongUrlResult.RequiresLogin -> listenTogetherFallback
+        SongUrlResult.WaitingForAuthoritativeStream -> localResult
+    }
+}
+
+internal fun shouldUseDirectStreamShortcut(
+    forceRefresh: Boolean,
+    hasListenTogetherFallback: Boolean
+): Boolean {
+    return !forceRefresh && !hasListenTogetherFallback
+}
+
 internal fun PlayerManager.isCurrentListenTogetherFallbackMediaUrl(): Boolean {
     val currentUrl = _currentMediaUrl.value ?: return false
     val candidate = currentPlaybackCandidate() ?: return false
