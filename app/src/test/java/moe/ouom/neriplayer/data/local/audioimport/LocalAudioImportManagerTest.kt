@@ -259,6 +259,36 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong cleans legacy source prefix from filename album fallback`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate(
+            "%title% - %artist% - %album% - %source%"
+        )
+        try {
+            val importedFile = tempFolder.newFile("茫 - 李润祺 - Netease茫 - netease.flac")
+
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = importedFile.absolutePath,
+                    displayName = importedFile.name,
+                    title = "content://provider/audio/123",
+                    artist = "",
+                    album = "",
+                    durationMs = null,
+                    localFile = importedFile
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("茫", song.name)
+            assertEquals("李润祺", song.artist)
+            assertEquals("茫", song.album)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
     fun `buildQuickImportedSong does not treat source prefix as artist`() {
         val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
         ManagedDownloadStorage.updateDownloadFileNameTemplate("%source% - %artist% - %title%")

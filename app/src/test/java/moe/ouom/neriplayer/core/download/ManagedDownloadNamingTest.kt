@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,6 +61,33 @@ class ManagedDownloadNamingTest {
     }
 
     @Test
+    fun `download filename cleans source album prefix without changing remote identity`() {
+        val song = SongItem(
+            id = 123L,
+            name = "茫",
+            artist = "李润祺",
+            album = "Netease茫",
+            albumId = 456L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "123"
+        )
+        val stableKey = song.stableKey()
+        val identity = song.identity()
+
+        assertEquals("茫 - 李润祺 - 茫 - netease", renderManagedDownloadBaseName(song))
+        assertEquals("茫 - 茫", renderManagedDownloadBaseName(song, "%album% - %title%"))
+        assertEquals("Netease茫", song.album)
+        assertEquals(stableKey, song.stableKey())
+        assertEquals(identity, song.identity())
+
+        val candidates = candidateManagedDownloadBaseNames(song)
+        assertTrue(candidates.contains("茫 - 李润祺 - 茫 - netease"))
+        assertTrue(candidates.contains("茫 - 李润祺 - Netease茫 - netease"))
+    }
+
+    @Test
     fun `parseManagedDownloadBaseName respects active custom template`() {
         val parsed = parseManagedDownloadBaseName(
             baseName = "叶惠美 - 晴天",
@@ -78,6 +108,45 @@ class ManagedDownloadNamingTest {
         assertEquals("netease", parsed?.source)
         assertEquals("周杰伦", parsed?.artist)
         assertEquals("晴天", parsed?.title)
+    }
+
+    @Test
+    fun `parseManagedDownloadBaseName cleans historical source album prefix`() {
+        val parsed = parseManagedDownloadBaseName("茫 - 李润祺 - Netease茫 - netease")
+
+        assertEquals("茫", parsed?.title)
+        assertEquals("李润祺", parsed?.artist)
+        assertEquals("茫", parsed?.album)
+        assertEquals("netease", parsed?.source)
+    }
+
+    @Test
+    fun `source only album marker is omitted while historical filename stays discoverable`() {
+        val song = SongItem(
+            id = 123L,
+            name = "歌曲",
+            artist = "歌手",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "123"
+        )
+
+        assertEquals("歌曲 - 歌手 - netease", renderManagedDownloadBaseName(song))
+        assertTrue(candidateManagedDownloadBaseNames(song).contains("歌曲 - 歌手 - netease"))
+        assertTrue(
+            candidateManagedDownloadBaseNames(song).contains(
+                "歌曲 - 歌手 - Netease - netease"
+            )
+        )
+
+        val parsed = parseManagedDownloadBaseName("歌曲 - 歌手 - netease")
+        assertEquals("歌曲", parsed?.title)
+        assertEquals("歌手", parsed?.artist)
+        assertNull(parsed?.album)
+        assertEquals("netease", parsed?.source)
     }
 
     @Test

@@ -74,6 +74,41 @@ class ManagedDownloadStorageLookupTest {
         assertEquals("localReference", result?.hitType)
     }
 
+    @Test
+    fun `filename lookup accepts clean and historical source prefixed albums`() {
+        val song = SongItem(
+            id = 123L,
+            name = "茫",
+            artist = "李润祺",
+            album = "Netease茫",
+            albumId = 456L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "123"
+        )
+        val baseNames = candidateManagedDownloadBaseNames(song)
+        val cleanEntry = storedEntry(
+            name = "茫 - 李润祺 - 茫 - netease.flac",
+            reference = "/music/clean.flac",
+            mediaUri = "/music/clean.flac"
+        )
+        val historicalEntry = storedEntry(
+            name = "茫 - 李润祺 - Netease茫 - netease.flac",
+            reference = "/music/historical.flac",
+            mediaUri = "/music/historical.flac"
+        )
+
+        assertEquals(
+            cleanEntry,
+            ManagedDownloadStorageLookup.findAudioEntry(listOf(cleanEntry), baseNames)
+        )
+        assertEquals(
+            historicalEntry,
+            ManagedDownloadStorageLookup.findAudioEntry(listOf(historicalEntry), baseNames)
+        )
+    }
+
     private fun storedEntry(
         name: String,
         reference: String,

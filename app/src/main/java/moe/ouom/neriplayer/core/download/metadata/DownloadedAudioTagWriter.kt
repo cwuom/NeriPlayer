@@ -9,8 +9,8 @@ import com.kyant.taglib.TagLib
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.naming.normalizeManagedDownloadAlbumName
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -220,31 +220,8 @@ internal object DownloadedAudioTagWriter {
         return fallback?.takeIf { it.isNotBlank() }
     }
 
-    internal fun normalizeEmbeddedAlbumName(album: String): String? {
-        val normalized = album.trim()
-        if (normalized.isBlank()) {
-            return null
-        }
-
-        stripSourcePrefix(normalized, PlayerManager.NETEASE_SOURCE_TAG)?.let { return it }
-        if (normalized.equals(PlayerManager.NETEASE_SOURCE_TAG, ignoreCase = true)) {
-            return null
-        }
-        if (normalized.equals(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true) ||
-            normalized.startsWith("${PlayerManager.BILI_SOURCE_TAG}|", ignoreCase = true)
-        ) {
-            return null
-        }
-
-        return normalized
-    }
-
-    private fun stripSourcePrefix(value: String, prefix: String): String? {
-        if (!value.startsWith(prefix, ignoreCase = true)) {
-            return null
-        }
-        return value.substring(prefix.length).trim().takeIf(String::isNotBlank)
-    }
+    internal fun normalizeEmbeddedAlbumName(album: String): String? =
+        normalizeManagedDownloadAlbumName(album)
 
     internal fun normalizeLyricForEmbedding(lyric: String?, enabled: Boolean): String? {
         if (!enabled || lyric.isNullOrBlank()) {
