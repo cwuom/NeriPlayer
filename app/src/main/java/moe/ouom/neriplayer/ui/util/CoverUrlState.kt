@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
@@ -39,24 +38,19 @@ private val resolvedCoverMemoryCache = object : LinkedHashMap<String, String>(
 }
 
 internal fun shouldResolveSlowLocalCoverFallback(
-    resolveLocalFallback: Boolean,
-    playbackIntentActive: Boolean
-): Boolean = resolveLocalFallback && !playbackIntentActive
+    resolveLocalFallback: Boolean
+): Boolean = resolveLocalFallback
 
 internal fun shouldResolveEmbeddedCoverFallback(
     resolveLocalFallback: Boolean,
-    playbackIntentActive: Boolean,
     allowEmbeddedCoverFallback: Boolean
-): Boolean = shouldResolveSlowLocalCoverFallback(
-    resolveLocalFallback = resolveLocalFallback,
-    playbackIntentActive = playbackIntentActive
-) && allowEmbeddedCoverFallback
+): Boolean = shouldResolveSlowLocalCoverFallback(resolveLocalFallback) &&
+    allowEmbeddedCoverFallback
 
 internal fun shouldResolvePlaylistCoverFallback(
     resolveLocalFallback: Boolean,
-    playbackIntentActive: Boolean,
     hasImmediateCover: Boolean
-): Boolean = resolveLocalFallback && !playbackIntentActive && !hasImmediateCover
+): Boolean = resolveLocalFallback && !hasImmediateCover
 
 @Composable
 fun rememberSongDisplayCoverUrl(
@@ -64,12 +58,10 @@ fun rememberSongDisplayCoverUrl(
     resolveLocalFallback: Boolean = true
 ): String? {
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val playbackIntentActive by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
     return rememberSongDisplayCoverUrl(
         song = song,
         resolveLocalFallback = resolveLocalFallback,
-        downloadPresenceVersion = downloadPresenceVersion,
-        playbackIntentActive = playbackIntentActive
+        downloadPresenceVersion = downloadPresenceVersion
     )
 }
 
@@ -78,7 +70,6 @@ internal fun rememberSongDisplayCoverUrl(
     song: SongItem?,
     resolveLocalFallback: Boolean,
     downloadPresenceVersion: Int,
-    playbackIntentActive: Boolean,
     allowEmbeddedCoverFallback: Boolean = true
 ): String? {
     val context = LocalContext.current
@@ -102,7 +93,6 @@ internal fun rememberSongDisplayCoverUrl(
         appContext,
         downloadPresenceVersion,
         resolveLocalFallback,
-        playbackIntentActive,
         allowEmbeddedCoverFallback
     ) {
         if (song == null) {
@@ -130,7 +120,6 @@ internal fun rememberSongDisplayCoverUrl(
         if (
             !shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveLocalFallback,
-                playbackIntentActive = playbackIntentActive,
                 allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
             )
         ) {
@@ -173,7 +162,6 @@ fun rememberPlaylistDisplayCoverUrl(
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val playbackIntentActive by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
     val effectivePlaylist = remember(playlist, appContext) {
         playlist?.takeUnless {
             it.songs.isEmpty() && LocalFilesPlaylist.isSystemPlaylist(it, appContext)
@@ -200,7 +188,6 @@ fun rememberPlaylistDisplayCoverUrl(
         downloadPresenceVersion,
         resolveLocalFallback,
         additionalCoverCandidates,
-        playbackIntentActive,
         allowEmbeddedCoverFallback
     ) {
         if (effectivePlaylist == null) {
@@ -219,13 +206,12 @@ fun rememberPlaylistDisplayCoverUrl(
             rememberResolvedCover(playlistKey, immediateCover)
             coverUrl = immediateCover
         }
-        if (!resolveLocalFallback || !allowEmbeddedCoverFallback || playbackIntentActive) {
+        if (!resolveLocalFallback || !allowEmbeddedCoverFallback) {
             return@LaunchedEffect
         }
         if (
             !shouldResolvePlaylistCoverFallback(
                 resolveLocalFallback = resolveLocalFallback,
-                playbackIntentActive = playbackIntentActive,
                 hasImmediateCover = !immediateCover.isNullOrBlank()
             )
         ) {
@@ -256,7 +242,6 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
     suspend fun resolveCandidates(candidates: Iterable<SongItem>): String? {
         for (song in candidates) {
             if (!song.isLocalSong()) continue
-            if (PlayerManager.playbackControlPlayingFlow.value) return null
 
             val resolvedCover = withContext(coverResolutionDispatcher) {
                 song.displayCoverUrl(

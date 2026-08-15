@@ -173,7 +173,9 @@ internal fun SettingsStorageCacheSection(
 ) {
     val composeResources = LocalResources.current
     val showDownloadFileNameDialog = remember { mutableStateOf(false) }
-    var pendingDownloadFileNameTemplate by rememberSaveable {
+    var pendingDownloadFileNameTemplate by rememberSaveable(
+        stateSaver = TextFieldValue.Saver
+    ) {
         mutableStateOf(
             TextFieldValue(downloadFileNameTemplate ?: DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE)
         )

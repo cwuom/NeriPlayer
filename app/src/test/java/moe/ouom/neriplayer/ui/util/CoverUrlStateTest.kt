@@ -10,21 +10,10 @@ import org.junit.Test
 class CoverUrlStateTest {
 
     @Test
-    fun `slow local cover fallback waits while playback has priority`() {
-        assertFalse(
-            shouldResolveSlowLocalCoverFallback(
-                resolveLocalFallback = true,
-                playbackIntentActive = true
-            )
-        )
-    }
-
-    @Test
-    fun `slow local cover fallback runs when playback is idle`() {
+    fun `slow local cover fallback remains available during playback`() {
         assertTrue(
             shouldResolveSlowLocalCoverFallback(
-                resolveLocalFallback = true,
-                playbackIntentActive = false
+                resolveLocalFallback = true
             )
         )
     }
@@ -33,8 +22,7 @@ class CoverUrlStateTest {
     fun `disabled local fallback remains disabled while idle`() {
         assertFalse(
             shouldResolveSlowLocalCoverFallback(
-                resolveLocalFallback = false,
-                playbackIntentActive = false
+                resolveLocalFallback = false
             )
         )
     }
@@ -44,7 +32,6 @@ class CoverUrlStateTest {
         assertFalse(
             shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = true,
-                playbackIntentActive = false,
                 allowEmbeddedCoverFallback = false
             )
         )
@@ -55,7 +42,6 @@ class CoverUrlStateTest {
         assertTrue(
             shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = true,
-                playbackIntentActive = false,
                 allowEmbeddedCoverFallback = true
             )
         )
@@ -66,29 +52,16 @@ class CoverUrlStateTest {
         assertFalse(
             shouldResolvePlaylistCoverFallback(
                 resolveLocalFallback = true,
-                playbackIntentActive = false,
                 hasImmediateCover = true
             )
         )
     }
 
     @Test
-    fun `playlist fallback waits for idle when no immediate cover exists`() {
+    fun `playlist fallback remains available during playback`() {
         assertTrue(
             shouldResolvePlaylistCoverFallback(
                 resolveLocalFallback = true,
-                playbackIntentActive = false,
-                hasImmediateCover = false
-            )
-        )
-    }
-
-    @Test
-    fun `playlist fallback stays disabled during playback`() {
-        assertFalse(
-            shouldResolvePlaylistCoverFallback(
-                resolveLocalFallback = true,
-                playbackIntentActive = true,
                 hasImmediateCover = false
             )
         )

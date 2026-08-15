@@ -21,7 +21,7 @@ class LocalPlaylistScrollPerformancePolicyTest {
     }
 
     @Test
-    fun `idle row artwork fallback enables embedded cover resolution without playback`() {
+    fun `idle row artwork fallback enables embedded cover resolution during playback`() {
         val resolveFallback = shouldResolveLocalPlaylistRowArtworkFallback(
             isScrollInProgress = false,
             hasReachedIdleWindow = true
@@ -30,7 +30,6 @@ class LocalPlaylistScrollPerformancePolicyTest {
         assertTrue(
             shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveFallback,
-                playbackIntentActive = false,
                 allowEmbeddedCoverFallback = resolveFallback
             )
         )

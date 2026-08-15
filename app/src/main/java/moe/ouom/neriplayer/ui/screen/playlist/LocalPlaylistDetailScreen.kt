@@ -538,7 +538,6 @@ fun LocalPlaylistDetailScreen(
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
             val isSystemPlaylist = isFavorites || isLocalFilesPlaylist
             val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
-            val playbackIntentActive by PlayerManager.playbackControlPlayingFlow.collectAsState()
             val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
             val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
             val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
@@ -2158,7 +2157,6 @@ fun LocalPlaylistDetailScreen(
                                                 offlineMode = offlineMode,
                                                 resolveLocalFallback = resolveArtworkFallback,
                                                 downloadPresenceVersion = downloadPresenceVersion,
-                                                playbackIntentActive = playbackIntentActive,
                                                 allowEmbeddedCoverFallback = resolveArtworkFallback
                                             )
                                             Spacer(Modifier.width(12.dp))
@@ -3026,14 +3024,12 @@ private fun LocalPlaylistSongArtwork(
     offlineMode: Boolean,
     resolveLocalFallback: Boolean,
     downloadPresenceVersion: Int,
-    playbackIntentActive: Boolean,
     allowEmbeddedCoverFallback: Boolean
 ) {
     val requestedCoverUrl = rememberSongDisplayCoverUrl(
         song = song,
         resolveLocalFallback = resolveLocalFallback,
         downloadPresenceVersion = downloadPresenceVersion,
-        playbackIntentActive = playbackIntentActive,
         allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
     )
     val context = LocalContext.current

@@ -32,9 +32,9 @@ class SettingsStorageCacheSectionTest {
     }
 
     @Test
-    fun cancelingFileNameEditRestoresSavedTemplateInCard() {
+    fun saveableFileNameEditorComposesAndRestoresTemplateInCard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val savedTemplate = "%artist% - %title%"
+        val savedTemplate = "%title% - %artist% [%hash%]"
         var currentTemplate by mutableStateOf<String?>(savedTemplate)
         var saveCallbackCount by mutableStateOf(0)
 
