@@ -5,22 +5,48 @@ import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun ListenTogetherRoomState.currentStableKey(): String? {
-    return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
+    return currentTrack()?.stableKey
+}
+
+internal fun ListenTogetherRoomState.currentTrack(): ListenTogetherTrack? {
+    return queue.getOrNull(currentIndex) ?: track
+}
+
+internal fun ListenTogetherRoomState.authoritativeStreamUrlForCurrentTrack(): String? {
+    return authoritativeStreamUrlsForCurrentTrack().firstOrNull()
+}
+
+internal fun ListenTogetherRoomState.authoritativeStreamUrlsForCurrentTrack(): List<String> {
+    val targetTrack = currentTrack() ?: return emptyList()
+    return sequenceOf(targetTrack, track)
+        .filterNotNull()
+        .filter { candidate -> candidate.stableKey == targetTrack.stableKey }
+        .flatMap { candidate ->
+            trustedListenTogetherStreamUrls(
+                channelId = candidate.channelId,
+                streamUrls = candidate.streamUrls,
+                legacyStreamUrl = candidate.streamUrl
+            ).asSequence()
+        }
+        .distinct()
+        .toList()
 }
 
 internal fun ListenTogetherEvent.requestedStableKey(): String? {
     return requestTrackStableKey
-        ?: track?.stableKey
         ?: queue?.getOrNull(currentIndex ?: -1)?.stableKey
+        ?: track?.stableKey
 }
 
 internal fun ListenTogetherRoomState.targetSongItem(): SongItem? {
-    return (track ?: queue.getOrNull(currentIndex))?.toSongItem()
+    return currentTrack()?.toSongItem()
 }
 
 internal fun SongItem.sameTrackAs(other: SongItem): Boolean {

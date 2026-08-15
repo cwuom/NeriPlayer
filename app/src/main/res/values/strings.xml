@@ -1891,6 +1891,7 @@
     <string name="listen_together_last_error">最近错误</string>
     <string name="listen_together_notice">提示</string>
     <string name="listen_together_notice_controller_reconnected">房主已重连，同步已恢复</string>
+    <string name="listen_together_notice_controller_left">房主已离开，房间已结束</string>
     <string name="listen_together_notice_room_closed">房主长时间未返回，房间已自动关闭</string>
     <string name="listen_together_same_room_join_ignored">你已经在房间 %1$s 中，无需重复加入</string>
     <string name="listen_together_create_and_connect">创建</string>

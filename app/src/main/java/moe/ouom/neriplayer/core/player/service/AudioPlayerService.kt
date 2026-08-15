@@ -121,6 +121,7 @@ import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.IsLandHelp
@@ -3032,7 +3033,7 @@ class AudioPlayerService : Service() {
 
     private fun listenTogetherRoomSong(): SongItem? {
         val room = AppContainer.listenTogetherSessionManager.roomState.value ?: return null
-        val track = room.track ?: room.queue.getOrNull(room.currentIndex)
+        val track = room.currentTrack()
         return track?.toSongItem()
     }
 
@@ -3084,7 +3085,7 @@ internal fun resolveListenTogetherMediaSessionPosition(
     roomState: ListenTogetherRoomState,
     nowMs: Long = System.currentTimeMillis()
 ): Long {
-    val activeTrack = roomState.track ?: roomState.queue.getOrNull(roomState.currentIndex)
+    val activeTrack = roomState.currentTrack()
     return roomState.playback.expectedPositionMs(
         nowMs = nowMs,
         durationMs = activeTrack?.durationMs ?: 0L

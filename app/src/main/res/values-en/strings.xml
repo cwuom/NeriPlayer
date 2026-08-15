@@ -1891,6 +1891,7 @@
     <string name="listen_together_last_error">Last Error</string>
     <string name="listen_together_notice">Notice</string>
     <string name="listen_together_notice_controller_reconnected">Controller reconnected. Sync has resumed.</string>
+    <string name="listen_together_notice_controller_left">The controller left. The room has ended.</string>
     <string name="listen_together_notice_room_closed">Room closed because the controller did not return in time.</string>
     <string name="listen_together_same_room_join_ignored">You are already in room %1$s.</string>
     <string name="listen_together_create_and_connect">Create</string>

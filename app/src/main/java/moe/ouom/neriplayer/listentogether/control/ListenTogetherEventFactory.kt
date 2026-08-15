@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.listentogether.mapping.withStreamUrls
 import moe.ouom.neriplayer.listentogether.playback.hasShareableListenTogetherTrackAt
 import moe.ouom.neriplayer.listentogether.playback.indexOfTrack
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.mergeCurrentTrack
 import moe.ouom.neriplayer.listentogether.playback.normalizedDirectStreamUrl
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
@@ -253,8 +254,6 @@ internal class ListenTogetherEventFactory(
                 addAll(streamUrlsOverride)
                 streamUrlOverride?.let(::add)
                 addAll(PlayerManager.currentListenTogetherShareableStreamUrls())
-                addAll(shareableTrack.streamUrls)
-                shareableTrack.streamUrl?.let(::add)
             }
         )
         if (trustedTrack.streamUrls.isEmpty()) {
@@ -286,6 +285,25 @@ internal class ListenTogetherEventFactory(
                 localPlaying = PlayerManager.isPlayingFlow.value
             ),
             positionMs = positionMs.coerceAtLeast(0L),
+            requestTrackStableKey = stableKey
+        )
+    }
+
+    fun buildLinkUnavailableEvent(stableKey: String): ListenTogetherEvent? {
+        val currentSong = PlayerManager.currentSongFlow.value ?: return null
+        val currentTrack = currentSong.toListenTogetherTrackOrNull() ?: return null
+        if (currentTrack.stableKey != stableKey) return null
+        val currentIndex = PlayerManager.currentQueueFlow.value
+            .indexOfFirst { song -> song.sameTrackAs(currentSong) }
+            .takeIf { it >= 0 }
+        return ListenTogetherEvent(
+            type = "LINK_UNAVAILABLE",
+            eventId = eventIdFactory(),
+            clientTimeMs = System.currentTimeMillis(),
+            clientInstanceId = clientInstanceIdProvider(),
+            clientSequence = clientSequenceFactory(),
+            currentIndex = currentIndex,
+            track = currentTrack.withStreamUrls(emptyList()),
             requestTrackStableKey = stableKey
         )
     }
@@ -371,9 +389,7 @@ internal class ListenTogetherEventFactory(
 
     private fun playbackModePositionSnapshot(positionMs: Long): Long {
         val roomState = roomStateProvider()
-        val currentTrack = roomState?.let { state ->
-            state.track ?: state.queue.getOrNull(state.currentIndex)
-        }
+        val currentTrack = roomState?.currentTrack()
         val durationMs = currentTrack?.durationMs
             ?: PlayerManager.currentSongFlow.value?.durationMs
             ?: 0L

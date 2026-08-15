@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.listentogether.control
 
 import moe.ouom.neriplayer.listentogether.playback.mergeCurrentTrack
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
@@ -20,7 +21,9 @@ internal fun buildListenTogetherForwardedControlSyntheticState(
         0,
         nextQueue.lastIndex.coerceAtLeast(0)
     )
-    val nextTrack = message.track ?: nextQueue.getOrNull(nextIndex) ?: currentState.track
+    val nextTrack = nextQueue.getOrNull(nextIndex)
+        ?: message.track
+        ?: currentState.currentTrack()
     val nextPlaybackState = when (committedEvent.type) {
         "PLAY" -> "playing"
         "PAUSE" -> "paused"

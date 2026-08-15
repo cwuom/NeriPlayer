@@ -8,6 +8,8 @@ import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBE
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTracker
 import moe.ouom.neriplayer.listentogether.session.PendingMemberControlRequest
+import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
+import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeatIntervalMs
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
@@ -25,6 +27,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListenTogetherSessionPoliciesTest {
+
+    @Test
+    fun `controller left is a normal room closure`() {
+        assertTrue(isNormalListenTogetherRoomClosureReason("controller_left"))
+        assertFalse(isNormalListenTogetherRoomClosureReason("controller_timeout"))
+        assertFalse(isNormalListenTogetherRoomClosureReason(null))
+    }
+
+    @Test
+    fun `controller left closure reason is normalized for display`() {
+        assertEquals(
+            "controller_left",
+            normalizeListenTogetherRoomClosureReason(" Controller_Left ")
+        )
+    }
 
     @Test
     fun `session role follows room controller identity when available`() {

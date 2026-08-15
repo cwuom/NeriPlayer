@@ -69,6 +69,7 @@ import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendi
 import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
+import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
@@ -767,9 +768,14 @@ internal fun PlayerManager.playAtIndex(
     )
     kickoffYouTubePlaybackIntentWarmup(song, source = "play_at_index")
     cancelPendingPauseRequest()
+    val previousSong = _currentSongFlow.value
+    val retainCurrentAudioInfo = commandSource == PlaybackCommandSource.REMOTE_SYNC &&
+        previousSong?.sameIdentityAs(song) == true
     setCurrentSongForPlayback(song, syncLyricon = false)
     _currentMediaUrl.value = null
-    _currentPlaybackAudioInfo.value = null
+    if (!retainCurrentAudioInfo) {
+        _currentPlaybackAudioInfo.value = null
+    }
     currentMediaUrlResolvedAtMs = 0L
     val shouldAwaitAuthoritativeStream =
         commandSource == PlaybackCommandSource.REMOTE_SYNC &&
@@ -887,7 +893,11 @@ internal fun PlayerManager.playAtIndex(
                     )
                     val selectedCandidate = currentPlaybackCandidate()
                     val selectedUrl = selectedCandidate?.url ?: result.url
-                    val selectedAudioInfo = selectedCandidate?.audioInfo ?: result.audioInfo
+                    val selectedAudioInfo = resolvePlaybackAudioInfoForListenTogetherStreamCandidate(
+                        candidate = selectedCandidate,
+                        resolvedAudioInfo = result.audioInfo,
+                        existingAudioInfo = _currentPlaybackAudioInfo.value
+                    )
                     val selectedMimeType = selectedCandidate?.mimeType ?: result.mimeType
                     val selectedExpectedContentLength =
                         selectedCandidate?.expectedContentLength ?: result.expectedContentLength

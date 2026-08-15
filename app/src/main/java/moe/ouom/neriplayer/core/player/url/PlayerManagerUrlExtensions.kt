@@ -150,6 +150,13 @@ internal suspend fun PlayerManager.resolveSongUrl(
         "NERI-PlayerManager",
         "resolveSongUrl: song=${song.name}, source=${song.album}, forceRefresh=$forceRefresh, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
+    if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "resolveSongUrl: wait for authoritative Listen Together stream before local resolution: song=${song.name}"
+        )
+        return SongUrlResult.WaitingForAuthoritativeStream
+    }
     val initialListenTogetherFallback = listenTogetherFallbackResult(song)
     if (
         shouldUseDirectStreamShortcut(
@@ -392,7 +399,10 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
         "NERI-PlayerManager",
         "resolveShareableListenTogetherStreamUrl: song=${song.name}, source=${song.album}, streamUrl=${song.streamUrl}, currentUrl=${_currentMediaUrl.value}, stack=[${debugStackHint()}]"
     )
-    if (isDirectStreamUrl(song.streamUrl)) {
+    if (
+        isDirectStreamUrl(song.streamUrl) &&
+        (isYouTubeMusicTrack(song) || isBiliTrack(song))
+    ) {
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     if (isLocalSong(song)) {
@@ -427,32 +437,40 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrl(
                 song = song,
                 suppressError = true,
                 sideEffects = sideEffects,
-                allowLocalFallback = false
+                allowLocalFallback = false,
+                allowPreviewFallback = true,
+                allowAutoBiliFallback = false
             )
         }
     }
     if (result is SongUrlResult.Success && !isDirectStreamUrl(result.url)) {
         NPLogger.w(
             "NERI-PlayerManager",
-            "resolveShareableListenTogetherStreamUrl: rejected non-http result song=${song.name}, url=${result.url}"
+            "resolveShareableListenTogetherStreamUrl: rejected non-http result " +
+                "song=${song.name}, url=${result.url}"
         )
         return SongUrlResult.Failure
     }
     return result
 }
 
+internal data class ShareableListenTogetherStreamResolution(
+    val streamUrls: List<String>,
+    val isPreviewOnly: Boolean
+)
+
 internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
     song: SongItem
-): List<String> {
-    val track = song.toListenTogetherTrackOrNull() ?: return emptyList()
+): ShareableListenTogetherStreamResolution {
+    val track = song.toListenTogetherTrackOrNull()
+        ?: return ShareableListenTogetherStreamResolution(emptyList(), isPreviewOnly = false)
     val urls = linkedSetOf<String>()
     fun addResult(result: SongUrlResult) {
-        (result as? SongUrlResult.Success)
-            ?.playbackUrls()
-            ?.forEach(urls::add)
+        shareableListenTogetherStreamUrls(result).forEach(urls::add)
     }
 
-    addResult(resolveShareableListenTogetherStreamUrl(song))
+    val primaryResult = resolveShareableListenTogetherStreamUrl(song)
+    addResult(primaryResult)
     when {
         isBiliTrack(song) -> Unit
         isYouTubeMusicTrack(song) && urls.size < MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES -> {
@@ -477,10 +495,16 @@ internal suspend fun PlayerManager.resolveShareableListenTogetherStreamUrls(
             )
         }
     }
-    return trustedListenTogetherStreamUrls(
+    val trustedUrls = trustedListenTogetherStreamUrls(
         channelId = track.channelId,
         streamUrls = urls.toList(),
         maxCount = MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+    )
+    return ShareableListenTogetherStreamResolution(
+        streamUrls = trustedUrls,
+        isPreviewOnly = primaryResult is SongUrlResult.Success &&
+            primaryResult.isPreviewClip &&
+            trustedUrls.isEmpty()
     )
 }
 
@@ -1044,7 +1068,11 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     )
     val selectedCandidate = currentPlaybackCandidate()
     val selectedUrl = selectedCandidate?.url ?: result.url
-    val selectedAudioInfo = selectedCandidate?.audioInfo ?: audioInfo
+    val selectedAudioInfo = resolvePlaybackAudioInfoForListenTogetherStreamCandidate(
+        candidate = selectedCandidate,
+        resolvedAudioInfo = audioInfo,
+        existingAudioInfo = _currentPlaybackAudioInfo.value
+    )
     val selectedMimeType = selectedCandidate?.mimeType ?: mimeType
     val selectedExpectedContentLength =
         selectedCandidate?.expectedContentLength ?: expectedContentLength
@@ -1365,7 +1393,9 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
     song: SongItem,
     suppressError: Boolean = false,
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
-    allowLocalFallback: Boolean = true
+    allowLocalFallback: Boolean = true,
+    allowPreviewFallback: Boolean = true,
+    allowAutoBiliFallback: Boolean = true
 ): SongUrlResult = withContext(Dispatchers.IO) {
     try {
         val effectiveQuality = effectiveNeteaseQuality()
@@ -1447,12 +1477,16 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                     return@withContext it
                 }
             }
-            tryResolveNeteaseAutoBiliSource(song, sideEffects)?.let {
-                return@withContext it
+            if (allowAutoBiliFallback) {
+                tryResolveNeteaseAutoBiliSource(song, sideEffects)?.let {
+                    return@withContext it
+                }
             }
         }
 
-        previewFallback?.let { return@withContext it }
+        if (allowPreviewFallback) {
+            previewFallback?.let { return@withContext it }
+        }
 
         if (!suppressError) {
             val messageRes = when (lastFailureReason) {

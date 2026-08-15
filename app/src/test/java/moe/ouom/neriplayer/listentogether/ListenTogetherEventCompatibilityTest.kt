@@ -30,9 +30,13 @@ import moe.ouom.neriplayer.listentogether.playback.isListenTogetherSeekControlSa
 import moe.ouom.neriplayer.listentogether.playback.requestedStableKey
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.shouldApplyListenTogetherQueueUpdateWithoutReload
+import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
+import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import org.junit.Assert.assertEquals
@@ -42,6 +46,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListenTogetherEventCompatibilityTest {
+
+    @Test
+    fun `initial shuffle restore queue survives protocol serialization`() {
+        val originalQueue = listOf(track("netease:1", "1"), track("netease:2", "2"))
+        val snapshot = ListenTogetherInitialSnapshot(
+            queue = originalQueue.reversed(),
+            currentIndex = 0,
+            shuffleEnabled = true,
+            shuffleRestoreQueue = originalQueue
+        )
+
+        val decoded = Json.decodeFromString<ListenTogetherInitialSnapshot>(
+            Json.encodeToString(snapshot)
+        )
+
+        assertEquals(originalQueue, decoded.shuffleRestoreQueue)
+    }
+
+    @Test
+    fun `shuffle restore snapshot keeps the active bounded queue in original order`() {
+        val originalQueue = listOf(
+            songItem(ListenTogetherChannels.NETEASE, "1"),
+            songItem(ListenTogetherChannels.NETEASE, "2"),
+            songItem(ListenTogetherChannels.NETEASE, "3")
+        )
+        val activeQueue = listOf(
+            track("netease:2", "2"),
+            track("netease:3", "3")
+        )
+
+        val snapshot = originalQueue.toShareableShuffleRestoreQueueSnapshot(activeQueue)
+
+        assertEquals(listOf("netease:2", "netease:3"), snapshot.map { it.stableKey })
+    }
 
     @Test
     fun `unsupported track finished error is detected for legacy workers`() {
@@ -264,6 +302,24 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `queue snapshot excludes raw track urls until a verified stream is resolved`() {
+        val rawPreviewUrl = "https://m701.music.126.net/preview.mp3"
+        val source = songItem(ListenTogetherChannels.NETEASE, "1").copy(
+            streamUrl = rawPreviewUrl
+        )
+
+        val (snapshot, currentIndex) = listOf(source).toShareableQueueSnapshot(
+            currentIndex = 0,
+            roomSettings = ListenTogetherRoomSettings(shareAudioLinks = true),
+            resolvedCurrentStreamUrls = emptyList()
+        )
+
+        assertEquals(0, currentIndex)
+        assertNull(snapshot.single().streamUrl)
+        assertTrue(snapshot.single().streamUrls.isEmpty())
+    }
+
+    @Test
     fun `inbound shared stream candidates do not overwrite listener resolver input`() {
         val primary = "https://m701.music.126.net/primary.mp3"
         val backup = "https://m702.music.126.net/backup.mp3"
@@ -369,7 +425,7 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
-    fun `room current stable key prefers explicit track over queue`() {
+    fun `room current stable key prefers current queue item over stale track`() {
         val state = ListenTogetherRoomState(
             roomId = "ABC234",
             version = 1L,
@@ -381,7 +437,7 @@ class ListenTogetherEventCompatibilityTest {
             )
         )
 
-        assertEquals("netease:explicit", state.currentStableKey())
+        assertEquals("netease:queue", state.currentStableKey())
     }
 
     @Test
@@ -389,6 +445,21 @@ class ListenTogetherEventCompatibilityTest {
         val event = ListenTogetherEvent(
             type = "REQUEST_SEEK",
             currentIndex = 1,
+            queue = listOf(
+                track("netease:0", "0"),
+                track("netease:target", "target")
+            )
+        )
+
+        assertEquals("netease:target", event.requestedStableKey())
+    }
+
+    @Test
+    fun `event requested stable key ignores stale explicit track when queue is indexed`() {
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SEEK",
+            currentIndex = 1,
+            track = track("netease:stale", "stale"),
             queue = listOf(
                 track("netease:0", "0"),
                 track("netease:target", "target")

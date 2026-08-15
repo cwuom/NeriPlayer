@@ -131,7 +131,7 @@ private val STREAM_DEPENDENT_MEMBER_CONTROL_TYPES = setOf(
 )
 
 private fun ListenTogetherRoomState.currentStableKeyForCompatibility(): String? {
-    return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
+    return queue.getOrNull(currentIndex)?.stableKey ?: track?.stableKey
 }
 
 internal fun isUnsupportedTrackFinishedEventError(errorMessage: String?): Boolean {

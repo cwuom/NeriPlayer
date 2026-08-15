@@ -1444,6 +1444,7 @@ private fun String.toDisplayNotice(context: Context): String =
         startsWith("member_joined:") -> context.getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
         startsWith("member_left:") -> context.getString(R.string.listen_together_notice_member_left, substringAfter(':'))
         this == "controller_reconnected" -> context.getString(R.string.listen_together_notice_controller_reconnected)
+        this == "controller_left" -> context.getString(R.string.listen_together_notice_controller_left)
         this == "controller_timeout" || this == "room_closed" || contains("room closed", ignoreCase = true) ->
             context.getString(R.string.listen_together_notice_room_closed)
         contains("unauthorized", ignoreCase = true) || contains("http=401", ignoreCase = true) || contains("(401)", ignoreCase = true) ->

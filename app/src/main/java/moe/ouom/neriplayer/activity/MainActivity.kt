@@ -1218,9 +1218,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showListenTogetherStatusFeedback(message: String) {
+        val displayMessage = message.toListenTogetherDisplayMessage()
+        if (displayMessage.isBlank()) return
         AppFeedback.showToast(
             context = this,
-            message = message
+            message = displayMessage
         )
     }
 
@@ -1268,6 +1270,8 @@ class MainActivity : ComponentActivity() {
                 getString(R.string.listen_together_notice_member_left, substringAfter(':'))
             normalized == "controller_reconnected" ->
                 getString(R.string.listen_together_notice_controller_reconnected)
+            normalized.equals("controller_left", ignoreCase = true) ->
+                getString(R.string.listen_together_notice_controller_left)
             normalized == "controller_timeout" ||
                 normalized == "room_closed" ||
                 "room closed" in lowered ->

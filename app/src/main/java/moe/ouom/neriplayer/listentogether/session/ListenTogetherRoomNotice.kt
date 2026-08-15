@@ -6,6 +6,20 @@ import java.util.concurrent.TimeUnit
 
 private const val DEFAULT_CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
 
+internal fun normalizeListenTogetherRoomClosureReason(reason: String?): String? {
+    val normalizedReason = reason?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return when {
+        normalizedReason.equals("controller_left", ignoreCase = true) -> "controller_left"
+        normalizedReason.equals("controller_timeout", ignoreCase = true) -> "controller_timeout"
+        normalizedReason.equals("room_closed", ignoreCase = true) -> "room_closed"
+        else -> normalizedReason
+    }
+}
+
+internal fun isNormalListenTogetherRoomClosureReason(reason: String?): Boolean {
+    return normalizeListenTogetherRoomClosureReason(reason) == "controller_left"
+}
+
 internal fun resolveListenTogetherRoomNotice(
     state: ListenTogetherRoomState?,
     fallbackMessage: String? = null,

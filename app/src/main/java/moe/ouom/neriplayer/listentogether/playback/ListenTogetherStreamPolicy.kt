@@ -15,10 +15,26 @@ internal fun normalizedDirectStreamUrl(value: String?): String? {
 
 internal fun shouldReloadListenTogetherAuthoritativeStream(
     remoteStreamUrl: String?,
-    localResolvedStreamUrl: String?
+    localResolvedStreamUrl: String?,
+    localPlaybackRequiresAuthoritativeStream: Boolean = true,
+    pendingAuthoritativeStreamUrl: String? = null
 ): Boolean {
     val remote = normalizedDirectStreamUrl(remoteStreamUrl) ?: return false
-    return remote != normalizedDirectStreamUrl(localResolvedStreamUrl)
+    val local = normalizedDirectStreamUrl(localResolvedStreamUrl)
+    if (remote == local) return false
+    if (local != null && !localPlaybackRequiresAuthoritativeStream) return false
+    return remote != normalizedDirectStreamUrl(pendingAuthoritativeStreamUrl)
+}
+
+internal fun hasListenTogetherAuthoritativeStreamUrl(
+    authoritativeStreamUrls: List<String>,
+    localResolvedStreamUrl: String?
+): Boolean {
+    val local = normalizedDirectStreamUrl(localResolvedStreamUrl) ?: return false
+    return authoritativeStreamUrls
+        .asSequence()
+        .mapNotNull(::normalizedDirectStreamUrl)
+        .any { candidate -> candidate == local }
 }
 
 internal fun shouldWaitForListenTogetherAuthoritativeStreamPlayback(
@@ -31,4 +47,21 @@ internal fun shouldWaitForListenTogetherAuthoritativeStreamPlayback(
     if (!localTrackMatchesTarget) return true
     return normalizedDirectStreamUrl(localTrackStreamUrl) == null &&
         normalizedDirectStreamUrl(localResolvedStreamUrl) == null
+}
+
+internal fun shouldReloadForListenTogetherLinkUnavailable(
+    isController: Boolean,
+    localPlaybackRequiresAuthoritativeStream: Boolean,
+    alreadyReloadedForStableKey: Boolean = false
+): Boolean {
+    return !isController &&
+        localPlaybackRequiresAuthoritativeStream &&
+        !alreadyReloadedForStableKey
+}
+
+internal fun shouldRequestListenTogetherControllerLink(
+    force: Boolean,
+    controllerLinkUnavailable: Boolean
+): Boolean {
+    return force || !controllerLinkUnavailable
 }

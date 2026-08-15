@@ -1211,6 +1211,28 @@ private fun queueStableKeyCounts(queue: List<SongItem>): Map<String, Int> {
     return queue.groupingBy { it.stableKey() }.eachCount()
 }
 
+internal fun resolveQueueCurrentIndexAfterReorder(
+    queue: List<SongItem>,
+    currentSong: SongItem?,
+    submittedCurrentIndex: Int,
+    fallbackCurrentIndex: Int
+): Int {
+    if (queue.isEmpty()) return -1
+    if (currentSong != null) {
+        if (
+            submittedCurrentIndex in queue.indices &&
+            queue[submittedCurrentIndex].sameIdentityAs(currentSong)
+        ) {
+            return submittedCurrentIndex
+        }
+        queue.indexOfFirst { candidate -> candidate.sameIdentityAs(currentSong) }
+            .takeIf { it >= 0 }
+            ?.let { return it }
+    }
+    return submittedCurrentIndex.takeIf { it in queue.indices }
+        ?: fallbackCurrentIndex.coerceIn(queue.indices)
+}
+
 internal fun PlayerManager.reorderQueueImpl(
     queue: List<SongItem>,
     currentIndexInQueue: Int,
@@ -1230,9 +1252,12 @@ internal fun PlayerManager.reorderQueueImpl(
     }
 
     val oldIndex = currentIndex
-    val newIndex = currentIndexInQueue.takeIf { it in queue.indices }
-        ?: _currentSongFlow.value?.let { current -> queue.indexOfFirst { it.sameIdentityAs(current) } }
-        ?: oldIndex.coerceIn(queue.indices)
+    val newIndex = resolveQueueCurrentIndexAfterReorder(
+        queue = queue,
+        currentSong = _currentSongFlow.value ?: currentPlaylist.getOrNull(oldIndex),
+        submittedCurrentIndex = currentIndexInQueue,
+        fallbackCurrentIndex = oldIndex
+    )
 
     currentPlaylist = queue.toList()
     _currentQueueFlow.value = currentPlaylist

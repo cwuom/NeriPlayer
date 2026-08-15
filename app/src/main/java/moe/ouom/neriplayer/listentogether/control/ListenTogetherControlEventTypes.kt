@@ -21,6 +21,7 @@ internal val passivePositionUpdateTypes = setOf(
     "WATCHDOG",
     "WATCHDOG_STALL",
     "LINK_READY",
+    "LINK_UNAVAILABLE",
     "MEMBER_JOINED",
     "MEMBER_LEFT"
 )

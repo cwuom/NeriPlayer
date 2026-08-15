@@ -279,7 +279,8 @@ internal fun buildNeteaseSuccessResult(
             resolvedQualityKey = resolvedQualityKey,
             fallbackDurationMs = fallbackDurationMs,
             getLocalizedString = getLocalizedString
-        )
+        ),
+        isPreviewClip = parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP
     )
 }
 
