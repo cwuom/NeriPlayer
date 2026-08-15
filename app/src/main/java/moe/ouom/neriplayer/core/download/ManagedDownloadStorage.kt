@@ -16,9 +16,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.*
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEntry
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
@@ -74,6 +76,7 @@ internal object ManagedDownloadStorage {
     private const val LOG_HOT_AUDIO_HITS = false
 
     private val snapshotBuildLock = Any()
+    private val batchReferenceDeleteMutex = Mutex()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val settings = ManagedDownloadStorageSettings(
         defaultRootPathProvider = { context -> createDefaultRoot(context).dir.absolutePath }
@@ -1263,13 +1266,16 @@ internal object ManagedDownloadStorage {
         deleteInternal(context, reference)
     }
 
-    suspend fun deleteReferences(context: Context, references: Collection<String?>): Set<String> = withContext(Dispatchers.IO) {
-        deleteReferencesInternalConcurrently(
-            context = context,
-            references = references,
-            invalidateSnapshot = true
-        )
-    }
+    suspend fun deleteReferences(context: Context, references: Collection<String?>): Set<String> =
+        withContext(Dispatchers.IO) {
+            batchReferenceDeleteMutex.withLock {
+                deleteReferencesInternalConcurrently(
+                    context = context,
+                    references = references,
+                    invalidateSnapshot = true
+                )
+            }
+        }
 
     suspend fun saveAudioFromTemp(
         context: Context,

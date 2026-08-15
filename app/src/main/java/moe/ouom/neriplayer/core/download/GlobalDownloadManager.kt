@@ -171,6 +171,7 @@ object GlobalDownloadManager {
     private val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
     private val catalogPersistenceLock = Any()
     private val downloadedSongMetadataSyncMutex = Mutex()
+    private val downloadedSongDeleteMutex = Mutex()
     private val downloadedSongMetadataRevision = AtomicLong(0L)
     private val cancelledArtifactRecoveryLock = Any()
     private var refreshJob: Job? = null
@@ -1900,7 +1901,9 @@ object GlobalDownloadManager {
         }
 
         return withContext(Dispatchers.IO) {
-            deleteDownloadedSongsOnIo(appContext, targetSongs)
+            downloadedSongDeleteMutex.withLock {
+                deleteDownloadedSongsOnIo(appContext, targetSongs)
+            }
         }
     }
 
