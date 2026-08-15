@@ -400,6 +400,87 @@ class PlaylistUsageRepositoryTest {
         assertEquals(1, entry.trackCount)
     }
 
+    @Test
+    fun `sync local entries keeps last known cover when fallback is temporarily blank`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val knownCoverUrl = "file:///covers/known-local.jpg"
+        val localFiles = LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf(localSong(coverUrl = null))
+        )
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = knownCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(playlists = listOf(localFiles))
+
+        assertEquals(knownCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
+    @Test
+    fun `opening local playlist without cover does not clear known cover`() {
+        val repo = PlaylistUsageRepository(mockContext())
+        val knownCoverUrl = "file:///covers/known-local.jpg"
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = knownCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = null,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 200L
+        )
+
+        assertEquals(knownCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
+    @Test
+    fun `merged usage stats keep local cover when sync omits local file cover`() {
+        val repo = PlaylistUsageRepository(mockContext())
+        val knownCoverUrl = "file:///covers/known-local.jpg"
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = knownCoverUrl,
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.applyMergedStats(
+            listOf(
+                SyncPlaylistUsageStat(
+                    playlistKey = "local:${LocalFilesPlaylist.SYSTEM_ID}",
+                    source = PlaylistUsageRepository.SOURCE_LOCAL,
+                    id = LocalFilesPlaylist.SYSTEM_ID,
+                    name = "本地文件",
+                    coverUrl = null,
+                    trackCount = 1,
+                    lastOpenedAt = 200L,
+                    firstOpenedAt = 100L,
+                    openCount = 2
+                )
+            )
+        )
+
+        assertEquals(knownCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
     private fun usageEntry(
         id: Long,
         subtype: String?,
