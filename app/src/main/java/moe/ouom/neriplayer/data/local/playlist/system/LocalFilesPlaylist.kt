@@ -77,14 +77,7 @@ object LocalFilesPlaylist {
             name = currentName(context),
             songs = songs,
             modifiedAt = playlists.maxOfOrNull { it.modifiedAt } ?: System.currentTimeMillis(),
-            customCoverUrl = songs
-                .takeIf { it.isNotEmpty() }
-                ?.let {
-                    playlists.lastOrNull { playlist ->
-                        playlist.songs.isNotEmpty() &&
-                            !playlist.customCoverUrl.isNullOrBlank()
-                    }?.customCoverUrl
-                },
+            customCoverUrl = null,
             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
         )
     }

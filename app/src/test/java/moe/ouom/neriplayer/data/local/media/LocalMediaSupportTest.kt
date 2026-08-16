@@ -17,6 +17,22 @@ class LocalMediaSupportTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun `media store uri skips direct sidecar and parent path access`() {
+        assertEquals(
+            true,
+            isMediaStoreAuthority("media")
+        )
+        assertEquals(
+            true,
+            isMediaStoreAuthority("com.android.providers.media.documents")
+        )
+        assertEquals(
+            false,
+            isMediaStoreAuthority("com.android.externalstorage.documents")
+        )
+    }
+
+    @Test
     fun `prepareShareableFileInDirectory stages arbitrary local file outside download directory`() {
         val sourceFile = tempFolder.newFile("library_track.flac").apply {
             writeText("lossless-audio")

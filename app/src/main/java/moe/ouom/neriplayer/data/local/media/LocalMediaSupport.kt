@@ -211,6 +211,16 @@ private fun Uri.isSupportedLocalMediaUri(): Boolean {
     }
 }
 
+internal fun isMediaStoreAuthority(authority: String?): Boolean {
+    return authority.equals("media", ignoreCase = true) ||
+        authority.equals("com.android.providers.media.documents", ignoreCase = true)
+}
+
+internal fun isMediaStoreUri(uri: Uri): Boolean {
+    return uri.scheme.equals("content", ignoreCase = true) &&
+        isMediaStoreAuthority(uri.authority)
+}
+
 internal fun preferredLocalMediaReference(
     localFilePath: String?,
     mediaUri: String?
@@ -2309,9 +2319,14 @@ object LocalMediaSupport {
         file: File?,
         displayName: String
     ): String? {
-        file?.let { localFile ->
-            val target = File(localFile.parentFile ?: return@let, localFile.name + LOCAL_METADATA_SUFFIX)
-            if (target.isFile) return target.absolutePath
+        if (!isMediaStoreUri(sourceUri)) {
+            file?.let { localFile ->
+                val target = File(
+                    localFile.parentFile ?: return@let,
+                    localFile.name + LOCAL_METADATA_SUFFIX
+                )
+                if (target.isFile) return target.absolutePath
+            }
         }
         val navigation = resolveLocalDocumentNavigation(context, sourceUri) ?: return null
         val parentChildren = queryDocumentChildren(
@@ -2322,13 +2337,12 @@ object LocalMediaSupport {
         val metadataName = displayName + LOCAL_METADATA_SUFFIX
         return parentChildren.firstOrNull { child ->
             !child.isDirectory && child.displayName == metadataName
-        }?.uri
-            ?: file?.let { localFile ->
+        }?.uri ?: if (!isMediaStoreUri(sourceUri)) file?.let { localFile ->
                 localFile.parentFile
                     ?.let { parent -> File(parent, localFile.name + LOCAL_METADATA_SUFFIX) }
                     ?.takeIf(File::isFile)
                     ?.absolutePath
-            }
+            } else null
     }
 
     private fun createLocalMetadataReference(
@@ -2337,7 +2351,7 @@ object LocalMediaSupport {
         file: File?,
         displayName: String
     ): String? {
-        if (file != null && !sourceUri.authority.equals("com.android.providers.media.documents", true)) {
+        if (file != null && !isMediaStoreUri(sourceUri)) {
             return File(
                 file.parentFile ?: return null,
                 file.name + LOCAL_METADATA_SUFFIX
@@ -2358,11 +2372,11 @@ object LocalMediaSupport {
             )?.toString()
         }.onFailure {
             NPLogger.w(TAG, "create local metadata sidecar failed for $sourceUri: ${it.message}")
-        }.getOrNull() ?: file?.let { localFile ->
-            localFile.parentFile
-                ?.let { parent -> File(parent, localFile.name + LOCAL_METADATA_SUFFIX) }
-                ?.absolutePath
-        }
+        }.getOrNull() ?: if (!isMediaStoreUri(sourceUri)) file?.let { localFile ->
+                localFile.parentFile
+                    ?.let { parent -> File(parent, localFile.name + LOCAL_METADATA_SUFFIX) }
+                    ?.absolutePath
+            } else null
     }
 
     private fun writeLocalMetadataReference(
@@ -2405,6 +2419,7 @@ object LocalMediaSupport {
         uri: Uri
     ): LocalDocumentNavigation? {
         if (!uri.scheme.equals("content", ignoreCase = true)) return null
+        if (isMediaStoreUri(uri)) return null
         val treeDocumentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
         val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
         val treeUri = runCatching {
@@ -3995,6 +4010,7 @@ object LocalMediaSupport {
     }
 
     private fun findDocumentParentId(context: Context, documentUri: Uri): String? {
+        if (isMediaStoreUri(documentUri)) return null
         return runCatching {
             DocumentsContract.findDocumentPath(context.contentResolver, documentUri)
                 ?.path

@@ -128,6 +128,19 @@ data class LocalAudioImportResult(
     val metadataDeferred: Boolean = false
 )
 
+internal fun <T> Result<T>.getOrRethrowCancellation(
+    onFailure: (Throwable) -> Unit
+): T? {
+    return fold(
+        onSuccess = { it },
+        onFailure = { error ->
+            if (error is CancellationException) throw error
+            onFailure(error)
+            null
+        }
+    )
+}
+
 internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boolean {
     return result?.songs?.isNotEmpty() == true
 }
@@ -302,9 +315,9 @@ object LocalAudioImportManager {
         distinctUris.take(MAX_EXTERNAL_IMPORT_COUNT).forEach { uri ->
             val stableUri = runCatching {
                 stabilizeExternalUri(context, uri)
-            }.onFailure {
+            }.getOrRethrowCancellation {
                 NPLogger.e(TAG, "Failed to stabilize external audio: $uri", it)
-            }.getOrNull()
+            }
 
             if (stableUri == null) {
                 failedCount++
@@ -313,9 +326,9 @@ object LocalAudioImportManager {
 
             val song = runCatching {
                 buildQuickImportedSong(context, stableUri)
-            }.onFailure {
+            }.getOrRethrowCancellation {
                 NPLogger.e(TAG, "Failed to import stabilized external audio: $stableUri", it)
-            }.getOrNull()
+            }
 
             if (song != null) {
                 songs += song
@@ -428,9 +441,9 @@ object LocalAudioImportManager {
                         candidate = candidate,
                         unknownArtistLabel = unknownArtistLabel
                     )
-                }.onFailure {
+                }.getOrRethrowCancellation {
                     NPLogger.w(TAG, "scanFolderSongs skipped ${candidate.uri}: ${it.message}")
-                }.getOrNull()?.let(::add)
+                }?.let(::add)
                 val processed = index + 1
                 progress.emit(
                     phase = LocalAudioScanPhase.BUILDING_ENTRIES,
@@ -932,9 +945,9 @@ object LocalAudioImportManager {
             } else {
                 LocalMediaSupport.inspectMetadataOnly(context, song)
             }
-        }.onFailure {
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local metadata failed for ${song.name}: ${it.message}")
-        }.getOrNull() ?: return song
+        } ?: return song
 
         return mergeImportedSongMetadata(
             quickSong = song,
@@ -956,18 +969,18 @@ object LocalAudioImportManager {
                 song = song,
                 resolveCoverFallback = resolveCoverFallback
             )
-        }.onFailure {
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
-        }.getOrNull() ?: return song
+        } ?: return song
         val lyricMetadata = song.localMediaUri()?.let { sourceUri ->
             runCatching {
                 LocalMediaSupport.inspectLyricsForScan(context, sourceUri)
-            }.onFailure {
+            }.getOrRethrowCancellation {
                 NPLogger.w(
                     TAG,
                     "hydrate local text sidecars failed for ${song.name}: ${it.message}"
                 )
-            }.getOrNull()
+            }
         }
         val detailedSong = LocalMediaSupport.toSongItem(details).let { embeddedSong ->
             val resolvedLyric = lyricMetadata?.lyric ?: embeddedSong.matchedLyric
@@ -1320,9 +1333,9 @@ object LocalAudioImportManager {
         }
         val lyrics = runCatching {
             LocalMediaSupport.inspectLyricsForScan(context, uri)
-        }.onFailure {
+        }.getOrRethrowCancellation {
             NPLogger.w(TAG, "quick local lyrics inspection failed for $uri: ${it.message}")
-        }.getOrNull()
+        }
 
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(

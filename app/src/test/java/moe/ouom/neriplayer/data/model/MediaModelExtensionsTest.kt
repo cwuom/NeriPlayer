@@ -3,9 +3,14 @@ package moe.ouom.neriplayer.data.model
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import org.junit.Assert.assertEquals
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class MediaModelExtensionsTest {
+
+    @get:Rule
+    val tempFolder = TemporaryFolder()
 
     @Test
     fun `resolveDisplayCoverUrl prefers local cover over remote fallback on main thread`() {
@@ -44,6 +49,17 @@ class MediaModelExtensionsTest {
                 onMainThread = true
             )
         )
+    }
+
+    @Test
+    fun `directory custom cover falls back to the song cover`() {
+        val directory = tempFolder.newFolder("cover-directory")
+        val song = song(
+            name = "directory-cover",
+            coverUrl = "content://covers/song.jpg"
+        ).copy(customCoverUrl = directory.toURI().toString())
+
+        assertEquals("content://covers/song.jpg", song.displayCoverUrl())
     }
 
     @Test

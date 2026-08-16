@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import java.io.File
+import java.net.URI
 import java.security.MessageDigest
 import java.net.URLConnection
 import java.util.Locale
@@ -92,6 +93,14 @@ object CustomSongCoverStorage {
         val sourceFile = resolveLocalFileReference(normalizedReference, sourceUri)
         val directory = File(context.filesDir, ORIGINAL_DIRECTORY_NAME)
         val persistentDirectory = runCatching { directory.canonicalFile }.getOrNull()
+        if (sourceFile?.isDirectory == true) {
+            if (persistentDirectory == null || !isInsideDirectory(sourceFile, persistentDirectory)) {
+                return@withContext null
+            }
+            return@withContext findStoredOriginalCover(directory, song)
+                ?.toURI()
+                ?.toString()
+        }
         if (sourceFile?.isFile == true && persistentDirectory != null &&
             isInsideDirectory(sourceFile, persistentDirectory)
         ) {
@@ -182,11 +191,20 @@ object CustomSongCoverStorage {
             reference.startsWith("https://", ignoreCase = true)
     }
 
+    internal fun isDirectoryReference(reference: String?): Boolean {
+        val normalized = reference?.trim()?.takeIf { it.isNotBlank() } ?: return false
+        val uri = runCatching { normalized.toUri() }.getOrNull()
+        return resolveLocalFileReference(normalized, uri)?.isDirectory == true
+    }
+
     private fun resolveLocalFileReference(reference: String, uri: Uri?): File? {
         return when {
             reference.startsWith("/", ignoreCase = false) -> File(reference)
             uri != null && uri.scheme.equals("file", ignoreCase = true) -> {
                 uri.path?.let(::File)
+            }
+            reference.startsWith("file:", ignoreCase = true) -> {
+                runCatching { File(URI(reference)) }.getOrNull()
             }
             else -> null
         }
@@ -196,6 +214,20 @@ object CustomSongCoverStorage {
         val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return false
         val directoryPath = runCatching { directory.canonicalPath }.getOrNull() ?: return false
         return filePath == directoryPath || filePath.startsWith("$directoryPath${File.separator}")
+    }
+
+    private fun findStoredOriginalCover(directory: File, song: SongItem): File? {
+        val filePrefix = sha256(song.stableKey())
+        return runCatching {
+            directory.listFiles()
+                ?.asSequence()
+                ?.filter { file ->
+                    file.isFile &&
+                        file.length() > 0L &&
+                        file.name.substringBeforeLast('.', file.name) == filePrefix
+                }
+                ?.maxByOrNull(File::lastModified)
+        }.getOrNull()
     }
 
     private fun resolveExtension(

@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -73,6 +74,21 @@ class LocalAudioImportManagerTest {
                 IllegalStateException("provider failed")
             )
         )
+    }
+
+    @Test
+    fun `metadata result helper rethrows cancellation and logs ordinary failures`() {
+        val cancellation = CancellationException("metadata cancelled")
+        assertThrows(CancellationException::class.java) {
+            Result.failure<SongItem>(cancellation).getOrRethrowCancellation { }
+        }
+
+        val failures = mutableListOf<Throwable>()
+        val recovered = Result.failure<SongItem>(IllegalStateException("metadata failed"))
+            .getOrRethrowCancellation(failures::add)
+
+        assertNull(recovered)
+        assertEquals(1, failures.size)
     }
 
     @Test

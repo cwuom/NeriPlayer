@@ -240,8 +240,25 @@ class LocalPlaylistRepository private constructor(
             recoverPendingSyncMutation(
                 committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
             )
-            _playlists.value = roomPrimary
-            _playlistCount.value = roomPrimary.size
+            val normalizedRoomPrimary = normalizePlaylistOrder(roomPrimary)
+            if (normalizedRoomPrimary != roomPrimary) {
+                runCatching {
+                    runBlocking {
+                        roomStore?.replacePlaylists(
+                            playlists = normalizedRoomPrimary,
+                            sourceDigest = LocalPlaylistRoomStore.domainDigest(normalizedRoomPrimary)
+                        )
+                    }
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "LocalPlaylistRepo",
+                        "Failed to persist normalized Room playlists",
+                        error
+                    )
+                }
+            }
+            _playlists.value = normalizedRoomPrimary
+            _playlistCount.value = normalizedRoomPrimary.size
             return
         }
 

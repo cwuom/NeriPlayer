@@ -26,18 +26,23 @@ package moe.ouom.neriplayer.data.model
 import android.content.Context
 import android.os.Looper
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 
-fun SongItem.displayCoverUrl(): String? = customCoverUrl ?: coverUrl
+fun SongItem.displayCoverUrl(): String? = customCoverUrl
+    ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+    ?: coverUrl
 
 fun SongItem.displayCoverUrl(
     context: Context,
     resolveLocalMetadataFallback: Boolean = true
 ): String? {
-    customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
+    customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?.let { return it }
     val current = coverUrl?.takeIf { it.isNotBlank() }
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
     val localCover = if (resolveLocalMetadataFallback && shouldResolveLocalCoverFallback(current)) {
@@ -68,7 +73,9 @@ fun SongItem.displayArtist(): String = customArtist ?: artist
 fun LocalPlaylist.displayCoverUrl(
     additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
-    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+    return customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
         .firstNotNullOfOrNull { song ->
         song.displayCoverUrl()?.takeIf { it.isNotBlank() }
     }
@@ -79,7 +86,9 @@ fun LocalPlaylist.displayCoverUrl(
     resolveLocalMetadataFallback: Boolean = true,
     additionalCoverCandidates: List<SongItem> = emptyList()
 ): String? {
-    return customCoverUrl ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
+    return customCoverUrl
+        ?.takeIf { it.isNotBlank() && !CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: (songs.asSequence() + additionalCoverCandidates.asSequence())
         .firstNotNullOfOrNull { song ->
         song.displayCoverUrl(
             context = context,

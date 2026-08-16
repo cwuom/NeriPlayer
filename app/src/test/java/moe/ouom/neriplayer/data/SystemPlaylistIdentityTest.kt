@@ -180,7 +180,7 @@ class SystemPlaylistIdentityTest {
     }
 
     @Test
-    fun `local files merge ignores covers from empty legacy playlists`() {
+    fun `local files merge drops legacy playlist cover in favor of song covers`() {
         val song = localFileSong(
             id = 1L,
             mediaUri = "content://media/external/audio/media/1"
@@ -200,7 +200,7 @@ class SystemPlaylistIdentityTest {
 
         val merged = LocalFilesPlaylist.merge(listOf(current, staleEmpty), inertContext)
 
-        assertEquals("file:///covers/current.jpg", merged.customCoverUrl)
+        assertNull(merged.customCoverUrl)
     }
 
     @Test

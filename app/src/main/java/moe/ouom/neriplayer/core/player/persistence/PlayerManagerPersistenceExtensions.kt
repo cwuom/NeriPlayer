@@ -1804,7 +1804,12 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val baseName = currentSong.name
             val baseArtist = currentSong.artist
             val baseCoverUrl = currentSong.coverUrl
-            val requestedCoverReference = customCoverUrl.normalizedManualMetadataValue()
+                ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+            val existingOriginalCoverUrl = currentSong.originalCoverUrl
+                ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+            val requestedCoverReference = customCoverUrl
+                .normalizedManualMetadataValue()
+                ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
             val coverChanged = writeLocalMetadata && shouldWriteLocalCoverMetadata(
                 restoreBaseCover = restoreBaseCover,
                 nextCustomCover = requestedCoverReference?.takeIf { !restoreBaseCover },
@@ -1813,14 +1818,14 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val originalCoverReference = if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
-                currentSong.originalCoverUrl
+                existingOriginalCoverUrl
                     ?.takeIf { reference ->
                         LocalSongSupport.isLocalMediaUri(reference) &&
                             reference != currentSong.customCoverUrl
                     }
                     ?: LocalMediaSupport.resolveCoverUri(application, currentSong)
-                    ?: currentSong.originalCoverUrl?.takeIf { it != currentSong.customCoverUrl }
-                    ?: currentSong.coverUrl?.takeIf { it != currentSong.customCoverUrl }
+                    ?: existingOriginalCoverUrl?.takeIf { it != currentSong.customCoverUrl }
+                    ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
             } else {
                 null
             }
@@ -1831,9 +1836,9 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     context = application,
                     song = currentSong,
                     reference = originalCoverReference
-                ) ?: currentSong.originalCoverUrl
+                ) ?: existingOriginalCoverUrl
             } else {
-                currentSong.originalCoverUrl
+                existingOriginalCoverUrl
             }
             val restoredBaseName = customName.normalizedManualMetadataValue()
                 ?: currentSong.originalName
@@ -1843,10 +1848,11 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 ?: baseArtist
             val restoredBaseCoverUrl = if (restoreBaseCover) {
                 resolveRestoredBaseCoverUrl(
-                    originalCoverUrl = preservedOriginalCoverUrl ?: currentSong.originalCoverUrl,
+                    originalCoverUrl = preservedOriginalCoverUrl ?: existingOriginalCoverUrl,
                     baseCoverUrl = baseCoverUrl,
                     currentCustomCoverUrl = currentSong.customCoverUrl
-                        ?: customCoverUrl.normalizedManualMetadataValue()
+                        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+                        ?: requestedCoverReference
                 )
             } else {
                 customCoverUrl.normalizedManualMetadataValue()
@@ -1885,7 +1891,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 null
             } else {
                 normalizeCustomMetadataValue(
-                    desiredValue = customCoverUrl,
+                    desiredValue = requestedCoverReference,
                     baseValue = baseCoverUrl
                 )
             }
