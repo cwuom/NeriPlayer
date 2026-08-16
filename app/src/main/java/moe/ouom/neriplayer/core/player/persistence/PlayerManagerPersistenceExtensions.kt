@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -1695,8 +1696,8 @@ private suspend fun PlayerManager.writeLocalEditableMetadata(
     writeCover: Boolean = coverReference != null,
     writeLyrics: Boolean = false
 ): LocalMediaMetadataWriteOutcome {
-    val downloadedPlaybackUri = AudioDownloadManager.getLocalPlaybackUri(application, song)
-    val writableSong = downloadedPlaybackUri?.let { playbackUri ->
+    val writableReference = resolveLocalMetadataWriteReference(song)
+    val writableSong = writableReference?.let { playbackUri ->
         song.copy(
             mediaUri = playbackUri,
             localFilePath = playbackUri.takeIf { it.startsWith('/') },
@@ -1719,6 +1720,39 @@ private suspend fun PlayerManager.writeLocalEditableMetadata(
     } finally {
         resumePlaybackAfterLocalMetadataWrite(playbackSnapshot)
     }
+}
+
+private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
+    song: SongItem
+): String? {
+    val downloadedPlaybackUri = AudioDownloadManager.getLocalPlaybackUri(application, song)
+    val managedReference = if (downloadedPlaybackUri != null) {
+        val cachedReference = ManagedDownloadStorage.peekDownloadedAudio(song)
+            ?.reference
+            ?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(application, reference)
+            }
+        cachedReference ?: try {
+            ManagedDownloadStorage.findDownloadedAudio(
+                context = application,
+                song = song,
+                forceRefresh = true
+            )?.reference?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(application, reference)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                "PlayerManager",
+                "resolve managed metadata write reference failed: ${error.message}"
+            )
+            null
+        }
+    } else {
+        null
+    }
+    return managedReference ?: downloadedPlaybackUri
 }
 
 private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
