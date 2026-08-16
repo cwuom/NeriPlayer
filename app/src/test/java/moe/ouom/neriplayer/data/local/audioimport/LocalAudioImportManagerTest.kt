@@ -1,7 +1,12 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import android.content.ContentResolver
+import android.content.Context
+import android.database.Cursor
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -9,11 +14,15 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import kotlinx.coroutines.CancellationException
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class LocalAudioImportManagerTest {
 
@@ -64,6 +73,29 @@ class LocalAudioImportManagerTest {
                 IllegalStateException("provider failed")
             )
         )
+    }
+
+    @Test
+    fun `device scan propagates cancellation from progress callback`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val cursor = mock(Cursor::class.java)
+        val cancellation = CancellationException("scan cancelled")
+
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(cursor.count).thenReturn(0)
+        `when`(cursor.moveToNext()).thenReturn(false)
+        doReturn(cursor).`when`(resolver).query(any(), any(), any(), any(), any())
+
+        val thrown = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                LocalAudioImportManager.scanDeviceSongs(context) {
+                    throw cancellation
+                }
+            }
+        }
+
+        assertEquals(cancellation.message, thrown.message)
     }
 
     @Test

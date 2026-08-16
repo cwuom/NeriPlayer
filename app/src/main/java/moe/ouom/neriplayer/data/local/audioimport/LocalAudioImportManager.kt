@@ -769,8 +769,11 @@ object LocalAudioImportManager {
                     force = true
                 )
             }
-        }.onFailure {
-            NPLogger.e(TAG, "scanDeviceSongs failed: ${it.message}", it)
+        }.onFailure { error ->
+            if (error is CancellationException) {
+                throw error
+            }
+            NPLogger.e(TAG, "scanDeviceSongs failed: ${error.message}", error)
             failed++
         }
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
