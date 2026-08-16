@@ -23,7 +23,9 @@ internal fun trustedListenTogetherStreamUrl(
                 host == "bilivideo.cn" ||
                 host.endsWith(".bilivideo.cn") ||
                 host == "hdslb.com" ||
-                host.endsWith(".hdslb.com")
+                host.endsWith(".hdslb.com") ||
+                host == "mountaintoys.cn" ||
+                host.endsWith(".mountaintoys.cn")
         }
         ListenTogetherChannels.YOUTUBE_MUSIC -> {
             host == "googlevideo.com" ||

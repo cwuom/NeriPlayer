@@ -101,6 +101,8 @@ internal class ListenTogetherPlayerStateApplier(
         val authoritativeStreamUrls = state.authoritativeStreamUrlsForCurrentTrack()
         val authoritativeStreamUrl = authoritativeStreamUrls.firstOrNull()
         val localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
+        val localPlaybackResolutionPending =
+            PlayerManager.isListenTogetherLocalResolutionPendingFor(targetSong)
         if (pendingAuthoritativeStreamStableKey != targetStableKey) {
             pendingAuthoritativeStreamStableKey = null
             pendingAuthoritativeStreamUrl = null
@@ -122,10 +124,14 @@ internal class ListenTogetherPlayerStateApplier(
             remoteStreamUrl = authoritativeStreamUrl,
             localResolvedStreamUrl = localResolvedStreamUrl,
             localUsesAuthoritativeStream = localUsesAuthoritativeStream,
+            localPlaybackResolutionPending = localPlaybackResolutionPending,
             pendingAuthoritativeStreamUrl = pendingAuthoritativeStreamUrl
         )
+        val controllerLinkConfirmedUnavailable =
+            causeType == "LINK_UNAVAILABLE" &&
+                PlayerManager.isListenTogetherAuthoritativeStreamConfirmedUnavailable(targetSong)
         val shouldClearUnavailableAuthoritativeStream =
-            causeType == "LINK_UNAVAILABLE" && !isControllerProvider()
+            controllerLinkConfirmedUnavailable && !isControllerProvider()
         if (shouldClearUnavailableAuthoritativeStream) {
             pendingAuthoritativeStreamStableKey = null
             pendingAuthoritativeStreamUrl = null
@@ -140,6 +146,7 @@ internal class ListenTogetherPlayerStateApplier(
                     isController = isControllerProvider(),
                     localPlaybackRequiresAuthoritativeStream =
                         PlayerManager.currentPlaybackRequiresListenTogetherAuthoritativeStream(),
+                    controllerLinkConfirmedUnavailable = controllerLinkConfirmedUnavailable,
                     alreadyReloadedForStableKey =
                         lastUnavailableAuthoritativeStreamReloadStableKey == targetStableKey
                 )
@@ -191,7 +198,9 @@ internal class ListenTogetherPlayerStateApplier(
         val localPlaying = PlayerManager.isPlayingFlow.value
         val localPlaybackAlreadyStarting = PlayerManager.playWhenReadyFlow.value
         val awaitingAuthoritativeStream = shouldWaitForListenTogetherAuthoritativeStreamPlayback(
-            playerWaitingForAuthoritativeStream = PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong),
+            playerWaitingForAuthoritativeStream =
+                !localPlaybackResolutionPending &&
+                    PlayerManager.shouldWaitForListenTogetherAuthoritativeStream(targetSong),
             localTrackMatchesTarget = currentSong?.sameTrackAs(targetSong) == true,
             localTrackStreamUrl = currentSong?.streamUrl,
             localResolvedStreamUrl = PlayerManager.currentMediaUrlFlow.value
@@ -226,7 +235,7 @@ internal class ListenTogetherPlayerStateApplier(
         )
         NPLogger.d(
             config.tag,
-            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, trackSwitchGracePeriodActive=$trackSwitchGracePeriodActive, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, shouldIssuePause=${syncPlan.shouldIssuePause}, hasAuthoritativeStream=${authoritativeStreamUrl != null}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, shouldClearUnavailableAuthoritativeStream=$shouldClearUnavailableAuthoritativeStream, shouldReloadForUnavailableAuthoritativeStream=$shouldReloadForUnavailableAuthoritativeStream, forcePlaybackStallReload=$forcePlaybackStallReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
+            "applyRoomStateToPlayer(): causeType=$causeType, desiredPlaying=$desiredPlaying, localPlaying=$localPlaying, localPlaybackAlreadyStarting=$localPlaybackAlreadyStarting, awaitingAuthoritativeStream=$awaitingAuthoritativeStream, localCurrentIndex=$localCurrentIndex, targetIndex=$targetIndex, playbackContextChanged=$playbackContextChanged, targetIndexChanged=$targetIndexChanged, trackSwitchGracePeriodActive=$trackSwitchGracePeriodActive, shouldReloadPlaylist=${syncPlan.shouldReloadPlaylist}, effectiveExpectedPositionMs=${syncPlan.effectiveExpectedPositionMs}, driftMs=${syncPlan.driftMs}, signedDriftMs=${syncPlan.signedDriftMs}, shouldSeek=${syncPlan.shouldSeek}, shouldIssuePlay=${syncPlan.shouldIssuePlay}, shouldIssuePause=${syncPlan.shouldIssuePause}, hasAuthoritativeStream=${authoritativeStreamUrl != null}, needsAuthoritativeStreamReload=$needsAuthoritativeStreamReload, controllerLinkConfirmedUnavailable=$controllerLinkConfirmedUnavailable, shouldClearUnavailableAuthoritativeStream=$shouldClearUnavailableAuthoritativeStream, shouldReloadForUnavailableAuthoritativeStream=$shouldReloadForUnavailableAuthoritativeStream, forcePlaybackStallReload=$forcePlaybackStallReload, ignoreUnexpectedZeroPositionRollback=$ignoreUnexpectedZeroPositionRollback, shouldForcePauseAfterRemoteLoad=${syncPlan.shouldForcePauseAfterRemoteLoad}"
         )
         applySyncPlan(syncPlan)
         return true
@@ -345,6 +354,7 @@ internal class ListenTogetherPlayerStateApplier(
         remoteStreamUrl: String?,
         localResolvedStreamUrl: String?,
         localUsesAuthoritativeStream: Boolean,
+        localPlaybackResolutionPending: Boolean,
         pendingAuthoritativeStreamUrl: String?
     ): Boolean {
         if (isControllerProvider()) return false
@@ -356,6 +366,7 @@ internal class ListenTogetherPlayerStateApplier(
             localResolvedStreamUrl = localResolvedStreamUrl,
             localPlaybackRequiresAuthoritativeStream =
                 PlayerManager.currentPlaybackRequiresListenTogetherAuthoritativeStream(),
+            localPlaybackResolutionPending = localPlaybackResolutionPending,
             pendingAuthoritativeStreamUrl = pendingAuthoritativeStreamUrl
         )
     }

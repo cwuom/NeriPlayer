@@ -96,6 +96,13 @@ class ListenTogetherAuthoritativeStreamTest {
                 localPlaybackRequiresAuthoritativeStream = true
             )
         )
+        assertFalse(
+            shouldReloadForListenTogetherLinkUnavailable(
+                isController = false,
+                localPlaybackRequiresAuthoritativeStream = true,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
     }
 
     @Test
@@ -159,6 +166,158 @@ class ListenTogetherAuthoritativeStreamTest {
                 playbackResolutionPending = false,
                 currentTrackStableKey = "netease:current",
                 requestedStableKey = "netease:current"
+            )
+        )
+    }
+
+    @Test
+    fun `controller retries empty stream resolution before declaring it unavailable`() {
+        assertTrue(
+            shouldRetryControllerLinkResolution(
+                attempt = 0,
+                maximumAttempts = 3,
+                hasShareableStream = false,
+                playbackResolutionPending = false
+            )
+        )
+        assertTrue(
+            shouldRetryControllerLinkResolution(
+                attempt = 1,
+                maximumAttempts = 3,
+                hasShareableStream = false,
+                playbackResolutionPending = false
+            )
+        )
+        assertFalse(
+            shouldRetryControllerLinkResolution(
+                attempt = 2,
+                maximumAttempts = 3,
+                hasShareableStream = false,
+                playbackResolutionPending = false
+            )
+        )
+        assertTrue(
+            shouldPublishControllerLinkUnavailable(
+                attempt = 2,
+                maximumAttempts = 3,
+                hasShareableStream = false,
+                playbackResolutionPending = false
+            )
+        )
+        assertFalse(
+            shouldPublishControllerLinkUnavailable(
+                attempt = 2,
+                maximumAttempts = 3,
+                hasShareableStream = true,
+                playbackResolutionPending = false
+            )
+        )
+    }
+
+    @Test
+    fun `preview notice stays hidden until controller link is confirmed unavailable`() {
+        assertFalse(
+            shouldShowListenTogetherPreviewClipNotice(
+                isPreviewClip = true,
+                listenerAudioLinkSharingActive = true,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
+        assertTrue(
+            shouldShowListenTogetherPreviewClipNotice(
+                isPreviewClip = true,
+                listenerAudioLinkSharingActive = true,
+                controllerLinkConfirmedUnavailable = true
+            )
+        )
+        assertTrue(
+            shouldShowListenTogetherPreviewClipNotice(
+                isPreviewClip = true,
+                listenerAudioLinkSharingActive = false,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
+        assertTrue(
+            shouldShowListenTogetherPreviewClipNotice(
+                isPreviewClip = false,
+                listenerAudioLinkSharingActive = true,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
+    }
+
+    @Test
+    fun `preview waits for a possible shared link before any unavailable confirmation`() {
+        assertTrue(
+            shouldAwaitListenTogetherSharedStreamFallback(
+                listenerAudioLinkSharingActive = true,
+                localResolutionRequiresSharedStream = true,
+                controllerLinkConfirmedUnavailable = false,
+                hasAuthoritativeStream = false
+            )
+        )
+        assertFalse(
+            shouldAwaitListenTogetherSharedStreamFallback(
+                listenerAudioLinkSharingActive = true,
+                localResolutionRequiresSharedStream = true,
+                controllerLinkConfirmedUnavailable = false,
+                hasAuthoritativeStream = true
+            )
+        )
+        assertFalse(
+            shouldAwaitListenTogetherSharedStreamFallback(
+                listenerAudioLinkSharingActive = true,
+                localResolutionRequiresSharedStream = true,
+                controllerLinkConfirmedUnavailable = true,
+                hasAuthoritativeStream = false
+            )
+        )
+    }
+
+    @Test
+    fun `resolver errors stay hidden while a shared link can still arrive`() {
+        assertTrue(
+            shouldSuppressListenTogetherResolverError(
+                listenerAudioLinkSharingActive = true,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
+        assertFalse(
+            shouldSuppressListenTogetherResolverError(
+                listenerAudioLinkSharingActive = true,
+                controllerLinkConfirmedUnavailable = true
+            )
+        )
+        assertFalse(
+            shouldSuppressListenTogetherResolverError(
+                listenerAudioLinkSharingActive = false,
+                controllerLinkConfirmedUnavailable = false
+            )
+        )
+    }
+
+    @Test
+    fun `link sharing keeps Netease alternate sources behind the controller link`() {
+        assertTrue(
+            shouldPreferListenTogetherSourceBeforeNeteaseFallback(
+                listenerAudioLinkSharingActive = true
+            )
+        )
+        assertFalse(
+            shouldPreferListenTogetherSourceBeforeNeteaseFallback(
+                listenerAudioLinkSharingActive = false
+            )
+        )
+    }
+
+    @Test
+    fun `shared link does not replace a listener local resolution in progress`() {
+        assertFalse(
+            shouldReloadListenTogetherAuthoritativeStream(
+                remoteStreamUrl = "https://m701.music.126.net/controller.mp3",
+                localResolvedStreamUrl = null,
+                localPlaybackRequiresAuthoritativeStream = true,
+                localPlaybackResolutionPending = true
             )
         )
     }

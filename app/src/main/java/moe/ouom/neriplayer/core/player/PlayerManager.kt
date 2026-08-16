@@ -199,6 +199,7 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
+import moe.ouom.neriplayer.core.player.url.stripListenTogetherStreamQualityMetadata
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -1296,23 +1297,51 @@ object PlayerManager {
     }
 
     internal fun shouldWaitForListenTogetherAuthoritativeStream(song: SongItem): Boolean {
-        if (!isListenTogetherActive()) return false
-        if (isCurrentUserControllerInListenTogether()) return false
-        val room = activeListenTogetherRoomState() ?: return false
-        if (!room.settings.shareAudioLinks || room.roomStatus != "active") return false
-        val targetStableKey = currentListenTogetherTargetStableKey() ?: return false
-        val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
-        if (songStableKey != targetStableKey) return false
+        if (!isListenTogetherAuthoritativeStreamTarget(song)) return false
         if (isListenTogetherAuthoritativeStreamConfirmedUnavailable(song)) return false
         return !isDirectStreamUrl(currentListenTogetherTargetStreamUrl())
     }
 
-    internal fun isListenTogetherAuthoritativeStreamConfirmedUnavailable(song: SongItem): Boolean {
-        if (!isListenTogetherActive() || isCurrentUserControllerInListenTogether()) return false
+    internal fun shouldAwaitListenTogetherSharedStreamFallback(
+        song: SongItem,
+        localResolutionRequiresSharedStream: Boolean
+    ): Boolean {
+        return moe.ouom.neriplayer.listentogether.playback
+            .shouldAwaitListenTogetherSharedStreamFallback(
+                listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled(),
+                localResolutionRequiresSharedStream = localResolutionRequiresSharedStream,
+                controllerLinkConfirmedUnavailable =
+                    isListenTogetherAuthoritativeStreamConfirmedUnavailable(song),
+                hasAuthoritativeStream = isDirectStreamUrl(currentListenTogetherTargetStreamUrl())
+            )
+    }
+
+    internal fun isListenTogetherAudioLinkFallbackEnabled(): Boolean {
+        if (!isListenTogetherActive()) return false
+        if (isCurrentUserControllerInListenTogether()) return false
         val room = activeListenTogetherRoomState() ?: return false
-        if (!room.settings.shareAudioLinks || room.roomStatus != "active") return false
+        return room.settings.shareAudioLinks && room.roomStatus == "active"
+    }
+
+    internal fun isListenTogetherLocalResolutionPendingFor(song: SongItem): Boolean {
+        val targetStableKey = song.listenTogetherStableKeyOrNull() ?: return false
+        return isPendingMediaLoadActive() &&
+            playJob?.isActive == true &&
+            _currentSongFlow.value?.listenTogetherStableKeyOrNull() == targetStableKey
+    }
+
+    internal fun isListenTogetherAuthoritativeStreamTarget(song: SongItem): Boolean {
+        if (!isListenTogetherAudioLinkFallbackEnabled()) return false
+        activeListenTogetherRoomState() ?: return false
+        val targetStableKey = currentListenTogetherTargetStableKey() ?: return false
         val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
-        if (songStableKey != currentListenTogetherTargetStableKey()) return false
+        return songStableKey == targetStableKey
+    }
+
+    internal fun isListenTogetherAuthoritativeStreamConfirmedUnavailable(song: SongItem): Boolean {
+        if (!isListenTogetherAuthoritativeStreamTarget(song)) return false
+        val room = activeListenTogetherRoomState() ?: return false
+        val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
         return AppContainer.listenTogetherSessionManager.isControllerAudioLinkUnavailable(
             roomId = room.roomId,
             stableKey = songStableKey
@@ -1336,6 +1365,8 @@ object PlayerManager {
         _isPlayingFlow.value = false
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
+        pendingMediaLoadActive = false
+        pendingMediaLoadPositionMs = 0L
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
     }
@@ -2361,14 +2392,15 @@ object PlayerManager {
         mimeType: String? = null,
         allowCustomCacheKey: Boolean = true
     ): MediaItem {
+        val mediaUrl = stripListenTogetherStreamQualityMetadata(url)
         val isLocalFile =
-            url.startsWith("file://") ||
-                url.startsWith("content://") ||
-                url.startsWith("android.resource://") ||
-                url.startsWith("/")
+            mediaUrl.startsWith("file://") ||
+                mediaUrl.startsWith("content://") ||
+                mediaUrl.startsWith("android.resource://") ||
+                mediaUrl.startsWith("/")
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
-            .setUri(url.toUri())
+            .setUri(mediaUrl.toUri())
             .apply {
                 if (!mimeType.isNullOrBlank()) {
                     setMimeType(mimeType)

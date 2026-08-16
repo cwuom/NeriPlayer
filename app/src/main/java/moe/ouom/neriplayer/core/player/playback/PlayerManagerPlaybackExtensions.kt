@@ -67,8 +67,9 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeSeekRefreshPolicy
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
+import moe.ouom.neriplayer.core.player.url.listenTogetherFallbackResult
+import moe.ouom.neriplayer.core.player.url.mergeListenTogetherFallbackResult
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
-import moe.ouom.neriplayer.core.player.url.resolveSongUrlOrWaitForAuthoritativeStream
 import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
 import moe.ouom.neriplayer.core.player.url.synchronizeCachedPlaybackDescriptor
 import moe.ouom.neriplayer.core.player.url.youtubePlaybackRecoveryStrategyForSeek
@@ -88,6 +89,7 @@ import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.platform.youtube.youtubeMusicThumbnailUrl
+import moe.ouom.neriplayer.listentogether.playback.shouldShowListenTogetherPreviewClipNotice
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
 internal fun PlayerManager.cancelVolumeFadeImpl(resetToFull: Boolean = false) {
@@ -777,12 +779,6 @@ internal fun PlayerManager.playAtIndex(
         _currentPlaybackAudioInfo.value = null
     }
     currentMediaUrlResolvedAtMs = 0L
-    val shouldAwaitAuthoritativeStream =
-        commandSource == PlaybackCommandSource.REMOTE_SYNC &&
-            shouldWaitForListenTogetherAuthoritativeStream(song)
-    if (shouldAwaitAuthoritativeStream) {
-        stopCurrentPlaybackForListenTogetherAwaitingStream()
-    }
     updateResumePlaybackRequested(true)
     clearUsbExclusiveInterruptedPlaybackIntent("play_at_index")
     restoredShouldResumePlayback = false
@@ -823,19 +819,17 @@ internal fun PlayerManager.playAtIndex(
     enterPendingMediaLoad(resolvedResumePositionMs)
     playJob = ioScope.launch {
         try {
-        val result = resolveSongUrlOrWaitForAuthoritativeStream(
-            shouldWaitForAuthoritativeStream = {
-                shouldWaitForListenTogetherAuthoritativeStream(song)
+        val localResult = resolveSongUrl(
+            song = song,
+            playbackRequestTokenOverride = requestToken,
+            shouldApplyCacheMutation = {
+                shouldApplyResolvedMedia(requestToken, playbackRequestToken) && isActive
             }
-        ) {
-            resolveSongUrl(
-                song = song,
-                playbackRequestTokenOverride = requestToken,
-                shouldApplyCacheMutation = {
-                    shouldApplyResolvedMedia(requestToken, playbackRequestToken) && isActive
-                }
-            )
-        }
+        )
+        val result = mergeListenTogetherFallbackResult(
+            localResult = localResult,
+            listenTogetherFallback = listenTogetherFallbackResult(song)
+        )
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(
                 "NERI-PlayerManager",
@@ -877,16 +871,25 @@ internal fun PlayerManager.playAtIndex(
                     ) {
                         return@withContext
                     }
-                    if (shouldWaitForListenTogetherAuthoritativeStream(song)) {
+                    if (
+                        shouldAwaitListenTogetherSharedStreamFallback(
+                            song = song,
+                            localResolutionRequiresSharedStream = result.isPreviewClip
+                        )
+                    ) {
                         switchedToAuthoritativeStreamWait = true
                         stopCurrentPlaybackForListenTogetherAwaitingStream()
                         return@withContext
                     }
                     consecutivePlayFailures = 0
                     result.noticeMessage?.let { message ->
-                        if (
-                            !result.isPreviewClip ||
-                            !shouldWaitForListenTogetherAuthoritativeStream(song)
+                        if (shouldShowListenTogetherPreviewClipNotice(
+                                isPreviewClip = result.isPreviewClip,
+                                listenerAudioLinkSharingActive =
+                                    isListenTogetherAudioLinkFallbackEnabled(),
+                                controllerLinkConfirmedUnavailable =
+                                    isListenTogetherAuthoritativeStreamConfirmedUnavailable(song)
+                            )
                         ) {
                             postPlayerEvent(PlayerEvent.ShowError(message))
                         }
@@ -1003,10 +1006,8 @@ internal fun PlayerManager.playAtIndex(
                 maybeWarmNextYouTubeMusicAfterCurrentResolved()
             }
             SongUrlResult.WaitingForAuthoritativeStream -> {
-                if (!shouldAwaitAuthoritativeStream) {
-                    withContext(Dispatchers.Main) {
-                        stopCurrentPlaybackForListenTogetherAwaitingStream()
-                    }
+                withContext(Dispatchers.Main) {
+                    stopCurrentPlaybackForListenTogetherAwaitingStream()
                 }
                 NPLogger.d(
                     "NERI-PlayerManager",
@@ -1018,6 +1019,21 @@ internal fun PlayerManager.playAtIndex(
                 )
             }
             is SongUrlResult.RequiresLogin -> {
+                if (
+                    shouldAwaitListenTogetherSharedStreamFallback(
+                        song = song,
+                        localResolutionRequiresSharedStream = true
+                    )
+                ) {
+                    withContext(Dispatchers.Main) {
+                        stopCurrentPlaybackForListenTogetherAwaitingStream()
+                    }
+                    scheduleStatePersist(
+                        positionMs = resolvedResumePositionMs,
+                        shouldResumePlayback = true
+                    )
+                    return@launch
+                }
                 clearPlaybackDemandCacheKey(reason = "play_at_index_requires_login")
                 NPLogger.w(
                     "NERI-PlayerManager",
@@ -1036,6 +1052,21 @@ internal fun PlayerManager.playAtIndex(
                 }
             }
             is SongUrlResult.Failure -> {
+                if (
+                    shouldAwaitListenTogetherSharedStreamFallback(
+                        song = song,
+                        localResolutionRequiresSharedStream = true
+                    )
+                ) {
+                    withContext(Dispatchers.Main) {
+                        stopCurrentPlaybackForListenTogetherAwaitingStream()
+                    }
+                    scheduleStatePersist(
+                        positionMs = resolvedResumePositionMs,
+                        shouldResumePlayback = true
+                    )
+                    return@launch
+                }
                 clearPlaybackDemandCacheKey(reason = "play_at_index_failure")
                 NPLogger.e(
                     "NERI-PlayerManager",

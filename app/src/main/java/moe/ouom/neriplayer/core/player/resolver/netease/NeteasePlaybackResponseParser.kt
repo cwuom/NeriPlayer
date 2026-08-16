@@ -12,6 +12,8 @@ internal object NeteasePlaybackResponseParser {
         data class Success(
             val url: String,
             val type: String?,
+            val level: String? = null,
+            val bitrateKbps: Int? = null,
             val notice: Notice? = null,
             val contentLength: Long? = null
         ) : PlaybackResult()
@@ -56,6 +58,8 @@ internal object NeteasePlaybackResponseParser {
                 PlaybackResult.Success(
                     url = url,
                     type = data.optCleanString("type"),
+                    level = data.optCleanString("level"),
+                    bitrateKbps = data.optBitrateKbps(),
                     notice = notice,
                     contentLength = data.optLongOrNull("size")?.takeIf { it > 0L }
                 )
@@ -146,5 +150,14 @@ internal object NeteasePlaybackResponseParser {
         } else {
             null
         }
+    }
+
+    private fun JSONObject.optBitrateKbps(): Int? {
+        val raw = sequenceOf("br", "bitrate", "bitrateKbps")
+            .mapNotNull { key -> optLongOrNull(key) }
+            .firstOrNull { it > 0L }
+            ?: return null
+        val bitrateKbps = if (raw >= 10_000L) raw / 1_000L else raw
+        return bitrateKbps.toInt().takeIf { it > 0 }
     }
 }

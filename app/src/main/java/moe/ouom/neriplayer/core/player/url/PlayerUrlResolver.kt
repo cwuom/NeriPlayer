@@ -77,9 +77,16 @@ internal fun buildYouTubeQualityOptions(getLocalizedString: (Int) -> String): Li
 )
 
 internal fun inferBiliQualityKey(biliAudioStream: BiliAudioStreamInfo): String {
+    val qualityTag = biliAudioStream.qualityTag?.trim()?.lowercase()
+    val mimeType = biliAudioStream.mimeType
+        .substringBefore(';')
+        .trim()
+        .lowercase()
     return when {
-        biliAudioStream.qualityTag == "dolby" -> "dolby"
-        biliAudioStream.qualityTag == "hires" -> "hires"
+        qualityTag == "dolby" -> "dolby"
+        qualityTag == "hires" -> "hires"
+        qualityTag == "lossless" -> "lossless"
+        mimeType == "audio/flac" || mimeType == "audio/x-flac" -> "lossless"
         biliAudioStream.bitrateKbps >= 180 -> "high"
         biliAudioStream.bitrateKbps >= 120 -> "medium"
         else -> "low"
@@ -121,20 +128,61 @@ internal fun buildNeteasePlaybackAudioInfo(
     getLocalizedString: (Int) -> String
 ): PlaybackAudioInfo {
     val mimeType = normalizeNeteaseMimeType(parsed.type)
+    val actualQualityKey = resolveNeteasePlaybackQualityKey(
+        parsed = parsed,
+        requestedQualityKey = resolvedQualityKey
+    )
     return PlaybackAudioInfo(
         source = PlaybackAudioSource.NETEASE,
-        qualityKey = resolvedQualityKey,
-        qualityLabel = qualityLabelForNetease(resolvedQualityKey, getLocalizedString),
+        qualityKey = actualQualityKey,
+        qualityLabel = qualityLabelForNetease(actualQualityKey, getLocalizedString),
         qualityOptions = buildNeteaseQualityOptions(getLocalizedString),
         codecLabel = deriveCodecLabel(mimeType) ?: parsed.type?.uppercase(),
         mimeType = mimeType,
         bitrateKbps = if (parsed.notice == NeteasePlaybackResponseParser.Notice.PREVIEW_CLIP) {
             null
         } else {
-            estimateBitrateKbps(parsed.contentLength, fallbackDurationMs)
+            parsed.bitrateKbps ?: estimateBitrateKbps(parsed.contentLength, fallbackDurationMs)
         }
     )
 }
+
+internal fun resolveNeteasePlaybackQualityKey(
+    parsed: NeteasePlaybackResponseParser.PlaybackResult.Success,
+    requestedQualityKey: String
+): String {
+    normalizeNeteaseQualityKey(parsed.level)?.let { return it }
+
+    val normalizedType = parsed.type?.trim()?.lowercase().orEmpty()
+    val bitrateKbps = parsed.bitrateKbps
+    return when {
+        normalizedType == "flac" || normalizedType == "audio/flac" -> "lossless"
+        bitrateKbps != null && bitrateKbps >= 900 -> "lossless"
+        bitrateKbps != null && bitrateKbps >= 300 -> "exhigh"
+        bitrateKbps != null && bitrateKbps >= 180 -> "higher"
+        bitrateKbps != null && bitrateKbps > 0 -> "standard"
+        normalizedType == "mp3" || normalizedType == "audio/mpeg" -> "standard"
+        else -> normalizeNeteaseQualityKey(requestedQualityKey) ?: "standard"
+    }
+}
+
+internal fun normalizeNeteaseQualityKey(value: String?): String? {
+    return value
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it in NETEASE_QUALITY_KEYS }
+}
+
+private val NETEASE_QUALITY_KEYS = setOf(
+    "standard",
+    "higher",
+    "exhigh",
+    "lossless",
+    "hires",
+    "jyeffect",
+    "sky",
+    "jymaster"
+)
 
 internal fun buildBiliPlaybackAudioInfo(
     selectedStream: BiliAudioStreamInfo,
@@ -252,6 +300,13 @@ internal fun shouldRetryNeteaseWithLowerQuality(
 ): Boolean {
     return reason == NeteasePlaybackResponseParser.FailureReason.NO_PERMISSION ||
         reason == NeteasePlaybackResponseParser.FailureReason.NO_PLAY_URL
+}
+
+internal fun shouldRetryNeteaseWithLowerQualityAfterLogin(
+    qualityIndex: Int,
+    lastQualityIndex: Int
+): Boolean {
+    return qualityIndex in 0 until lastQualityIndex
 }
 
 internal fun buildNeteaseSuccessResult(
