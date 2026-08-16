@@ -69,6 +69,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -128,7 +129,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -1352,8 +1357,45 @@ private fun ExploreSearchHistoryRow(
                     }
                 }
             }
+            val historyListState = rememberLazyListState()
+            val showStartFade by remember(historyListState) {
+                derivedStateOf { historyListState.canScrollBackward }
+            }
+            val showEndFade by remember(historyListState) {
+                derivedStateOf { historyListState.canScrollForward }
+            }
+            val edgeFadeColor = MaterialTheme.colorScheme.background
             LazyRow(
-                modifier = Modifier.fillMaxWidth(),
+                state = historyListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .drawWithContent {
+                        drawContent()
+                        val fadeWidth = 28.dp.toPx().coerceAtMost(size.width / 2f)
+                        if (fadeWidth <= 0f) return@drawWithContent
+                        if (showStartFade) {
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(edgeFadeColor, edgeFadeColor.copy(alpha = 0f)),
+                                    startX = 0f,
+                                    endX = fadeWidth
+                                ),
+                                topLeft = Offset.Zero,
+                                size = Size(fadeWidth, size.height)
+                            )
+                        }
+                        if (showEndFade) {
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(edgeFadeColor.copy(alpha = 0f), edgeFadeColor),
+                                    startX = size.width - fadeWidth,
+                                    endX = size.width
+                                ),
+                                topLeft = Offset(size.width - fadeWidth, 0f),
+                                size = Size(fadeWidth, size.height)
+                            )
+                        }
+                    },
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 itemsIndexed(history) { _, item ->
