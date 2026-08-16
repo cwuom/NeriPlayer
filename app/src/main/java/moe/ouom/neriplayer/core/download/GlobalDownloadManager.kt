@@ -947,10 +947,7 @@ object GlobalDownloadManager {
                 finalized = false,
                 sidecarReferences = sidecarReferences.retainCreatedOnly()
             )
-            if (
-                finalizedAudio.sizeBytes <= 0L ||
-                !ManagedDownloadStorage.exists(appContext, finalizedAudio.reference)
-            ) {
+            if (!ManagedDownloadStorage.hasReadableContent(appContext, finalizedAudio)) {
                 NPLogger.w(TAG, "下载收尾发现音频已不可读: song=${song.name}, reference=${storedAudio.reference}")
                 return CompletedDownloadMetadataFinalizationResult(
                     finalized = false,
@@ -1015,10 +1012,7 @@ object GlobalDownloadManager {
                     finalized = false,
                     sidecarReferences = sidecarReferences.retainCreatedOnly()
                 )
-                if (
-                    finalizedAudio.sizeBytes <= 0L ||
-                    !ManagedDownloadStorage.exists(appContext, finalizedAudio.reference)
-                ) {
+                if (!ManagedDownloadStorage.hasReadableContent(appContext, finalizedAudio)) {
                     NPLogger.w(TAG, "标签写入后音频校验失败，保持未完成状态: ${song.name}")
                     return CompletedDownloadMetadataFinalizationResult(
                         finalized = false,
@@ -1089,10 +1083,7 @@ object GlobalDownloadManager {
         audio: ManagedDownloadStorage.StoredEntry,
         song: SongItem
     ): Boolean {
-        if (
-            audio.sizeBytes <= 0L ||
-            !ManagedDownloadStorage.exists(context, audio.reference)
-        ) {
+        if (!ManagedDownloadStorage.hasReadableContent(context, audio)) {
             return false
         }
         val metadata = readDownloadedMetadata(context, audio) ?: return false
@@ -1566,7 +1557,7 @@ object GlobalDownloadManager {
             return
         }
         NPLogger.w(TAG, "扫描发现未最终确认下载半成品，隐藏并等待重试: file=${storedAudio.name}")
-        if (storedAudio.sizeBytes > 0L) {
+        if (ManagedDownloadStorage.hasReadableContent(context, storedAudio)) {
             return
         }
         runCatching {
@@ -2059,7 +2050,7 @@ object GlobalDownloadManager {
                     ?: ManagedDownloadStorage.toPlayableUri(playbackReference)
                     ?: playbackReference
                 val quickSong = song.withCachedDownloadedLyrics(
-                    storedAudio?.let { snapshot?.metadataByAudioName?.get(it.name) }
+                    storedAudio?.let { snapshot.metadataByAudioName[it.name] }
                 ).toPlaybackSongItem(
                     playbackUri = playbackUri,
                     localFileName = storedAudio?.name
@@ -2920,7 +2911,9 @@ object GlobalDownloadManager {
             return null
         }
 
-        if (metadata != null && isMetadataOwnedBySong(metadata, song) && audio.sizeBytes > 0L) {
+        val hasReadableAudio = audio.sizeBytes > 0L ||
+            ManagedDownloadStorage.hasReadableContent(context, audio)
+        if (metadata != null && isMetadataOwnedBySong(metadata, song) && hasReadableAudio) {
             NPLogger.d(
                 TAG,
                 "已下载文件 metadata 快速校验通过: song=${song.name}, file=${audio.name}, size=${audio.sizeBytes}"
@@ -2930,7 +2923,7 @@ object GlobalDownloadManager {
 
         val localDetails = inspectDownloadedAudioDetails(context, audio)
         if (metadata != null && localDetails == null) {
-            if (audio.sizeBytes > 0L) {
+            if (hasReadableAudio) {
                 NPLogger.w(
                     TAG,
                     "已下载文件存在 metadata 但音频标签不可读，保留并复用: song=${song.name}, file=${audio.name}, size=${audio.sizeBytes}"
@@ -2956,7 +2949,7 @@ object GlobalDownloadManager {
         if (localDetails == null) {
             // 无法读取音频标签 (常见于 SAF content:// URI)
             // 通过文件名和文件大小判断是否为有效下载
-            if (audio.sizeBytes > 0L && matchesExpectedDownloadFileName(song, audio)) {
+            if (hasReadableAudio && matchesExpectedDownloadFileName(song, audio)) {
                 NPLogger.d(TAG, "无法读取音频标签但文件名匹配，补写元数据: ${audio.name}")
                 persistDownloadedMetadata(context, audio, song)
                 return audio

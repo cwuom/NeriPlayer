@@ -7,11 +7,14 @@ import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -66,6 +69,92 @@ class LocalAudioImportSafLyricsTest {
         )
         assertEquals("[00:00.10]original from Lyrics", hydratedSong.matchedLyric)
         assertEquals("[00:00.10]translated from Lyrics", hydratedSong.matchedTranslatedLyric)
+    }
+
+    @Test
+    fun emptyMediaStoreResultRunsTheSafFallbackScan() = runBlocking {
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+
+        val result = LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+            context = targetContext,
+            folderUri = treeUri,
+            mediaStoreResult = LocalAudioImportResult(
+                songs = emptyList(),
+                failedCount = 0,
+                completed = true
+            )
+        )
+
+        assertEquals(0, result.failedCount)
+        assertEquals(1, result.songs.size)
+        assertEquals(
+            Issue339LyricsTestDocumentProvider.AUDIO_NAME,
+            result.songs.single().localFileName
+        )
+    }
+
+    @Test
+    fun safAudioWithUnknownSizeIsStillReadable() = runBlocking {
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = Issue339LyricsTestDocumentProvider.AUDIO_NAME,
+            reference = audioUri.toString(),
+            mediaUri = audioUri.toString(),
+            localFilePath = null,
+            sizeBytes = 0L,
+            lastModifiedMs = 0L,
+            isDirectory = false
+        )
+
+        assertTrue(ManagedDownloadStorage.hasReadableContent(targetContext, entry))
+
+        val emptyFile = File.createTempFile("empty-audio", ".wav", targetContext.cacheDir)
+        try {
+            assertEquals(0L, emptyFile.length())
+            assertFalse(
+                ManagedDownloadStorage.hasReadableContent(
+                    targetContext,
+                    entry.copy(
+                        name = emptyFile.name,
+                        reference = emptyFile.absolutePath,
+                        mediaUri = emptyFile.toURI().toString(),
+                        localFilePath = emptyFile.absolutePath
+                    )
+                )
+            )
+        } finally {
+            emptyFile.delete()
+        }
+    }
+
+    @Test
+    fun cancelledSafScanPropagatesCancellation() = runBlocking {
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        var cancelled = false
+        try {
+            LocalAudioImportManager.scanFolderSongsWithMediaStoreResultForTest(
+                context = targetContext,
+                folderUri = treeUri,
+                mediaStoreResult = LocalAudioImportResult(
+                    songs = emptyList(),
+                    failedCount = 0,
+                    completed = true
+                ),
+                onProgress = { throw CancellationException("scan cancelled") }
+            )
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
     }
 
     @Test

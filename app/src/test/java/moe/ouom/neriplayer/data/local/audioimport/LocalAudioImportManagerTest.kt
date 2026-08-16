@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
 import java.io.File
+import java.security.MessageDigest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -12,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import kotlinx.coroutines.CancellationException
 
 class LocalAudioImportManagerTest {
 
@@ -46,6 +48,20 @@ class LocalAudioImportManagerTest {
                     failedCount = 0,
                     completed = true
                 )
+            )
+        )
+    }
+
+    @Test
+    fun `scan traversal does not fall back after cancellation`() {
+        assertFalse(
+            shouldFallbackToDocumentFileAfterTraversalFailure(
+                CancellationException("scan cancelled")
+            )
+        )
+        assertTrue(
+            shouldFallbackToDocumentFileAfterTraversalFailure(
+                IllegalStateException("provider failed")
             )
         )
     }
@@ -217,6 +233,30 @@ class LocalAudioImportManagerTest {
         assertEquals(0L, song.durationMs)
         assertEquals(importedFile.absolutePath, song.mediaUri)
         assertEquals(importedFile.absolutePath, song.localFilePath)
+    }
+
+    @Test
+    fun `buildQuickImportedSong preserves legacy stable id calculation`() {
+        val sourceRef = "content://provider/audio/legacy-id"
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = sourceRef,
+                displayName = "legacy-id.flac",
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+        val expectedId = MessageDigest.getInstance("SHA-256")
+            .digest(sourceRef.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+            .take(16)
+            .toULong(16)
+            .toLong()
+
+        assertEquals(expectedId, song.id)
     }
 
     @Test

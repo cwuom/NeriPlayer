@@ -35,6 +35,7 @@ import android.provider.OpenableColumns
 import android.system.Os
 import androidx.annotation.RequiresApi
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -96,7 +97,7 @@ private class LocalAudioScanProgressEmitter(
             return
         }
         lastReportedAt = now
-        runCatching {
+        try {
             onProgress(
                 LocalAudioScanProgress(
                     phase = phase,
@@ -107,8 +108,10 @@ private class LocalAudioScanProgressEmitter(
                     elapsedMs = now - startedAt
                 )
             )
-        }.onFailure {
-            NPLogger.w(TAG, "scan progress callback failed: ${it.message}")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "scan progress callback failed: ${error.message}")
         }
     }
 
@@ -127,6 +130,10 @@ data class LocalAudioImportResult(
 
 internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boolean {
     return result?.songs?.isNotEmpty() == true
+}
+
+internal fun shouldFallbackToDocumentFileAfterTraversalFailure(error: Throwable): Boolean {
+    return error !is CancellationException
 }
 
 internal data class SidecarCopyPlan(
@@ -329,22 +336,51 @@ object LocalAudioImportManager {
         folderUri: Uri,
         onProgress: (LocalAudioScanProgress) -> Unit = {}
     ): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        scanFolderSongsInternal(
+            context = context,
+            folderUri = folderUri,
+            onProgress = onProgress,
+            mediaStoreScan = { progress ->
+                scanExternalStorageFolderWithMediaStore(context, folderUri, progress)
+            }
+        )
+    }
+
+    internal suspend fun scanFolderSongsWithMediaStoreResultForTest(
+        context: Context,
+        folderUri: Uri,
+        mediaStoreResult: LocalAudioImportResult?,
+        onProgress: (LocalAudioScanProgress) -> Unit = {}
+    ): LocalAudioImportResult = withContext(Dispatchers.IO) {
+        scanFolderSongsInternal(
+            context = context,
+            folderUri = folderUri,
+            onProgress = onProgress,
+            mediaStoreScan = { mediaStoreResult }
+        )
+    }
+
+    private suspend fun scanFolderSongsInternal(
+        context: Context,
+        folderUri: Uri,
+        onProgress: (LocalAudioScanProgress) -> Unit,
+        mediaStoreScan: suspend (LocalAudioScanProgressEmitter) -> LocalAudioImportResult?
+    ): LocalAudioImportResult {
         val scanStartedAt = SystemClock.elapsedRealtime()
         val progress = LocalAudioScanProgressEmitter(scanStartedAt, onProgress)
         NPLogger.d(TAG, "scanFolderSongs start: uri=$folderUri")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val mediaStoreResult = scanExternalStorageFolderWithMediaStore(context, folderUri, progress)
+            val mediaStoreResult = mediaStoreScan(progress)
             if (shouldUseMediaStoreScanResult(mediaStoreResult)) {
-                val result = requireNotNull(mediaStoreResult)
-                return@withContext result
+                return requireNotNull(mediaStoreResult)
             }
         }
 
         val root = DocumentFile.fromTreeUri(context, folderUri)
         if (root == null) {
             NPLogger.w(TAG, "scanFolderSongs skipped unreadable folder: $folderUri")
-            return@withContext LocalAudioImportResult(
+            return LocalAudioImportResult(
                 songs = emptyList(),
                 failedCount = 1,
                 completed = false
@@ -352,11 +388,16 @@ object LocalAudioImportManager {
         }
 
         val traversalStartedAt = SystemClock.elapsedRealtime()
-        val traversalResult = runCatching {
+        val traversalResult = try {
             collectFolderCandidatesWithDocumentsContract(context, folderUri, progress)
-        }.onFailure {
-            NPLogger.w(TAG, "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${it.message}")
-        }.getOrElse {
+        } catch (error: Exception) {
+            if (!shouldFallbackToDocumentFileAfterTraversalFailure(error)) {
+                throw error
+            }
+            NPLogger.w(
+                TAG,
+                "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${error.message}"
+            )
             collectFolderCandidatesWithDocumentFile(root, progress)
         }
         val traversalElapsedMs = SystemClock.elapsedRealtime() - traversalStartedAt
@@ -417,7 +458,7 @@ object LocalAudioImportManager {
             force = true
         )
 
-        LocalAudioImportResult(
+        return LocalAudioImportResult(
             songs = songs.distinctBy { it.identity() },
             failedCount = failed,
             completed = true,
@@ -425,7 +466,6 @@ object LocalAudioImportManager {
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun scanExternalStorageFolderWithMediaStore(
         context: Context,
         folderUri: Uri,
@@ -453,7 +493,7 @@ object LocalAudioImportManager {
             .takeIf(String::isNotBlank)
             ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
 
-        return runCatching {
+        return try {
             context.contentResolver.query(
                 audioUri,
                 projection,
@@ -540,12 +580,15 @@ object LocalAudioImportManager {
                     metadataDeferred = false
                 )
             }
-        }.onFailure { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(
                 TAG,
                 "scanFolderSongs MediaStore fast path unavailable for $folderUri: ${error.message}"
             )
-        }.getOrNull()
+            null
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -1050,7 +1093,12 @@ object LocalAudioImportManager {
     }
 
     private fun computeStableSongId(source: String): Long {
-        return stableKey(source).take(16).toULong(16).toLong()
+        val digest = MessageDigest.getInstance("SHA-256").digest(source.toByteArray())
+        var stableId = 0L
+        for (index in 0 until Long.SIZE_BYTES) {
+            stableId = (stableId shl 8) or (digest[index].toLong() and 0xffL)
+        }
+        return stableId
     }
 
     private fun buildFolderScannedSong(context: Context, uri: Uri): SongItem {
@@ -1075,7 +1123,7 @@ object LocalAudioImportManager {
         )
     }
 
-    private fun collectFolderCandidatesWithDocumentsContract(
+    private suspend fun collectFolderCandidatesWithDocumentsContract(
         context: Context,
         folderUri: Uri,
         progress: LocalAudioScanProgressEmitter
@@ -1086,6 +1134,7 @@ object LocalAudioImportManager {
         val pendingDirectories = ArrayDeque<Uri>().apply { add(folderUri) }
 
         while (pendingDirectories.isNotEmpty()) {
+            coroutineContext.ensureActive()
             val directoryUri = pendingDirectories.removeFirst()
             visitedDirectoryCount++
             progress.emit(
@@ -1101,6 +1150,7 @@ object LocalAudioImportManager {
                 error("Unable to query children for $directoryUri")
             }
             for (child in children) {
+                coroutineContext.ensureActive()
                 when {
                     child.isDirectory -> pendingDirectories.add(child.documentUri)
                     child.isSupportedAudioDocument() -> {
@@ -1121,7 +1171,7 @@ object LocalAudioImportManager {
         )
     }
 
-    private fun collectFolderCandidatesWithDocumentFile(
+    private suspend fun collectFolderCandidatesWithDocumentFile(
         root: DocumentFile,
         progress: LocalAudioScanProgressEmitter
     ): FolderTraversalResult {
@@ -1131,6 +1181,7 @@ object LocalAudioImportManager {
         val pendingDirectories = ArrayDeque<DocumentFile>().apply { add(root) }
 
         while (pendingDirectories.isNotEmpty()) {
+            coroutineContext.ensureActive()
             val directory = pendingDirectories.removeFirst()
             visitedDirectoryCount++
             progress.emit(
@@ -1140,15 +1191,18 @@ object LocalAudioImportManager {
                 discoveredSongs = candidates.size,
                 visitedDirectories = visitedDirectoryCount
             )
-            val children = runCatching { directory.listFiles() }
-                .onFailure {
-                    failed++
-                    NPLogger.w(TAG, "scanFolderSongs failed to list ${directory.uri}: ${it.message}")
-                }
-                .getOrNull()
-                ?: continue
+            val children = try {
+                directory.listFiles()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failed++
+                NPLogger.w(TAG, "scanFolderSongs failed to list ${directory.uri}: ${error.message}")
+                null
+            } ?: continue
 
             for (child in children) {
+                coroutineContext.ensureActive()
                 when {
                     child.isDirectory -> pendingDirectories.add(child)
                     child.isFile && child.isSupportedAudioDocument() -> {
@@ -1169,10 +1223,14 @@ object LocalAudioImportManager {
         )
     }
 
-    private fun queryFolderChildren(context: Context, parentUri: Uri): List<QueriedFolderChild>? {
+    private suspend fun queryFolderChildren(
+        context: Context,
+        parentUri: Uri
+    ): List<QueriedFolderChild>? {
         val documentId = resolveDocumentId(parentUri) ?: return null
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
-        return runCatching {
+        val scanContext = coroutineContext
+        return try {
             context.contentResolver.query(
                 childrenUri,
                 arrayOf(
@@ -1193,6 +1251,7 @@ object LocalAudioImportManager {
 
                 buildList {
                     while (cursor.moveToNext()) {
+                        scanContext.ensureActive()
                         val childDocumentId = cursor.getString(idIndex) ?: continue
                         val childDisplayName = cursor.getString(nameIndex) ?: continue
                         val childMimeType = cursor.getString(mimeTypeIndex).orEmpty()
@@ -1207,9 +1266,12 @@ object LocalAudioImportManager {
                     }
                 }
             }.orEmpty()
-        }.onFailure {
-            NPLogger.w(TAG, "queryFolderChildren failed for $parentUri: ${it.message}")
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "queryFolderChildren failed for $parentUri: ${error.message}")
+            null
+        }
     }
 
     private fun resolveDocumentId(uri: Uri): String? {

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.naming
 import java.io.File
 import java.security.MessageDigest
 import java.text.Normalizer
+import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -53,6 +54,9 @@ private val managedDownloadTemplatePlaceholderMap = linkedMapOf(
     "%subAudioId%" to ManagedDownloadTemplateField.SUB_AUDIO_ID,
     "%hash%" to ManagedDownloadTemplateField.HASH
 )
+
+private val managedDownloadTemplatePatternCache =
+    ConcurrentHashMap<String, ManagedDownloadTemplatePattern>()
 
 private val managedDownloadTemplatePlaceholderRegex = Regex(
     managedDownloadTemplatePlaceholderMap.keys.joinToString(
@@ -502,6 +506,7 @@ private fun parseDefaultManagedDownloadBaseNameWithoutAlbum(
 }
 
 private fun buildManagedDownloadTemplatePattern(template: String): ManagedDownloadTemplatePattern? {
+    managedDownloadTemplatePatternCache[template]?.let { return it }
     val matches = managedDownloadTemplatePlaceholderRegex.findAll(template).toList()
     if (matches.isEmpty()) {
         return null
@@ -531,8 +536,10 @@ private fun buildManagedDownloadTemplatePattern(template: String): ManagedDownlo
 
     pattern.append(Regex.escape(template.substring(cursor)))
     pattern.append("$")
-    return ManagedDownloadTemplatePattern(
+    val compiledPattern = ManagedDownloadTemplatePattern(
         regex = Regex(pattern.toString()),
         fields = fields.toList()
     )
+    return managedDownloadTemplatePatternCache.putIfAbsent(template, compiledPattern)
+        ?: compiledPattern
 }

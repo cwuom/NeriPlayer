@@ -95,6 +95,7 @@ internal fun buildDownloadedSongCatalogIndex(
                 songsByLegacyIdentityKey[legacyIdentityKey] = song
             }
         }
+    }
     return DownloadedSongCatalogIndex(
         songsByLocalReference = songsByLocalReference,
         songsByStableIdentityKey = songsByStableIdentityKey,

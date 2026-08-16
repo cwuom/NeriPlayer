@@ -1303,6 +1303,26 @@ internal object ManagedDownloadStorage {
         existsInternal(context, reference)
     }
 
+    suspend fun hasReadableContent(
+        context: Context,
+        entry: StoredEntry
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (entry.isDirectory) {
+            return@withContext false
+        }
+        if (entry.sizeBytes > 0L) {
+            return@withContext existsInternal(context, entry.reference)
+        }
+        try {
+            val input = openStoredEntryInputStream(context, entry) ?: return@withContext false
+            input.use { stream -> stream.read() != -1 }
+        } catch (error: java.util.concurrent.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun deleteReference(context: Context, reference: String?): Boolean = withContext(Dispatchers.IO) {
         deleteInternal(context, reference)
     }
