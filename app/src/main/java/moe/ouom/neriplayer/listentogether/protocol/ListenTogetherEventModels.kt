@@ -39,6 +39,7 @@ data class ListenTogetherEvent(
     val state: String? = null,
     val repeatMode: Int? = null,
     val shuffleEnabled: Boolean? = null,
+    val queueMutation: ListenTogetherQueueMutation? = null,
     val requestTrackStableKey: String? = null,
     val forceRefresh: Boolean? = null,
     val finishedTrackStableKey: String? = null

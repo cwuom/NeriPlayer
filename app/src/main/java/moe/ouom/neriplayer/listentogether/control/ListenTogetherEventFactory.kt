@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
 import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.LISTEN_TOGETHER_QUEUE_MUTATION_SCHEMA_VERSION
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
@@ -43,11 +44,17 @@ internal class ListenTogetherEventFactory(
         positionMs: Long,
         shouldPlay: Boolean
     ): ListenTogetherEvent {
+        val roomState = roomStateProvider()
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
-            roomSettings = roomStateProvider()?.settings,
+            roomSettings = roomState?.settings,
             includeResolvedStreamUrl = false
         )
+        val queueMutationPlan = roomState?.queueMutationPlanFor(
+            targetQueue = shareableQueue,
+            targetCurrentIndex = resolvedCurrentIndex
+        )
+        val useQueueMutation = queueMutationPlan?.requiresSnapshotFallback == false
         return ListenTogetherEvent(
             type = "SET_TRACK",
             eventId = eventIdFactory(),
@@ -57,7 +64,8 @@ internal class ListenTogetherEventFactory(
             positionMs = positionMs.coerceAtLeast(0L),
             currentIndex = resolvedCurrentIndex,
             track = shareableQueue.getOrNull(resolvedCurrentIndex),
-            queue = shareableQueue,
+            queue = shareableQueue.takeUnless { useQueueMutation },
+            queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
             shouldPlay = shouldPlay
         )
     }
@@ -69,7 +77,13 @@ internal class ListenTogetherEventFactory(
         commandShouldPlay: Boolean? = null
     ): ListenTogetherEvent? {
         val eventType = if (isControllerProvider()) "SET_QUEUE" else "REQUEST_SET_QUEUE"
+        val roomState = roomStateProvider()
         if (queue.isEmpty()) {
+            val queueMutationPlan = roomState?.queueMutationPlanFor(
+                targetQueue = emptyList(),
+                targetCurrentIndex = -1
+            )
+            val useQueueMutation = queueMutationPlan?.requiresSnapshotFallback == false
             return ListenTogetherEvent(
                 type = eventType,
                 eventId = eventIdFactory(),
@@ -78,7 +92,8 @@ internal class ListenTogetherEventFactory(
                 clientSequence = clientSequenceFactory(),
                 positionMs = 0L,
                 currentIndex = -1,
-                queue = emptyList(),
+                queue = emptyList<ListenTogetherTrack>().takeUnless { useQueueMutation },
+                queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
                 shouldPlay = false,
                 state = "paused",
                 repeatMode = PlayerManager.repeatModeFlow.value,
@@ -87,7 +102,7 @@ internal class ListenTogetherEventFactory(
         }
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
-            roomSettings = roomStateProvider()?.settings,
+            roomSettings = roomState?.settings,
             includeResolvedStreamUrl = false
         )
         val currentTrack = shareableQueue.getOrNull(resolvedCurrentIndex) ?: run {
@@ -100,6 +115,11 @@ internal class ListenTogetherEventFactory(
         val shouldPlay = commandShouldPlay ?: (
             localTransportActiveProvider() || PlayerManager.isPlayingFlow.value
         )
+        val queueMutationPlan = roomState?.queueMutationPlanFor(
+            targetQueue = shareableQueue,
+            targetCurrentIndex = resolvedCurrentIndex
+        )
+        val useQueueMutation = queueMutationPlan?.requiresSnapshotFallback == false
         return ListenTogetherEvent(
             type = eventType,
             eventId = eventIdFactory(),
@@ -109,7 +129,8 @@ internal class ListenTogetherEventFactory(
             positionMs = positionMs.coerceAtLeast(0L),
             currentIndex = resolvedCurrentIndex,
             track = currentTrack,
-            queue = shareableQueue,
+            queue = shareableQueue.takeUnless { useQueueMutation },
+            queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
             shouldPlay = shouldPlay,
             state = if (shouldPlay) "playing" else "paused",
             repeatMode = PlayerManager.repeatModeFlow.value,
@@ -151,7 +172,8 @@ internal class ListenTogetherEventFactory(
         )
         return playbackSnapshotEvent(
             type = if (isControllerProvider()) "PLAYBACK_MODE" else "REQUEST_PLAYBACK_MODE",
-            positionMs = positionMs
+            positionMs = positionMs,
+            includeQueueMutation = true
         ).copy(
             repeatMode = repeatMode,
             shuffleEnabled = shuffleEnabled
@@ -163,6 +185,7 @@ internal class ListenTogetherEventFactory(
         positionMs: Long,
         includeQueue: Boolean = true
     ): ListenTogetherEvent {
+        val roomState = roomStateProvider()
         val queue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value
         val rawIndex = queue.indexOfFirst { song ->
@@ -170,7 +193,7 @@ internal class ListenTogetherEventFactory(
         }
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = rawIndex.takeIf { it >= 0 } ?: 0,
-            roomSettings = roomStateProvider()?.settings,
+            roomSettings = roomState?.settings,
             includeResolvedStreamUrl = false
         )
         val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex)
@@ -182,7 +205,9 @@ internal class ListenTogetherEventFactory(
             clientSequence = clientSequenceFactory(),
             currentIndex = resolvedCurrentIndex,
             track = shareableTrack,
-            queue = shareableQueue.takeIf { includeQueue },
+            queue = shareableQueue.takeIf {
+                includeQueue && shouldIncludeLegacyQueueSnapshot(roomState)
+            },
             state = state,
             positionMs = positionMs.coerceAtLeast(0L)
         )
@@ -334,12 +359,18 @@ internal class ListenTogetherEventFactory(
             ?: 0
         if (!queue.hasShareableListenTogetherTrackAt(proposedNextIndex)) return null
         val isController = isControllerProvider()
+        val roomState = roomStateProvider()
         val (shareableQueue, resolvedNextIndex) = queue.toShareableQueueSnapshot(
             currentIndex = proposedNextIndex,
-            roomSettings = roomStateProvider()?.settings,
+            roomSettings = roomState?.settings,
             includeResolvedStreamUrl = false
         )
         val shouldAdvance = command.shouldPlay == true
+        val queueMutationPlan = roomState?.takeIf { isController }?.queueMutationPlanFor(
+            targetQueue = shareableQueue,
+            targetCurrentIndex = resolvedNextIndex
+        )
+        val useQueueMutation = queueMutationPlan?.requiresSnapshotFallback == false
         return ListenTogetherEvent(
             type = "TRACK_FINISHED",
             eventId = eventIdFactory(),
@@ -350,7 +381,8 @@ internal class ListenTogetherEventFactory(
             currentIndex = if (isController) resolvedNextIndex else null,
             nextIndex = if (isController) resolvedNextIndex else null,
             track = if (isController && shouldAdvance) shareableQueue.getOrNull(resolvedNextIndex) else null,
-            queue = if (isController) shareableQueue else null,
+            queue = if (isController && !useQueueMutation) shareableQueue else null,
+            queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
             shouldPlay = if (isController) shouldAdvance else null,
             finishedTrackStableKey = finishedTrack.stableKey
         )
@@ -382,6 +414,7 @@ internal class ListenTogetherEventFactory(
             state = message.stateName,
             repeatMode = message.repeatMode,
             shuffleEnabled = message.shuffleEnabled,
+            queueMutation = message.queueMutation,
             requestTrackStableKey = message.requestTrackStableKey
         )
     }
@@ -492,7 +525,12 @@ internal class ListenTogetherEventFactory(
         }
     }
 
-    private fun playbackSnapshotEvent(type: String, positionMs: Long): ListenTogetherEvent {
+    private fun playbackSnapshotEvent(
+        type: String,
+        positionMs: Long,
+        includeQueueMutation: Boolean = false
+    ): ListenTogetherEvent {
+        val roomState = roomStateProvider()
         val queue = PlayerManager.currentQueueFlow.value
         val currentSong = PlayerManager.currentSongFlow.value
         val rawIndex = queue.indexOfFirst { song ->
@@ -500,10 +538,15 @@ internal class ListenTogetherEventFactory(
         }
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = rawIndex.takeIf { it >= 0 } ?: 0,
-            roomSettings = roomStateProvider()?.settings,
+            roomSettings = roomState?.settings,
             includeResolvedStreamUrl = false
         )
         val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex)
+        val queueMutationPlan = roomState?.takeIf { includeQueueMutation }?.queueMutationPlanFor(
+            targetQueue = shareableQueue,
+            targetCurrentIndex = resolvedCurrentIndex
+        )
+        val useQueueMutation = queueMutationPlan?.requiresSnapshotFallback == false
         val resolvedState = when (type.removePrefix("REQUEST_")) {
             "PLAY" -> "playing"
             "PAUSE" -> "paused"
@@ -518,12 +561,34 @@ internal class ListenTogetherEventFactory(
             positionMs = positionMs.coerceAtLeast(0L),
             currentIndex = resolvedCurrentIndex,
             track = shareableTrack,
-            queue = shareableQueue,
+            queue = shareableQueue.takeIf {
+                !useQueueMutation && (
+                    queueMutationPlan?.requiresSnapshotFallback == true ||
+                        shouldIncludeLegacyQueueSnapshot(roomState)
+                    )
+            },
+            queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
             shouldPlay = resolvedState == "playing",
             state = resolvedState,
             repeatMode = PlayerManager.repeatModeFlow.value,
             shuffleEnabled = PlayerManager.shuffleModeFlow.value
         )
+    }
+
+    private fun ListenTogetherRoomState.queueMutationPlanFor(
+        targetQueue: List<ListenTogetherTrack>,
+        targetCurrentIndex: Int
+    ): ListenTogetherQueueMutationPlan? {
+        if (schemaVersion < LISTEN_TOGETHER_QUEUE_MUTATION_SCHEMA_VERSION) return null
+        return buildListenTogetherQueueMutationPlan(
+            baseState = this,
+            targetQueue = targetQueue,
+            targetCurrentIndex = targetCurrentIndex
+        )
+    }
+
+    private fun shouldIncludeLegacyQueueSnapshot(roomState: ListenTogetherRoomState?): Boolean {
+        return (roomState?.schemaVersion ?: 1) < LISTEN_TOGETHER_QUEUE_MUTATION_SCHEMA_VERSION
     }
 
     private companion object {

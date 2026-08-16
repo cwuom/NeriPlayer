@@ -544,7 +544,9 @@ For release build and signing details, see
   policy first, try local candidates first, and retain shared candidates as session-scoped startup
   fallbacks. Candidates are never written to normal song or offline caches. Shuffle requests reuse
   the requester's validated real queue order, disabling shuffle restores that order without
-  reloading the current song, and playback-mode commits re-anchor room position. Single-track
+  reloading the current song. Queue reorder/add/remove actions carry versioned replayable intents
+  so concurrent room edits converge without replacing the current track by a stale index, and
+  playback-mode commits re-anchor room position. Single-track
   repeat wraps position by track duration. Outdated client control events are filtered, and
   `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:

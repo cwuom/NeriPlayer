@@ -166,6 +166,9 @@ class ListenTogetherSessionManager(
     private var pendingTrackFinishedLegacyFallback: PendingTrackFinishedLegacyFallback? = null
     @Volatile
     private var pendingMemberControlRequest: PendingMemberControlRequest? = null
+    private val coalescedControlLock = Any()
+    private val pendingCoalescedControlEvents = mutableMapOf<String, PendingCoalescedControlEvent>()
+    private val coalescedControlJobs = mutableMapOf<String, Job>()
     @Volatile
     private var lastListenerStateRefreshAtElapsedMs: Long = 0L
     @Volatile
@@ -190,6 +193,11 @@ class ListenTogetherSessionManager(
 
     private val clientInstanceId = UUID.randomUUID().toString()
     private val clientSequence = AtomicLong(0L)
+
+    private data class PendingCoalescedControlEvent(
+        val event: ListenTogetherEvent,
+        val roomId: String?
+    )
 
     private val _sessionState = MutableStateFlow(ListenTogetherSessionState())
     val sessionState: StateFlow<ListenTogetherSessionState> = _sessionState.asStateFlow()
@@ -693,6 +701,7 @@ class ListenTogetherSessionManager(
     }
 
     fun disconnectWebSocket() {
+        clearCoalescedLocalControlEvents("disconnect")
         reconnectEnabled = false
         resetReconnectAttempt()
         pendingStateRefreshAfterReconnect = false
@@ -733,6 +742,7 @@ class ListenTogetherSessionManager(
     }
 
     fun leaveRoom() {
+        clearCoalescedLocalControlEvents("leave")
         val snapshot = _sessionState.value
         val leaveBaseUrl = snapshot.baseUrl
         val leaveRoomId = snapshot.roomId
@@ -1092,6 +1102,7 @@ class ListenTogetherSessionManager(
             !previousSession.baseUrl.equals(normalizedBaseUrl, ignoreCase = true) ||
                 !previousSession.roomId.equals(response.roomId, ignoreCase = true)
         ) {
+            clearCoalescedLocalControlEvents("session_changed")
             clockSyncPingSupported = null
         }
         val nextRoomId = response.roomId
@@ -1364,6 +1375,9 @@ class ListenTogetherSessionManager(
             source = RoomStateSource.WEB_SOCKET_STATE,
             cause = message.causedBy
         ) ?: return
+        if (pendingMemberControlRequest?.event?.eventId == message.causedBy?.eventId) {
+            pendingMemberControlRequest = null
+        }
         val shouldConfirmControllerLinkUnavailable =
             if (message.causedBy?.type == "LINK_UNAVAILABLE") {
                 markControllerAudioLinkUnavailable(
@@ -1590,6 +1604,53 @@ class ListenTogetherSessionManager(
         if (shouldSuppressLocalListenerControlEvent(event)) {
             return
         }
+        noteControllerLocalControl(command)
+        if (shouldCoalesceLocalControlEvent(event)) {
+            enqueueCoalescedLocalControlEvent(event, snapshot.roomId)
+            return
+        }
+        dispatchLocalControlEvent(event, snapshot.roomId)
+    }
+
+    private fun shouldCoalesceLocalControlEvent(event: ListenTogetherEvent): Boolean {
+        return event.type in COALESCED_LOCAL_CONTROL_EVENT_TYPES
+    }
+
+    private fun enqueueCoalescedLocalControlEvent(
+        event: ListenTogetherEvent,
+        roomId: String?
+    ) {
+        val eventType = event.type
+        synchronized(coalescedControlLock) {
+            pendingCoalescedControlEvents[eventType] = PendingCoalescedControlEvent(event, roomId)
+            coalescedControlJobs.remove(eventType)?.cancel()
+            coalescedControlJobs[eventType] = scope.launch {
+                delay(COALESCED_LOCAL_CONTROL_WINDOW_MS)
+                val pending = synchronized(coalescedControlLock) {
+                    coalescedControlJobs.remove(eventType)
+                    pendingCoalescedControlEvents.remove(eventType)
+                }
+                pending?.let { dispatchLocalControlEvent(it.event, it.roomId) }
+            }
+        }
+    }
+
+    private fun dispatchLocalControlEvent(
+        event: ListenTogetherEvent,
+        expectedRoomId: String?
+    ) {
+        val snapshot = _sessionState.value
+        if (
+            snapshot.connectionState != ListenTogetherConnectionState.CONNECTED ||
+            snapshot.roomId.isNullOrBlank() ||
+            snapshot.roomId != expectedRoomId
+        ) {
+            NPLogger.d(
+                TAG,
+                "dispatchLocalControlEvent(): discard stale event type=${event.type}, expectedRoomId=$expectedRoomId, currentRoomId=${snapshot.roomId}, connection=${snapshot.connectionState}"
+            )
+            return
+        }
         if (event.type == "TRACK_FINISHED") {
             awaitingTrackFinishStableKey = event.finishedTrackStableKey
             pendingTrackFinishedLegacyFallback = buildTrackFinishedLegacyFallbackEvent(
@@ -1608,7 +1669,6 @@ class ListenTogetherSessionManager(
             pendingTrackFinishedLegacyFallback = null
         }
         pendingMemberControlRequest = buildPendingMemberControlRequest(event)
-        noteControllerLocalControl(command)
         markOutboundEvent(event.eventId)
         noteOutboundSync()
         NPLogger.d(
@@ -1619,6 +1679,19 @@ class ListenTogetherSessionManager(
         NPLogger.d(TAG, "sendEvent(): websocketSent=$wsSent, type=${event.type}, eventId=${event.eventId}")
         if (!wsSent) {
             NPLogger.w(TAG, "sendEvent(): websocket unavailable, type=${event.type}, eventId=${event.eventId}")
+        }
+    }
+
+    private fun clearCoalescedLocalControlEvents(reason: String) {
+        val pendingCount = synchronized(coalescedControlLock) {
+            val count = pendingCoalescedControlEvents.size
+            pendingCoalescedControlEvents.clear()
+            coalescedControlJobs.values.forEach(Job::cancel)
+            coalescedControlJobs.clear()
+            count
+        }
+        if (pendingCount > 0) {
+            NPLogger.d(TAG, "clearCoalescedLocalControlEvents(): reason=$reason, count=$pendingCount")
         }
     }
 
@@ -3021,6 +3094,13 @@ class ListenTogetherSessionManager(
         internal const val LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS = 20_000L
         private const val LINK_REQUEST_THROTTLE_MS = 4_000L
         private const val CONTROLLER_LOCAL_CONTROL_COOLDOWN_MS = 1_200L
+        private const val COALESCED_LOCAL_CONTROL_WINDOW_MS = 100L
+        private val COALESCED_LOCAL_CONTROL_EVENT_TYPES = setOf(
+            "SET_QUEUE",
+            "REQUEST_SET_QUEUE",
+            "PLAYBACK_MODE",
+            "REQUEST_PLAYBACK_MODE"
+        )
         private const val SYNC_WATCHDOG_INTERVAL_MS = 8_000L
         private const val LISTENER_WEB_SOCKET_SILENCE_TIMEOUT_MS = 45_000L
         private const val LISTENER_STATE_REPAIR_MIN_INTERVAL_MS = 30_000L

@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueu
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
@@ -892,6 +893,32 @@ class ListenTogetherEventCompatibilityTest {
                     track = track("netease:1", "1"),
                     queue = listOf(track("netease:1", "1"))
                 )
+            )
+        )
+    }
+
+    @Test
+    fun `member queue mutation is satisfied after a newer committed room version`() {
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            track = track("netease:2", "2"),
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = emptyList()
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 1,
+            queue = listOf(track("netease:1", "1"), track("netease:2", "2"))
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, committed))
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event,
+                committed.copy(version = 4L)
             )
         )
     }
