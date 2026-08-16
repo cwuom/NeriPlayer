@@ -13,26 +13,66 @@ internal fun buildListenTogetherForwardedControlSyntheticState(
     committedEvent: ListenTogetherEvent,
     nowMs: Long = System.currentTimeMillis()
 ): ListenTogetherRoomState {
-    // 空 queue 的转发请求视为"不改动队列", 回退当前房间队列, 避免被清空
-    val queueWithoutCurrentTrack = message.queue
-        ?.takeIf { it.isNotEmpty() }
-        ?: currentState.queue.mergeCurrentTrack(currentState.currentIndex, currentState.track)
-    val requestedIndex = message.currentIndex ?: currentState.currentIndex
-    val preferredStableKey = message.requestTrackStableKey
-        ?: committedEvent.requestTrackStableKey
+    val currentQueue = currentState.queue.mergeCurrentTrack(
+        currentState.currentIndex,
+        currentState.track
+    )
+    val mutationResult = message.queueMutation?.let { mutation ->
+        applyListenTogetherQueueMutation(
+            roomQueue = currentQueue,
+            roomCurrentIndex = currentState.currentIndex,
+            mutation = mutation,
+            targetCurrentStableKey = message.track?.stableKey
+        )
+    }
+    val legacyQueueSnapshot = message.queue?.takeIf { queue ->
+        queue.isNotEmpty() || committedEvent.type == "SET_QUEUE"
+    }
+    val queueWithoutCurrentTrack = mutationResult?.queue
+        ?: legacyQueueSnapshot
+        ?: currentQueue
+    val isTrackSelection = committedEvent.type == "SET_TRACK"
+    val requestedIndex = if (isTrackSelection) {
+        mutationResult?.targetCurrentIndex
+            ?: mutationResult?.currentIndex
+            ?: message.currentIndex
+            ?: currentState.currentIndex
+    } else {
+        mutationResult?.currentIndex
+            ?: message.currentIndex
+            ?: currentState.currentIndex
+    }
+    val preferredStableKey = if (isTrackSelection) {
+        message.requestTrackStableKey
+            ?: committedEvent.requestTrackStableKey
+            ?: message.track?.stableKey
+            ?: committedEvent.track?.stableKey
+    } else {
+        message.requestTrackStableKey
+            ?: committedEvent.requestTrackStableKey
+    }
     val nextIndex = resolveListenTogetherQueueIndex(
         queue = queueWithoutCurrentTrack,
         requestedIndex = requestedIndex,
         preferredStableKey = preferredStableKey
     )
     val nextQueue = queueWithoutCurrentTrack.mergeCurrentTrack(nextIndex, message.track)
-    val nextTrack = nextQueue.getOrNull(nextIndex)
-        ?: message.track
-        ?: currentState.currentTrack()
-    val nextPlaybackState = when (committedEvent.type) {
-        "PLAY" -> "playing"
-        "PAUSE" -> "paused"
-        else -> message.stateName ?: if (message.shouldPlay == true) "playing" else currentState.playback.state
+    val nextTrack = if (nextQueue.isEmpty()) {
+        null
+    } else {
+        nextQueue.getOrNull(nextIndex)
+            ?: message.track
+            ?: currentState.currentTrack()
+    }
+    val nextPlaybackState = if (nextQueue.isEmpty()) {
+        "paused"
+    } else {
+        when (committedEvent.type) {
+            "PLAY" -> "playing"
+            "PAUSE" -> "paused"
+            else -> message.stateName
+                ?: if (message.shouldPlay == true) "playing" else currentState.playback.state
+        }
     }
     return currentState.copy(
         queue = nextQueue,

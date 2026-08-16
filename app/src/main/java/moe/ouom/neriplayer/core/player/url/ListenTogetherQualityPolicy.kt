@@ -40,6 +40,11 @@ internal fun buildListenTogetherNeteaseQualityGroups(
     }.distinct().take(3)
 }
 
+internal fun tryRegisterNeteaseListenTogetherQualityCandidate(
+    resolvedQualityKeys: MutableSet<String>,
+    actualQualityKey: String
+): Boolean = resolvedQualityKeys.add(actualQualityKey)
+
 internal fun buildListenTogetherBiliQualityOrder(
     preferredQualityKey: String,
     availableQualityKeys: Set<String>

@@ -36,7 +36,13 @@ internal fun resolveListenTogetherRoomNotice(
             "controller_offline:${remainingMinutes + 1}"
         }
 
-        ListenTogetherRoomStatuses.CLOSED -> fallbackMessage ?: state.closedReason ?: "room_closed"
+        ListenTogetherRoomStatuses.CLOSED -> {
+            state.closedReason
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: fallbackMessage
+                ?: "room_closed"
+        }
         else -> fallbackMessage
     }
 }

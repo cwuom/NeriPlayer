@@ -171,12 +171,13 @@ private data class UsbExclusiveNativeServiceSignal(
     val lastError: String?
 )
 
-private data class PlaybackNotificationSnapshot(
+internal data class PlaybackNotificationSnapshot(
     val songKey: String?,
     val title: String,
     val text: String,
     val isTransportActive: Boolean,
     val isPlaybackControlPlaying: Boolean,
+    val isAudioRouteMuted: Boolean,
     val isFavorite: Boolean,
     val requiresInteractiveFavoriteConfirmation: Boolean,
     val largeIconReady: Boolean,
@@ -2249,6 +2250,7 @@ class AudioPlayerService : Service() {
             text = text,
             isTransportActive = PlayerManager.isTransportActive(),
             isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
+            isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
             isFavorite = isFavoriteSong(song),
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
             largeIconReady = currentNotificationLargeIcon != null,

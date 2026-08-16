@@ -2,11 +2,14 @@ package moe.ouom.neriplayer.listentogether
 
 import moe.ouom.neriplayer.listentogether.control.buildListenTogetherForwardedControlSyntheticState
 import moe.ouom.neriplayer.listentogether.playback.clampListenTogetherPositionMs
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
 import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherQueueIndex
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
@@ -237,6 +240,36 @@ class ListenTogetherControlHardeningTest {
     }
 
     @Test
+    fun `legacy set queue with explicit empty snapshot clears the queue`() {
+        val only = listenTogetherTrack("only")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 3L,
+            queue = listOf(only),
+            currentIndex = 0,
+            track = only,
+            playback = ListenTogetherPlaybackState(state = "playing")
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queue = emptyList(),
+            currentIndex = -1
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertTrue(next.queue.isEmpty())
+        assertEquals(-1, next.currentIndex)
+        assertEquals(null, next.track)
+        assertEquals("paused", next.playback.state)
+    }
+
+    @Test
     fun `forwarded control with non-empty queue adopts requested queue`() {
         val current = listenTogetherTrack("k1")
         val incoming1 = listenTogetherTrack("k2")
@@ -359,10 +392,332 @@ class ListenTogetherControlHardeningTest {
         assertEquals(current, next.track)
     }
 
-    private fun listenTogetherTrack(stableKey: String) = ListenTogetherTrack(
-        stableKey = stableKey,
+    @Test
+    fun `forwarded v2 mutation replays move and preserves a remote insertion`() {
+        val first = listenTogetherTrack("a")
+        val remoteInsert = listenTogetherTrack("remote")
+        val current = listenTogetherTrack("b")
+        val last = listenTogetherTrack("c")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(first, remoteInsert, current, last),
+            currentIndex = 2,
+            track = current
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queue = listOf(first, current, last),
+            queueMutation = queueMutation(
+                baseRoomVersion = 6L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = reference("c"),
+                        anchor = reference("a"),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = reference("c")
+            ),
+            currentIndex = 0,
+            track = last
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(last, first, remoteInsert, current), next.queue)
+        assertEquals(3, next.currentIndex)
+        assertEquals(current, next.track)
+    }
+
+    @Test
+    fun `forwarded mutation-only set track selects the requested duplicate occurrence`() {
+        val firstDuplicate = listenTogetherTrack("dup", audioId = "first")
+        val secondDuplicate = listenTogetherTrack("dup", audioId = "second")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(firstDuplicate, secondDuplicate),
+            currentIndex = 0,
+            track = firstDuplicate
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = emptyList(),
+                targetCurrent = reference("dup", occurrence = 1)
+            ),
+            currentIndex = 1,
+            track = secondDuplicate
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_TRACK"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(firstDuplicate, secondDuplicate), next.queue)
+        assertEquals(1, next.currentIndex)
+        assertEquals(secondDuplicate, next.track)
+    }
+
+    @Test
+    fun `forwarded v2 mutation replays insert before an existing anchor`() {
+        val first = listenTogetherTrack("a")
+        val current = listenTogetherTrack("b")
+        val inserted = listenTogetherTrack("x")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "insert",
+                        anchor = reference("b"),
+                        placement = "before",
+                        track = inserted
+                    )
+                ),
+                targetCurrent = reference("b")
+            ),
+            currentIndex = 2,
+            track = current
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(first, inserted, current), next.queue)
+        assertEquals(2, next.currentIndex)
+        assertEquals(current, next.track)
+    }
+
+    @Test
+    fun `forwarded v2 mutation removes one track and selects target current`() {
+        val first = listenTogetherTrack("a")
+        val current = listenTogetherTrack("b")
+        val last = listenTogetherTrack("c")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(first, current, last),
+            currentIndex = 1,
+            track = current
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "remove",
+                        target = reference("b")
+                    )
+                ),
+                targetCurrent = reference("c")
+            ),
+            currentIndex = 1,
+            track = last
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(first, last), next.queue)
+        assertEquals(1, next.currentIndex)
+        assertEquals(last, next.track)
+    }
+
+    @Test
+    fun `forwarded v2 mutation supports reorder without changing duplicate occurrences`() {
+        val firstDuplicate = listenTogetherTrack("dup", audioId = "first")
+        val middle = listenTogetherTrack("middle")
+        val secondDuplicate = listenTogetherTrack("dup", audioId = "second")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(firstDuplicate, middle, secondDuplicate),
+            currentIndex = 2,
+            track = secondDuplicate
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "reorder",
+                        order = listOf(
+                            reference("dup", occurrence = 1),
+                            reference("middle"),
+                            reference("dup", occurrence = 0)
+                        )
+                    )
+                ),
+                targetCurrent = reference("dup", occurrence = 1)
+            ),
+            currentIndex = 0,
+            track = secondDuplicate
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(
+            listOf(secondDuplicate, middle, firstDuplicate),
+            next.queue
+        )
+        assertEquals(0, next.currentIndex)
+        assertEquals(secondDuplicate, next.track)
+    }
+
+    @Test
+    fun `forwarded v2 remove many can clear a single track queue`() {
+        val only = listenTogetherTrack("only")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(only),
+            currentIndex = 0,
+            track = only,
+            playback = ListenTogetherPlaybackState(state = "playing")
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "remove_many",
+                        order = listOf(reference("only"))
+                    )
+                )
+            ),
+            currentIndex = -1,
+            track = null
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertTrue(next.queue.isEmpty())
+        assertEquals(-1, next.currentIndex)
+        assertEquals(null, next.track)
+        assertEquals("paused", next.playback.state)
+    }
+
+    @Test
+    fun `forwarded v2 mutation ignores unknown references without losing queue`() {
+        val first = listenTogetherTrack("a")
+        val current = listenTogetherTrack("b")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queueMutation = queueMutation(
+                baseRoomVersion = 7L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "remove",
+                        target = reference("missing")
+                    )
+                ),
+                targetCurrent = reference("b")
+            ),
+            currentIndex = 1,
+            track = current
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = ListenTogetherEvent(type = "SET_QUEUE"),
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(listOf(first, current), next.queue)
+        assertEquals(1, next.currentIndex)
+        assertEquals(current, next.track)
+    }
+
+    @Test
+    fun `current track follows player index clamping for negative and high indexes`() {
+        val first = listenTogetherTrack("a")
+        val last = listenTogetherTrack("b")
+        val state = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 7L,
+            queue = listOf(first, last),
+            currentIndex = -1,
+            track = last
+        )
+
+        assertEquals(first, state.currentTrack())
+        assertEquals(last, state.copy(currentIndex = 99, track = first).currentTrack())
+    }
+
+    private fun queueMutation(
+        baseRoomVersion: Long,
+        operations: List<ListenTogetherQueueOperation>,
+        targetCurrent: ListenTogetherQueueReference? = null
+    ) = moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation(
+        baseRoomVersion = baseRoomVersion,
+        operations = operations,
+        targetCurrent = targetCurrent
+    )
+
+    private fun reference(
+        stableKey: String,
+        occurrence: Int = 0
+    ) = ListenTogetherQueueReference(
+        stableKey = "channel:$stableKey",
+        occurrence = occurrence
+    )
+
+    private fun listenTogetherTrack(
+        stableKey: String,
+        audioId: String = "audio-$stableKey"
+    ) = ListenTogetherTrack(
+        stableKey = "channel:$stableKey",
         channelId = "channel",
-        audioId = "audio-$stableKey",
+        audioId = audioId,
         name = "name-$stableKey",
         artist = "artist"
     )

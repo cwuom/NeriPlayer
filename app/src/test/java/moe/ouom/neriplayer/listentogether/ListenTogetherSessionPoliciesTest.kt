@@ -257,7 +257,7 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
-    fun `room notice keeps fallback and closed reason precedence`() {
+    fun `room notice keeps fallback and prioritizes the structured closed reason`() {
         assertEquals(
             "fallback",
             resolveListenTogetherRoomNotice(
@@ -271,7 +271,8 @@ class ListenTogetherSessionPoliciesTest {
                 state = roomState(
                     roomStatus = ListenTogetherRoomStatuses.CLOSED,
                     closedReason = "room expired"
-                )
+                ),
+                fallbackMessage = "legacy room closed message"
             )
         )
     }

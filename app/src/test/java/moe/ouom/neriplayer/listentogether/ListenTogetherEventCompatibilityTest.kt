@@ -36,6 +36,8 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
@@ -898,27 +900,194 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
-    fun `member queue mutation is satisfied after a newer committed room version`() {
+    fun `pending track control uses the same clamped queue index as playback`() {
+        val first = track("netease:1", "1")
+        val staleTrack = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_TRACK",
+            track = first
+        )
+        val malformedState = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 2L,
+            currentIndex = -1,
+            track = staleTrack,
+            queue = listOf(first, staleTrack)
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, malformedState))
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event.copy(track = staleTrack),
+                malformedState
+            )
+        )
+    }
+
+    @Test
+    fun `member queue mutation is not satisfied by an unrelated newer room version`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
         val event = ListenTogetherEvent(
             type = "REQUEST_SET_QUEUE",
-            track = track("netease:2", "2"),
+            eventId = "request-reorder",
+            track = current,
             queueMutation = ListenTogetherQueueMutation(
                 baseRoomVersion = 4L,
-                operations = emptyList()
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
             )
         )
         val committed = ListenTogetherRoomState(
             roomId = "ABC234",
             version = 5L,
             currentIndex = 1,
-            queue = listOf(track("netease:1", "1"), track("netease:2", "2"))
+            queue = listOf(first, current)
         )
 
-        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, committed))
+        assertFalse(isListenTogetherPendingMemberControlSatisfied(event, committed))
+    }
+
+    @Test
+    fun `member queue mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            eventId = "request-reorder",
+            track = current,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(current, first)
+        )
+
         assertFalse(
             isListenTogetherPendingMemberControlSatisfied(
-                event,
-                committed.copy(version = 4L)
+                event = event,
+                state = committed,
+                committedEventId = "other-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-reorder"
+            )
+        )
+    }
+
+    @Test
+    fun `member track mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val selected = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_TRACK",
+            eventId = "request-track-mutation",
+            track = selected,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(selected, first)
+        )
+
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "another-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-track-mutation"
+            )
+        )
+    }
+
+    @Test
+    fun `member playback mode mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val selected = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_PLAYBACK_MODE",
+            eventId = "request-mode-mutation",
+            repeatMode = 1,
+            shuffleEnabled = true,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(selected, first),
+            playback = ListenTogetherPlaybackState(
+                repeatMode = 1,
+                shuffleEnabled = true
+            )
+        )
+
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "another-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-mode-mutation"
             )
         )
     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.listentogether.compat
 
 import moe.ouom.neriplayer.listentogether.playback.isListenTogetherSeekControlSatisfied
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import java.util.Locale
@@ -73,9 +74,16 @@ internal fun shouldSuppressListenerControlWhileAwaitingStream(
 internal fun isListenTogetherPendingMemberControlSatisfied(
     event: ListenTogetherEvent,
     state: ListenTogetherRoomState?,
-    seekSatisfiedDriftMs: Long = 1_500L
+    seekSatisfiedDriftMs: Long = 1_500L,
+    committedEventId: String? = null
 ): Boolean {
     state ?: return false
+    event.queueMutation?.let { queueMutation ->
+        val requestEventId = event.eventId?.takeIf { it.isNotBlank() }
+            ?: return false
+        if (requestEventId != committedEventId) return false
+        if (state.version <= queueMutation.baseRoomVersion) return false
+    }
     val requestedType = event.type.removePrefix("REQUEST_")
     return when (requestedType) {
         "PLAY" -> state.playback.state == "playing"
@@ -101,9 +109,7 @@ internal fun isListenTogetherPendingMemberControlSatisfied(
             state.currentStableKeyForCompatibility() == requestedStableKey
         }
         "SET_QUEUE" -> {
-            val queueMutation = event.queueMutation
-            if (queueMutation != null && event.queue == null) {
-                if (state.version <= queueMutation.baseRoomVersion) return false
+            if (event.queueMutation != null && event.queue == null) {
                 val requestedStableKey = event.track?.stableKey
                 val committedStableKey = state.currentStableKeyForCompatibility()
                 return requestedStableKey == null || requestedStableKey == committedStableKey
@@ -138,7 +144,7 @@ private val STREAM_DEPENDENT_MEMBER_CONTROL_TYPES = setOf(
 )
 
 private fun ListenTogetherRoomState.currentStableKeyForCompatibility(): String? {
-    return queue.getOrNull(currentIndex)?.stableKey ?: track?.stableKey
+    return currentTrack()?.stableKey
 }
 
 internal fun isUnsupportedTrackFinishedEventError(errorMessage: String?): Boolean {

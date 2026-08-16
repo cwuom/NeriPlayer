@@ -330,6 +330,7 @@ object PlayerManager {
     @Volatile
     internal var playbackStartupWatchdogToken = 0L
     internal var bluetoothDisconnectPauseJob: Job? = null
+    @Volatile
     internal var audioRouteMuteRestoreVolume: Float? = null
     @Volatile
     internal var audioRouteMuteRequiresExplicitRestore = false

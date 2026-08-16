@@ -16,7 +16,11 @@ internal fun ListenTogetherRoomState.currentStableKey(): String? {
 }
 
 internal fun ListenTogetherRoomState.currentTrack(): ListenTogetherTrack? {
-    return queue.getOrNull(currentIndex) ?: track
+    return if (queue.isNotEmpty()) {
+        queue[currentIndex.coerceIn(0, queue.lastIndex)]
+    } else {
+        track
+    }
 }
 
 internal fun ListenTogetherRoomState.authoritativeStreamUrlForCurrentTrack(): String? {

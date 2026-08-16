@@ -646,6 +646,25 @@ class ListenTogetherStreamResolutionTest {
     }
 
     @Test
+    fun `duplicate Netease actual quality keeps trying alternatives in its group`() {
+        val resolvedQualityKeys = linkedSetOf("exhigh")
+
+        assertFalse(
+            tryRegisterNeteaseListenTogetherQualityCandidate(
+                resolvedQualityKeys = resolvedQualityKeys,
+                actualQualityKey = "exhigh"
+            )
+        )
+        assertTrue(
+            tryRegisterNeteaseListenTogetherQualityCandidate(
+                resolvedQualityKeys = resolvedQualityKeys,
+                actualQualityKey = "higher"
+            )
+        )
+        assertEquals(setOf("exhigh", "higher"), resolvedQualityKeys)
+    }
+
+    @Test
     fun `YouTube sharing resolves only the controller preferred quality`() {
         assertEquals(
             listOf("very_high"),

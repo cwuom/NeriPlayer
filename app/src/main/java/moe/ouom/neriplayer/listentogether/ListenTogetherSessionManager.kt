@@ -102,6 +102,7 @@ import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeat
 import moe.ouom.neriplayer.listentogether.session.resolveReusableListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
+import moe.ouom.neriplayer.listentogether.session.isCurrentListenTogetherCoalescedControlJob
 import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.retriedAt
@@ -1189,7 +1190,7 @@ class ListenTogetherSessionManager(
         source: RoomStateSource,
         cause: ListenTogetherCause? = null
     ): AcceptedRoomState? {
-        return synchronized(roomStateLock) {
+        val accepted = synchronized(roomStateLock) {
             val activeRoomId = activeRoomIdForStateAcceptance
             if (activeRoomId.isNullOrBlank() || activeRoomId != state.roomId) {
                 NPLogger.d(
@@ -1239,6 +1240,11 @@ class ListenTogetherSessionManager(
                 expectedPositionMs = expectedPositionMs
             )
         }
+        val causedByEventId = cause?.eventId?.takeIf { it.isNotBlank() }
+        if (causedByEventId != null && pendingMemberControlRequest?.event?.eventId == causedByEventId) {
+            pendingMemberControlRequest = null
+        }
+        return accepted
     }
 
     private fun clearRoomRepairIfSatisfied(version: Long, source: RoomStateSource) {
@@ -1375,9 +1381,6 @@ class ListenTogetherSessionManager(
             source = RoomStateSource.WEB_SOCKET_STATE,
             cause = message.causedBy
         ) ?: return
-        if (pendingMemberControlRequest?.event?.eventId == message.causedBy?.eventId) {
-            pendingMemberControlRequest = null
-        }
         val shouldConfirmControllerLinkUnavailable =
             if (message.causedBy?.type == "LINK_UNAVAILABLE") {
                 markControllerAudioLinkUnavailable(
@@ -1576,7 +1579,13 @@ class ListenTogetherSessionManager(
                 cause = message.causedBy
             )
         }
-        closeRoomLocally(message.message ?: state?.closedReason ?: roomNoticeForState(state))
+        closeRoomLocally(
+            state?.closedReason
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: message.message
+                ?: roomNoticeForState(state)
+        )
     }
 
     private suspend fun handleLocalPlaybackCommand(command: PlaybackCommand) {
@@ -1627,6 +1636,15 @@ class ListenTogetherSessionManager(
             coalescedControlJobs[eventType] = scope.launch {
                 delay(COALESCED_LOCAL_CONTROL_WINDOW_MS)
                 val pending = synchronized(coalescedControlLock) {
+                    val completingJob = coroutineContext[Job]
+                        ?: return@synchronized null
+                    if (!isCurrentListenTogetherCoalescedControlJob(
+                            currentJob = coalescedControlJobs[eventType],
+                            completingJob = completingJob
+                        )
+                    ) {
+                        return@synchronized null
+                    }
                     coalescedControlJobs.remove(eventType)
                     pendingCoalescedControlEvents.remove(eventType)
                 }

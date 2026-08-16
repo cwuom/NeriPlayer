@@ -482,14 +482,18 @@ private suspend fun PlayerManager.resolveNeteaseListenTogetherShareableStreams(
                             ?.lowercase()
                             ?.ifBlank { requestedQuality }
                             ?: requestedQuality
-                        if (resolvedQualityKeys.add(actualQualityKey)) {
+                        if (tryRegisterNeteaseListenTogetherQualityCandidate(
+                                resolvedQualityKeys = resolvedQualityKeys,
+                                actualQualityKey = actualQualityKey
+                            )
+                        ) {
                             streamUrls += decorateListenTogetherStreamUrl(
                                 streamUrl = resolved.url,
                                 source = PlaybackAudioSource.NETEASE,
                                 qualityKey = actualQualityKey
                             )
+                            break
                         }
-                        break
                     }
                 }
                 NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin,

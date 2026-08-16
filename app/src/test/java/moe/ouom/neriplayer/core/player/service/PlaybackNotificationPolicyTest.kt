@@ -1,10 +1,19 @@
 package moe.ouom.neriplayer.core.player.service
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackNotificationPolicyTest {
+    @Test
+    fun `audio route mute changes notification presentation snapshot`() {
+        assertNotEquals(
+            notificationSnapshot(isAudioRouteMuted = false),
+            notificationSnapshot(isAudioRouteMuted = true)
+        )
+    }
+
     @Test
     fun `current song favorite change refreshes notification`() {
         assertTrue(
@@ -90,4 +99,24 @@ class PlaybackNotificationPolicyTest {
             )
         )
     }
+
+    private fun notificationSnapshot(
+        isAudioRouteMuted: Boolean
+    ) = PlaybackNotificationSnapshot(
+        songKey = "song-1",
+        title = "Song",
+        text = "Artist",
+        isTransportActive = true,
+        isPlaybackControlPlaying = true,
+        isAudioRouteMuted = isAudioRouteMuted,
+        isFavorite = false,
+        requiresInteractiveFavoriteConfirmation = false,
+        largeIconReady = false,
+        coverSource = null,
+        statusBarLyricState = StatusBarLyricNotificationState(
+            enabled = false,
+            line = null
+        ),
+        floatingLyricsEnabled = false
+    )
 }

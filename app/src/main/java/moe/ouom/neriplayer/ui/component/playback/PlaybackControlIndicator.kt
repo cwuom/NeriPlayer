@@ -45,9 +45,9 @@ internal fun PlaybackControlIndicator(
     playContentDescription: String,
     pauseContentDescription: String,
     waitingContentDescription: String,
+    modifier: Modifier = Modifier,
     isAudioRouteMuted: Boolean = false,
     restoreVolumeContentDescription: String = playContentDescription,
-    modifier: Modifier = Modifier,
     color: Color = LocalContentColor.current,
     progressIndicatorSize: Dp = 24.dp,
     progressStrokeWidth: Dp = 2.5.dp

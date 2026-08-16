@@ -55,6 +55,12 @@ class ListenTogetherAuthoritativeStreamAvailabilityTest {
             stableKey = "netease:1",
             signalId = "unavailable-3"
         )
+        availability.markUnavailable(
+            roomId = "room-a",
+            stableKey = "netease:1",
+            signalId = "unavailable-4"
+        )
+        assertTrue(availability.isUnavailable(roomId = "room-a", stableKey = "netease:1"))
         availability.reconcile(
             roomId = "room-a",
             stableKey = "netease:2",

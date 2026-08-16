@@ -5448,8 +5448,8 @@ private fun NowPlayingProgressSection(
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
-    progressRowModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    progressRowModifier: Modifier = Modifier
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
