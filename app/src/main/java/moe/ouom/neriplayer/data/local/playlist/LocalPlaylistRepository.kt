@@ -237,15 +237,16 @@ class LocalPlaylistRepository private constructor(
         val roomPrimary = readRoomPrimary()
         if (roomPrimary != null) {
             LegacyJsonCleanupScheduler.schedule(context, "local-playlist-room-load")
-            recoverPendingSyncMutation(
+            val pendingSyncRecovered = recoverPendingSyncMutation(
                 committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
             )
-            val normalizedRoomPrimary = normalizePlaylistOrder(roomPrimary)
-            if (normalizedRoomPrimary != roomPrimary) {
+            val normalizedRoomPrimary = normalizeRoomPrimaryLocalFilesCover(roomPrimary)
+            if (pendingSyncRecovered && normalizedRoomPrimary != roomPrimary) {
                 runCatching {
                     runBlocking {
-                        roomStore?.replacePlaylists(
-                            playlists = normalizedRoomPrimary,
+                        roomStore?.writeIncremental(
+                            previous = roomPrimary,
+                            next = normalizedRoomPrimary,
                             sourceDigest = LocalPlaylistRoomStore.domainDigest(normalizedRoomPrimary)
                         )
                     }
@@ -480,6 +481,23 @@ class LocalPlaylistRepository private constructor(
         )
     }
 
+    private fun normalizeRoomPrimaryLocalFilesCover(
+        playlists: List<LocalPlaylist>
+    ): List<LocalPlaylist> {
+        var changed = false
+        val normalized = playlists.map { playlist ->
+            if (isLocalFilesPlaylist(playlist.id, playlist.name) &&
+                playlist.customCoverUrl != null
+            ) {
+                changed = true
+                playlist.copy(customCoverUrl = null)
+            } else {
+                playlist
+            }
+        }
+        return if (changed) normalized else playlists
+    }
+
     private fun normalizeRemoteSourcePlaylistEntries(
         playlists: List<LocalPlaylist>
     ): List<LocalPlaylist> {
@@ -674,14 +692,14 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun recoverPendingSyncMutation(committedDomainDigest: String) {
-        runCatching {
+    private fun recoverPendingSyncMutation(committedDomainDigest: String): Boolean {
+        return runCatching {
             runBlocking {
                 flushPendingSyncMutation(committedDomainDigest)
             }
         }.onFailure { error ->
             NPLogger.e("LocalPlaylistRepo", "Failed to replay playlist sync mutation", error)
-        }
+        }.isSuccess
     }
 
     private suspend fun flushPendingSyncMutation(committedDomainDigest: String): Boolean {

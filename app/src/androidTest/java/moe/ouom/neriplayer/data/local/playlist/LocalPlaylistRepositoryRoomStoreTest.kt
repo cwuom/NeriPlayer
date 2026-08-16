@@ -10,7 +10,6 @@ import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
-import moe.ouom.neriplayer.data.local.playlist.system.SystemLocalPlaylists
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.sync.model.SyncCausalToken
 import org.junit.Assert.assertEquals
@@ -102,9 +101,7 @@ class LocalPlaylistRepositoryRoomStoreTest {
             val repository = LocalPlaylistRepository.createForTest(
                 context = context,
                 file = File(context.cacheDir, "room_primary_normalized_cover_unused.json"),
-                normalizePlaylists = { playlists ->
-                    SystemLocalPlaylists.normalize(playlists, context)
-                },
+                normalizePlaylists = { it },
                 autoSyncEnabled = false,
                 storage = EmptyStorage(),
                 roomStore = roomStore
