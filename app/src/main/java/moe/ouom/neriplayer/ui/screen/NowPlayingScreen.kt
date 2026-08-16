@@ -695,10 +695,18 @@ internal fun shouldAutoLocateNowPlayingQueue(
     queueOrderDirty: Boolean
 ): Boolean = !selectionMode && !queueOrderDirty
 
-internal fun shouldShowNowPlayingQueueDragHandle(
+internal fun isNowPlayingQueueReorderEnabled(
     selectionMode: Boolean,
     allowQueueReorder: Boolean
 ): Boolean = selectionMode && allowQueueReorder
+
+internal fun shouldShowNowPlayingQueueDragHandle(
+    selectionMode: Boolean,
+    allowQueueReorder: Boolean
+): Boolean = isNowPlayingQueueReorderEnabled(
+    selectionMode = selectionMode,
+    allowQueueReorder = allowQueueReorder
+)
 
 internal fun resolveNowPlayingQueueIndexInput(
     input: String,
@@ -1200,6 +1208,13 @@ internal fun NowPlayingQueueSheet(
         ?: currentIndexInDisplay
     val latestCurrentEntryKey by rememberUpdatedState(currentEntryKey)
     val latestCurrentIndexInQueueEntries by rememberUpdatedState(currentIndexInQueueEntries)
+    val latestQueueReorderEnabled by rememberUpdatedState(
+        isNowPlayingQueueReorderEnabled(
+            selectionMode = selectionMode,
+            allowQueueReorder = allowQueueReorder
+        )
+    )
+    val latestSourceEntries by rememberUpdatedState(sourceEntries)
     val queueItemKeys by remember {
         derivedStateOf {
             queueEntries.mapTo(LinkedHashSet()) { it.key }
@@ -1216,7 +1231,7 @@ internal fun NowPlayingQueueSheet(
     val reorderState = rememberReorderableLazyListState(
         listState = queueListState,
         onMove = { from: ItemPosition, to: ItemPosition ->
-            if (!selectionMode || !allowQueueReorder) {
+            if (!latestQueueReorderEnabled) {
                 return@rememberReorderableLazyListState
             }
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
@@ -1226,7 +1241,14 @@ internal fun NowPlayingQueueSheet(
             }
         },
         onDragEnd = { _, _ ->
-            if (!allowQueueReorder || !queueOrderDirty) {
+            if (!latestQueueReorderEnabled) {
+                if (queueOrderDirty) {
+                    queueOrderDirty = false
+                    syncNowPlayingQueueEntries(queueEntries, latestSourceEntries)
+                }
+                return@rememberReorderableLazyListState
+            }
+            if (!queueOrderDirty) {
                 return@rememberReorderableLazyListState
             }
             val currentKey = latestCurrentEntryKey

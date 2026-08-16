@@ -698,7 +698,26 @@ class NowPlayingScreenTest {
     }
 
     @Test
-    fun `restricted listener does not show the queue reorder handle`() {
+    fun `queue reordering requires selection and listener control permission`() {
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = false,
+                allowQueueReorder = true
+            )
+        )
+
         assertFalse(
             shouldShowNowPlayingQueueDragHandle(
                 selectionMode = true,
