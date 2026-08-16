@@ -1975,6 +1975,11 @@
     <string name="listen_together_status_active">Listen Together active</string>
     <string name="listen_together_action_unavailable">This action is temporarily unavailable. Please try again.</string>
     <string name="settings_listen_together_expand">Configure the server address and unique identity</string>
+    <string name="settings_listen_together_join_room_desc">Paste or enter an invite to join a room.</string>
+    <string name="settings_listen_together_join_room_disabled">Leave the current room before joining another one.</string>
+    <string name="settings_listen_together_join_invite_input_label">Invite</string>
+    <string name="settings_listen_together_join_invite_input_placeholder">Paste an invite or invite link</string>
+    <string name="settings_listen_together_join_invite_invalid">Enter a valid Listen Together invite.</string>
     <string name="settings_listen_together_server_title">Listen Together Server</string>
     <string name="settings_listen_together_default_nickname_title">Default Nickname</string>
     <string name="settings_listen_together_default_nickname_input_label">Nickname</string>
