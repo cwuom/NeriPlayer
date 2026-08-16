@@ -27,6 +27,7 @@ private const val LISTEN_TOGETHER_QUALITY_FRAGMENT_KEY = "neriplayer-ltw-quality
 
 internal fun PlayerManager.currentListenTogetherShareableStreamUrls(): List<String> {
     val currentSong = _currentSongFlow.value
+    val currentSource = currentSong?.let(::listenTogetherPlaybackSource)
     if (
         !shouldPublishCurrentListenTogetherStream(
             listenTogetherActive = isListenTogetherActive(),
@@ -67,6 +68,10 @@ internal fun PlayerManager.currentListenTogetherShareableStreamUrls(): List<Stri
             qualityKey = audioInfo?.qualityKey
         )
     }.distinct()
+        .take(
+            currentSource?.let(::maxListenTogetherStreamUrlCandidates)
+                ?: MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
+        )
 }
 
 internal fun shouldPublishCurrentListenTogetherStream(
@@ -191,6 +196,16 @@ internal fun listenTogetherQualityRank(
         PlaybackAudioSource.YOUTUBE_MUSIC -> YOUTUBE_LISTEN_TOGETHER_QUALITY_ORDER
         PlaybackAudioSource.LOCAL -> emptyList()
     }.indexOf(normalized).takeIf { it >= 0 }
+}
+
+internal fun listenTogetherQualityMatchesPreference(
+    source: PlaybackAudioSource,
+    actualQualityKey: String?,
+    preferredQualityKey: String?
+): Boolean {
+    val actual = normalizeListenTogetherQualityKey(source, actualQualityKey) ?: return false
+    val preferred = normalizeListenTogetherQualityKey(source, preferredQualityKey) ?: return false
+    return actual == preferred
 }
 
 private fun normalizeListenTogetherQualityKey(
@@ -353,6 +368,15 @@ internal fun PlayerManager.listenTogetherFallbackResult(song: SongItem): SongUrl
     )
 }
 
+internal fun PlayerManager.listenTogetherPreferredQualityKey(song: SongItem): String? {
+    return when (listenTogetherPlaybackSource(song)) {
+        PlaybackAudioSource.NETEASE -> effectiveNeteaseQuality()
+        PlaybackAudioSource.BILIBILI -> effectiveBiliQuality()
+        PlaybackAudioSource.YOUTUBE_MUSIC -> effectiveYouTubeQuality()
+        PlaybackAudioSource.LOCAL -> null
+    }
+}
+
 private fun PlayerManager.listenTogetherFallbackAudioInfo(song: SongItem): PlaybackAudioInfo {
     val currentAudioInfo = _currentPlaybackAudioInfo.value
         ?.takeIf { _currentSongFlow.value?.sameTrackAs(song) == true }
@@ -418,9 +442,22 @@ private val LISTEN_TOGETHER_BILI_QUALITY_OPTIONS = listOf(
 
 internal fun mergeListenTogetherFallbackResult(
     localResult: SongUrlResult,
-    listenTogetherFallback: SongUrlResult.Success?
+    listenTogetherFallback: SongUrlResult.Success?,
+    preferredQualityKey: String? = null
 ): SongUrlResult {
     listenTogetherFallback ?: return localResult
+    val fallbackMatchesPreference = listenTogetherFallback.audioInfo?.let { audioInfo ->
+        listenTogetherQualityKeyFromStreamUrl(
+            streamUrl = listenTogetherFallback.url,
+            source = audioInfo.source
+        )?.let { actualQualityKey ->
+            listenTogetherQualityMatchesPreference(
+                source = audioInfo.source,
+                actualQualityKey = actualQualityKey,
+                preferredQualityKey = preferredQualityKey
+            )
+        }
+    } == true
     return when (localResult) {
         is SongUrlResult.Success -> {
             if (localResult.isPreviewClip) {
@@ -433,6 +470,13 @@ internal fun mergeListenTogetherFallbackResult(
                             candidate.isPreviewClip
                         }
                 )
+            } else if (fallbackMatchesPreference) {
+                listenTogetherFallback.copy(
+                    durationMs = listenTogetherFallback.durationMs ?: localResult.durationMs,
+                    mimeType = listenTogetherFallback.mimeType ?: localResult.mimeType,
+                    fallbackCandidates = listenTogetherFallback.fallbackCandidates +
+                        localResult.playbackCandidates()
+                )
             } else {
                 localResult.copy(
                     fallbackCandidates = localResult.fallbackCandidates +
@@ -442,7 +486,8 @@ internal fun mergeListenTogetherFallbackResult(
         }
         SongUrlResult.Failure,
         SongUrlResult.RequiresLogin -> listenTogetherFallback
-        SongUrlResult.WaitingForAuthoritativeStream -> localResult
+        SongUrlResult.WaitingForAuthoritativeStream ->
+            if (fallbackMatchesPreference) listenTogetherFallback else localResult
     }
 }
 

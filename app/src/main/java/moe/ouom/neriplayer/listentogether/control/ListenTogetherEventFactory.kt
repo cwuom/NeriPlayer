@@ -46,7 +46,7 @@ internal class ListenTogetherEventFactory(
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
             roomSettings = roomStateProvider()?.settings,
-            includeResolvedStreamUrl = isControllerProvider()
+            includeResolvedStreamUrl = false
         )
         return ListenTogetherEvent(
             type = "SET_TRACK",
@@ -88,7 +88,7 @@ internal class ListenTogetherEventFactory(
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
             roomSettings = roomStateProvider()?.settings,
-            includeResolvedStreamUrl = isControllerProvider()
+            includeResolvedStreamUrl = false
         )
         val currentTrack = shareableQueue.getOrNull(resolvedCurrentIndex) ?: run {
             NPLogger.w(
@@ -171,7 +171,7 @@ internal class ListenTogetherEventFactory(
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = rawIndex.takeIf { it >= 0 } ?: 0,
             roomSettings = roomStateProvider()?.settings,
-            includeResolvedStreamUrl = isControllerProvider()
+            includeResolvedStreamUrl = false
         )
         val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex)
         return ListenTogetherEvent(
@@ -249,13 +249,12 @@ internal class ListenTogetherEventFactory(
             )
             return null
         }
-        val trustedTrack = shareableTrack.withStreamUrls(
-            buildList {
-                addAll(streamUrlsOverride)
+        val resolvedStreamUrls = streamUrlsOverride.takeIf { it.isNotEmpty() }
+            ?: buildList {
                 streamUrlOverride?.let(::add)
                 addAll(PlayerManager.currentListenTogetherShareableStreamUrls())
             }
-        )
+        val trustedTrack = shareableTrack.withStreamUrls(resolvedStreamUrls)
         if (trustedTrack.streamUrls.isEmpty()) {
             NPLogger.w(
                 TAG,
@@ -480,7 +479,7 @@ internal class ListenTogetherEventFactory(
                 val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
                     currentIndex = currentIndex,
                     roomSettings = roomStateProvider()?.settings,
-                    includeResolvedStreamUrl = isControllerProvider()
+                    includeResolvedStreamUrl = false
                 )
                 val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex)
                 val event = if (isControllerProvider()) buildSeekEvent(positionMs) else buildRequestSeekEvent(positionMs)
@@ -502,7 +501,7 @@ internal class ListenTogetherEventFactory(
         val (shareableQueue, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = rawIndex.takeIf { it >= 0 } ?: 0,
             roomSettings = roomStateProvider()?.settings,
-            includeResolvedStreamUrl = isControllerProvider()
+            includeResolvedStreamUrl = false
         )
         val shareableTrack = shareableQueue.getOrNull(resolvedCurrentIndex)
         val resolvedState = when (type.removePrefix("REQUEST_")) {

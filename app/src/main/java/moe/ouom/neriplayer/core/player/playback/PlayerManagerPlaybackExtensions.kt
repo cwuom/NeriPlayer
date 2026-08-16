@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.url.cancelUrlRefreshIfNotReusableForPendingLoad
 import moe.ouom.neriplayer.core.player.url.allowsCustomCacheKey
 import moe.ouom.neriplayer.core.player.url.listenTogetherFallbackResult
+import moe.ouom.neriplayer.core.player.url.listenTogetherPreferredQualityKey
 import moe.ouom.neriplayer.core.player.url.mergeListenTogetherFallbackResult
 import moe.ouom.neriplayer.core.player.url.resolveSongUrl
 import moe.ouom.neriplayer.core.player.url.resolvePlaybackAudioInfoForListenTogetherStreamCandidate
@@ -828,7 +829,8 @@ internal fun PlayerManager.playAtIndex(
         )
         val result = mergeListenTogetherFallbackResult(
             localResult = localResult,
-            listenTogetherFallback = listenTogetherFallbackResult(song)
+            listenTogetherFallback = listenTogetherFallbackResult(song),
+            preferredQualityKey = listenTogetherPreferredQualityKey(song)
         )
         if (!shouldApplyResolvedMedia(requestToken, playbackRequestToken) || !isActive) {
             NPLogger.d(

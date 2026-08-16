@@ -259,7 +259,8 @@ class ListenTogetherSessionManager(
         requireValidListenTogetherRoomCreation(queue, currentIndex, currentSong)
         val (queueTracks, resolvedCurrentIndex) = queue.toShareableQueueSnapshot(
             currentIndex = currentIndex,
-            roomSettings = roomSettings
+            roomSettings = roomSettings,
+            includeResolvedStreamUrl = false
         )
         val shuffleRestoreQueue = if (PlayerManager.shuffleModeFlow.value) {
             PlayerManager.shuffleRestorePlaylistReference
@@ -1440,16 +1441,10 @@ class ListenTogetherSessionManager(
             TAG,
             "handleLinkRequested(): stableKey=$stableKey, requester=${message.causedBy?.userUuid}"
         )
-        val published = publishControllerLinkReadyIfPossible(
+        resolveAndPublishControllerLink(
             stableKey = stableKey,
             reason = "request:${message.causedBy?.userUuid}"
         )
-        if (!published) {
-            resolveAndPublishControllerLink(
-                stableKey = stableKey,
-                reason = "request:${message.causedBy?.userUuid}"
-            )
-        }
     }
 
     // 旧自建 Worker 可能仍依赖这条中转路径, 当前内置 Worker 已直接仲裁听众请求
@@ -2062,16 +2057,10 @@ class ListenTogetherSessionManager(
             "handleResolvedStreamUrlChanged(): roomId=${snapshot.roomId}, stableKey=$currentStableKey, url=${streamUrl.take(128)}"
         )
         if (!currentStableKey.isNullOrBlank()) {
-            val published = publishControllerLinkReadyIfPossible(
+            resolveAndPublishControllerLink(
                 stableKey = currentStableKey,
                 reason = "stream_url_resolved"
             )
-            if (!published) {
-                resolveAndPublishControllerLink(
-                    stableKey = currentStableKey,
-                    reason = "stream_url_resolved"
-                )
-            }
         } else {
             publishControllerHeartbeatIfNeeded(force = true, reason = "stream_url_resolved")
         }
@@ -2566,9 +2555,6 @@ class ListenTogetherSessionManager(
             )
             return
         }
-        if (publishControllerLinkReadyIfPossible(currentStableKey, "audio_links_enabled:$reason")) {
-            return
-        }
         resolveAndPublishControllerLink(currentStableKey, "audio_links_enabled:$reason")
     }
 
@@ -2695,9 +2681,7 @@ class ListenTogetherSessionManager(
             )
             return
         }
-        if (!publishControllerLinkReadyIfPossible(stableKey, reason)) {
-            resolveAndPublishControllerLink(stableKey, reason)
-        }
+        resolveAndPublishControllerLink(stableKey, reason)
     }
 
     private fun isControllerPlaybackResolutionPending(stableKey: String): Boolean {
@@ -2774,13 +2758,6 @@ class ListenTogetherSessionManager(
                         )
                         return@launch
                     }
-                    if (publishControllerLinkReadyIfPossible(
-                            stableKey = stableKey,
-                            reason = "playback_resolved:$reason"
-                        )
-                    ) {
-                        return@launch
-                    }
                     NPLogger.d(
                         TAG,
                         "resolveAndPublishControllerLink(): resolving shareable stream, stableKey=$stableKey, attempt=${attempt + 1}/$CONTROLLER_LINK_RESOLUTION_ATTEMPTS, reason=$reason"
@@ -2840,6 +2817,13 @@ class ListenTogetherSessionManager(
                             playbackResolutionPending = playbackResolutionPending
                         )
                     ) {
+                        if (publishControllerLinkReadyIfPossible(
+                                stableKey = stableKey,
+                                reason = "current_stream_fallback:$reason"
+                            )
+                        ) {
+                            return@launch
+                        }
                         publishControllerLinkUnavailable(
                             stableKey = stableKey,
                             reason = if (resolution.isPreviewOnly) {
@@ -2961,16 +2945,10 @@ class ListenTogetherSessionManager(
                 TAG,
                 "maybePublishControllerRecoveryHeartbeat(): respond with LINK_READY, requester=${cause.userUuid}, stableKey=$stableKey"
             )
-            val published = publishControllerLinkReadyIfPossible(
+            resolveAndPublishControllerLink(
                 stableKey = stableKey,
                 reason = "recovery:REQUEST_LINK"
             )
-            if (!published) {
-                resolveAndPublishControllerLink(
-                    stableKey = stableKey,
-                    reason = "recovery:REQUEST_LINK"
-                )
-            }
             return
         }
         if (cause.type !in controllerHeartbeatRecoveryTypes) return

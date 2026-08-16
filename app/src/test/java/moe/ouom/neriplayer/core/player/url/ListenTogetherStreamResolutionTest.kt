@@ -103,6 +103,70 @@ class ListenTogetherStreamResolutionTest {
     }
 
     @Test
+    fun `matching shared quality is preferred over listener result`() {
+        val listenerUrl = "https://m701.music.126.net/listener-standard.mp3"
+        val controllerUrl = decorateListenTogetherStreamUrl(
+            "https://m702.music.126.net/controller-lossless.flac",
+            PlaybackAudioSource.NETEASE,
+            "lossless"
+        )
+        val merged = mergeListenTogetherFallbackResult(
+            localResult = SongUrlResult.Success(
+                url = listenerUrl,
+                audioInfo = PlaybackAudioInfo(
+                    source = PlaybackAudioSource.NETEASE,
+                    qualityKey = "standard",
+                    qualityLabel = "Standard"
+                )
+            ),
+            listenTogetherFallback = SongUrlResult.Success(
+                url = controllerUrl,
+                audioInfo = PlaybackAudioInfo(
+                    source = PlaybackAudioSource.NETEASE,
+                    qualityKey = "lossless",
+                    qualityLabel = "Lossless"
+                )
+            ),
+            preferredQualityKey = "lossless"
+        ) as SongUrlResult.Success
+
+        assertEquals(controllerUrl, merged.url)
+        assertEquals("lossless", merged.audioInfo?.qualityKey)
+    }
+
+    @Test
+    fun `mismatched shared quality does not replace listener result`() {
+        val listenerUrl = "https://m701.music.126.net/listener-lossless.flac"
+        val controllerUrl = decorateListenTogetherStreamUrl(
+            "https://m702.music.126.net/controller-standard.mp3",
+            PlaybackAudioSource.NETEASE,
+            "standard"
+        )
+        val merged = mergeListenTogetherFallbackResult(
+            localResult = SongUrlResult.Success(
+                url = listenerUrl,
+                audioInfo = PlaybackAudioInfo(
+                    source = PlaybackAudioSource.NETEASE,
+                    qualityKey = "lossless",
+                    qualityLabel = "Lossless"
+                )
+            ),
+            listenTogetherFallback = SongUrlResult.Success(
+                url = controllerUrl,
+                audioInfo = PlaybackAudioInfo(
+                    source = PlaybackAudioSource.NETEASE,
+                    qualityKey = "standard",
+                    qualityLabel = "Standard"
+                )
+            ),
+            preferredQualityKey = "lossless"
+        ) as SongUrlResult.Success
+
+        assertEquals(listenerUrl, merged.url)
+        assertEquals("lossless", merged.audioInfo?.qualityKey)
+    }
+
+    @Test
     fun `non http result is not eligible for listen together sharing`() {
         assertFalse(
             isShareableListenTogetherStreamResolution(
@@ -350,6 +414,39 @@ class ListenTogetherStreamResolutionTest {
     }
 
     @Test
+    fun `incoming Bili candidates are capped at two`() {
+        val urls = listOf(
+            "https://upos-sz-mirror.bilivideo.com/high.m4a",
+            "https://upos-sz-mirror.bilivideo.com/lossless.flac",
+            "https://upos-sz-mirror.bilivideo.com/hires.flac"
+        )
+
+        assertEquals(
+            urls.take(2),
+            trustedListenTogetherStreamUrls(
+                channelId = ListenTogetherChannels.BILIBILI,
+                streamUrls = urls
+            )
+        )
+    }
+
+    @Test
+    fun `incoming YouTube candidates are capped at one`() {
+        val urls = listOf(
+            "https://rr1---sn.googlevideo.com/videoplayback?itag=251",
+            "https://rr2---sn.googlevideo.com/videoplayback?itag=140"
+        )
+
+        assertEquals(
+            urls.take(1),
+            trustedListenTogetherStreamUrls(
+                channelId = ListenTogetherChannels.YOUTUBE_MUSIC,
+                streamUrls = urls
+            )
+        )
+    }
+
+    @Test
     fun `only the controller may publish a current room stream`() {
         assertTrue(
             shouldPublishCurrentListenTogetherStream(
@@ -448,7 +545,7 @@ class ListenTogetherStreamResolutionTest {
     }
 
     @Test
-    fun `Bili sharing keeps the requested three quality tiers when available`() {
+    fun `Bili sharing keeps at most two default quality tiers`() {
         val streams = selectBiliListenTogetherShareableStreams(
             listOf(
                 BiliAudioStreamInfo(
@@ -483,7 +580,7 @@ class ListenTogetherStreamResolutionTest {
         )
 
         assertEquals(
-            listOf("hires", "lossless", "high"),
+            listOf("high", "lossless"),
             streams.map(::inferBiliQualityKey)
         )
     }
@@ -528,12 +625,36 @@ class ListenTogetherStreamResolutionTest {
             )
         )
 
-        assertEquals(3, urls.size)
+        assertEquals(2, urls.size)
         assertEquals(
-            listOf("hires", "lossless", "high"),
+            listOf("hires", "lossless"),
             urls.map { listenTogetherQualityKeyFromStreamUrl(it, PlaybackAudioSource.BILIBILI) }
         )
         assertTrue(urls.all { it.contains("neriplayer-ltw-quality=bili:") })
+    }
+
+    @Test
+    fun `Netease share groups keep the default three quality slots`() {
+        assertEquals(
+            listOf(
+                listOf("exhigh", "higher", "standard"),
+                listOf("lossless"),
+                listOf("sky")
+            ),
+            buildListenTogetherNeteaseQualityGroups("exhigh")
+        )
+    }
+
+    @Test
+    fun `YouTube sharing resolves only the controller preferred quality`() {
+        assertEquals(
+            listOf("very_high"),
+            buildListenTogetherYouTubeQualityOrder("very_high")
+        )
+        assertEquals(
+            listOf("high"),
+            buildListenTogetherYouTubeQualityOrder("high")
+        )
     }
 
     @Test
