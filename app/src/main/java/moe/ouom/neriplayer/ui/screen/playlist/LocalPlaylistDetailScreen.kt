@@ -3449,7 +3449,7 @@ private fun LocalScanPreviewScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            if (isScanning) {
+            if (isScanning && songs.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center

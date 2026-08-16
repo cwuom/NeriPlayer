@@ -19,6 +19,12 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `unfinalized recovery only rebuilds a snapshot after deleting an artifact`() {
+        assertFalse(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 0))
+        assertTrue(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 1))
+    }
+
+    @Test
     fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
         var executed = false
         var rollbackResult: String? = null

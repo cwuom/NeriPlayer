@@ -146,6 +146,52 @@ internal fun remapScanPreviewKeySet(
     return keys - previousKey + updatedKey
 }
 
+internal fun applyHydratedSongsToScanPreview(
+    state: LocalScanPreviewState,
+    hydratedSongs: List<SongItem?>,
+    progress: LocalAudioScanProgress
+): LocalScanPreviewState {
+    val resolvedProgress = if (state.scanProgress.processed > progress.processed) {
+        state.scanProgress
+    } else {
+        progress
+    }
+    if (hydratedSongs.isEmpty() || state.songs.isEmpty()) {
+        return state.copy(scanProgress = resolvedProgress)
+    }
+
+    val updatedSongs = state.songs.toMutableList()
+    var selectedKeys = state.selectedKeys
+    var existingLocalPlaylistKeys = state.existingLocalPlaylistKeys
+    var duplicateMetadataKeys = state.duplicateMetadataKeys
+    var metadataPendingKeys = state.metadataPendingKeys
+    hydratedSongs.forEachIndexed { index, hydratedSong ->
+        if (hydratedSong == null || index !in updatedSongs.indices) return@forEachIndexed
+        val previousSong = updatedSongs[index]
+        updatedSongs[index] = hydratedSong
+        selectedKeys = remapScanPreviewKeySet(selectedKeys, previousSong, hydratedSong)
+        existingLocalPlaylistKeys = remapScanPreviewKeySet(
+            existingLocalPlaylistKeys,
+            previousSong,
+            hydratedSong
+        )
+        duplicateMetadataKeys = remapScanPreviewKeySet(
+            duplicateMetadataKeys,
+            previousSong,
+            hydratedSong
+        )
+        metadataPendingKeys = metadataPendingKeys - previousSong.stableKey() - hydratedSong.stableKey()
+    }
+    return state.copy(
+        scanProgress = resolvedProgress,
+        songs = updatedSongs,
+        selectedKeys = selectedKeys,
+        existingLocalPlaylistKeys = existingLocalPlaylistKeys,
+        duplicateMetadataKeys = duplicateMetadataKeys,
+        metadataPendingKeys = metadataPendingKeys
+    )
+}
+
 private data class LocalScanMetadataFingerprint(
     val title: String,
     val artist: String,
@@ -233,6 +279,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private companion object {
         const val TAG = "LocalPlaylistScanVM"
         const val SCAN_METADATA_HYDRATION_PARALLELISM = 8
+        const val SCAN_METADATA_HYDRATION_UI_BATCH_SIZE = 16
     }
 
     private val app = application
@@ -332,72 +379,76 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     "scan action finished: session=$sessionId, songs=${result.songs.size}, failed=${result.failedCount}, completed=${result.completed}, elapsed=${scanElapsedMs}ms"
                 )
                 val finalizedResult = if (result.completed) {
+                    val scanOptions = _scanPreviewState.value
+                    val localPlaylists = repo.playlists.value.toList()
+                    val metadataPendingKeys = if (result.metadataDeferred) {
+                        result.songs.mapTo(LinkedHashSet(result.songs.size)) { it.stableKey() }
+                    } else {
+                        emptySet()
+                    }
+                    val quickProgress = if (result.metadataDeferred) {
+                        LocalAudioScanProgress(
+                            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+                            processed = 0,
+                            total = result.songs.size,
+                            discoveredSongs = result.songs.size,
+                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                        )
+                    } else {
+                        LocalAudioScanProgress(
+                            phase = LocalAudioScanPhase.COMPLETED,
+                            processed = result.songs.size,
+                            total = result.songs.size,
+                            discoveredSongs = result.songs.size,
+                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                        )
+                    }
+                    val preparedState = withContext(Dispatchers.Default) {
+                        buildScanPreviewState(
+                            songs = result.songs,
+                            localPlaylists = localPlaylists,
+                            options = scanOptions,
+                            metadataPendingKeys = metadataPendingKeys,
+                            selectedKeys = null,
+                            progress = quickProgress
+                        )
+                    }
+                    _scanPreviewState.value = preparedState
                     val hydratedSongs = if (result.metadataDeferred) {
                         hydrateScanSongs(
                             sessionId = sessionId,
-                            songs = result.songs,
+                            songs = preparedState.songs,
                             scanStartedAt = scanStartedAt
                         )
                     } else {
-                        result.songs
+                        preparedState.songs
                     }
                     if (!isActiveScanSession(sessionId, currentJob)) return@launch
 
                     val prepareStartedAt = SystemClock.elapsedRealtime()
-                    val localPlaylists = repo.playlists.value.toList()
-                    val preparedState = withContext(Dispatchers.Default) {
-                        val preparedSongs = prepareScannedSongs(hydratedSongs)
-                        LocalScanPreviewState(
-                            visible = true,
-                            isScanning = false,
-                            scanProgress = LocalAudioScanProgress(
-                                phase = LocalAudioScanPhase.COMPLETED,
-                                processed = preparedSongs.size,
-                                total = preparedSongs.size,
-                                discoveredSongs = preparedSongs.size,
-                                elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                            ),
-                            songs = preparedSongs,
-                            existingLocalPlaylistKeys = scannedSongKeysAlreadyInLocalPlaylists(
-                                scannedSongs = preparedSongs,
-                                localPlaylists = localPlaylists
-                            ),
-                            duplicateMetadataKeys = duplicateScannedSongKeysByMetadata(
-                                preparedSongs
-                            ),
+                    val finalLocalPlaylists = repo.playlists.value.toList()
+                    val finalProgress = LocalAudioScanProgress(
+                        phase = LocalAudioScanPhase.COMPLETED,
+                        processed = hydratedSongs.size,
+                        total = hydratedSongs.size,
+                        discoveredSongs = hydratedSongs.size,
+                        elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                    )
+                    val currentScanState = _scanPreviewState.value
+                    val finalizedState = withContext(Dispatchers.Default) {
+                        buildScanPreviewState(
+                            songs = hydratedSongs,
+                            localPlaylists = finalLocalPlaylists,
+                            options = currentScanState,
                             metadataPendingKeys = emptySet(),
-                            selectedKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
-                                it.stableKey()
-                            }
+                            selectedKeys = currentScanState.selectedKeys,
+                            progress = finalProgress
                         )
                     }
                     val prepareElapsedMs = SystemClock.elapsedRealtime() - prepareStartedAt
                     NPLogger.d(
                         TAG,
-                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${preparedState.songs.size}, elapsed=${prepareElapsedMs}ms"
-                    )
-                    val scanOptions = _scanPreviewState.value
-                    val hiddenKeys = buildSet {
-                        if (scanOptions.metadataOnly) {
-                            preparedState.songs
-                                .asSequence()
-                                .filterNot(::hasMeaningfulScanMetadata)
-                                .forEach { add(it.stableKey()) }
-                        }
-                        if (scanOptions.hideExistingLocalPlaylistSongs) {
-                            addAll(preparedState.existingLocalPlaylistKeys)
-                        }
-                        if (scanOptions.hideDuplicateMetadataSongs) {
-                            addAll(preparedState.duplicateMetadataKeys)
-                        }
-                    }
-                    val finalizedState = preparedState.copy(
-                        query = scanOptions.query,
-                        metadataOnly = scanOptions.metadataOnly,
-                        hideExistingLocalPlaylistSongs =
-                            scanOptions.hideExistingLocalPlaylistSongs,
-                        hideDuplicateMetadataSongs = scanOptions.hideDuplicateMetadataSongs,
-                        selectedKeys = preparedState.selectedKeys - hiddenKeys
+                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${finalizedState.songs.size}, elapsed=${prepareElapsedMs}ms"
                     )
                     _scanPreviewState.value = finalizedState
                     result.copy(
@@ -742,26 +793,37 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                                 "scan metadata hydration failed for ${song.name}: ${it.message}"
                             )
                         }.getOrDefault(song)
+                        synchronized(hydratedSongs) {
+                            hydratedSongs[songIndex] = hydratedSong
+                        }
                         val processed = processedCount.incrementAndGet()
-                        if (scanSessionId == sessionId) {
+                        if (
+                            scanSessionId == sessionId &&
+                            (processed % SCAN_METADATA_HYDRATION_UI_BATCH_SIZE == 0 ||
+                                processed == totalCount)
+                        ) {
+                            val hydratedSnapshot = synchronized(hydratedSongs) {
+                                hydratedSongs.toList()
+                            }
+                            val progress = LocalAudioScanProgress(
+                                phase = LocalAudioScanPhase.HYDRATING_METADATA,
+                                processed = processed,
+                                total = totalCount,
+                                discoveredSongs = totalCount,
+                                elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                            )
                             _scanPreviewState.update { current ->
                                 if (scanSessionId != sessionId) {
                                     current
                                 } else {
-                                    current.copy(
-                                        isScanning = true,
-                                        scanProgress = LocalAudioScanProgress(
-                                            phase = LocalAudioScanPhase.HYDRATING_METADATA,
-                                            processed = processed,
-                                            total = totalCount,
-                                            discoveredSongs = totalCount,
-                                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                                        )
+                                    applyHydratedSongsToScanPreview(
+                                        state = current,
+                                        hydratedSongs = hydratedSnapshot,
+                                        progress = progress
                                     )
                                 }
                             }
                         }
-                        hydratedSongs[songIndex] = hydratedSong
                     }
                 }
             }.awaitAll()
@@ -778,6 +840,57 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         ) {
             delay(SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS)
         }
+    }
+
+    private fun buildScanPreviewState(
+        songs: List<SongItem>,
+        localPlaylists: List<LocalPlaylist>,
+        options: LocalScanPreviewState,
+        metadataPendingKeys: Set<String>,
+        selectedKeys: Set<String>?,
+        progress: LocalAudioScanProgress
+    ): LocalScanPreviewState {
+        val preparedSongs = prepareScannedSongs(songs)
+        val preparedSongKeys = preparedSongs.mapTo(LinkedHashSet(preparedSongs.size)) {
+            it.stableKey()
+        }
+        val pendingKeys = metadataPendingKeys.intersect(preparedSongKeys)
+        val existingLocalPlaylistKeys = scannedSongKeysAlreadyInLocalPlaylists(
+            scannedSongs = preparedSongs,
+            localPlaylists = localPlaylists
+        )
+        val duplicateMetadataKeys = duplicateScannedSongKeysByMetadata(preparedSongs)
+        val hiddenKeys = buildSet {
+            if (options.metadataOnly) {
+                preparedSongs
+                    .asSequence()
+                    .filter { song ->
+                        song.stableKey() !in pendingKeys && !hasMeaningfulScanMetadata(song)
+                    }
+                    .forEach { song -> add(song.stableKey()) }
+            }
+            if (options.hideExistingLocalPlaylistSongs) {
+                addAll(existingLocalPlaylistKeys)
+            }
+            if (options.hideDuplicateMetadataSongs) {
+                addAll(duplicateMetadataKeys)
+            }
+        }
+        val initialSelection = selectedKeys ?: preparedSongKeys
+        return LocalScanPreviewState(
+            visible = true,
+            isScanning = progress.phase != LocalAudioScanPhase.COMPLETED,
+            scanProgress = progress,
+            songs = preparedSongs,
+            query = options.query,
+            metadataOnly = options.metadataOnly,
+            hideExistingLocalPlaylistSongs = options.hideExistingLocalPlaylistSongs,
+            existingLocalPlaylistKeys = existingLocalPlaylistKeys,
+            hideDuplicateMetadataSongs = options.hideDuplicateMetadataSongs,
+            duplicateMetadataKeys = duplicateMetadataKeys,
+            metadataPendingKeys = pendingKeys,
+            selectedKeys = initialSelection.intersect(preparedSongKeys) - hiddenKeys
+        )
     }
 
     private fun launchPlaylistMutation(

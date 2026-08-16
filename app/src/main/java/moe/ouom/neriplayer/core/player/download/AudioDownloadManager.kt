@@ -125,6 +125,7 @@ object AudioDownloadManager {
     private const val BILI_REFERER = "https://www.bilibili.com"
     internal const val DEFAULT_MAX_CONCURRENT_DOWNLOADS = DEFAULT_DOWNLOAD_PARALLELISM
     internal const val MAX_CONCURRENT_DOWNLOADS_LIMIT = MAX_DOWNLOAD_PARALLELISM
+    private const val BATCH_COMPLETION_CALLBACK_PARALLELISM = 2
     private const val PROGRESS_EMIT_INTERVAL_NS = 180_000_000L
     private const val PROGRESS_EMIT_MIN_BYTES_DELTA = 256L * 1024L
     private const val DOWNLOAD_TRAFFIC_FLUSH_BYTES = 512L * 1024L
@@ -1987,11 +1988,16 @@ object AudioDownloadManager {
                         publishBatchProgress()
                     }
                 }
+                val completionDispatcher = BatchDownloadCompletionDispatcher(
+                    scope = this,
+                    maxConcurrentCallbacks = BATCH_COMPLETION_CALLBACK_PARALLELISM
+                )
 
                 suspend fun processTrackedSong(trackedSong: TrackedBatchSong) {
                     val song = trackedSong.song
                     val songKey = song.stableKey()
                     val attemptId = songAttemptIds[songKey]
+                    var completionDispatched = false
                     GlobalDownloadManager.withSongExecutionLock(songKey) {
                         if (_isCancelled.value || !isBatchSessionCurrent(batchSessionId)) {
                             NPLogger.d(TAG, context.getString(R.string.download_cancelled_message))
@@ -2021,7 +2027,16 @@ object AudioDownloadManager {
                                 batchSessionId = batchSessionId,
                                 attemptId = attemptId
                             )
-                            invokeBatchCallback(song) { onSongCompleted(song) }
+                            completionDispatched = true
+                            completionDispatcher.dispatch {
+                                try {
+                                    GlobalDownloadManager.withSongExecutionLock(songKey) {
+                                        invokeBatchCallback(song) { onSongCompleted(song) }
+                                    }
+                                } finally {
+                                    markSongFinished(songKey)
+                                }
+                            }
                         } catch (_: java.util.concurrent.CancellationException) {
                             NPLogger.d(TAG, "歌曲下载被取消: ${song.name}")
                             clearSongCancelled(songKey)
@@ -2038,7 +2053,9 @@ object AudioDownloadManager {
                             )
                             invokeBatchCallback(song) { onSongFailed(song, e) }
                         } finally {
-                            markSongFinished(songKey)
+                            if (!completionDispatched) {
+                                markSongFinished(songKey)
+                            }
                         }
                     }
                 }
@@ -2057,6 +2074,7 @@ object AudioDownloadManager {
                                 }
                             }
                         }.joinAll()
+                        completionDispatcher.awaitAll()
                     }
                 } finally {
                     progressJob.cancel()
@@ -2086,6 +2104,8 @@ object AudioDownloadManager {
     ) {
         try {
             block()
+        } catch (cancellation: java.util.concurrent.CancellationException) {
+            throw cancellation
         } catch (callbackError: Exception) {
             NPLogger.e(TAG, "批量下载回调失败: ${song.name}", callbackError)
         }

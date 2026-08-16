@@ -1023,8 +1023,7 @@ internal object ManagedDownloadStorage {
                     canReuseCachedDownloadedMetadata(
                         cachedEntry = cachedEntry,
                         currentEntry = entry,
-                        cachedMetadata = cachedMetadata,
-                        allowCachedMetadataReuse = !forceRefresh
+                        cachedMetadata = cachedMetadata
                     )
                 ) {
                     reusedMetadataCount++
@@ -1078,11 +1077,9 @@ internal object ManagedDownloadStorage {
     internal fun canReuseCachedDownloadedMetadata(
         cachedEntry: StoredEntry?,
         currentEntry: StoredEntry,
-        cachedMetadata: DownloadedAudioMetadata?,
-        allowCachedMetadataReuse: Boolean = true
+        cachedMetadata: DownloadedAudioMetadata?
     ): Boolean {
-        return allowCachedMetadataReuse &&
-            cachedMetadata != null &&
+        return cachedMetadata != null &&
             cachedEntry != null &&
             cachedEntry.reference == currentEntry.reference &&
             cachedEntry.sizeBytes == currentEntry.sizeBytes &&

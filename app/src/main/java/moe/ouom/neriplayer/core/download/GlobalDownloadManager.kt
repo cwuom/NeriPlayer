@@ -73,6 +73,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 
+internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
+    return recoveredArtifactCount > 0
+}
+
 /**
  * 全局下载管理器, 统一维护下载任务和本地下载列表
  */
@@ -1456,17 +1460,19 @@ object GlobalDownloadManager {
                 isUnfinalizedDownloadedMetadata(snapshot.metadataByAudioName[storedAudio.name])
             }
             if (unfinalizedAudios.isNotEmpty()) {
-                unfinalizedAudios.forEach { storedAudio ->
+                val recoveredArtifactCount = unfinalizedAudios.count { storedAudio ->
                     recoverUnfinalizedDownloadedAudio(
                         context = context,
                         storedAudio = storedAudio,
                         snapshot = snapshot
                     )
                 }
-                snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
-                    context = context,
-                    forceRefresh = true
-                )
+                if (shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount)) {
+                    snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                        context = context,
+                        forceRefresh = true
+                    )
+                }
             }
             val songs = snapshot.audioEntries
                 .filterNot { storedAudio ->
@@ -1550,17 +1556,17 @@ object GlobalDownloadManager {
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
-    ) {
+    ): Boolean {
         val metadata = snapshot.metadataByAudioName[storedAudio.name]
         if (isUnfinalizedDownloadStillActive(metadata)) {
             NPLogger.d(TAG, "跳过活跃下载的未最终确认文件: file=${storedAudio.name}")
-            return
+            return false
         }
         NPLogger.w(TAG, "扫描发现未最终确认下载半成品，隐藏并等待重试: file=${storedAudio.name}")
         if (ManagedDownloadStorage.hasReadableContent(context, storedAudio)) {
-            return
+            return false
         }
-        runCatching {
+        val removal = runCatching {
             removeManagedDownloadArtifacts(
                 context = context,
                 songName = storedAudio.nameWithoutExtension,
@@ -1570,7 +1576,12 @@ object GlobalDownloadManager {
             )
         }.onFailure { error ->
             NPLogger.e(TAG, "扫描回滚未完成下载半成品失败: ${storedAudio.name}, ${error.message}", error)
+        }.getOrNull() ?: return false
+        val deleted = removal.deletedReferences.isNotEmpty()
+        if (deleted) {
+            NPLogger.d(TAG, "扫描回滚未完成下载半成品完成: file=${storedAudio.name}")
         }
+        return deleted
     }
 
     private fun isUnfinalizedDownloadStillActive(
