@@ -10,6 +10,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -27,6 +30,9 @@ import java.util.LinkedHashMap
 private val coverResolutionDispatcher = Dispatchers.IO.limitedParallelism(1)
 private const val UI_COVER_MEMORY_CACHE_LIMIT = 2048
 private const val PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS = 96L
+private const val PLAYLIST_COVER_SIGNATURE_CANDIDATE_LIMIT = 32
+private const val PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT = 24
+private const val PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT = 12
 private val resolvedCoverMemoryCache = object : LinkedHashMap<String, String>(
     UI_COVER_MEMORY_CACHE_LIMIT,
     0.75f,
@@ -162,20 +168,16 @@ fun rememberPlaylistDisplayCoverUrl(
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
-    val effectivePlaylist = remember(playlist, appContext) {
-        playlist?.takeUnless {
-            it.songs.isEmpty() && LocalFilesPlaylist.isSystemPlaylist(it, appContext)
-        }
+    val effectivePlaylist = playlist?.takeUnless {
+        it.songs.isEmpty() && LocalFilesPlaylist.isSystemPlaylist(it, appContext)
     }
     val effectiveCoverCandidates = if (effectivePlaylist == null) {
         emptyList()
     } else {
         additionalCoverCandidates
     }
-    val playlistKey = remember(effectivePlaylist, effectiveCoverCandidates) {
-        effectivePlaylist?.let { playlist ->
-            playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates)
-        }
+    val playlistKey = effectivePlaylist?.let { playlist ->
+        playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates)
     }
     var coverUrl by remember(playlistKey, downloadPresenceVersion) {
         mutableStateOf(
@@ -189,7 +191,6 @@ fun rememberPlaylistDisplayCoverUrl(
         appContext,
         downloadPresenceVersion,
         resolveLocalFallback,
-        additionalCoverCandidates,
         allowEmbeddedCoverFallback
     ) {
         if (effectivePlaylist == null) {
@@ -202,7 +203,10 @@ fun rememberPlaylistDisplayCoverUrl(
             return@LaunchedEffect
         }
         val immediateCover = withContext(coverResolutionDispatcher) {
-            effectivePlaylist.displayCoverUrl(effectiveCoverCandidates)
+            resolveImmediatePlaylistCover(
+                playlist = effectivePlaylist,
+                additionalCoverCandidates = effectiveCoverCandidates
+            )
         }
         if (!immediateCover.isNullOrBlank()) {
             rememberResolvedCover(playlistKey, immediateCover)
@@ -242,7 +246,8 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
     additionalCoverCandidates: List<SongItem>
 ): String? {
     suspend fun resolveCandidates(candidates: Iterable<SongItem>): String? {
-        for (song in candidates) {
+        for (song in candidates.asSequence().take(PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT)) {
+            currentCoroutineContext().ensureActive()
             if (!song.isLocalSong()) continue
 
             val resolvedCover = withContext(coverResolutionDispatcher) {
@@ -251,16 +256,37 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
                     resolveLocalMetadataFallback = true
                 )
             }
+            currentCoroutineContext().ensureActive()
             if (!resolvedCover.isNullOrBlank()) return resolvedCover
 
             // 每个候选之间留出时间，避免无封面的大歌单持续占用 CPU 和内存
-            kotlinx.coroutines.delay(PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS)
+            delay(PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS)
         }
         return null
     }
 
     return resolveCandidates(playlist.songs)
         ?: resolveCandidates(additionalCoverCandidates)
+}
+
+private fun resolveImmediatePlaylistCover(
+    playlist: LocalPlaylist,
+    additionalCoverCandidates: List<SongItem>
+): String? {
+    val boundedPlaylist = if (
+        playlist.songs.size <= PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT
+    ) {
+        playlist
+    } else {
+        playlist.copy(
+            songs = playlist.songs
+                .take(PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT)
+                .toMutableList()
+        )
+    }
+    return boundedPlaylist.displayCoverUrl(
+        additionalCoverCandidates.take(PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT)
+    )
 }
 
 @Composable
@@ -378,19 +404,21 @@ private fun LocalArtistSummary.coverResolutionKey(): String {
 
 internal fun playlistCoverResolutionSignature(songs: List<SongItem>): Long {
     var signature = 1_125_899_906_842_597L
-    songs.forEach { song ->
-        signature = 31L * signature + song.id
-        signature = 31L * signature + song.album.hashCode()
-        signature = 31L * signature + song.albumId
-        signature = 31L * signature + song.customCoverUrl.orEmpty().hashCode()
-        signature = 31L * signature + song.coverUrl.orEmpty().hashCode()
-        signature = 31L * signature + song.originalCoverUrl.orEmpty().hashCode()
-        signature = 31L * signature + song.localFilePath.orEmpty().hashCode()
-        signature = 31L * signature + song.mediaUri.orEmpty().hashCode()
-        signature = 31L * signature + song.channelId.orEmpty().hashCode()
-        signature = 31L * signature + song.audioId.orEmpty().hashCode()
-        signature = 31L * signature + song.subAudioId.orEmpty().hashCode()
-        signature = 31L * signature + song.sourceStableKey.orEmpty().hashCode()
-    }
+    songs.asSequence()
+        .take(PLAYLIST_COVER_SIGNATURE_CANDIDATE_LIMIT)
+        .forEach { song ->
+            signature = 31L * signature + song.id
+            signature = 31L * signature + song.album.hashCode()
+            signature = 31L * signature + song.albumId
+            signature = 31L * signature + song.customCoverUrl.orEmpty().hashCode()
+            signature = 31L * signature + song.coverUrl.orEmpty().hashCode()
+            signature = 31L * signature + song.originalCoverUrl.orEmpty().hashCode()
+            signature = 31L * signature + song.localFilePath.orEmpty().hashCode()
+            signature = 31L * signature + song.mediaUri.orEmpty().hashCode()
+            signature = 31L * signature + song.channelId.orEmpty().hashCode()
+            signature = 31L * signature + song.audioId.orEmpty().hashCode()
+            signature = 31L * signature + song.subAudioId.orEmpty().hashCode()
+            signature = 31L * signature + song.sourceStableKey.orEmpty().hashCode()
+        }
     return signature
 }

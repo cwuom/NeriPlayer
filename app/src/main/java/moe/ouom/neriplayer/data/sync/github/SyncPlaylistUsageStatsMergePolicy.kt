@@ -45,7 +45,8 @@ internal object SyncPlaylistUsageStatsMergePolicy {
                         lastOccurredAt = stat.lastOpenedAt,
                         counterBaseCount = stat.counterBaseOpenCount,
                         counterShards = stat.counterShards
-                    )
+                    ),
+                    deriveOccurredAtFromCounterShards = false
                 )
                 val newest = if (stat.lastOpenedAt >= existing.lastOpenedAt) stat else existing
                 val older = if (newest === stat) existing else stat
@@ -201,7 +202,8 @@ internal object SyncPlaylistUsageStatsMergePolicy {
             firstOccurredAt = stat.firstOpenedAt,
             lastOccurredAt = stat.lastOpenedAt,
             counterBaseCount = stat.counterBaseOpenCount,
-            counterShards = stat.counterShards
+            counterShards = stat.counterShards,
+            deriveOccurredAtFromCounterShards = false
         )
         return stat.copy(
             playlistKey = playlistKey,
@@ -275,7 +277,8 @@ internal object SyncPlaylistUsageStatsMergePolicy {
         firstOccurredAt: Long,
         lastOccurredAt: Long,
         counterBaseCount: Long,
-        counterShards: List<SyncPlaybackCounterShard>
+        counterShards: List<SyncPlaybackCounterShard>,
+        deriveOccurredAtFromCounterShards: Boolean = true
     ): MergedCounter {
         return mergeCounters(
             left = CounterInput(
@@ -285,11 +288,16 @@ internal object SyncPlaylistUsageStatsMergePolicy {
                 counterBaseCount = counterBaseCount,
                 counterShards = counterShards
             ),
-            right = CounterInput()
+            right = CounterInput(),
+            deriveOccurredAtFromCounterShards = deriveOccurredAtFromCounterShards
         )
     }
 
-    private fun mergeCounters(left: CounterInput, right: CounterInput): MergedCounter {
+    private fun mergeCounters(
+        left: CounterInput,
+        right: CounterInput,
+        deriveOccurredAtFromCounterShards: Boolean = true
+    ): MergedCounter {
         val shards = SyncPlaybackStatMapper.normalizeCounterShards(
             left.counterShards + right.counterShards
         )
@@ -312,23 +320,35 @@ internal object SyncPlaylistUsageStatsMergePolicy {
             effectiveCounterBase(left, shardCount),
             effectiveCounterBase(right, shardCount)
         )
+        val explicitFirstOccurredAt = minPositiveTimestamp(
+            left.firstOccurredAt,
+            right.firstOccurredAt
+        )
+        val explicitLastOccurredAt = maxOf(left.lastOccurredAt, right.lastOccurredAt)
         return MergedCounter(
             totalCount = maxOf(
                 left.totalCount.coerceAtLeast(0L),
                 right.totalCount.coerceAtLeast(0L),
                 baseCount.saturatingAdd(shardCount)
             ),
-            firstOccurredAt = minPositiveTimestamp(
-                minPositiveTimestamp(left.firstOccurredAt, right.firstOccurredAt),
-                shards.fold(0L) { earliest, shard ->
-                    minPositiveTimestamp(earliest, shard.firstPlayedAt)
-                }
-            ),
-            lastOccurredAt = maxOf(
-                left.lastOccurredAt,
-                right.lastOccurredAt,
-                shards.maxOfOrNull(SyncPlaybackCounterShard::lastPlayedAt) ?: 0L
-            ),
+            firstOccurredAt = if (deriveOccurredAtFromCounterShards) {
+                minPositiveTimestamp(
+                    explicitFirstOccurredAt,
+                    shards.fold(0L) { earliest, shard ->
+                        minPositiveTimestamp(earliest, shard.firstPlayedAt)
+                    }
+                )
+            } else {
+                explicitFirstOccurredAt
+            },
+            lastOccurredAt = if (deriveOccurredAtFromCounterShards) {
+                maxOf(
+                    explicitLastOccurredAt,
+                    shards.maxOfOrNull(SyncPlaybackCounterShard::lastPlayedAt) ?: 0L
+                )
+            } else {
+                explicitLastOccurredAt
+            },
             counterBaseCount = baseCount,
             counterShards = shards
         )

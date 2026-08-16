@@ -176,6 +176,28 @@ object CustomSongCoverStorage {
         }
     }
 
+    internal suspend fun resolveLegacyOriginalCoverReference(
+        context: Context,
+        song: SongItem,
+        references: Iterable<String?>
+    ): String? {
+        for (reference in references) {
+            val normalizedReference = reference
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: continue
+            if (!isDirectoryReference(normalizedReference)) continue
+
+            val resolved = persistOriginalCover(
+                context = context,
+                song = song,
+                reference = normalizedReference
+            ) ?: continue
+            if (!isDirectoryReference(resolved)) return resolved
+        }
+        return null
+    }
+
     internal fun originalCoverFileName(song: SongItem, extension: String): String {
         val normalizedExtension = extension
             .trim()

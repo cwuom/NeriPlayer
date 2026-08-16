@@ -1815,6 +1815,22 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 nextCustomCover = requestedCoverReference?.takeIf { !restoreBaseCover },
                 previousCustomCover = currentSong.customCoverUrl
             )
+            val legacyOriginalCoverUrl = if (
+                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
+            ) {
+                CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
+                    context = application,
+                    song = currentSong,
+                    references = listOf(
+                        currentSong.originalCoverUrl,
+                        customCoverUrl,
+                        currentSong.customCoverUrl,
+                        currentSong.coverUrl
+                    )
+                )
+            } else {
+                null
+            }
             val originalCoverReference = if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
@@ -1823,6 +1839,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                         LocalSongSupport.isLocalMediaUri(reference) &&
                             reference != currentSong.customCoverUrl
                     }
+                    ?: legacyOriginalCoverUrl
                     ?: LocalMediaSupport.resolveCoverUri(application, currentSong)
                     ?: existingOriginalCoverUrl?.takeIf { it != currentSong.customCoverUrl }
                     ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
@@ -1832,7 +1849,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val preservedOriginalCoverUrl = if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
-                CustomSongCoverStorage.persistOriginalCover(
+                legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
                     context = application,
                     song = currentSong,
                     reference = originalCoverReference

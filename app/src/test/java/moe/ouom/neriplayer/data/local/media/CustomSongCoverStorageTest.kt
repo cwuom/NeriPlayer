@@ -89,6 +89,28 @@ class CustomSongCoverStorageTest {
     }
 
     @Test
+    fun `legacy cover lookup skips unrelated directories and resolves the original file`() = runBlocking {
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val unrelated = tempFolder.newFolder("custom_song_covers")
+        val directory = File(tempFolder.root, "original_song_covers").apply { mkdirs() }
+        val stored = File(
+            directory,
+            CustomSongCoverStorage.originalCoverFileName(testSong(), "jpg")
+        ).apply {
+            writeBytes(byteArrayOf(8, 9, 10))
+        }
+
+        val resolved = CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
+            context = context,
+            song = testSong(),
+            references = listOf(unrelated.toURI().toString(), directory.toURI().toString())
+        )
+
+        assertEquals(stored.toURI().toString(), resolved)
+    }
+
+    @Test
     fun `unmatched original cover directory is rejected`() = runBlocking {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)

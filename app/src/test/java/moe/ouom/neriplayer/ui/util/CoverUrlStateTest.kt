@@ -80,6 +80,19 @@ class CoverUrlStateTest {
     }
 
     @Test
+    fun `playlist cover signature uses a bounded candidate prefix`() {
+        val original = List(33) { index -> song(coverUrl = null).copy(id = index.toLong()) }
+        val updated = original.toMutableList().apply {
+            this[lastIndex] = last().copy(coverUrl = "file:///music/later-cover.jpg")
+        }
+
+        assertEquals(
+            playlistCoverResolutionSignature(original),
+            playlistCoverResolutionSignature(updated)
+        )
+    }
+
+    @Test
     fun `song cover cache key survives local metadata hydration`() {
         val quickSong = SongItem(
             id = 7L,

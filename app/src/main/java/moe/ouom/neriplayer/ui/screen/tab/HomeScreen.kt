@@ -84,9 +84,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -119,6 +122,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -167,6 +171,9 @@ import java.util.Locale
 private const val HomeContinueHorizontalPaddingDp = 8f
 private const val HomeContinueCardSpacingDp = 12f
 private const val HomeContinueCardMaxWidthDp = 140f
+private const val HomeContinueEntryLimit = 12
+private const val HomeLocalPlaylistCoverCandidateLimit = 24
+private const val HomeDownloadedCoverSourceLimit = 64
 private const val HomeContinueThreeSlotWidthDp = 300f
 private const val HomeContinueTabletWidthDp = 600f
 private const val HomeScrollKeyContinueHeader = "home:continue:header"
@@ -189,6 +196,30 @@ internal fun shouldShowHomeContinueSection(
     usageLoaded: Boolean,
     hasUsage: Boolean
 ): Boolean = showContinueCard && (!usageLoaded || hasUsage)
+
+internal fun resolveHomeContinuePagerPage(savedPage: Int, pageCount: Int): Int {
+    return savedPage.coerceIn(0, pageCount.coerceAtLeast(1) - 1)
+}
+
+internal fun shouldResolveHomeContinueLocalCoverFallback(
+    persistedCoverUrl: String?,
+    localPlaylist: LocalPlaylist?
+): Boolean = persistedCoverUrl.isNullOrBlank() && localPlaylist != null
+
+internal fun homeLocalFilesCoverCandidates(
+    downloadedSongs: List<DownloadedSong>
+): List<SongItem> {
+    return downloadedSongs.asSequence()
+        .take(HomeDownloadedCoverSourceLimit)
+        .filter { song ->
+            !song.customCoverUrl.isNullOrBlank() ||
+                !song.coverPath.isNullOrBlank() ||
+                !song.coverUrl.isNullOrBlank()
+        }
+        .take(HomeLocalPlaylistCoverCandidateLimit)
+        .map(DownloadedSong::toPlaybackSongItem)
+        .toList()
+}
 
 private fun homeNeteaseSongSectionKey(group: String, source: NeteaseHomeSongSource): String {
     return "home:netease:$group:${source.name.lowercase(Locale.ROOT)}"
@@ -233,6 +264,8 @@ fun HomeScreen(
     usageEntries: List<UsageEntry> = emptyList(),
     usageLoaded: Boolean = true,
     offlineMode: Boolean = false,
+    continuePagerPage: Int = 0,
+    onContinuePagerPageChanged: (Int) -> Unit = {},
     onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     gridState: LazyGridState,
@@ -253,58 +286,96 @@ fun HomeScreen(
         }
     )
     val ui by vm.uiState.collectAsStateWithLifecycle()
-    val localPlaylistRepo = remember(appContext) { LocalPlaylistRepository.getInstance(appContext) }
-    var localPlaylists by remember { mutableStateOf<List<LocalPlaylist>>(emptyList()) }
+    var localPlaylistRepo by remember { mutableStateOf<LocalPlaylistRepository?>(null) }
+    var localPlaylists by remember {
+        mutableStateOf<List<LocalPlaylist>>(
+            value = emptyList(),
+            policy = referentialEqualityPolicy()
+        )
+    }
     var localPlaylistsReady by remember { mutableStateOf(false) }
-    LaunchedEffect(appContext, localPlaylistRepo) {
+    var localPlaylistSnapshotVersion by remember { mutableIntStateOf(0) }
+    LaunchedEffect(appContext) {
         localPlaylistsReady = false
         val initializedRepo = withContext(Dispatchers.IO) {
-            if (localPlaylistRepo.awaitInitialized()) localPlaylistRepo else null
+            LocalPlaylistRepository.getInstance(appContext)
+                .takeIf { repository -> repository.awaitInitialized() }
         }
+        localPlaylistRepo = initializedRepo
         if (initializedRepo == null) return@LaunchedEffect
         initializedRepo.playlists.collect { playlists ->
             localPlaylists = playlists
+            localPlaylistSnapshotVersion += 1
             localPlaylistsReady = true
         }
     }
     val favoriteRepo = remember(context) { FavoritePlaylistRepository.getInstance(context) }
     val favorites by favoriteRepo.favorites.collectAsStateWithLifecycle()
     val downloadedSongs by GlobalDownloadManager.downloadedSongs.collectAsStateWithLifecycle()
-    val downloadedPlaybackCoverCandidates = remember(downloadedSongs) {
-        downloadedSongs.map { it.toPlaybackSongItem() }
-    }
+    val downloadedPlaybackCoverCandidates = homeLocalFilesCoverCandidates(downloadedSongs)
     val favoriteKeys = remember(favorites) {
         favorites.mapTo(mutableSetOf()) { "${it.source}:${it.id}" }
     }
-    val favoriteSongs = remember(localPlaylists, context) {
+    val favoriteSongs = remember(localPlaylistSnapshotVersion, context) {
         localPlaylists
             .firstOrNull { FavoritesPlaylist.isSystemPlaylist(it, context) }
             ?.songs
             .orEmpty()
     }
-    val localPlaylistUsageLookup = remember(localPlaylists, context) {
-        buildLocalPlaylistUsageLookup(localPlaylists, context)
-    }
-
-    val hasLocalUsage = remember(usageEntries) {
-        usageEntries.any {
-            it.source == PlaylistUsageRepository.SOURCE_LOCAL ||
-                it.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+    val localPlaylistCoverFallbackIds = usageEntries.asSequence()
+        .take(HomeContinueEntryLimit)
+        .filter { entry ->
+            entry.source == PlaylistUsageRepository.SOURCE_LOCAL && entry.picUrl.isNullOrBlank()
+        }
+        .mapTo(linkedSetOf()) { entry -> entry.id }
+    val localPlaylistUsageLookup by produceState<Map<Long, LocalPlaylist>>(
+        initialValue = emptyMap(),
+        key1 = localPlaylistSnapshotVersion,
+        key2 = localPlaylistCoverFallbackIds,
+        key3 = appContext
+    ) {
+        value = if (localPlaylistCoverFallbackIds.isEmpty()) {
+            emptyMap()
+        } else {
+            withContext(Dispatchers.Default) {
+                buildLocalPlaylistUsageLookup(
+                    playlists = localPlaylists,
+                    context = appContext,
+                    requestedPlaylistIds = localPlaylistCoverFallbackIds,
+                    maxSongsPerPlaylist = HomeLocalPlaylistCoverCandidateLimit
+                )
+            }
         }
     }
+
+    val hasLocalPlaylistUsage = usageEntries.any { entry ->
+        entry.source == PlaylistUsageRepository.SOURCE_LOCAL
+    }
+    val hasLocalArtistUsage = usageEntries.any { entry ->
+        entry.source == PlaylistUsageRepository.SOURCE_LOCAL_ARTIST
+    }
     LaunchedEffect(
-        hasLocalUsage,
+        hasLocalPlaylistUsage,
+        hasLocalArtistUsage,
         localPlaylistsReady,
-        localPlaylists,
+        localPlaylistSnapshotVersion,
         downloadedPlaybackCoverCandidates
     ) {
-        if (hasLocalUsage && localPlaylistsReady) {
+        if ((hasLocalPlaylistUsage || hasLocalArtistUsage) && localPlaylistsReady) {
             withContext(Dispatchers.Default) {
-                AppContainer.playlistUsageRepo.syncLocalEntries(
-                    playlists = localPlaylists,
-                    localFilesCoverCandidates = downloadedPlaybackCoverCandidates
-                )
-                AppContainer.playlistUsageRepo.syncLocalArtistEntries(localPlaylists)
+                if (hasLocalPlaylistUsage) {
+                    AppContainer.playlistUsageRepo.syncLocalEntries(
+                        playlists = localPlaylists,
+                        localFilesCoverCandidates = downloadedPlaybackCoverCandidates,
+                        resolveLocalMetadataFallback = false
+                    )
+                }
+                if (hasLocalArtistUsage) {
+                    AppContainer.playlistUsageRepo.syncLocalArtistEntries(
+                        playlists = localPlaylists,
+                        resolveLocalMetadataFallback = false
+                    )
+                }
             }
         }
     }
@@ -364,11 +435,14 @@ fun HomeScreen(
 
     fun toggleHomeSongFavorite(song: SongItem, isFavorite: Boolean) {
         scope.launch {
+            val repository = localPlaylistRepo ?: withContext(Dispatchers.IO) {
+                LocalPlaylistRepository.getInstance(appContext)
+            }
             if (isFavorite) {
-                localPlaylistRepo.removeFromFavorites(song)
+                repository.removeFromFavorites(song)
                 snackbarHostState.showNeriSnackbar(favoriteRemovedText)
             } else {
-                localPlaylistRepo.addToFavorites(song)
+                repository.addToFavorites(song)
                 snackbarHostState.showNeriSnackbar(favoriteAddedText)
             }
         }
@@ -502,10 +576,12 @@ fun HomeScreen(
                         ) {
                             if (usageLoaded) {
                                 ContinueSection(
-                                    items = usageEntries.take(12),
+                                    items = usageEntries.take(HomeContinueEntryLimit),
                                     localPlaylistLookup = localPlaylistUsageLookup,
                                     localFilesCoverCandidates = downloadedPlaybackCoverCandidates,
                                     onClick = { entry -> onOpenRecent(entry) },
+                                    savedPage = continuePagerPage,
+                                    onPageChanged = onContinuePagerPageChanged,
                                     offlineMode = offlineMode
                                 )
                             } else {
@@ -1906,6 +1982,8 @@ private fun ContinueSection(
     localPlaylistLookup: Map<Long, LocalPlaylist>,
     localFilesCoverCandidates: List<SongItem>,
     onClick: (UsageEntry) -> Unit,
+    savedPage: Int,
+    onPageChanged: (Int) -> Unit,
     offlineMode: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -1922,7 +2000,16 @@ private fun ContinueSection(
         val pageCount = remember(items.size, cardsPerPage) {
             ceil(items.size / cardsPerPage.toFloat()).toInt().coerceAtLeast(1)
         }
-        val pagerState = rememberPagerState(pageCount = { pageCount })
+        val initialPage = remember(savedPage, pageCount) {
+            resolveHomeContinuePagerPage(savedPage, pageCount)
+        }
+        val pagerState = rememberPagerState(
+            initialPage = initialPage,
+            pageCount = { pageCount }
+        )
+        LaunchedEffect(pagerState.currentPage) {
+            onPageChanged(pagerState.currentPage)
+        }
 
         HorizontalPager(
             state = pagerState,
@@ -1992,10 +2079,15 @@ private fun ContinueCard(
     val displayName = remember(entry.id, entry.name, entry.source, configuration) {
         SystemLocalPlaylists.resolve(entry.id, entry.name, context)?.currentName ?: entry.name
     }
-    val resolvedLocalCoverUrl = if (localPlaylist != null) {
+    val shouldResolveLocalCover = shouldResolveHomeContinueLocalCoverFallback(
+        persistedCoverUrl = entry.picUrl,
+        localPlaylist = localPlaylist
+    )
+    val resolvedLocalCoverUrl = if (shouldResolveLocalCover) {
+        val playlist = requireNotNull(localPlaylist)
         rememberPlaylistDisplayCoverUrl(
-            playlist = localPlaylist,
-            additionalCoverCandidates = if (localPlaylist.id == LocalFilesPlaylist.SYSTEM_ID) {
+            playlist = playlist,
+            additionalCoverCandidates = if (playlist.id == LocalFilesPlaylist.SYSTEM_ID) {
                 localFilesCoverCandidates
             } else {
                 emptyList()
@@ -2004,7 +2096,7 @@ private fun ContinueCard(
     } else {
         null
     }
-    val coverUrl = resolvedLocalCoverUrl ?: entry.picUrl
+    val coverUrl = entry.picUrl?.takeIf { it.isNotBlank() } ?: resolvedLocalCoverUrl
 
     Column(
         modifier = modifier

@@ -261,6 +261,50 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `continue entry open keeps its display order`() {
+        val repo = PlaylistUsageRepository(mockContext())
+        repo.recordOpen(
+            id = 1L,
+            name = "较早歌单",
+            picUrl = null,
+            trackCount = 1,
+            source = "netease",
+            now = 100L
+        )
+        repo.recordOpen(
+            id = 2L,
+            name = "较新歌单",
+            picUrl = null,
+            trackCount = 1,
+            source = "netease",
+            now = 200L
+        )
+        assertEquals(
+            listOf(200L, 100L),
+            repo.frequentPlaylistsFlow.value.map(UsageEntry::lastOpened)
+        )
+
+        repo.recordOpen(
+            id = 1L,
+            name = "较早歌单",
+            picUrl = null,
+            trackCount = 1,
+            source = "netease",
+            now = 300L,
+            updateLastOpened = false
+        )
+
+        assertEquals(
+            listOf(200L, 100L),
+            repo.frequentPlaylistsFlow.value.map(UsageEntry::lastOpened)
+        )
+        assertEquals(listOf(2L, 1L), repo.frequentPlaylistsFlow.value.map(UsageEntry::id))
+        assertEquals(100L, repo.frequentPlaylistsFlow.value.last().lastOpened)
+        assertEquals(2, repo.frequentPlaylistsFlow.value.last().openCount)
+        assertEquals(300L, repo.frequentPlaylistsFlow.value.last().counterShards.single().lastPlayedAt)
+    }
+
+    @Test
     fun `bili usage keeps uploader subtitle when reopening and refreshing`() {
         val repo = PlaylistUsageRepository(mockContext())
 
@@ -422,6 +466,33 @@ class PlaylistUsageRepositoryTest {
         repo.syncLocalEntries(playlists = listOf(localFiles))
 
         assertEquals(knownCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
+    }
+
+    @Test
+    fun `lightweight local sync updates direct cover without media fallback`() {
+        val context = mockLocalizedContext()
+        val repo = PlaylistUsageRepository(context)
+        val currentCoverUrl = "file:///covers/current-local.jpg"
+        val localFiles = LocalPlaylist(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            songs = mutableListOf(localSong(coverUrl = currentCoverUrl))
+        )
+
+        repo.recordOpen(
+            id = LocalFilesPlaylist.SYSTEM_ID,
+            name = "本地文件",
+            picUrl = "file:///covers/stale-local.jpg",
+            trackCount = 1,
+            source = PlaylistUsageRepository.SOURCE_LOCAL,
+            now = 100L
+        )
+        repo.syncLocalEntries(
+            playlists = listOf(localFiles),
+            resolveLocalMetadataFallback = false
+        )
+
+        assertEquals(currentCoverUrl, repo.frequentPlaylistsFlow.value.single().picUrl)
     }
 
     @Test

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicHomeItem
+import moe.ouom.neriplayer.core.download.DownloadedSong
+import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +11,57 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HomeScreenMappingTest {
+
+    @Test
+    fun `persisted local continue cover skips playlist fallback`() {
+        val playlist = LocalPlaylist(id = 7L, name = "local")
+
+        assertFalse(
+            shouldResolveHomeContinueLocalCoverFallback(
+                persistedCoverUrl = "file:///covers/saved.jpg",
+                localPlaylist = playlist
+            )
+        )
+        assertTrue(
+            shouldResolveHomeContinueLocalCoverFallback(
+                persistedCoverUrl = null,
+                localPlaylist = playlist
+            )
+        )
+    }
+
+    @Test
+    fun `continue pager restores the saved page and clamps removed pages`() {
+        assertEquals(1, resolveHomeContinuePagerPage(savedPage = 1, pageCount = 2))
+        assertEquals(0, resolveHomeContinuePagerPage(savedPage = 1, pageCount = 1))
+        assertEquals(0, resolveHomeContinuePagerPage(savedPage = -1, pageCount = 2))
+    }
+
+    @Test
+    fun `home local files cover candidates stay bounded to recent covered downloads`() {
+        val downloads = (0 until 80).map { index ->
+            DownloadedSong(
+                id = index.toLong(),
+                name = "song-$index",
+                artist = "artist",
+                album = "album",
+                filePath = "/music/song-$index.mp3",
+                fileSize = 1L,
+                downloadTime = 80L - index,
+                coverUrl = if (index < 32) {
+                    "https://example.com/cover-$index.jpg"
+                } else {
+                    null
+                }
+            )
+        }
+
+        val candidates = homeLocalFilesCoverCandidates(downloads)
+
+        assertEquals(24, candidates.size)
+        assertEquals("https://example.com/cover-0.jpg", candidates.first().coverUrl)
+        assertEquals("https://example.com/cover-23.jpg", candidates.last().coverUrl)
+    }
 
     @Test
     fun continueSectionStaysMountedWhileUsageRepositoryLoads() {
