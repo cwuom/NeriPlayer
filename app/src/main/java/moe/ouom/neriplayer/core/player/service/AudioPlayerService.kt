@@ -96,6 +96,7 @@ import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
+import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
@@ -1616,6 +1617,11 @@ class AudioPlayerService : Service() {
                             "active USB audio device detached id=${detachedDevice?.deviceId} " +
                                 "name=${detachedDevice?.deviceName}"
                         )
+                        if (PlayerManager.shouldMuteListenTogetherListenerForAudioRouteLoss()) {
+                            PlayerManager.suppressPlaybackForAudioRouteLoss(
+                                reason = "listen_together_usb_output_disconnect"
+                            )
+                        }
                         StartupAudioFocusController.forceRelease("usb_device_detached")
                         PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
                             "usb_device_detached"

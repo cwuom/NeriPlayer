@@ -145,7 +145,7 @@ private fun PlayerManager.volumeWhileAudioRouteMuted(volume: Float): Float {
 internal fun PlayerManager.clearAudioRouteMuteSuppression(reason: String) {
     clearAudioRouteMuteSuppression(
         reason = reason,
-        preserveExplicitRestore = false
+        preserveExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
     )
 }
 

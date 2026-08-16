@@ -1234,11 +1234,9 @@ object PlayerManager {
     }
 
     internal fun shouldMuteListenTogetherListenerForAudioRouteLoss(): Boolean {
-        val room = activeListenTogetherRoomState()
         return shouldMuteListenTogetherListenerForAudioRouteLoss(
             listenTogetherActive = isListenTogetherActive(),
-            isCurrentUserController = isCurrentUserControllerInListenTogether(),
-            allowMemberControl = room?.settings?.allowMemberControl
+            isCurrentUserController = isCurrentUserControllerInListenTogether()
         )
     }
 

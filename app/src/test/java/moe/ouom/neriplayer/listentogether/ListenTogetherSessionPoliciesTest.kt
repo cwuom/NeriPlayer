@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherList
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
+import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -400,26 +401,67 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
-    fun `listener audio route mute only applies when member control is disabled`() {
+    fun `audio route mute applies to every active listener`() {
         assertTrue(
             shouldMuteListenTogetherListenerForAudioRouteLoss(
                 listenTogetherActive = true,
-                isCurrentUserController = false,
-                allowMemberControl = false
+                isCurrentUserController = false
             )
         )
         assertFalse(
             shouldMuteListenTogetherListenerForAudioRouteLoss(
+                listenTogetherActive = true,
+                isCurrentUserController = true
+            )
+        )
+        assertFalse(
+            shouldMuteListenTogetherListenerForAudioRouteLoss(
+                listenTogetherActive = false,
+                isCurrentUserController = false
+            )
+        )
+    }
+
+    @Test
+    fun `listener output disconnect mute also applies while paused and on route replacement`() {
+        assertTrue(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
+                listenTogetherActive = true,
+                isCurrentUserController = false,
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = false,
+                outputDeviceRemoved = true,
+                routeChanged = true
+            )
+        )
+        assertTrue(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
+                listenTogetherActive = true,
+                isCurrentUserController = false,
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = false,
+                routeChanged = true
+            )
+        )
+        assertFalse(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
                 listenTogetherActive = true,
                 isCurrentUserController = true,
-                allowMemberControl = false
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = true,
+                routeChanged = true
             )
         )
         assertFalse(
-            shouldMuteListenTogetherListenerForAudioRouteLoss(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
                 listenTogetherActive = true,
                 isCurrentUserController = false,
-                allowMemberControl = true
+                previousRouteWasHeadsetLike = false,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = true,
+                routeChanged = true
             )
         )
     }
