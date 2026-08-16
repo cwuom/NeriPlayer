@@ -802,7 +802,6 @@ private fun InviteCopyActions(
     onShowMessage: (String) -> Unit
 ) {
     val composeResources = LocalResources.current
-    val joinSecret = sanitizeListenTogetherJoinSecretOrNull(sessionState.joinSecret)
 
     FlowRow(
         modifier = modifier.fillMaxWidth(),
@@ -830,20 +829,8 @@ private fun InviteCopyActions(
             },
             enabled = inviteUri != null
         ) {
-            Text(stringResource(R.string.listen_together_copy_invite))
-        }
-        TextButton(
-            onClick = {
-                val secret = joinSecret ?: return@TextButton
-                clipboard.copyText(clipboardScope, secret)
-                onShowMessage(
-                    composeResources.getString(R.string.listen_together_join_secret_copied)
-                )
-            },
-            enabled = joinSecret != null
-        ) {
             Icon(Icons.Outlined.ContentCopy, contentDescription = null)
-            Text(stringResource(R.string.listen_together_copy_join_secret))
+            Text(stringResource(R.string.listen_together_copy_invite))
         }
     }
 }
