@@ -124,6 +124,7 @@
     <!-- Player Controls -->
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
+    <string name="player_restore_volume">Restore volume</string>
     <string name="player_waiting">Waiting for playback</string>
     <string name="player_previous">Previous</string>
     <string name="player_next">Next</string>

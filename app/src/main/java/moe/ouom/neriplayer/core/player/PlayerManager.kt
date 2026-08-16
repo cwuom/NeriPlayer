@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.core.player.playback.playBiliVideoPartsImpl
 import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.playPlaylistImpl
 import moe.ouom.neriplayer.core.player.playback.previousImpl
+import moe.ouom.neriplayer.core.player.playback.restoreAudioRouteMuteImpl
 import moe.ouom.neriplayer.core.player.playback.seekToImpl
 import moe.ouom.neriplayer.core.player.playback.setShuffleImpl
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackPreservingQueueImpl
@@ -330,6 +331,10 @@ object PlayerManager {
     internal var playbackStartupWatchdogToken = 0L
     internal var bluetoothDisconnectPauseJob: Job? = null
     internal var audioRouteMuteRestoreVolume: Float? = null
+    @Volatile
+    internal var audioRouteMuteRequiresExplicitRestore = false
+    internal val _audioRouteMuteSuppressedFlow = MutableStateFlow(false)
+    val audioRouteMuteSuppressedFlow: StateFlow<Boolean> = _audioRouteMuteSuppressedFlow
     @Volatile
     internal var listenTogetherSafetyPausePendingResume = false
     @Volatile
@@ -2544,6 +2549,8 @@ object PlayerManager {
     ) = this.pauseImpl(forcePersist, commandSource)
 
     fun togglePlayPause() = this.togglePlayPauseImpl()
+
+    internal fun restoreAudioRouteMute() = this.restoreAudioRouteMuteImpl()
 
     fun togglePlayPauseWithoutFade() = this.togglePlayPauseImpl(allowFade = false)
 

@@ -698,6 +698,28 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `restricted listener does not show the queue reorder handle`() {
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = false,
+                allowQueueReorder = true
+            )
+        )
+    }
+
+    @Test
     fun `artist navigation ignores matched netease metadata for non netease songs`() {
         val biliSong = testSong(id = 6L, name = "Bili song").copy(
             album = "Bilibili|123",

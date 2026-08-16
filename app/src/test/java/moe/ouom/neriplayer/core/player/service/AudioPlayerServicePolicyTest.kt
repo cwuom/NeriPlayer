@@ -440,6 +440,7 @@ class AudioPlayerServicePolicyTest {
     @Test
     fun `widget accepts a state independent play pause command`() {
         assertTrue(isSupportedPlaybackWidgetAction(AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE))
+        assertTrue(isSupportedPlaybackWidgetAction(AudioPlayerService.ACTION_RESTORE_VOLUME))
         assertFalse(isSupportedPlaybackWidgetAction("moe.ouom.neriplayer.action.UNKNOWN"))
     }
 

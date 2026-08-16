@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotic
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.retriedAt
 import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomStateToPlayer
+import moe.ouom.neriplayer.listentogether.session.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherControllerLocalEcho
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
@@ -164,6 +165,75 @@ class ListenTogetherSessionPoliciesTest {
                 lastControllerLocalControlAtElapsedMs = 1_000L,
                 nowElapsedMs = 3_000L,
                 controllerLocalControlCooldownMs = 1_200L
+            )
+        )
+    }
+
+    @Test
+    fun `higher version queue echo overrides an optimistic concurrent reorder`() {
+        val first = track("netease:first")
+        val current = track("netease:current")
+        val previousState = roomState(version = 4L).copy(
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+        val concurrentState = previousState.copy(
+            version = 5L,
+            queue = listOf(current, first),
+            currentIndex = 0,
+            track = current
+        )
+
+        val ownCommittedState = concurrentState.copy(
+            version = 6L,
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+
+        assertTrue(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "controller-id",
+                    type = "SET_QUEUE",
+                    eventId = "controller-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
+            )
+        )
+        assertFalse(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "controller-id",
+                    type = "SET_QUEUE",
+                    eventId = "controller-reorder"
+                ),
+                candidateState = previousState,
+                currentState = previousState
+            )
+        )
+        assertTrue(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "listener-id",
+                    type = "REQUEST_SET_QUEUE",
+                    eventId = "listener-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
+            )
+        )
+        assertFalse(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "another-controller-id",
+                    type = "PLAY",
+                    eventId = "other-controller-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
             )
         )
     }
@@ -386,4 +456,12 @@ class ListenTogetherSessionPoliciesTest {
             closedReason = closedReason
         )
     }
+
+    private fun track(stableKey: String) = moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack(
+        stableKey = stableKey,
+        channelId = "netease",
+        audioId = stableKey,
+        name = stableKey,
+        artist = "artist"
+    )
 }

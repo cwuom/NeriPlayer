@@ -21,7 +21,8 @@ fun NeriMiniPlayer(
     onExpand: () -> Unit,
     enableBlur: Boolean = true,
     offlineMode: Boolean = false,
-    isPlaybackWaiting: Boolean = false
+    isPlaybackWaiting: Boolean = false,
+    isAudioRouteMuted: Boolean = false
 ) {
     moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer(
         title = title,
@@ -36,7 +37,8 @@ fun NeriMiniPlayer(
         onExpand = onExpand,
         enableBlur = enableBlur,
         offlineMode = offlineMode,
-        isPlaybackWaiting = isPlaybackWaiting
+        isPlaybackWaiting = isPlaybackWaiting,
+        isAudioRouteMuted = isAudioRouteMuted
     )
 }
 

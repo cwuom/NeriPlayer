@@ -45,6 +45,25 @@ internal fun ListenTogetherEvent.requestedStableKey(): String? {
         ?: track?.stableKey
 }
 
+internal fun resolveListenTogetherQueueIndex(
+    queue: List<ListenTogetherTrack>,
+    requestedIndex: Int,
+    preferredStableKey: String?
+): Int {
+    if (queue.isEmpty()) return -1
+    val indexedPosition = requestedIndex.takeIf { it in queue.indices }
+    if (preferredStableKey.isNullOrBlank()) {
+        return indexedPosition ?: 0
+    }
+    if (indexedPosition != null && queue[indexedPosition].stableKey == preferredStableKey) {
+        return indexedPosition
+    }
+    return queue.indexOfFirst { it.stableKey == preferredStableKey }
+        .takeIf { it >= 0 }
+        ?: indexedPosition
+        ?: 0
+}
+
 internal fun ListenTogetherRoomState.targetSongItem(): SongItem? {
     return currentTrack()?.toSongItem()
 }

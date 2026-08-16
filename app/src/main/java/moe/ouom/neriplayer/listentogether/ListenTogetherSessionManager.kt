@@ -55,6 +55,7 @@ import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlsForCurrentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.isShareableForListenTogether
+import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherListenerStallRecovery
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.ListenTogetherPlayerStateApplier
@@ -108,6 +109,7 @@ import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomS
 import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherControllerLocalEcho
 import moe.ouom.neriplayer.listentogether.session.shouldDeferListenTogetherIncomingStateForLocalTrackFinish
 import moe.ouom.neriplayer.listentogether.session.shouldIgnoreListenTogetherIncomingState
+import moe.ouom.neriplayer.listentogether.session.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.shouldRejectForwardedListenTogetherMemberControl
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.session.toMembershipCredentialOrNull
@@ -1194,7 +1196,16 @@ class ListenTogetherSessionManager(
                 )
                 return@synchronized null
             }
-            if (shouldDropControllerLocalEcho(state, cause, latestVersion)) {
+            val acceptsAuthoritativeQueueUpdate =
+                shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                    cause = cause,
+                    candidateState = state,
+                    currentState = currentState
+                )
+            if (
+                shouldDropControllerLocalEcho(state, cause, latestVersion) &&
+                !acceptsAuthoritativeQueueUpdate
+            ) {
                 NPLogger.d(
                     TAG,
                     "acceptRoomState(): drop controller echo source=${source.logName}, roomId=${state.roomId}, version=${state.version}, latest=$latestVersion, causedBy=${cause?.type}:${cause?.eventId}"
@@ -1331,7 +1342,7 @@ class ListenTogetherSessionManager(
 
     private fun handleSocketRoomState(message: ListenTogetherSocketEnvelope) {
         val state = message.state ?: return
-        if (shouldIgnoreIncomingState(message.causedBy)) {
+        if (shouldIgnoreIncomingState(message)) {
             NPLogger.d(
                 TAG,
                 "handleSocketRoomState(): ignored causedBy=${message.causedBy?.type}:${message.causedBy?.eventId}"
@@ -1396,7 +1407,8 @@ class ListenTogetherSessionManager(
         if (
             isCurrentUserController() &&
             message.causedBy?.userUuid == currentUserUuid &&
-            message.causedBy?.type != "TRACK_FINISHED"
+            message.causedBy?.type != "TRACK_FINISHED" &&
+            !isListenTogetherQueueUpdateCause(message.causedBy?.type)
         ) {
             NPLogger.d(
                 TAG,
@@ -1743,9 +1755,22 @@ class ListenTogetherSessionManager(
         )
     }
 
-    private fun shouldIgnoreIncomingState(cause: ListenTogetherCause?): Boolean {
+    private fun shouldIgnoreIncomingState(message: ListenTogetherSocketEnvelope): Boolean {
+        if (
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = message.causedBy,
+                candidateState = message.state,
+                currentState = _roomState.value
+            )
+        ) {
+            NPLogger.d(
+                TAG,
+                "shouldIgnoreIncomingState(): accept authoritative queue update, eventId=${message.causedBy?.eventId}"
+            )
+            return false
+        }
         return shouldIgnoreListenTogetherIncomingState(
-            cause = cause,
+            cause = message.causedBy,
             currentUserId = _sessionState.value.userUuid,
             hasRecentOutboundEvent = ::hasRecentOutboundEvent,
             hasRecentInboundEvent = ::hasRecentInboundEvent

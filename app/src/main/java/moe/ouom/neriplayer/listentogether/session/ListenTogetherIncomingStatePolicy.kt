@@ -2,8 +2,30 @@ package moe.ouom.neriplayer.listentogether.session
 
 import moe.ouom.neriplayer.listentogether.control.passivePositionUpdateTypes
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
+import moe.ouom.neriplayer.listentogether.playback.isListenTogetherQueueUpdateCause
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherCause
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+
+/**
+ * a higher-version room queue is authoritative over any local optimistic
+ * reorder, including a local echo that arrives after another member's update
+ */
+internal fun shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+    cause: ListenTogetherCause?,
+    candidateState: ListenTogetherRoomState?,
+    currentState: ListenTogetherRoomState?
+): Boolean {
+    if (!isListenTogetherQueueUpdateCause(cause?.type)) return false
+    val candidate = candidateState ?: return false
+    val current = currentState ?: return false
+    if (candidate.roomId != current.roomId) return false
+    if (candidate.version <= current.version) return false
+    if (candidate.queue.map { it.stableKey } != current.queue.map { it.stableKey }) {
+        return true
+    }
+    return candidate.currentIndex != current.currentIndex ||
+        candidate.currentStableKey() != current.currentStableKey()
+}
 
 internal fun shouldIgnoreListenTogetherIncomingState(
     cause: ListenTogetherCause?,

@@ -135,7 +135,7 @@ internal fun PlayerManager.cancelPendingPauseRequestImpl(resetVolumeToFull: Bool
 }
 
 private fun PlayerManager.isAudioRouteMuteSuppressed(): Boolean {
-    return audioRouteMuteRestoreVolume != null
+    return audioRouteMuteRestoreVolume?.let { it > 0f } == true
 }
 
 private fun PlayerManager.volumeWhileAudioRouteMuted(volume: Float): Float {
@@ -143,34 +143,112 @@ private fun PlayerManager.volumeWhileAudioRouteMuted(volume: Float): Float {
 }
 
 internal fun PlayerManager.clearAudioRouteMuteSuppression(reason: String) {
-    val suppressedVolume = audioRouteMuteRestoreVolume ?: return
+    clearAudioRouteMuteSuppression(
+        reason = reason,
+        preserveExplicitRestore = false
+    )
+}
+
+internal fun PlayerManager.clearAudioRouteMuteSuppression(
+    reason: String,
+    preserveExplicitRestore: Boolean
+) {
+    if (
+        preserveExplicitRestore &&
+        shouldDeferAudioRouteMuteRestore(audioRouteMuteRequiresExplicitRestore)
+    ) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "clearAudioRouteMuteSuppression(): keep explicit listener mute, reason=$reason, currentSong=${_currentSongFlow.value?.name}"
+        )
+        return
+    }
+    val suppressedVolume = audioRouteMuteRestoreVolume
     audioRouteMuteRestoreVolume = null
+    audioRouteMuteRequiresExplicitRestore = false
+    _audioRouteMuteSuppressedFlow.value = false
+    if (suppressedVolume == null) return
     NPLogger.d(
         "NERI-PlayerManager",
         "clearAudioRouteMuteSuppression(): reason=$reason, suppressedVolume=$suppressedVolume, currentSong=${_currentSongFlow.value?.name}"
     )
 }
 
+internal fun shouldDeferAudioRouteMuteRestore(
+    requiresExplicitRestore: Boolean
+): Boolean = requiresExplicitRestore
+
+internal fun resolveAudioRouteMuteRestoreVolume(
+    currentVolume: Float,
+    existingRestoreVolume: Float?
+): Float? {
+    return existingRestoreVolume?.takeIf { it > 0f }
+        ?: currentVolume.coerceIn(0f, 1f).takeIf { it > 0f }
+}
+
 internal fun PlayerManager.suppressPlaybackForAudioRouteLoss(reason: String) {
     if (!isPlayerInitialized()) return
+    val requiresExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
     cancelVolumeFade(resetToFull = false)
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
         val currentVolume = runCatching { player.volume.coerceIn(0f, 1f) }.getOrDefault(1f)
-        if (audioRouteMuteRestoreVolume == null) {
-            audioRouteMuteRestoreVolume = currentVolume
+        val restoreVolume = resolveAudioRouteMuteRestoreVolume(
+            currentVolume = currentVolume,
+            existingRestoreVolume = audioRouteMuteRestoreVolume
+        )
+        if (restoreVolume == null) {
+            audioRouteMuteRestoreVolume = null
+            audioRouteMuteRequiresExplicitRestore = false
+            _audioRouteMuteSuppressedFlow.value = false
+            return@runPlayerActionOnMainThread
         }
+        audioRouteMuteRestoreVolume = restoreVolume
+        audioRouteMuteRequiresExplicitRestore =
+            audioRouteMuteRequiresExplicitRestore || requiresExplicitRestore
+        _audioRouteMuteSuppressedFlow.value = true
         player.volume = 0f
         NPLogger.d(
             "NERI-PlayerManager",
-            "suppressPlaybackForAudioRouteLoss(): reason=$reason, capturedVolume=${audioRouteMuteRestoreVolume}, currentSong=${_currentSongFlow.value?.name}"
+            "suppressPlaybackForAudioRouteLoss(): reason=$reason, capturedVolume=$restoreVolume, explicitRestore=${audioRouteMuteRequiresExplicitRestore}, currentSong=${_currentSongFlow.value?.name}"
+        )
+    }
+}
+
+internal fun PlayerManager.restoreAudioRouteMuteImpl() {
+    val restoreVolume = audioRouteMuteRestoreVolume ?: run {
+        audioRouteMuteRequiresExplicitRestore = false
+        _audioRouteMuteSuppressedFlow.value = false
+        return
+    }
+    audioRouteMuteRestoreVolume = null
+    audioRouteMuteRequiresExplicitRestore = false
+    _audioRouteMuteSuppressedFlow.value = false
+    if (!isPlayerInitialized()) return
+    runPlayerActionOnMainThread {
+        if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
+        player.volume = restoreVolume.coerceIn(0f, 1f)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "restoreAudioRouteMuteImpl(): restoredVolume=$restoreVolume, currentSong=${_currentSongFlow.value?.name}"
         )
     }
 }
 
 internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: String) {
-    val restoreVolume = audioRouteMuteRestoreVolume ?: return
+    if (shouldDeferAudioRouteMuteRestore(audioRouteMuteRequiresExplicitRestore)) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "restorePlaybackAfterTransientAudioRouteLoss(): keep listener muted until explicit restore, reason=$reason, currentSong=${_currentSongFlow.value?.name}"
+        )
+        return
+    }
+    val restoreVolume = audioRouteMuteRestoreVolume ?: run {
+        _audioRouteMuteSuppressedFlow.value = false
+        return
+    }
     audioRouteMuteRestoreVolume = null
+    _audioRouteMuteSuppressedFlow.value = false
     if (!isPlayerInitialized()) return
     val shouldRestore = runCatching {
         player.playWhenReady || player.isPlaying
@@ -1427,7 +1505,12 @@ internal fun PlayerManager.pauseImpl(
         if (lyriconEnabled) {
             LyriconManager.setPlaybackState(false)
         }
-        clearAudioRouteMuteSuppression(reason = debugReason)
+        clearAudioRouteMuteSuppression(
+            reason = debugReason,
+            preserveExplicitRestore = shouldDeferAudioRouteMuteRestore(
+                audioRouteMuteRequiresExplicitRestore
+            )
+        )
         persistPausedPlaybackState(
             forcePersist = forcePersist,
             positionMs = action.persistPositionMs,
@@ -1567,14 +1650,19 @@ private fun PlayerManager.pauseInternal(
         }
         _playbackPositionMs.value = currentPosition
     }
-    if (restoreVolumeAfterPause) {
+    if (restoreVolumeAfterPause && !isAudioRouteMuteSuppressed()) {
         runPlayerActionOnMainThread {
             if (isPlayerInitialized()) {
                 player.volume = 1f
             }
         }
     }
-    clearAudioRouteMuteSuppression(reason = debugReason)
+    clearAudioRouteMuteSuppression(
+        reason = debugReason,
+        preserveExplicitRestore = shouldDeferAudioRouteMuteRestore(
+            audioRouteMuteRequiresExplicitRestore
+        )
+    )
     persistLongFormPlaybackProgress(
         song = currentSong,
         positionMs = currentPosition,
@@ -1594,6 +1682,10 @@ private fun PlayerManager.pauseInternal(
 internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
     ensureInitialized()
     if (!initialized) return
+    if (isAudioRouteMuteSuppressed()) {
+        restoreAudioRouteMuteImpl()
+        return
+    }
     if (shouldPausePlaybackWhenToggling(
             resumePlaybackRequested = resumePlaybackRequested,
             pendingPauseJobActive = pendingPauseJob?.isActive == true,

@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.listentogether.control.buildListenTogetherForwardedCo
 import moe.ouom.neriplayer.listentogether.playback.clampListenTogetherPositionMs
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.playback.wrapListenTogetherSingleTrackRepeatPosition
+import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherQueueIndex
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
@@ -307,6 +308,55 @@ class ListenTogetherControlHardeningTest {
         assertEquals(current, next.track)
         assertEquals("playing", next.playback.state)
         assertEquals(12_000L, next.playback.basePositionMs)
+    }
+
+    @Test
+    fun `forwarded queue index follows stable current track when numeric index is stale`() {
+        val first = listenTogetherTrack("k1")
+        val current = listenTogetherTrack("k2")
+
+        assertEquals(
+            1,
+            resolveListenTogetherQueueIndex(
+                queue = listOf(first, current),
+                requestedIndex = 0,
+                preferredStableKey = current.stableKey
+            )
+        )
+    }
+
+    @Test
+    fun `forwarded queue reorder resolves a stale numeric index from its explicit stable key`() {
+        val first = listenTogetherTrack("k1")
+        val current = listenTogetherTrack("k2")
+        val currentState = ListenTogetherRoomState(
+            roomId = "room-1",
+            version = 3L,
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+        val message = ListenTogetherSocketEnvelope(
+            type = "member_control_requested",
+            queue = listOf(first, current),
+            currentIndex = 0,
+            track = current,
+            requestTrackStableKey = current.stableKey
+        )
+        val committedEvent = ListenTogetherEvent(
+            type = "SET_QUEUE",
+            requestTrackStableKey = current.stableKey
+        )
+
+        val next = buildListenTogetherForwardedControlSyntheticState(
+            currentState = currentState,
+            message = message,
+            committedEvent = committedEvent,
+            nowMs = 1_700_000_000_000L
+        )
+
+        assertEquals(1, next.currentIndex)
+        assertEquals(current, next.track)
     }
 
     private fun listenTogetherTrack(stableKey: String) = ListenTogetherTrack(

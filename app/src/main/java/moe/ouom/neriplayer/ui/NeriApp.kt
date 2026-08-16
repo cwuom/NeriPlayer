@@ -3370,6 +3370,8 @@ private fun NeriAppContent(
 
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+                val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow
+                    .collectAsStateWithLifecycle()
                 val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
                 val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow
                     .collectAsStateWithLifecycle()
@@ -4269,7 +4271,8 @@ private fun NeriAppContent(
                                     onExpand = { showNowPlaying = true },
                                     enableBlur = effectiveAdvancedBlurEnabled,
                                     offlineMode = offlineMode,
-                                    isPlaybackWaiting = isPlaybackWaiting
+                                    isPlaybackWaiting = isPlaybackWaiting,
+                                    isAudioRouteMuted = isAudioRouteMuted
                                     )
                                 }
                             }
