@@ -65,6 +65,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.MeetingRoom
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Search
@@ -4036,7 +4037,7 @@ private fun ListenTogetherSettingsSection(
             modifier = joinRoomItemModifier,
             leadingContent = {
                 Icon(
-                    imageVector = Icons.Outlined.Link,
+                    imageVector = Icons.Outlined.MeetingRoom,
                     contentDescription = stringResource(R.string.listen_together_join_room),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurface
