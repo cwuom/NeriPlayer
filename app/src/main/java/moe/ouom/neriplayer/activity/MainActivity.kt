@@ -1096,6 +1096,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         if (!safeModeActive) {
             PlayerManager.flushPlaybackStatsAsync("activity_stop")
+            AppContainer.listenTogetherSessionManager.onApplicationBackgrounded()
         }
         super.onStop()
     }

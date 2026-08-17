@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommand
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
+import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.url.resolveShareableListenTogetherStreamUrls
@@ -50,8 +51,10 @@ import moe.ouom.neriplayer.listentogether.network.reconnect.LISTEN_TOGETHER_MAX_
 import moe.ouom.neriplayer.listentogether.network.reconnect.isTerminalListenTogetherReconnectError
 import moe.ouom.neriplayer.listentogether.network.reconnect.listenTogetherReconnectDelayMs
 import moe.ouom.neriplayer.listentogether.network.ws.ListenTogetherWebSocketClient
+import moe.ouom.neriplayer.listentogether.network.ws.LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
 import moe.ouom.neriplayer.listentogether.network.ws.buildListenTogetherWsUrl
 import moe.ouom.neriplayer.listentogether.network.ws.redactListenTogetherWsUrlForLog
+import moe.ouom.neriplayer.listentogether.network.ws.shouldReconnectListenTogetherSocket
 import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlsForCurrentTrack
@@ -94,6 +97,7 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.listentogether.session.AcceptedRoomState
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
+import moe.ouom.neriplayer.listentogether.session.ListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForwardedRequestDeduper
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherControlOutbox
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherForegroundRecoveryAction
@@ -109,6 +113,9 @@ import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeat
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherForegroundRecoveryAction
 import moe.ouom.neriplayer.listentogether.session.resolveReusableListenTogetherMembershipCredential
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
+import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherClosedRoomPause
+import moe.ouom.neriplayer.listentogether.session.shouldAutoPauseListenTogetherForMemberChange
+import moe.ouom.neriplayer.listentogether.session.shouldHoldListenTogetherBackgroundKeepAlive
 import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.shouldReconnectListenTogetherForegroundSocket
 import moe.ouom.neriplayer.listentogether.session.shouldShowListenTogetherControllerReconnectedNotice
@@ -169,6 +176,8 @@ class ListenTogetherSessionManager(
     private var lastControllerLocalControlAtElapsedMs: Long = 0L
     @Volatile
     private var reconnectEnabled = false
+    @Volatile
+    private var applicationInForeground = true
     @Volatile
     private var retainedMembershipCredential: ListenTogetherMembershipCredential? = null
     private val reconnectAttempt = AtomicInteger(0)
@@ -526,6 +535,7 @@ class ListenTogetherSessionManager(
                         connectionState = ListenTogetherConnectionState.CONNECTED,
                         lastError = null
                     )
+                    updateBackgroundKeepAlive("socket_open")
                     startSocketKeepAlive()
                     startHeartbeat()
                     startSyncWatchdog()
@@ -774,6 +784,7 @@ class ListenTogetherSessionManager(
         estimatedServerClockOffsetMs = 0L
         clockSyncPingSupported = null
         resetListenerRecoveryState()
+        ListenTogetherBackgroundKeepAlive.release("disconnect")
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "disconnectWebSocket()")
         webSocketClient.disconnect()
@@ -784,6 +795,8 @@ class ListenTogetherSessionManager(
     }
 
     fun onApplicationForegrounded() {
+        applicationInForeground = true
+        ListenTogetherBackgroundKeepAlive.release("foreground")
         val snapshot = _sessionState.value
         when (
             resolveListenTogetherForegroundRecoveryAction(
@@ -827,10 +840,38 @@ class ListenTogetherSessionManager(
         }
     }
 
+    fun onApplicationBackgrounded() {
+        applicationInForeground = false
+        if (
+            shouldHoldListenTogetherBackgroundKeepAlive(
+                sessionActive = !_sessionState.value.roomId.isNullOrBlank(),
+                reconnectEnabled = reconnectEnabled,
+                applicationInForeground = applicationInForeground
+            )
+        ) {
+            ensureListenTogetherForegroundService("application_backgrounded")
+        }
+        updateBackgroundKeepAlive("application_backgrounded")
+    }
+
     fun leaveRoom() {
         clearCoalescedLocalControlEvents("leave")
         localControlOutbox.clear()
         val snapshot = _sessionState.value
+        val shouldAutoPause = shouldAutoPauseListenTogetherForMemberChange(
+            autoPauseOnMemberChange =
+                !snapshot.roomId.isNullOrBlank() &&
+                    (_roomState.value?.settings?.autoPauseOnMemberChange ?: true),
+            memberChangeType = "MEMBER_LEFT"
+        )
+        if (shouldAutoPause) {
+            PlayerManager.pauseImpl(
+                forcePersist = true,
+                commandSource = PlaybackCommandSource.REMOTE_SYNC,
+                allowFadeOut = false,
+                debugReason = "listen_together_leave_room_auto_pause"
+            )
+        }
         val leaveBaseUrl = snapshot.baseUrl
         val leaveRoomId = snapshot.roomId
         val leaveToken = snapshot.token
@@ -896,6 +937,7 @@ class ListenTogetherSessionManager(
         clockSyncPingSupported = null
         observedControllerOffline = false
         resetListenerRecoveryState()
+        ListenTogetherBackgroundKeepAlive.release("leave")
         PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         NPLogger.d(TAG, "leaveRoom(): roomId=${snapshot.roomId}, role=${snapshot.role}")
@@ -914,13 +956,19 @@ class ListenTogetherSessionManager(
     }
 
     private fun sendSocketKeepAlivePing(): Boolean {
-        if (clockSyncPingSupported == false) {
-            return webSocketClient.sendLegacyPing()
-        }
         val sentAtElapsedMs = SystemClock.elapsedRealtime()
-        pingSentAtElapsedMs = sentAtElapsedMs
-        pingSentAtWallMs = System.currentTimeMillis()
-        return webSocketClient.sendPing(sentAtElapsedMs)
+        if (
+            pingSentAtElapsedMs <= 0L ||
+            lastWebSocketMessageAtElapsedMs > pingSentAtElapsedMs
+        ) {
+            pingSentAtElapsedMs = sentAtElapsedMs
+            pingSentAtWallMs = System.currentTimeMillis()
+        }
+        return if (clockSyncPingSupported == false) {
+            webSocketClient.sendLegacyPing()
+        } else {
+            webSocketClient.sendPing(sentAtElapsedMs)
+        }
     }
 
     private fun updateServerClockOffsetFromPong(
@@ -1690,13 +1738,23 @@ class ListenTogetherSessionManager(
             TAG,
             "handleRoomClosed(): roomId=${message.roomId ?: state?.roomId}, message=${message.message}"
         )
-        state?.let {
+        val accepted = state?.let {
             acceptRoomState(
                 state = it,
                 expectedPositionMs = message.expectedPositionMs,
                 source = RoomStateSource.WEB_SOCKET_ROOM_CLOSED,
                 cause = message.causedBy
             )
+        }
+        if (accepted != null && shouldApplyListenTogetherClosedRoomPause(accepted.state)) {
+            mainScope.launch {
+                PlayerManager.pauseImpl(
+                    forcePersist = true,
+                    commandSource = PlaybackCommandSource.REMOTE_SYNC,
+                    allowFadeOut = false,
+                    debugReason = "listen_together_closed_room_auto_pause"
+                )
+            }
         }
         closeRoomLocally(
             state?.closedReason
@@ -2134,12 +2192,30 @@ class ListenTogetherSessionManager(
                     delay(HEARTBEAT_STATE_RECHECK_INTERVAL_MS)
                     continue
                 }
+                val nowElapsedMs = SystemClock.elapsedRealtime()
+                if (
+                    shouldReconnectListenTogetherSocket(
+                        reconnectEnabled = reconnectEnabled,
+                        connectionState = snapshot.connectionState,
+                        lastMessageAtElapsedMs = lastWebSocketMessageAtElapsedMs,
+                        lastPingSentAtElapsedMs = pingSentAtElapsedMs,
+                        nowElapsedMs = nowElapsedMs,
+                        responseTimeoutMs = LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
+                    )
+                ) {
+                    NPLogger.w(TAG, "socketKeepAlive(): response timeout, scheduling reconnect")
+                    pendingStateRefreshAfterReconnect = true
+                    scheduleReconnect("socket_keep_alive_response_timeout")
+                    delay(LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS)
+                    continue
+                }
                 val sent = sendSocketKeepAlivePing()
                 if (!sent) {
                     NPLogger.w(TAG, "socketKeepAlive(): send failed")
                     pendingStateRefreshAfterReconnect = true
                     scheduleReconnect("socket_keep_alive_send_failed")
                 }
+                updateBackgroundKeepAlive("socket_keep_alive")
                 delay(LISTEN_TOGETHER_SOCKET_KEEP_ALIVE_INTERVAL_MS)
             }
         }
@@ -2149,6 +2225,24 @@ class ListenTogetherSessionManager(
         NPLogger.d(TAG, "stopSocketKeepAlive()")
         socketKeepAliveJob?.cancel()
         socketKeepAliveJob = null
+    }
+
+    private fun updateBackgroundKeepAlive(reason: String) {
+        val snapshot = _sessionState.value
+        val shouldHold = shouldHoldListenTogetherBackgroundKeepAlive(
+            sessionActive = !snapshot.roomId.isNullOrBlank(),
+            reconnectEnabled = reconnectEnabled,
+            applicationInForeground = applicationInForeground
+        )
+        if (shouldHold) {
+            if (!AppContainer.isInitialized()) return
+            ListenTogetherBackgroundKeepAlive.renew(
+                context = AppContainer.applicationContext,
+                reason = reason
+            )
+        } else {
+            ListenTogetherBackgroundKeepAlive.release(reason)
+        }
     }
 
     private fun startSyncWatchdog() {
@@ -2496,6 +2590,7 @@ class ListenTogetherSessionManager(
             NPLogger.d(TAG, "scheduleReconnect(): skipped, already connecting, reason=$reason")
             return
         }
+        updateBackgroundKeepAlive("reconnect_scheduled:$reason")
         synchronized(connectionLock) {
             if (reconnectJob?.isActive == true) {
                 NPLogger.d(TAG, "scheduleReconnect(): already scheduled, reason=$reason")
@@ -2523,6 +2618,7 @@ class ListenTogetherSessionManager(
                     NPLogger.d(TAG, "scheduleReconnect(): cancelled before execution")
                     return@launch
                 }
+                updateBackgroundKeepAlive("reconnect_attempt:$reason")
                 NPLogger.d(TAG, "reconnect(): roomId=${latest.roomId}, attempt=$attempt")
                 if (tryRecoverMembershipBeforeReconnect("scheduled_reconnect:$reason")) {
                     return@launch
@@ -2921,6 +3017,7 @@ class ListenTogetherSessionManager(
         clockSyncPingSupported = null
         observedControllerOffline = false
         resetListenerRecoveryState()
+        ListenTogetherBackgroundKeepAlive.release("room_closed")
         PlayerManager.clearListenTogetherSafetyPause()
         PlayerManager.resetListenTogetherSyncPlaybackRate()
         webSocketClient.disconnect(code = 1000, reason = "room_closed")

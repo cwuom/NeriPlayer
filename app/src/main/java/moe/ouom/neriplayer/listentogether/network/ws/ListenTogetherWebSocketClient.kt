@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.listentogether.network.ws
 import android.os.SystemClock
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherConnectionState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherSocketEnvelope
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -11,6 +12,28 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 private const val LISTEN_TOGETHER_MAX_WS_MESSAGE_CHARS = 2 * 1024 * 1024
+
+internal const val LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS = 35_000L
+
+internal fun shouldReconnectListenTogetherSocket(
+    reconnectEnabled: Boolean,
+    connectionState: ListenTogetherConnectionState,
+    lastMessageAtElapsedMs: Long,
+    lastPingSentAtElapsedMs: Long,
+    nowElapsedMs: Long,
+    responseTimeoutMs: Long = LISTEN_TOGETHER_SOCKET_RESPONSE_TIMEOUT_MS
+): Boolean {
+    if (!reconnectEnabled || connectionState != ListenTogetherConnectionState.CONNECTED) {
+        return false
+    }
+    if (lastPingSentAtElapsedMs <= 0L || nowElapsedMs < lastPingSentAtElapsedMs) {
+        return false
+    }
+    if (nowElapsedMs - lastPingSentAtElapsedMs < responseTimeoutMs.coerceAtLeast(0L)) {
+        return false
+    }
+    return lastMessageAtElapsedMs <= lastPingSentAtElapsedMs
+}
 
 class ListenTogetherWebSocketClient(
     private val okHttpClient: OkHttpClient

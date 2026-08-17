@@ -287,11 +287,11 @@ Current positioning:
   try those local candidates first, and keep the session-only candidates as isolated startup
   fallbacks, so they never enter song or offline caches. Valid playback-mode queue snapshots
   reuse the requester's real shuffle or restored order without reloading the current track.
-  Mode commits re-anchor projected position with the previous repeat semantics. Reconnecting
-  with the same member credential does not trigger member-change auto-pause, and both
-  roles keep their WebSocket connection alive. Explicitly leaving a room removes the
-  member and broadcasts the departure, while a transport-only disconnect remains
-  reconnectable. Durable Objects persist room state while WebSocket keeps active
+  Mode commits re-anchor projected position with the previous repeat semantics. When enabled,
+  member joins and explicit departures publish an authoritative room pause; reconnecting with
+  the same member credential does not trigger that pause, and both roles keep their WebSocket
+  connection alive. A transport-only disconnect remains reconnectable. Durable Objects persist
+  room state while WebSocket keeps active
   members in sync.
 
 ---
@@ -531,9 +531,9 @@ For release build and signing details, see
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
 - 🎧 **Listen Together**:
   create or join rooms, sync playback state over WebSocket, support host/listener
-  permissions, member-control toggles, optional auto-pause when a new member joins
-  (not when the same member reconnects),
-  repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
+  permissions, member-control toggles, automatic pause for new members and explicit
+  departures when enabled (same-member reconnects do not pause), repeat/shuffle mode sync,
+  optional sharing of controller-resolved stream URLs,
   invite links, deep links, custom server URLs, and host-offline detection. A first join
   requires the invite secret and member reconnects use member secrets. Controllers can copy the
   complete invite or its secret separately; tapping Join reads a valid invite from the clipboard
