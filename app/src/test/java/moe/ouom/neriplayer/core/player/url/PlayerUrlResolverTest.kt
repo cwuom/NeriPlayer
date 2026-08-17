@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.player.url
 
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
+import moe.ouom.neriplayer.core.player.resolver.netease.NeteasePlaybackResponseParser
+import moe.ouom.neriplayer.data.platform.bili.BiliAudioStreamInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,5 +46,71 @@ class PlayerUrlResolverTest {
 
         assertEquals("exhigh", audioInfo.qualityKey)
         assertEquals(R.string.quality_very_high.toString(), audioInfo.qualityLabel)
+    }
+
+    @Test
+    fun buildNeteasePlaybackAudioInfo_usesReportedLevelInsteadOfRequestedQuality() {
+        val audioInfo = buildNeteasePlaybackAudioInfo(
+            parsed = NeteasePlaybackResponseParser.PlaybackResult.Success(
+                url = "https://m701.music.126.net/track.mp3",
+                type = "mp3",
+                level = "exhigh",
+                bitrateKbps = 320
+            ),
+            resolvedQualityKey = "jymaster",
+            fallbackDurationMs = 180_000L,
+            getLocalizedString = { it.toString() }
+        )
+
+        assertEquals("exhigh", audioInfo.qualityKey)
+        assertEquals(R.string.quality_very_high.toString(), audioInfo.qualityLabel)
+        assertEquals("MP3", audioInfo.codecLabel)
+        assertEquals(320, audioInfo.bitrateKbps)
+    }
+
+    @Test
+    fun buildNeteasePlaybackAudioInfo_conservativelyLabelsUnknownMp3AsStandard() {
+        val audioInfo = buildNeteasePlaybackAudioInfo(
+            parsed = NeteasePlaybackResponseParser.PlaybackResult.Success(
+                url = "https://m701.music.126.net/track.mp3",
+                type = "mp3"
+            ),
+            resolvedQualityKey = "jymaster",
+            fallbackDurationMs = 180_000L,
+            getLocalizedString = { it.toString() }
+        )
+
+        assertEquals("standard", audioInfo.qualityKey)
+        assertEquals(R.string.quality_standard.toString(), audioInfo.qualityLabel)
+    }
+
+    @Test
+    fun inferBiliQualityKey_detectsLosslessTagsAndFlacStreams() {
+        val taggedLossless = BiliAudioStreamInfo(
+            id = 30280,
+            mimeType = "audio/mp4",
+            bitrateKbps = 320,
+            qualityTag = "lossless",
+            url = "https://upos-sz-mirror.bilivideo.com/lossless.m4a"
+        )
+        val flac = BiliAudioStreamInfo(
+            id = 30251,
+            mimeType = "audio/flac; codecs=\"flac\"",
+            bitrateKbps = 900,
+            qualityTag = null,
+            url = "https://upos-sz-mirror.bilivideo.com/lossless.flac"
+        )
+
+        assertEquals("lossless", inferBiliQualityKey(taggedLossless))
+        assertEquals("lossless", inferBiliQualityKey(flac))
+    }
+
+    @Test
+    fun shouldRetryNeteaseWithLowerQualityAfterLogin_onlyRetriesBeforeLastTier() {
+        assertTrue(shouldRetryNeteaseWithLowerQualityAfterLogin(0, 3))
+        assertTrue(shouldRetryNeteaseWithLowerQualityAfterLogin(1, 3))
+        assertTrue(shouldRetryNeteaseWithLowerQualityAfterLogin(2, 3))
+        assertTrue(!shouldRetryNeteaseWithLowerQualityAfterLogin(3, 3))
+        assertTrue(!shouldRetryNeteaseWithLowerQualityAfterLogin(-1, 3))
     }
 }

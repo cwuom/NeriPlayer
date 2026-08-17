@@ -215,6 +215,7 @@ fun LyricsScreen(
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
     val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsState()
+    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsState()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsState()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
@@ -748,8 +749,10 @@ fun LyricsScreen(
                     PlaybackControlIndicator(
                         isPlaying = isPlaybackControlPlaying,
                         isPlaybackWaiting = isPlaybackWaiting,
+                        isAudioRouteMuted = isAudioRouteMuted,
                         playContentDescription = stringResource(R.string.lyrics_play),
                         pauseContentDescription = stringResource(R.string.lyrics_pause),
+                        restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
                         waitingContentDescription = stringResource(R.string.player_waiting),
                         modifier = Modifier.size(primaryControlIconSize),
                         progressIndicatorSize = primaryControlIconSize
@@ -983,6 +986,7 @@ fun LyricsScreen(
                     displayedQueueItems = displayedQueueItems,
                     currentIndexInDisplay = currentIndexInDisplay,
                     offlineMode = offlineMode,
+                    allowQueueReorder = progressSeekEnabled,
                     onDismissRequest = { showQueueSheet = false },
                     onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                 )

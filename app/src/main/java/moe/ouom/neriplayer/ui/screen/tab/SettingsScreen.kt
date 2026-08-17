@@ -65,6 +65,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.MeetingRoom
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Search
@@ -158,7 +159,9 @@ import moe.ouom.neriplayer.data.storage.StorageUsageSummary
 import moe.ouom.neriplayer.data.storage.analyzeStorageUsage
 import moe.ouom.neriplayer.listentogether.invite.configuredListenTogetherBaseUrlOrNull
 import moe.ouom.neriplayer.listentogether.invite.isDefaultListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.invite.parseListenTogetherInvite
 import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherBaseUrl
+import moe.ouom.neriplayer.listentogether.invite.resolveListenTogetherInviteJoinBaseUrl
 import moe.ouom.neriplayer.listentogether.validation.validateListenTogetherNickname
 import moe.ouom.neriplayer.ui.component.settings.LanguageSettingItem
 import moe.ouom.neriplayer.util.platform.LanguageManager
@@ -592,6 +595,7 @@ fun SettingsScreen(
     val listenTogetherApi = remember { AppContainer.listenTogetherApi }
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsState()
+    val listenTogetherWorkerBaseUrl by listenTogetherPreferences.workerBaseUrlFlow.collectAsState(initial = "")
     val listenTogetherWorkerBaseUrlInput by listenTogetherPreferences.workerBaseUrlInputFlow.collectAsState(initial = "")
     val listenTogetherNickname by listenTogetherPreferences.nicknameFlow.collectAsState(initial = "")
     var pendingBackgroundImageBlur by rememberSaveable(backgroundImageUri) {
@@ -677,9 +681,13 @@ fun SettingsScreen(
     var showListenTogetherResetUuidDialog by remember { mutableStateOf(false) }
     var showListenTogetherServerDialog by remember { mutableStateOf(false) }
     var showListenTogetherNicknameDialog by remember { mutableStateOf(false) }
+    var showListenTogetherJoinDialog by remember { mutableStateOf(false) }
     var listenTogetherServerInput by rememberSaveable { mutableStateOf("") }
     var listenTogetherNicknameInput by rememberSaveable { mutableStateOf("") }
     var listenTogetherNicknameError by remember { mutableStateOf<String?>(null) }
+    var listenTogetherInviteInput by remember { mutableStateOf("") }
+    var listenTogetherInviteError by remember { mutableStateOf<String?>(null) }
+    var listenTogetherJoining by remember { mutableStateOf(false) }
     var listenTogetherServerTesting by remember { mutableStateOf(false) }
     var listenTogetherServerTestMessage by remember { mutableStateOf<String?>(null) }
     // ------------------------------------
@@ -2138,6 +2146,23 @@ fun SettingsScreen(
                                 ) == true,
                             isInRoom = !listenTogetherSessionState.roomId.isNullOrBlank(),
                             nickname = listenTogetherNickname,
+                            onOpenJoinRoomDialog = {
+                                if (listenTogetherSessionState.roomId.isNullOrBlank()) {
+                                    val clipboardText = runCatching {
+                                        context.getSystemService(ClipboardManager::class.java)
+                                            ?.primaryClip
+                                            ?.takeIf { it.itemCount > 0 }
+                                            ?.getItemAt(0)
+                                            ?.coerceToText(context)
+                                            ?.toString()
+                                    }.getOrNull()
+                                    listenTogetherInviteInput = clipboardText
+                                        ?.takeIf { parseListenTogetherInvite(it) != null }
+                                        .orEmpty()
+                                    listenTogetherInviteError = null
+                                    showListenTogetherJoinDialog = true
+                                }
+                            },
                             onOpenServerDialog = {
                                 listenTogetherServerTestMessage = null
                                 showListenTogetherServerDialog = true
@@ -2391,6 +2416,136 @@ fun SettingsScreen(
                         listenTogetherNicknameInput = listenTogetherNickname
                         listenTogetherNicknameError = null
                     }
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+    if (showListenTogetherJoinDialog) {
+        MiuixSettingsDialog(
+            onDismissRequest = {
+                if (!listenTogetherJoining) {
+                    showListenTogetherJoinDialog = false
+                    listenTogetherInviteInput = ""
+                    listenTogetherInviteError = null
+                }
+            },
+            title = { Text(stringResource(R.string.listen_together_join_room)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.settings_listen_together_join_room_desc))
+                    MiuixSettingsTextField(
+                        value = listenTogetherInviteInput,
+                        onValueChange = {
+                            listenTogetherInviteInput = it
+                            listenTogetherInviteError = null
+                        },
+                        enabled = !listenTogetherJoining,
+                        minLines = 2,
+                        maxLines = 5,
+                        label = {
+                            Text(
+                                stringResource(
+                                    R.string.settings_listen_together_join_invite_input_label
+                                )
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                stringResource(
+                                    R.string.settings_listen_together_join_invite_input_placeholder
+                                )
+                            )
+                        }
+                    )
+                    listenTogetherInviteError?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    if (listenTogetherJoining) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = stringResource(R.string.listen_together_joining_room),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                MiuixSettingsTextButton(
+                    onClick = {
+                        if (listenTogetherJoining) {
+                            return@MiuixSettingsTextButton
+                        }
+                        val invite = parseListenTogetherInvite(listenTogetherInviteInput)
+                        if (invite == null) {
+                            listenTogetherInviteError = composeResources.getString(
+                                R.string.settings_listen_together_join_invite_invalid
+                            )
+                            return@MiuixSettingsTextButton
+                        }
+                        if (!listenTogetherSessionState.roomId.isNullOrBlank()) {
+                            listenTogetherInviteError = composeResources.getString(
+                                R.string.settings_listen_together_join_room_disabled
+                            )
+                            return@MiuixSettingsTextButton
+                        }
+                        scope.launch {
+                            listenTogetherJoining = true
+                            listenTogetherInviteError = null
+                            runCatching {
+                                val joinBaseUrl = resolveListenTogetherInviteJoinBaseUrl(
+                                    invite = invite,
+                                    savedBaseUrlInput = listenTogetherWorkerBaseUrlInput,
+                                    savedBaseUrl = listenTogetherWorkerBaseUrl
+                                )
+                                listenTogetherSessionManager.joinRoom(
+                                    baseUrl = joinBaseUrl,
+                                    roomId = invite.roomId,
+                                    userUuid = listenTogetherPreferences.getOrCreateUserUuid(),
+                                    nickname = listenTogetherPreferences.getOrCreateNickname(),
+                                    joinSecret = invite.joinSecret
+                                )
+                                listenTogetherSessionManager.connectWebSocket()
+                            }.onSuccess {
+                                showListenTogetherJoinDialog = false
+                                listenTogetherInviteInput = ""
+                            }.onFailure { error ->
+                                listenTogetherInviteError = error.message ?: error.javaClass.simpleName
+                            }
+                            listenTogetherJoining = false
+                        }
+                    },
+                    enabled = !listenTogetherJoining
+                ) {
+                    Text(
+                        stringResource(
+                            if (listenTogetherJoining) {
+                                R.string.listen_together_joining_room
+                            } else {
+                                R.string.listen_together_join_room
+                            }
+                        )
+                    )
+                }
+            },
+            dismissButton = {
+                MiuixSettingsTextButton(
+                    onClick = {
+                        showListenTogetherJoinDialog = false
+                        listenTogetherInviteInput = ""
+                        listenTogetherInviteError = null
+                    },
+                    enabled = !listenTogetherJoining
                 ) {
                     Text(stringResource(R.string.action_cancel))
                 }
@@ -3854,10 +4009,16 @@ private fun ListenTogetherSettingsSection(
     isUsingDefaultServer: Boolean,
     isInRoom: Boolean,
     nickname: String,
+    onOpenJoinRoomDialog: () -> Unit,
     onOpenServerDialog: () -> Unit,
     onResetIdentity: () -> Unit,
     onOpenNicknameDialog: () -> Unit
 ) {
+    val joinRoomItemModifier = if (isInRoom) {
+        Modifier.alpha(0.5f)
+    } else {
+        Modifier.settingsItemClickable(onClick = onOpenJoinRoomDialog)
+    }
     val identityItemModifier = if (isInRoom) {
         Modifier.alpha(0.5f)
     } else {
@@ -3872,6 +4033,29 @@ private fun ListenTogetherSettingsSection(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        ListItem(
+            modifier = joinRoomItemModifier,
+            leadingContent = {
+                Icon(
+                    imageVector = Icons.Outlined.MeetingRoom,
+                    contentDescription = stringResource(R.string.listen_together_join_room),
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            headlineContent = { Text(stringResource(R.string.listen_together_join_room)) },
+            supportingContent = {
+                Text(
+                    if (isInRoom) {
+                        stringResource(R.string.settings_listen_together_join_room_disabled)
+                    } else {
+                        stringResource(R.string.settings_listen_together_join_room_desc)
+                    }
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+
         ListItem(
             modifier = Modifier.settingsItemClickable(onClick = onOpenServerDialog),
             leadingContent = {

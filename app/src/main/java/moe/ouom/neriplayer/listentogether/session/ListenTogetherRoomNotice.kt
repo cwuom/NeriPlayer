@@ -6,11 +6,26 @@ import java.util.concurrent.TimeUnit
 
 private const val DEFAULT_CONTROLLER_GRACE_PERIOD_MS = 10 * 60 * 1000L
 
+internal fun normalizeListenTogetherRoomClosureReason(reason: String?): String? {
+    val normalizedReason = reason?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return when {
+        normalizedReason.equals("controller_left", ignoreCase = true) -> "controller_left"
+        normalizedReason.equals("controller_timeout", ignoreCase = true) -> "controller_timeout"
+        normalizedReason.equals("room_closed", ignoreCase = true) -> "room_closed"
+        else -> normalizedReason
+    }
+}
+
+internal fun isNormalListenTogetherRoomClosureReason(reason: String?): Boolean {
+    return normalizeListenTogetherRoomClosureReason(reason) == "controller_left"
+}
+
 internal fun resolveListenTogetherRoomNotice(
     state: ListenTogetherRoomState?,
     fallbackMessage: String? = null,
     nowMs: Long = System.currentTimeMillis(),
-    controllerGracePeriodMs: Long = DEFAULT_CONTROLLER_GRACE_PERIOD_MS
+    controllerGracePeriodMs: Long = DEFAULT_CONTROLLER_GRACE_PERIOD_MS,
+    showControllerReconnected: Boolean = false
 ): String? {
     state ?: return fallbackMessage
     return when (state.roomStatus) {
@@ -22,7 +37,22 @@ internal fun resolveListenTogetherRoomNotice(
             "controller_offline:${remainingMinutes + 1}"
         }
 
-        ListenTogetherRoomStatuses.CLOSED -> fallbackMessage ?: state.closedReason ?: "room_closed"
-        else -> fallbackMessage
+        ListenTogetherRoomStatuses.CLOSED -> {
+            state.closedReason
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: fallbackMessage
+                ?: "room_closed"
+        }
+        else -> fallbackMessage?.takeUnless {
+            it.equals("controller_reconnected", ignoreCase = true) && !showControllerReconnected
+        }
     }
+}
+
+internal fun shouldShowListenTogetherControllerReconnectedNotice(
+    isCurrentUserController: Boolean,
+    observedControllerOffline: Boolean
+): Boolean {
+    return !isCurrentUserController && observedControllerOffline
 }

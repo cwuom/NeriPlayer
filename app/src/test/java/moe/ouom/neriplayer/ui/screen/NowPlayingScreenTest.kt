@@ -698,6 +698,47 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `queue reordering requires selection and listener control permission`() {
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = false,
+                allowQueueReorder = true
+            )
+        )
+
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = false,
+                allowQueueReorder = true
+            )
+        )
+    }
+
+    @Test
     fun `artist navigation ignores matched netease metadata for non netease songs`() {
         val biliSong = testSong(id = 6L, name = "Bili song").copy(
             album = "Bilibili|123",

@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.ui.component.playback
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,6 +75,30 @@ class PlaybackControlIndicatorTest {
                 playContentDescription = "播放",
                 pauseContentDescription = "暂停",
                 waitingContentDescription = "等待中"
+            )
+        )
+    }
+
+    @Test
+    fun `muted route reports restore volume before other playback states`() {
+        assertEquals(
+            "恢复音量",
+            resolvePlaybackControlContentDescription(
+                isPlaying = true,
+                isPlaybackWaiting = true,
+                isAudioRouteMuted = true,
+                playContentDescription = "播放",
+                pauseContentDescription = "暂停",
+                waitingContentDescription = "等待中",
+                restoreVolumeContentDescription = "恢复音量"
+            )
+        )
+        assertEquals(
+            PlaybackControlVisualState.RESTORE_VOLUME,
+            resolvePlaybackControlVisualState(
+                isPlaying = true,
+                isPlaybackWaiting = true,
+                isAudioRouteMuted = true
             )
         )
     }

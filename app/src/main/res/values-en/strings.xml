@@ -124,6 +124,7 @@
     <!-- Player Controls -->
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
+    <string name="player_restore_volume">Restore volume</string>
     <string name="player_waiting">Waiting for playback</string>
     <string name="player_previous">Previous</string>
     <string name="player_next">Next</string>
@@ -1891,6 +1892,7 @@
     <string name="listen_together_last_error">Last Error</string>
     <string name="listen_together_notice">Notice</string>
     <string name="listen_together_notice_controller_reconnected">Controller reconnected. Sync has resumed.</string>
+    <string name="listen_together_notice_controller_left">The controller left. The room has ended.</string>
     <string name="listen_together_notice_room_closed">Room closed because the controller did not return in time.</string>
     <string name="listen_together_same_room_join_ignored">You are already in room %1$s.</string>
     <string name="listen_together_create_and_connect">Create</string>
@@ -1899,8 +1901,6 @@
     <string name="listen_together_leave_room">Leave</string>
     <string name="listen_together_copy_invite">Copy Invite</string>
     <string name="listen_together_invite_copied">Invite copied</string>
-    <string name="listen_together_copy_join_secret">Copy Invite Secret</string>
-    <string name="listen_together_join_secret_copied">Invite secret copied</string>
     <string name="listen_together_clipboard_invite_missing">No valid Listen Together invite was found in the clipboard.</string>
     <string name="listen_together_invite_share_text">%1$s invites you to join room %2$s in NeriPlayer. Copy this invitation and open the app to join.</string>
     <string name="listen_together_creating_room">Creating room</string>
@@ -1975,6 +1975,11 @@
     <string name="listen_together_status_active">Listen Together active</string>
     <string name="listen_together_action_unavailable">This action is temporarily unavailable. Please try again.</string>
     <string name="settings_listen_together_expand">Configure the server address and unique identity</string>
+    <string name="settings_listen_together_join_room_desc">Paste or enter an invite to join a room.</string>
+    <string name="settings_listen_together_join_room_disabled">Leave the current room before joining another one.</string>
+    <string name="settings_listen_together_join_invite_input_label">Invite</string>
+    <string name="settings_listen_together_join_invite_input_placeholder">Paste an invite or invite link</string>
+    <string name="settings_listen_together_join_invite_invalid">Enter a valid Listen Together invite.</string>
     <string name="settings_listen_together_server_title">Listen Together Server</string>
     <string name="settings_listen_together_default_nickname_title">Default Nickname</string>
     <string name="settings_listen_together_default_nickname_input_label">Nickname</string>

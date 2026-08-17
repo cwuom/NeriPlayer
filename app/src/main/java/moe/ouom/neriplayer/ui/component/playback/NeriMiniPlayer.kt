@@ -281,7 +281,8 @@ fun NeriMiniPlayer(
     onExpand: () -> Unit,
     enableBlur: Boolean = true,
     offlineMode: Boolean = false,
-    isPlaybackWaiting: Boolean = false
+    isPlaybackWaiting: Boolean = false,
+    isAudioRouteMuted: Boolean = false
 ) {
     val shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
     val context = LocalContext.current
@@ -509,8 +510,10 @@ fun NeriMiniPlayer(
                     PlaybackControlIndicator(
                         isPlaying = isPlaying,
                         isPlaybackWaiting = isPlaybackWaiting,
+                        isAudioRouteMuted = isAudioRouteMuted,
                         playContentDescription = stringResource(R.string.lyrics_play),
                         pauseContentDescription = stringResource(R.string.lyrics_pause),
+                        restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
                         waitingContentDescription = stringResource(R.string.player_waiting),
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         progressIndicatorSize = 22.dp,

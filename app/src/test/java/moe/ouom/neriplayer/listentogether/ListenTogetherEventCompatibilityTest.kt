@@ -30,9 +30,16 @@ import moe.ouom.neriplayer.listentogether.playback.isListenTogetherSeekControlSa
 import moe.ouom.neriplayer.listentogether.playback.requestedStableKey
 import moe.ouom.neriplayer.listentogether.playback.sameTrackAs
 import moe.ouom.neriplayer.listentogether.playback.shouldApplyListenTogetherQueueUpdateWithoutReload
+import moe.ouom.neriplayer.listentogether.playback.toShareableQueueSnapshot
+import moe.ouom.neriplayer.listentogether.playback.toShareableShuffleRestoreQueueSnapshot
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherInitialSnapshot
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueMutation
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueOperation
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherQueueReference
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherPlaybackState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomSettings
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import org.junit.Assert.assertEquals
@@ -42,6 +49,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListenTogetherEventCompatibilityTest {
+
+    @Test
+    fun `initial shuffle restore queue survives protocol serialization`() {
+        val originalQueue = listOf(track("netease:1", "1"), track("netease:2", "2"))
+        val snapshot = ListenTogetherInitialSnapshot(
+            queue = originalQueue.reversed(),
+            currentIndex = 0,
+            shuffleEnabled = true,
+            shuffleRestoreQueue = originalQueue
+        )
+
+        val decoded = Json.decodeFromString<ListenTogetherInitialSnapshot>(
+            Json.encodeToString(snapshot)
+        )
+
+        assertEquals(originalQueue, decoded.shuffleRestoreQueue)
+    }
+
+    @Test
+    fun `shuffle restore snapshot keeps the active bounded queue in original order`() {
+        val originalQueue = listOf(
+            songItem(ListenTogetherChannels.NETEASE, "1"),
+            songItem(ListenTogetherChannels.NETEASE, "2"),
+            songItem(ListenTogetherChannels.NETEASE, "3")
+        )
+        val activeQueue = listOf(
+            track("netease:2", "2"),
+            track("netease:3", "3")
+        )
+
+        val snapshot = originalQueue.toShareableShuffleRestoreQueueSnapshot(activeQueue)
+
+        assertEquals(listOf("netease:2", "netease:3"), snapshot.map { it.stableKey })
+    }
 
     @Test
     fun `unsupported track finished error is detected for legacy workers`() {
@@ -264,6 +305,24 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
+    fun `queue snapshot excludes raw track urls until a verified stream is resolved`() {
+        val rawPreviewUrl = "https://m701.music.126.net/preview.mp3"
+        val source = songItem(ListenTogetherChannels.NETEASE, "1").copy(
+            streamUrl = rawPreviewUrl
+        )
+
+        val (snapshot, currentIndex) = listOf(source).toShareableQueueSnapshot(
+            currentIndex = 0,
+            roomSettings = ListenTogetherRoomSettings(shareAudioLinks = true),
+            resolvedCurrentStreamUrls = emptyList()
+        )
+
+        assertEquals(0, currentIndex)
+        assertNull(snapshot.single().streamUrl)
+        assertTrue(snapshot.single().streamUrls.isEmpty())
+    }
+
+    @Test
     fun `inbound shared stream candidates do not overwrite listener resolver input`() {
         val primary = "https://m701.music.126.net/primary.mp3"
         val backup = "https://m702.music.126.net/backup.mp3"
@@ -369,7 +428,7 @@ class ListenTogetherEventCompatibilityTest {
     }
 
     @Test
-    fun `room current stable key prefers explicit track over queue`() {
+    fun `room current stable key prefers current queue item over stale track`() {
         val state = ListenTogetherRoomState(
             roomId = "ABC234",
             version = 1L,
@@ -381,7 +440,7 @@ class ListenTogetherEventCompatibilityTest {
             )
         )
 
-        assertEquals("netease:explicit", state.currentStableKey())
+        assertEquals("netease:queue", state.currentStableKey())
     }
 
     @Test
@@ -389,6 +448,21 @@ class ListenTogetherEventCompatibilityTest {
         val event = ListenTogetherEvent(
             type = "REQUEST_SEEK",
             currentIndex = 1,
+            queue = listOf(
+                track("netease:0", "0"),
+                track("netease:target", "target")
+            )
+        )
+
+        assertEquals("netease:target", event.requestedStableKey())
+    }
+
+    @Test
+    fun `event requested stable key ignores stale explicit track when queue is indexed`() {
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SEEK",
+            currentIndex = 1,
+            track = track("netease:stale", "stale"),
             queue = listOf(
                 track("netease:0", "0"),
                 track("netease:target", "target")
@@ -490,6 +564,71 @@ class ListenTogetherEventCompatibilityTest {
                 currentQueue = originalQueue,
                 currentSong = duplicateA,
                 incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `playback mode reorder updates the queue without reloading the current song`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val originalQueue = listOf(first, current, last)
+        val reorderedQueue = listOf(current, last, first)
+
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+        assertTrue(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = reorderedQueue,
+                incomingCurrentIndex = 0
+            )
+        )
+    }
+
+    @Test
+    fun `playback mode update cannot add remove or switch the current song`() {
+        val first = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "1")
+        val current = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "2")
+        val last = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "3")
+        val added = songItem(channelId = ListenTogetherChannels.NETEASE, audioId = "4")
+        val originalQueue = listOf(first, current, last)
+
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(current, last, added, first),
+                incomingCurrentIndex = 0
+            )
+        )
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "REQUEST_PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(current, last),
+                incomingCurrentIndex = 0
+            )
+        )
+        assertFalse(
+            shouldApplyListenTogetherQueueUpdateWithoutReload(
+                causeType = "PLAYBACK_MODE",
+                currentQueue = originalQueue,
+                currentSong = current,
+                incomingQueue = listOf(first, current, last),
                 incomingCurrentIndex = 0
             )
         )
@@ -756,6 +895,199 @@ class ListenTogetherEventCompatibilityTest {
                     track = track("netease:1", "1"),
                     queue = listOf(track("netease:1", "1"))
                 )
+            )
+        )
+    }
+
+    @Test
+    fun `pending track control uses the same clamped queue index as playback`() {
+        val first = track("netease:1", "1")
+        val staleTrack = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_TRACK",
+            track = first
+        )
+        val malformedState = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 2L,
+            currentIndex = -1,
+            track = staleTrack,
+            queue = listOf(first, staleTrack)
+        )
+
+        assertTrue(isListenTogetherPendingMemberControlSatisfied(event, malformedState))
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event.copy(track = staleTrack),
+                malformedState
+            )
+        )
+    }
+
+    @Test
+    fun `member queue mutation is not satisfied by an unrelated newer room version`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            eventId = "request-reorder",
+            track = current,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 1,
+            queue = listOf(first, current)
+        )
+
+        assertFalse(isListenTogetherPendingMemberControlSatisfied(event, committed))
+    }
+
+    @Test
+    fun `member queue mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val current = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_QUEUE",
+            eventId = "request-reorder",
+            track = current,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(current, first)
+        )
+
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "other-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-reorder"
+            )
+        )
+    }
+
+    @Test
+    fun `member track mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val selected = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_SET_TRACK",
+            eventId = "request-track-mutation",
+            track = selected,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(selected, first)
+        )
+
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "another-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-track-mutation"
+            )
+        )
+    }
+
+    @Test
+    fun `member playback mode mutation is satisfied only by its causal event id`() {
+        val first = track("netease:1", "1")
+        val selected = track("netease:2", "2")
+        val event = ListenTogetherEvent(
+            type = "REQUEST_PLAYBACK_MODE",
+            eventId = "request-mode-mutation",
+            repeatMode = 1,
+            shuffleEnabled = true,
+            queueMutation = ListenTogetherQueueMutation(
+                baseRoomVersion = 4L,
+                operations = listOf(
+                    ListenTogetherQueueOperation(
+                        type = "move",
+                        target = ListenTogetherQueueReference("netease:2", 0),
+                        anchor = ListenTogetherQueueReference("netease:1", 0),
+                        placement = "before"
+                    )
+                ),
+                targetCurrent = ListenTogetherQueueReference("netease:2", 0)
+            )
+        )
+        val committed = ListenTogetherRoomState(
+            roomId = "ABC234",
+            version = 5L,
+            currentIndex = 0,
+            queue = listOf(selected, first),
+            playback = ListenTogetherPlaybackState(
+                repeatMode = 1,
+                shuffleEnabled = true
+            )
+        )
+
+        assertFalse(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "another-request"
+            )
+        )
+        assertTrue(
+            isListenTogetherPendingMemberControlSatisfied(
+                event = event,
+                state = committed,
+                committedEventId = "request-mode-mutation"
             )
         )
     }

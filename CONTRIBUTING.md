@@ -55,7 +55,7 @@
 - **compileSdk / targetSdk / minSdk**：37 / 36 / 28
 - **NDK**：`27.0.12077973`
 - **CMake**：`3.28.0+`
-- **Node.js**：20，用于一起听 Worker 检查
+- **Node.js**：22，用于一起听 Worker 检查
 - **版本名格式**：`<git短哈希>.<MMddHHmm>`
 - **Release APK 文件名**：`NeriPlayer-<versionName>[-abi].apk`
 

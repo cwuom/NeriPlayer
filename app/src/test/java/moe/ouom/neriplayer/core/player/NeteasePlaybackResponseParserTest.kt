@@ -146,4 +146,29 @@ class NeteasePlaybackResponseParserTest {
             (result as NeteasePlaybackResponseParser.PlaybackResult.Failure).reason
         )
     }
+
+    @Test
+    fun parsePlayback_readsServerReportedLevelAndBitrate() {
+        val raw = """
+            {
+              "code": 200,
+              "data": [{
+                "url": "https://m701.music.126.net/full.mp3",
+                "type": "mp3",
+                "level": "exhigh",
+                "br": 320000,
+                "size": 7200000
+              }]
+            }
+        """.trimIndent()
+
+        val result = NeteasePlaybackResponseParser.parsePlayback(
+            raw,
+            originalDurationMs = 180_000L
+        ) as NeteasePlaybackResponseParser.PlaybackResult.Success
+
+        assertEquals("exhigh", result.level)
+        assertEquals(320, result.bitrateKbps)
+        assertEquals(7_200_000L, result.contentLength)
+    }
 }

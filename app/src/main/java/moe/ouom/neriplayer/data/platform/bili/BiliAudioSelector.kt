@@ -92,19 +92,30 @@ private fun regularQualityUpperBoundExclusive(quality: BiliQuality): Int = when 
     else -> Int.MAX_VALUE
 }
 
+private fun BiliAudioStreamInfo.normalizedQualityTag(): String? {
+    return qualityTag
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotBlank() }
+}
+
 private fun matchesRegularQuality(
     stream: BiliAudioStreamInfo,
     quality: BiliQuality
 ): Boolean {
-    if (stream.qualityTag != null) return false
+    if (stream.normalizedQualityTag() != null) return false
     val upperBoundExclusive = regularQualityUpperBoundExclusive(quality)
     return stream.bitrateKbps >= quality.minBitrateKbps &&
         stream.bitrateKbps < upperBoundExclusive
 }
 
 private fun isLosslessLikeStream(stream: BiliAudioStreamInfo): Boolean {
-    if (stream.qualityTag == "lossless" || stream.qualityTag == "hires") return true
-    val mimeType = stream.mimeType.trim().lowercase()
+    val qualityTag = stream.normalizedQualityTag()
+    if (qualityTag == "lossless" || qualityTag == "hires") return true
+    val mimeType = stream.mimeType
+        .substringBefore(';')
+        .trim()
+        .lowercase()
     return mimeType == "audio/flac" || mimeType == "audio/x-flac"
 }
 
@@ -120,7 +131,7 @@ enum class BiliQuality(val key: String, val minBitrateKbps: Int) {
         private val order = listOf(DOLBY, HIRES, LOSSLESS, HIGH, MEDIUM, LOW)
 
         fun fromKey(key: String): BiliQuality =
-            order.find { it.key == key } ?: HIGH
+            order.find { it.key == key.trim().lowercase() } ?: HIGH
 
         /** 返回从当前到更低的一条降级链 */
         fun degradeChain(from: BiliQuality): List<BiliQuality> {
@@ -139,18 +150,18 @@ fun selectStreamByPreference(
     val pref = BiliQuality.fromKey(preferredKey)
 
     val regularSorted = available
-        .filter { it.qualityTag == null }
+        .filter { it.normalizedQualityTag() == null }
         .sortedByDescending { it.bitrateKbps }
     val taggedSorted = available
-        .filter { it.qualityTag != null }
+        .filter { it.normalizedQualityTag() != null }
         .sortedByDescending { it.bitrateKbps }
     val sorted = (regularSorted + taggedSorted).distinctBy { it.url }
 
     when (pref) {
         BiliQuality.DOLBY ->
-            sorted.firstOrNull { it.qualityTag == "dolby" }?.let { return it }
+            sorted.firstOrNull { it.normalizedQualityTag() == "dolby" }?.let { return it }
         BiliQuality.HIRES ->
-            sorted.firstOrNull { it.qualityTag == "hires" }?.let { return it }
+            sorted.firstOrNull { it.normalizedQualityTag() == "hires" }?.let { return it }
         BiliQuality.LOSSLESS ->
             sorted.firstOrNull(::isLosslessLikeStream)?.let { return it }
         else -> Unit
@@ -158,8 +169,8 @@ fun selectStreamByPreference(
 
     for (q in BiliQuality.degradeChain(pref)) {
         val hit = when (q) {
-            BiliQuality.DOLBY   -> sorted.firstOrNull { it.qualityTag == "dolby" }
-            BiliQuality.HIRES   -> sorted.firstOrNull { it.qualityTag == "hires" }
+            BiliQuality.DOLBY   -> sorted.firstOrNull { it.normalizedQualityTag() == "dolby" }
+            BiliQuality.HIRES   -> sorted.firstOrNull { it.normalizedQualityTag() == "hires" }
             BiliQuality.LOSSLESS ->
                 sorted.firstOrNull(::isLosslessLikeStream)
                     ?: regularSorted.firstOrNull { matchesRegularQuality(it, q) }

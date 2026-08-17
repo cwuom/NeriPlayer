@@ -701,6 +701,23 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
         ),
         entry(
             page = SettingsPage.ListenTogether,
+            titleRes = R.string.listen_together_join_room,
+            descriptionRes = R.string.settings_listen_together_join_room_desc,
+            id = "listen_together_join_room",
+            aliases = listOf(
+                "listen together",
+                "lt",
+                "join",
+                "invite",
+                "room",
+                "link",
+                "jiaru",
+                "yaoqing",
+                "yiqiting"
+            )
+        ),
+        entry(
+            page = SettingsPage.ListenTogether,
             titleRes = R.string.settings_listen_together_server_title,
             descriptionRes = R.string.settings_listen_together_expand,
             id = "listen_together_server",

@@ -4,6 +4,7 @@ import android.media.AudioDeviceInfo
 
 internal fun isBluetoothOutputType(type: Int): Boolean {
     return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
         (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
             (type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
                 type == AudioDeviceInfo.TYPE_BLE_SPEAKER))

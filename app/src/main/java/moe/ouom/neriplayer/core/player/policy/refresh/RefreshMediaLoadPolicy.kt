@@ -181,10 +181,12 @@ internal fun resolveRefreshedMediaStartPosition(
     requestedResumePositionMs: Long,
     observedPlaybackPositionMs: Long,
     requestedPositionGeneration: Long,
-    currentPositionGeneration: Long
+    currentPositionGeneration: Long,
+    observedPositionBelongsToRequestedMedia: Boolean = true
 ): Long {
     pendingSeekPositionMs?.let { return it.coerceAtLeast(0L) }
     val requestedPosition = requestedResumePositionMs.coerceAtLeast(0L)
+    if (!observedPositionBelongsToRequestedMedia) return requestedPosition
     val observedPosition = observedPlaybackPositionMs.coerceAtLeast(0L)
     return if (requestedPositionGeneration == currentPositionGeneration) {
         maxOf(requestedPosition, observedPosition)

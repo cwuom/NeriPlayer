@@ -11,7 +11,8 @@ data class ListenTogetherInitialSnapshot(
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val repeatMode: Int = 0,
-    val shuffleEnabled: Boolean = false
+    val shuffleEnabled: Boolean = false,
+    val shuffleRestoreQueue: List<ListenTogetherTrack>? = null
 )
 
 @Serializable

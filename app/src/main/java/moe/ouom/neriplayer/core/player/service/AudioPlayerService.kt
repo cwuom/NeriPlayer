@@ -96,6 +96,7 @@ import moe.ouom.neriplayer.core.player.metadata.shouldUseExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.persistence.persistStateNow
 import moe.ouom.neriplayer.core.player.persistence.preloadRestoredStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
+import moe.ouom.neriplayer.core.player.playback.suppressPlaybackForAudioRouteLoss
 import moe.ouom.neriplayer.core.player.policy.usb.shouldRunUsbExclusiveBackgroundAudioAnchor
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveKeepAliveProgress
 import moe.ouom.neriplayer.core.player.policy.usb.evaluateUsbExclusiveKeepAliveProgress
@@ -121,6 +122,7 @@ import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
 import moe.ouom.neriplayer.data.settings.readPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.playback.currentTrack
 import moe.ouom.neriplayer.listentogether.playback.expectedPositionMs
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import moe.ouom.neriplayer.util.media.IsLandHelp
@@ -169,12 +171,13 @@ private data class UsbExclusiveNativeServiceSignal(
     val lastError: String?
 )
 
-private data class PlaybackNotificationSnapshot(
+internal data class PlaybackNotificationSnapshot(
     val songKey: String?,
     val title: String,
     val text: String,
     val isTransportActive: Boolean,
     val isPlaybackControlPlaying: Boolean,
+    val isAudioRouteMuted: Boolean,
     val isFavorite: Boolean,
     val requiresInteractiveFavoriteConfirmation: Boolean,
     val largeIconReady: Boolean,
@@ -353,6 +356,7 @@ internal fun isSupportedPlaybackWidgetAction(action: String): Boolean {
     return when (action) {
         AudioPlayerService.ACTION_PLAY,
         AudioPlayerService.ACTION_PAUSE,
+        AudioPlayerService.ACTION_RESTORE_VOLUME,
         AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE,
         AudioPlayerService.ACTION_NEXT,
         AudioPlayerService.ACTION_PREV,
@@ -537,6 +541,7 @@ class AudioPlayerService : Service() {
     companion object {
         const val ACTION_PLAY = "moe.ouom.neriplayer.action.PLAY"
         const val ACTION_PAUSE = "moe.ouom.neriplayer.action.PAUSE"
+        const val ACTION_RESTORE_VOLUME = "moe.ouom.neriplayer.action.RESTORE_VOLUME"
         const val ACTION_TOGGLE_PLAY_PAUSE =
             "moe.ouom.neriplayer.action.TOGGLE_PLAY_PAUSE"
         const val ACTION_STOP = "moe.ouom.neriplayer.action.STOP"
@@ -1103,7 +1108,11 @@ class AudioPlayerService : Service() {
         override fun onPlay() {
             runWhenPlayerRuntimeReady("media_session_play") {
                 keepPlayerRuntimeAfterServiceStop = false
-                PlayerManager.play()
+                if (PlayerManager.audioRouteMuteSuppressedFlow.value) {
+                    PlayerManager.restoreAudioRouteMute()
+                } else {
+                    PlayerManager.play()
+                }
                 updateAll()
                 refreshIdleShutdown("media_session_play")
             }
@@ -1488,6 +1497,11 @@ class AudioPlayerService : Service() {
             }
         }
         serviceScope.launch {
+            PlayerManager.audioRouteMuteSuppressedFlow.collectSafely("audioRouteMuteSuppressedFlow") {
+                updateNotification()
+            }
+        }
+        serviceScope.launch {
             PlayerManager.playWhenReadyFlow.collectSafely("playWhenReadyFlow") {
                 updatePlaybackState()
                 updateNotification()
@@ -1604,6 +1618,11 @@ class AudioPlayerService : Service() {
                             "active USB audio device detached id=${detachedDevice?.deviceId} " +
                                 "name=${detachedDevice?.deviceName}"
                         )
+                        if (PlayerManager.shouldMuteListenTogetherListenerForAudioRouteLoss()) {
+                            PlayerManager.suppressPlaybackForAudioRouteLoss(
+                                reason = "listen_together_usb_output_disconnect"
+                            )
+                        }
                         StartupAudioFocusController.forceRelease("usb_device_detached")
                         PlayerManager.stopPlaybackAfterUsbExclusiveNativeFailure(
                             "usb_device_detached"
@@ -1750,6 +1769,10 @@ class AudioPlayerService : Service() {
         dispatchMediaButtonIntent(intent)
 
         when (action) {
+            ACTION_RESTORE_VOLUME -> {
+                PlayerManager.restoreAudioRouteMute()
+                updateAll()
+            }
             ACTION_PLAY -> {
                 val songList = IntentCompat.getParcelableArrayListExtra(
                     intent,
@@ -1760,7 +1783,11 @@ class AudioPlayerService : Service() {
                 if (!songList.isNullOrEmpty()) {
                     PlayerManager.playPlaylist(songList, startIndex)
                 } else if (PlayerManager.hasItems()) {
-                    PlayerManager.play()
+                    if (PlayerManager.audioRouteMuteSuppressedFlow.value) {
+                        PlayerManager.restoreAudioRouteMute()
+                    } else {
+                        PlayerManager.play()
+                    }
                 }
                 updateAll()
             }
@@ -1886,6 +1913,7 @@ class AudioPlayerService : Service() {
 
     private fun buildNotification(): Notification {
         val isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value
+        val isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value
         val song = playbackSurfaceSong()
 
         val contentIntent = PendingIntent.getActivity(
@@ -1898,6 +1926,7 @@ class AudioPlayerService : Service() {
         val prevIntent  = servicePendingIntent(ACTION_PREV, 1)
         val playIntent  = servicePendingIntent(ACTION_PLAY, 2)
         val pauseIntent = servicePendingIntent(ACTION_PAUSE, 3)
+        val restoreVolumeIntent = servicePendingIntent(ACTION_RESTORE_VOLUME, 8)
         val nextIntent  = servicePendingIntent(ACTION_NEXT, 4)
         val toggleFavIntent = servicePendingIntent(ACTION_TOGGLE_FAV, 6)
         val toggleFloatingLyricsIntent = servicePendingIntent(ACTION_TOGGLE_FLOATING_LYRICS, 7)
@@ -1941,17 +1970,21 @@ class AudioPlayerService : Service() {
         )
         builder.addAction(
             mediaNotificationAction(
-                iconRes = if (isPlaybackControlPlaying) {
-                    R.drawable.round_pause_24
-                } else {
-                    R.drawable.round_play_arrow_24
+                iconRes = when {
+                    isAudioRouteMuted -> R.drawable.round_volume_up_24
+                    isPlaybackControlPlaying -> R.drawable.round_pause_24
+                    else -> R.drawable.round_play_arrow_24
                 },
-                title = if (isPlaybackControlPlaying) {
-                    getString(R.string.player_pause)
-                } else {
-                    getString(R.string.player_play)
+                title = when {
+                    isAudioRouteMuted -> getString(R.string.player_restore_volume)
+                    isPlaybackControlPlaying -> getString(R.string.player_pause)
+                    else -> getString(R.string.player_play)
                 },
-                pendingIntent = if (isPlaybackControlPlaying) pauseIntent else playIntent
+                pendingIntent = when {
+                    isAudioRouteMuted -> restoreVolumeIntent
+                    isPlaybackControlPlaying -> pauseIntent
+                    else -> playIntent
+                }
             )
         )
         builder.addAction(favAction)
@@ -2217,6 +2250,7 @@ class AudioPlayerService : Service() {
             text = text,
             isTransportActive = PlayerManager.isTransportActive(),
             isPlaybackControlPlaying = PlayerManager.playbackControlPlayingFlow.value,
+            isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
             isFavorite = isFavoriteSong(song),
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
             largeIconReady = currentNotificationLargeIcon != null,
@@ -3032,7 +3066,7 @@ class AudioPlayerService : Service() {
 
     private fun listenTogetherRoomSong(): SongItem? {
         val room = AppContainer.listenTogetherSessionManager.roomState.value ?: return null
-        val track = room.track ?: room.queue.getOrNull(room.currentIndex)
+        val track = room.currentTrack()
         return track?.toSongItem()
     }
 
@@ -3084,7 +3118,7 @@ internal fun resolveListenTogetherMediaSessionPosition(
     roomState: ListenTogetherRoomState,
     nowMs: Long = System.currentTimeMillis()
 ): Long {
-    val activeTrack = roomState.track ?: roomState.queue.getOrNull(roomState.currentIndex)
+    val activeTrack = roomState.currentTrack()
     return roomState.playback.expectedPositionMs(
         nowMs = nowMs,
         durationMs = activeTrack?.durationMs ?: 0L

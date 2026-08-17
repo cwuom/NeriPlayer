@@ -5,22 +5,71 @@ import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
+import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
+import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun ListenTogetherRoomState.currentStableKey(): String? {
-    return track?.stableKey ?: queue.getOrNull(currentIndex)?.stableKey
+    return currentTrack()?.stableKey
+}
+
+internal fun ListenTogetherRoomState.currentTrack(): ListenTogetherTrack? {
+    return if (queue.isNotEmpty()) {
+        queue[currentIndex.coerceIn(0, queue.lastIndex)]
+    } else {
+        track
+    }
+}
+
+internal fun ListenTogetherRoomState.authoritativeStreamUrlForCurrentTrack(): String? {
+    return authoritativeStreamUrlsForCurrentTrack().firstOrNull()
+}
+
+internal fun ListenTogetherRoomState.authoritativeStreamUrlsForCurrentTrack(): List<String> {
+    val targetTrack = currentTrack() ?: return emptyList()
+    return sequenceOf(targetTrack, track)
+        .filterNotNull()
+        .filter { candidate -> candidate.stableKey == targetTrack.stableKey }
+        .flatMap { candidate ->
+            trustedListenTogetherStreamUrls(
+                channelId = candidate.channelId,
+                streamUrls = candidate.streamUrls,
+                legacyStreamUrl = candidate.streamUrl
+            ).asSequence()
+        }
+        .distinct()
+        .toList()
 }
 
 internal fun ListenTogetherEvent.requestedStableKey(): String? {
     return requestTrackStableKey
-        ?: track?.stableKey
         ?: queue?.getOrNull(currentIndex ?: -1)?.stableKey
+        ?: track?.stableKey
+}
+
+internal fun resolveListenTogetherQueueIndex(
+    queue: List<ListenTogetherTrack>,
+    requestedIndex: Int,
+    preferredStableKey: String?
+): Int {
+    if (queue.isEmpty()) return -1
+    val indexedPosition = requestedIndex.takeIf { it in queue.indices }
+    if (preferredStableKey.isNullOrBlank()) {
+        return indexedPosition ?: 0
+    }
+    if (indexedPosition != null && queue[indexedPosition].stableKey == preferredStableKey) {
+        return indexedPosition
+    }
+    return queue.indexOfFirst { it.stableKey == preferredStableKey }
+        .takeIf { it >= 0 }
+        ?: indexedPosition
+        ?: 0
 }
 
 internal fun ListenTogetherRoomState.targetSongItem(): SongItem? {
-    return (track ?: queue.getOrNull(currentIndex))?.toSongItem()
+    return currentTrack()?.toSongItem()
 }
 
 internal fun SongItem.sameTrackAs(other: SongItem): Boolean {
@@ -66,16 +115,26 @@ internal fun shouldApplyListenTogetherQueueUpdateWithoutReload(
 ): Boolean {
     if (!isListenTogetherQueueUpdateCause(causeType)) return false
     val incomingCurrentSong = incomingQueue.getOrNull(incomingCurrentIndex) ?: return false
-    return currentQueue.isNotEmpty() && currentSong?.sameTrackAs(incomingCurrentSong) == true
+    if (currentQueue.isEmpty() || currentSong?.sameTrackAs(incomingCurrentSong) != true) {
+        return false
+    }
+    return causeType !in LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES ||
+        currentQueue.hasSameTrackMultisetAs(incomingQueue)
 }
 
 internal fun isListenTogetherQueueUpdateCause(causeType: String?): Boolean {
-    return causeType in LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES
+    return causeType in LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES ||
+        causeType in LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES
 }
 
 private val LISTEN_TOGETHER_QUEUE_UPDATE_CAUSES = setOf(
     "SET_QUEUE",
     "REQUEST_SET_QUEUE"
+)
+
+private val LISTEN_TOGETHER_PLAYBACK_MODE_QUEUE_UPDATE_CAUSES = setOf(
+    "PLAYBACK_MODE",
+    "REQUEST_PLAYBACK_MODE"
 )
 
 internal fun List<SongItem>.indexOfTrack(track: SongItem?): Int {

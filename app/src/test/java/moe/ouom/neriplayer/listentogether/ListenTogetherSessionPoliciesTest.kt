@@ -8,16 +8,21 @@ import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PAUSED_HEARTBE
 import moe.ouom.neriplayer.listentogether.session.LISTEN_TOGETHER_PLAYING_HEARTBEAT_INTERVAL_MS
 import moe.ouom.neriplayer.listentogether.session.ListenTogetherRecentEventTracker
 import moe.ouom.neriplayer.listentogether.session.PendingMemberControlRequest
+import moe.ouom.neriplayer.listentogether.session.isNormalListenTogetherRoomClosureReason
+import moe.ouom.neriplayer.listentogether.session.normalizeListenTogetherRoomClosureReason
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeatIntervalMs
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.retriedAt
+import moe.ouom.neriplayer.listentogether.session.shouldShowListenTogetherControllerReconnectedNotice
 import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomStateToPlayer
+import moe.ouom.neriplayer.listentogether.session.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherControllerLocalEcho
 import moe.ouom.neriplayer.listentogether.session.shouldRepairListenTogetherListenerState
 import moe.ouom.neriplayer.listentogether.playback.LISTEN_TOGETHER_LISTENER_SAFETY_RESUME_CAUSE
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
+import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForOutputDisconnect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -25,6 +30,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListenTogetherSessionPoliciesTest {
+
+    @Test
+    fun `controller left is a normal room closure`() {
+        assertTrue(isNormalListenTogetherRoomClosureReason("controller_left"))
+        assertFalse(isNormalListenTogetherRoomClosureReason("controller_timeout"))
+        assertFalse(isNormalListenTogetherRoomClosureReason(null))
+    }
+
+    @Test
+    fun `controller left closure reason is normalized for display`() {
+        assertEquals(
+            "controller_left",
+            normalizeListenTogetherRoomClosureReason(" Controller_Left ")
+        )
+    }
 
     @Test
     fun `session role follows room controller identity when available`() {
@@ -152,6 +172,75 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
+    fun `higher version queue echo overrides an optimistic concurrent reorder`() {
+        val first = track("netease:first")
+        val current = track("netease:current")
+        val previousState = roomState(version = 4L).copy(
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+        val concurrentState = previousState.copy(
+            version = 5L,
+            queue = listOf(current, first),
+            currentIndex = 0,
+            track = current
+        )
+
+        val ownCommittedState = concurrentState.copy(
+            version = 6L,
+            queue = listOf(first, current),
+            currentIndex = 1,
+            track = current
+        )
+
+        assertTrue(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "controller-id",
+                    type = "SET_QUEUE",
+                    eventId = "controller-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
+            )
+        )
+        assertFalse(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "controller-id",
+                    type = "SET_QUEUE",
+                    eventId = "controller-reorder"
+                ),
+                candidateState = previousState,
+                currentState = previousState
+            )
+        )
+        assertTrue(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "listener-id",
+                    type = "REQUEST_SET_QUEUE",
+                    eventId = "listener-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
+            )
+        )
+        assertFalse(
+            shouldAcceptListenTogetherAuthoritativeQueueUpdate(
+                cause = ListenTogetherCause(
+                    userUuid = "another-controller-id",
+                    type = "PLAY",
+                    eventId = "other-controller-reorder"
+                ),
+                candidateState = ownCommittedState,
+                currentState = concurrentState
+            )
+        )
+    }
+
+    @Test
     fun `room notice resolves controller offline countdown`() {
         val state = roomState(
             roomStatus = ListenTogetherRoomStatuses.CONTROLLER_OFFLINE,
@@ -169,7 +258,7 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
-    fun `room notice keeps fallback and closed reason precedence`() {
+    fun `room notice keeps fallback and prioritizes the structured closed reason`() {
         assertEquals(
             "fallback",
             resolveListenTogetherRoomNotice(
@@ -183,7 +272,8 @@ class ListenTogetherSessionPoliciesTest {
                 state = roomState(
                     roomStatus = ListenTogetherRoomStatuses.CLOSED,
                     closedReason = "room expired"
-                )
+                ),
+                fallbackMessage = "legacy room closed message"
             )
         )
     }
@@ -195,6 +285,42 @@ class ListenTogetherSessionPoliciesTest {
             resolveListenTogetherRoomNotice(
                 state = roomState(roomStatus = ListenTogetherRoomStatuses.ACTIVE),
                 fallbackMessage = "member_left:Listener"
+            )
+        )
+    }
+
+    @Test
+    fun `room notice suppresses controller reconnect when offline state was not observed`() {
+        assertNull(
+            resolveListenTogetherRoomNotice(
+                state = roomState(roomStatus = ListenTogetherRoomStatuses.ACTIVE),
+                fallbackMessage = "controller_reconnected"
+            )
+        )
+    }
+
+    @Test
+    fun `listener sees controller reconnect only after observing controller offline`() {
+        assertTrue(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = false,
+                observedControllerOffline = true
+            )
+        )
+        assertFalse(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = false,
+                observedControllerOffline = false
+            )
+        )
+    }
+
+    @Test
+    fun `controller never sees its own reconnect notice`() {
+        assertFalse(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = true,
+                observedControllerOffline = true
             )
         )
     }
@@ -313,26 +439,67 @@ class ListenTogetherSessionPoliciesTest {
     }
 
     @Test
-    fun `listener audio route mute only applies when member control is disabled`() {
+    fun `audio route mute applies to every active listener`() {
         assertTrue(
             shouldMuteListenTogetherListenerForAudioRouteLoss(
                 listenTogetherActive = true,
-                isCurrentUserController = false,
-                allowMemberControl = false
+                isCurrentUserController = false
             )
         )
         assertFalse(
             shouldMuteListenTogetherListenerForAudioRouteLoss(
+                listenTogetherActive = true,
+                isCurrentUserController = true
+            )
+        )
+        assertFalse(
+            shouldMuteListenTogetherListenerForAudioRouteLoss(
+                listenTogetherActive = false,
+                isCurrentUserController = false
+            )
+        )
+    }
+
+    @Test
+    fun `listener output disconnect mute also applies while paused and on route replacement`() {
+        assertTrue(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
+                listenTogetherActive = true,
+                isCurrentUserController = false,
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = false,
+                outputDeviceRemoved = true,
+                routeChanged = true
+            )
+        )
+        assertTrue(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
+                listenTogetherActive = true,
+                isCurrentUserController = false,
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = false,
+                routeChanged = true
+            )
+        )
+        assertFalse(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
                 listenTogetherActive = true,
                 isCurrentUserController = true,
-                allowMemberControl = false
+                previousRouteWasHeadsetLike = true,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = true,
+                routeChanged = true
             )
         )
         assertFalse(
-            shouldMuteListenTogetherListenerForAudioRouteLoss(
+            shouldMuteListenTogetherListenerForOutputDisconnect(
                 listenTogetherActive = true,
                 isCurrentUserController = false,
-                allowMemberControl = true
+                previousRouteWasHeadsetLike = false,
+                newRouteIsBuiltinSpeaker = true,
+                outputDeviceRemoved = true,
+                routeChanged = true
             )
         )
     }
@@ -369,4 +536,12 @@ class ListenTogetherSessionPoliciesTest {
             closedReason = closedReason
         )
     }
+
+    private fun track(stableKey: String) = moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack(
+        stableKey = stableKey,
+        channelId = "netease",
+        audioId = stableKey,
+        name = stableKey,
+        artist = "artist"
+    )
 }

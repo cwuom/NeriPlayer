@@ -695,6 +695,19 @@ internal fun shouldAutoLocateNowPlayingQueue(
     queueOrderDirty: Boolean
 ): Boolean = !selectionMode && !queueOrderDirty
 
+internal fun isNowPlayingQueueReorderEnabled(
+    selectionMode: Boolean,
+    allowQueueReorder: Boolean
+): Boolean = selectionMode && allowQueueReorder
+
+internal fun shouldShowNowPlayingQueueDragHandle(
+    selectionMode: Boolean,
+    allowQueueReorder: Boolean
+): Boolean = isNowPlayingQueueReorderEnabled(
+    selectionMode = selectionMode,
+    allowQueueReorder = allowQueueReorder
+)
+
 internal fun resolveNowPlayingQueueIndexInput(
     input: String,
     queueSize: Int
@@ -1145,6 +1158,7 @@ internal fun NowPlayingQueueSheet(
     displayedQueueItems: List<PlayerQueueDisplayItem>,
     currentIndexInDisplay: Int,
     offlineMode: Boolean,
+    allowQueueReorder: Boolean,
     onDismissRequest: () -> Unit,
     onOpenCurrentPlaybackSource: (() -> Unit)? = null
 ) {
@@ -1194,6 +1208,13 @@ internal fun NowPlayingQueueSheet(
         ?: currentIndexInDisplay
     val latestCurrentEntryKey by rememberUpdatedState(currentEntryKey)
     val latestCurrentIndexInQueueEntries by rememberUpdatedState(currentIndexInQueueEntries)
+    val latestQueueReorderEnabled by rememberUpdatedState(
+        isNowPlayingQueueReorderEnabled(
+            selectionMode = selectionMode,
+            allowQueueReorder = allowQueueReorder
+        )
+    )
+    val latestSourceEntries by rememberUpdatedState(sourceEntries)
     val queueItemKeys by remember {
         derivedStateOf {
             queueEntries.mapTo(LinkedHashSet()) { it.key }
@@ -1210,7 +1231,9 @@ internal fun NowPlayingQueueSheet(
     val reorderState = rememberReorderableLazyListState(
         listState = queueListState,
         onMove = { from: ItemPosition, to: ItemPosition ->
-            if (!selectionMode) return@rememberReorderableLazyListState
+            if (!latestQueueReorderEnabled) {
+                return@rememberReorderableLazyListState
+            }
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
             val toKey = to.key as? String ?: return@rememberReorderableLazyListState
             if (moveNowPlayingQueueEntry(queueEntries, fromKey, toKey)) {
@@ -1218,7 +1241,16 @@ internal fun NowPlayingQueueSheet(
             }
         },
         onDragEnd = { _, _ ->
-            if (!queueOrderDirty) return@rememberReorderableLazyListState
+            if (!latestQueueReorderEnabled) {
+                if (queueOrderDirty) {
+                    queueOrderDirty = false
+                    syncNowPlayingQueueEntries(queueEntries, latestSourceEntries)
+                }
+                return@rememberReorderableLazyListState
+            }
+            if (!queueOrderDirty) {
+                return@rememberReorderableLazyListState
+            }
             val currentKey = latestCurrentEntryKey
             val currentIndexByKey = currentKey
                 ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
@@ -1298,6 +1330,13 @@ internal fun NowPlayingQueueSheet(
 
     LaunchedEffect(sourceEntries) {
         if (!queueOrderDirty) {
+            syncNowPlayingQueueEntries(queueEntries, sourceEntries)
+        }
+    }
+
+    LaunchedEffect(allowQueueReorder) {
+        if (!allowQueueReorder && queueOrderDirty) {
+            queueOrderDirty = false
             syncNowPlayingQueueEntries(queueEntries, sourceEntries)
         }
     }
@@ -1453,7 +1492,13 @@ internal fun NowPlayingQueueSheet(
                     state = reorderState.listState,
                     modifier = Modifier
                         .weight(1f)
-                        .reorderable(reorderState)
+                        .then(
+                            if (allowQueueReorder) {
+                                Modifier.reorderable(reorderState)
+                            } else {
+                                Modifier
+                            }
+                        )
                         .bottomSheetScrollGuard(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -1514,25 +1559,34 @@ internal fun NowPlayingQueueSheet(
                                 onRemoveFromQueue = {
                                     PlayerManager.removeQueueItem(index)
                                 },
-                                dragHandle = {
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(start = 8.dp)
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(
-                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+                                dragHandle = if (
+                                    shouldShowNowPlayingQueueDragHandle(
+                                        selectionMode = selectionMode,
+                                        allowQueueReorder = allowQueueReorder
+                                    )
+                                ) {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(start = 8.dp)
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+                                                )
+                                                .detectReorder(reorderState)
+                                                .padding(10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DragHandle,
+                                                contentDescription = stringResource(R.string.common_drag_handle),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            .detectReorder(reorderState)
-                                            .padding(10.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DragHandle,
-                                            contentDescription = stringResource(R.string.common_drag_handle),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        }
                                     }
+                                } else {
+                                    null
                                 }
                             )
                         }
@@ -1791,6 +1845,7 @@ fun NowPlayingScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
@@ -2742,8 +2797,10 @@ fun NowPlayingScreen(
                                 PlaybackControlIndicator(
                                     isPlaying = isPlaybackControlPlaying,
                                     isPlaybackWaiting = isPlaybackWaiting,
+                                    isAudioRouteMuted = isAudioRouteMuted,
                                     playContentDescription = stringResource(R.string.player_play),
                                     pauseContentDescription = stringResource(R.string.player_pause),
+                                    restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
                                     waitingContentDescription = stringResource(R.string.player_waiting),
                                     modifier = Modifier.size(primaryIconSize),
                                     progressIndicatorSize = primaryIconSize
@@ -3577,6 +3634,7 @@ fun NowPlayingScreen(
                     displayedQueueItems = displayedQueueItems,
                     currentIndexInDisplay = currentIndexInDisplay,
                     offlineMode = offlineMode,
+                    allowQueueReorder = playbackProgressSeekEnabled,
                     onDismissRequest = { showQueueSheet = false },
                     onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                 )
@@ -5390,8 +5448,8 @@ private fun NowPlayingProgressSection(
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
-    progressRowModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    progressRowModifier: Modifier = Modifier
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current

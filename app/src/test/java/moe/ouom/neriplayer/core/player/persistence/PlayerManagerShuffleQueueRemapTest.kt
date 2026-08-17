@@ -253,6 +253,44 @@ class PlayerManagerQueueOrderTest {
         assertEquals(-1, index)
     }
 
+    @Test
+    fun `reorder resolves current song when submitted index is stale`() {
+        val current = testSong(2L, "Current")
+        val queue = listOf(
+            testSong(1L, "First"),
+            testSong(3L, "Third"),
+            current
+        )
+
+        val index = resolveQueueCurrentIndexAfterReorder(
+            queue = queue,
+            currentSong = current,
+            submittedCurrentIndex = 1,
+            fallbackCurrentIndex = 0
+        )
+
+        assertEquals(2, index)
+    }
+
+    @Test
+    fun `reorder keeps submitted index when it still points to current song`() {
+        val current = testSong(2L, "Current")
+        val queue = listOf(
+            testSong(1L, "First"),
+            current,
+            testSong(3L, "Third")
+        )
+
+        val index = resolveQueueCurrentIndexAfterReorder(
+            queue = queue,
+            currentSong = current,
+            submittedCurrentIndex = 1,
+            fallbackCurrentIndex = 0
+        )
+
+        assertEquals(1, index)
+    }
+
     private fun testSong(id: Long, name: String): SongItem {
         return SongItem(
             id = id,
