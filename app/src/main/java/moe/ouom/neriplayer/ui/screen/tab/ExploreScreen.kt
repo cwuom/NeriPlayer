@@ -48,7 +48,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,6 +61,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -69,6 +69,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -128,7 +129,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -144,6 +152,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -597,8 +606,6 @@ fun ExploreScreen(
         ) {
             vm.search(effectiveSearchKeyword, displayQuery = displayQuery)
         }
-        delay(EXPLORE_HISTORY_RECORD_DEBOUNCE_MS - SEARCH_INPUT_DEBOUNCE_MS)
-        queueExploreSearchRecord(searchQuery)
     }
 
     LaunchedEffect(ui.selectedSearchSource) {
@@ -1354,11 +1361,24 @@ private fun ExploreSearchHistoryRow(
                     }
                 }
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            val historyListState = rememberLazyListState()
+            val showStartFade by remember(historyListState) {
+                derivedStateOf { historyListState.canScrollBackward }
+            }
+            val showEndFade by remember(historyListState) {
+                derivedStateOf { historyListState.canScrollForward }
+            }
+            LazyRow(
+                state = historyListState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .exploreHorizontalEdgeFade(
+                        showStartFade = showStartFade,
+                        showEndFade = showEndFade
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                history.forEach { item ->
+                itemsIndexed(history) { _, item ->
                     ExploreSearchHistoryChip(
                         text = item,
                         onClick = { onHistoryClick(item) }
@@ -1368,6 +1388,42 @@ private fun ExploreSearchHistoryRow(
         }
     }
 }
+
+internal fun Modifier.exploreHorizontalEdgeFade(
+    showStartFade: Boolean,
+    showEndFade: Boolean,
+    fadeWidth: Dp = 28.dp
+): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val resolvedFadeWidth = fadeWidth.toPx().coerceAtMost(size.width / 2f)
+        if (resolvedFadeWidth <= 0f) return@drawWithContent
+        if (showStartFade) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startX = 0f,
+                    endX = resolvedFadeWidth
+                ),
+                topLeft = Offset.Zero,
+                size = Size(resolvedFadeWidth, size.height),
+                blendMode = BlendMode.DstIn
+            )
+        }
+        if (showEndFade) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Black, Color.Transparent),
+                    startX = size.width - resolvedFadeWidth,
+                    endX = size.width
+                ),
+                topLeft = Offset(size.width - resolvedFadeWidth, 0f),
+                size = Size(resolvedFadeWidth, size.height),
+                blendMode = BlendMode.DstIn
+            )
+        }
+    }
 
 @Composable
 private fun ExploreSearchHistoryChip(
@@ -1532,15 +1588,14 @@ internal fun ExploreSearchTypeBar(
     ) { displayedSource ->
         when (displayedSource) {
             SearchSource.NETEASE -> {
-                FlowRow(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .testTag(EXPLORE_NETEASE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    NeteaseExploreSearchType.entries.forEach { type ->
+                    itemsIndexed(NeteaseExploreSearchType.entries) { _, type ->
                         ExploreTagChip(
                             label = neteaseSearchTypeLabel(type),
                             icon = neteaseSearchTypeIcon(type),
@@ -1559,15 +1614,14 @@ internal fun ExploreSearchTypeBar(
             }
 
             SearchSource.YOUTUBE_MUSIC -> {
-                FlowRow(
+                LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .testTag(EXPLORE_YOUTUBE_SEARCH_TYPE_BAR_TAG),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    YouTubeExploreSearchType.entries.forEach { type ->
+                    itemsIndexed(YouTubeExploreSearchType.entries) { _, type ->
                         ExploreTagChip(
                             label = youtubeSearchTypeLabel(type),
                             icon = youtubeSearchTypeIcon(type),
@@ -1591,7 +1645,6 @@ internal fun ExploreSearchTypeBar(
 }
 
 private const val EXPLORE_HISTORY_DISPLAY_LIMIT = 15
-private const val EXPLORE_HISTORY_RECORD_DEBOUNCE_MS = 1_200L
 private val EXPLORE_SEARCH_TYPE_BAR_SOURCES = setOf(
     SearchSource.NETEASE,
     SearchSource.YOUTUBE_MUSIC
@@ -1623,6 +1676,13 @@ private fun NeteaseDefaultContent(
     val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
     val gridMinCellSize = if (isTabletLayout) 170.dp else 150.dp
     val gridSpacing = if (isTabletLayout) 16.dp else 12.dp
+    val tagListState = rememberLazyListState()
+    val showTagStartFade by remember(tagListState) {
+        derivedStateOf { tagListState.canScrollBackward }
+    }
+    val showTagEndFade by remember(tagListState) {
+        derivedStateOf { tagListState.canScrollForward }
+    }
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(gridMinCellSize),
@@ -1637,14 +1697,19 @@ private fun NeteaseDefaultContent(
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(Modifier.fillMaxWidth()) {
-                val displayCount = if (ui.expanded) tagKeys.size else 12
-                val displayKeys = tagKeys.take(displayCount)
-                val displayLabels = tagLabels.take(displayCount)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                val displayKeys = tagKeys
+                val displayLabels = tagLabels
+                LazyRow(
+                    state = tagListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .exploreHorizontalEdgeFade(
+                            showStartFade = showTagStartFade,
+                            showEndFade = showTagEndFade
+                        ),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    displayKeys.forEachIndexed { index, tagKey ->
+                    itemsIndexed(displayKeys) { index, tagKey ->
                         val selected = (ui.selectedTag == tagKey)
                         ExploreTagChip(
                             label = displayLabels[index],
@@ -1654,11 +1719,6 @@ private fun NeteaseDefaultContent(
                             unselectedAlpha = tagChipUnselectedAlpha,
                             borderAlpha = tagChipBorderAlpha
                         )
-                    }
-                }
-                Box(Modifier.fillMaxWidth(), Alignment.Center) {
-                    HapticTextButton(onClick = { vm.toggleExpanded() }) {
-                        Text(if (ui.expanded) stringResource(R.string.explore_collapse) else stringResource(R.string.explore_expand))
                     }
                 }
                 Box(

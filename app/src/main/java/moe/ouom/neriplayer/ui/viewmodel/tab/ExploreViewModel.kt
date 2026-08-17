@@ -168,7 +168,6 @@ sealed class ExploreSearchResult {
 }
 
 data class ExploreUiState(
-    val expanded: Boolean = false,
     val loading: Boolean = false,
     val error: String? = null,
     val playlists: List<PlaylistSummary> = emptyList(),
@@ -630,10 +629,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         _uiState.value = transform(_uiState.value)
-    }
-
-    fun toggleExpanded() {
-        _uiState.value = _uiState.value.copy(expanded = !_uiState.value.expanded)
     }
 
     fun loadHighQuality(cat: String? = null) {

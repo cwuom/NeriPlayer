@@ -32,6 +32,7 @@ import coil.transform.Transformation
 import moe.ouom.neriplayer.data.traffic.isOfflineModeNow
 
 private const val DEFAULT_LOCAL_IMAGE_REQUEST_SIZE_PX = 512
+private const val DEFAULT_IMAGE_CROSSFADE_DURATION_MILLIS = 180
 
 /**
  * 创建支持离线缓存的图片请求
@@ -41,7 +42,7 @@ fun offlineCachedImageRequest(
     data: Any?,
     sizePx: Int? = null,
     allowHardware: Boolean = true,
-    crossfade: Boolean = false,
+    crossfade: Boolean = true,
     offlineMode: Boolean = context.isOfflineModeNow(),
     transformations: List<Transformation> = emptyList()
 ): ImageRequest {
@@ -52,7 +53,6 @@ fun offlineCachedImageRequest(
     val builder = ImageRequest.Builder(context)
         .data(data)
         .allowHardware(resolvedAllowHardware)
-        .crossfade(crossfade)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
@@ -66,6 +66,11 @@ fun offlineCachedImageRequest(
     }
     if (transformations.isNotEmpty()) {
         builder.transformations(transformations)
+    }
+    if (crossfade) {
+        builder.crossfade(DEFAULT_IMAGE_CROSSFADE_DURATION_MILLIS)
+    } else {
+        builder.crossfade(false)
     }
     return builder.build()
 }
@@ -82,7 +87,6 @@ fun fastScrollableImageRequest(
         .data(data)
         .size(sizePx)
         .precision(Precision.INEXACT)
-        .crossfade(crossfade)
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
@@ -90,6 +94,11 @@ fun fastScrollableImageRequest(
         builder
             .allowHardware(false)
             .bitmapConfig(Bitmap.Config.RGB_565)
+    }
+    if (crossfade) {
+        builder.crossfade(DEFAULT_IMAGE_CROSSFADE_DURATION_MILLIS)
+    } else {
+        builder.crossfade(false)
     }
     return builder.build()
 }
