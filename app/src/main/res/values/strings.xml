@@ -1081,8 +1081,8 @@
     <string name="settings_personalization_playback_info_section_desc">控制标题、来源、封面歌词和进度条信息</string>
     <string name="settings_personalization_playback_controls_section">播放页控制</string>
     <string name="settings_personalization_playback_controls_section_desc">调整屏幕常亮、Dock 和 TAB 样式</string>
-    <string name="settings_personalization_lyrics_scale_section">歌词与字体</string>
-    <string name="settings_personalization_lyrics_scale_section_desc">调整歌词翻译和字号</string>
+    <string name="settings_lyrics_appearance_section">歌词与字体</string>
+    <string name="settings_lyrics_appearance_section_desc">调整歌词翻译和字号</string>
     <string name="settings_personalization_background_section">背景图</string>
     <string name="settings_personalization_background_section_desc">选择自定义背景和显示强度</string>
     <string name="settings_display">显示设置</string>
@@ -1547,7 +1547,7 @@
     <string name="settings_dynamic_island_lyrics_dependency_title">需要开启蓝牙歌词</string>
     <string name="settings_dynamic_island_lyrics_dependency_message">开启灵动岛歌词需要先打开蓝牙外接设备原文歌词，是否自动开启？</string>
     <string name="settings_lyrics_offset">歌词设置</string>
-    <string name="settings_lyrics_offset_expand">外接歌词、词幕适配与默认偏移</string>
+    <string name="settings_lyrics_offset_expand">歌词外观、外接歌词、词幕适配与默认偏移</string>
     <string name="settings_lyrics_offset_cloud_music">网易云默认歌词偏移</string>
     <string name="settings_lyrics_offset_cloud_music_desc">设置加载网易云歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_qq_music">QQ 音乐默认歌词偏移</string>

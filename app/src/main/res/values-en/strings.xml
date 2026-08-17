@@ -1081,8 +1081,8 @@
     <string name="settings_personalization_playback_info_section_desc">Control title, source, cover lyrics, and progress info.</string>
     <string name="settings_personalization_playback_controls_section">Now Playing Controls</string>
     <string name="settings_personalization_playback_controls_section_desc">Adjust screen awake, Dock style, and tab layout.</string>
-    <string name="settings_personalization_lyrics_scale_section">Lyrics and Fonts</string>
-    <string name="settings_personalization_lyrics_scale_section_desc">Adjust lyric translation and font sizes.</string>
+    <string name="settings_lyrics_appearance_section">Lyrics and Fonts</string>
+    <string name="settings_lyrics_appearance_section_desc">Adjust lyric translation and font sizes.</string>
     <string name="settings_personalization_background_section">Background Image</string>
     <string name="settings_personalization_background_section_desc">Choose a custom background and display strength.</string>
     <string name="settings_display">Display Settings</string>
@@ -1547,7 +1547,7 @@
     <string name="settings_dynamic_island_lyrics_dependency_title">Bluetooth lyrics required</string>
     <string name="settings_dynamic_island_lyrics_dependency_message">Dynamic Island Lyrics requires Bluetooth original lyrics. Turn them on automatically?</string>
     <string name="settings_lyrics_offset">Lyrics Settings</string>
-    <string name="settings_lyrics_offset_expand">External lyrics, Lyricon integration, and default offsets</string>
+    <string name="settings_lyrics_offset_expand">Lyric appearance, external lyrics, Lyricon integration, and default offsets</string>
     <string name="settings_lyrics_offset_cloud_music">Cloud Music default offset</string>
     <string name="settings_lyrics_offset_cloud_music_desc">Default offset applied when loading Cloud Music lyrics</string>
     <string name="settings_lyrics_offset_qq_music">QQ Music default offset</string>

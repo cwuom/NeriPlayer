@@ -734,7 +734,7 @@ object AutoSettingsSchema {
         val showLyricTranslation = autoSetting(
             titleRes = R.string.settings_show_lyric_translation,
             descriptionRes = R.string.settings_show_lyric_translation_desc,
-            icon = AutoSettingIcon.Subtitles
+            icon = AutoSettingIcon.Public
         )
 
         @AutoSetting(
@@ -747,7 +747,7 @@ object AutoSettingsSchema {
         val lyricTranslationUsePhonetic = autoSetting(
             titleRes = R.string.lyrics_translation_use_phonetic,
             descriptionRes = R.string.lyrics_translation_use_phonetic_desc,
-            icon = AutoSettingIcon.Keyboard
+            icon = AutoSettingIcon.RecordVoiceOver
         )
     }
 
@@ -941,7 +941,7 @@ object AutoSettingsSchema {
     /*
      * 歌词设置
      *
-     * 放外部词幕适配和各来源默认歌词偏移
+     * 放歌词外观, 外部词幕适配和各来源默认歌词偏移
      * 偏移会影响已有歌曲的用户偏移重算, 所以保留手写入口
      */
     @AutoSettingsSection(
