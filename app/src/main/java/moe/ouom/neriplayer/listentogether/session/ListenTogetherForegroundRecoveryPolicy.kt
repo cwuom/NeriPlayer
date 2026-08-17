@@ -28,7 +28,8 @@ internal fun resolveListenTogetherForegroundRecoveryAction(
         ListenTogetherConnectionState.CONNECTING -> {
             val connectingDurationMs = nowElapsedMs - connectingSinceElapsedMs
             if (
-                connectingSinceElapsedMs in 1 downTo nowElapsedMs &&
+                connectingSinceElapsedMs > 0L &&
+                nowElapsedMs >= connectingSinceElapsedMs &&
                 connectingDurationMs >= connectingTimeoutMs.coerceAtLeast(0L)
             ) {
                 ListenTogetherForegroundRecoveryAction.CONNECT
