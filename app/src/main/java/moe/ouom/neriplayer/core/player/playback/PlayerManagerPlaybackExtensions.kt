@@ -1477,6 +1477,8 @@ internal fun PlayerManager.pauseImpl(
     if (!initialized) return
     val internalUsbTransition = debugReason.startsWith("usb_toggle_")
     if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
+    restoredShouldResumePlayback = false
+    restoredResumePositionMs = 0L
     if (isPendingMediaLoadActive()) {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,

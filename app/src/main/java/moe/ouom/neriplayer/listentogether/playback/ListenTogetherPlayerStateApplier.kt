@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.listentogether.playback
 import android.os.SystemClock
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.url.currentPlaybackRequiresListenTogetherAuthoritativeStream
 import moe.ouom.neriplayer.listentogether.mapping.toSongItem
@@ -270,7 +271,12 @@ internal class ListenTogetherPlayerStateApplier(
             )
         }
         if (syncPlan.shouldIssuePause) {
-            PlayerManager.pause(forcePersist = false, commandSource = PlaybackCommandSource.REMOTE_SYNC)
+            PlayerManager.pauseImpl(
+                forcePersist = true,
+                commandSource = PlaybackCommandSource.REMOTE_SYNC,
+                allowFadeOut = false,
+                debugReason = "listen_together_remote_pause"
+            )
         }
     }
 
