@@ -4583,6 +4583,7 @@ fun EditSongInfoSheet(
     } else {
         originalSong
     }
+    val canReplaceCoverFromLocalFile = shouldAllowLocalCoverReplacement(actualSong, context)
 
     var coverUrl by remember { mutableStateOf(actualSong.customCoverUrl ?: actualSong.coverUrl ?: "") }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
@@ -4599,6 +4600,7 @@ fun EditSongInfoSheet(
     var shouldRestoreArtistBase by remember { mutableStateOf(false) }
     var shouldClearMatchedMetadata by remember { mutableStateOf(false) }
     var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
+    var showLocalCoverSyncConfirm by remember { mutableStateOf(false) }
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -4844,9 +4846,9 @@ fun EditSongInfoSheet(
                         .size(120.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable {
+                        .clickable(enabled = canReplaceCoverFromLocalFile) {
                             clearEditSongInfoFocus()
-                            coverPickerLauncher.launch("image/*")
+                            showLocalCoverSyncConfirm = true
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -4859,14 +4861,22 @@ fun EditSongInfoSheet(
                                 allowHardware = false,
                                 offlineMode = offlineMode
                             ),
-                            contentDescription = stringResource(R.string.music_edit_cover),
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            },
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Icon(
                             Icons.Outlined.Edit,
-                            contentDescription = stringResource(R.string.music_edit_cover)
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            }
                         )
                     }
                 }
@@ -5167,6 +5177,20 @@ fun EditSongInfoSheet(
     }
     } // 关闭 AnimatedVisibility
 
+    if (showLocalCoverSyncConfirm) {
+        LocalSongSyncConfirmDialog(
+            actionLabel = composeResources.getString(R.string.music_edit_cover),
+            onConfirm = {
+                showLocalCoverSyncConfirm = false
+                if (shouldAllowLocalCoverReplacement(actualSong, context)) {
+                    clearEditSongInfoFocus()
+                    coverPickerLauncher.launch("image/*")
+                }
+            },
+            onDismiss = { showLocalCoverSyncConfirm = false }
+        )
+    }
+
     if (showLocalMetadataWriteBackConfirm) {
         AlertDialog(
             onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
@@ -5432,6 +5456,13 @@ internal fun shouldConfirmLocalMetadataWriteBack(
     return !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
         !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false) ||
         currentCoverUrl?.trim() != resolvedCoverUrl
+}
+
+internal fun shouldAllowLocalCoverReplacement(
+    song: SongItem,
+    context: Context? = null
+): Boolean {
+    return !song.isSyncableRemoteSong(context)
 }
 
 @Composable
