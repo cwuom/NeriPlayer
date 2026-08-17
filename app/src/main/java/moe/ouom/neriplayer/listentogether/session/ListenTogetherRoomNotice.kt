@@ -24,7 +24,8 @@ internal fun resolveListenTogetherRoomNotice(
     state: ListenTogetherRoomState?,
     fallbackMessage: String? = null,
     nowMs: Long = System.currentTimeMillis(),
-    controllerGracePeriodMs: Long = DEFAULT_CONTROLLER_GRACE_PERIOD_MS
+    controllerGracePeriodMs: Long = DEFAULT_CONTROLLER_GRACE_PERIOD_MS,
+    showControllerReconnected: Boolean = false
 ): String? {
     state ?: return fallbackMessage
     return when (state.roomStatus) {
@@ -43,6 +44,15 @@ internal fun resolveListenTogetherRoomNotice(
                 ?: fallbackMessage
                 ?: "room_closed"
         }
-        else -> fallbackMessage
+        else -> fallbackMessage?.takeUnless {
+            it.equals("controller_reconnected", ignoreCase = true) && !showControllerReconnected
+        }
     }
+}
+
+internal fun shouldShowListenTogetherControllerReconnectedNotice(
+    isCurrentUserController: Boolean,
+    observedControllerOffline: Boolean
+): Boolean {
+    return !isCurrentUserController && observedControllerOffline
 }

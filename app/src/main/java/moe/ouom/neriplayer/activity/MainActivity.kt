@@ -1089,6 +1089,7 @@ class MainActivity : ComponentActivity() {
         if (safeModeActive) {
             return
         }
+        AppContainer.listenTogetherSessionManager.onApplicationForegrounded()
         startPendingExternalAudioServiceIfNeeded()
     }
 

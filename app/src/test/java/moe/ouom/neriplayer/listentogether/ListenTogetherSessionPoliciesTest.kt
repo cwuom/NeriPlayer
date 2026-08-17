@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherHeartbeat
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherRoomNotice
 import moe.ouom.neriplayer.listentogether.session.resolveListenTogetherSessionRole
 import moe.ouom.neriplayer.listentogether.session.retriedAt
+import moe.ouom.neriplayer.listentogether.session.shouldShowListenTogetherControllerReconnectedNotice
 import moe.ouom.neriplayer.listentogether.session.shouldApplyListenTogetherRoomStateToPlayer
 import moe.ouom.neriplayer.listentogether.session.shouldAcceptListenTogetherAuthoritativeQueueUpdate
 import moe.ouom.neriplayer.listentogether.session.shouldDropListenTogetherControllerLocalEcho
@@ -284,6 +285,42 @@ class ListenTogetherSessionPoliciesTest {
             resolveListenTogetherRoomNotice(
                 state = roomState(roomStatus = ListenTogetherRoomStatuses.ACTIVE),
                 fallbackMessage = "member_left:Listener"
+            )
+        )
+    }
+
+    @Test
+    fun `room notice suppresses controller reconnect when offline state was not observed`() {
+        assertNull(
+            resolveListenTogetherRoomNotice(
+                state = roomState(roomStatus = ListenTogetherRoomStatuses.ACTIVE),
+                fallbackMessage = "controller_reconnected"
+            )
+        )
+    }
+
+    @Test
+    fun `listener sees controller reconnect only after observing controller offline`() {
+        assertTrue(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = false,
+                observedControllerOffline = true
+            )
+        )
+        assertFalse(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = false,
+                observedControllerOffline = false
+            )
+        )
+    }
+
+    @Test
+    fun `controller never sees its own reconnect notice`() {
+        assertFalse(
+            shouldShowListenTogetherControllerReconnectedNotice(
+                isCurrentUserController = true,
+                observedControllerOffline = true
             )
         )
     }

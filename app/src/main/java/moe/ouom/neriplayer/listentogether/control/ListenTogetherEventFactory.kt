@@ -66,6 +66,7 @@ internal class ListenTogetherEventFactory(
             track = shareableQueue.getOrNull(resolvedCurrentIndex),
             queue = shareableQueue.takeUnless { useQueueMutation },
             queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
+            legacyQueueSnapshot = shareableQueue.takeIf { useQueueMutation },
             shouldPlay = shouldPlay
         )
     }
@@ -94,6 +95,7 @@ internal class ListenTogetherEventFactory(
                 currentIndex = -1,
                 queue = emptyList<ListenTogetherTrack>().takeUnless { useQueueMutation },
                 queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
+                legacyQueueSnapshot = emptyList<ListenTogetherTrack>().takeIf { useQueueMutation },
                 shouldPlay = false,
                 state = "paused",
                 repeatMode = PlayerManager.repeatModeFlow.value,
@@ -131,6 +133,7 @@ internal class ListenTogetherEventFactory(
             track = currentTrack,
             queue = shareableQueue.takeUnless { useQueueMutation },
             queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
+            legacyQueueSnapshot = shareableQueue.takeIf { useQueueMutation },
             shouldPlay = shouldPlay,
             state = if (shouldPlay) "playing" else "paused",
             repeatMode = PlayerManager.repeatModeFlow.value,
@@ -383,6 +386,7 @@ internal class ListenTogetherEventFactory(
             track = if (isController && shouldAdvance) shareableQueue.getOrNull(resolvedNextIndex) else null,
             queue = if (isController && !useQueueMutation) shareableQueue else null,
             queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
+            legacyQueueSnapshot = shareableQueue.takeIf { useQueueMutation },
             shouldPlay = if (isController) shouldAdvance else null,
             finishedTrackStableKey = finishedTrack.stableKey
         )
@@ -568,6 +572,7 @@ internal class ListenTogetherEventFactory(
                     )
             },
             queueMutation = queueMutationPlan?.mutation.takeIf { useQueueMutation },
+            legacyQueueSnapshot = shareableQueue.takeIf { useQueueMutation },
             shouldPlay = resolvedState == "playing",
             state = resolvedState,
             repeatMode = PlayerManager.repeatModeFlow.value,

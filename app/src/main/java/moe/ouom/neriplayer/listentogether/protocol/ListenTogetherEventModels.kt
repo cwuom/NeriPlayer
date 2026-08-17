@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.listentogether.protocol
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class ListenTogetherCause(
@@ -42,5 +43,7 @@ data class ListenTogetherEvent(
     val queueMutation: ListenTogetherQueueMutation? = null,
     val requestTrackStableKey: String? = null,
     val forceRefresh: Boolean? = null,
-    val finishedTrackStableKey: String? = null
+    val finishedTrackStableKey: String? = null,
+    @Transient
+    val legacyQueueSnapshot: List<ListenTogetherTrack>? = null
 )

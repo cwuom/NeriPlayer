@@ -1178,6 +1178,8 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
 
     var applied = false
     withContext(Dispatchers.Main) {
+        val observedPositionBelongsToRequestedMedia =
+            loadedMediaRequestToken == semantics.requestGeneration
         if (!gate.runMutation {
                 updateAudioOffloadPreferences("refreshed_stream_source")
             }
@@ -1199,7 +1201,8 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
             requestedResumePositionMs = resumePositionMs,
             observedPlaybackPositionMs = _playbackPositionMs.value,
             requestedPositionGeneration = semantics.positionGeneration,
-            currentPositionGeneration = playbackPositionGeneration
+            currentPositionGeneration = playbackPositionGeneration,
+            observedPositionBelongsToRequestedMedia = observedPositionBelongsToRequestedMedia
         )
         if (startPositionMs > 0) {
             if (!gate.runMutation {

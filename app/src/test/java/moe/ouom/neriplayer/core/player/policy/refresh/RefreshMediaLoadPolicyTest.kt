@@ -242,6 +242,51 @@ class RefreshMediaLoadPolicyTest {
     }
 
     @Test
+    fun `new media refresh never inherits progress reported by the previous stream`() {
+        assertEquals(
+            0L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = null,
+                requestedResumePositionMs = 0L,
+                observedPlaybackPositionMs = 6_500L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 8L,
+                observedPositionBelongsToRequestedMedia = false
+            )
+        )
+    }
+
+    @Test
+    fun `new media refresh keeps the requested resume position when old stream is further ahead`() {
+        assertEquals(
+            1_200L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = null,
+                requestedResumePositionMs = 1_200L,
+                observedPlaybackPositionMs = 8_000L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 8L,
+                observedPositionBelongsToRequestedMedia = false
+            )
+        )
+    }
+
+    @Test
+    fun `new media refresh keeps a pending seek over every stale progress source`() {
+        assertEquals(
+            900L,
+            resolveRefreshedMediaStartPosition(
+                pendingSeekPositionMs = 900L,
+                requestedResumePositionMs = 0L,
+                observedPlaybackPositionMs = 8_000L,
+                requestedPositionGeneration = 8L,
+                currentPositionGeneration = 8L,
+                observedPositionBelongsToRequestedMedia = false
+            )
+        )
+    }
+
+    @Test
     fun `refresh media start preserves an explicit seek made during resolution`() {
         assertEquals(
             12_000L,

@@ -6,6 +6,30 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherEvent
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherRoomState
 import java.util.Locale
 
+internal fun buildListenTogetherLegacyQueueMutationFallback(
+    event: ListenTogetherEvent,
+    fallbackEventId: String
+): ListenTogetherEvent? {
+    val snapshot = event.legacyQueueSnapshot ?: return null
+    if (event.queueMutation == null || fallbackEventId.isBlank()) return null
+    return event.copy(
+        eventId = fallbackEventId,
+        queue = snapshot,
+        queueMutation = null,
+        legacyQueueSnapshot = null
+    )
+}
+
+internal fun isListenTogetherQueueMutationCompatibilityError(
+    errorMessage: String?
+): Boolean {
+    val normalized = errorMessage?.trim()?.lowercase(Locale.ROOT).orEmpty()
+    return normalized.contains("queue mutation is invalid") ||
+        normalized.contains("queue mutation base version is ahead") ||
+        normalized.contains("queue mutation event type unsupported") ||
+        normalized.contains("queue update queue required")
+}
+
 internal fun resolveListenTogetherPlaybackCommandShouldPlay(
     commandType: String,
     commandShouldPlay: Boolean?,
