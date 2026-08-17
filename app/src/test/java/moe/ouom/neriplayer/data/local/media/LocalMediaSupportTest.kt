@@ -303,6 +303,114 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `fast lyric inspection prefers all sidecar variants over stored lyrics`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-sidecar-priority")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.lrc").writeText("source fallback original")
+        File(sourceDir, "song_trans.lrc").writeText("source fallback translation")
+        File(sourceDir, "song_roma.lrc").writeText("source fallback romanized")
+        val lyricsDir = File(sourceDir, "Lyrics").apply { mkdirs() }
+        File(lyricsDir, "song.lrc").writeText("[00:01.00]sidecar original")
+        File(lyricsDir, "song_trans.lrc").writeText("[00:02.00]sidecar translation")
+        File(lyricsDir, "song_roma.lrc").writeText("[00:03.00]sidecar romanized")
+        val song = SongItem(
+            id = 10L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            matchedLyric = "stored original",
+            matchedTranslatedLyric = "stored translation",
+            matchedRomanizedLyric = "stored romanized",
+            channelId = "local"
+        )
+
+        val lyrics = LocalMediaSupport.inspectLyricsFast(song)
+
+        assertEquals("[00:01.00]sidecar original", lyrics.lyric)
+        assertEquals("[00:02.00]sidecar translation", lyrics.translatedLyric)
+        assertEquals("[00:03.00]sidecar romanized", lyrics.romanizedLyric)
+        assertEquals(true, lyrics.hasOriginalSidecar)
+        assertEquals(true, lyrics.hasTranslatedSidecar)
+        assertEquals(true, lyrics.hasRomanizedSidecar)
+    }
+
+    @Test
+    fun `fast lyric inspection refreshes after sidecar edit deletion and recreation`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-refresh")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val original = File(sourceDir, "song.lrc")
+        val translated = File(sourceDir, "song_trans.lrc")
+        val romanized = File(sourceDir, "song_roma.lrc")
+        original.writeText("[00:01.00]first original")
+        translated.writeText("[00:02.00]first translation")
+        romanized.writeText("[00:03.00]first romanized")
+        val song = SongItem(
+            id = 11L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            matchedLyric = "stored original",
+            matchedTranslatedLyric = "stored translation",
+            matchedRomanizedLyric = "stored romanized",
+            channelId = "local"
+        )
+
+        val first = LocalMediaSupport.inspectLyricsFast(song)
+        assertEquals("[00:01.00]first original", first.lyric)
+        assertEquals("[00:02.00]first translation", first.translatedLyric)
+        assertEquals("[00:03.00]first romanized", first.romanizedLyric)
+
+        original.writeText("[00:11.00]updated original")
+        translated.writeText("[00:12.00]updated translation")
+        romanized.writeText("[00:13.00]updated romanized")
+        original.setLastModified(11_000L)
+        translated.setLastModified(12_000L)
+        romanized.setLastModified(13_000L)
+
+        val updated = LocalMediaSupport.inspectLyricsFast(song)
+        assertEquals("[00:11.00]updated original", updated.lyric)
+        assertEquals("[00:12.00]updated translation", updated.translatedLyric)
+        assertEquals("[00:13.00]updated romanized", updated.romanizedLyric)
+
+        assertEquals(true, original.delete())
+        assertEquals(true, translated.delete())
+        assertEquals(true, romanized.delete())
+
+        val afterDeletion = LocalMediaSupport.inspectLyricsFast(song)
+        assertEquals("stored original", afterDeletion.lyric)
+        assertEquals("stored translation", afterDeletion.translatedLyric)
+        assertEquals("stored romanized", afterDeletion.romanizedLyric)
+        assertEquals(false, afterDeletion.hasOriginalSidecar)
+        assertEquals(false, afterDeletion.hasTranslatedSidecar)
+        assertEquals(false, afterDeletion.hasRomanizedSidecar)
+
+        original.writeText("[00:21.00]recreated original")
+        translated.writeText("[00:22.00]recreated translation")
+        romanized.writeText("[00:23.00]recreated romanized")
+        LocalMediaSupport.clearLyricsLookupCache()
+
+        val recreated = LocalMediaSupport.inspectLyricsFast(song)
+        assertEquals("[00:21.00]recreated original", recreated.lyric)
+        assertEquals("[00:22.00]recreated translation", recreated.translatedLyric)
+        assertEquals("[00:23.00]recreated romanized", recreated.romanizedLyric)
+        assertEquals(true, recreated.hasOriginalSidecar)
+        assertEquals(true, recreated.hasTranslatedSidecar)
+        assertEquals(true, recreated.hasRomanizedSidecar)
+    }
+
+    @Test
     fun `clearing lyric lookup cache observes sidecar created after an empty lookup`() {
         val sourceDir = tempFolder.newFolder("download-lyrics-cache")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
@@ -407,7 +515,7 @@ class LocalMediaSupportTest {
     }
 
     @Test
-    fun `findNearbyLyricFiles keeps source directory priority over Lyrics fallback`() {
+    fun `findNearbyLyricFiles keeps Lyrics directory priority over source fallback`() {
         val sourceDir = tempFolder.newFolder("nearby-lyrics-priority")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
         val original = File(sourceDir, "song.txt").apply { writeText("source original") }
@@ -418,8 +526,11 @@ class LocalMediaSupportTest {
 
         val found = LocalMediaSupport.findNearbyLyricFiles(audioFile)
 
-        assertEquals(original.canonicalPath, found.original?.canonicalPath)
-        assertEquals(translated.canonicalPath, found.translated?.canonicalPath)
+        assertEquals(File(lyricsDir, "song.lrc").canonicalPath, found.original?.canonicalPath)
+        assertEquals(
+            File(lyricsDir, "song_trans.lrc").canonicalPath,
+            found.translated?.canonicalPath
+        )
     }
 
     @Test

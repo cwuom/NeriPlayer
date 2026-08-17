@@ -2217,8 +2217,10 @@ fun NowPlayingScreen(
         currentSong?.id,
         currentSong?.matchedLyric,
         currentSong?.matchedTranslatedLyric,
+        currentSong?.matchedRomanizedLyric,
         currentSong?.originalLyric,
         currentSong?.originalTranslatedLyric,
+        currentSong?.originalRomanizedLyric,
         currentSong?.matchedSongId,
         currentSong?.matchedLyricSource,
         currentSong?.album,
@@ -2262,7 +2264,7 @@ fun NowPlayingScreen(
                 )
             } == true
             val localLyrics = song?.takeIf { candidate -> candidate.isLocalSong() }?.let { localSong ->
-                runCatching { LocalMediaSupport.inspectLyricsFast(localSong) }
+                runCatching { LocalMediaSupport.inspectLyricsFast(context, localSong) }
                     .onFailure { error ->
                         NPLogger.w(
                             "NowPlayingLyrics",
@@ -2271,10 +2273,15 @@ fun NowPlayingScreen(
                     }
                     .getOrNull()
             }
-            val storedRawLyrics = resolveStoredLyricText(
-                currentLyric = song?.matchedLyric,
-                legacyLyric = song?.originalLyric
-            )
+            val isLocalSong = song?.isLocalSong() == true
+            val storedRawLyrics = if (isLocalSong) {
+                null
+            } else {
+                resolveStoredLyricText(
+                    currentLyric = song?.matchedLyric,
+                    legacyLyric = song?.originalLyric
+                )
+            }
             val downloadedRawLyrics = song?.takeIf {
                 canReadManagedDownloadLyrics &&
                     localLyrics?.lyric == null &&
@@ -2301,10 +2308,14 @@ fun NowPlayingScreen(
                 ),
                 rawTranslatedLyrics = resolveLocalFirstLyricText(
                     localLyric = localLyrics?.translatedLyric,
-                    storedLyric = resolveStoredLyricText(
-                        currentLyric = song?.matchedTranslatedLyric,
-                        legacyLyric = song?.originalTranslatedLyric
-                    ),
+                    storedLyric = if (isLocalSong) {
+                        null
+                    } else {
+                        resolveStoredLyricText(
+                            currentLyric = song?.matchedTranslatedLyric,
+                            legacyLyric = song?.originalTranslatedLyric
+                        )
+                    },
                     downloadedLyric = null
                 ),
                 rawPhoneticLyrics = localLyrics?.romanizedLyric
@@ -2326,7 +2337,7 @@ fun NowPlayingScreen(
                 )
             } == true
             val localLyrics = if (isLocalSong) {
-                runCatching { LocalMediaSupport.inspectLyricsFast(song) }
+                runCatching { LocalMediaSupport.inspectLyricsFast(context, song) }
                     .onFailure { error ->
                         NPLogger.w(
                             "NowPlayingLyrics",
@@ -2372,14 +2383,22 @@ fun NowPlayingScreen(
                     )
                 }.getOrNull()
             }
-            val storedRawLyrics = resolveStoredLyricText(
-                currentLyric = song?.matchedLyric,
-                legacyLyric = song?.originalLyric
-            )
-            val storedRawTranslatedLyrics = resolveStoredLyricText(
-                currentLyric = song?.matchedTranslatedLyric,
-                legacyLyric = song?.originalTranslatedLyric
-            )
+            val storedRawLyrics = if (isLocalSong) {
+                null
+            } else {
+                resolveStoredLyricText(
+                    currentLyric = song?.matchedLyric,
+                    legacyLyric = song?.originalLyric
+                )
+            }
+            val storedRawTranslatedLyrics = if (isLocalSong) {
+                null
+            } else {
+                resolveStoredLyricText(
+                    currentLyric = song?.matchedTranslatedLyric,
+                    legacyLyric = song?.originalTranslatedLyric
+                )
+            }
             val preferredSongId = resolvePreferredNeteaseLyricSongId(song)
             val preferredNeteaseLyric = runCatching {
                 if (
@@ -4833,11 +4852,14 @@ fun EditSongInfoSheet(
     fun writeFetchedLyricsToLocalMetadata() {
         coroutineScope.launch {
             try {
+                val latestSong = PlayerManager.currentSongFlow.value
+                    ?.takeIf { it.sameIdentityAs(actualSong) }
+                    ?: actualSong
                 viewModel.updateSongInfo(
-                    originalSong = actualSong,
-                    newCoverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl,
-                    newName = actualSong.customName ?: actualSong.name,
-                    newArtist = actualSong.customArtist ?: actualSong.artist,
+                    originalSong = latestSong,
+                    newCoverUrl = latestSong.customCoverUrl ?: latestSong.coverUrl,
+                    newName = latestSong.customName ?: latestSong.name,
+                    newArtist = latestSong.customArtist ?: latestSong.artist,
                     writeLocalMetadata = true,
                     writeLyrics = true
                 )
@@ -5041,7 +5063,9 @@ fun EditSongInfoSheet(
                                     isManagedLocalDownload = isManagedLocalDownload
                                 )
                                 val localLyrics = if (isLocalSong) {
-                                    runCatching { LocalMediaSupport.inspectLyricsFast(actualSong) }
+                                    runCatching {
+                                        LocalMediaSupport.inspectLyricsFast(context, actualSong)
+                                    }
                                         .onFailure { error ->
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
@@ -5049,6 +5073,18 @@ fun EditSongInfoSheet(
                                             )
                                         }
                                         .getOrNull()
+                                } else {
+                                    null
+                                }
+                                val embeddedLocalLyrics = if (isLocalSong) {
+                                    runCatching {
+                                        LocalMediaSupport.inspectEmbeddedLyrics(context, actualSong)
+                                    }.onFailure { error ->
+                                        NPLogger.w(
+                                            "NowPlayingLyrics",
+                                            "编辑器读取嵌入歌词失败: ${error.message}"
+                                        )
+                                    }.getOrNull()
                                 } else {
                                     null
                                 }
@@ -5067,6 +5103,21 @@ fun EditSongInfoSheet(
                                     currentLyric = actualSong.matchedRomanizedLyric,
                                     legacyLyric = actualSong.originalRomanizedLyric
                                 )
+                                val embeddedRawLyrics = embeddedLocalLyrics?.lyric.orEmpty()
+                                val embeddedRawTranslatedLyrics =
+                                    embeddedLocalLyrics?.translatedLyric.orEmpty()
+                                val embeddedRawRomanizedLyrics =
+                                    embeddedLocalLyrics?.romanizedLyric.orEmpty()
+                                val localStoredLyrics = if (isLocalSong) {
+                                    embeddedRawLyrics.takeIf(String::isNotEmpty)
+                                } else {
+                                    storedRawLyrics
+                                }
+                                val localStoredTranslatedLyrics = if (isLocalSong) {
+                                    embeddedRawTranslatedLyrics.takeIf(String::isNotEmpty)
+                                } else {
+                                    storedRawTranslatedLyrics
+                                }
                                 val downloadedRawLyrics = actualSong
                                     .takeIf { canReadManagedDownloadLyrics }
                                     ?.let { downloadedSong ->
@@ -5099,12 +5150,12 @@ fun EditSongInfoSheet(
                                     }
                                 val selectedRawLyrics = resolveLocalFirstLyricText(
                                     localLyric = localRawLyrics,
-                                    storedLyric = storedRawLyrics,
+                                    storedLyric = localStoredLyrics,
                                     downloadedLyric = downloadedRawLyrics
                                 )
                                 val selectedRawTranslatedLyrics = resolveLocalFirstLyricText(
                                     localLyric = localRawTranslatedLyrics,
-                                    storedLyric = storedRawTranslatedLyrics,
+                                    storedLyric = localStoredTranslatedLyrics,
                                     downloadedLyric = downloadedRawTranslatedLyrics
                                 )
                                 val rawNeteaseLyric = runCatching {
@@ -5165,29 +5216,29 @@ fun EditSongInfoSheet(
                                         translatedLyrics = selectedRawTranslatedLyrics
                                             ?: translatedLyrics,
                                         romanizedLyrics = localRawRomanizedLyrics
-                                            ?: storedRawRomanizedLyrics.orEmpty(),
+                                            ?: embeddedRawRomanizedLyrics,
                                         sidecarLyrics = if (localLyrics?.hasOriginalSidecar == true) {
                                             localRawLyrics.orEmpty()
                                         } else {
-                                            ""
+                                            embeddedRawLyrics.orEmpty()
                                         },
                                         sidecarTranslatedLyrics = if (
                                             localLyrics?.hasTranslatedSidecar == true
                                         ) {
                                             localRawTranslatedLyrics.orEmpty()
                                         } else {
-                                            ""
+                                            embeddedRawTranslatedLyrics.orEmpty()
                                         },
                                         sidecarRomanizedLyrics = if (
                                             localLyrics?.hasRomanizedSidecar == true
                                         ) {
                                             localRawRomanizedLyrics.orEmpty()
                                         } else {
-                                            ""
+                                            embeddedRawRomanizedLyrics.orEmpty()
                                         },
-                                        embeddedLyrics = storedRawLyrics.orEmpty(),
-                                        embeddedTranslatedLyrics = storedRawTranslatedLyrics.orEmpty(),
-                                        embeddedRomanizedLyrics = storedRawRomanizedLyrics.orEmpty(),
+                                        embeddedLyrics = embeddedRawLyrics.orEmpty(),
+                                        embeddedTranslatedLyrics = embeddedRawTranslatedLyrics.orEmpty(),
+                                        embeddedRomanizedLyrics = embeddedRawRomanizedLyrics.orEmpty(),
                                         hasSidecar = localLyrics?.let {
                                             it.hasOriginalSidecar ||
                                                 it.hasTranslatedSidecar ||

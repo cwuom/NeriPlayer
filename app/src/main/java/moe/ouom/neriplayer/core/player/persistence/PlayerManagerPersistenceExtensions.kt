@@ -1755,6 +1755,16 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     return managedReference ?: downloadedPlaybackUri
 }
 
+private suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem {
+    val playbackReference = resolveLocalMetadataWriteReference(song) ?: return song
+    return song.copy(
+        mediaUri = playbackReference,
+        localFilePath = playbackReference.takeIf { it.startsWith('/') },
+        localFileName = song.localFileName
+            ?: playbackReference.substringAfterLast('/').takeIf(String::isNotBlank)
+    )
+}
+
 private fun PlayerManager.showLocalEditableMetadataWriteFeedback(
     outcome: LocalMediaMetadataWriteOutcome,
     downloadSyncOutcome: GlobalDownloadManager.DownloadedSongMetadataSyncOutcome
@@ -2210,12 +2220,20 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     writeLocalMetadata: Boolean = false
 ) = runSongMetadataMutation {
     val queueIndex = queueIndexOf(songToUpdate)
+    val currentQueueSong = currentPlaylist.getOrNull(queueIndex)
+        ?: _currentSongFlow.value?.takeIf { it.sameIdentityAs(songToUpdate) }
+        ?: songToUpdate
+    val effectiveLyrics = newLyrics ?: currentQueueSong.matchedLyric
+    val effectiveTranslatedLyrics = newTranslatedLyrics
+        ?: currentQueueSong.matchedTranslatedLyric
+    val effectiveRomanizedLyrics = newRomanizedLyrics
+        ?: currentQueueSong.matchedRomanizedLyric
 
     if (queueIndex != -1) {
         val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
-            newLyrics = newLyrics,
-            newTranslatedLyric = newTranslatedLyrics,
-            newRomanizedLyric = newRomanizedLyrics
+            newLyrics = effectiveLyrics,
+            newTranslatedLyric = effectiveTranslatedLyrics,
+            newRomanizedLyric = effectiveRomanizedLyrics
         )
         val newList = currentPlaylist.toMutableList()
         newList[queueIndex] = updatedSong
@@ -2234,9 +2252,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         val beforeUpdate = _currentSongFlow.value?.matchedLyric
         setCurrentSongForPlayback(
             _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
-                newLyrics = newLyrics,
-                newTranslatedLyric = newTranslatedLyrics,
-                newRomanizedLyric = newRomanizedLyrics
+                newLyrics = effectiveLyrics,
+                newTranslatedLyric = effectiveTranslatedLyrics,
+                newRomanizedLyric = effectiveRomanizedLyrics
             )
         )
         NPLogger.e(
@@ -2258,11 +2276,12 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
                 )
             }
         }
-        if (LocalSongSupport.isLocalSong(latestSong, application)) {
+        if (LocalSongSupport.isLocalSong(latestSong, application) && !writeLocalMetadata) {
+            val sidecarSong = resolveLocalSidecarWriteSong(latestSong)
             val sidecarsWritten = runCatching {
                 LocalMediaSupport.writeLocalLyricsSidecars(
                     context = application,
-                    song = latestSong
+                    song = sidecarSong
                 )
             }.getOrElse { error ->
                 NPLogger.w(

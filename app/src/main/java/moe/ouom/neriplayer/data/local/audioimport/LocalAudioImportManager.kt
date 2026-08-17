@@ -912,10 +912,9 @@ object LocalAudioImportManager {
             album = resolvedAlbum,
             durationMs = detailedSong.durationMs.takeIf { it > 0L } ?: quickSong.durationMs,
             coverUrl = resolvedCoverUrl,
-            matchedLyric = detailedSong.matchedLyric ?: quickSong.matchedLyric,
-            matchedTranslatedLyric = detailedSong.matchedTranslatedLyric ?: quickSong.matchedTranslatedLyric,
-            matchedRomanizedLyric = detailedSong.matchedRomanizedLyric
-                ?: quickSong.matchedRomanizedLyric,
+            matchedLyric = detailedSong.matchedLyric,
+            matchedTranslatedLyric = detailedSong.matchedTranslatedLyric,
+            matchedRomanizedLyric = detailedSong.matchedRomanizedLyric,
             originalName = quickSong.originalName?.takeIf { it.isNotBlank() }
                 ?: detailedSong.originalName?.takeIf { it.isNotBlank() }
                 ?: resolvedName,
@@ -1364,8 +1363,10 @@ object LocalAudioImportManager {
                 nearbyCoverUri = nearbyCoverUri,
                 matchedLyric = lyrics?.lyric,
                 matchedTranslatedLyric = lyrics?.translatedLyric,
+                matchedRomanizedLyric = lyrics?.romanizedLyric,
                 originalLyric = lyrics?.lyric,
-                originalTranslatedLyric = lyrics?.translatedLyric
+                originalTranslatedLyric = lyrics?.translatedLyric,
+                originalRomanizedLyric = lyrics?.romanizedLyric
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )

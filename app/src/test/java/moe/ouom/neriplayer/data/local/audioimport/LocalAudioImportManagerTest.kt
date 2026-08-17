@@ -238,7 +238,7 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `copyNearbySidecars preserves source directory lyric selection priority`() {
+    fun `copyNearbySidecars preserves Lyrics directory lyric selection priority`() {
         val sourceDir = tempFolder.newFolder("source-lyrics-priority")
         val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
         File(sourceDir, "song.txt").writeText("source original")
@@ -252,10 +252,13 @@ class LocalAudioImportManagerTest {
 
         LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
 
-        assertEquals("source original", File(targetDir, "imported_song.txt").readText())
-        assertFalse(File(targetDir, "imported_song.lrc").exists())
-        assertEquals("source translation", File(targetDir, "imported_song_trans.txt").readText())
-        assertFalse(File(targetDir, "imported_song_trans.lrc").exists())
+        assertEquals("nested original", File(targetDir, "imported_song.lrc").readText())
+        assertFalse(File(targetDir, "imported_song.txt").exists())
+        assertEquals(
+            "nested translation",
+            File(targetDir, "imported_song_trans.lrc").readText()
+        )
+        assertFalse(File(targetDir, "imported_song_trans.txt").exists())
     }
 
     @Test

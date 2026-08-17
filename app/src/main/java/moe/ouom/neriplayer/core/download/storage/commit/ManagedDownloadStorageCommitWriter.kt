@@ -254,9 +254,12 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
                 val writtenAtMs = System.currentTimeMillis()
                 val encoded = content.toByteArray(Charsets.UTF_8)
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    output.write(encoded)
+                val output = runCatching {
+                    context.contentResolver.openOutputStream(target.uri, "rwt")
+                }.getOrElse {
+                    context.contentResolver.openOutputStream(target.uri, "wt")
                 } ?: throw IOException("无法写入元数据文件: $displayName")
+                output.use { it.write(encoded) }
                 val entry = treeFileCommitter.verifiedTreeStoredEntry(
                     context = context,
                     target = target,

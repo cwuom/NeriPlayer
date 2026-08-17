@@ -765,15 +765,19 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val localLyrics = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song)
+                LocalMediaSupport.inspectLyricsFast(application, song)
             } else {
                 null
             }
             val localTranslatedLyric = localLyrics?.translatedLyric
-            val storedTranslatedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedTranslatedLyric,
-                legacyLyric = song.originalTranslatedLyric
-            )
+            val storedTranslatedLyric = if (song.isLocalSong()) {
+                null
+            } else {
+                resolveStoredLyricText(
+                    currentLyric = song.matchedTranslatedLyric,
+                    legacyLyric = song.originalTranslatedLyric
+                )
+            }
             val downloadedTranslatedLyric = if (canReadManagedDownloadLyrics) {
                 AudioDownloadManager.getTranslatedLyricContent(application, song)
             } else {
@@ -889,7 +893,7 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val localRomanizedLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).romanizedLyric
+                LocalMediaSupport.inspectLyricsFast(application, song).romanizedLyric
             } else {
                 null
             }
@@ -970,14 +974,18 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val localLyric = if (song.isLocalSong()) {
-                LocalMediaSupport.inspectLyricsFast(song).lyric
+                LocalMediaSupport.inspectLyricsFast(application, song).lyric
             } else {
                 null
             }
-            val storedLyric = resolveStoredLyricText(
-                currentLyric = song.matchedLyric,
-                legacyLyric = song.originalLyric
-            )
+            val storedLyric = if (song.isLocalSong()) {
+                null
+            } else {
+                resolveStoredLyricText(
+                    currentLyric = song.matchedLyric,
+                    legacyLyric = song.originalLyric
+                )
+            }
             val downloadedLyric = if (canReadManagedDownloadLyrics) {
                 AudioDownloadManager.getLyricContent(application, song)
             } else {
