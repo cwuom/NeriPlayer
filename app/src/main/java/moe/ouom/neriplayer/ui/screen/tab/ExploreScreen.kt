@@ -130,10 +130,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -149,6 +152,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1364,38 +1368,14 @@ private fun ExploreSearchHistoryRow(
             val showEndFade by remember(historyListState) {
                 derivedStateOf { historyListState.canScrollForward }
             }
-            val edgeFadeColor = MaterialTheme.colorScheme.background
             LazyRow(
                 state = historyListState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawWithContent {
-                        drawContent()
-                        val fadeWidth = 28.dp.toPx().coerceAtMost(size.width / 2f)
-                        if (fadeWidth <= 0f) return@drawWithContent
-                        if (showStartFade) {
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(edgeFadeColor, edgeFadeColor.copy(alpha = 0f)),
-                                    startX = 0f,
-                                    endX = fadeWidth
-                                ),
-                                topLeft = Offset.Zero,
-                                size = Size(fadeWidth, size.height)
-                            )
-                        }
-                        if (showEndFade) {
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(edgeFadeColor.copy(alpha = 0f), edgeFadeColor),
-                                    startX = size.width - fadeWidth,
-                                    endX = size.width
-                                ),
-                                topLeft = Offset(size.width - fadeWidth, 0f),
-                                size = Size(fadeWidth, size.height)
-                            )
-                        }
-                    },
+                    .exploreHorizontalEdgeFade(
+                        showStartFade = showStartFade,
+                        showEndFade = showEndFade
+                    ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 itemsIndexed(history) { _, item ->
@@ -1408,6 +1388,42 @@ private fun ExploreSearchHistoryRow(
         }
     }
 }
+
+internal fun Modifier.exploreHorizontalEdgeFade(
+    showStartFade: Boolean,
+    showEndFade: Boolean,
+    fadeWidth: Dp = 28.dp
+): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        val resolvedFadeWidth = fadeWidth.toPx().coerceAtMost(size.width / 2f)
+        if (resolvedFadeWidth <= 0f) return@drawWithContent
+        if (showStartFade) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.Black),
+                    startX = 0f,
+                    endX = resolvedFadeWidth
+                ),
+                topLeft = Offset.Zero,
+                size = Size(resolvedFadeWidth, size.height),
+                blendMode = BlendMode.DstIn
+            )
+        }
+        if (showEndFade) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Black, Color.Transparent),
+                    startX = size.width - resolvedFadeWidth,
+                    endX = size.width
+                ),
+                topLeft = Offset(size.width - resolvedFadeWidth, 0f),
+                size = Size(resolvedFadeWidth, size.height),
+                blendMode = BlendMode.DstIn
+            )
+        }
+    }
 
 @Composable
 private fun ExploreSearchHistoryChip(
