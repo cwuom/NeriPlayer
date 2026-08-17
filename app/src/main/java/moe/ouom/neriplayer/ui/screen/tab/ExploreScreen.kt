@@ -1676,6 +1676,13 @@ private fun NeteaseDefaultContent(
     val gridHorizontalPadding = if (isTabletLayout) 56.dp else 16.dp
     val gridMinCellSize = if (isTabletLayout) 170.dp else 150.dp
     val gridSpacing = if (isTabletLayout) 16.dp else 12.dp
+    val tagListState = rememberLazyListState()
+    val showTagStartFade by remember(tagListState) {
+        derivedStateOf { tagListState.canScrollBackward }
+    }
+    val showTagEndFade by remember(tagListState) {
+        derivedStateOf { tagListState.canScrollForward }
+    }
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Adaptive(gridMinCellSize),
@@ -1693,7 +1700,13 @@ private fun NeteaseDefaultContent(
                 val displayKeys = tagKeys
                 val displayLabels = tagLabels
                 LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
+                    state = tagListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .exploreHorizontalEdgeFade(
+                            showStartFade = showTagStartFade,
+                            showEndFade = showTagEndFade
+                        ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     itemsIndexed(displayKeys) { index, tagKey ->
