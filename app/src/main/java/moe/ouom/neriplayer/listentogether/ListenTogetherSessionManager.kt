@@ -207,6 +207,8 @@ class ListenTogetherSessionManager(
     private var clockSyncPingSupported: Boolean? = null
     @Volatile
     private var observedControllerOffline = false
+    @Volatile
+    private var webSocketConnectingAtElapsedMs: Long = 0L
 
     private val clientInstanceId = UUID.randomUUID().toString()
     private val clientSequence = AtomicLong(0L)
@@ -496,6 +498,7 @@ class ListenTogetherSessionManager(
         reconnectJob?.cancel()
         reconnectJob = null
         val wsUrl = _sessionState.value.wsUrl ?: return
+        webSocketConnectingAtElapsedMs = SystemClock.elapsedRealtime()
         ensureListenTogetherForegroundService("connect_websocket")
         NPLogger.d(TAG, "connectWebSocket(): wsUrl=${wsUrl.redactListenTogetherWsUrlForLog()}")
         _sessionState.value = _sessionState.value.copy(
@@ -508,10 +511,12 @@ class ListenTogetherSessionManager(
                 override fun onOpen() {
                     NPLogger.d(TAG, "websocket.onOpen()")
                     if (!reconnectEnabled || activeRoomIdForStateAcceptance.isNullOrBlank()) {
+                        webSocketConnectingAtElapsedMs = 0L
                         NPLogger.d(TAG, "websocket.onOpen(): drop inactive session")
                         webSocketClient.disconnect(code = 1000, reason = "inactive_session")
                         return
                     }
+                    webSocketConnectingAtElapsedMs = 0L
                     lastWebSocketMessageAtElapsedMs = SystemClock.elapsedRealtime()
                     val shouldRefreshState = pendingStateRefreshAfterReconnect
                     resetReconnectAttempt()
@@ -692,6 +697,7 @@ class ListenTogetherSessionManager(
                 }
 
                 override fun onClosed(code: Int, reason: String) {
+                    webSocketConnectingAtElapsedMs = 0L
                     stopHeartbeat()
                     stopSocketKeepAlive()
                     NPLogger.w(TAG, "websocket.onClosed(): code=$code, reason=$reason")
@@ -706,6 +712,7 @@ class ListenTogetherSessionManager(
                 }
 
                 override fun onFailure(error: Throwable) {
+                    webSocketConnectingAtElapsedMs = 0L
                     stopHeartbeat()
                     stopSocketKeepAlive()
                     NPLogger.e(TAG, "websocket.onFailure(): ${error.message}", error)
@@ -761,6 +768,7 @@ class ListenTogetherSessionManager(
         pendingMemberControlRequest = null
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
+        webSocketConnectingAtElapsedMs = 0L
         pingSentAtWallMs = 0L
         pingSentAtElapsedMs = 0L
         estimatedServerClockOffsetMs = 0L
@@ -782,7 +790,9 @@ class ListenTogetherSessionManager(
                 connectionState = snapshot.connectionState,
                 roomId = snapshot.roomId,
                 wsUrl = snapshot.wsUrl,
-                reconnectEnabled = reconnectEnabled
+                reconnectEnabled = reconnectEnabled,
+                connectingSinceElapsedMs = webSocketConnectingAtElapsedMs,
+                nowElapsedMs = SystemClock.elapsedRealtime()
             )
         ) {
             ListenTogetherForegroundRecoveryAction.NONE -> Unit
@@ -882,6 +892,7 @@ class ListenTogetherSessionManager(
         pendingMemberControlRequest = null
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
+        webSocketConnectingAtElapsedMs = 0L
         clockSyncPingSupported = null
         observedControllerOffline = false
         resetListenerRecoveryState()
@@ -1196,6 +1207,7 @@ class ListenTogetherSessionManager(
             cancelForegroundSocketProbe()
             stopListenTogetherSoftSyncRateRecheck()
             observedControllerOffline = false
+            webSocketConnectingAtElapsedMs = 0L
             clockSyncPingSupported = null
         }
         val nextRoomId = response.roomId
@@ -2905,6 +2917,7 @@ class ListenTogetherSessionManager(
         pendingMemberControlRequest = null
         lastListenerStateRefreshAtElapsedMs = 0L
         lastWebSocketMessageAtElapsedMs = 0L
+        webSocketConnectingAtElapsedMs = 0L
         clockSyncPingSupported = null
         observedControllerOffline = false
         resetListenerRecoveryState()

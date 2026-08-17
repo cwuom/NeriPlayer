@@ -12,7 +12,10 @@ internal fun resolveListenTogetherForegroundRecoveryAction(
     connectionState: ListenTogetherConnectionState,
     roomId: String?,
     wsUrl: String?,
-    reconnectEnabled: Boolean
+    reconnectEnabled: Boolean,
+    connectingSinceElapsedMs: Long = 0L,
+    nowElapsedMs: Long = 0L,
+    connectingTimeoutMs: Long = DEFAULT_CONNECTING_TIMEOUT_MS
 ): ListenTogetherForegroundRecoveryAction {
     if (!reconnectEnabled || roomId.isNullOrBlank() || wsUrl.isNullOrBlank()) {
         return ListenTogetherForegroundRecoveryAction.NONE
@@ -22,9 +25,21 @@ internal fun resolveListenTogetherForegroundRecoveryAction(
         ListenTogetherConnectionState.CONNECTED -> {
             ListenTogetherForegroundRecoveryAction.REFRESH_ROOM_STATE
         }
-        ListenTogetherConnectionState.CONNECTING -> ListenTogetherForegroundRecoveryAction.NONE
+        ListenTogetherConnectionState.CONNECTING -> {
+            val connectingDurationMs = nowElapsedMs - connectingSinceElapsedMs
+            if (
+                connectingSinceElapsedMs in 1 downTo nowElapsedMs &&
+                connectingDurationMs >= connectingTimeoutMs.coerceAtLeast(0L)
+            ) {
+                ListenTogetherForegroundRecoveryAction.CONNECT
+            } else {
+                ListenTogetherForegroundRecoveryAction.NONE
+            }
+        }
     }
 }
+
+private const val DEFAULT_CONNECTING_TIMEOUT_MS = 15_000L
 
 internal fun shouldReconnectListenTogetherForegroundSocket(
     reconnectEnabled: Boolean,

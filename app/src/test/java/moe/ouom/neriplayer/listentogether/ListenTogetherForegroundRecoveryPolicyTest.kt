@@ -45,7 +45,73 @@ class ListenTogetherForegroundRecoveryPolicyTest {
                 connectionState = ListenTogetherConnectionState.CONNECTING,
                 roomId = "ROOM01",
                 wsUrl = "wss://example.test/room",
-                reconnectEnabled = true
+                reconnectEnabled = true,
+                connectingSinceElapsedMs = 90_000L,
+                nowElapsedMs = 90_500L
+            )
+        )
+    }
+
+    @Test
+    fun `foreground recovery restarts a connection that stayed connecting past the timeout`() {
+        assertEquals(
+            ListenTogetherForegroundRecoveryAction.CONNECT,
+            resolveListenTogetherForegroundRecoveryAction(
+                connectionState = ListenTogetherConnectionState.CONNECTING,
+                roomId = "ROOM01",
+                wsUrl = "wss://example.test/room",
+                reconnectEnabled = true,
+                connectingSinceElapsedMs = 90_000L,
+                nowElapsedMs = 106_000L,
+                connectingTimeoutMs = 15_000L
+            )
+        )
+    }
+
+    @Test
+    fun `foreground recovery never treats a connection without a start time as stale`() {
+        assertEquals(
+            ListenTogetherForegroundRecoveryAction.NONE,
+            resolveListenTogetherForegroundRecoveryAction(
+                connectionState = ListenTogetherConnectionState.CONNECTING,
+                roomId = "ROOM01",
+                wsUrl = "wss://example.test/room",
+                reconnectEnabled = true,
+                connectingSinceElapsedMs = 0L,
+                nowElapsedMs = 100_000L,
+                connectingTimeoutMs = 15_000L
+            )
+        )
+    }
+
+    @Test
+    fun `foreground recovery treats the timeout boundary as stale`() {
+        assertEquals(
+            ListenTogetherForegroundRecoveryAction.CONNECT,
+            resolveListenTogetherForegroundRecoveryAction(
+                connectionState = ListenTogetherConnectionState.CONNECTING,
+                roomId = "ROOM01",
+                wsUrl = "wss://example.test/room",
+                reconnectEnabled = true,
+                connectingSinceElapsedMs = 90_000L,
+                nowElapsedMs = 105_000L,
+                connectingTimeoutMs = 15_000L
+            )
+        )
+    }
+
+    @Test
+    fun `foreground recovery ignores elapsed time that moves backwards`() {
+        assertEquals(
+            ListenTogetherForegroundRecoveryAction.NONE,
+            resolveListenTogetherForegroundRecoveryAction(
+                connectionState = ListenTogetherConnectionState.CONNECTING,
+                roomId = "ROOM01",
+                wsUrl = "wss://example.test/room",
+                reconnectEnabled = true,
+                connectingSinceElapsedMs = 105_000L,
+                nowElapsedMs = 90_000L,
+                connectingTimeoutMs = 15_000L
             )
         )
     }
