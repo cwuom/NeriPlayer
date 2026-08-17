@@ -18,9 +18,23 @@ fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
 
 fun List<LyricEntry>.hasWordTimedEntries(): Boolean = any { !it.words.isNullOrEmpty() }
 
+enum class LyricsEditorSource {
+    SIDECAR,
+    EMBEDDED
+}
+
 internal data class LyricsEditorSeed(
     val lyrics: String,
-    val translatedLyrics: String
+    val translatedLyrics: String,
+    val romanizedLyrics: String = "",
+    val sidecarLyrics: String = lyrics,
+    val sidecarTranslatedLyrics: String = translatedLyrics,
+    val sidecarRomanizedLyrics: String = romanizedLyrics,
+    val embeddedLyrics: String = lyrics,
+    val embeddedTranslatedLyrics: String = translatedLyrics,
+    val embeddedRomanizedLyrics: String = romanizedLyrics,
+    val hasSidecar: Boolean = false,
+    val source: LyricsEditorSource = LyricsEditorSource.SIDECAR
 )
 
 internal fun resolveStoredLyricText(
@@ -92,6 +106,22 @@ internal fun resolveLyricsEditorSeed(
         translatedLyrics = preparedTranslatedLyrics ?: resolveStoredLyricText(
             currentLyric = song.matchedTranslatedLyric,
             legacyLyric = song.originalTranslatedLyric
+        ).orEmpty(),
+        romanizedLyrics = resolveStoredLyricText(
+            currentLyric = song.matchedRomanizedLyric,
+            legacyLyric = song.originalRomanizedLyric
+        ).orEmpty(),
+        embeddedLyrics = preparedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedLyric,
+            legacyLyric = song.originalLyric
+        ).orEmpty(),
+        embeddedTranslatedLyrics = preparedTranslatedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedTranslatedLyric,
+            legacyLyric = song.originalTranslatedLyric
+        ).orEmpty(),
+        embeddedRomanizedLyrics = resolveStoredLyricText(
+            currentLyric = song.matchedRomanizedLyric,
+            legacyLyric = song.originalRomanizedLyric
         ).orEmpty()
     )
 }

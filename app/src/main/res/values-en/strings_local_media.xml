@@ -41,6 +41,14 @@
     <string name="local_song_metadata_write_confirm_message">Writes the current title, artist, cover art, lyrics, and translated lyrics to the audio tags. Unsupported audio formats or tag providers may not retain every field.</string>
     <string name="local_song_metadata_write_confirm_write">Write Back</string>
     <string name="local_song_metadata_write_confirm_app_only">Save in App Only</string>
+    <string name="local_lyrics_source_choice_title">Choose lyric source</string>
+    <string name="local_lyrics_source_choice_message">This song has both sidecar and embedded lyrics. Choose the source for this edit.</string>
+    <string name="local_lyrics_source_sidecar">Prefer Sidecar Lyrics</string>
+    <string name="local_lyrics_source_embedded">Prefer Embedded Lyrics</string>
+    <string name="local_lyrics_embedded_overwrite_title">Overwrite sidecar lyrics?</string>
+    <string name="local_lyrics_embedded_overwrite_message">Saving embedded lyrics writes audio metadata and replaces the current original, translated, and romanized sidecar lyrics. Continue?</string>
+    <string name="local_lyrics_embedded_overwrite_confirm">Continue and Overwrite</string>
+    <string name="local_lyrics_fill_write_confirm_message">Lyrics were saved to sidecar files. Also write them back to local audio metadata?</string>
     <string name="local_song_metadata_write_success">Local audio tags updated</string>
     <string name="local_song_metadata_write_catalog_sync_failed">Local audio tags updated, but the downloaded list could not be refreshed</string>
     <string name="local_song_metadata_write_not_writable">Could not write local audio tags. The changes were not saved.</string>

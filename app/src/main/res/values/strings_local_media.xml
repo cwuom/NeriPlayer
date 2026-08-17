@@ -41,6 +41,14 @@
     <string name="local_song_metadata_write_confirm_message">将当前标题、艺术家、封面、原文歌词和翻译歌词写入本地音频标签。音频格式或提供商不支持的字段可能无法回写。</string>
     <string name="local_song_metadata_write_confirm_write">回写</string>
     <string name="local_song_metadata_write_confirm_app_only">仅应用内保存</string>
+    <string name="local_lyrics_source_choice_title">选择歌词来源</string>
+    <string name="local_lyrics_source_choice_message">当前歌曲同时存在侧载歌词和嵌入歌词，请选择本次编辑使用的来源</string>
+    <string name="local_lyrics_source_sidecar">侧载歌词优先</string>
+    <string name="local_lyrics_source_embedded">嵌入歌词优先</string>
+    <string name="local_lyrics_embedded_overwrite_title">覆盖侧载歌词？</string>
+    <string name="local_lyrics_embedded_overwrite_message">保存嵌入歌词会回写音频元信息，并覆盖当前原文、翻译和罗马音侧载歌词。是否继续？</string>
+    <string name="local_lyrics_embedded_overwrite_confirm">继续并覆盖</string>
+    <string name="local_lyrics_fill_write_confirm_message">歌词已保存到侧载文件。是否同时回写到本地音频元信息？</string>
     <string name="local_song_metadata_write_success">已回写本地音频标签</string>
     <string name="local_song_metadata_write_catalog_sync_failed">已回写本地音频标签，但下载列表同步失败</string>
     <string name="local_song_metadata_write_not_writable">无法写入本地音频标签，未保存本次修改</string>

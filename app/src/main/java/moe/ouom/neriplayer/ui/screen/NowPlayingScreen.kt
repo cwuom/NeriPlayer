@@ -274,6 +274,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.hasWordTimedEntries
 import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSeed
+import moe.ouom.neriplayer.ui.component.lyrics.LyricsEditorSource
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.lyrics.LyricVisualSpec
@@ -2433,8 +2434,8 @@ fun NowPlayingScreen(
                     extractYouTubeMusicVideoId(song.mediaUri) != null &&
                     currentMediaUrl.isNullOrBlank()
             val resolvedLyrics = when {
-                localRawLyrics != null && song != null -> {
-                    PlayerManager.getLyrics(song)
+                isLocalSong && localRawLyrics != null -> {
+                    parseNeteaseLyricsAuto(localRawLyrics)
                 }
                 isLocalSong && !effectiveRawLyrics.isNullOrBlank() -> {
                     parseNeteaseLyricsAuto(effectiveRawLyrics)
@@ -2473,8 +2474,8 @@ fun NowPlayingScreen(
 
             val resolvedTranslatedLyrics = try {
                 when {
-                    localRawTranslatedLyrics != null && song != null -> {
-                        PlayerManager.getTranslatedLyrics(song)
+                    isLocalSong && localRawTranslatedLyrics != null -> {
+                        parseNeteaseLyricsAuto(localRawTranslatedLyrics)
                     }
                     effectiveRawTranslatedLyrics != null -> {
                         if (effectiveRawTranslatedLyrics.isBlank()) {
@@ -2500,8 +2501,8 @@ fun NowPlayingScreen(
             }
             val resolvedPhoneticLyrics = try {
                 when {
-                    localRawPhoneticLyrics != null && song != null -> {
-                        PlayerManager.getRomanizedLyrics(song)
+                    isLocalSong && localRawPhoneticLyrics != null -> {
+                        parseNeteaseLyricsAuto(localRawPhoneticLyrics)
                     }
                     downloadedRawPhoneticLyrics != null -> {
                         parseNeteaseLyricsAuto(downloadedRawPhoneticLyrics)
@@ -4656,6 +4657,7 @@ fun EditSongInfoSheet(
     var showSearchResults by remember { mutableStateOf(false) }
     var selectedSongForFill by remember { mutableStateOf<SongSearchInfo?>(null) }
     var lyricsEditorSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
+    var pendingLyricsSourceSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
     var shouldClearLyrics by remember { mutableStateOf(false) }  // 标记是否应该清除歌词(B站)
     var shouldRestoreLyrics by remember { mutableStateOf(false) }  // 标记是否应该恢复歌词(网易云)
     var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
@@ -4665,6 +4667,7 @@ fun EditSongInfoSheet(
     var shouldRestoreArtistBase by remember { mutableStateOf(false) }
     var shouldClearMatchedMetadata by remember { mutableStateOf(false) }
     var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
+    var showFillLyricsMetadataWriteBackConfirm by remember { mutableStateOf(false) }
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -4822,6 +4825,26 @@ fun EditSongInfoSheet(
                 NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
                 snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
+                )
+            }
+        }
+    }
+
+    fun writeFetchedLyricsToLocalMetadata() {
+        coroutineScope.launch {
+            try {
+                viewModel.updateSongInfo(
+                    originalSong = actualSong,
+                    newCoverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl,
+                    newName = actualSong.customName ?: actualSong.name,
+                    newArtist = actualSong.customArtist ?: actualSong.artist,
+                    writeLocalMetadata = true,
+                    writeLyrics = true
+                )
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingScreen", "回写填充歌词失败", error)
+                snackbarHostState.showNeriSnackbar(
+                    composeResources.getString(R.string.toast_save_failed, error.message.orEmpty())
                 )
             }
         }
@@ -5007,7 +5030,7 @@ fun EditSongInfoSheet(
                     val displayedTranslatedLyricsSnapshot = displayedTranslatedLyrics.toList()
                     coroutineScope.launch {
                         try {
-                            val loadedLyricsResult: Pair<String, String> = withContext(Dispatchers.IO) {
+                            val loadedEditorSeed: LyricsEditorSeed = withContext(Dispatchers.IO) {
                                 val isLocalSong = actualSong.isLocalSong()
                                 val isManagedLocalDownload = isLocalSong && (
                                     GlobalDownloadManager.hasDownloadedSongCached(actualSong) ||
@@ -5031,6 +5054,7 @@ fun EditSongInfoSheet(
                                 }
                                 val localRawLyrics = localLyrics?.lyric
                                 val localRawTranslatedLyrics = localLyrics?.translatedLyric
+                                val localRawRomanizedLyrics = localLyrics?.romanizedLyric
                                 val storedRawLyrics = resolveStoredLyricText(
                                     currentLyric = actualSong.matchedLyric,
                                     legacyLyric = actualSong.originalLyric
@@ -5038,6 +5062,10 @@ fun EditSongInfoSheet(
                                 val storedRawTranslatedLyrics = resolveStoredLyricText(
                                     currentLyric = actualSong.matchedTranslatedLyric,
                                     legacyLyric = actualSong.originalTranslatedLyric
+                                )
+                                val storedRawRomanizedLyrics = resolveStoredLyricText(
+                                    currentLyric = actualSong.matchedRomanizedLyric,
+                                    legacyLyric = actualSong.originalRomanizedLyric
                                 )
                                 val downloadedRawLyrics = actualSong
                                     .takeIf { canReadManagedDownloadLyrics }
@@ -5131,16 +5159,55 @@ fun EditSongInfoSheet(
                                     ""
                                 }
 
-                                Pair(lyrics, translatedLyrics)
+                                if (isLocalSong) {
+                                    LyricsEditorSeed(
+                                        lyrics = selectedRawLyrics.orEmpty(),
+                                        translatedLyrics = selectedRawTranslatedLyrics
+                                            ?: translatedLyrics,
+                                        romanizedLyrics = localRawRomanizedLyrics
+                                            ?: storedRawRomanizedLyrics.orEmpty(),
+                                        sidecarLyrics = if (localLyrics?.hasOriginalSidecar == true) {
+                                            localRawLyrics.orEmpty()
+                                        } else {
+                                            ""
+                                        },
+                                        sidecarTranslatedLyrics = if (
+                                            localLyrics?.hasTranslatedSidecar == true
+                                        ) {
+                                            localRawTranslatedLyrics.orEmpty()
+                                        } else {
+                                            ""
+                                        },
+                                        sidecarRomanizedLyrics = if (
+                                            localLyrics?.hasRomanizedSidecar == true
+                                        ) {
+                                            localRawRomanizedLyrics.orEmpty()
+                                        } else {
+                                            ""
+                                        },
+                                        embeddedLyrics = storedRawLyrics.orEmpty(),
+                                        embeddedTranslatedLyrics = storedRawTranslatedLyrics.orEmpty(),
+                                        embeddedRomanizedLyrics = storedRawRomanizedLyrics.orEmpty(),
+                                        hasSidecar = localLyrics?.let {
+                                            it.hasOriginalSidecar ||
+                                                it.hasTranslatedSidecar ||
+                                                it.hasRomanizedSidecar
+                                        } == true,
+                                        source = LyricsEditorSource.SIDECAR
+                                    )
+                                } else {
+                                    resolveLyricsEditorSeed(
+                                        song = actualSong,
+                                        preparedLyrics = lyrics,
+                                        preparedTranslatedLyrics = translatedLyrics
+                                    )
+                                }
                             }
-                            val loadedLyrics = loadedLyricsResult.first
-                            val loadedTranslatedLyrics = loadedLyricsResult.second
-
-                            lyricsEditorSeed = resolveLyricsEditorSeed(
-                                song = actualSong,
-                                preparedLyrics = loadedLyrics,
-                                preparedTranslatedLyrics = loadedTranslatedLyrics
-                            )
+                            if (loadedEditorSeed.hasSidecar && actualSong.isLocalSong()) {
+                                pendingLyricsSourceSeed = loadedEditorSeed
+                            } else {
+                                lyricsEditorSeed = loadedEditorSeed
+                            }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -5269,6 +5336,31 @@ fun EditSongInfoSheet(
         )
     }
 
+    if (showFillLyricsMetadataWriteBackConfirm) {
+        AlertDialog(
+            onDismissRequest = { showFillLyricsMetadataWriteBackConfirm = false },
+            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
+            text = { Text(stringResource(R.string.local_lyrics_fill_write_confirm_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        showFillLyricsMetadataWriteBackConfirm = false
+                        writeFetchedLyricsToLocalMetadata()
+                    }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = { showFillLyricsMetadataWriteBackConfirm = false }
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+            }
+        )
+    }
+
     // 填充选项对话框
     if (selectedSongForFill != null) {
         FillOptionsDialog(
@@ -5292,7 +5384,10 @@ fun EditSongInfoSheet(
                 }
                 if (fillLyrics) {
                     selectedSongForFill?.let { selectedSong ->
-                        viewModel.fillLyrics(context, actualSong, selectedSong) { _, message ->
+                        viewModel.fillLyrics(context, actualSong, selectedSong) { success, message ->
+                            if (success && actualSong.isLocalSong()) {
+                                showFillLyricsMetadataWriteBackConfirm = true
+                            }
                             coroutineScope.launch {
                                 snackbarHostState.showNeriSnackbar(message)
                             }
@@ -5311,9 +5406,50 @@ fun EditSongInfoSheet(
             originalSong = actualSong,
             initialLyrics = lyricsEditorSeed!!.lyrics,
             initialTranslatedLyrics = lyricsEditorSeed!!.translatedLyrics,
+            initialRomanizedLyrics = lyricsEditorSeed!!.romanizedLyrics,
+            editingSource = lyricsEditorSeed!!.source,
+            hasExistingSidecar = lyricsEditorSeed!!.hasSidecar,
             onDismiss = {
                 clearEditSongInfoFocus()
                 lyricsEditorSeed = null
+            }
+        )
+    }
+
+    pendingLyricsSourceSeed?.let { pendingSeed ->
+        AlertDialog(
+            onDismissRequest = { pendingLyricsSourceSeed = null },
+            title = { Text(stringResource(R.string.local_lyrics_source_choice_title)) },
+            text = { Text(stringResource(R.string.local_lyrics_source_choice_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        lyricsEditorSeed = pendingSeed.copy(
+                            lyrics = pendingSeed.sidecarLyrics,
+                            translatedLyrics = pendingSeed.sidecarTranslatedLyrics,
+                            romanizedLyrics = pendingSeed.sidecarRomanizedLyrics,
+                            source = LyricsEditorSource.SIDECAR
+                        )
+                        pendingLyricsSourceSeed = null
+                    }
+                ) {
+                    Text(stringResource(R.string.local_lyrics_source_sidecar))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = {
+                        lyricsEditorSeed = pendingSeed.copy(
+                            lyrics = pendingSeed.embeddedLyrics,
+                            translatedLyrics = pendingSeed.embeddedTranslatedLyrics,
+                            romanizedLyrics = pendingSeed.embeddedRomanizedLyrics,
+                            source = LyricsEditorSource.EMBEDDED
+                        )
+                        pendingLyricsSourceSeed = null
+                    }
+                ) {
+                    Text(stringResource(R.string.local_lyrics_source_embedded))
+                }
             }
         )
     }
@@ -5715,6 +5851,9 @@ fun LyricsEditorSheet(
     originalSong: SongItem,
     initialLyrics: String,
     initialTranslatedLyrics: String,
+    initialRomanizedLyrics: String = "",
+    editingSource: LyricsEditorSource = LyricsEditorSource.SIDECAR,
+    hasExistingSidecar: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -5732,8 +5871,10 @@ fun LyricsEditorSheet(
 
     var lyricsText by remember { mutableStateOf(initialLyrics) }
     var translatedLyricsText by remember { mutableStateOf(initialTranslatedLyrics) }
+    var romanizedLyricsText by remember { mutableStateOf(initialRomanizedLyrics) }
     var isSaving by remember { mutableStateOf(false) }
     var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
+    var showEmbeddedLyricsOverwriteConfirm by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showLyricMatchSheet by remember { mutableStateOf(false) }
     var lyricMatchQuery by remember(originalSong.stableKey()) {
@@ -5767,6 +5908,7 @@ fun LyricsEditorSheet(
 
     BackHandler {
         when {
+            showEmbeddedLyricsOverwriteConfirm -> showEmbeddedLyricsOverwriteConfirm = false
             showLocalMetadataWriteBackConfirm -> showLocalMetadataWriteBackConfirm = false
             showLyricMatchSheet -> showLyricMatchSheet = false
             else -> dismissLyricsEditor()
@@ -5781,6 +5923,7 @@ fun LyricsEditorSheet(
                     songToUpdate = originalSong,
                     newLyrics = lyricsText,
                     newTranslatedLyrics = translatedLyricsText,
+                    newRomanizedLyrics = romanizedLyricsText,
                     writeLocalMetadata = writeLocalMetadata
                 )
                 dismissLyricsEditor()
@@ -5928,6 +6071,11 @@ fun LyricsEditorSheet(
                 onClick = { selectedTab = 1 },
                 text = { Text(stringResource(R.string.lyrics_translation)) }
             )
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = { Text(stringResource(R.string.lyrics_romanized)) }
+            )
         }
 
         // 歌词编辑器
@@ -5972,6 +6120,26 @@ fun LyricsEditorSheet(
                     maxLines = Int.MAX_VALUE
                 )
             }
+            2 -> {
+                OutlinedTextField(
+                    value = romanizedLyricsText,
+                    onValueChange = { romanizedLyricsText = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    placeholder = {
+                        Text(
+                            text = stringResource(R.string.lyrics_editor_hint_romanized),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    maxLines = Int.MAX_VALUE
+                )
+            }
         }
 
         // 底部按钮
@@ -5984,6 +6152,7 @@ fun LyricsEditorSheet(
                     when (selectedTab) {
                         0 -> lyricsText = ""
                         1 -> translatedLyricsText = ""
+                        2 -> romanizedLyricsText = ""
                     }
                 },
                 modifier = Modifier.weight(1f)
@@ -6003,6 +6172,7 @@ fun LyricsEditorSheet(
                             when (selectedTab) {
                                 0 -> lyricsText = clipText
                                 1 -> translatedLyricsText = clipText
+                                2 -> romanizedLyricsText = clipText
                             }
                         }
                     }
@@ -6015,7 +6185,14 @@ fun LyricsEditorSheet(
             HapticTextButton(
                 onClick = {
                     if (originalSong.isLocalSong()) {
-                        showLocalMetadataWriteBackConfirm = true
+                        if (
+                            editingSource == LyricsEditorSource.EMBEDDED &&
+                                hasExistingSidecar
+                        ) {
+                            showEmbeddedLyricsOverwriteConfirm = true
+                        } else {
+                            showLocalMetadataWriteBackConfirm = true
+                        }
                     } else {
                         saveLyrics(writeLocalMetadata = false)
                     }
@@ -6096,6 +6273,31 @@ fun LyricsEditorSheet(
                     }
                 ) {
                     Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+            }
+        )
+    }
+
+    if (showEmbeddedLyricsOverwriteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showEmbeddedLyricsOverwriteConfirm = false },
+            title = { Text(stringResource(R.string.local_lyrics_embedded_overwrite_title)) },
+            text = { Text(stringResource(R.string.local_lyrics_embedded_overwrite_message)) },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        showEmbeddedLyricsOverwriteConfirm = false
+                        saveLyrics(writeLocalMetadata = true)
+                    }
+                ) {
+                    Text(stringResource(R.string.local_lyrics_embedded_overwrite_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(
+                    onClick = { showEmbeddedLyricsOverwriteConfirm = false }
+                ) {
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

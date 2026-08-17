@@ -7,13 +7,16 @@ import moe.ouom.neriplayer.data.model.SongItem
 
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newLyrics: String? = matchedLyric,
-    newTranslatedLyric: String? = matchedTranslatedLyric
+    newTranslatedLyric: String? = matchedTranslatedLyric,
+    newRomanizedLyric: String? = matchedRomanizedLyric
 ): SongItem {
     return copy(
         matchedLyric = newLyrics,
         matchedTranslatedLyric = newTranslatedLyric,
+        matchedRomanizedLyric = newRomanizedLyric,
         originalLyric = originalLyric ?: matchedLyric,
-        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric
+        originalTranslatedLyric = originalTranslatedLyric ?: matchedTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric ?: matchedRomanizedLyric
     )
 }
 

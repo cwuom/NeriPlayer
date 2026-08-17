@@ -310,6 +310,7 @@
     <string name="lyrics_phone_speaker">Phone Speaker</string>
     <string name="lyrics_original">Original</string>
     <string name="lyrics_translation">Translation</string>
+    <string name="lyrics_romanized">Romanized</string>
     <string name="music_restore_original">Restore</string>
     <string name="music_restore_cover">Restore cover</string>
     <string name="music_restore_title">Restore title</string>
@@ -321,6 +322,7 @@
     <string name="music_lyrics_fill_failed">Failed to fill lyrics</string>
     <string name="lyrics_editor_hint_original">[00:00.00]Enter lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Lyrics content</string>
     <string name="lyrics_editor_hint_translation">[00:00.00]Enter translated lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Translation content</string>
+    <string name="lyrics_editor_hint_romanized">[00:00.00]Enter romanized lyrics here\n[00:05.00]Supports LRC format\n[00:10.00]Format: [mm:ss.xx]Romanized content</string>
     <string name="lyrics_match_action">Match</string>
     <string name="lyrics_match_title">Match Lyrics</string>
     <string name="lyrics_match_keyword">Match keyword</string>

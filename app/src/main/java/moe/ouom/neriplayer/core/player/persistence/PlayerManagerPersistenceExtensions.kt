@@ -2206,6 +2206,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     songToUpdate: SongItem,
     newLyrics: String?,
     newTranslatedLyrics: String?,
+    newRomanizedLyrics: String? = null,
     writeLocalMetadata: Boolean = false
 ) = runSongMetadataMutation {
     val queueIndex = queueIndexOf(songToUpdate)
@@ -2213,7 +2214,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     if (queueIndex != -1) {
         val updatedSong = currentPlaylist[queueIndex].withUpdatedLyricsPreservingOriginal(
             newLyrics = newLyrics,
-            newTranslatedLyric = newTranslatedLyrics
+            newTranslatedLyric = newTranslatedLyrics,
+            newRomanizedLyric = newRomanizedLyrics
         )
         val newList = currentPlaylist.toMutableList()
         newList[queueIndex] = updatedSong
@@ -2233,7 +2235,8 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         setCurrentSongForPlayback(
             _currentSongFlow.value?.withUpdatedLyricsPreservingOriginal(
                 newLyrics = newLyrics,
-                newTranslatedLyric = newTranslatedLyrics
+                newTranslatedLyric = newTranslatedLyrics,
+                newRomanizedLyric = newRomanizedLyrics
             )
         )
         NPLogger.e(
@@ -2253,6 +2256,23 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
                     newSongInfo = latestSong,
                     triggerSync = true
                 )
+            }
+        }
+        if (LocalSongSupport.isLocalSong(latestSong, application)) {
+            val sidecarsWritten = runCatching {
+                LocalMediaSupport.writeLocalLyricsSidecars(
+                    context = application,
+                    song = latestSong
+                )
+            }.getOrElse { error ->
+                NPLogger.w(
+                    "PlayerManager",
+                    "本地歌词侧载写入失败: ${error.message}"
+                )
+                false
+            }
+            if (!sidecarsWritten) {
+                NPLogger.w("PlayerManager", "本地歌词侧载未写入: ${latestSong.name}")
             }
         }
         val localMetadataOutcome = if (writeLocalMetadata) {

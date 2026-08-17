@@ -167,7 +167,9 @@ internal data class QuickImportedSongSeed(
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
     val originalLyric: String? = null,
-    val originalTranslatedLyric: String? = null
+    val originalTranslatedLyric: String? = null,
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null
 )
 
 private data class QuickImportedAudioInfo(
@@ -863,8 +865,10 @@ object LocalAudioImportManager {
             originalCoverUrl = seed.nearbyCoverUri,
             matchedLyric = seed.matchedLyric,
             matchedTranslatedLyric = seed.matchedTranslatedLyric,
+            matchedRomanizedLyric = seed.matchedRomanizedLyric,
             originalLyric = seed.originalLyric,
             originalTranslatedLyric = seed.originalTranslatedLyric,
+            originalRomanizedLyric = seed.originalRomanizedLyric,
             localFileName = resolvedDisplayName.ifBlank { null },
             localFilePath = seed.localFile?.absolutePath,
             channelId = "local",
@@ -910,6 +914,8 @@ object LocalAudioImportManager {
             coverUrl = resolvedCoverUrl,
             matchedLyric = detailedSong.matchedLyric ?: quickSong.matchedLyric,
             matchedTranslatedLyric = detailedSong.matchedTranslatedLyric ?: quickSong.matchedTranslatedLyric,
+            matchedRomanizedLyric = detailedSong.matchedRomanizedLyric
+                ?: quickSong.matchedRomanizedLyric,
             originalName = quickSong.originalName?.takeIf { it.isNotBlank() }
                 ?: detailedSong.originalName?.takeIf { it.isNotBlank() }
                 ?: resolvedName,
@@ -922,6 +928,8 @@ object LocalAudioImportManager {
             originalLyric = quickSong.originalLyric ?: detailedSong.originalLyric,
             originalTranslatedLyric = quickSong.originalTranslatedLyric
                 ?: detailedSong.originalTranslatedLyric,
+            originalRomanizedLyric = quickSong.originalRomanizedLyric
+                ?: detailedSong.originalRomanizedLyric,
             mediaUri = resolvedMediaUri,
             localFileName = quickSong.localFileName ?: detailedSong.localFileName,
             localFilePath = resolvedLocalPath,
@@ -986,12 +994,17 @@ object LocalAudioImportManager {
             val resolvedLyric = lyricMetadata?.lyric ?: embeddedSong.matchedLyric
             val resolvedTranslatedLyric = lyricMetadata?.translatedLyric
                 ?: embeddedSong.matchedTranslatedLyric
+            val resolvedRomanizedLyric = lyricMetadata?.romanizedLyric
+                ?: embeddedSong.matchedRomanizedLyric
             embeddedSong.copy(
                 matchedLyric = resolvedLyric,
                 matchedTranslatedLyric = resolvedTranslatedLyric,
+                matchedRomanizedLyric = resolvedRomanizedLyric,
                 originalLyric = resolvedLyric ?: embeddedSong.originalLyric,
                 originalTranslatedLyric = resolvedTranslatedLyric
-                    ?: embeddedSong.originalTranslatedLyric
+                    ?: embeddedSong.originalTranslatedLyric,
+                originalRomanizedLyric = resolvedRomanizedLyric
+                    ?: embeddedSong.originalRomanizedLyric
             )
         }
 
@@ -1133,7 +1146,9 @@ object LocalAudioImportManager {
                 matchedLyric = details.lyricContent,
                 matchedTranslatedLyric = details.translatedLyricContent,
                 originalLyric = details.lyricContent,
-                originalTranslatedLyric = details.translatedLyricContent
+                originalTranslatedLyric = details.translatedLyricContent,
+                matchedRomanizedLyric = details.romanizedLyricContent,
+                originalRomanizedLyric = details.romanizedLyricContent
             ),
             unknownArtistLabel = context.getString(R.string.music_unknown_artist)
         )
