@@ -424,7 +424,10 @@ internal object ManagedDownloadStorage {
     data class DownloadedLyricsBundle(
         val lyric: String?,
         val translatedLyric: String?,
-        val romanizedLyric: String?
+        val romanizedLyric: String?,
+        val hasOriginalSidecar: Boolean = false,
+        val hasTranslatedSidecar: Boolean = false,
+        val hasRomanizedSidecar: Boolean = false
     )
 
     internal enum class SnapshotEntryBucket {
@@ -1799,7 +1802,7 @@ internal object ManagedDownloadStorage {
         val resolvedAudio = findAudioEntry(snapshot, song)
         val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
 
-        fun readLyric(translated: Boolean): String? {
+        fun readLyric(translated: Boolean): Pair<String?, Boolean> {
             val reference = ManagedDownloadLyricStore.resolveManagedLyricReference(
                 context = context,
                 snapshot = snapshot,
@@ -1811,13 +1814,15 @@ internal object ManagedDownloadStorage {
                 exists = exists
             )
             if (reference != null) {
-                readText(reference)?.let { return it }
+                readText(reference)?.let { return it to true }
             }
-            return ManagedDownloadLyricStore.selectedEmbeddedLyric(resolvedMetadata, translated)
-                ?: ManagedDownloadLyricStore.fallbackEmbeddedLyric(resolvedMetadata, translated)
+            return (
+                ManagedDownloadLyricStore.selectedEmbeddedLyric(resolvedMetadata, translated)
+                    ?: ManagedDownloadLyricStore.fallbackEmbeddedLyric(resolvedMetadata, translated)
+                ) to false
         }
 
-        fun readRomanizedLyric(): String? {
+        fun readRomanizedLyric(): Pair<String?, Boolean> {
             val reference = ManagedDownloadLyricStore.resolveManagedRomanizedLyricReference(
                 context = context,
                 snapshot = snapshot,
@@ -1828,16 +1833,25 @@ internal object ManagedDownloadStorage {
                 exists = exists
             )
             if (reference != null) {
-                readText(reference)?.let { return it }
+                readText(reference)?.let { return it to true }
             }
-            return ManagedDownloadLyricStore.selectedEmbeddedRomanizedLyric(resolvedMetadata)
-                ?: ManagedDownloadLyricStore.fallbackEmbeddedRomanizedLyric(resolvedMetadata)
+            return (
+                ManagedDownloadLyricStore.selectedEmbeddedRomanizedLyric(resolvedMetadata)
+                    ?: ManagedDownloadLyricStore.fallbackEmbeddedRomanizedLyric(resolvedMetadata)
+                ) to false
         }
 
+        val original = readLyric(translated = false)
+        val translated = readLyric(translated = true)
+        val romanized = readRomanizedLyric()
+
         return DownloadedLyricsBundle(
-            lyric = readLyric(translated = false),
-            translatedLyric = readLyric(translated = true),
-            romanizedLyric = readRomanizedLyric()
+            lyric = original.first,
+            translatedLyric = translated.first,
+            romanizedLyric = romanized.first,
+            hasOriginalSidecar = original.second,
+            hasTranslatedSidecar = translated.second,
+            hasRomanizedSidecar = romanized.second
         )
     }
 

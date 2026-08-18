@@ -788,6 +788,9 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertEquals("original", bundle.lyric)
         assertEquals("translated", bundle.translatedLyric)
         assertEquals("romanized", bundle.romanizedLyric)
+        assertTrue(bundle.hasOriginalSidecar)
+        assertTrue(bundle.hasTranslatedSidecar)
+        assertTrue(bundle.hasRomanizedSidecar)
     }
 
     private fun ManagedDownloadStorage.StoredEntry.lyricEntry(name: String):

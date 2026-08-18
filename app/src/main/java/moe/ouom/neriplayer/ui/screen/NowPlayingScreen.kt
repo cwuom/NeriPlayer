@@ -5139,22 +5139,78 @@ fun EditSongInfoSheet(
                     coroutineScope.launch {
                         try {
                             if (actualSong.isLocalSong()) {
-                                val localLyrics = withContext(Dispatchers.IO) {
-                                    runCatching {
-                                        LocalMediaSupport.inspectLyricsFast(
-                                            context = context,
-                                            song = actualSong,
-                                            includeEmbeddedFallback = false
-                                        )
-                                    }
-                                        .onFailure { error ->
+                                val isManagedLocalDownload = hasCachedLocalDownload(actualSong)
+                                val lyricsSources = withContext(Dispatchers.IO) {
+                                    val downloadedLyrics = if (isManagedLocalDownload) {
+                                        runCatching {
+                                            AudioDownloadManager.getLyricsBundle(context, actualSong)
+                                        }.onFailure { error ->
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
-                                                "编辑器读取本地歌词快速失败: ${error.message}"
+                                                "编辑器读取下载歌词索引失败: ${error.message}"
+                                            )
+                                        }.getOrNull()
+                                    } else {
+                                        null
+                                    }
+                                    val shouldProbeLocalSidecars = !isManagedLocalDownload ||
+                                        downloadedLyrics == null ||
+                                        !downloadedLyrics.hasOriginalSidecar &&
+                                        !downloadedLyrics.hasTranslatedSidecar &&
+                                        !downloadedLyrics.hasRomanizedSidecar
+                                    val localLyrics = if (shouldProbeLocalSidecars) {
+                                        val sidecarProbeSong = if (isManagedLocalDownload) {
+                                            actualSong.copy(localFilePath = null)
+                                        } else {
+                                            actualSong
+                                        }
+                                        runCatching {
+                                            LocalMediaSupport.inspectLyricsFast(
+                                                context = context,
+                                                song = sidecarProbeSong,
+                                                includeStoredFallback = !isManagedLocalDownload,
+                                                includeEmbeddedFallback = false
                                             )
                                         }
-                                        .getOrNull()
+                                            .onFailure { error ->
+                                                NPLogger.w(
+                                                    "NowPlayingLyrics",
+                                                    "编辑器读取本地歌词快速失败: ${error.message}"
+                                                )
+                                            }
+                                            .getOrNull()
+                                    } else {
+                                        null
                                     }
+                                    downloadedLyrics to localLyrics
+                                }
+                                val downloadedLyrics = lyricsSources.first
+                                val localLyrics = lyricsSources.second
+                                val sidecarLyrics = when {
+                                    downloadedLyrics?.hasOriginalSidecar == true -> {
+                                        downloadedLyrics.lyric
+                                    }
+                                    localLyrics?.hasOriginalSidecar == true -> localLyrics.lyric
+                                    else -> null
+                                }
+                                val sidecarTranslatedLyrics = when {
+                                    downloadedLyrics?.hasTranslatedSidecar == true -> {
+                                        downloadedLyrics.translatedLyric
+                                    }
+                                    localLyrics?.hasTranslatedSidecar == true -> {
+                                        localLyrics.translatedLyric
+                                    }
+                                    else -> null
+                                }
+                                val sidecarRomanizedLyrics = when {
+                                    downloadedLyrics?.hasRomanizedSidecar == true -> {
+                                        downloadedLyrics.romanizedLyric
+                                    }
+                                    localLyrics?.hasRomanizedSidecar == true -> {
+                                        localLyrics.romanizedLyric
+                                    }
+                                    else -> null
+                                }
                                 val storedLyrics = resolveStoredLyricText(
                                     actualSong.matchedLyric,
                                     actualSong.originalLyric
@@ -5169,17 +5225,33 @@ fun EditSongInfoSheet(
                                 )
                                 val loadedEditorSeed = resolveLocalLyricsEditorSeed(
                                     song = actualSong,
-                                    sidecarLyrics = localLyrics?.lyric,
-                                    sidecarTranslatedLyrics = localLyrics?.translatedLyric,
-                                    sidecarRomanizedLyrics = localLyrics?.romanizedLyric,
-                                    embeddedLyrics = storedLyrics ?: displayedLyricsText,
-                                    embeddedTranslatedLyrics = storedTranslatedLyrics
+                                    sidecarLyrics = sidecarLyrics,
+                                    sidecarTranslatedLyrics = sidecarTranslatedLyrics,
+                                    sidecarRomanizedLyrics = sidecarRomanizedLyrics,
+                                    embeddedLyrics = downloadedLyrics
+                                        ?.takeUnless { it.hasOriginalSidecar }
+                                        ?.lyric
+                                        ?: storedLyrics
+                                        ?: displayedLyricsText,
+                                    embeddedTranslatedLyrics = downloadedLyrics
+                                        ?.takeUnless { it.hasTranslatedSidecar }
+                                        ?.translatedLyric
+                                        ?: storedTranslatedLyrics
                                         ?: displayedTranslatedLyricsText,
-                                    embeddedRomanizedLyrics =
-                                        storedRomanizedLyrics ?: displayedRomanizedLyricsText,
-                                    hasOriginalSidecar = localLyrics?.hasOriginalSidecar == true,
-                                    hasTranslatedSidecar = localLyrics?.hasTranslatedSidecar == true,
-                                    hasRomanizedSidecar = localLyrics?.hasRomanizedSidecar == true
+                                    embeddedRomanizedLyrics = downloadedLyrics
+                                        ?.takeUnless { it.hasRomanizedSidecar }
+                                        ?.romanizedLyric
+                                        ?: storedRomanizedLyrics
+                                        ?: displayedRomanizedLyricsText,
+                                    hasOriginalSidecar =
+                                        downloadedLyrics?.hasOriginalSidecar == true ||
+                                            localLyrics?.hasOriginalSidecar == true,
+                                    hasTranslatedSidecar =
+                                        downloadedLyrics?.hasTranslatedSidecar == true ||
+                                            localLyrics?.hasTranslatedSidecar == true,
+                                    hasRomanizedSidecar =
+                                        downloadedLyrics?.hasRomanizedSidecar == true ||
+                                            localLyrics?.hasRomanizedSidecar == true
                                 )
                                 if (lyricsEditorRequestId != requestId) {
                                     return@launch
