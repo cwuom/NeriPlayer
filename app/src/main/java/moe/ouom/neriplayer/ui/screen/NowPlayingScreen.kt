@@ -4583,6 +4583,7 @@ fun EditSongInfoSheet(
     } else {
         originalSong
     }
+    val canReplaceCoverFromLocalFile = shouldAllowLocalCoverReplacement(actualSong, context)
 
     var coverUrl by remember { mutableStateOf(actualSong.customCoverUrl ?: actualSong.coverUrl ?: "") }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
@@ -4599,6 +4600,8 @@ fun EditSongInfoSheet(
     var shouldRestoreArtistBase by remember { mutableStateOf(false) }
     var shouldClearMatchedMetadata by remember { mutableStateOf(false) }
     var showLocalMetadataWriteBackConfirm by remember { mutableStateOf(false) }
+    var showLocalCoverSyncConfirm by remember { mutableStateOf(false) }
+    var pendingCoverReplacementSong by remember { mutableStateOf<SongItem?>(null) }
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -4606,22 +4609,29 @@ fun EditSongInfoSheet(
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { sourceUri ->
-        if (sourceUri != null) {
-            coroutineScope.launch {
-                val importedCover = CustomSongCoverStorage.importFromUri(
-                    context = context,
-                    song = actualSong,
-                    sourceUri = sourceUri
+        val targetSong = pendingCoverReplacementSong
+        pendingCoverReplacementSong = null
+        sourceUri ?: return@rememberLauncherForActivityResult
+        val verifiedTargetSong = resolvePendingLocalCoverReplacementTarget(
+            pendingSong = targetSong,
+            currentSong = currentSong,
+            context = context
+        ) ?: return@rememberLauncherForActivityResult
+
+        coroutineScope.launch {
+            val importedCover = CustomSongCoverStorage.importFromUri(
+                context = context,
+                song = verifiedTargetSong,
+                sourceUri = sourceUri
+            )
+            if (importedCover == null) {
+                snackbarHostState.showNeriSnackbar(
+                    composeResources.getString(R.string.music_cover_import_failed)
                 )
-                if (importedCover == null) {
-                    snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.music_cover_import_failed)
-                    )
-                } else {
-                    coverUrl = importedCover.toString()
-                    userHasEdited = true
-                    shouldRestoreCoverBase = false
-                }
+            } else {
+                coverUrl = importedCover.toString()
+                userHasEdited = true
+                shouldRestoreCoverBase = false
             }
         }
     }
@@ -4844,9 +4854,9 @@ fun EditSongInfoSheet(
                         .size(120.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable {
+                        .clickable(enabled = canReplaceCoverFromLocalFile) {
                             clearEditSongInfoFocus()
-                            coverPickerLauncher.launch("image/*")
+                            showLocalCoverSyncConfirm = true
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -4859,14 +4869,22 @@ fun EditSongInfoSheet(
                                 allowHardware = false,
                                 offlineMode = offlineMode
                             ),
-                            contentDescription = stringResource(R.string.music_edit_cover),
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            },
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Icon(
                             Icons.Outlined.Edit,
-                            contentDescription = stringResource(R.string.music_edit_cover)
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            }
                         )
                     }
                 }
@@ -5167,6 +5185,21 @@ fun EditSongInfoSheet(
     }
     } // 关闭 AnimatedVisibility
 
+    if (showLocalCoverSyncConfirm) {
+        LocalSongSyncConfirmDialog(
+            actionLabel = composeResources.getString(R.string.music_edit_cover),
+            onConfirm = {
+                showLocalCoverSyncConfirm = false
+                if (shouldAllowLocalCoverReplacement(actualSong, context)) {
+                    pendingCoverReplacementSong = actualSong
+                    clearEditSongInfoFocus()
+                    coverPickerLauncher.launch("image/*")
+                }
+            },
+            onDismiss = { showLocalCoverSyncConfirm = false }
+        )
+    }
+
     if (showLocalMetadataWriteBackConfirm) {
         AlertDialog(
             onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
@@ -5432,6 +5465,25 @@ internal fun shouldConfirmLocalMetadataWriteBack(
     return !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
         !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false) ||
         currentCoverUrl?.trim() != resolvedCoverUrl
+}
+
+internal fun shouldAllowLocalCoverReplacement(
+    song: SongItem,
+    context: Context? = null
+): Boolean {
+    return !song.isSyncableRemoteSong(context)
+}
+
+internal fun resolvePendingLocalCoverReplacementTarget(
+    pendingSong: SongItem?,
+    currentSong: SongItem?,
+    context: Context? = null
+): SongItem? {
+    if (pendingSong == null || currentSong == null) return null
+    if (!pendingSong.sameIdentityAs(currentSong)) return null
+    if (!shouldAllowLocalCoverReplacement(pendingSong, context)) return null
+    if (!shouldAllowLocalCoverReplacement(currentSong, context)) return null
+    return pendingSong
 }
 
 @Composable
