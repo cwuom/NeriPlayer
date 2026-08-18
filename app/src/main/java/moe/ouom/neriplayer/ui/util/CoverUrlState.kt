@@ -8,6 +8,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.net.Uri
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,7 +18,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
@@ -25,14 +29,38 @@ import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import java.util.LinkedHashMap
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
-private val coverResolutionDispatcher = Dispatchers.IO.limitedParallelism(1)
+private val coverProbeDispatcher = Dispatchers.IO.limitedParallelism(4)
+@OptIn(ExperimentalCoroutinesApi::class)
+private val embeddedCoverResolutionDispatcher = Dispatchers.IO.limitedParallelism(2)
 private const val UI_COVER_MEMORY_CACHE_LIMIT = 2048
 private const val PLAYLIST_COVER_FALLBACK_IDLE_DELAY_MS = 96L
 private const val PLAYLIST_COVER_SIGNATURE_CANDIDATE_LIMIT = 32
 private const val PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT = 24
 private const val PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT = 12
+private const val COVER_PERF_LOG_LIMIT = 48
+private const val COVER_SLOW_LOG_THRESHOLD_MS = 120L
+private const val FAST_COVER_PROBE_CACHE_LIMIT = 2048
+private const val FAST_COVER_PROBE_TTL_MS = 900L
+private val coverPerfLogCount = AtomicInteger()
+private data class FastCoverProbeCacheEntry(
+    val coverUrl: String?,
+    val checkedAtMs: Long
+)
+
+private val fastCoverProbeCache = object : LinkedHashMap<String, FastCoverProbeCacheEntry>(
+    FAST_COVER_PROBE_CACHE_LIMIT,
+    0.75f,
+    true
+) {
+    override fun removeEldestEntry(
+        eldest: MutableMap.MutableEntry<String, FastCoverProbeCacheEntry>
+    ): Boolean = size > FAST_COVER_PROBE_CACHE_LIMIT
+}
+
 private val resolvedCoverMemoryCache = object : LinkedHashMap<String, String>(
     UI_COVER_MEMORY_CACHE_LIMIT,
     0.75f,
@@ -101,24 +129,49 @@ internal fun rememberSongDisplayCoverUrl(
         resolveLocalFallback,
         allowEmbeddedCoverFallback
     ) {
+        val startedAt = SystemClock.elapsedRealtime()
+        var resolutionStage = "none"
         if (song == null) {
             coverUrl = null
             return@LaunchedEffect
         }
 
         // 这里只读取歌曲对象中的已知封面, 避免重组时触发存储探测
-        val immediateCover = song.displayCoverUrl()
+        val rawImmediateCover = song.displayCoverUrl()
+        if (!rawImmediateCover.isNullOrBlank()) {
+            resolutionStage = "song-pending"
+            rememberResolvedCover(songDisplayKey, rawImmediateCover)
+            coverUrl = rawImmediateCover
+        }
+        val immediateCover = withContext(coverProbeDispatcher) {
+            rawImmediateCover?.takeIf { isUsableCoverReference(appContext, it) }
+        }
+        if (immediateCover.isNullOrBlank() && rawImmediateCover != null && coverUrl == rawImmediateCover) {
+            // a deleted sidecar must not keep the row in a permanently failed image state
+            coverUrl = null
+        }
         if (!immediateCover.isNullOrBlank()) {
+            resolutionStage = "song"
             rememberResolvedCover(songDisplayKey, immediateCover)
             coverUrl = immediateCover
         } else {
-            cachedResolvedCover(songDisplayKey)?.let { cachedCover ->
-                coverUrl = cachedCover
+            val memoryCover = cachedResolvedCover(songDisplayKey)
+            if (!memoryCover.isNullOrBlank()) {
+                coverUrl = memoryCover
             }
-            val cachedCover = withContext(coverResolutionDispatcher) {
-                resolveCachedSongDisplayCoverUrl(appContext, song)
+            val cachedCover = withContext(coverProbeDispatcher) {
+                memoryCover?.takeIf { isUsableCoverReference(appContext, it) }
+                    ?: resolveCachedSongDisplayCoverUrl(
+                        context = appContext,
+                        song = song,
+                        probeGeneration = downloadPresenceVersion
+                    )
+            }
+            if (cachedCover.isNullOrBlank() && memoryCover != null && coverUrl == memoryCover) {
+                coverUrl = null
             }
             if (!cachedCover.isNullOrBlank()) {
+                resolutionStage = if (cachedCover == memoryCover) "memory" else "local-cache"
                 rememberResolvedCover(songDisplayKey, cachedCover)
                 coverUrl = cachedCover
             }
@@ -127,35 +180,150 @@ internal fun rememberSongDisplayCoverUrl(
             !shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveLocalFallback,
                 allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
-            )
+            ) || !coverUrl.isNullOrBlank()
         ) {
             return@LaunchedEffect
         }
 
-        val resolvedCover = withContext(coverResolutionDispatcher) {
+        val resolvedCover = withContext(embeddedCoverResolutionDispatcher) {
             song.displayCoverUrl(appContext, resolveLocalFallback)
         }
         if (!resolvedCover.isNullOrBlank()) {
+            resolutionStage = "fallback"
             rememberResolvedCover(songDisplayKey, resolvedCover)
             coverUrl = resolvedCover
         }
+        logCoverResolution(
+            song = song,
+            stage = resolutionStage,
+            startedAt = startedAt,
+            immediateCover = immediateCover,
+            resolvedCover = resolvedCover
+        )
     }
 
     return coverUrl
 }
 
+private fun logCoverResolution(
+    song: SongItem,
+    stage: String,
+    startedAt: Long,
+    immediateCover: String?,
+    resolvedCover: String?
+) {
+    val elapsedMs = SystemClock.elapsedRealtime() - startedAt
+    if (elapsedMs < COVER_SLOW_LOG_THRESHOLD_MS ||
+        coverPerfLogCount.getAndIncrement() >= COVER_PERF_LOG_LIMIT
+    ) {
+        return
+    }
+    NPLogger.d(
+        "LocalCoverPerf",
+        "song=${song.name}, stage=$stage, elapsed=${elapsedMs}ms, " +
+            "hasImmediate=${!immediateCover.isNullOrBlank()}, " +
+            "hasResolved=${!resolvedCover.isNullOrBlank()}, " +
+            "source=${song.mediaUri ?: song.localFilePath}"
+    )
+}
+
 private fun resolveCachedSongDisplayCoverUrl(
+    context: android.content.Context,
+    song: SongItem,
+    probeGeneration: Int = 0
+): String? {
+    val cacheKey = fastCoverProbeCacheKey(song, probeGeneration)
+    val now = SystemClock.elapsedRealtime()
+    synchronized(fastCoverProbeCache) {
+        fastCoverProbeCache[cacheKey]?.let { cached ->
+            if (now - cached.checkedAtMs <= FAST_COVER_PROBE_TTL_MS) {
+                return cached.coverUrl
+            }
+            fastCoverProbeCache.remove(cacheKey)
+        }
+    }
+
+    val resolved = resolveCachedSongDisplayCoverUrlUncached(context, song)
+    synchronized(fastCoverProbeCache) {
+        fastCoverProbeCache[cacheKey] = FastCoverProbeCacheEntry(
+            coverUrl = resolved,
+            checkedAtMs = now
+        )
+    }
+    return resolved
+}
+
+private fun resolveCachedSongDisplayCoverUrlUncached(
     context: android.content.Context,
     song: SongItem
 ): String? {
-    song.customCoverUrl?.takeIf { it.isNotBlank() }?.let { return it }
-    AudioDownloadManager.peekLocalCoverUri(song)?.takeIf { it.isNotBlank() }?.let { return it }
+    song.customCoverUrl
+        ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
+        ?.let { return it }
+    AudioDownloadManager.peekLocalCoverUri(song)
+        ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
+        ?.let { return it }
     if (song.isLocalSong()) {
+        // local songs commonly have no persisted artwork. Keep provider lookups
+        // shared by all visible rows and prefer the indexed MediaStore hint.
+        LocalMediaSupport.peekMediaStoreAlbumArtUri(context, song)
+            ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
+            ?.let { return it }
+        LocalMediaSupport.resolveNearbyCoverUri(context, song)
+            ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
+            ?.let { return it }
         LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
-            ?.takeIf { it.isNotBlank() }
+            ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
             ?.let { return it }
     }
-    return song.displayCoverUrl()
+    return song.displayCoverUrl()?.takeIf(::isFastCoverReference)
+}
+
+private fun fastCoverProbeCacheKey(song: SongItem, probeGeneration: Int): String {
+    val localFile = song.localFilePath
+        ?.takeUnless { it.startsWith("content://", ignoreCase = true) }
+        ?.let(::File)
+    val fileState = localFile?.let {
+        "${it.length()}:${it.lastModified()}:${it.parentFile?.lastModified()}"
+    }.orEmpty()
+    return "${song.coverResolutionKey()}|$fileState|generation=$probeGeneration"
+}
+
+internal fun isFastCoverReference(reference: String): Boolean {
+    val normalized = reference.trim()
+    if (normalized.isEmpty()) return false
+    if (normalized.startsWith("http://", ignoreCase = true) ||
+        normalized.startsWith("https://", ignoreCase = true) ||
+        normalized.startsWith("content://", ignoreCase = true)
+    ) {
+        return true
+    }
+    val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return false
+    return when (uri.scheme?.lowercase()) {
+        "file" -> uri.path?.let(::File)?.isFile == true
+        null, "" -> normalized.startsWith("/") && File(normalized).isFile
+        else -> true
+    }
+}
+
+private fun isUsableCoverReference(context: android.content.Context, reference: String): Boolean {
+    val normalized = reference.trim()
+    if (normalized.isEmpty()) return false
+    if (normalized.startsWith("http://", ignoreCase = true) ||
+        normalized.startsWith("https://", ignoreCase = true)
+    ) {
+        return true
+    }
+    val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return false
+    return when (uri.scheme?.lowercase()) {
+        "file" -> uri.path?.let(::File)?.isFile == true
+        "content" if isMediaStoreCoverReference(normalized) -> true
+        "content" -> runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+        }.getOrDefault(false)
+        null, "" -> normalized.startsWith("/") && File(normalized).isFile
+        else -> true
+    }
 }
 
 @Composable
@@ -198,14 +366,23 @@ fun rememberPlaylistDisplayCoverUrl(
             return@LaunchedEffect
         }
 
-        cachedResolvedCover(playlistKey)?.let { cachedCover ->
-            coverUrl = cachedCover
-            return@LaunchedEffect
+        val cachedCover = cachedResolvedCover(playlistKey)
+        if (!cachedCover.isNullOrBlank()) {
+            val cacheIsUsable = withContext(coverProbeDispatcher) {
+                isUsableCoverReference(appContext, cachedCover)
+            }
+            if (cacheIsUsable) {
+                coverUrl = cachedCover
+                return@LaunchedEffect
+            }
+            forgetResolvedCover(playlistKey)
         }
-        val immediateCover = withContext(coverResolutionDispatcher) {
+        val immediateCover = withContext(coverProbeDispatcher) {
             resolveImmediatePlaylistCover(
+                context = appContext,
                 playlist = effectivePlaylist,
-                additionalCoverCandidates = effectiveCoverCandidates
+                additionalCoverCandidates = effectiveCoverCandidates,
+                probeGeneration = downloadPresenceVersion
             )
         }
         if (!immediateCover.isNullOrBlank()) {
@@ -227,7 +404,8 @@ fun rememberPlaylistDisplayCoverUrl(
         val resolvedCover = resolvePlaylistCoverFallbackGradually(
             context = appContext,
             playlist = effectivePlaylist,
-            additionalCoverCandidates = effectiveCoverCandidates
+            additionalCoverCandidates = effectiveCoverCandidates,
+            probeGeneration = downloadPresenceVersion
         )
         if (!resolvedCover.isNullOrBlank()) {
             rememberResolvedCover(playlistKey, resolvedCover)
@@ -243,14 +421,21 @@ fun rememberPlaylistDisplayCoverUrl(
 private suspend fun resolvePlaylistCoverFallbackGradually(
     context: android.content.Context,
     playlist: LocalPlaylist,
-    additionalCoverCandidates: List<SongItem>
+    additionalCoverCandidates: List<SongItem>,
+    probeGeneration: Int
 ): String? {
     suspend fun resolveCandidates(candidates: Iterable<SongItem>): String? {
         for (song in candidates.asSequence().take(PLAYLIST_COVER_FALLBACK_CANDIDATE_LIMIT)) {
             currentCoroutineContext().ensureActive()
             if (!song.isLocalSong()) continue
 
-            val resolvedCover = withContext(coverResolutionDispatcher) {
+            val fastCover = resolveCachedSongDisplayCoverUrl(
+                context = context,
+                song = song,
+                probeGeneration = probeGeneration
+            )
+            if (!fastCover.isNullOrBlank()) return fastCover
+            val resolvedCover = withContext(embeddedCoverResolutionDispatcher) {
                 song.displayCoverUrl(
                     context = context,
                     resolveLocalMetadataFallback = true
@@ -270,23 +455,24 @@ private suspend fun resolvePlaylistCoverFallbackGradually(
 }
 
 private fun resolveImmediatePlaylistCover(
+    context: android.content.Context,
     playlist: LocalPlaylist,
-    additionalCoverCandidates: List<SongItem>
+    additionalCoverCandidates: List<SongItem>,
+    probeGeneration: Int
 ): String? {
-    val boundedPlaylist = if (
-        playlist.songs.size <= PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT
-    ) {
-        playlist
-    } else {
-        playlist.copy(
-            songs = playlist.songs
-                .take(PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT)
-                .toMutableList()
-        )
-    }
-    return boundedPlaylist.displayCoverUrl(
-        additionalCoverCandidates.take(PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT)
-    )
+    playlist.customCoverUrl
+        ?.takeIf { it.isNotBlank() && isFastCoverReference(it) }
+        ?.let { return it }
+    return (playlist.songs.asSequence() + additionalCoverCandidates.asSequence())
+        .take(PLAYLIST_COVER_IMMEDIATE_CANDIDATE_LIMIT)
+        .firstNotNullOfOrNull { song ->
+            resolveCachedSongDisplayCoverUrl(
+                context = context,
+                song = song,
+                probeGeneration = probeGeneration
+            )
+                ?: song.displayCoverUrl()?.takeIf(::isFastCoverReference)
+        }
 }
 
 @Composable
@@ -311,8 +497,16 @@ fun rememberLocalArtistDisplayCoverUrl(
         }
 
         val immediateCover = artist.displayCoverUrl()
-        cachedResolvedCover(artistKey)?.let { cachedCover ->
-            coverUrl = cachedCover
+        val cachedCover = cachedResolvedCover(artistKey)
+        if (!cachedCover.isNullOrBlank()) {
+            val cacheIsUsable = withContext(coverProbeDispatcher) {
+                isUsableCoverReference(appContext, cachedCover)
+            }
+            if (cacheIsUsable) {
+                coverUrl = cachedCover
+            } else {
+                forgetResolvedCover(artistKey)
+            }
         }
         if (!immediateCover.isNullOrBlank()) {
             rememberResolvedCover(artistKey, immediateCover)
@@ -324,7 +518,7 @@ fun rememberLocalArtistDisplayCoverUrl(
             return@LaunchedEffect
         }
 
-        val resolvedCover = withContext(coverResolutionDispatcher) {
+        val resolvedCover = withContext(embeddedCoverResolutionDispatcher) {
             artist.displayCoverUrl(appContext, resolveLocalFallback)
         }
         if (!resolvedCover.isNullOrBlank()) {
@@ -342,6 +536,13 @@ private fun cachedResolvedCover(key: String?): String? {
     if (key.isNullOrBlank()) return null
     return synchronized(resolvedCoverMemoryCache) {
         resolvedCoverMemoryCache[key]
+    }
+}
+
+private fun forgetResolvedCover(key: String?) {
+    if (key.isNullOrBlank()) return
+    synchronized(resolvedCoverMemoryCache) {
+        resolvedCoverMemoryCache.remove(key)
     }
 }
 

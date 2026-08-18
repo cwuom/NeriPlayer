@@ -1452,7 +1452,7 @@ fun LocalPlaylistDetailScreen(
                         }
                         appendSongsOptimistically(LocalFilesPlaylist.SYSTEM_ID, selectedSongs)
                         vm.applyScannedSongs(selectedSongs, ::showAudioImportResult)
-                        dismissScanPreviewPage(cancelScan = false)
+                        dismissScanPreviewPage(cancelScan = true)
                     },
                     onSecondaryAction = {
                         showScanPlaylistExportSheet = true
@@ -2154,7 +2154,7 @@ fun LocalPlaylistDetailScreen(
                                                 }
                                             }
 
-                                            // 滚动期间也允许后台解析, 解析本身在 CoverUrlState 的 IO 队列执行
+                                            // 滚动结束后才解析内嵌封面, 避免快速滑动积压重型任务
                                             val resolveArtworkFallback = shouldResolveLocalPlaylistRowArtworkFallback(
                                                 isScrollInProgress = isListScrolling,
                                                 hasReachedIdleWindow = isListArtworkIdle
@@ -2996,7 +2996,7 @@ private fun SongItem.scanPreviewRowKey(): String {
     return source?.let { "local-scan:$it" } ?: "local-scan:${stableKey()}"
 }
 
-private const val LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS = 750L
+private const val LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS = 96L
 private const val LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT = 256
 private val retainedLocalPlaylistArtworkCache = object : LinkedHashMap<String, String>(
     LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT,
@@ -3157,7 +3157,7 @@ internal fun shouldResolveLocalPlaylistRowArtworkFallback(
     isScrollInProgress: Boolean,
     hasReachedIdleWindow: Boolean = true
 ): Boolean {
-    return isScrollInProgress || hasReachedIdleWindow
+    return !isScrollInProgress && hasReachedIdleWindow
 }
 
 private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {

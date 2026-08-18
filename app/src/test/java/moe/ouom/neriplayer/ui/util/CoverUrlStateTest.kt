@@ -39,6 +39,16 @@ class CoverUrlStateTest {
     }
 
     @Test
+    fun `fast cover reference accepts provider uri without opening descriptor`() {
+        assertTrue(isFastCoverReference("content://provider/document/cover"))
+    }
+
+    @Test
+    fun `fast cover reference rejects missing file path`() {
+        assertFalse(isFastCoverReference("/path/that/does/not/exist.jpg"))
+    }
+
+    @Test
     fun `embedded local cover fallback remains available outside scroll constrained rows`() {
         assertTrue(
             shouldResolveEmbeddedCoverFallback(
