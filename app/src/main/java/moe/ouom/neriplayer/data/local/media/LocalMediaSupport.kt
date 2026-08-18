@@ -1344,9 +1344,10 @@ object LocalMediaSupport {
                 inspectLyricsFromContentUri(
                     context = context,
                     sourceUri = source,
-                    displayName = song.localFileName
-                        ?.takeIf(String::isNotBlank)
-                        ?: source.lastPathSegment.orEmpty()
+                    displayName = ManagedDownloadStorage.resolveManagedAudioDisplayName(
+                        context = context,
+                        song = song
+                    ) ?: source.lastPathSegment.orEmpty()
                 )
             }.onFailure {
                 NPLogger.w(TAG, "fast SAF lyrics inspection failed for $source: ${it.message}")

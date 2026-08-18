@@ -11,8 +11,10 @@ import org.junit.Test
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.model.PlaybackAudioSource
 import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
+import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.settings.NowPlayingControlPlacement
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.data.model.SongItem
@@ -72,6 +74,173 @@ class NowPlayingScreenTest {
         assertEquals(1, state.translatedLyrics.size)
         assertEquals("translated line", state.translatedLyrics.first().text)
         assertEquals(state.lyrics, state.plainLyrics)
+    }
+
+    @Test
+    fun `managed download fast lyrics keep root sidecar ahead of local fallback`() {
+        val local = LocalLyricsScanMetadata(
+            lyric = "",
+            translatedLyric = "local translation",
+            romanizedLyric = "local romanized",
+            hasOriginalSidecar = true,
+            hasTranslatedSidecar = true,
+            hasRomanizedSidecar = true,
+            sourceResolved = true
+        )
+        val indexed = ManagedDownloadStorage.DownloadedLyricsBundle(
+            lyric = "indexed original",
+            translatedLyric = "indexed translation",
+            romanizedLyric = "indexed romanized",
+            hasOriginalSidecar = true,
+            hasTranslatedSidecar = true,
+            hasRomanizedSidecar = true
+        )
+
+        assertEquals(
+            "indexed original",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = local,
+                downloadedLyrics = indexed,
+                storedLyric = "stored original",
+                variant = ManagedLyricVariant.ORIGINAL
+            )
+        )
+        assertEquals(
+            "indexed translation",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = local,
+                downloadedLyrics = indexed,
+                storedLyric = "stored translation",
+                variant = ManagedLyricVariant.TRANSLATED
+            )
+        )
+    }
+
+    @Test
+    fun `managed download fast lyrics use indexed sidecar then metadata fallback`() {
+        val indexedSidecar = ManagedDownloadStorage.DownloadedLyricsBundle(
+            lyric = "indexed original",
+            translatedLyric = null,
+            romanizedLyric = null,
+            hasOriginalSidecar = true
+        )
+        assertEquals(
+            "indexed original",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = null,
+                downloadedLyrics = indexedSidecar,
+                storedLyric = "stored original",
+                variant = ManagedLyricVariant.ORIGINAL
+            )
+        )
+        assertEquals(
+            "stored translation",
+            resolveManagedDownloadFastLyricText(
+                localLyrics = null,
+                downloadedLyrics = indexedSidecar,
+                storedLyric = "stored translation",
+                variant = ManagedLyricVariant.TRANSLATED
+            )
+        )
+    }
+
+    @Test
+    fun `managed download fast lyric miss requests a one shot backfill`() {
+        assertTrue(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = null,
+                    translatedLyric = null,
+                    romanizedLyric = null
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `non managed song skips downloaded lyric backfill`() {
+        assertFalse(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = false,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = null,
+                    romanizedLyric = null,
+                    hasOriginalSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `managed download partial fast bundle backfills missing lyric variants`() {
+        assertTrue(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = null,
+                    romanizedLyric = null,
+                    hasOriginalSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `managed download complete fast lyric bundle skips a backfill`() {
+        assertFalse(
+            shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = true,
+                canReadManagedDownloadLyrics = true,
+                fastLyrics = ManagedDownloadStorage.DownloadedLyricsBundle(
+                    lyric = "[00:00.00]sidecar",
+                    translatedLyric = "[00:00.00]translation",
+                    romanizedLyric = "[00:00.00]romanized",
+                    hasOriginalSidecar = true,
+                    hasTranslatedSidecar = true,
+                    hasRomanizedSidecar = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `local playback uri changes do not cancel lyric reload`() {
+        val localSong = SongItem(
+            id = 1L,
+            name = "Local",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio",
+            localFileName = "audio.mp3"
+        )
+
+        assertEquals(
+            null,
+            resolveNowPlayingLyricsMediaReloadKey(
+                song = localSong,
+                currentMediaUrl = "file:///storage/emulated/0/audio.mp3"
+            )
+        )
+        assertEquals(
+            "https://example.com/audio.mp3",
+            resolveNowPlayingLyricsMediaReloadKey(
+                song = localSong.copy(
+                    album = "netease",
+                    mediaUri = "https://example.com/audio.mp3",
+                    localFileName = null
+                ),
+                currentMediaUrl = "https://example.com/audio.mp3"
+            )
+        )
     }
 
     @Test

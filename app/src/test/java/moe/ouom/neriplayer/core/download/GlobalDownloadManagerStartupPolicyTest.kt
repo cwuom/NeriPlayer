@@ -12,11 +12,48 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `download playback hydration survives local reference normalization`() {
+        val quickSong = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/1",
+            localFileName = "song.mp3",
+            localFilePath = "/storage/emulated/0/neriplayer-download/song.mp3"
+        )
+        val normalizedSong = quickSong.copy(
+            mediaUri = "content://downloads/audio/2"
+        )
+
+        assertFalse(quickSong.stableKey() == normalizedSong.stableKey())
+        assertTrue(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong,
+                quickSong = quickSong
+            )
+        )
+        assertFalse(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong.copy(
+                    mediaUri = "content://downloads/audio/3",
+                    localFilePath = null
+                ),
+                quickSong = quickSong
+            )
+        )
+    }
 
     @Test
     fun `unfinalized recovery only rebuilds a snapshot after deleting an artifact`() {

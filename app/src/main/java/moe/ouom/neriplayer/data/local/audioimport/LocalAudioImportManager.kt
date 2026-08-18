@@ -1033,7 +1033,8 @@ object LocalAudioImportManager {
     fun hydrateLocalSongTextMetadata(
         context: Context,
         song: SongItem,
-        resolveCoverFallback: Boolean = true
+        resolveCoverFallback: Boolean = true,
+        includeEmbeddedFallback: Boolean = true
     ): SongItem {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
@@ -1042,7 +1043,8 @@ object LocalAudioImportManager {
             LocalMediaSupport.inspectLyricsFast(
                 context = context,
                 song = song,
-                includeStoredFallback = false
+                includeStoredFallback = false,
+                includeEmbeddedFallback = includeEmbeddedFallback
             )
         }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
@@ -1275,6 +1277,8 @@ object LocalAudioImportManager {
                 .firstOrNull { it.isDirectory && it.displayName.equals("Covers", ignoreCase = true) }
                 ?.let { queryFolderChildren(context, it.documentUri) }
                 .orEmpty()
+            val directCoverIndex = buildDocumentCoverIndex(children)
+            val nestedCoverIndex = buildDocumentCoverIndex(coversChildren)
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
@@ -1285,8 +1289,8 @@ object LocalAudioImportManager {
                             uri = child.documentUri,
                             displayName = child.displayName,
                             nearbyCoverUri = findNearbyDocumentCoverReference(
-                                children = children,
-                                nestedCoversChildren = coversChildren,
+                                directCoverIndex = directCoverIndex,
+                                nestedCoverIndex = nestedCoverIndex,
                                 baseName = baseName
                             )
                         )
@@ -1338,6 +1342,8 @@ object LocalAudioImportManager {
                 ?.listFiles()
                 ?.filter { it.isFile }
                 .orEmpty()
+            val directCoverIndex = buildSafCoverIndex(children.asList())
+            val nestedCoverIndex = buildSafCoverIndex(coversChildren)
 
             for (child in children) {
                 coroutineContext.ensureActive()
@@ -1352,8 +1358,8 @@ object LocalAudioImportManager {
                             uri = child.uri,
                             displayName = displayName,
                             nearbyCoverUri = findNearbySafCoverReference(
-                                children = children.asList(),
-                                nestedCoversChildren = coversChildren,
+                                directCoverIndex = directCoverIndex,
+                                nestedCoverIndex = nestedCoverIndex,
                                 baseName = baseName
                             )
                         )
@@ -1447,62 +1453,72 @@ object LocalAudioImportManager {
         )
     }
 
+    private fun buildDocumentCoverIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .mapNotNull { child ->
+                child.displayName
+                    .takeIf(String::isNotBlank)
+                    ?.lowercase()
+                    ?.let { name -> name to child.documentUri.toString() }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, references) -> references.first() }
+    }
+
+    private fun buildSafCoverIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filter(DocumentFile::isFile)
+            .mapNotNull { child ->
+                child.name
+                    ?.takeIf(String::isNotBlank)
+                    ?.lowercase()
+                    ?.let { name -> name to child.uri.toString() }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, references) -> references.first() }
+    }
+
     private fun findNearbyDocumentCoverReference(
-        children: Collection<QueriedFolderChild>,
-        nestedCoversChildren: Collection<QueriedFolderChild>,
+        directCoverIndex: Map<String, String>,
+        nestedCoverIndex: Map<String, String>,
         baseName: String
     ): String? {
-        fun findSpecific(candidates: Collection<QueriedFolderChild>): String? {
+        fun findSpecific(index: Map<String, String>): String? {
             return imageExtensions.firstNotNullOfOrNull { extension ->
-                candidates.firstOrNull { child ->
-                    !child.isDirectory && child.displayName.equals(
-                        "$baseName.$extension",
-                        ignoreCase = true
-                    )
-                }?.documentUri?.toString()
+                index["$baseName.$extension".lowercase()]
             }
         }
 
-        findSpecific(children)?.let { return it }
-        findSpecific(nestedCoversChildren)?.let { return it }
+        findSpecific(directCoverIndex)?.let { return it }
+        findSpecific(nestedCoverIndex)?.let { return it }
         return coverNames.firstNotNullOfOrNull { coverName ->
             imageExtensions.firstNotNullOfOrNull { extension ->
-                children.firstOrNull { child ->
-                    !child.isDirectory && child.displayName.equals(
-                        "$coverName.$extension",
-                        ignoreCase = true
-                    )
-                }?.documentUri?.toString()
+                directCoverIndex["$coverName.$extension".lowercase()]
             }
         }
     }
 
     private fun findNearbySafCoverReference(
-        children: Collection<DocumentFile>,
-        nestedCoversChildren: Collection<DocumentFile>,
+        directCoverIndex: Map<String, String>,
+        nestedCoverIndex: Map<String, String>,
         baseName: String
     ): String? {
-        fun findSpecific(candidates: Collection<DocumentFile>): String? {
+        fun findSpecific(index: Map<String, String>): String? {
             return imageExtensions.firstNotNullOfOrNull { extension ->
-                candidates.firstOrNull { child ->
-                    child.isFile && child.name?.equals(
-                        "$baseName.$extension",
-                        ignoreCase = true
-                    ) == true
-                }?.uri?.toString()
+                index["$baseName.$extension".lowercase()]
             }
         }
 
-        findSpecific(children)?.let { return it }
-        findSpecific(nestedCoversChildren)?.let { return it }
+        findSpecific(directCoverIndex)?.let { return it }
+        findSpecific(nestedCoverIndex)?.let { return it }
         return coverNames.firstNotNullOfOrNull { coverName ->
             imageExtensions.firstNotNullOfOrNull { extension ->
-                children.firstOrNull { child ->
-                    child.isFile && child.name?.equals(
-                        "$coverName.$extension",
-                        ignoreCase = true
-                    ) == true
-                }?.uri?.toString()
+                directCoverIndex["$coverName.$extension".lowercase()]
             }
         }
     }

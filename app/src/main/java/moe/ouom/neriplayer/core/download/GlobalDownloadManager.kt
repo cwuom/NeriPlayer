@@ -68,6 +68,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
@@ -79,6 +80,11 @@ import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
     return recoveredArtifactCount > 0
 }
+
+internal fun shouldApplyDownloadedPlaybackHydration(
+    currentSong: SongItem?,
+    quickSong: SongItem
+): Boolean = currentSong?.sameIdentityAs(quickSong) == true
 
 /**
  * 全局下载管理器, 统一维护下载任务和本地下载列表
@@ -2102,7 +2108,7 @@ object GlobalDownloadManager {
                 val quickSongBase = (quickDownloadedSong ?: song).toPlaybackSongItem(
                     playbackUri = playbackUri,
                     localFileName = storedAudio?.name
-                        ?: song.filePath.substringAfterLast('/').takeIf(String::isNotBlank),
+                        ?: ManagedDownloadStorage.normalizeManagedAudioFileName(song.filePath),
                     localFilePath = storedAudio?.localFilePath
                         ?: song.filePath.takeIf { it.startsWith("/") },
                     resolvedDurationMs = song.durationMs
@@ -2147,15 +2153,22 @@ object GlobalDownloadManager {
                     song = refreshedSong.toPlaybackSongItem(
                         playbackUri = playbackUri,
                         localFileName = hydratedStoredAudio?.name
-                            ?: refreshedSong.filePath.substringAfterLast('/').takeIf(String::isNotBlank),
+                            ?: ManagedDownloadStorage.normalizeManagedAudioFileName(
+                                refreshedSong.filePath
+                            ),
                         localFilePath = hydratedStoredAudio?.localFilePath
                             ?: refreshedSong.filePath.takeIf { it.startsWith("/") },
                         resolvedDurationMs = hydratedDurationMs
-                    )
+                    ),
+                    refreshIfMissing = true
                 )
                 if (hydratedSong != quickSong) {
                     delay(resolveDownloadedPlaybackHydrationDelayMs(quickSong, hydratedSong))
-                    if (PlayerManager.currentSongFlow.value?.stableKey() != quickSong.stableKey()) {
+                    if (!shouldApplyDownloadedPlaybackHydration(
+                            currentSong = PlayerManager.currentSongFlow.value,
+                            quickSong = quickSong
+                        )
+                    ) {
                         return@launch
                     }
                     PlayerManager.hydrateSongMetadata(
@@ -2171,30 +2184,31 @@ object GlobalDownloadManager {
 
     private fun hydrateDownloadedSidecarLyricsFast(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        refreshIfMissing: Boolean = false
     ): SongItem {
-        val scan = runCatching {
-            LocalMediaSupport.inspectLyricsFast(
-                context = context,
-                song = song,
-                includeStoredFallback = false,
-                includeEmbeddedFallback = false
-            )
+        val lyrics = runCatching {
+            if (refreshIfMissing) {
+                AudioDownloadManager.getLyricsBundle(context, song)
+            } else {
+                AudioDownloadManager.getLyricsBundleFast(context, song)
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "下载播放首屏歌词读取失败: ${error.message}")
         }.getOrNull() ?: return song
-        if (!scan.sourceResolved) return song
         return song.copy(
-            matchedLyric = if (scan.hasOriginalSidecar) {
-                scan.lyric
+            matchedLyric = if (lyrics.hasOriginalSidecar) {
+                lyrics.lyric
             } else {
                 song.matchedLyric
             },
-            matchedTranslatedLyric = if (scan.hasTranslatedSidecar) {
-                scan.translatedLyric
+            matchedTranslatedLyric = if (lyrics.hasTranslatedSidecar) {
+                lyrics.translatedLyric
             } else {
                 song.matchedTranslatedLyric
             },
-            matchedRomanizedLyric = if (scan.hasRomanizedSidecar) {
-                scan.romanizedLyric
+            matchedRomanizedLyric = if (lyrics.hasRomanizedSidecar) {
+                lyrics.romanizedLyric
             } else {
                 song.matchedRomanizedLyric
             }

@@ -1726,6 +1726,11 @@ internal fun hasCachedLocalDownload(song: SongItem): Boolean {
         ManagedDownloadStorage.peekDownloadedAudio(song) != null
 }
 
+internal fun hasCachedLocalDownload(context: Context, song: SongItem): Boolean {
+    return hasCachedLocalDownload(song) ||
+        ManagedDownloadStorage.isLikelyManagedDownloadSong(context, song)
+}
+
 
 private fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
     if (song == null) {
@@ -1761,6 +1766,83 @@ internal data class LoadedLyricsState(
     val plainTranslatedLyrics: List<LyricEntry>,
     val embeddedPhoneticLyrics: List<LyricEntry>
 )
+
+internal enum class ManagedLyricVariant {
+    ORIGINAL,
+    TRANSLATED,
+    ROMANIZED
+}
+
+internal fun resolveManagedDownloadFastLyricText(
+    localLyrics: LocalLyricsScanMetadata?,
+    downloadedLyrics: ManagedDownloadStorage.DownloadedLyricsBundle?,
+    storedLyric: String?,
+    variant: ManagedLyricVariant
+): String? {
+    val downloadedHasSidecar = when (variant) {
+        ManagedLyricVariant.ORIGINAL -> downloadedLyrics?.hasOriginalSidecar == true
+        ManagedLyricVariant.TRANSLATED -> downloadedLyrics?.hasTranslatedSidecar == true
+        ManagedLyricVariant.ROMANIZED -> downloadedLyrics?.hasRomanizedSidecar == true
+    }
+    if (downloadedHasSidecar) {
+        return when (variant) {
+            ManagedLyricVariant.ORIGINAL -> downloadedLyrics?.lyric
+            ManagedLyricVariant.TRANSLATED -> downloadedLyrics?.translatedLyric
+            ManagedLyricVariant.ROMANIZED -> downloadedLyrics?.romanizedLyric
+        }
+    }
+
+    val localHasSidecar = when (variant) {
+        ManagedLyricVariant.ORIGINAL -> localLyrics?.hasOriginalSidecar == true
+        ManagedLyricVariant.TRANSLATED -> localLyrics?.hasTranslatedSidecar == true
+        ManagedLyricVariant.ROMANIZED -> localLyrics?.hasRomanizedSidecar == true
+    }
+    if (localHasSidecar) {
+        return when (variant) {
+            ManagedLyricVariant.ORIGINAL -> localLyrics?.lyric
+            ManagedLyricVariant.TRANSLATED -> localLyrics?.translatedLyric
+            ManagedLyricVariant.ROMANIZED -> localLyrics?.romanizedLyric
+        }
+    }
+
+    val localValue = when (variant) {
+        ManagedLyricVariant.ORIGINAL -> localLyrics?.lyric
+        ManagedLyricVariant.TRANSLATED -> localLyrics?.translatedLyric
+        ManagedLyricVariant.ROMANIZED -> localLyrics?.romanizedLyric
+    }
+    val downloadedValue = when (variant) {
+        ManagedLyricVariant.ORIGINAL -> downloadedLyrics?.lyric
+        ManagedLyricVariant.TRANSLATED -> downloadedLyrics?.translatedLyric
+        ManagedLyricVariant.ROMANIZED -> downloadedLyrics?.romanizedLyric
+    }
+    return downloadedValue ?: localValue ?: storedLyric
+}
+
+internal fun resolveNowPlayingLyricText(
+    isManagedLocalDownload: Boolean,
+    localLyrics: LocalLyricsScanMetadata?,
+    downloadedLyrics: ManagedDownloadStorage.DownloadedLyricsBundle?,
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?,
+    variant: ManagedLyricVariant
+): String? {
+    return if (isManagedLocalDownload) {
+        resolveManagedDownloadFastLyricText(
+            localLyrics = localLyrics,
+            downloadedLyrics = downloadedLyrics,
+            storedLyric = storedLyric,
+            variant = variant
+        )
+    } else {
+        resolveLyricTextForPlayback(
+            isManagedLocalDownload = false,
+            localLyric = localLyric,
+            storedLyric = storedLyric,
+            downloadedLyric = downloadedLyric
+        )
+    }
+}
 
 internal fun buildNowPlayingFastLyricsState(
     rawLyrics: String?,
@@ -1801,6 +1883,29 @@ internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,
     loadedHasLyrics: Boolean
 ): Boolean = !sameSong || loadedHasLyrics
+
+internal fun shouldBackfillDownloadedLyricsAfterFastMiss(
+    isManagedLocalDownload: Boolean,
+    canReadManagedDownloadLyrics: Boolean,
+    fastLyrics: ManagedDownloadStorage.DownloadedLyricsBundle?
+): Boolean {
+    if (!isManagedLocalDownload || !canReadManagedDownloadLyrics) {
+        return false
+    }
+    // 音频快照命中不代表 Lyrics 索引已经完成, 首播也必须补齐过期或部分索引
+    return fastLyrics == null ||
+        !fastLyrics.hasOriginalSidecar ||
+        !fastLyrics.hasTranslatedSidecar ||
+        !fastLyrics.hasRomanizedSidecar
+}
+
+internal fun resolveNowPlayingLyricsMediaReloadKey(
+    song: SongItem?,
+    currentMediaUrl: String?
+): String? {
+    // 本地音频的播放地址可能在首播期间从索引 URI 切换为可播放 URI, 不应取消歌词补读
+    return currentMediaUrl.takeUnless { song?.isLocalSong() == true }
+}
 
 internal fun shouldBypassCollapsedStoredLyric(rawLyric: String?): Boolean {
     return rawLyric?.let(::hasCollapsedTimedLyricTimeline) == true
@@ -2230,11 +2335,27 @@ fun NowPlayingScreen(
         currentSong?.mediaUri,
         currentSong?.localFilePath,
         downloadPresenceVersion,
-        currentMediaUrl
+        resolveNowPlayingLyricsMediaReloadKey(
+            song = currentSong,
+            currentMediaUrl = currentMediaUrl
+        )
     ) {
         val song = currentSong
-        fun publishLoadedLyricsState(loadedLyricsState: LoadedLyricsState) {
+        val lyricIdentity = song?.stableKey().orEmpty()
+        NPLogger.d(
+            "NowPlayingLyrics",
+            "歌词加载开始: key=$lyricIdentity, local=${song?.isLocalSong() == true}, " +
+                "mediaReloadKey=${resolveNowPlayingLyricsMediaReloadKey(song, currentMediaUrl)}"
+        )
+        fun publishLoadedLyricsState(
+            loadedLyricsState: LoadedLyricsState,
+            stage: String
+        ) {
             if (song != null && currentSong?.sameIdentityAs(song) != true) {
+                NPLogger.d(
+                    "NowPlayingLyrics",
+                    "丢弃过期歌词结果: stage=$stage, key=$lyricIdentity"
+                )
                 return
             }
             val loadedHasLyrics = loadedLyricsState.rawLyrics?.isNotBlank() == true ||
@@ -2255,37 +2376,43 @@ fun NowPlayingScreen(
                 plainTranslatedLyrics = loadedLyricsState.plainTranslatedLyrics
                 embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
             }
+            NPLogger.d(
+                "NowPlayingLyrics",
+                "歌词结果发布: stage=$stage, key=$lyricIdentity, " +
+                    "hasLyrics=$loadedHasLyrics, raw=${loadedLyricsState.rawLyrics != null}, " +
+                    "translated=${loadedLyricsState.rawTranslatedLyrics != null}, " +
+                    "romanized=${loadedLyricsState.rawPhoneticLyrics != null}"
+            )
         }
         var localLyricsScan: LocalLyricsScanMetadata? = null
         var downloadedLyricsBundle: ManagedDownloadStorage.DownloadedLyricsBundle? = null
+        var managedLocalDownloadDetected = false
+        var managedDownloadLyricsReadable = false
         val fastLoadedLyricsState = withContext(Dispatchers.IO) {
             val isManagedLocalDownload = song?.let { candidate ->
-                candidate.isLocalSong() && hasCachedLocalDownload(candidate)
+                candidate.isLocalSong() && hasCachedLocalDownload(context, candidate)
             } == true
+            managedLocalDownloadDetected = isManagedLocalDownload
             val canReadManagedDownloadLyrics = song?.let { candidate ->
                 shouldReadManagedDownloadLyrics(
                     song = candidate,
                     isManagedLocalDownload = isManagedLocalDownload
                 )
             } == true
+            managedDownloadLyricsReadable = canReadManagedDownloadLyrics
             val downloadedLyrics = song?.takeIf { canReadManagedDownloadLyrics }?.let { downloadedSong ->
                 runCatching {
-                    AudioDownloadManager.getLyricsBundle(context, downloadedSong)
+                    AudioDownloadManager.getLyricsBundleFast(context, downloadedSong)
                 }.onFailure { error ->
                     NPLogger.w(
                         "NowPlayingLyrics",
-                        "下载歌词首屏读取失败: ${error.message}"
+                        "下载歌词内存索引读取失败: ${error.message}"
                     )
                 }.getOrNull().also { downloadedLyricsBundle = it }
             }
-            val shouldProbeLocalLyrics = !isManagedLocalDownload ||
-                downloadedLyrics == null ||
-                downloadedLyrics.lyric == null ||
-                downloadedLyrics.translatedLyric == null ||
-                downloadedLyrics.romanizedLyric == null
-            val localLyrics = song?.takeIf { candidate ->
-                candidate.isLocalSong() && shouldProbeLocalLyrics
-            }?.let { localSong ->
+            // 托管下载由 ManagedDownloadStorage 统一读取, 避免同一首歌再走一次普通 SAF 探测
+            val shouldProbeLocalSidecar = song?.isLocalSong() == true && !isManagedLocalDownload
+            val localLyrics = song?.takeIf { shouldProbeLocalSidecar }?.let { localSong ->
                 runCatching {
                     LocalMediaSupport.inspectLyricsFast(
                         context = context,
@@ -2302,7 +2429,6 @@ fun NowPlayingScreen(
                     }
                     .getOrNull()
             }.also { localLyricsScan = it }
-            val isLocalSong = song?.isLocalSong() == true
             val storedRawLyrics = resolveStoredLyricText(
                 currentLyric = song?.matchedLyric,
                 legacyLyric = song?.originalLyric
@@ -2316,69 +2442,42 @@ fun NowPlayingScreen(
                 legacyLyric = song?.originalRomanizedLyric
             )
             buildNowPlayingFastLyricsState(
-                rawLyrics = resolveLyricTextForPlayback(
+                rawLyrics = resolveNowPlayingLyricText(
                     isManagedLocalDownload = isManagedLocalDownload,
+                    localLyrics = localLyrics,
+                    downloadedLyrics = downloadedLyrics,
                     localLyric = localLyrics?.lyric,
                     storedLyric = storedRawLyrics,
-                    downloadedLyric = downloadedLyrics?.lyric
+                    downloadedLyric = null,
+                    variant = ManagedLyricVariant.ORIGINAL
                 ),
-                rawTranslatedLyrics = resolveLyricTextForPlayback(
+                rawTranslatedLyrics = resolveNowPlayingLyricText(
                     isManagedLocalDownload = isManagedLocalDownload,
+                    localLyrics = localLyrics,
+                    downloadedLyrics = downloadedLyrics,
                     localLyric = localLyrics?.translatedLyric,
                     storedLyric = storedRawTranslatedLyrics,
-                    downloadedLyric = downloadedLyrics?.translatedLyric
+                    downloadedLyric = null,
+                    variant = ManagedLyricVariant.TRANSLATED
                 ),
-                rawPhoneticLyrics = resolveLyricTextForPlayback(
+                rawPhoneticLyrics = resolveNowPlayingLyricText(
                     isManagedLocalDownload = isManagedLocalDownload,
+                    localLyrics = localLyrics,
+                    downloadedLyrics = downloadedLyrics,
                     localLyric = localLyrics?.romanizedLyric,
                     storedLyric = storedRawPhoneticLyrics,
-                    downloadedLyric = downloadedLyrics?.romanizedLyric
+                    downloadedLyric = null,
+                    variant = ManagedLyricVariant.ROMANIZED
                 )
             )
         }
-        publishLoadedLyricsState(fastLoadedLyricsState)
+        publishLoadedLyricsState(fastLoadedLyricsState, stage = "fast")
         val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
-            val isManagedLocalDownload = song?.let { candidate ->
-                candidate.isLocalSong() && (
-                    GlobalDownloadManager.hasDownloadedSongCached(candidate) ||
-                        ManagedDownloadStorage.peekDownloadedAudio(candidate) != null
-                    )
-            } == true
-            val canReadManagedDownloadLyrics = song?.let { candidate ->
-                shouldReadManagedDownloadLyrics(
-                    song = candidate,
-                    isManagedLocalDownload = isManagedLocalDownload
-                )
-            } == true
+            val isManagedLocalDownload = managedLocalDownloadDetected
+            val canReadManagedDownloadLyrics = managedDownloadLyricsReadable
             val localLyrics = if (isLocalSong) {
-                val cachedLyrics = localLyricsScan
-                if (
-                    isManagedLocalDownload &&
-                        cachedLyrics != null &&
-                        downloadedLyricsBundle?.lyric == null &&
-                        downloadedLyricsBundle?.translatedLyric == null &&
-                        downloadedLyricsBundle?.romanizedLyric == null &&
-                        cachedLyrics.lyric == null &&
-                        cachedLyrics.translatedLyric == null &&
-                        cachedLyrics.romanizedLyric == null
-                ) {
-                    runCatching {
-                        LocalMediaSupport.inspectLyricsFast(
-                            context = context,
-                            song = song,
-                            includeStoredFallback = false,
-                            includeEmbeddedFallback = true
-                        )
-                    }.onFailure { error ->
-                        NPLogger.w(
-                            "NowPlayingLyrics",
-                            "本地嵌入歌词快速读取失败: ${error.message}"
-                        )
-                    }.getOrNull() ?: cachedLyrics
-                } else {
-                    cachedLyrics
-                }
+                localLyricsScan
             } else {
                 null
             }
@@ -2398,15 +2497,18 @@ fun NowPlayingScreen(
                 legacyLyric = song?.originalRomanizedLyric
             )
             val cachedDownloadedLyrics = downloadedLyricsBundle
-            val shouldReadDownloadedLyrics = canReadManagedDownloadLyrics && when (
-                val cached = cachedDownloadedLyrics
-            ) {
-                null -> true
-                else -> cached.lyric == null ||
-                    cached.translatedLyric == null ||
-                    cached.romanizedLyric == null
+            val shouldReadDownloadedLyrics = shouldBackfillDownloadedLyricsAfterFastMiss(
+                isManagedLocalDownload = isManagedLocalDownload,
+                canReadManagedDownloadLyrics = canReadManagedDownloadLyrics,
+                fastLyrics = cachedDownloadedLyrics
+            )
+            if (shouldReadDownloadedLyrics && isManagedLocalDownload) {
+                NPLogger.d(
+                    "NowPlayingLyrics",
+                    "下载侧载快读不完整，执行一次后台补读: song=${song?.name.orEmpty()}"
+                )
             }
-            val downloadedLyrics = cachedDownloadedLyrics ?: song
+            val downloadedLyrics = song
                 ?.takeIf { shouldReadDownloadedLyrics }
                 ?.let { downloadedSong ->
                     runCatching {
@@ -2416,8 +2518,13 @@ fun NowPlayingScreen(
                             "NowPlayingLyrics",
                             "下载歌词读取失败: ${error.message}"
                         )
-                    }.getOrNull().also { downloadedLyricsBundle = it }
+                    }.getOrNull().also { refreshedLyrics ->
+                        if (refreshedLyrics != null) {
+                            downloadedLyricsBundle = refreshedLyrics
+                        }
+                    }
                 }
+                ?: cachedDownloadedLyrics
             val downloadedRawLyrics = downloadedLyrics?.lyric
             val downloadedRawTranslatedLyrics = downloadedLyrics?.translatedLyric
             val downloadedRawPhoneticLyrics = downloadedLyrics?.romanizedLyric
@@ -2448,27 +2555,54 @@ fun NowPlayingScreen(
                 }
             }.getOrNull().orEmpty()
             val effectiveRawLyrics = resolvePreferredLyricContent(
-                matchedLyric = resolveLyricTextForPlayback(
-                    isManagedLocalDownload = isManagedLocalDownload,
-                    localLyric = localRawLyrics,
-                    storedLyric = storedRawLyrics,
-                    downloadedLyric = downloadedRawLyrics
-                ),
+                matchedLyric = if (isManagedLocalDownload) {
+                    resolveManagedDownloadFastLyricText(
+                        localLyrics = localLyrics,
+                        downloadedLyrics = downloadedLyrics,
+                        storedLyric = storedRawLyrics,
+                        variant = ManagedLyricVariant.ORIGINAL
+                    )
+                } else {
+                    resolveLyricTextForPlayback(
+                        isManagedLocalDownload = false,
+                        localLyric = localRawLyrics,
+                        storedLyric = storedRawLyrics,
+                        downloadedLyric = downloadedRawLyrics
+                    )
+                },
                 preferredNeteaseLyric = preferredNeteaseLyric,
                 legacyLyric = null
             )
-            val effectiveRawTranslatedLyrics = resolveLyricTextForPlayback(
-                isManagedLocalDownload = isManagedLocalDownload,
-                localLyric = localRawTranslatedLyrics,
-                storedLyric = storedRawTranslatedLyrics,
-                downloadedLyric = downloadedRawTranslatedLyrics
-            )
-            val effectiveRawPhoneticLyrics = resolveLyricTextForPlayback(
-                isManagedLocalDownload = isManagedLocalDownload,
-                localLyric = localRawPhoneticLyrics,
-                storedLyric = storedRawPhoneticLyrics,
-                downloadedLyric = downloadedRawPhoneticLyrics
-            ) ?: rawNeteasePhoneticLyric.takeIf { it.isNotBlank() }
+            val effectiveRawTranslatedLyrics = if (isManagedLocalDownload) {
+                resolveManagedDownloadFastLyricText(
+                    localLyrics = localLyrics,
+                    downloadedLyrics = downloadedLyrics,
+                    storedLyric = storedRawTranslatedLyrics,
+                    variant = ManagedLyricVariant.TRANSLATED
+                )
+            } else {
+                resolveLyricTextForPlayback(
+                    isManagedLocalDownload = false,
+                    localLyric = localRawTranslatedLyrics,
+                    storedLyric = storedRawTranslatedLyrics,
+                    downloadedLyric = downloadedRawTranslatedLyrics
+                )
+            }
+            val effectiveRawPhoneticLyrics = if (isManagedLocalDownload) {
+                resolveManagedDownloadFastLyricText(
+                    localLyrics = localLyrics,
+                    downloadedLyrics = downloadedLyrics,
+                    storedLyric = storedRawPhoneticLyrics,
+                    variant = ManagedLyricVariant.ROMANIZED
+                )
+            } else {
+                resolveLyricTextForPlayback(
+                    isManagedLocalDownload = false,
+                    localLyric = localRawPhoneticLyrics,
+                    storedLyric = storedRawPhoneticLyrics,
+                    downloadedLyric = downloadedRawPhoneticLyrics
+                )
+            } ?: rawNeteasePhoneticLyric.takeIf { it.isNotBlank() }
             val bypassStoredRawLyrics = shouldBypassCollapsedStoredLyric(effectiveRawLyrics)
             val bypassStoredTranslatedLyrics = shouldBypassCollapsedStoredLyric(
                 effectiveRawTranslatedLyrics
@@ -2582,7 +2716,7 @@ fun NowPlayingScreen(
                 )
             )
         }
-        publishLoadedLyricsState(loadedLyricsState)
+        publishLoadedLyricsState(loadedLyricsState, stage = "background")
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
@@ -5139,11 +5273,14 @@ fun EditSongInfoSheet(
                     coroutineScope.launch {
                         try {
                             if (actualSong.isLocalSong()) {
-                                val isManagedLocalDownload = hasCachedLocalDownload(actualSong)
                                 val lyricsSources = withContext(Dispatchers.IO) {
+                                    val isManagedLocalDownload = hasCachedLocalDownload(
+                                        context,
+                                        actualSong
+                                    )
                                     val downloadedLyrics = if (isManagedLocalDownload) {
                                         runCatching {
-                                            AudioDownloadManager.getLyricsBundle(context, actualSong)
+                                            AudioDownloadManager.getLyricsBundleFast(context, actualSong)
                                         }.onFailure { error ->
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
@@ -5182,10 +5319,15 @@ fun EditSongInfoSheet(
                                     } else {
                                         null
                                     }
-                                    downloadedLyrics to localLyrics
+                                    Triple(
+                                        isManagedLocalDownload,
+                                        downloadedLyrics,
+                                        localLyrics
+                                    )
                                 }
-                                val downloadedLyrics = lyricsSources.first
-                                val localLyrics = lyricsSources.second
+                                val isManagedLocalDownload = lyricsSources.first
+                                val downloadedLyrics = lyricsSources.second
+                                val localLyrics = lyricsSources.third
                                 val sidecarLyrics = when {
                                     downloadedLyrics?.hasOriginalSidecar == true -> {
                                         downloadedLyrics.lyric

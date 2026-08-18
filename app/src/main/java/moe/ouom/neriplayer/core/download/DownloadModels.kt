@@ -153,7 +153,7 @@ private fun DownloadedSong.rebuildRemoteSourceIdentity(): SongIdentity? {
 }
 
 internal fun DownloadedSong.toPlaybackSongItem(): SongItem {
-    val localFileName = filePath.substringAfterLast('/').takeIf(String::isNotBlank)
+    val localFileName = ManagedDownloadStorage.normalizeManagedAudioFileName(filePath)
     return toPlaybackSongItem(
         playbackUri = mediaUri?.takeIf(String::isNotBlank) ?: filePath,
         localFileName = localFileName,

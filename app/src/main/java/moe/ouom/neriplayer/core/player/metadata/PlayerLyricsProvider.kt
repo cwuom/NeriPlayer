@@ -166,9 +166,13 @@ internal fun shouldReadManagedDownloadLyrics(
     return !song.isLocalSong() || isManagedLocalDownload
 }
 
-private fun hasCachedManagedLocalDownload(song: SongItem): Boolean {
+private fun isManagedLocalDownloadForSong(application: Application, song: SongItem): Boolean {
+    if (!song.isLocalSong()) {
+        return false
+    }
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+        ManagedDownloadStorage.peekDownloadedAudio(song) != null ||
+        ManagedDownloadStorage.isLikelyManagedDownloadSong(application, song)
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -788,12 +792,17 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val isManagedLocalDownload = song.isLocalSong() && hasCachedManagedLocalDownload(song)
+            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload
             )
-            val localLyrics = if (song.isLocalSong()) {
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(application, song)
+            } else {
+                null
+            }
+            val localLyrics = if (song.isLocalSong() && !isManagedLocalDownload) {
                 LocalMediaSupport.inspectLyricsFast(application, song)
             } else {
                 null
@@ -807,10 +816,12 @@ internal object PlayerLyricsProvider {
                     legacyLyric = song.originalTranslatedLyric
                 )
             }
-            val downloadedTranslatedLyric = if (canReadManagedDownloadLyrics) {
-                AudioDownloadManager.getTranslatedLyricContent(application, song)
-            } else {
-                null
+            val downloadedTranslatedLyric = when {
+                managedLyrics != null -> managedLyrics.translatedLyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getTranslatedLyricContent(application, song)
+                }
+                else -> null
             }
             val selectedTranslatedLyric = resolveLocalFirstLyricText(
                 localLyric = localTranslatedLyric,
@@ -916,12 +927,17 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
-            val isManagedLocalDownload = song.isLocalSong() && hasCachedManagedLocalDownload(song)
+            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload
             )
-            val localRomanizedLyric = if (song.isLocalSong()) {
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(application, song)
+            } else {
+                null
+            }
+            val localRomanizedLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
                 LocalMediaSupport.inspectLyricsFast(application, song).romanizedLyric
             } else {
                 null
@@ -933,10 +949,12 @@ internal object PlayerLyricsProvider {
                     logPrefix = "本地音译歌词读取失败"
                 )?.let { return@withContext it }
             }
-            val downloadedRomanizedLyric = if (canReadManagedDownloadLyrics) {
-                AudioDownloadManager.getRomanizedLyricContent(application, song)
-            } else {
-                null
+            val downloadedRomanizedLyric = when {
+                managedLyrics != null -> managedLyrics.romanizedLyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getRomanizedLyricContent(application, song)
+                }
+                else -> null
             }
             downloadedRomanizedLyric?.let { rawLyric ->
                 parseLocalLyricOverride(
@@ -997,12 +1015,17 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val isManagedLocalDownload = song.isLocalSong() && hasCachedManagedLocalDownload(song)
+            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload
             )
-            val localLyric = if (song.isLocalSong()) {
+            val managedLyrics = if (isManagedLocalDownload) {
+                AudioDownloadManager.getLyricsBundleFast(application, song)
+            } else {
+                null
+            }
+            val localLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
                 LocalMediaSupport.inspectLyricsFast(application, song).lyric
             } else {
                 null
@@ -1015,10 +1038,12 @@ internal object PlayerLyricsProvider {
                     legacyLyric = song.originalLyric
                 )
             }
-            val downloadedLyric = if (canReadManagedDownloadLyrics) {
-                AudioDownloadManager.getLyricContent(application, song)
-            } else {
-                null
+            val downloadedLyric = when {
+                managedLyrics != null -> managedLyrics.lyric
+                canReadManagedDownloadLyrics -> {
+                    AudioDownloadManager.getLyricContent(application, song)
+                }
+                else -> null
             }
             val selectedLyric = resolveLocalFirstLyricText(
                 localLyric = localLyric,
