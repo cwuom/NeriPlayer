@@ -37,6 +37,54 @@ internal data class LyricsEditorSeed(
     val source: LyricsEditorSource = LyricsEditorSource.SIDECAR
 )
 
+internal fun resolveLocalLyricsEditorSeed(
+    song: SongItem,
+    sidecarLyrics: String?,
+    sidecarTranslatedLyrics: String?,
+    sidecarRomanizedLyrics: String?,
+    embeddedLyrics: String?,
+    embeddedTranslatedLyrics: String?,
+    embeddedRomanizedLyrics: String?,
+    hasOriginalSidecar: Boolean,
+    hasTranslatedSidecar: Boolean,
+    hasRomanizedSidecar: Boolean
+): LyricsEditorSeed {
+    val storedLyrics = resolveStoredLyricText(song.matchedLyric, song.originalLyric).orEmpty()
+    val storedTranslatedLyrics = resolveStoredLyricText(
+        song.matchedTranslatedLyric,
+        song.originalTranslatedLyric
+    ).orEmpty()
+    val storedRomanizedLyrics = resolveStoredLyricText(
+        song.matchedRomanizedLyric,
+        song.originalRomanizedLyric
+    ).orEmpty()
+    val resolvedEmbeddedLyrics = embeddedLyrics ?: storedLyrics
+    val resolvedEmbeddedTranslatedLyrics = embeddedTranslatedLyrics ?: storedTranslatedLyrics
+    val resolvedEmbeddedRomanizedLyrics = embeddedRomanizedLyrics ?: storedRomanizedLyrics
+    val hasSidecar = hasOriginalSidecar || hasTranslatedSidecar || hasRomanizedSidecar
+    return LyricsEditorSeed(
+        lyrics = if (hasOriginalSidecar) sidecarLyrics.orEmpty() else resolvedEmbeddedLyrics,
+        translatedLyrics = if (hasTranslatedSidecar) {
+            sidecarTranslatedLyrics.orEmpty()
+        } else {
+            resolvedEmbeddedTranslatedLyrics
+        },
+        romanizedLyrics = if (hasRomanizedSidecar) {
+            sidecarRomanizedLyrics.orEmpty()
+        } else {
+            resolvedEmbeddedRomanizedLyrics
+        },
+        sidecarLyrics = sidecarLyrics ?: resolvedEmbeddedLyrics,
+        sidecarTranslatedLyrics = sidecarTranslatedLyrics ?: resolvedEmbeddedTranslatedLyrics,
+        sidecarRomanizedLyrics = sidecarRomanizedLyrics ?: resolvedEmbeddedRomanizedLyrics,
+        embeddedLyrics = resolvedEmbeddedLyrics,
+        embeddedTranslatedLyrics = resolvedEmbeddedTranslatedLyrics,
+        embeddedRomanizedLyrics = resolvedEmbeddedRomanizedLyrics,
+        hasSidecar = hasSidecar,
+        source = if (hasSidecar) LyricsEditorSource.SIDECAR else LyricsEditorSource.EMBEDDED
+    )
+}
+
 internal fun resolveStoredLyricText(
     currentLyric: String?,
     legacyLyric: String?
