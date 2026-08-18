@@ -88,6 +88,9 @@ internal fun searchSettingsEntries(
 }
 
 internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
+    if (keyName in LyricAppearanceSettingKeys) {
+        return SettingsPage.Lyrics
+    }
     if (
         keyName == "netease_auto_source_switch" ||
         keyName == "netease_local_source_fallback"
@@ -149,6 +152,7 @@ internal fun AutoSettingInfo.searchTargetId(): String {
         "nowplaying_cover_blur_darken" -> "nowplaying_cover_blur_background_enabled"
         "lyric_blur_amount" -> "lyric_blur_enabled"
         "standardized_lyric_embedding_enabled" -> "download_metadata_post_processing_enabled"
+        "lyric_font_scale" -> "nowplaying_cover_lyric_font_scale"
         else -> keyName
     }
     return "setting:$targetKey"
@@ -217,6 +221,7 @@ private fun lyricsCardIndex(targetId: String): Int {
         "setting:floating_lyrics_enabled" -> 0
         "setting:cloud_music_lyric_default_offset_ms",
         "setting:qq_music_lyric_default_offset_ms" -> 2
+        in LyricAppearanceSearchTargets -> 3
         else -> 1
     }
 }
@@ -299,8 +304,7 @@ private fun personalizationCardIndex(targetId: String): Int {
         in PersonalizationHomeTargets -> 1
         in PersonalizationPlaybackInfoTargets -> 2
         in PersonalizationPlaybackControlTargets -> 3
-        in PersonalizationLyricsAndDisplayTargets -> 4
-        in PersonalizationBackgroundTargets -> 5
+        in PersonalizationBackgroundTargets -> 4
         else -> 0
     }
 }
@@ -336,14 +340,24 @@ private val PersonalizationPlaybackControlTargets = setOf(
     "setting:lyrics_control_size"
 )
 
-private val PersonalizationLyricsAndDisplayTargets = setOf(
-    "setting:show_lyric_translation",
-    "setting:lyric_translation_use_phonetic",
+private val LyricAppearanceSettingKeys = setOf(
+    "show_lyric_translation",
+    "lyric_translation_use_phonetic",
+    "lyric_font_scale",
+    "nowplaying_cover_lyric_font_scale",
+    "nowplaying_cover_translation_font_scale",
+    "lyrics_page_lyric_font_scale",
+    "lyrics_page_translation_font_scale"
+)
+
+private val LyricAppearanceSearchTargets = setOf(
     "setting:lyric_font_scale",
     "setting:nowplaying_cover_lyric_font_scale",
     "setting:nowplaying_cover_translation_font_scale",
     "setting:lyrics_page_lyric_font_scale",
-    "setting:lyrics_page_translation_font_scale"
+    "setting:lyrics_page_translation_font_scale",
+    "setting:show_lyric_translation",
+    "setting:lyric_translation_use_phonetic"
 )
 
 private val PersonalizationBackgroundTargets = setOf(

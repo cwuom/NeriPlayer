@@ -224,6 +224,8 @@ enum class AutoSettingIcon {
     LibraryMusic,
     Palette,
     PlaylistPlay,
+    Public,
+    RecordVoiceOver,
     Router,
     Settings,
     Storage,

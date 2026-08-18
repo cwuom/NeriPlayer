@@ -1543,7 +1543,7 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.Personalization -> {
-                    for (cardIndex in 0..5) {
+                    for (cardIndex in 0..4) {
                         item(key = "${selectedPage.name}:card:$cardIndex") {
                             SettingsPersonalizationPageContent(
                                 autoSettingsRepository = autoSettingsRepository,
@@ -1566,8 +1566,6 @@ fun SettingsScreen(
                                 onShowHomeRadarCardChange = onShowHomeRadarCardChange,
                                 showHomeRecommendedCard = showHomeRecommendedCard,
                                 onShowHomeRecommendedCardChange = onShowHomeRecommendedCardChange,
-                                lyricFontScales = lyricFontScales,
-                                onLyricFontScaleChange = onLyricFontScaleChange,
                                 backgroundImageUri = backgroundImageUri,
                                 onPickBackgroundImage = {
                                     photoPickerLauncher.launch(
@@ -1655,7 +1653,7 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.Lyrics -> {
-                    for (cardIndex in 0..2) {
+                    for (cardIndex in 0..3) {
                         item(key = "${selectedPage.name}:card:$cardIndex") {
                             SettingsLyricsSection(
                                 expanded = true,
@@ -1667,6 +1665,17 @@ fun SettingsScreen(
                                 scope = scope,
                                 floatingLyricsPreferences = floatingLyricsPreferences,
                                 onFloatingLyricsPreferencesChange = onFloatingLyricsPreferencesChange,
+                                lyricsAppearanceContent = {
+                                    SettingsLyricsAppearanceContent(
+                                        autoSettingsRepository = autoSettingsRepository,
+                                        scope = scope,
+                                        lyricFontScales = lyricFontScales,
+                                        onLyricFontScaleChange = onLyricFontScaleChange,
+                                        highlightTargetId = settingsHighlightTargetId,
+                                        highlightPulse = settingsHighlightPulse,
+                                        onHighlightFinished = onSettingsHighlightFinished
+                                    )
+                                },
                                 cloudMusicLyricDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
                                 onCloudMusicLyricDefaultOffsetMsChange =
                                     onCloudMusicLyricDefaultOffsetMsChange,
@@ -3177,8 +3186,6 @@ private fun SettingsPersonalizationPageContent(
     onShowHomeRadarCardChange: (Boolean) -> Unit,
     showHomeRecommendedCard: Boolean,
     onShowHomeRecommendedCardChange: (Boolean) -> Unit,
-    lyricFontScales: LyricFontScales,
-    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
     backgroundImageUri: String?,
     onPickBackgroundImage: () -> Unit,
     onClearBackgroundImage: () -> Unit,
@@ -3227,11 +3234,6 @@ private fun SettingsPersonalizationPageContent(
         val nowPlayingProgressShowAudioSpec by autoSettingsRepository
             .nowPlayingProgressShowAudioSpecFlow
             .collectAsState(initial = true)
-        val showLyricTranslation by autoSettingsRepository.showLyricTranslationFlow.collectAsState(initial = true)
-        val lyricTranslationUsePhonetic by autoSettingsRepository.lyricTranslationUsePhoneticFlow.collectAsState(
-            initial = false
-        )
-
         if (shouldShowCard(0)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_start_section),
@@ -3482,96 +3484,6 @@ private fun SettingsPersonalizationPageContent(
 
         if (shouldShowCard(4)) PersonalizationDetailCard {
             MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_personalization_lyrics_scale_section),
-                description = stringResource(R.string.settings_personalization_lyrics_scale_section_desc)
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.SHOW_LYRIC_TRANSLATION),
-                checked = showLyricTranslation,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setShowLyricTranslation(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            PersonalizationSwitchItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_TRANSLATION_USE_PHONETIC),
-                checked = lyricTranslationUsePhonetic,
-                onCheckedChange = { enabled ->
-                    scope.launch { autoSettingsRepository.setLyricTranslationUsePhonetic(enabled) }
-                },
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_lyrics_cover_page_section),
-                description = stringResource(R.string.settings_lyrics_cover_page_section_desc)
-            )
-            LyricFontScaleSettingsItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE
-                ),
-                currentScale = lyricFontScales.coverLyric,
-                onScaleCommit = { scale ->
-                    onLyricFontScaleChange(LyricFontScaleTarget.COVER_LYRIC, scale)
-                },
-                sampleText = stringResource(R.string.settings_lyrics_sample),
-                sampleBaseSizeSp = 18f,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            LyricFontScaleSettingsItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE
-                ),
-                currentScale = lyricFontScales.coverTranslation,
-                onScaleCommit = { scale ->
-                    onLyricFontScaleChange(LyricFontScaleTarget.COVER_TRANSLATION, scale)
-                },
-                sampleText = stringResource(R.string.settings_lyrics_translation_sample),
-                sampleBaseSizeSp = 14f,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            MiuixSettingsSectionIntro(
-                title = stringResource(R.string.settings_lyrics_page_section),
-                description = stringResource(R.string.settings_lyrics_page_section_desc)
-            )
-            LyricFontScaleSettingsItem(
-                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE),
-                currentScale = lyricFontScales.lyricsPageLyric,
-                onScaleCommit = { scale ->
-                    onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_LYRIC, scale)
-                },
-                sampleText = stringResource(R.string.settings_lyrics_sample),
-                sampleBaseSizeSp = 20f,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-            LyricFontScaleSettingsItem(
-                setting = AutoSettingsMetadata.requireSetting(
-                    AutoSettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
-                ),
-                currentScale = lyricFontScales.lyricsPageTranslation,
-                onScaleCommit = { scale ->
-                    onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION, scale)
-                },
-                sampleText = stringResource(R.string.settings_lyrics_translation_sample),
-                sampleBaseSizeSp = 16f,
-                highlightTargetId = highlightTargetId,
-                highlightPulse = highlightPulse,
-                onHighlightFinished = onHighlightFinished
-            )
-
-        }
-
-        if (shouldShowCard(5)) PersonalizationDetailCard {
-            MiuixSettingsSectionIntro(
                 title = stringResource(R.string.settings_personalization_background_section),
                 description = stringResource(R.string.settings_personalization_background_section_desc)
             )
@@ -3641,6 +3553,109 @@ private fun SettingsPersonalizationPageContent(
             }
         }
     }
+}
+
+@Composable
+private fun SettingsLyricsAppearanceContent(
+    autoSettingsRepository: AutoSettingsRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    lyricFontScales: LyricFontScales,
+    onLyricFontScaleChange: (LyricFontScaleTarget, Float) -> Unit,
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?
+) {
+    val showLyricTranslation by autoSettingsRepository.showLyricTranslationFlow.collectAsState(initial = true)
+    val lyricTranslationUsePhonetic by autoSettingsRepository.lyricTranslationUsePhoneticFlow.collectAsState(
+        initial = false
+    )
+
+    MiuixSettingsSectionIntro(
+        title = stringResource(R.string.settings_lyrics_appearance_section),
+        description = stringResource(R.string.settings_lyrics_appearance_section_desc)
+    )
+    PersonalizationSwitchItem(
+        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.SHOW_LYRIC_TRANSLATION),
+        checked = showLyricTranslation,
+        onCheckedChange = { enabled ->
+            scope.launch { autoSettingsRepository.setShowLyricTranslation(enabled) }
+        },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    PersonalizationSwitchItem(
+        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRIC_TRANSLATION_USE_PHONETIC),
+        checked = lyricTranslationUsePhonetic,
+        onCheckedChange = { enabled ->
+            scope.launch { autoSettingsRepository.setLyricTranslationUsePhonetic(enabled) }
+        },
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    MiuixSettingsSectionIntro(
+        title = stringResource(R.string.settings_lyrics_cover_page_section),
+        description = stringResource(R.string.settings_lyrics_cover_page_section_desc)
+    )
+    LyricFontScaleSettingsItem(
+        setting = AutoSettingsMetadata.requireSetting(
+            AutoSettingsKeys.NOWPLAYING_COVER_LYRIC_FONT_SCALE
+        ),
+        currentScale = lyricFontScales.coverLyric,
+        onScaleCommit = { scale ->
+            onLyricFontScaleChange(LyricFontScaleTarget.COVER_LYRIC, scale)
+        },
+        sampleText = stringResource(R.string.settings_lyrics_sample),
+        sampleBaseSizeSp = 18f,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    LyricFontScaleSettingsItem(
+        setting = AutoSettingsMetadata.requireSetting(
+            AutoSettingsKeys.NOWPLAYING_COVER_TRANSLATION_FONT_SCALE
+        ),
+        currentScale = lyricFontScales.coverTranslation,
+        onScaleCommit = { scale ->
+            onLyricFontScaleChange(LyricFontScaleTarget.COVER_TRANSLATION, scale)
+        },
+        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+        sampleBaseSizeSp = 14f,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    MiuixSettingsSectionIntro(
+        title = stringResource(R.string.settings_lyrics_page_section),
+        description = stringResource(R.string.settings_lyrics_page_section_desc)
+    )
+    LyricFontScaleSettingsItem(
+        setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.LYRICS_PAGE_LYRIC_FONT_SCALE),
+        currentScale = lyricFontScales.lyricsPageLyric,
+        onScaleCommit = { scale ->
+            onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_LYRIC, scale)
+        },
+        sampleText = stringResource(R.string.settings_lyrics_sample),
+        sampleBaseSizeSp = 20f,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
+    LyricFontScaleSettingsItem(
+        setting = AutoSettingsMetadata.requireSetting(
+            AutoSettingsKeys.LYRICS_PAGE_TRANSLATION_FONT_SCALE
+        ),
+        currentScale = lyricFontScales.lyricsPageTranslation,
+        onScaleCommit = { scale ->
+            onLyricFontScaleChange(LyricFontScaleTarget.LYRICS_PAGE_TRANSLATION, scale)
+        },
+        sampleText = stringResource(R.string.settings_lyrics_translation_sample),
+        sampleBaseSizeSp = 16f,
+        highlightTargetId = highlightTargetId,
+        highlightPulse = highlightPulse,
+        onHighlightFinished = onHighlightFinished
+    )
 }
 
 @Composable

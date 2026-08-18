@@ -23,6 +23,8 @@ import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Public
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
@@ -221,6 +223,8 @@ private fun autoSettingSpecIconVector(icon: AutoSettingIcon): ImageVector? {
         AutoSettingIcon.LibraryMusic -> Icons.Outlined.LibraryMusic
         AutoSettingIcon.Palette -> Icons.Outlined.Palette
         AutoSettingIcon.PlaylistPlay -> Icons.AutoMirrored.Outlined.PlaylistPlay
+        AutoSettingIcon.Public -> Icons.Outlined.Public
+        AutoSettingIcon.RecordVoiceOver -> Icons.Outlined.RecordVoiceOver
         AutoSettingIcon.Router -> Icons.Outlined.Router
         AutoSettingIcon.Settings -> Icons.Outlined.Settings
         AutoSettingIcon.Storage -> Icons.Outlined.Storage
