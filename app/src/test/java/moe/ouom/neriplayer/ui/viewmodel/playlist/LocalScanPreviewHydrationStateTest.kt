@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class LocalScanPreviewHydrationStateTest {
@@ -39,6 +40,45 @@ class LocalScanPreviewHydrationStateTest {
         assertEquals(setOf(hydratedSong.stableKey()), updated.duplicateMetadataKeys)
         assertEquals(setOf(pendingSong.stableKey()), updated.metadataPendingKeys)
         assertEquals(1, updated.scanProgress.processed)
+    }
+
+    @Test
+    fun `background hydration does not reopen a completed preview`() {
+        val quickSong = localSong(
+            id = 3L,
+            name = "Artist - Ready",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY
+        )
+        val state = LocalScanPreviewState(
+            visible = true,
+            isScanning = false,
+            songs = listOf(quickSong),
+            metadataPendingKeys = setOf(quickSong.stableKey())
+        )
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(quickSong.copy(album = "Album")),
+            progress = state.scanProgress.copy(processed = 1, total = 1)
+        )
+
+        assertFalse(updated.isScanning)
+    }
+
+    @Test
+    fun `metadata refresh candidates keep the newest song for each stable key`() {
+        val firstSong = localSong(id = 4L, name = "First")
+        val replacement = firstSong.copy(name = "First updated")
+        val secondSong = localSong(id = 5L, name = "Second")
+
+        val merged = mergeLocalMetadataRefreshCandidates(
+            pending = mapOf(firstSong.stableKey() to firstSong),
+            incoming = listOf(replacement, secondSong)
+        )
+
+        assertEquals(2, merged.size)
+        assertEquals(replacement, merged[replacement.stableKey()])
+        assertEquals(secondSong, merged[secondSong.stableKey()])
     }
 
     private fun localSong(id: Long, name: String, album: String = "") = SongItem(

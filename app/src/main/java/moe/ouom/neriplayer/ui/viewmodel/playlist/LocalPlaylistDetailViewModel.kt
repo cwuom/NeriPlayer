@@ -34,20 +34,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
@@ -146,6 +139,18 @@ internal fun remapScanPreviewKeySet(
     return keys - previousKey + updatedKey
 }
 
+internal fun mergeLocalMetadataRefreshCandidates(
+    pending: Map<String, SongItem>,
+    incoming: List<SongItem>
+): LinkedHashMap<String, SongItem> {
+    val merged = LinkedHashMap<String, SongItem>(pending.size + incoming.size)
+    merged.putAll(pending)
+    incoming.forEach { song ->
+        merged[song.stableKey()] = song
+    }
+    return merged
+}
+
 internal fun applyHydratedSongsToScanPreview(
     state: LocalScanPreviewState,
     hydratedSongs: List<SongItem?>,
@@ -242,7 +247,6 @@ internal fun claimNextScanMetadataHydrationIndex(
 }
 
 private const val SCAN_METADATA_HYDRATION_PLAYBACK_PARALLELISM = 1
-private const val SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS = 80L
 
 private class LocalScanDuplicateIndex(songs: List<SongItem>) {
     private val identities = HashSet<SongIdentity>(songs.size)
@@ -278,8 +282,6 @@ data class LocalMetadataProcessingState(
 class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(application) {
     private companion object {
         const val TAG = "LocalPlaylistScanVM"
-        const val SCAN_METADATA_HYDRATION_PARALLELISM = 8
-        const val SCAN_METADATA_HYDRATION_UI_BATCH_SIZE = 16
     }
 
     private val app = application
@@ -297,6 +299,9 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private var playlistId: Long = 0L
     private var playlistCollectJob: Job? = null
     private var scanJob: Job? = null
+    private var localMetadataRefreshJob: Job? = null
+    private val localMetadataRefreshLock = Any()
+    private val pendingLocalMetadataRefresh = LinkedHashMap<String, SongItem>()
     private var scanSessionId: Long = 0L
 
     fun start(id: Long) {
@@ -305,9 +310,22 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         playlistCollectJob?.cancel()
         _uiState.value = LocalPlaylistDetailUiState(requestedPlaylistId = id)
         playlistCollectJob = viewModelScope.launch {
+            launch {
+                val preview = runCatching { repo.readFastPlaylist(id) }
+                    .onFailure { error ->
+                        NPLogger.w(TAG, "读取本地歌单首屏快照失败: ${error.message}")
+                    }
+                    .getOrNull()
+                    ?: return@launch
+                if (playlistId != id || _uiState.value.playlist != null) return@launch
+                _uiState.value = _uiState.value.copy(
+                    playlist = preview,
+                    requestedPlaylistId = id
+                )
+            }
             if (!repo.awaitInitialized()) {
                 if (playlistId != id) return@launch
-                _uiState.value = LocalPlaylistDetailUiState(
+                _uiState.value = _uiState.value.copy(
                     initializationFailed = true,
                     requestedPlaylistId = id
                 )
@@ -381,27 +399,17 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 val finalizedResult = if (result.completed) {
                     val scanOptions = _scanPreviewState.value
                     val localPlaylists = repo.playlists.value.toList()
+                    val completedProgress = LocalAudioScanProgress(
+                        phase = LocalAudioScanPhase.COMPLETED,
+                        processed = result.songs.size,
+                        total = result.songs.size,
+                        discoveredSongs = result.songs.size,
+                        elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                    )
                     val metadataPendingKeys = if (result.metadataDeferred) {
-                        result.songs.mapTo(LinkedHashSet(result.songs.size)) { it.stableKey() }
+                        result.songs.mapTo(LinkedHashSet()) { it.stableKey() }
                     } else {
                         emptySet()
-                    }
-                    val quickProgress = if (result.metadataDeferred) {
-                        LocalAudioScanProgress(
-                            phase = LocalAudioScanPhase.HYDRATING_METADATA,
-                            processed = 0,
-                            total = result.songs.size,
-                            discoveredSongs = result.songs.size,
-                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                        )
-                    } else {
-                        LocalAudioScanProgress(
-                            phase = LocalAudioScanPhase.COMPLETED,
-                            processed = result.songs.size,
-                            total = result.songs.size,
-                            discoveredSongs = result.songs.size,
-                            elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                        )
                     }
                     val preparedState = withContext(Dispatchers.Default) {
                         buildScanPreviewState(
@@ -410,50 +418,16 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                             options = scanOptions,
                             metadataPendingKeys = metadataPendingKeys,
                             selectedKeys = null,
-                            progress = quickProgress
+                            progress = completedProgress
                         )
                     }
-                    _scanPreviewState.value = preparedState
-                    val hydratedSongs = if (result.metadataDeferred) {
-                        hydrateScanSongs(
-                            sessionId = sessionId,
-                            songs = preparedState.songs,
-                            scanStartedAt = scanStartedAt
-                        )
-                    } else {
-                        preparedState.songs
-                    }
-                    if (!isActiveScanSession(sessionId, currentJob)) return@launch
-
-                    val prepareStartedAt = SystemClock.elapsedRealtime()
-                    val finalLocalPlaylists = repo.playlists.value.toList()
-                    val finalProgress = LocalAudioScanProgress(
-                        phase = LocalAudioScanPhase.COMPLETED,
-                        processed = hydratedSongs.size,
-                        total = hydratedSongs.size,
-                        discoveredSongs = hydratedSongs.size,
-                        elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
+                    // 歌词、翻译和罗马字在播放或编辑时按需读取, 不阻塞扫描结果
+                    _scanPreviewState.value = preparedState.copy(
+                        isScanning = false,
+                        scanProgress = completedProgress
                     )
-                    val currentScanState = _scanPreviewState.value
-                    val finalizedState = withContext(Dispatchers.Default) {
-                        buildScanPreviewState(
-                            songs = hydratedSongs,
-                            localPlaylists = finalLocalPlaylists,
-                            options = currentScanState,
-                            metadataPendingKeys = emptySet(),
-                            selectedKeys = currentScanState.selectedKeys,
-                            progress = finalProgress
-                        )
-                    }
-                    val prepareElapsedMs = SystemClock.elapsedRealtime() - prepareStartedAt
-                    NPLogger.d(
-                        TAG,
-                        "prepareScannedSongs finished: session=$sessionId, input=${result.songs.size}, output=${finalizedState.songs.size}, elapsed=${prepareElapsedMs}ms"
-                    )
-                    _scanPreviewState.value = finalizedState
                     result.copy(
-                        songs = finalizedState.songs,
-                        metadataDeferred = false
+                        songs = preparedState.songs
                     )
                 } else {
                     LocalScanPreviewState()
@@ -560,6 +534,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("applyScannedSongs") {
                 repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
             }.onSuccess { importedCount ->
+                scheduleLocalMetadataRefresh(songs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = importedCount,
@@ -581,6 +556,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("createPlaylistWithScannedSongs") {
                 repo.createPlaylistWithScannedSongs(name, songs)
             }.onSuccess { playlist ->
+                scheduleLocalMetadataRefresh(playlist.songs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = playlist.songs.size,
@@ -604,6 +580,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("addScannedSongsToPlaylist") {
                 repo.addScannedSongsToPlaylistWithResult(targetPlaylistId, songs)
             }.onSuccess { addResult ->
+                scheduleLocalMetadataRefresh(addResult.addedSongs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = addResult.addedCount,
@@ -613,6 +590,47 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 )
             }.onFailure {
                 onResult(LocalAudioImportUiResult(importedCount = 0, failedCount = songs.size))
+            }
+        }
+    }
+
+    private fun scheduleLocalMetadataRefresh(songs: List<SongItem>) {
+        val candidates = songs
+            .distinctBy(SongItem::stableKey)
+            .filter { it.localFilePath?.isNotBlank() == true || it.mediaUri?.startsWith("content://") == true }
+        if (candidates.isEmpty()) return
+        synchronized(localMetadataRefreshLock) {
+            val merged = mergeLocalMetadataRefreshCandidates(
+                pending = pendingLocalMetadataRefresh,
+                incoming = candidates
+            )
+            pendingLocalMetadataRefresh.clear()
+            pendingLocalMetadataRefresh.putAll(merged)
+            if (localMetadataRefreshJob?.isActive != true) {
+                localMetadataRefreshJob = viewModelScope.launch {
+                    drainLocalMetadataRefreshQueue()
+                }
+            }
+        }
+    }
+
+    private suspend fun drainLocalMetadataRefreshQueue() {
+        while (true) {
+            val batch = synchronized(localMetadataRefreshLock) {
+                if (pendingLocalMetadataRefresh.isEmpty()) {
+                    localMetadataRefreshJob = null
+                    return
+                }
+                pendingLocalMetadataRefresh.values.toList().also {
+                    pendingLocalMetadataRefresh.clear()
+                }
+            }
+            try {
+                repo.refreshScannedLocalSongMetadata(batch)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "后台补全本地歌曲元数据失败: ${error.message}")
             }
         }
     }
@@ -738,108 +756,6 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     private fun isActiveScanSession(sessionId: Long, currentJob: Job): Boolean {
         return scanJob === currentJob && scanSessionId == sessionId
-    }
-
-    private suspend fun hydrateScanSongs(
-        sessionId: Long,
-        songs: List<SongItem>,
-        scanStartedAt: Long
-    ): List<SongItem> {
-        if (songs.isEmpty()) return emptyList()
-
-        val processedCount = AtomicInteger(0)
-        val totalCount = songs.size
-        _scanPreviewState.update { current ->
-            current.copy(
-                visible = true,
-                isScanning = true,
-                scanProgress = LocalAudioScanProgress(
-                    phase = LocalAudioScanPhase.HYDRATING_METADATA,
-                    processed = 0,
-                    total = totalCount,
-                    discoveredSongs = totalCount,
-                    elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                )
-            )
-        }
-
-        val hydrationDispatcher = Dispatchers.IO.limitedParallelism(
-            SCAN_METADATA_HYDRATION_PARALLELISM
-        )
-        val hydratedSongs = arrayOfNulls<SongItem>(totalCount)
-        val nextSongIndex = AtomicInteger(0)
-        coroutineScope {
-            (0 until SCAN_METADATA_HYDRATION_PARALLELISM).map { workerSlot ->
-                async(hydrationDispatcher) {
-                    while (true) {
-                        ensureActive()
-                        val songIndex = claimNextScanMetadataHydrationIndex(
-                            nextSongIndex = nextSongIndex,
-                            totalCount = totalCount
-                        ) ?: break
-                        awaitPlaybackSafeMetadataHydrationSlot(workerSlot)
-                        ensureActive()
-                        val song = songs[songIndex]
-
-                        val hydratedSong = runCatching {
-                            LocalAudioImportManager.hydrateLocalSongTextMetadata(
-                                context = app,
-                                song = song,
-                                resolveCoverFallback = false
-                            )
-                        }.onFailure {
-                            NPLogger.w(
-                                TAG,
-                                "scan metadata hydration failed for ${song.name}: ${it.message}"
-                            )
-                        }.getOrDefault(song)
-                        synchronized(hydratedSongs) {
-                            hydratedSongs[songIndex] = hydratedSong
-                        }
-                        val processed = processedCount.incrementAndGet()
-                        if (
-                            scanSessionId == sessionId &&
-                            (processed % SCAN_METADATA_HYDRATION_UI_BATCH_SIZE == 0 ||
-                                processed == totalCount)
-                        ) {
-                            val hydratedSnapshot = synchronized(hydratedSongs) {
-                                hydratedSongs.toList()
-                            }
-                            val progress = LocalAudioScanProgress(
-                                phase = LocalAudioScanPhase.HYDRATING_METADATA,
-                                processed = processed,
-                                total = totalCount,
-                                discoveredSongs = totalCount,
-                                elapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
-                            )
-                            _scanPreviewState.update { current ->
-                                if (scanSessionId != sessionId) {
-                                    current
-                                } else {
-                                    applyHydratedSongsToScanPreview(
-                                        state = current,
-                                        hydratedSongs = hydratedSnapshot,
-                                        progress = progress
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }.awaitAll()
-        }
-        return hydratedSongs.mapIndexed { index, hydratedSong -> hydratedSong ?: songs[index] }
-    }
-
-    private suspend fun awaitPlaybackSafeMetadataHydrationSlot(workerSlot: Int) {
-        while (
-            shouldThrottleScanMetadataHydration(
-                workerSlot = workerSlot,
-                playbackIntentActive = PlayerManager.playbackControlPlayingFlow.value
-            )
-        ) {
-            delay(SCAN_METADATA_HYDRATION_PLAYBACK_WAIT_MS)
-        }
     }
 
     private fun buildScanPreviewState(
