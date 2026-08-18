@@ -158,6 +158,293 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromVersion15ToVersion16AddsRomanizedLyricColumns() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_NAME, 15).apply {
+            execSQL(
+                """
+                INSERT INTO downloaded_song_catalog (
+                  catalog_key, root_key, display_position, id, name, artist, album,
+                  file_path, file_size, download_time, user_lyric_offset_ms, duration_ms
+                ) VALUES ('file:song.flac', 'root', 0, 1, 'Song', 'Artist', 'Album',
+                  '/song.flac', 1, 10, 0, 1000)
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO download_snapshot_metadata (
+                  root_key, audio_name, user_lyric_offset_ms, duration_ms
+                ) VALUES ('root', 'song.flac', 0, 1000)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_NAME,
+            16,
+            true,
+            NeriUserDataDatabase.MIGRATION_15_16
+        )
+
+        try {
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('downloaded_song_catalog') " +
+                        "WHERE name IN ('matched_romanized_lyric', 'original_romanized_lyric')"
+                )
+            )
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('download_snapshot_metadata') " +
+                        "WHERE name IN ('matched_romanized_lyric', 'original_romanized_lyric')"
+                )
+            )
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('download_pending_queue') " +
+                        "WHERE name IN ('matched_romanized_lyric', 'original_romanized_lyric')"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM downloaded_song_catalog " +
+                        "WHERE matched_romanized_lyric IS NULL AND original_romanized_lyric IS NULL"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion16ToVersion17KeepsRomanizedLyricColumnsAndRows() {
+        helper.createDatabase(TEST_DATABASE_VERSION_16_NAME, 16).apply {
+            execSQL(
+                """
+                INSERT INTO downloaded_song_catalog (
+                  catalog_key, root_key, display_position, id, name, artist, album,
+                  file_path, file_size, download_time, matched_romanized_lyric,
+                  original_romanized_lyric, user_lyric_offset_ms, duration_ms
+                ) VALUES ('file:song.flac', 'root', 0, 1, 'Song', 'Artist', 'Album',
+                  '/song.flac', 1, 10, 'roma', 'original roma', 0, 1000)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_16_NAME,
+            17,
+            true,
+            NeriUserDataDatabase.MIGRATION_16_17
+        )
+
+        try {
+            assertEquals(
+                "roma",
+                migrated.stringFor(
+                    "SELECT matched_romanized_lyric FROM downloaded_song_catalog " +
+                        "WHERE catalog_key = 'file:song.flac'"
+                )
+            )
+            assertEquals(
+                "original roma",
+                migrated.stringFor(
+                    "SELECT original_romanized_lyric FROM downloaded_song_catalog " +
+                        "WHERE catalog_key = 'file:song.flac'"
+                )
+            )
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('download_pending_queue') " +
+                        "WHERE name IN ('matched_romanized_lyric', 'original_romanized_lyric')"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion17ToVersion18KeepsExistingRows() {
+        helper.createDatabase(TEST_DATABASE_VERSION_17_NAME, 17).apply {
+            execSQL(
+                """
+                INSERT INTO downloaded_song_catalog (
+                  catalog_key, root_key, display_position, id, name, artist, album,
+                  file_path, file_size, download_time, matched_romanized_lyric,
+                  original_romanized_lyric, user_lyric_offset_ms, duration_ms
+                ) VALUES ('file:song.flac', 'root', 0, 1, 'Song', 'Artist', 'Album',
+                  '/song.flac', 1, 10, 'roma', 'original roma', 0, 1000)
+                """.trimIndent()
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_17_NAME,
+            18,
+            true,
+            NeriUserDataDatabase.MIGRATION_17_18
+        )
+
+        try {
+            assertEquals(
+                "roma",
+                migrated.stringFor(
+                    "SELECT matched_romanized_lyric FROM downloaded_song_catalog " +
+                        "WHERE catalog_key = 'file:song.flac'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion18ToVersion19RepairsLegacyRomanizedSchema() {
+        helper.createDatabase(TEST_DATABASE_VERSION_18_NAME, 18).apply {
+            execSQL(
+                """
+                INSERT INTO downloaded_song_catalog (
+                  catalog_key, root_key, display_position, id, name, artist, album,
+                  file_path, file_size, download_time, user_lyric_offset_ms, duration_ms
+                ) VALUES ('file:song.flac', 'root', 0, 1, 'Song', 'Artist', 'Album',
+                  '/song.flac', 1, 10, 0, 1000)
+                """.trimIndent()
+            )
+            execSQL(
+                "UPDATE room_master_table SET identity_hash = '3d734fb4f12dd32bbd4876b9556f8147'"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_18_NAME,
+            19,
+            true,
+            NeriUserDataDatabase.MIGRATION_18_19
+        )
+
+        try {
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('downloaded_song_catalog') " +
+                        "WHERE name IN ('matched_romanized_lyric', 'original_romanized_lyric')"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM downloaded_song_catalog " +
+                        "WHERE catalog_key = 'file:song.flac'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion19WithLegacyIdentityHashToVersion20() {
+        helper.createDatabase(TEST_DATABASE_VERSION_19_NAME, 19).apply {
+            execSQL(
+                "UPDATE room_master_table SET identity_hash = " +
+                    "'3d734fb4f12dd32bbd4876b9556f8147'"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_19_NAME,
+            20,
+            true,
+            NeriUserDataDatabase.MIGRATION_19_20
+        )
+
+        try {
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('downloaded_song_catalog') " +
+                        "WHERE name IN ('matched_romanized_lyric', " +
+                        "'original_romanized_lyric')"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion20WithLegacyIdentityHashToVersion21() {
+        helper.createDatabase(TEST_DATABASE_VERSION_20_NAME, 20).apply {
+            execSQL(
+                "UPDATE room_master_table SET identity_hash = " +
+                    "'3d734fb4f12dd32bbd4876b9556f8147'"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_20_NAME,
+            21,
+            true,
+            NeriUserDataDatabase.MIGRATION_20_21
+        )
+
+        try {
+            assertEquals(
+                21L,
+                migrated.longFor("PRAGMA user_version")
+            )
+            assertEquals(
+                "361bf3ee3aec4a5d3d2059cab1c7f9f3",
+                migrated.stringFor("SELECT identity_hash FROM room_master_table")
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion21WithLegacyIdentityHashToVersion22() {
+        helper.createDatabase(TEST_DATABASE_VERSION_21_NAME, 21).apply {
+            execSQL(
+                "UPDATE room_master_table SET identity_hash = " +
+                    "'3d734fb4f12dd32bbd4876b9556f8147'"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_21_NAME,
+            22,
+            true,
+            NeriUserDataDatabase.MIGRATION_21_22
+        )
+
+        try {
+            assertEquals(
+                22L,
+                migrated.longFor("PRAGMA user_version")
+            )
+            assertEquals(
+                "361bf3ee3aec4a5d3d2059cab1c7f9f3",
+                migrated.stringFor("SELECT identity_hash FROM room_master_table")
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertVersion1LocalPlaylistFixture() {
         val songPayload = sqlText(
             """
@@ -255,5 +542,12 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_NAME = "neri-user-data-migration-test"
         const val TEST_DATABASE_WITH_DATA_NAME = "neri-user-data-migration-with-data-test"
         const val TEST_DATABASE_VERSION_14_NAME = "neri-user-data-migration-v14-test"
+        const val TEST_DATABASE_VERSION_15_NAME = "neri-user-data-migration-v15-test"
+        const val TEST_DATABASE_VERSION_16_NAME = "neri-user-data-migration-v16-test"
+        const val TEST_DATABASE_VERSION_17_NAME = "neri-user-data-migration-v17-test"
+        const val TEST_DATABASE_VERSION_18_NAME = "neri-user-data-migration-v18-test"
+        const val TEST_DATABASE_VERSION_19_NAME = "neri-user-data-migration-v19-test"
+        const val TEST_DATABASE_VERSION_20_NAME = "neri-user-data-migration-v20-test"
+        const val TEST_DATABASE_VERSION_21_NAME = "neri-user-data-migration-v21-test"
     }
 }
