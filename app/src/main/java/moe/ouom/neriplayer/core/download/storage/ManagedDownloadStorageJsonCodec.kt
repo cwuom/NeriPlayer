@@ -177,6 +177,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("coverUrl", coverUrl)
             put("matchedLyric", matchedLyric)
             put("matchedTranslatedLyric", matchedTranslatedLyric)
+            put("matchedRomanizedLyric", matchedRomanizedLyric)
             put("matchedLyricSource", matchedLyricSource)
             put("matchedSongId", matchedSongId)
             put("userLyricOffsetMs", userLyricOffsetMs)
@@ -188,6 +189,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("originalCoverUrl", originalCoverUrl)
             put("originalLyric", originalLyric)
             put("originalTranslatedLyric", originalTranslatedLyric)
+            put("originalRomanizedLyric", originalRomanizedLyric)
             put("mediaUri", mediaUri)
             put("channelId", channelId)
             put("audioId", audioId)
@@ -214,6 +216,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("mediaUri", mediaUri)
             put("matchedLyric", matchedLyric)
             put("matchedTranslatedLyric", matchedTranslatedLyric)
+            put("matchedRomanizedLyric", matchedRomanizedLyric)
             put("matchedLyricSource", matchedLyricSource?.name)
             put("matchedSongId", matchedSongId)
             put("userLyricOffsetMs", userLyricOffsetMs)
@@ -225,6 +228,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("originalCoverUrl", originalCoverUrl)
             put("originalLyric", originalLyric)
             put("originalTranslatedLyric", originalTranslatedLyric)
+            put("originalRomanizedLyric", originalRomanizedLyric)
             put("localFileName", localFileName)
             put("localFilePath", localFilePath)
             put("channelId", channelId)
@@ -299,6 +303,7 @@ internal object ManagedDownloadStorageJsonCodec {
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             matchedLyric = optPresentString("matchedLyric"),
             matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
+            matchedRomanizedLyric = optPresentString("matchedRomanizedLyric"),
             matchedLyricSource = optString("matchedLyricSource")
                 .takeIf(String::isNotBlank)
                 ?.let { value -> runCatching { MusicPlatform.valueOf(value) }.getOrNull() },
@@ -312,6 +317,7 @@ internal object ManagedDownloadStorageJsonCodec {
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
             originalLyric = optPresentString("originalLyric"),
             originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
+            originalRomanizedLyric = optPresentString("originalRomanizedLyric"),
             localFileName = optString("localFileName").takeIf(String::isNotBlank),
             localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
@@ -353,6 +359,7 @@ internal object ManagedDownloadStorageJsonCodec {
             coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
             matchedLyric = optPresentString("matchedLyric"),
             matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
+            matchedRomanizedLyric = optPresentString("matchedRomanizedLyric"),
             matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
             matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
             userLyricOffsetMs = optLong("userLyricOffsetMs"),
@@ -364,6 +371,7 @@ internal object ManagedDownloadStorageJsonCodec {
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
             originalLyric = optPresentString("originalLyric"),
             originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
+            originalRomanizedLyric = optPresentString("originalRomanizedLyric"),
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),

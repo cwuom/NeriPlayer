@@ -137,6 +137,20 @@ internal object ManagedDownloadArtifactPlanner {
         return ManagedDownloadStorage.readText(context, reference)
     }
 
+    suspend fun indexedRomanizedLyricText(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        val reference = indexedRomanizedLyricReference(
+            audio = audio,
+            songId = songId,
+            snapshot = snapshot
+        ) ?: return null
+        return ManagedDownloadStorage.readText(context, reference)
+    }
+
     fun indexedCoverReference(
         audio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot

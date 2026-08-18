@@ -163,6 +163,7 @@ internal data class QuickImportedSongSeed(
     val durationMs: Long?,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
+    val mediaStoreCoverUri: String? = null,
     val sourceStableKey: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
@@ -177,7 +178,8 @@ private data class QuickImportedAudioInfo(
     val title: String? = null,
     val artist: String? = null,
     val album: String? = null,
-    val durationMs: Long? = null
+    val durationMs: Long? = null,
+    val mediaStoreCoverUri: String? = null
 )
 
 private data class ExternalAudioCopyInfo(
@@ -187,7 +189,8 @@ private data class ExternalAudioCopyInfo(
 
 private data class FolderScanCandidate(
     val uri: Uri,
-    val displayName: String? = null
+    val displayName: String? = null,
+    val nearbyCoverUri: String? = null
 )
 
 private data class FolderTraversalResult(
@@ -342,7 +345,8 @@ object LocalAudioImportManager {
         LocalAudioImportResult(
             songs = songs.distinctBy { it.identity() },
             failedCount = failedCount,
-            completed = true
+            completed = true,
+            metadataDeferred = songs.isNotEmpty()
         )
     }
 
@@ -496,8 +500,11 @@ object LocalAudioImportManager {
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
-            MediaStore.MediaColumns.DISPLAY_NAME
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.RELATIVE_PATH,
+            "_data"
         )
         val selection = if (scope.relativePath.isBlank()) {
             null
@@ -521,10 +528,18 @@ object LocalAudioImportManager {
                 val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val albumIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val albumIdIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
                 val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val displayNameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val relativePathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                val dataPathIndex = cursor.getColumnIndex("_data")
                 val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
                 val songs = ArrayList<SongItem>(totalCount.coerceAtLeast(0))
+                var resolvedPathCount = 0
+                var coverHitCount = 0
+                var mediaStoreCoverHitCount = 0
+                var slowRowCount = 0
+                val startedAt = SystemClock.elapsedRealtime()
 
                 progress.emit(
                     phase = LocalAudioScanPhase.BUILDING_ENTRIES,
@@ -536,6 +551,7 @@ object LocalAudioImportManager {
                 )
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
+                    val rowStartedAt = SystemClock.elapsedRealtime()
                     val contentUri = Uri.withAppendedPath(
                         audioUri,
                         cursor.getLong(idIndex).toString()
@@ -546,6 +562,29 @@ object LocalAudioImportManager {
                         ?.takeIf(String::isNotBlank)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
+                    val resolvedPath = resolveScannedFilePath(
+                        rawPath = dataPathIndex
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getString),
+                        relativePath = relativePathIndex
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getString),
+                        displayName = displayName
+                    )
+                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::isFile)
+                    if (resolvedFile != null) {
+                        resolvedPathCount++
+                    }
+                    val nearbyCoverUri = LocalMediaSupport.findNearbyCover(resolvedFile)
+                        ?.toURI()
+                        ?.toString()
+                        ?.also { coverHitCount++ }
+                    val mediaStoreCoverUri = albumIdIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
+                        ?.also { mediaStoreCoverHitCount++ }
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
                             sourceRef = contentUri.toString(),
@@ -561,10 +600,22 @@ object LocalAudioImportManager {
                                 ?.let(cursor::getString),
                             durationMs = durationIndex
                                 .takeIf { !cursor.isNull(it) }
-                                ?.let(cursor::getLong)
+                                ?.let(cursor::getLong),
+                            localFile = resolvedFile,
+                            nearbyCoverUri = nearbyCoverUri,
+                            mediaStoreCoverUri = mediaStoreCoverUri
                         ),
                         unknownArtistLabel = unknownArtistLabel
                     )
+                    val rowElapsedMs = SystemClock.elapsedRealtime() - rowStartedAt
+                    if (rowElapsedMs >= SLOW_SCAN_ITEM_THRESHOLD_MS) {
+                        slowRowCount++
+                        NPLogger.d(
+                            TAG,
+                            "scanFolderSongs MediaStore slow row: " +
+                                "cost=${rowElapsedMs}ms, uri=$contentUri"
+                        )
+                    }
                     val processed = songs.size
                     progress.emit(
                         phase = LocalAudioScanPhase.BUILDING_ENTRIES,
@@ -586,13 +637,17 @@ object LocalAudioImportManager {
                 NPLogger.d(
                     TAG,
                     "scanFolderSongs MediaStore finished: volume=${scope.volumeName}, " +
-                        "relativePath=${scope.relativePath}, songs=${songs.size}"
+                        "relativePath=${scope.relativePath}, songs=${songs.size}, " +
+                        "resolvedPaths=$resolvedPathCount, coverHits=$coverHitCount, " +
+                        "mediaStoreCoverHits=$mediaStoreCoverHitCount, " +
+                        "slowRows=$slowRowCount, elapsed=" +
+                        "${SystemClock.elapsedRealtime() - startedAt}ms"
                 )
                 LocalAudioImportResult(
                     songs = songs.distinctBy { it.identity() },
                     failedCount = 0,
                     completed = true,
-                    metadataDeferred = false
+                    metadataDeferred = songs.isNotEmpty()
                 )
             }
         } catch (error: CancellationException) {
@@ -680,6 +735,7 @@ object LocalAudioImportManager {
         var completed = false
         var rawRowCount = 0
         var slowItemCount = 0
+        var mediaStoreCoverHitCount = 0
 
         val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val includeRelativePath = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -688,6 +744,7 @@ object LocalAudioImportManager {
             add(MediaStore.Audio.Media.TITLE)
             add(MediaStore.Audio.Media.ARTIST)
             add(MediaStore.Audio.Media.ALBUM)
+            add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.MediaColumns.DISPLAY_NAME)
             if (includeRelativePath) {
@@ -710,6 +767,7 @@ object LocalAudioImportManager {
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
                 val idxAlbum = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val idxAlbumId = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
                 val idxDuration = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val idxDisplayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 val idxRelativePath = if (includeRelativePath) {
@@ -718,7 +776,6 @@ object LocalAudioImportManager {
                     -1
                 }
                 val idxData = cursor.getColumnIndex("_data")
-
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
                     val itemStartedAt = SystemClock.elapsedRealtime()
@@ -748,6 +805,12 @@ object LocalAudioImportManager {
                     } else {
                         null
                     }
+                    val mediaStoreCoverUri = idxAlbumId
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
+                        ?.also { mediaStoreCoverHitCount++ }
 
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -758,7 +821,8 @@ object LocalAudioImportManager {
                             album = idxAlbum.takeIf { it >= 0 }?.let(cursor::getString),
                             durationMs = duration,
                             localFile = resolvedFile,
-                            nearbyCoverUri = nearbyCoverUri
+                            nearbyCoverUri = nearbyCoverUri,
+                            mediaStoreCoverUri = mediaStoreCoverUri
                         ),
                         unknownArtistLabel = context.getString(R.string.music_unknown_artist)
                     )
@@ -794,13 +858,17 @@ object LocalAudioImportManager {
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanDeviceSongs finished: rows=$rawRowCount, songs=${songs.size}, failed=$failed, slowItems=$slowItemCount, completed=$completed, totalElapsed=${totalElapsedMs}ms"
+            "scanDeviceSongs finished: rows=$rawRowCount, songs=${songs.size}, " +
+                "failed=$failed, slowItems=$slowItemCount, " +
+                "mediaStoreCoverHits=$mediaStoreCoverHitCount, completed=$completed, " +
+                "totalElapsed=${totalElapsedMs}ms"
         )
 
         LocalAudioImportResult(
             songs = songs.distinctBy { it.identity() },
             failedCount = failed,
-            completed = completed
+            completed = completed,
+            metadataDeferred = songs.isNotEmpty()
         )
     }
 
@@ -855,14 +923,14 @@ object LocalAudioImportManager {
             album = resolvedAlbum,
             albumId = 0L,
             durationMs = seed.durationMs?.takeIf { it > 0L } ?: 0L,
-            coverUrl = seed.nearbyCoverUri,
+            coverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
             mediaUri = preferredLocalMediaReference(
                 localFilePath = seed.localFile?.absolutePath,
                 mediaUri = seed.sourceRef
             ) ?: resolvedSource,
             originalName = resolvedTitle,
             originalArtist = resolvedArtist,
-            originalCoverUrl = seed.nearbyCoverUri,
+            originalCoverUrl = seed.nearbyCoverUri ?: seed.mediaStoreCoverUri,
             matchedLyric = seed.matchedLyric,
             matchedTranslatedLyric = seed.matchedTranslatedLyric,
             matchedRomanizedLyric = seed.matchedRomanizedLyric,
@@ -970,46 +1038,70 @@ object LocalAudioImportManager {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
         }
-        val details = runCatching {
-            LocalMediaSupport.inspectMetadataOnly(
+        val lyricMetadata = runCatching {
+            LocalMediaSupport.inspectLyricsFast(
                 context = context,
                 song = song,
-                resolveCoverFallback = resolveCoverFallback
+                includeStoredFallback = false
             )
         }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         } ?: return song
-        val lyricMetadata = song.localMediaUri()?.let { sourceUri ->
+        if (!lyricMetadata.sourceResolved) {
+            return song
+        }
+        val nearbyCover = if (resolveCoverFallback && song.coverUrl.isNullOrBlank()) {
             runCatching {
-                LocalMediaSupport.inspectLyricsForScan(context, sourceUri)
-            }.getOrRethrowCancellation {
-                NPLogger.w(
-                    TAG,
-                    "hydrate local text sidecars failed for ${song.name}: ${it.message}"
-                )
+                LocalMediaSupport.resolveNearbyCoverUri(context, song)
+            }.getOrNull()
+        } else {
+            null
+        }
+        return song.copy(
+            coverUrl = song.coverUrl ?: nearbyCover,
+            originalCoverUrl = song.originalCoverUrl ?: nearbyCover,
+            matchedLyric = lyricMetadata.lyric ?: song.matchedLyric,
+            matchedTranslatedLyric = lyricMetadata.translatedLyric
+                ?: song.matchedTranslatedLyric,
+            matchedRomanizedLyric = lyricMetadata.romanizedLyric
+                ?: song.matchedRomanizedLyric,
+            originalLyric = lyricMetadata.lyric ?: song.originalLyric,
+            originalTranslatedLyric = lyricMetadata.translatedLyric
+                ?: song.originalTranslatedLyric,
+            originalRomanizedLyric = lyricMetadata.romanizedLyric
+                ?: song.originalRomanizedLyric,
+            matchedLyricSource = if (lyricMetadata.lyric != null) {
+                null
+            } else {
+                song.matchedLyricSource
+            },
+            matchedSongId = if (lyricMetadata.lyric != null) {
+                null
+            } else {
+                song.matchedSongId
             }
-        }
-        val detailedSong = LocalMediaSupport.toSongItem(details).let { embeddedSong ->
-            val resolvedLyric = lyricMetadata?.lyric ?: embeddedSong.matchedLyric
-            val resolvedTranslatedLyric = lyricMetadata?.translatedLyric
-                ?: embeddedSong.matchedTranslatedLyric
-            val resolvedRomanizedLyric = lyricMetadata?.romanizedLyric
-                ?: embeddedSong.matchedRomanizedLyric
-            embeddedSong.copy(
-                matchedLyric = resolvedLyric,
-                matchedTranslatedLyric = resolvedTranslatedLyric,
-                matchedRomanizedLyric = resolvedRomanizedLyric,
-                originalLyric = resolvedLyric ?: embeddedSong.originalLyric,
-                originalTranslatedLyric = resolvedTranslatedLyric
-                    ?: embeddedSong.originalTranslatedLyric,
-                originalRomanizedLyric = resolvedRomanizedLyric
-                    ?: embeddedSong.originalRomanizedLyric
-            )
-        }
+        )
+    }
 
-        return mergeImportedSongMetadata(
-            quickSong = song,
-            detailedSong = detailedSong
+    /**
+     * 只补全已经可直接访问的本地封面，避免扫描后台读取并持久化整段歌词
+     */
+    fun hydrateLocalSongCoverMetadata(
+        context: Context,
+        song: SongItem
+    ): SongItem {
+        if (!LocalSongSupport.isLocalSong(song, context)) {
+            return song
+        }
+        if (!song.coverUrl.isNullOrBlank() || !song.originalCoverUrl.isNullOrBlank()) {
+            return song
+        }
+        val nearbyCover = runCatching {
+            LocalMediaSupport.resolveNearbyCoverUri(context, song)
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: return song
+        return song.copy(
+            coverUrl = nearbyCover,
+            originalCoverUrl = song.originalCoverUrl ?: nearbyCover
         )
     }
 
@@ -1179,14 +1271,24 @@ object LocalAudioImportManager {
                 failed++
                 error("Unable to query children for $directoryUri")
             }
+            val coversChildren = children
+                .firstOrNull { it.isDirectory && it.displayName.equals("Covers", ignoreCase = true) }
+                ?.let { queryFolderChildren(context, it.documentUri) }
+                .orEmpty()
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
                     child.isDirectory -> pendingDirectories.add(child.documentUri)
                     child.isSupportedAudioDocument() -> {
+                        val baseName = child.displayName.substringBeforeLast('.', child.displayName)
                         candidates += FolderScanCandidate(
                             uri = child.documentUri,
-                            displayName = child.displayName
+                            displayName = child.displayName,
+                            nearbyCoverUri = findNearbyDocumentCoverReference(
+                                children = children,
+                                nestedCoversChildren = coversChildren,
+                                baseName = baseName
+                            )
                         )
                     }
                 }
@@ -1231,14 +1333,29 @@ object LocalAudioImportManager {
                 null
             } ?: continue
 
+            val coversChildren = children
+                .firstOrNull { it.isDirectory && it.name.equals("Covers", ignoreCase = true) }
+                ?.listFiles()
+                ?.filter { it.isFile }
+                .orEmpty()
+
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
                     child.isDirectory -> pendingDirectories.add(child)
                     child.isFile && child.isSupportedAudioDocument() -> {
+                        val displayName = child.name
+                        val baseName = displayName
+                            ?.substringBeforeLast('.', displayName)
+                            .orEmpty()
                         candidates += FolderScanCandidate(
                             uri = child.uri,
-                            displayName = child.name
+                            displayName = displayName,
+                            nearbyCoverUri = findNearbySafCoverReference(
+                                children = children.asList(),
+                                nestedCoversChildren = coversChildren,
+                                baseName = baseName
+                            )
                         )
                     }
                 }
@@ -1323,10 +1440,71 @@ object LocalAudioImportManager {
                 title = null,
                 artist = null,
                 album = null,
-                durationMs = null
+                durationMs = null,
+                nearbyCoverUri = candidate.nearbyCoverUri
             ),
             unknownArtistLabel = unknownArtistLabel
         )
+    }
+
+    private fun findNearbyDocumentCoverReference(
+        children: Collection<QueriedFolderChild>,
+        nestedCoversChildren: Collection<QueriedFolderChild>,
+        baseName: String
+    ): String? {
+        fun findSpecific(candidates: Collection<QueriedFolderChild>): String? {
+            return imageExtensions.firstNotNullOfOrNull { extension ->
+                candidates.firstOrNull { child ->
+                    !child.isDirectory && child.displayName.equals(
+                        "$baseName.$extension",
+                        ignoreCase = true
+                    )
+                }?.documentUri?.toString()
+            }
+        }
+
+        findSpecific(children)?.let { return it }
+        findSpecific(nestedCoversChildren)?.let { return it }
+        return coverNames.firstNotNullOfOrNull { coverName ->
+            imageExtensions.firstNotNullOfOrNull { extension ->
+                children.firstOrNull { child ->
+                    !child.isDirectory && child.displayName.equals(
+                        "$coverName.$extension",
+                        ignoreCase = true
+                    )
+                }?.documentUri?.toString()
+            }
+        }
+    }
+
+    private fun findNearbySafCoverReference(
+        children: Collection<DocumentFile>,
+        nestedCoversChildren: Collection<DocumentFile>,
+        baseName: String
+    ): String? {
+        fun findSpecific(candidates: Collection<DocumentFile>): String? {
+            return imageExtensions.firstNotNullOfOrNull { extension ->
+                candidates.firstOrNull { child ->
+                    child.isFile && child.name?.equals(
+                        "$baseName.$extension",
+                        ignoreCase = true
+                    ) == true
+                }?.uri?.toString()
+            }
+        }
+
+        findSpecific(children)?.let { return it }
+        findSpecific(nestedCoversChildren)?.let { return it }
+        return coverNames.firstNotNullOfOrNull { coverName ->
+            imageExtensions.firstNotNullOfOrNull { extension ->
+                children.firstOrNull { child ->
+                    child.isFile && child.name?.equals(
+                        "$coverName.$extension",
+                        ignoreCase = true
+                    ) == true
+                }?.uri?.toString()
+            }
+        }
     }
 
     private fun buildQuickImportedSong(
@@ -1361,6 +1539,7 @@ object LocalAudioImportManager {
                 durationMs = queryInfo.durationMs,
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,
+                mediaStoreCoverUri = queryInfo.mediaStoreCoverUri,
                 matchedLyric = lyrics?.lyric,
                 matchedTranslatedLyric = lyrics?.translatedLyric,
                 matchedRomanizedLyric = lyrics?.romanizedLyric,
@@ -1384,6 +1563,7 @@ object LocalAudioImportManager {
                     MediaStore.Audio.Media.TITLE,
                     MediaStore.Audio.Media.ARTIST,
                     MediaStore.Audio.Media.ALBUM,
+                    MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DURATION,
                     MediaStore.MediaColumns.DISPLAY_NAME
                 ),
@@ -1407,6 +1587,11 @@ object LocalAudioImportManager {
                     durationMs = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong),
+                    mediaStoreCoverUri = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                        ?.takeIf { it > 0L }
+                        ?.let(LocalMediaSupport::mediaStoreAlbumArtUri),
                     displayName = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString)

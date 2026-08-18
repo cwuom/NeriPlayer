@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import moe.ouom.neriplayer.util.media.NERI_ORIGINAL_LYRICS_METADATA_KEY
+import moe.ouom.neriplayer.util.media.NERI_ROMANIZED_LYRICS_METADATA_KEY
 import moe.ouom.neriplayer.util.media.mergeLyricsForExternalPlayers
 import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
 import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
@@ -176,6 +177,14 @@ internal object DownloadedAudioTagWriter {
             ),
             enabled = standardizedLyricEmbeddingEnabled
         )
+        val embeddedRomanizedLyric = normalizeLyricForEmbedding(
+            lyric = resolveEmbeddedLyric(
+                context = context,
+                explicitReference = sidecarReferences?.romanizedLyricReference,
+                fallback = song.matchedRomanizedLyric ?: song.originalRomanizedLyric
+            ),
+            enabled = standardizedLyricEmbeddingEnabled
+        )
 
         putSingleValue(propertyMap, "TITLE", song.displayName())
         putSingleValue(propertyMap, "ARTIST", song.artist)
@@ -186,7 +195,8 @@ internal object DownloadedAudioTagWriter {
             propertyMap = propertyMap,
             audioExtension = audioExtension,
             lyrics = embeddedLyric,
-            translatedLyrics = embeddedTranslatedLyric
+            translatedLyrics = embeddedTranslatedLyric,
+            romanizedLyrics = embeddedRomanizedLyric
         )
         putSingleValue(propertyMap, "NERI_STABLE_KEY", song.stableKey())
         putSingleValue(propertyMap, "NERI_MEDIA_URI", song.mediaUri)
@@ -215,9 +225,9 @@ internal object DownloadedAudioTagWriter {
             ?.let { reference ->
                 runCatching {
                     ManagedDownloadStorage.readText(context, reference)
-                }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+                }.getOrNull()?.let { return it }
             }
-        return fallback?.takeIf { it.isNotBlank() }
+        return fallback
     }
 
     internal fun normalizeEmbeddedAlbumName(album: String): String? =
@@ -305,7 +315,8 @@ internal object DownloadedAudioTagWriter {
         propertyMap: PropertyMap,
         audioExtension: String,
         lyrics: String?,
-        translatedLyrics: String?
+        translatedLyrics: String?,
+        romanizedLyrics: String? = null
     ) {
         val externalLyrics = mergeLyricsForExternalPlayers(lyrics, translatedLyrics)
         standardLyricsMetadataKeys(audioExtension).forEach { key ->
@@ -315,6 +326,7 @@ internal object DownloadedAudioTagWriter {
         translatedLyricsMetadataKeys.forEach { key ->
             putSingleValue(propertyMap, key, translatedLyrics)
         }
+        putSingleValue(propertyMap, NERI_ROMANIZED_LYRICS_METADATA_KEY, romanizedLyrics)
     }
 
     private fun propertyMapsEquivalent(

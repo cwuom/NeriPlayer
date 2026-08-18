@@ -7,14 +7,32 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import java.io.IOException
 
 internal object ManagedDownloadTreeChildQuery {
+    internal data class QueryResult(
+        val children: List<QueriedTreeChild>,
+        val isComplete: Boolean
+    )
+
     fun queryChildren(
         context: Context,
         parent: DocumentFile,
         onQueryFailure: (Throwable) -> Unit
-    ): List<QueriedTreeChild> {
+    ): List<QueriedTreeChild> = queryChildrenWithStatus(
+        context = context,
+        parent = parent,
+        onQueryFailure = onQueryFailure
+    ).children
+
+    fun queryChildrenWithStatus(
+        context: Context,
+        parent: DocumentFile,
+        onQueryFailure: (Throwable) -> Unit
+    ): QueryResult {
         val parentUri = parent.uri
         val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }.getOrNull()
-            ?: return listChildrenWithDocumentFile(parent)
+            ?: return QueryResult(
+                children = listChildrenWithDocumentFile(parent),
+                isComplete = false
+            )
 
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
         return runCatching {
@@ -60,8 +78,13 @@ internal object ManagedDownloadTreeChildQuery {
                     }
                 }
             }
+        }.map { children ->
+            QueryResult(children = children, isComplete = true)
         }.onFailure(onQueryFailure).getOrElse {
-            listChildrenWithDocumentFile(parent)
+            QueryResult(
+                children = listChildrenWithDocumentFile(parent),
+                isComplete = false
+            )
         }
     }
 

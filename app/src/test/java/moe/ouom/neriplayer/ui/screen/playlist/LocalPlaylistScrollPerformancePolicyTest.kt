@@ -11,8 +11,8 @@ import org.junit.Test
 class LocalPlaylistScrollPerformancePolicyTest {
 
     @Test
-    fun `row artwork fallback remains enabled while the list is scrolling`() {
-        assertTrue(shouldResolveLocalPlaylistRowArtworkFallback(isScrollInProgress = true))
+    fun `row artwork fallback stays disabled while the list is scrolling`() {
+        assertFalse(shouldResolveLocalPlaylistRowArtworkFallback(isScrollInProgress = true))
     }
 
     @Test

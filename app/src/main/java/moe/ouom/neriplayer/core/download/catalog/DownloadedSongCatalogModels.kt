@@ -227,6 +227,7 @@ internal fun projectDownloadedSongMetadata(
         coverUrl = updatedSong.coverUrl ?: existing.coverUrl,
         matchedLyric = updatedSong.matchedLyric,
         matchedTranslatedLyric = updatedSong.matchedTranslatedLyric,
+        matchedRomanizedLyric = updatedSong.matchedRomanizedLyric,
         matchedLyricSource = updatedSong.matchedLyricSource?.name,
         matchedSongId = updatedSong.matchedSongId,
         userLyricOffsetMs = updatedSong.userLyricOffsetMs,
@@ -245,6 +246,8 @@ internal fun projectDownloadedSongMetadata(
         originalLyric = existing.originalLyric ?: updatedSong.originalLyric,
         originalTranslatedLyric = existing.originalTranslatedLyric
             ?: updatedSong.originalTranslatedLyric,
+        originalRomanizedLyric = existing.originalRomanizedLyric
+            ?: updatedSong.originalRomanizedLyric,
         mediaUri = updatedSong.mediaUri?.takeIf(::isResolvableLocalReference) ?: existing.mediaUri,
         durationMs = updatedSong.durationMs.takeIf { it > 0L } ?: existing.durationMs,
         stableKey = remoteSource?.stableKey()
@@ -280,6 +283,7 @@ internal fun DownloadedSong.toMetadataPersistenceSong(updatedSong: SongItem): So
         originalCoverUrl = originalCoverUrl ?: updatedSong.originalCoverUrl,
         originalLyric = originalLyric ?: updatedSong.originalLyric,
         originalTranslatedLyric = originalTranslatedLyric ?: updatedSong.originalTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric ?: updatedSong.originalRomanizedLyric,
         channelId = sourceChannel ?: updatedSong.channelId,
         audioId = resolvedSourceAudioId ?: updatedSong.audioId,
         subAudioId = sourceSubAudioId ?: updatedSong.subAudioId,
@@ -328,6 +332,7 @@ internal fun serializeDownloadedSongsCatalog(
                         put("coverUrl", song.coverUrl)
                         put("matchedLyric", song.matchedLyric)
                         put("matchedTranslatedLyric", song.matchedTranslatedLyric)
+                        put("matchedRomanizedLyric", song.matchedRomanizedLyric)
                         put("matchedLyricSource", song.matchedLyricSource)
                         put("matchedSongId", song.matchedSongId)
                         put("userLyricOffsetMs", song.userLyricOffsetMs)
@@ -376,8 +381,9 @@ internal fun deserializeDownloadedSongsCatalog(
                     downloadTime = item.optLong("downloadTime"),
                     coverPath = item.optString("coverPath").takeIf(String::isNotBlank),
                     coverUrl = item.optString("coverUrl").takeIf(String::isNotBlank),
-                    matchedLyric = item.optString("matchedLyric").takeIf(String::isNotBlank),
-                    matchedTranslatedLyric = item.optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
+                    matchedLyric = item.optPresentCatalogString("matchedLyric"),
+                    matchedTranslatedLyric = item.optPresentCatalogString("matchedTranslatedLyric"),
+                    matchedRomanizedLyric = item.optPresentCatalogString("matchedRomanizedLyric"),
                     matchedLyricSource = item.optString("matchedLyricSource").takeIf(String::isNotBlank),
                     matchedSongId = item.optString("matchedSongId").takeIf(String::isNotBlank),
                     userLyricOffsetMs = item.optLong("userLyricOffsetMs"),
@@ -387,8 +393,12 @@ internal fun deserializeDownloadedSongsCatalog(
                     originalName = item.optString("originalName").takeIf(String::isNotBlank),
                     originalArtist = item.optString("originalArtist").takeIf(String::isNotBlank),
                     originalCoverUrl = item.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                    originalLyric = item.optString("originalLyric").takeIf(String::isNotBlank),
-                    originalTranslatedLyric = item.optString("originalTranslatedLyric").takeIf(String::isNotBlank),
+                    // original lyric fields stay in Room and metadata snapshots; keeping the
+                    // legacy startup cache limited to list data avoids a multi-megabyte JSON
+                    // parse on devices with a large downloaded library
+                    originalLyric = null,
+                    originalTranslatedLyric = null,
+                    originalRomanizedLyric = null,
                     mediaUri = item.optString("mediaUri").takeIf(String::isNotBlank),
                     durationMs = item.optLong("durationMs"),
                     stableKey = item.optString("stableKey").takeIf(String::isNotBlank),
@@ -411,6 +421,11 @@ internal fun isResolvableLocalReference(reference: String): Boolean {
     return reference.startsWith("/") ||
         reference.startsWith("content://") ||
         reference.startsWith("file://")
+}
+
+private fun JSONObject.optPresentCatalogString(fieldName: String): String? {
+    if (!has(fieldName) || isNull(fieldName)) return null
+    return optString(fieldName)
 }
 
 private fun downloadedSongCatalogIdentityKey(

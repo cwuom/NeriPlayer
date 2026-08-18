@@ -4,9 +4,11 @@ import java.io.File
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -29,6 +31,49 @@ class LocalMediaSupportTest {
         assertEquals(
             false,
             isMediaStoreAuthority("com.android.externalstorage.documents")
+        )
+    }
+
+    @Test
+    fun `media store album art references are trusted as indexed local covers`() {
+        assertTrue(
+            isMediaStoreCoverReference(
+                "content://media/external/audio/albumart/42"
+            )
+        )
+        assertFalse(
+            isMediaStoreCoverReference(
+                "content://media/external/audio/media/42"
+            )
+        )
+        assertFalse(
+            isMediaStoreCoverReference(
+                "content://com.example.documents/document/cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `media store cover sidecar is skipped only when no local file was resolved`() {
+        val localFile = tempFolder.newFile("resolved-song.mp3")
+
+        assertTrue(
+            LocalMediaSupport.shouldSkipLocalCoverSidecar(
+                sourceReference = "content://media/external/audio/media/1",
+                file = null
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.shouldSkipLocalCoverSidecar(
+                sourceReference = "content://media/external/audio/media/1",
+                file = localFile
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.shouldSkipLocalCoverSidecar(
+                sourceReference = "content://com.example.documents/document/1",
+                file = null
+            )
         )
     }
 
@@ -114,6 +159,14 @@ class LocalMediaSupportTest {
                 width = 512,
                 height = 320
             )
+        )
+    }
+
+    @Test
+    fun `MediaStore album art uri uses the stable external audio endpoint`() {
+        assertEquals(
+            "content://media/external/audio/albumart/42",
+            LocalMediaSupport.mediaStoreAlbumArtUri(42L)
         )
     }
 
@@ -245,6 +298,20 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyCover prefers song specific Covers artwork over generic cover`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-specific")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "cover.jpg").writeText("generic")
+        val coversDir = File(sourceDir, "Covers").apply { mkdirs() }
+        val specific = File(coversDir, "song.png").apply { writeText("specific") }
+
+        assertEquals(
+            specific.canonicalPath,
+            LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath
+        )
+    }
+
+    @Test
     fun `fast lyric inspection reads direct file sidecars without content resolver`() {
         val sourceDir = tempFolder.newFolder("fast-lyrics")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
@@ -300,6 +367,37 @@ class LocalMediaSupportTest {
         assertEquals("[00:01.00]stored", lyrics.lyric)
         assertEquals("[00:02.00]translated", lyrics.translatedLyric)
         assertEquals("[00:03.00]romanized", lyrics.romanizedLyric)
+    }
+
+    @Test
+    fun `fast lyric inspection falls back to readable local sidecars when content source has none`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-content-fallback")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.lrc").writeText("content fallback original")
+        File(sourceDir, "song_trans.lrc").writeText("content fallback translation")
+        val song = SongItem(
+            id = 81L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/81",
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+
+        val lyrics = LocalMediaSupport.inspectLyricsFast(
+            song = song,
+            includeStoredFallback = false
+        )
+
+        assertEquals("content fallback original", lyrics.lyric)
+        assertEquals("content fallback translation", lyrics.translatedLyric)
+        assertTrue(lyrics.hasOriginalSidecar)
+        assertTrue(lyrics.hasTranslatedSidecar)
     }
 
     @Test
@@ -411,6 +509,43 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `fast lyric inspection without stored fallback clears deleted sidecars`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-clear")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        File(sourceDir, "song.lrc").writeText("original")
+        val song = SongItem(
+            id = 13L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            matchedLyric = "stale network lyric",
+            channelId = "local"
+        )
+
+        assertEquals(
+            "original",
+            LocalMediaSupport.inspectLyricsFast(
+                song = song,
+                includeStoredFallback = false
+            ).lyric
+        )
+        File(sourceDir, "song.lrc").delete()
+
+        val cleared = LocalMediaSupport.inspectLyricsFast(
+            song = song,
+            includeStoredFallback = false
+        )
+        assertNull(cleared.lyric)
+        assertEquals(true, cleared.sourceResolved)
+    }
+
+    @Test
     fun `clearing lyric lookup cache observes sidecar created after an empty lookup`() {
         val sourceDir = tempFolder.newFolder("download-lyrics-cache")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
@@ -463,9 +598,9 @@ class LocalMediaSupportTest {
     }
 
     @Test
-    fun `resolveEffectiveLocalLyricContent falls back to embedded lyrics for blank sidecar`() {
+    fun `resolveEffectiveLocalLyricContent keeps blank sidecar as an explicit clear`() {
         assertEquals(
-            "[00:00.00]embedded",
+            "  \n",
             LocalMediaSupport.resolveEffectiveLocalLyricContent(
                 sidecarContent = "  \n",
                 embeddedContent = "[00:00.00]embedded"
@@ -479,7 +614,7 @@ class LocalMediaSupportTest {
             )
         )
         assertEquals(
-            null,
+            "",
             LocalMediaSupport.resolveEffectiveLocalLyricContent(
                 sidecarContent = "",
                 embeddedContent = " "
@@ -488,8 +623,9 @@ class LocalMediaSupportTest {
     }
 
     @Test
-    fun `resolveEffectiveLocalLyricPath hides unreadable sidecar references`() {
-        assertNull(
+    fun `resolveEffectiveLocalLyricPath keeps readable empty sidecar references`() {
+        assertEquals(
+            "content://lyrics/empty",
             LocalMediaSupport.resolveEffectiveLocalLyricPath(
                 reference = "content://lyrics/empty",
                 content = "  \n"

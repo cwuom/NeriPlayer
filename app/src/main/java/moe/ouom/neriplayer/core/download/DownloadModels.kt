@@ -22,6 +22,7 @@ data class DownloadedSong(
     val coverUrl: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
+    val matchedRomanizedLyric: String? = null,
     val matchedLyricSource: String? = null,
     val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L,
@@ -33,6 +34,7 @@ data class DownloadedSong(
     val originalCoverUrl: String? = null,
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
+    val originalRomanizedLyric: String? = null,
     val mediaUri: String? = null,
     val durationMs: Long = 0L,
     val stableKey: String? = null,
@@ -88,13 +90,16 @@ internal fun DownloadedSong.withCachedDownloadedLyrics(
     return copy(
         matchedLyric = metadata.matchedLyric ?: matchedLyric,
         matchedTranslatedLyric = metadata.matchedTranslatedLyric ?: matchedTranslatedLyric,
+        matchedRomanizedLyric = metadata.matchedRomanizedLyric ?: matchedRomanizedLyric,
         matchedLyricSource = metadata.matchedLyricSource ?: matchedLyricSource,
         matchedSongId = metadata.matchedSongId ?: matchedSongId,
         userLyricOffsetMs = metadata.userLyricOffsetMs.takeIf { it != 0L }
             ?: userLyricOffsetMs,
         originalLyric = metadata.originalLyric ?: originalLyric,
         originalTranslatedLyric = metadata.originalTranslatedLyric
-            ?: originalTranslatedLyric
+            ?: originalTranslatedLyric,
+        originalRomanizedLyric = metadata.originalRomanizedLyric
+            ?: originalRomanizedLyric
     )
 }
 
@@ -214,6 +219,7 @@ internal fun DownloadedSong.toPlaybackSongItem(
         mediaUri = playbackUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
+        matchedRomanizedLyric = matchedRomanizedLyric,
         matchedLyricSource = matchedLyricSource?.let {
             runCatching { MusicPlatform.valueOf(it) }.getOrNull()
         },
@@ -228,6 +234,7 @@ internal fun DownloadedSong.toPlaybackSongItem(
             ?: coverUrl?.takeUnless(LocalSongSupport::isLocalMediaUri),
         originalLyric = originalLyric,
         originalTranslatedLyric = originalTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric,
         localFileName = localFileName,
         localFilePath = localFilePath,
         channelId = resolvedSourceChannel,

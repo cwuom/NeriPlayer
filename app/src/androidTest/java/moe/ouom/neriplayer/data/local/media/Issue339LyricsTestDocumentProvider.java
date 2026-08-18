@@ -21,8 +21,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
@@ -65,10 +67,18 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final String CONFIGURE_LARGE_SCAN = "test:configureLargeScan";
     private static final String QUERY_LARGE_SCAN_COUNT = "test:queryLargeScanCount";
     private static final String RESET_LARGE_SCAN = "test:resetLargeScan";
+    public static final String RESET_LYRICS = "test:resetLyrics";
     private static final String COUNT_EXTRA = "count";
     private static final String RESULT_EXTRA = "result";
+    private static final String LYRICS_FIXTURE_DIRECTORY_NAME = "issue339-lyrics";
     private static volatile int configuredAudioCount = 1;
     private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
+    private static final Set<String> lyricDocuments =
+        Collections.synchronizedSet(new HashSet<>(Arrays.asList(
+            ORIGINAL_ID,
+            TRANSLATED_ID,
+            ROMANIZED_ID
+        )));
     private static final int DIRECTORY_FLAGS =
         DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE;
 
@@ -124,6 +134,26 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
                 throw failure;
             }
         }
+        if (isLyricDocument(documentId(uri))) {
+            try {
+                File file = lyricFile(documentId(uri));
+                if (!file.exists()) {
+                    writeFixture(file, defaultContentFor(documentId(uri)));
+                }
+                int flags = mode.contains("w")
+                    ? ParcelFileDescriptor.MODE_READ_WRITE
+                        | ParcelFileDescriptor.MODE_CREATE
+                        | (mode.contains("t") ? ParcelFileDescriptor.MODE_TRUNCATE : 0)
+                    : ParcelFileDescriptor.MODE_READ_ONLY;
+                return ParcelFileDescriptor.open(file, flags);
+            } catch (IOException error) {
+                FileNotFoundException failure = new FileNotFoundException(
+                    "Unable to open Issue #339 lyric: " + uri
+                );
+                failure.initCause(error);
+                throw failure;
+            }
+        }
         if (!mode.contains("r")) {
             throw new FileNotFoundException("read-only test provider");
         }
@@ -149,10 +179,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        if (METADATA_ID.equals(documentId(uri))) {
-            return metadataFile().delete() ? 1 : 0;
-        }
-        return 0;
+        return deleteDocumentById(documentId(uri)) ? 1 : 0;
     }
 
     @Override
@@ -178,6 +205,10 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             largeAudioDocumentQueryCount.set(0);
             return new Bundle();
         }
+        if (RESET_LYRICS.equals(method)) {
+            resetLyricsFixtures();
+            return new Bundle();
+        }
         if ("android:findDocumentPath".equals(method)) {
             Bundle result = new Bundle();
             result.putParcelable(
@@ -187,6 +218,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return result;
         }
         if ("android:createDocument".equals(method)) {
+            String displayName = extras == null
+                ? null
+                : extras.getString("android.provider.extra.DISPLAY_NAME");
+            String createdId = lyricDocumentIdForDisplayName(displayName);
+            if (createdId != null) {
+                lyricDocuments.add(createdId);
+                return documentResult(createdId);
+            }
             Bundle result = new Bundle();
             result.putParcelable(
                 EXTRA_URI,
@@ -200,19 +239,30 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if ("android:deleteDocument".equals(method)) {
             Uri target = null;
             if (extras != null) {
-                Object rawTarget = Build.VERSION.SDK_INT >= 33
-                    ? extras.getParcelable(EXTRA_URI, Uri.class)
-                    : extras.get(EXTRA_URI);
-                if (rawTarget instanceof Uri) {
-                    target = (Uri) rawTarget;
-                }
+                target = uriExtra(extras);
             }
             if (target != null && METADATA_ID.equals(documentId(target))) {
-                metadataFile().delete();
+                deleteDocumentById(METADATA_ID);
+            } else if (target != null) {
+                deleteDocumentById(documentId(target));
             }
             return new Bundle();
         }
         return super.call(method, arg, extras);
+    }
+
+    private Uri uriExtra(Bundle extras) {
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                return extras.getParcelable(EXTRA_URI, Uri.class);
+            }
+            Object value = Bundle.class
+                .getMethod("getParcelable", String.class)
+                .invoke(extras, EXTRA_URI);
+            return value instanceof Uri ? (Uri) value : null;
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
     }
 
     private static void writePipe(ParcelFileDescriptor writeSide, byte[] content) {
@@ -270,7 +320,13 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return Arrays.asList(AUDIO_ID, LYRICS_ID);
         }
         if (LYRICS_ID.equals(parentDocumentId)) {
-            return Arrays.asList(ORIGINAL_ID, TRANSLATED_ID, ROMANIZED_ID);
+            synchronized (lyricDocuments) {
+                List<String> children = new ArrayList<>(3);
+                if (lyricDocuments.contains(ORIGINAL_ID)) children.add(ORIGINAL_ID);
+                if (lyricDocuments.contains(TRANSLATED_ID)) children.add(TRANSLATED_ID);
+                if (lyricDocuments.contains(ROMANIZED_ID)) children.add(ROMANIZED_ID);
+                return children;
+            }
         }
         return Collections.emptyList();
     }
@@ -332,9 +388,17 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private byte[] contentFor(String documentId) {
         if (AUDIO_ID.equals(documentId)) return AUDIO_CONTENT;
         if (isLargeAudioDocument(documentId)) return AUDIO_CONTENT;
-        if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
-        if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
-        if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
+        if (isLyricDocument(documentId)) {
+            File file = lyricFile(documentId);
+            if (file.isFile()) {
+                try {
+                    return java.nio.file.Files.readAllBytes(file.toPath());
+                } catch (IOException ignored) {
+                    return EMPTY_CONTENT;
+                }
+            }
+            return defaultContentFor(documentId);
+        }
         if (METADATA_ID.equals(documentId)) {
             try {
                 return java.nio.file.Files.readAllBytes(metadataFile().toPath());
@@ -366,6 +430,79 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             throw new IllegalStateException("Unable to create metadata fixture directory");
         }
         return new File(directory, METADATA_NAME);
+    }
+
+    private File lyricFile(String documentId) {
+        if (getContext() == null) {
+            throw new IllegalStateException("Provider context is unavailable");
+        }
+        File directory = new File(getContext().getCacheDir(), LYRICS_FIXTURE_DIRECTORY_NAME);
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw new IllegalStateException("Unable to create lyric fixture directory");
+        }
+        String fileName;
+        if (ORIGINAL_ID.equals(documentId)) {
+            fileName = "original.lrc";
+        } else if (TRANSLATED_ID.equals(documentId)) {
+            fileName = "translated.lrc";
+        } else {
+            fileName = "romanized.lrc";
+        }
+        return new File(directory, fileName);
+    }
+
+    private byte[] defaultContentFor(String documentId) {
+        if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_CONTENT;
+        if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_CONTENT;
+        if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_CONTENT;
+        return EMPTY_CONTENT;
+    }
+
+    private void writeFixture(File file, byte[] content) throws IOException {
+        java.nio.file.Files.write(file.toPath(), content);
+    }
+
+    private boolean isLyricDocument(String documentId) {
+        return ORIGINAL_ID.equals(documentId)
+            || TRANSLATED_ID.equals(documentId)
+            || ROMANIZED_ID.equals(documentId);
+    }
+
+    private String lyricDocumentIdForDisplayName(String displayName) {
+        if (ORIGINAL_NAME.equals(displayName)) return ORIGINAL_ID;
+        if (TRANSLATED_NAME.equals(displayName)) return TRANSLATED_ID;
+        if (ROMANIZED_NAME.equals(displayName)) return ROMANIZED_ID;
+        return null;
+    }
+
+    private Bundle documentResult(String documentId) {
+        Bundle result = new Bundle();
+        result.putParcelable(
+            EXTRA_URI,
+            DocumentsContract.buildDocumentUri(AUTHORITY, documentId)
+        );
+        return result;
+    }
+
+    private boolean deleteDocumentById(String documentId) {
+        if (METADATA_ID.equals(documentId)) {
+            File file = metadataFile();
+            return file.delete();
+        }
+        if (!isLyricDocument(documentId)) return false;
+        lyricDocuments.remove(documentId);
+        return lyricFile(documentId).delete();
+    }
+
+    private void resetLyricsFixtures() {
+        lyricDocuments.clear();
+        lyricDocuments.add(ORIGINAL_ID);
+        lyricDocuments.add(TRANSLATED_ID);
+        lyricDocuments.add(ROMANIZED_ID);
+        metadataFile().delete();
+        lyricFile(ORIGINAL_ID).delete();
+        lyricFile(TRANSLATED_ID).delete();
+        lyricFile(ROMANIZED_ID).delete();
     }
 
     private static byte[] buildWaveContent() {

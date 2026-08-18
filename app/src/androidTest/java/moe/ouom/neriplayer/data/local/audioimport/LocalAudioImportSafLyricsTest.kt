@@ -18,12 +18,27 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalAudioImportSafLyricsTest {
     private val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Before
+    fun resetProviderLyricsFixtures() {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.RESET_LYRICS,
+            null,
+            null
+        )
+    }
 
     @Test
     fun importExternalDocumentCopiesLyricsDirectorySidecars() = runBlocking {
@@ -261,6 +276,16 @@ class LocalAudioImportSafLyricsTest {
                 writeLyrics = true
             ).name
         )
+        val sourceMetadataUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.METADATA_ID
+        )
+        val sourceMetadata = LocalMediaSupport.readTextContent(
+            targetContext,
+            sourceMetadataUri.toString()
+        )
+        assertNotNull(sourceMetadata)
+        assertTrue(sourceMetadata.orEmpty().contains("saved original"))
 
         val result = LocalAudioImportManager.importExternalSongs(targetContext, listOf(audioUri))
         val importedFile = File(requireNotNull(result.songs.single().localFilePath))

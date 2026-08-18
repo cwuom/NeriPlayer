@@ -5,7 +5,9 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadedSongCatalogProjectionTest {
@@ -104,6 +106,91 @@ class DownloadedSongCatalogProjectionTest {
         assertEquals(remoteSong.stableKey(), persistedSong.sourceStableKey)
         assertEquals("netease", persistedSong.channelId)
         assertEquals("42", persistedSong.audioId)
+    }
+
+    @Test
+    fun `legacy catalog round trip keeps translated romanized and cleared lyrics`() {
+        val song = downloadedSong(coverPath = null, customCoverUrl = null).copy(
+            matchedLyric = "",
+            matchedTranslatedLyric = "[00:01.00]译",
+            matchedRomanizedLyric = "[00:01.00]yi",
+            originalLyric = "[00:01.00]原",
+            originalTranslatedLyric = "",
+            originalRomanizedLyric = "[00:01.00]yuan"
+        )
+
+        val restored = deserializeDownloadedSongsCatalog(
+            raw = serializeDownloadedSongsCatalog("root", listOf(song)),
+            expectedCacheKey = "root"
+        )
+
+        assertEquals(
+            song.copy(
+                originalLyric = null,
+                originalTranslatedLyric = null,
+                originalRomanizedLyric = null
+            ),
+            restored?.single()
+        )
+    }
+
+    @Test
+    fun `downloaded lyric fallback skips slow inspection when any lyric variant is indexed`() {
+        assertFalse(
+            shouldInspectDownloadedLocalLyrics(
+                loadLyricContents = true,
+                fileLyric = null,
+                fileTranslatedLyric = null,
+                fileRomanizedLyric = null,
+                matchedLyric = null,
+                originalLyric = null,
+                matchedTranslatedLyric = null,
+                originalTranslatedLyric = null,
+                matchedRomanizedLyric = null,
+                originalRomanizedLyric = null,
+                indexedLyric = null,
+                indexedTranslatedLyric = "[00:00.00]译",
+                indexedRomanizedLyric = null
+            )
+        )
+        assertFalse(
+            shouldInspectDownloadedLocalLyrics(
+                loadLyricContents = true,
+                fileLyric = null,
+                fileTranslatedLyric = null,
+                fileRomanizedLyric = "",
+                matchedLyric = null,
+                originalLyric = null,
+                matchedTranslatedLyric = null,
+                originalTranslatedLyric = null,
+                matchedRomanizedLyric = null,
+                originalRomanizedLyric = null,
+                indexedLyric = null,
+                indexedTranslatedLyric = null,
+                indexedRomanizedLyric = null
+            )
+        )
+    }
+
+    @Test
+    fun `downloaded lyric fallback stays enabled only when every source is absent`() {
+        assertTrue(
+            shouldInspectDownloadedLocalLyrics(
+                loadLyricContents = true,
+                fileLyric = null,
+                fileTranslatedLyric = null,
+                fileRomanizedLyric = null,
+                matchedLyric = null,
+                originalLyric = null,
+                matchedTranslatedLyric = null,
+                originalTranslatedLyric = null,
+                matchedRomanizedLyric = null,
+                originalRomanizedLyric = null,
+                indexedLyric = null,
+                indexedTranslatedLyric = null,
+                indexedRomanizedLyric = null
+            )
+        )
     }
 
     private fun downloadedSong(

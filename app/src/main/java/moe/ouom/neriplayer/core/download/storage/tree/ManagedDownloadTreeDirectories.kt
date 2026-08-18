@@ -117,6 +117,92 @@ internal class ManagedDownloadTreeDirectories(
             .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
     }
 
+    data class SubdirectoryEntriesRefresh(
+        val entries: List<ManagedDownloadStorage.StoredEntry>,
+        val isComplete: Boolean
+    )
+
+    fun refreshSubdirectoryEntries(
+        context: Context,
+        root: ManagedDownloadRootHandle,
+        subdirectory: String
+    ): SubdirectoryEntriesRefresh {
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val directories = root.dir.listFiles()
+                    ?.filter(File::isDirectory)
+                    ?.filter { directory ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            directory.name,
+                            subdirectory
+                        )
+                    }
+                    ?.sortedWith(compareBy<File>(
+                        { if (it.name == subdirectory) 0 else 1 },
+                        { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                        { it.name }
+                    ))
+                if (directories == null) {
+                    SubdirectoryEntriesRefresh(emptyList(), isComplete = false)
+                } else {
+                    var isComplete = true
+                    val entries = buildList {
+                        directories.forEach { directory ->
+                            val children = directory.listFiles()
+                            if (children == null) {
+                                isComplete = false
+                                return@forEach
+                            }
+                            children
+                                .filterNot(File::isDirectory)
+                                .mapTo(this, ManagedDownloadStoredEntryMapper::fromFile)
+                        }
+                    }
+                    SubdirectoryEntriesRefresh(entries, isComplete)
+                }
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val rootRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                val directoryChildren = rootRefresh.children
+                    .filter(QueriedTreeChild::isDirectory)
+                    .filter { child ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            child.name,
+                            subdirectory
+                        )
+                    }
+                    .sortedWith(compareBy<QueriedTreeChild>(
+                        { if (it.name == subdirectory) 0 else 1 },
+                        { ManagedDownloadTreeNaming.managedSubdirectoryOrdinal(it.name, subdirectory) },
+                        { it.name }
+                    ))
+                var isComplete = rootRefresh.isComplete
+                val entries = buildList {
+                    directoryChildren.forEach { child ->
+                        val directory = treeChildRegistry.toDocumentFile(context, child)
+                        if (directory == null) {
+                            isComplete = false
+                            return@forEach
+                        }
+                        val childRefresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                            context = context,
+                            parent = directory
+                        )
+                        isComplete = isComplete && childRefresh.isComplete
+                        childRefresh.children
+                            .filterNot(QueriedTreeChild::isDirectory)
+                            .mapTo(this, ManagedDownloadStoredEntryMapper::fromTreeChild)
+                    }
+                }
+                SubdirectoryEntriesRefresh(entries, isComplete)
+            }
+        }
+    }
+
     fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
         runCatching {
             ManagedDownloadMediaScanIsolation.ensureFileDirectory(

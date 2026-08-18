@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.local.playlist
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CompletableDeferred
@@ -215,6 +216,32 @@ class LocalPlaylistRepository private constructor(
         return initialLoadFailure == null
     }
 
+    /**
+     * reads only the requested playlist for first paint; authoritative state still comes from
+     * the normal initialization flow
+     */
+    internal suspend fun readFastPlaylist(playlistId: Long): LocalPlaylist? = withContext(Dispatchers.IO) {
+        runCatching {
+            roomStore?.readPlaylistIfRoomPrimary(playlistId)
+        }.onFailure { error ->
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Fast Room playlist preview unavailable: ${error.message}"
+            )
+        }.getOrNull()?.let { return@withContext it }
+
+        val primaryText = runCatching { storage.readPrimary() }
+            .onFailure { error ->
+                NPLogger.w(
+                    "LocalPlaylistRepo",
+                    "Fast legacy playlist preview unavailable: ${error.message}"
+                )
+            }
+            .getOrNull()
+            ?: return@withContext null
+        parseFastPlaylistPreview(primaryText, playlistId)
+    }
+
     internal suspend fun requireInitialized() {
         if (!awaitInitialized()) {
             throw IOException("Local playlist initialization failed", initialLoadFailure)
@@ -237,11 +264,11 @@ class LocalPlaylistRepository private constructor(
         val roomPrimary = readRoomPrimary()
         if (roomPrimary != null) {
             LegacyJsonCleanupScheduler.schedule(context, "local-playlist-room-load")
-            val pendingSyncRecovered = recoverPendingSyncMutation(
+            recoverPendingSyncMutation(
                 committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
             )
             val normalizedRoomPrimary = normalizeRoomPrimaryLocalFilesCover(roomPrimary)
-            if (pendingSyncRecovered && normalizedRoomPrimary != roomPrimary) {
+            if (normalizedRoomPrimary != roomPrimary) {
                 runCatching {
                     runBlocking {
                         roomStore?.writeIncremental(
@@ -445,6 +472,28 @@ class LocalPlaylistRepository private constructor(
             )
         }.onFailure { error ->
             NPLogger.e("LocalPlaylistRepo", "Failed to parse $source playlists", error)
+        }.getOrNull()
+    }
+
+    private fun parseFastPlaylistPreview(text: String, playlistId: Long): LocalPlaylist? {
+        return runCatching {
+            validateLocalPlaylistJson(text, "fast-preview")
+            val type = object : TypeToken<List<LocalPlaylist>>() {}.type
+            gson.fromJson<List<LocalPlaylist>>(text, type)
+                .orEmpty()
+                .firstOrNull { it.id == playlistId }
+                ?.let { playlist ->
+                    playlist.copy(
+                        songs = playlist.songs
+                            .filterNotNull()
+                            .toMutableList()
+                    )
+                }
+        }.onFailure { error ->
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Failed to parse fast playlist preview: ${error.message}"
+            )
         }.getOrNull()
     }
 
@@ -1838,6 +1887,7 @@ class LocalPlaylistRepository private constructor(
     suspend fun refreshScannedLocalSongMetadata(
         songs: List<SongItem>,
         includeEmbeddedAssets: Boolean = false,
+        includeLyricContents: Boolean = false,
         onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
         withContext(Dispatchers.IO) {
@@ -1852,7 +1902,10 @@ class LocalPlaylistRepository private constructor(
 
             val refreshDispatcher = Dispatchers.IO.limitedParallelism(LOCAL_METADATA_REFRESH_PARALLELISM)
             var processedCount = 0
+            val allUpdates = ArrayList<Pair<SongItem, SongItem>>()
+            val refreshStartedAt = SystemClock.elapsedRealtime()
             candidates.chunked(LOCAL_METADATA_REFRESH_BATCH_SIZE).forEach { batch ->
+                val batchStartedAt = SystemClock.elapsedRealtime()
                 val updates = coroutineScope {
                     batch.map { originalSong ->
                         async(refreshDispatcher) {
@@ -1861,8 +1914,16 @@ class LocalPlaylistRepository private constructor(
                                     context,
                                     originalSong
                                 )
+                            } else if (includeLyricContents) {
+                                LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                    context,
+                                    originalSong
+                                )
                             } else {
-                                LocalAudioImportManager.hydrateLocalSongTextMetadata(context, originalSong)
+                                LocalAudioImportManager.hydrateLocalSongCoverMetadata(
+                                    context,
+                                    originalSong
+                                )
                             }
                             originalSong to hydratedSong
                         }
@@ -1870,10 +1931,23 @@ class LocalPlaylistRepository private constructor(
                 }.filter { (originalSong, hydratedSong) ->
                     hydratedSong != originalSong
                 }
-                applySongMetadataUpdates(updates)
+                allUpdates += updates
                 processedCount += batch.size
                 onProgress(processedCount, candidates.size)
+                NPLogger.d(
+                    "LocalPlaylistRepo",
+                    "本地扫描后台批次完成: processed=$processedCount/${candidates.size}, " +
+                        "updates=${updates.size}, elapsed=" +
+                        "${SystemClock.elapsedRealtime() - batchStartedAt}ms"
+                )
             }
+            applySongMetadataUpdates(allUpdates)
+            NPLogger.d(
+                "LocalPlaylistRepo",
+                "本地扫描后台刷新完成: candidates=${candidates.size}, " +
+                    "updates=${allUpdates.size}, elapsed=" +
+                    "${SystemClock.elapsedRealtime() - refreshStartedAt}ms"
+            )
         }
     }
 

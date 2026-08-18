@@ -56,6 +56,12 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
         if (identity in seenIdentities) {
             indexByIdentity[identity]?.let { index ->
                 distinct[index] = mergeDuplicateSong(distinct[index], song)
+                LocalSongSupport.localDuplicateKeys(
+                    song = song,
+                    includeMetadataFallback = true
+                ).forEach { key ->
+                    indexByLocalKey[key] = index
+                }
             }
             return
         }
@@ -98,9 +104,13 @@ internal class SystemPlaylistSongDeduper(expectedSongCount: Int) {
             matchedLyric = existing.matchedLyric ?: candidate.matchedLyric,
             matchedTranslatedLyric = existing.matchedTranslatedLyric
                 ?: candidate.matchedTranslatedLyric,
+            matchedRomanizedLyric = existing.matchedRomanizedLyric
+                ?: candidate.matchedRomanizedLyric,
             originalLyric = existing.originalLyric ?: candidate.originalLyric,
             originalTranslatedLyric = existing.originalTranslatedLyric
-                ?: candidate.originalTranslatedLyric
+                ?: candidate.originalTranslatedLyric,
+            originalRomanizedLyric = existing.originalRomanizedLyric
+                ?: candidate.originalRomanizedLyric
         )
     }
 

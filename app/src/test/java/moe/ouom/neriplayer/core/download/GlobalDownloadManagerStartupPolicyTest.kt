@@ -283,7 +283,8 @@ class GlobalDownloadManagerStartupPolicyTest {
             listOf(
                 song.copy(
                     originalLyric = null,
-                    originalTranslatedLyric = null
+                    originalTranslatedLyric = null,
+                    originalRomanizedLyric = null
                 )
             ),
             restored
@@ -388,6 +389,16 @@ class GlobalDownloadManagerStartupPolicyTest {
                 fileLyric = null,
                 embeddedMatchedLyric = null,
                 embeddedOriginalLyric = "",
+                localLyricContent = "[00:00.00]local",
+                indexedLyricContent = "[00:00.00]indexed"
+            )
+        )
+        assertEquals(
+            "",
+            resolveDownloadedLyricOverride(
+                fileLyric = "",
+                embeddedMatchedLyric = "[00:00.00]embedded",
+                embeddedOriginalLyric = "[00:00.00]original",
                 localLyricContent = "[00:00.00]local",
                 indexedLyricContent = "[00:00.00]indexed"
             )

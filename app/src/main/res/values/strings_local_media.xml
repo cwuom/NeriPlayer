@@ -54,6 +54,7 @@
     <string name="local_song_metadata_write_not_writable">无法写入本地音频标签，未保存本次修改</string>
     <string name="local_song_metadata_write_unsupported">此音频无法读取标签或不支持回写，未保存本次修改</string>
     <string name="local_song_metadata_write_failed">回写本地音频标签失败，未保存本次修改</string>
+    <string name="local_song_lyrics_write_failed">歌词侧载保存失败，未保存本次修改</string>
     <string name="local_song_sync_confirm_title">本地歌曲不会同步</string>
     <string name="local_song_sync_confirm_message">本地歌曲不会参与同步，确认%1$s吗？</string>
     <string name="local_song_share_failed">无法分享本地歌曲文件</string>

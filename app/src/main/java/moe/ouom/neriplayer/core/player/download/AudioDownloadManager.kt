@@ -2876,6 +2876,13 @@ object AudioDownloadManager {
         return ManagedDownloadStorage.readLyrics(context, song, translated = false)
     }
 
+    internal fun getLyricsBundle(
+        context: Context,
+        song: SongItem
+    ): ManagedDownloadStorage.DownloadedLyricsBundle {
+        return ManagedDownloadStorage.readLyricsBundle(context, song)
+    }
+
     fun getTranslatedLyricContent(context: Context, song: SongItem): String? {
         return ManagedDownloadStorage.readLyrics(context, song, translated = true)
     }

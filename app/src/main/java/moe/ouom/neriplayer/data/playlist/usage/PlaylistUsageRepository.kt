@@ -105,6 +105,7 @@ private const val LOCAL_USAGE_COVER_CANDIDATE_LIMIT = 24
 
 internal fun normalizeUsageEntries(list: List<UsageEntry>): List<UsageEntry> {
     return list
+        .filterNotNull()
         .map { entry ->
             entry.copy(counterShards = entry.counterShards.orEmpty().filterNotNull())
         }

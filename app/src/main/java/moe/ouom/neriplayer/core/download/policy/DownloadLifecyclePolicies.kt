@@ -173,8 +173,10 @@ internal fun resolveDownloadedPlaybackHydrationDelayMs(
 ): Long {
     val lyricsChanged = originalSong.matchedLyric != hydratedSong.matchedLyric ||
         originalSong.matchedTranslatedLyric != hydratedSong.matchedTranslatedLyric ||
+        originalSong.matchedRomanizedLyric != hydratedSong.matchedRomanizedLyric ||
         originalSong.originalLyric != hydratedSong.originalLyric ||
-        originalSong.originalTranslatedLyric != hydratedSong.originalTranslatedLyric
+        originalSong.originalTranslatedLyric != hydratedSong.originalTranslatedLyric ||
+        originalSong.originalRomanizedLyric != hydratedSong.originalRomanizedLyric
     return if (lyricsChanged) {
         0L
     } else if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
@@ -234,7 +236,7 @@ internal fun resolveDownloadedLyricOverride(
     localLyricContent: String?,
     indexedLyricContent: String?
 ): String? {
-    if (!fileLyric.isNullOrBlank()) {
+    if (fileLyric != null) {
         return fileLyric
     }
     if (embeddedMatchedLyric != null) {

@@ -516,6 +516,29 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong uses indexed MediaStore cover when no nearby cover exists`() {
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://media/external/audio/media/7",
+                displayName = "indexed-cover.mp3",
+                title = "Indexed Cover",
+                artist = "Artist",
+                album = "Album",
+                durationMs = 120_000L,
+                mediaStoreCoverUri =
+                    "content://media/external/audio/albumart/17"
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals(
+            "content://media/external/audio/albumart/17",
+            song.coverUrl
+        )
+        assertEquals(song.coverUrl, song.originalCoverUrl)
+    }
+
+    @Test
     fun `mergeImportedSongMetadata keeps quick identity while adopting richer metadata`() {
         val quickSong = LocalAudioImportManager.buildQuickImportedSong(
             seed = QuickImportedSongSeed(

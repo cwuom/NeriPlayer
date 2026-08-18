@@ -86,6 +86,8 @@ internal data class DownloadSnapshotMetadataEntity(
     val matchedLyric: String?,
     @ColumnInfo(name = "matched_translated_lyric")
     val matchedTranslatedLyric: String?,
+    @ColumnInfo(name = "matched_romanized_lyric")
+    val matchedRomanizedLyric: String?,
     @ColumnInfo(name = "matched_lyric_source")
     val matchedLyricSource: String?,
     @ColumnInfo(name = "matched_song_id")
@@ -108,6 +110,8 @@ internal data class DownloadSnapshotMetadataEntity(
     val originalLyric: String?,
     @ColumnInfo(name = "original_translated_lyric")
     val originalTranslatedLyric: String?,
+    @ColumnInfo(name = "original_romanized_lyric")
+    val originalRomanizedLyric: String?,
     @ColumnInfo(name = "media_uri")
     val mediaUri: String?,
     @ColumnInfo(name = "channel_id")

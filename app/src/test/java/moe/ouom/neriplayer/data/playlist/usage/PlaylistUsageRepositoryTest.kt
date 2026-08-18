@@ -149,6 +149,17 @@ class PlaylistUsageRepositoryTest {
     }
 
     @Test
+    fun `normalization ignores null legacy usage entries`() {
+        val valid = usageEntry(id = 42L, subtype = null, trackCount = 3)
+        @Suppress("UNCHECKED_CAST")
+        val legacyEntries = listOf(valid, null) as List<UsageEntry>
+
+        val normalized = normalizeUsageEntries(legacyEntries)
+
+        assertEquals(listOf(valid), normalized)
+    }
+
+    @Test
     fun `record open removes stale empty playlist instead of keeping it`() {
         val repo = PlaylistUsageRepository(mockContext())
 

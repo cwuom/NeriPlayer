@@ -46,13 +46,22 @@ fun SongItem.displayCoverUrl(
     val current = coverUrl?.takeIf { it.isNotBlank() }
     val onMainThread = Looper.myLooper() == Looper.getMainLooper()
     val localCover = if (resolveLocalMetadataFallback && shouldResolveLocalCoverFallback(current)) {
-        AudioDownloadManager.getLocalCoverUri(
-            context = context,
-            song = this,
-            // local media support below owns the media-file fallback. Keeping it out of
-            // the download lookup prevents two embedded-cover probes for one song.
-            resolveLocalMediaFallback = false
-        )
+        if (isLocalSong()) {
+            // local rows already carry their source path; a download-index rebuild here
+            // would block the first frame and repeat the same directory scan
+            AudioDownloadManager.peekLocalCoverUri(this)
+                ?: if (!onMainThread) {
+                    LocalMediaSupport.resolveCoverUri(context, this)
+                } else {
+                    null
+                }
+        } else {
+            AudioDownloadManager.getLocalCoverUri(
+                context = context,
+                song = this,
+                resolveLocalMediaFallback = false
+            )
+        }
     } else {
         null
     }
@@ -62,9 +71,7 @@ fun SongItem.displayCoverUrl(
         localCoverUrl = localCover,
         onMainThread = onMainThread
     )?.let { return it }
-    if (!isLocalSong()) return current
-    if (onMainThread || !resolveLocalMetadataFallback) return current
-    return LocalMediaSupport.resolveCoverUri(context, this)?.takeIf { it.isNotBlank() } ?: current
+    return current
 }
 
 fun SongItem.displayName(): String = customName ?: name

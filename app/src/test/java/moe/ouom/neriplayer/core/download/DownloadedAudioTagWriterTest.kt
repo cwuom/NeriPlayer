@@ -95,7 +95,8 @@ class DownloadedAudioTagWriterTest {
             propertyMap = propertyMap,
             audioExtension = "mp3",
             lyrics = "[00:01.00]hello",
-            translatedLyrics = "[00:01.00]你好"
+            translatedLyrics = "[00:01.00]你好",
+            romanizedLyrics = "[00:01.00]ni hao"
         )
 
         val externalLyrics = "[00:01.00]hello\n[00:01.00]你好"
@@ -104,6 +105,7 @@ class DownloadedAudioTagWriterTest {
         assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["LYRICS:TRANSLATION"])
         assertArrayEquals(arrayOf("[00:01.00]hello"), propertyMap["NERI_LYRICS_ORIGINAL"])
         assertArrayEquals(arrayOf("[00:01.00]你好"), propertyMap["NERI_LYRICS_TRANSLATED"])
+        assertArrayEquals(arrayOf("[00:01.00]ni hao"), propertyMap["NERI_LYRICS_ROMANIZED"])
     }
 
     @Test

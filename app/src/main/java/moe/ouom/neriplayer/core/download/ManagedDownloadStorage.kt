@@ -6,6 +6,7 @@ import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -74,10 +75,15 @@ import java.util.concurrent.ConcurrentHashMap
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LOG_HOT_AUDIO_HITS = false
+    private const val SIDECAR_REFRESH_THROTTLE_MS = 400L
 
     private val snapshotBuildLock = Any()
+    private val sidecarRefreshLock = Any()
+    private val snapshotWarmupLock = Any()
     private val batchReferenceDeleteMutex = Mutex()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var snapshotWarmupJob: Job? = null
+    private var snapshotWarmupKey: String? = null
     private val settings = ManagedDownloadStorageSettings(
         defaultRootPathProvider = { context -> createDefaultRoot(context).dir.absolutePath }
     )
@@ -197,6 +203,12 @@ internal object ManagedDownloadStorage {
 
     @Volatile
     private var startupRecoveryResult = StartupRecoveryResult()
+
+    @Volatile
+    private var lastSidecarRefreshKey: String? = null
+
+    @Volatile
+    private var lastSidecarRefreshAtMs: Long = 0L
 
     private val _startupRecoveryResults = MutableSharedFlow<StartupRecoveryResult>(
         replay = 1,
@@ -409,6 +421,12 @@ internal object ManagedDownloadStorage {
         val knownReferences: Set<String>
     )
 
+    data class DownloadedLyricsBundle(
+        val lyric: String?,
+        val translatedLyric: String?,
+        val romanizedLyric: String?
+    )
+
     internal enum class SnapshotEntryBucket {
         AUDIO,
         COVER,
@@ -430,6 +448,7 @@ internal object ManagedDownloadStorage {
         val coverUrl: String? = null,
         val matchedLyric: String? = null,
         val matchedTranslatedLyric: String? = null,
+        val matchedRomanizedLyric: String? = null,
         val matchedLyricSource: String? = null,
         val matchedSongId: String? = null,
         val userLyricOffsetMs: Long = 0L,
@@ -441,6 +460,7 @@ internal object ManagedDownloadStorage {
         val originalCoverUrl: String? = null,
         val originalLyric: String? = null,
         val originalTranslatedLyric: String? = null,
+        val originalRomanizedLyric: String? = null,
         val mediaUri: String? = null,
         val channelId: String? = null,
         val audioId: String? = null,
@@ -483,6 +503,8 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun currentDownloadFileNameTemplate(): String? = settings.fileNameTemplate
+
+    internal fun configuredDirectoryUri(): String? = settings.configuredDirectoryUri
 
     internal fun currentSnapshotCacheKey(context: Context): String {
         return snapshotCacheStore.currentKey(context)
@@ -949,6 +971,75 @@ internal object ManagedDownloadStorage {
         forceRefresh: Boolean = false
     ): DownloadLibrarySnapshot = withContext(Dispatchers.IO) {
         buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
+    }
+
+    internal suspend fun refreshDownloadSidecarSnapshot(
+        context: Context,
+        snapshot: DownloadLibrarySnapshot,
+        forceRefresh: Boolean = false
+    ): DownloadLibrarySnapshot = withContext(Dispatchers.IO) {
+        refreshDownloadSidecarSnapshotBlocking(
+            context = context,
+            snapshot = snapshot,
+            respectThrottle = !forceRefresh
+        )
+    }
+
+    private fun refreshDownloadSidecarSnapshotBlocking(
+        context: Context,
+        snapshot: DownloadLibrarySnapshot,
+        respectThrottle: Boolean
+    ): DownloadLibrarySnapshot {
+        val activeSnapshot = snapshotCacheStore.cachedSnapshot(
+            context = context,
+            restorePersisted = false
+        ) ?: return snapshot
+        val cacheKey = snapshotCacheStore.currentKey(context)
+        synchronized(sidecarRefreshLock) {
+            val nowMs = System.currentTimeMillis()
+            if (
+                respectThrottle &&
+                    lastSidecarRefreshKey == cacheKey &&
+                    nowMs - lastSidecarRefreshAtMs < SIDECAR_REFRESH_THROTTLE_MS
+            ) {
+                return activeSnapshot
+            }
+            val root = resolveRootBlocking(context)
+            val coverRefresh = treeDirectories.refreshSubdirectoryEntries(
+                context = context,
+                root = root,
+                subdirectory = COVER_SUBDIRECTORY
+            )
+            val lyricRefresh = treeDirectories.refreshSubdirectoryEntries(
+                context = context,
+                root = root,
+                subdirectory = LYRIC_SUBDIRECTORY
+            )
+            lastSidecarRefreshKey = cacheKey
+            lastSidecarRefreshAtMs = System.currentTimeMillis()
+            if (!coverRefresh.isComplete || !lyricRefresh.isComplete) {
+                NPLogger.w(
+                    TAG,
+                    "下载侧载目录刷新不完整，保留旧索引: " +
+                        "coversComplete=${coverRefresh.isComplete}, " +
+                        "lyricsComplete=${lyricRefresh.isComplete}"
+                )
+                return activeSnapshot
+            }
+            val updatedSnapshot = ManagedDownloadSnapshotIndex.applySidecarRefresh(
+                snapshot = activeSnapshot,
+                coverEntries = coverRefresh.entries,
+                lyricEntries = lyricRefresh.entries
+            )
+            if (updatedSnapshot !== activeSnapshot) {
+                snapshotCacheStore.putSnapshot(
+                    context = context,
+                    cacheKey = cacheKey,
+                    snapshot = updatedSnapshot
+                )
+            }
+            return updatedSnapshot
+        }
     }
 
     fun isReferenceAccessible(context: Context, reference: String?): Boolean {
@@ -1641,46 +1732,113 @@ internal object ManagedDownloadStorage {
     }
 
     fun readLyrics(context: Context, song: SongItem, translated: Boolean): String? {
-        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
-        val resolvedAudio = findAudioEntry(snapshot, song)
-        val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
-        val embeddedLyric = ManagedDownloadLyricStore.selectedEmbeddedLyric(resolvedMetadata, translated)
-        if (embeddedLyric != null && embeddedLyric.isBlank()) {
-            return ""
-        }
-        val reference = ManagedDownloadLyricStore.resolveManagedLyricReference(
-            context = context,
-            snapshot = snapshot,
-            song = song,
-            resolvedAudio = resolvedAudio,
-            resolvedMetadata = resolvedMetadata,
-            translated = translated,
-            fileNameTemplate = settings.fileNameTemplate,
-            exists = ::existsInternal
-        )
-        if (reference != null) {
-            return readTextInternal(context, reference)
-        }
-        return ManagedDownloadLyricStore.fallbackEmbeddedLyric(resolvedMetadata, translated)
+        val lyrics = readLyricsBundle(context, song)
+        return if (translated) lyrics.translatedLyric else lyrics.lyric
     }
 
     fun readRomanizedLyrics(context: Context, song: SongItem): String? {
-        val snapshot = buildDownloadLibrarySnapshotBlocking(context)
-        val resolvedAudio = findAudioEntry(snapshot, song)
-        val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
-        val reference = ManagedDownloadLyricStore.resolveManagedRomanizedLyricReference(
+        return readLyricsBundle(context, song).romanizedLyric
+    }
+
+    fun readLyricsBundle(context: Context, song: SongItem): DownloadedLyricsBundle {
+        // 原文、翻译和罗马字必须共用一次快照解析, 避免首屏重复查询下载目录
+        // 首屏没有驻留索引时只读歌曲已有字段, 完整目录扫描交给后台预热
+        val snapshot = snapshotCacheStore.cachedSnapshot(
             context = context,
-            snapshot = snapshot,
+            restorePersisted = true
+        )
+        if (snapshot == null) {
+            scheduleSnapshotWarmup(context)
+            return DownloadedLyricsBundle(
+                lyric = song.matchedLyric ?: song.originalLyric,
+                translatedLyric = song.matchedTranslatedLyric
+                    ?: song.originalTranslatedLyric,
+                romanizedLyric = song.matchedRomanizedLyric
+                    ?: song.originalRomanizedLyric
+            )
+        }
+        return resolveDownloadedLyricsBundle(
+            context = context,
             song = song,
-            resolvedAudio = resolvedAudio,
-            resolvedMetadata = resolvedMetadata,
-            fileNameTemplate = settings.fileNameTemplate,
+            snapshot = snapshot,
+            readText = { reference -> readTextInternal(context, reference) },
             exists = ::existsInternal
         )
-        if (reference != null) {
-            return readTextInternal(context, reference)
+    }
+
+    private fun scheduleSnapshotWarmup(context: Context) {
+        val appContext = context.applicationContext
+        val cacheKey = snapshotCacheStore.currentKey(appContext)
+        synchronized(snapshotWarmupLock) {
+            if (snapshotWarmupKey == cacheKey && snapshotWarmupJob?.isActive == true) {
+                return
+            }
+            snapshotWarmupKey = cacheKey
+            snapshotWarmupJob = snapshotScope.launch {
+                runCatching {
+                    buildDownloadLibrarySnapshotBlocking(appContext)
+                }.onFailure { error ->
+                    NPLogger.w(TAG, "后台预热下载歌词索引失败: ${error.message}")
+                }
+                synchronized(snapshotWarmupLock) {
+                    if (snapshotWarmupKey == cacheKey) {
+                        snapshotWarmupJob = null
+                    }
+                }
+            }
         }
-        return null
+    }
+
+    internal fun resolveDownloadedLyricsBundle(
+        context: Context,
+        song: SongItem,
+        snapshot: DownloadLibrarySnapshot,
+        readText: (String) -> String?,
+        exists: (Context, String?) -> Boolean
+    ): DownloadedLyricsBundle {
+        val resolvedAudio = findAudioEntry(snapshot, song)
+        val resolvedMetadata = resolvedAudio?.let { snapshot.metadataByAudioName[it.name] }
+
+        fun readLyric(translated: Boolean): String? {
+            val reference = ManagedDownloadLyricStore.resolveManagedLyricReference(
+                context = context,
+                snapshot = snapshot,
+                song = song,
+                resolvedAudio = resolvedAudio,
+                resolvedMetadata = resolvedMetadata,
+                translated = translated,
+                fileNameTemplate = settings.fileNameTemplate,
+                exists = exists
+            )
+            if (reference != null) {
+                readText(reference)?.let { return it }
+            }
+            return ManagedDownloadLyricStore.selectedEmbeddedLyric(resolvedMetadata, translated)
+                ?: ManagedDownloadLyricStore.fallbackEmbeddedLyric(resolvedMetadata, translated)
+        }
+
+        fun readRomanizedLyric(): String? {
+            val reference = ManagedDownloadLyricStore.resolveManagedRomanizedLyricReference(
+                context = context,
+                snapshot = snapshot,
+                song = song,
+                resolvedAudio = resolvedAudio,
+                resolvedMetadata = resolvedMetadata,
+                fileNameTemplate = settings.fileNameTemplate,
+                exists = exists
+            )
+            if (reference != null) {
+                readText(reference)?.let { return it }
+            }
+            return ManagedDownloadLyricStore.selectedEmbeddedRomanizedLyric(resolvedMetadata)
+                ?: ManagedDownloadLyricStore.fallbackEmbeddedRomanizedLyric(resolvedMetadata)
+        }
+
+        return DownloadedLyricsBundle(
+            lyric = readLyric(translated = false),
+            translatedLyric = readLyric(translated = true),
+            romanizedLyric = readRomanizedLyric()
+        )
     }
 
     internal fun findRomanizedLyricLocation(
@@ -1852,6 +2010,18 @@ internal object ManagedDownloadStorage {
         bucket: SnapshotEntryBucket
     ): DownloadLibrarySnapshot {
         return ManagedDownloadSnapshotIndex.applyStoredEntryWrite(snapshot, storedEntry, bucket)
+    }
+
+    internal fun applySidecarRefreshToSnapshot(
+        snapshot: DownloadLibrarySnapshot,
+        coverEntries: List<StoredEntry>,
+        lyricEntries: List<StoredEntry>
+    ): DownloadLibrarySnapshot {
+        return ManagedDownloadSnapshotIndex.applySidecarRefresh(
+            snapshot = snapshot,
+            coverEntries = coverEntries,
+            lyricEntries = lyricEntries
+        )
     }
 
     internal fun applyReferenceDeletesToSnapshot(

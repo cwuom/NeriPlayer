@@ -50,9 +50,6 @@ internal object ManagedDownloadLyricStore {
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
     ): String? {
-        resolvedMetadata?.romanizedLyricPath
-            ?.takeIf { exists(context, it) }
-            ?.let { return it }
         resolvedAudio?.let { audio ->
             findRomanizedLyricLocation(
                 snapshot = snapshot,
@@ -60,11 +57,13 @@ internal object ManagedDownloadLyricStore {
                 candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
             )?.let { return it }
         }
-        return findRomanizedLyricLocation(
+        findRomanizedLyricLocation(
             snapshot = snapshot,
             songId = song.id,
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
-        )
+        )?.let { return it }
+        return resolvedMetadata?.romanizedLyricPath
+            ?.takeIf { exists(context, it) }
     }
 
     fun resolveManagedLyricReference(
@@ -82,10 +81,6 @@ internal object ManagedDownloadLyricStore {
         } else {
             resolvedMetadata?.lyricPath
         }
-        if (exists(context, metadataReference)) {
-            return metadataReference
-        }
-
         resolvedAudio?.let { audio ->
             findIndexedLyricReference(
                 snapshot = snapshot,
@@ -99,7 +94,7 @@ internal object ManagedDownloadLyricStore {
             )?.let { return it }
         }
 
-        return findIndexedLyricReference(
+        findIndexedLyricReference(
             snapshot = snapshot,
             songId = song.id.takeIf { it > 0L },
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate),
@@ -108,7 +103,8 @@ internal object ManagedDownloadLyricStore {
             } else {
                 ManagedDownloadStorageNaming.LyricKind.ORIGINAL
             }
-        )
+        )?.let { return it }
+        return metadataReference?.takeIf { exists(context, it) }
     }
 
     fun fallbackEmbeddedLyric(
@@ -132,6 +128,16 @@ internal object ManagedDownloadLyricStore {
             metadata?.matchedLyric
         }
     }
+
+    fun fallbackEmbeddedRomanizedLyric(
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    ): String? {
+        return metadata?.matchedRomanizedLyric ?: metadata?.originalRomanizedLyric
+    }
+
+    fun selectedEmbeddedRomanizedLyric(
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    ): String? = metadata?.matchedRomanizedLyric
 
     private fun findIndexedLyricReference(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,

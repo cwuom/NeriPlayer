@@ -10,12 +10,27 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LocalMediaSupportSafLyricsTest {
     private val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Before
+    fun resetProviderLyricsFixtures() {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.RESET_LYRICS,
+            null,
+            null
+        )
+    }
 
     @Test
     fun inspectContentDocumentReadsLyricsDirectorySidecarsForOpaqueDocumentIds() {

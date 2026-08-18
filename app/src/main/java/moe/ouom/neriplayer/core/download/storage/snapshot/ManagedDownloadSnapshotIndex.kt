@@ -189,6 +189,26 @@ internal object ManagedDownloadSnapshotIndex {
         }
     }
 
+    fun applySidecarRefresh(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        lyricEntries: List<ManagedDownloadStorage.StoredEntry>
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        if (
+            snapshot.coverEntriesByName.values.toList() == coverEntries &&
+            snapshot.lyricEntriesByName.values.toList() == lyricEntries
+        ) {
+            return snapshot
+        }
+        return compose(
+            audioEntries = snapshot.audioEntries,
+            metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+            metadataByAudioName = snapshot.metadataByAudioName,
+            coverEntries = coverEntries,
+            lyricEntries = lyricEntries
+        )
+    }
+
     fun applyReferenceDeletes(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         references: Set<String>
