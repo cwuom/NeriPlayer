@@ -115,6 +115,14 @@ internal class ManagedDownloadTreeChildRegistry(
             .firstOrNull { child -> child.name == childName }
     }
 
+    fun peekTreeChildren(parent: DocumentFile): Collection<QueriedTreeChild>? {
+        return treeChildCache.peekChildren(parent.uri.toString())
+    }
+
+    fun peekTreeChild(parent: DocumentFile, childName: String): QueriedTreeChild? {
+        return peekTreeChildren(parent)?.firstOrNull { child -> child.name == childName }
+    }
+
     fun rememberTreeChildren(
         parent: DocumentFile,
         children: Collection<QueriedTreeChild>,
@@ -232,8 +240,11 @@ internal class ManagedDownloadTreeChildRegistry(
 
     fun toDocumentFile(context: Context, child: QueriedTreeChild): DocumentFile? {
         return runCatching {
-            DocumentFile.fromTreeUri(context, child.documentUri)
-                ?: DocumentFile.fromSingleUri(context, child.documentUri)
+            // child.documentUri points at one document under a tree. Wrapping it
+            // as a tree URI can reset the document back to the tree root on
+            // providers that return opaque IDs
+            DocumentFile.fromSingleUri(context, child.documentUri)
+                ?: DocumentFile.fromTreeUri(context, child.documentUri)
         }.getOrNull()
     }
 

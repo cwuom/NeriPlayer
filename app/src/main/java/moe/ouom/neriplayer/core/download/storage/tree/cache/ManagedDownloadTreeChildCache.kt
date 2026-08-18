@@ -39,6 +39,13 @@ internal class ManagedDownloadTreeChildCache {
             ?.values
     }
 
+    fun peekChildren(cacheKey: String): Collection<QueriedTreeChild>? {
+        return childrenByParent[cacheKey]
+            ?.takeIf { it.isComplete }
+            ?.childrenByName
+            ?.values
+    }
+
     fun rememberChildren(
         cacheKey: String,
         children: Collection<QueriedTreeChild>,

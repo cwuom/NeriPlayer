@@ -68,6 +68,9 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final String QUERY_LARGE_SCAN_COUNT = "test:queryLargeScanCount";
     private static final String RESET_LARGE_SCAN = "test:resetLargeScan";
     public static final String RESET_LYRICS = "test:resetLyrics";
+    public static final String CLEAR_LYRICS = "test:clearLyrics";
+    public static final String RESTORE_LYRICS = "test:restoreLyrics";
+    public static final String CREATE_EMPTY_METADATA = "test:createEmptyMetadata";
     private static final String COUNT_EXTRA = "count";
     private static final String RESULT_EXTRA = "result";
     private static final String LYRICS_FIXTURE_DIRECTORY_NAME = "issue339-lyrics";
@@ -207,6 +210,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         }
         if (RESET_LYRICS.equals(method)) {
             resetLyricsFixtures();
+            return new Bundle();
+        }
+        if (CLEAR_LYRICS.equals(method)) {
+            clearLyricsFixtures();
+            return new Bundle();
+        }
+        if (RESTORE_LYRICS.equals(method)) {
+            restoreLyricsFixtures();
+            return new Bundle();
+        }
+        if (CREATE_EMPTY_METADATA.equals(method)) {
+            try {
+                writeFixture(metadataFile(), "{}".getBytes(StandardCharsets.UTF_8));
+            } catch (IOException error) {
+                throw new IllegalStateException("Unable to create metadata fixture", error);
+            }
             return new Bundle();
         }
         if ("android:findDocumentPath".equals(method)) {
@@ -495,11 +514,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     }
 
     private void resetLyricsFixtures() {
+        restoreLyricsFixtures();
+        metadataFile().delete();
+    }
+
+    private void clearLyricsFixtures() {
+        lyricDocuments.clear();
+        lyricFile(ORIGINAL_ID).delete();
+        lyricFile(TRANSLATED_ID).delete();
+        lyricFile(ROMANIZED_ID).delete();
+    }
+
+    private void restoreLyricsFixtures() {
         lyricDocuments.clear();
         lyricDocuments.add(ORIGINAL_ID);
         lyricDocuments.add(TRANSLATED_ID);
         lyricDocuments.add(ROMANIZED_ID);
-        metadataFile().delete();
         lyricFile(ORIGINAL_ID).delete();
         lyricFile(TRANSLATED_ID).delete();
         lyricFile(ROMANIZED_ID).delete();

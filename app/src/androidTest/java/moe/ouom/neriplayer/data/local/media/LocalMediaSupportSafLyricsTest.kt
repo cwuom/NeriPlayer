@@ -7,7 +7,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -30,6 +32,129 @@ class LocalMediaSupportSafLyricsTest {
             null,
             null
         )
+        LocalMediaSupport.clearLyricsLookupCache()
+    }
+
+    @Test
+    fun fastManagedLyricsReadResolvesOpaqueDocumentIdOnColdStart() {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Issue 339",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = "opaque%2Faudio-issue339"
+        )
+        try {
+            ManagedDownloadStorage.primeSettings(treeUri.toString(), "Issue 339")
+            assertTrue(
+                ManagedDownloadStorage.isLikelyManagedDownloadSong(targetContext, song)
+            )
+            assertEquals(
+                Issue339LyricsTestDocumentProvider.AUDIO_NAME,
+                ManagedDownloadStorage.resolveManagedAudioDisplayName(targetContext, song)
+            )
+            val localFast = LocalMediaSupport.inspectLyricsFast(
+                context = targetContext,
+                song = song,
+                includeStoredFallback = false,
+                includeEmbeddedFallback = false
+            )
+            assertEquals("[00:00.10]original from Lyrics", localFast.lyric)
+            val lyrics = ManagedDownloadStorage.readLyricsBundleFast(targetContext, song)
+
+            assertEquals("[00:00.10]original from Lyrics", lyrics.lyric)
+            assertEquals("[00:00.10]translated from Lyrics", lyrics.translatedLyric)
+            assertEquals("[00:00.10]romanized from Lyrics", lyrics.romanizedLyric)
+            assertTrue(lyrics.hasOriginalSidecar)
+            assertTrue(lyrics.hasTranslatedSidecar)
+            assertTrue(lyrics.hasRomanizedSidecar)
+        } finally {
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
+    }
+
+    @Test
+    fun managedLyricsReadRefreshesAnEmptySafLyricsCache() {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Issue 339",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        )
+        try {
+            ManagedDownloadStorage.primeSettings(treeUri.toString(), "Issue 339")
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.CREATE_EMPTY_METADATA,
+                null,
+                null
+            )
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.CLEAR_LYRICS,
+                null,
+                null
+            )
+            runBlocking {
+                ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                    context = targetContext,
+                    forceRefresh = true
+                )
+            }
+
+            val initial = ManagedDownloadStorage.readLyricsBundleFast(targetContext, song)
+            assertFalse(initial.hasOriginalSidecar)
+            assertFalse(initial.hasTranslatedSidecar)
+            assertFalse(initial.hasRomanizedSidecar)
+
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.RESTORE_LYRICS,
+                null,
+                null
+            )
+            val refreshed = ManagedDownloadStorage.readLyricsBundle(targetContext, song)
+
+            assertEquals("[00:00.10]original from Lyrics", refreshed.lyric)
+            assertEquals("[00:00.10]translated from Lyrics", refreshed.translatedLyric)
+            assertEquals("[00:00.10]romanized from Lyrics", refreshed.romanizedLyric)
+            assertTrue(refreshed.hasOriginalSidecar)
+            assertTrue(refreshed.hasTranslatedSidecar)
+            assertTrue(refreshed.hasRomanizedSidecar)
+        } finally {
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
     }
 
     @Test
