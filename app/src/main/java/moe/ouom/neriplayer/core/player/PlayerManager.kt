@@ -2641,7 +2641,7 @@ object PlayerManager {
         clearMatchedMetadata: Boolean = false,
         writeLocalMetadata: Boolean = false,
         writeLyrics: Boolean = false
-    ) = updateSongCustomInfoImpl(
+    ): Boolean = updateSongCustomInfoImpl(
         originalSong,
         customCoverUrl,
         customName,
@@ -2686,7 +2686,7 @@ object PlayerManager {
         newTranslatedLyrics: String?,
         newRomanizedLyrics: String? = null,
         writeLocalMetadata: Boolean = false
-    ) = updateSongLyricsAndTranslationImpl(
+    ): Boolean = updateSongLyricsAndTranslationImpl(
         songToUpdate = songToUpdate,
         newLyrics = newLyrics,
         newTranslatedLyrics = newTranslatedLyrics,

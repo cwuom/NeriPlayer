@@ -5,6 +5,14 @@ import moe.ouom.neriplayer.core.api.search.SongDetails
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.data.model.SongItem
 
+internal fun shouldSkipSongMetadataMutation(
+    currentSong: SongItem,
+    updatedSong: SongItem,
+    writeLyrics: Boolean
+): Boolean {
+    return !writeLyrics && currentSong == updatedSong
+}
+
 internal fun SongItem.withUpdatedLyricsPreservingOriginal(
     newLyrics: String? = matchedLyric,
     newTranslatedLyric: String? = matchedTranslatedLyric,
@@ -49,8 +57,7 @@ internal fun shouldWriteLocalCoverMetadata(
     previousCustomCover: String?
 ): Boolean {
     return restoreBaseCover ||
-        nextCustomCover != previousCustomCover ||
-        !nextCustomCover.isNullOrBlank()
+        nextCustomCover != previousCustomCover
 }
 
 internal fun resolveLocalCoverWriteReference(
@@ -72,12 +79,15 @@ internal fun resolveRestoredBaseCoverUrl(
     currentCustomCoverUrl: String?
 ): String? {
     val customCover = currentCustomCoverUrl?.trim()?.takeIf { it.isNotBlank() }
-    return originalCoverUrl
+    val originalCover = originalCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
-        ?: baseCoverUrl
+    val baseCover = baseCoverUrl
             ?.trim()
             ?.takeIf { it.isNotBlank() && it != customCover }
+    return originalCover ?: baseCover ?: customCover.takeIf {
+        originalCoverUrl.isNullOrBlank() && baseCoverUrl.isNullOrBlank()
+    }
 }
 
 internal enum class LocalMetadataWritePlaybackAction {

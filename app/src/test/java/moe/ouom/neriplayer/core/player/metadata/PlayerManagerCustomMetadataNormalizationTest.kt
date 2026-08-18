@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.player.metadata
 
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -75,10 +76,10 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `second metadata write preserves an unchanged custom cover`() {
+    fun `second metadata write skips an unchanged custom cover`() {
         val customCover = "file:///cache/custom-cover.jpg"
 
-        assertTrue(
+        assertFalse(
             shouldWriteLocalCoverMetadata(
                 restoreBaseCover = false,
                 nextCustomCover = customCover,
@@ -146,6 +147,18 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
+    fun `restoring without a known original cover keeps the visible cover`() {
+        assertEquals(
+            "file:///cache/custom-cover.jpg",
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = null,
+                baseCoverUrl = null,
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg"
+            )
+        )
+    }
+
+    @Test
     fun `restoring a remote base cover keeps it for display`() {
         assertEquals(
             "https://example.com/original-cover.jpg",
@@ -167,6 +180,22 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 shouldResumePlayback = true
             )
         )
+    }
+
+    @Test
+    fun `unchanged song metadata save can skip the expensive persistence fanout`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertTrue(shouldSkipSongMetadataMutation(song, song, writeLyrics = false))
+        assertFalse(shouldSkipSongMetadataMutation(song, song, writeLyrics = true))
     }
 
     @Test
