@@ -81,6 +81,46 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `managed downloads prefer indexed sidecar text for every lyric variant`() {
+        assertEquals(
+            "downloaded",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "stored",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = null,
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = false,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+    }
+
+    @Test
     fun `local songs never load remote lyrics`() {
         val song = SongItem(
             id = 1L,

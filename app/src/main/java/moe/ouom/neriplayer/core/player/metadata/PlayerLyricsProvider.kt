@@ -126,6 +126,35 @@ internal fun resolveLocalFirstLyricText(
     return localLyric ?: storedLyric ?: downloadedLyric
 }
 
+internal fun resolveManagedDownloadFirstLyricText(
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?
+): String? {
+    return downloadedLyric ?: localLyric ?: storedLyric
+}
+
+internal fun resolveLyricTextForPlayback(
+    isManagedLocalDownload: Boolean,
+    localLyric: String?,
+    storedLyric: String?,
+    downloadedLyric: String?
+): String? {
+    return if (isManagedLocalDownload) {
+        resolveManagedDownloadFirstLyricText(
+            localLyric = localLyric,
+            storedLyric = storedLyric,
+            downloadedLyric = downloadedLyric
+        )
+    } else {
+        resolveLocalFirstLyricText(
+            localLyric = localLyric,
+            storedLyric = storedLyric,
+            downloadedLyric = downloadedLyric
+        )
+    }
+}
+
 internal fun shouldLoadRemoteLyrics(song: SongItem): Boolean {
     return !song.isLocalSong()
 }
