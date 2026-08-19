@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.sync.model.SyncSong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class SyncPlaylistDeletionPolicyTest {
@@ -44,8 +45,7 @@ class SyncPlaylistDeletionPolicyTest {
         )
         val expected = latest.copy(
             removedMembershipTokens = listOf(
-                token("a", 1L),
-                token("a", 2L),
+                token("a", 1L, counterEnd = 2L),
                 token("b", 1L)
             )
         )
@@ -55,6 +55,33 @@ class SyncPlaylistDeletionPolicyTest {
 
         assertEquals(listOf(expected), localFirst)
         assertEquals(localFirst, remoteFirst)
+    }
+
+    @Test
+    fun `causal range merge is commutative and idempotent`() {
+        val local = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 100L,
+            removedTokens = listOf(token("device", 1L, counterEnd = 3L))
+        )
+        val remote = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 200L,
+            removedTokens = listOf(token("device", 4L, counterEnd = 6L))
+        )
+
+        val first = SyncPlaylistDeletionPolicy.mergeDeletions(listOf(local), listOf(remote))
+        val reverse = SyncPlaylistDeletionPolicy.mergeDeletions(listOf(remote), listOf(local))
+        val replayed = SyncPlaylistDeletionPolicy.mergeDeletions(first, first)
+
+        assertEquals(first, reverse)
+        assertEquals(first, replayed)
+        assertEquals(
+            listOf(remote.copy(removedMembershipTokens = listOf(token("device", 1L, counterEnd = 6L)))),
+            first
+        )
     }
 
     @Test
@@ -548,7 +575,7 @@ class SyncPlaylistDeletionPolicyTest {
     }
 
     @Test
-    fun `bounded deletion retention keeps recent legacy and causal tombstones`() {
+    fun `deletion capacity preserves all tombstone classes when within capacity`() {
         val legacy = (1L..6L).map { id ->
             deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
         }
@@ -564,22 +591,24 @@ class SyncPlaylistDeletionPolicyTest {
 
         val retained = SyncPlaylistDeletionPolicy.limitDeletions(
             deletions = legacy + causal,
-            maxCount = 6
+            maxCount = 12
         )
 
-        assertEquals(6, retained.size)
-        assertEquals(3, retained.count { it.removedMembershipTokens.isEmpty() })
-        assertEquals(3, retained.count { it.removedMembershipTokens.isNotEmpty() })
-        assertEquals(setOf(4L, 5L, 6L), retained.filter {
+        assertEquals(7, retained.size)
+        assertEquals(6, retained.count { it.removedMembershipTokens.isEmpty() })
+        assertEquals(1, retained.count { it.removedMembershipTokens.isNotEmpty() })
+        assertEquals(setOf(1L, 2L, 3L, 4L, 5L, 6L), retained.filter {
             it.removedMembershipTokens.isEmpty()
         }.map { it.songId }.toSet())
-        assertEquals(setOf(14L, 15L, 16L), retained.filter {
-            it.removedMembershipTokens.isNotEmpty()
-        }.map { it.songId }.toSet())
+        assertEquals(
+            listOf(token("causal", 11L, counterEnd = 16L)),
+            retained.single { it.removedMembershipTokens.isNotEmpty() }
+                .removedMembershipTokens
+        )
     }
 
     @Test
-    fun `bounded deletion retention fills unused class capacity`() {
+    fun `deletion capacity keeps unused capacity available without truncation`() {
         val legacy = (1L..2L).map { id ->
             deletion(playlistId = 7L, songId = id, deletedAt = id, deviceId = "legacy")
         }
@@ -595,12 +624,100 @@ class SyncPlaylistDeletionPolicyTest {
 
         val retained = SyncPlaylistDeletionPolicy.limitDeletions(
             deletions = legacy + causal,
-            maxCount = 6
+            maxCount = 8
         )
 
-        assertEquals(6, retained.size)
+        assertEquals(3, retained.size)
         assertEquals(2, retained.count { it.removedMembershipTokens.isEmpty() })
-        assertEquals(4, retained.count { it.removedMembershipTokens.isNotEmpty() })
+        assertEquals(1, retained.count { it.removedMembershipTokens.isNotEmpty() })
+    }
+
+    @Test
+    fun `causal tombstones across songs collapse into one playlist record`() {
+        val deletions = (1L..3L).map { id ->
+            deletion(
+                playlistId = 7L,
+                songId = id,
+                deletedAt = id,
+                removedTokens = listOf(token("device", id))
+            )
+        }
+
+        val retained = SyncPlaylistDeletionPolicy.limitDeletions(
+            deletions = deletions,
+            maxCount = 1
+        )
+
+        assertEquals(1, retained.size)
+        assertEquals(
+            listOf(token("device", 1L, counterEnd = 3L)),
+            retained.single().removedMembershipTokens
+        )
+    }
+
+    @Test
+    fun `deletion capacity overflow is rejected instead of dropping tombstones`() {
+        val deletions = (1L..2L).map { id ->
+            deletion(playlistId = 7L, songId = id, deletedAt = id)
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SyncPlaylistDeletionPolicy.limitDeletions(deletions, maxCount = 1)
+        }
+    }
+
+    @Test
+    fun `range tombstone removes only observed memberships`() {
+        val observed = token("device", 11L)
+        val concurrent = token("device", 13L)
+        val deletion = deletion(
+            playlistId = 7L,
+            songId = 11L,
+            deletedAt = 200L,
+            removedTokens = listOf(token("device", 10L, counterEnd = 12L))
+        )
+
+        val merged = SyncPlaylistDeletionPolicy.applyDeletions(
+            playlistId = 7L,
+            songs = listOf(
+                syncSong(
+                    id = 11L,
+                    addedAt = 100L,
+                    membershipTokens = listOf(observed, concurrent)
+                )
+            ),
+            deletions = listOf(deletion)
+        )
+
+        assertEquals(
+            listOf(
+                syncSong(
+                    id = 11L,
+                    addedAt = 100L,
+                    membershipTokens = listOf(concurrent)
+                )
+            ),
+            merged
+        )
+    }
+
+    @Test
+    fun `fragmented causal ranges are rejected instead of truncated`() {
+        val fragmented = (1L..65L).map { counter ->
+            deletion(
+                playlistId = 7L,
+                songId = 11L,
+                deletedAt = 200L,
+                removedTokens = listOf(token("device", counter * 2L))
+            )
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            SyncPlaylistDeletionPolicy.limitDeletions(
+                deletions = fragmented,
+                maxCount = 1
+            )
+        }
     }
 
     private fun syncSong(
@@ -641,7 +758,15 @@ class SyncPlaylistDeletionPolicyTest {
         )
     }
 
-    private fun token(deviceId: String, counter: Long): SyncCausalToken {
-        return SyncCausalToken(deviceId = deviceId, counter = counter)
+    private fun token(
+        deviceId: String,
+        counter: Long,
+        counterEnd: Long = 0L
+    ): SyncCausalToken {
+        return SyncCausalToken(
+            deviceId = deviceId,
+            counter = counter,
+            counterEnd = counterEnd
+        )
     }
 }
