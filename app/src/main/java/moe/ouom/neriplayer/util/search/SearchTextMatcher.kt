@@ -45,7 +45,7 @@ object SearchTextMatcher {
             if (queryTokens.isEmpty()) return items
 
             return items.mapIndexedNotNull { index, item ->
-                val score = SearchTextMatcher.scoreCandidates(queryTokens, candidates[index])
+                val score = scoreCandidates(queryTokens, candidates[index])
                     ?: return@mapIndexedNotNull null
                 RankedSearchItem(item = item, score = score, index = index)
             }
@@ -160,7 +160,7 @@ private fun String.candidateTokens(baseBias: Int): List<SearchCandidate> {
     val normalized = normalizeSearchText(this)
     if (normalized.isBlank()) return emptyList()
 
-    val splitTokens = normalized
+    val splitTokens = normalizeSearchTextPreservingCase(this)
         .split(SearchSeparatorRegex)
         .filter { it.isNotBlank() }
         .flatMap { splitCamelToken(it) }
@@ -261,13 +261,22 @@ private fun splitCamelToken(value: String): List<String> {
 }
 
 private fun normalizeSearchText(value: String): String {
+    return normalizeSearchText(value, lowercase = true)
+}
+
+private fun normalizeSearchTextPreservingCase(value: String): String {
+    return normalizeSearchText(value, lowercase = false)
+}
+
+private fun normalizeSearchText(value: String, lowercase: Boolean): String {
     val folded = Normalizer.normalize(value.trim(), Normalizer.Form.NFKD)
     return buildString(folded.length) {
         folded.forEach { char ->
             when {
                 char.category == CharCategory.NON_SPACING_MARK -> Unit
                 char == '\u3000' -> append(' ')
-                else -> append(char.lowercaseChar())
+                lowercase -> append(char.lowercaseChar())
+                else -> append(char)
             }
         }
     }
