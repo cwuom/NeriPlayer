@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.data.local.playlist.system
 
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.identity
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -27,6 +28,31 @@ class SystemPlaylistSongDeduperTest {
         deduper.addAll(listOf(duplicated))
 
         assertEquals(listOf(first), deduper.songs())
+    }
+
+    @Test
+    fun `registers local keys from identity duplicates for later chain deduplication`() {
+        val firstIdentity = localSong(
+            id = 10L,
+            mediaUri = "/storage/emulated/0/Music/first.mp3",
+            localFilePath = "/storage/emulated/0/Music/first.mp3"
+        ).copy(audioId = "first")
+        val secondIdentityAlias = localSong(
+            id = 10L,
+            mediaUri = "/storage/emulated/0/Music/first.mp3",
+            localFilePath = "/storage/emulated/0/Music/first.mp3"
+        ).copy(audioId = "second")
+        val laterSong = localSong(
+            id = 11L,
+            mediaUri = "/storage/emulated/0/Music/second.mp3",
+            localFilePath = "/storage/emulated/0/Music/second.mp3"
+        ).copy(audioId = "second")
+        val deduper = SystemPlaylistSongDeduper(expectedSongCount = 3)
+
+        deduper.addAll(listOf(firstIdentity, secondIdentityAlias, laterSong))
+
+        assertEquals(1, deduper.songs().size)
+        assertEquals(firstIdentity.identity(), deduper.songs().single().identity())
     }
 
     @Test

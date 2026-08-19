@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.Issue339LyricsTestDocumentProvider
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -108,6 +109,37 @@ class LocalAudioImportSafLyricsTest {
         assertEquals(
             Issue339LyricsTestDocumentProvider.AUDIO_NAME,
             result.songs.single().localFileName
+        )
+    }
+
+    @Test
+    fun missingSafDocumentIsRecognizedWithoutProviderFalseNegative() {
+        val rootUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            rootUri,
+            Issue339LyricsTestDocumentProvider.CREATE_EMPTY_METADATA,
+            null,
+            null
+        )
+        val metadataUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.METADATA_ID
+        )
+
+        assertTrue(
+            DocumentsContract.deleteDocument(
+                targetContext.contentResolver,
+                metadataUri
+            )
+        )
+        assertTrue(
+            ManagedDownloadReferenceIo.isContentReferenceGone(
+                context = targetContext,
+                uri = metadataUri
+            )
         )
     }
 

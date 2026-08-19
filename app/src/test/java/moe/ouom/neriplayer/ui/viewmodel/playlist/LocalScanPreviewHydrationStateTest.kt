@@ -66,6 +66,33 @@ class LocalScanPreviewHydrationStateTest {
     }
 
     @Test
+    fun `hydration batches update their offset without changing later selection`() {
+        val firstSong = localSong(id = 11L, name = "First")
+        val secondSong = localSong(id = 12L, name = "Second")
+        val state = LocalScanPreviewState(
+            visible = true,
+            songs = listOf(firstSong, secondSong),
+            metadataPendingKeys = setOf(firstSong.stableKey(), secondSong.stableKey()),
+            selectedKeys = setOf(firstSong.stableKey(), secondSong.stableKey())
+        )
+        val hydratedSecond = secondSong.copy(album = "Album")
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(hydratedSecond),
+            progress = state.scanProgress,
+            startIndex = 1
+        )
+
+        assertEquals(listOf(firstSong, hydratedSecond), updated.songs)
+        assertEquals(
+            setOf(firstSong.stableKey(), hydratedSecond.stableKey()),
+            updated.selectedKeys
+        )
+        assertEquals(setOf(firstSong.stableKey()), updated.metadataPendingKeys)
+    }
+
+    @Test
     fun `metadata refresh candidates keep the newest song for each stable key`() {
         val firstSong = localSong(id = 4L, name = "First")
         val replacement = firstSong.copy(name = "First updated")
