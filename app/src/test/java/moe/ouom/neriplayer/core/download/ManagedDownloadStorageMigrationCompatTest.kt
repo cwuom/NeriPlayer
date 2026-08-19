@@ -6,6 +6,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,6 +22,141 @@ import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 
 class ManagedDownloadStorageMigrationCompatTest {
+
+    @Test
+    fun `remote source identity marks a downloaded local song before catalog restore`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/42",
+            channelId = "netease",
+            audioId = "42",
+            sourceStableKey = "42|netease|"
+        )
+
+        assertTrue(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `local source identity does not classify a manually added song as downloaded`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Imported",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/music/imported.mp3",
+            channelId = "local",
+            audioId = "42",
+            sourceStableKey = "42|netease|"
+        )
+
+        assertFalse(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `legacy downloaded song without stable key still uses managed lyric path`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/storage/emulated/0/neriplayer-download/Downloaded.mp3",
+            channelId = null,
+            audioId = null,
+            sourceStableKey = null
+        )
+
+        assertTrue(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `manual song in legacy download directory stays on local lyric path`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Imported",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/storage/emulated/0/neriplayer-download/Imported.mp3",
+            channelId = "local",
+            audioId = "42",
+            sourceStableKey = null
+        )
+
+        assertFalse(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `legacy download root matches media store relative paths with a parent directory`() {
+        assertTrue(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "Music/neriplayer-download/",
+                treeDocumentId = null
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "Music/other-directory/",
+                treeDocumentId = null
+            )
+        )
+    }
+
+    @Test
+    fun `download document uri recovers its SAF tree root before settings restore`() {
+        assertEquals(
+            "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download",
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download/" +
+                    "document/primary%3Aneriplayer-download%2Ftrack.mp3"
+            )
+        )
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://media/external_primary/audio/media/42"
+            )
+        )
+    }
+
+    @Test
+    fun `non content and unrelated document references do not produce a tree root`() {
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "/storage/emulated/0/neriplayer-download/track.mp3"
+            )
+        )
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://com.android.externalstorage.documents/document/primary%3AMusic%2Ftrack.mp3"
+            )
+        )
+    }
+
+    @Test
+    fun `tree reference parser accepts encoded and case insensitive content uris`() {
+        assertEquals(
+            "content://provider/tree/primary%3Aneriplayer-download",
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "CONTENT://provider/TREE/primary%3Aneriplayer-download/document/track"
+            )
+        )
+    }
 
     @Test
     fun `rewriteManagedMetadataReferences remaps migrated sidecar references`() {

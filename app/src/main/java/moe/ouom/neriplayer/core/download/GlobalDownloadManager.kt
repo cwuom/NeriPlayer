@@ -749,9 +749,10 @@ object GlobalDownloadManager {
         songs: List<DownloadedSong>,
         persistCatalog: Boolean
     ) {
-        _downloadedSongs.value = songs
+        // 先发布索引再通知列表, 避免界面首帧看到歌曲时索引仍为空
         downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
         downloadedSongCatalogReady = true
+        _downloadedSongs.value = songs
         // 下载音频和歌词侧车可能在同一收尾阶段写入, 让本地歌词查找重新读取文件
         LocalMediaSupport.clearLyricsLookupCache()
         _downloadPresenceVersion.value += 1
@@ -2191,7 +2192,11 @@ object GlobalDownloadManager {
             if (refreshIfMissing) {
                 AudioDownloadManager.getLyricsBundle(context, song)
             } else {
-                AudioDownloadManager.getLyricsBundleFast(context, song)
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = context,
+                    song = song,
+                    allowColdSafProbe = false
+                )
             }
         }.onFailure { error ->
             NPLogger.w(TAG, "下载播放首屏歌词读取失败: ${error.message}")

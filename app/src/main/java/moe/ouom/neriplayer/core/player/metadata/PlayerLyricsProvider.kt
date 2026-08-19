@@ -172,7 +172,7 @@ private fun isManagedLocalDownloadForSong(application: Application, song: SongIt
     }
     return GlobalDownloadManager.hasDownloadedSongCached(song) ||
         ManagedDownloadStorage.peekDownloadedAudio(song) != null ||
-        ManagedDownloadStorage.isLikelyManagedDownloadSong(application, song)
+        ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -798,12 +798,20 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val managedLyrics = if (isManagedLocalDownload) {
-                AudioDownloadManager.getLyricsBundleFast(application, song)
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
             } else {
                 null
             }
             val localLyrics = if (song.isLocalSong() && !isManagedLocalDownload) {
-                LocalMediaSupport.inspectLyricsFast(application, song)
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                )
             } else {
                 null
             }
@@ -933,12 +941,20 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val managedLyrics = if (isManagedLocalDownload) {
-                AudioDownloadManager.getLyricsBundleFast(application, song)
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
             } else {
                 null
             }
             val localRomanizedLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
-                LocalMediaSupport.inspectLyricsFast(application, song).romanizedLyric
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                ).romanizedLyric
             } else {
                 null
             }
@@ -1021,12 +1037,20 @@ internal object PlayerLyricsProvider {
                 isManagedLocalDownload = isManagedLocalDownload
             )
             val managedLyrics = if (isManagedLocalDownload) {
-                AudioDownloadManager.getLyricsBundleFast(application, song)
+                AudioDownloadManager.getLyricsBundleFast(
+                    context = application,
+                    song = song,
+                    allowColdSafProbe = false
+                )
             } else {
                 null
             }
             val localLyric = if (song.isLocalSong() && !isManagedLocalDownload) {
-                LocalMediaSupport.inspectLyricsFast(application, song).lyric
+                LocalMediaSupport.inspectLyricsFast(
+                    context = application,
+                    song = song,
+                    includeEmbeddedFallback = true
+                ).lyric
             } else {
                 null
             }

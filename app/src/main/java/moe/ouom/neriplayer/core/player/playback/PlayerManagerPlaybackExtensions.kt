@@ -1048,7 +1048,7 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
 
     ioScope.launch {
         val isManagedDownload = GlobalDownloadManager.hasDownloadedSongCached(song) ||
-            ManagedDownloadStorage.isLikelyManagedDownloadSong(application, song)
+            ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
         // 下载歌曲的标题和封面已经来自下载目录索引, 播放首屏只补侧载文本, 避免 TagLib
         // 读取整段音频和内嵌歌词抢占歌词快路径
         val hydratedSong = if (isManagedDownload) {

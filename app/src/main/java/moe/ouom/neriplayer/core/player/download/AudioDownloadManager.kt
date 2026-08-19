@@ -2885,9 +2885,14 @@ object AudioDownloadManager {
 
     internal fun getLyricsBundleFast(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        allowColdSafProbe: Boolean = true
     ): ManagedDownloadStorage.DownloadedLyricsBundle {
-        return ManagedDownloadStorage.readLyricsBundleFast(context, song)
+        return ManagedDownloadStorage.readLyricsBundleFast(
+            context = context,
+            song = song,
+            allowColdSafProbe = allowColdSafProbe
+        )
     }
 
     fun getTranslatedLyricContent(context: Context, song: SongItem): String? {

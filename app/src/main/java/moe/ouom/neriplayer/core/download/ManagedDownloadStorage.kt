@@ -11,24 +11,33 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.core.download.storage.*
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEntry
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
+import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadStorageCommitWriter
@@ -39,10 +48,10 @@ import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReference
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteResult
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
-import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLookup
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCopyWorker
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
@@ -58,28 +67,32 @@ import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNa
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteCleaner
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
-import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.storage.sidecar.ManagedDownloadLyricStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
-import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
-import moe.ouom.neriplayer.data.model.displayName
-import moe.ouom.neriplayer.data.model.identity
-import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LEGACY_DOWNLOAD_ROOT_PATH = "/storage/emulated/0/neriplayer-download"
     private const val LEGACY_DOWNLOAD_ROOT_RELATIVE_PATH = "neriplayer-download"
+    private const val LEGACY_DOWNLOAD_TREE_DOCUMENT_ID = "primary:neriplayer-download"
+    private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+        "com.android.externalstorage.documents"
     private const val LOG_HOT_AUDIO_HITS = false
     private const val SIDECAR_REFRESH_THROTTLE_MS = 400L
     private const val FAST_LYRICS_SLOW_LOG_MS = 120L
@@ -91,6 +104,7 @@ internal object ManagedDownloadStorage {
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var snapshotWarmupJob: Job? = null
     private var snapshotWarmupKey: String? = null
+    private var snapshotWarmupRefreshSidecars: Boolean = false
     private val settings = ManagedDownloadStorageSettings(
         defaultRootPathProvider = { context -> createDefaultRoot(context).dir.absolutePath }
     )
@@ -227,6 +241,10 @@ internal object ManagedDownloadStorage {
     private val _migrationProgressFlow = MutableStateFlow<MigrationProgress?>(null)
     val migrationProgressFlow: StateFlow<MigrationProgress?> = _migrationProgressFlow
 
+    // sidecar 目录刷新完成后通知播放页重新读取当前歌曲, 不让首帧等待 SAF
+    private val _lyricsRefreshVersion = MutableStateFlow(0L)
+    internal val lyricsRefreshVersion: StateFlow<Long> = _lyricsRefreshVersion
+
     fun initialize(context: Context) {
         val appContext = context.applicationContext
         createDefaultRoot(appContext)
@@ -242,6 +260,11 @@ internal object ManagedDownloadStorage {
                 metadataRecovery.failedCount
         )
         invalidateSnapshotCache()
+        scheduleSnapshotWarmup(appContext)
+    }
+
+    internal fun scheduleLyricsRefresh(context: Context) {
+        scheduleSnapshotWarmup(context, refreshSidecars = true)
     }
 
     private fun resolveStartupPendingAudioRecovery(context: Context): StartupRecoveryResult {
@@ -919,6 +942,9 @@ internal object ManagedDownloadStorage {
      * 判断歌曲是否落在托管下载目录, 不恢复索引也不列举整棵目录
      */
     internal fun isLikelyManagedDownloadSong(context: Context, song: SongItem): Boolean {
+        if (hasManagedDownloadIdentityHint(song)) {
+            return true
+        }
         if (peekDownloadedAudio(song) != null) {
             return true
         }
@@ -988,6 +1014,89 @@ internal object ManagedDownloadStorage {
         return false
     }
 
+    /**
+     * 首屏只使用内存和 URI 线索判断下载来源, 不查询 MediaStore 或 SAF provider
+     */
+    internal fun isLikelyManagedDownloadSongFast(
+        context: Context,
+        song: SongItem
+    ): Boolean {
+        if (!LocalSongSupport.isLocalSong(song, null)) {
+            return false
+        }
+        if (hasManagedDownloadIdentityHint(song) || peekDownloadedAudio(song) != null) {
+            return true
+        }
+
+        val configuredRoot = settings.configuredDirectoryUri
+            ?.takeIf(String::isNotBlank)
+            ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val songTree = listOfNotNull(song.mediaUri, song.localFilePath)
+            .asSequence()
+            .mapNotNull(::managedDownloadTreeUri)
+            .firstOrNull()
+        if (configuredRoot != null && songTree != null) {
+            return areEquivalentDirectoryUris(songTree.toString(), configuredRoot.toString())
+        }
+
+        val defaultRoot = runCatching { createDefaultRoot(context).dir.absolutePath }.getOrNull()
+        val directPaths = listOfNotNull(song.localFilePath, song.mediaUri)
+            .mapNotNull { reference ->
+                when {
+                    reference.startsWith("/") -> reference
+                    reference.startsWith("file:", ignoreCase = true) -> {
+                        runCatching { reference.toUri().path }.getOrNull()
+                    }
+                    else -> null
+                }
+            }
+        return directPaths.any { path ->
+            (defaultRoot != null && isPathInside(path, defaultRoot)) ||
+                isPathInside(path, LEGACY_DOWNLOAD_ROOT_PATH)
+        }
+    }
+
+    /**
+     * 下载歌曲在目录索引恢复前仍保留远端来源标识, 可据此走下载侧载快路径
+     */
+    internal fun hasManagedDownloadIdentityHint(song: SongItem): Boolean {
+        if (!LocalSongSupport.isLocalSong(song, null)) {
+            return false
+        }
+        val rawChannel = song.channelId?.trim()?.takeIf(String::isNotBlank)
+        if (rawChannel?.equals("local", ignoreCase = true) == true) {
+            return false
+        }
+        val sourceChannel = rawChannel
+            ?.trim()
+            ?.takeIf { !it.equals("local", ignoreCase = true) }
+        if (song.remoteSourceIdentityOrNull() != null) {
+            return true
+        }
+        if (
+            sourceChannel != null &&
+                (
+                    !song.audioId.isNullOrBlank() ||
+                        !song.subAudioId.isNullOrBlank() ||
+                        song.id > 0L
+                    )
+        ) {
+            return true
+        }
+        return hasManagedDownloadPathHint(song)
+    }
+
+    private fun hasManagedDownloadPathHint(song: SongItem): Boolean {
+        return listOfNotNull(song.localFilePath, song.mediaUri).any { reference ->
+            val raw = reference.trim().replace('\\', '/')
+            val decoded = runCatching { Uri.decode(raw) }.getOrNull() ?: raw
+            val normalized = "/${decoded.trim('/')}/"
+                .replace("//", "/")
+                .lowercase()
+            normalized.contains("/neriplayer-download/")
+        }
+    }
+
     internal fun isKnownManagedDownloadDocumentId(
         documentId: String,
         treeDocumentId: String?
@@ -1023,7 +1132,9 @@ internal object ManagedDownloadStorage {
         }.distinct()
         return managedRoots.any { managedRoot ->
             normalizedRelativePath == managedRoot ||
-                normalizedRelativePath.startsWith("$managedRoot/")
+                normalizedRelativePath.startsWith("$managedRoot/") ||
+                normalizedRelativePath.endsWith("/$managedRoot") ||
+                normalizedRelativePath.contains("/$managedRoot/")
         }
     }
 
@@ -1292,6 +1403,7 @@ internal object ManagedDownloadStorage {
                     cacheKey = cacheKey,
                     snapshot = updatedSnapshot
                 )
+                notifyLyricsRefresh()
             }
             return updatedSnapshot
         }
@@ -1999,7 +2111,7 @@ internal object ManagedDownloadStorage {
         val fastLyrics = readLyricsBundleFastInternal(
             context = context,
             song = song,
-            restorePersisted = true
+            allowColdSafProbe = false
         )
         if (!hasManagedLocalReference(song)) {
             return fastLyrics
@@ -2066,7 +2178,7 @@ internal object ManagedDownloadStorage {
         val completedLyrics = readLyricsBundleFastInternal(
             context = context,
             song = song,
-            restorePersisted = false
+            allowColdSafProbe = false
         )
         if (hasCompleteLyricsSidecars(completedLyrics)) {
             return completedLyrics
@@ -2143,12 +2255,13 @@ internal object ManagedDownloadStorage {
      */
     internal fun readLyricsBundleFast(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        allowColdSafProbe: Boolean = true
     ): DownloadedLyricsBundle {
         return readLyricsBundleFastInternal(
             context = context,
             song = song,
-            restorePersisted = true
+            allowColdSafProbe = allowColdSafProbe
         )
     }
 
@@ -2170,39 +2283,44 @@ internal object ManagedDownloadStorage {
     private fun readLyricsBundleFastInternal(
         context: Context,
         song: SongItem,
-        restorePersisted: Boolean
+        allowColdSafProbe: Boolean
     ): DownloadedLyricsBundle {
         // 原文、翻译和罗马字必须共用一次快照解析, 避免首屏重复查询下载目录
         val snapshot = snapshotCacheStore.cachedSnapshot(
             context = context,
-            restorePersisted = restorePersisted
+            restorePersisted = false
         )
         if (snapshot == null) {
-            if (restorePersisted) {
-                scheduleSnapshotWarmup(context)
+            scheduleSnapshotWarmup(context)
+            val directSidecar = readLyricsBundleFromDirectSongPathFast(context, song)
+            val coldSafSidecar = if (
+                !allowColdSafProbe ||
+                directSidecar.hasOriginalSidecar ||
+                    directSidecar.hasTranslatedSidecar ||
+                    directSidecar.hasRomanizedSidecar ||
+                    !song.mediaUri.orEmpty().startsWith("content://", ignoreCase = true)
+            ) {
+                DownloadedLyricsBundle(null, null, null)
+            } else {
+                // 首次从 SAF 树恢复歌曲时没有可用索引, 仅查询当前歌曲的目录并缓存结果
+                readLyricsBundleFromManagedRootFast(
+                    context = context,
+                    song = song,
+                    metadataOverride = null
+                )
             }
-            if (!hasManagedLocalReference(song)) {
-                return DownloadedLyricsBundle(
+            return mergeLyricsBundles(
+                preferred = mergeLyricsBundles(
+                    preferred = directSidecar,
+                    fallback = coldSafSidecar
+                ),
+                fallback = DownloadedLyricsBundle(
                     lyric = song.matchedLyric ?: song.originalLyric,
                     translatedLyric = song.matchedTranslatedLyric
                         ?: song.originalTranslatedLyric,
                     romanizedLyric = song.matchedRomanizedLyric
                         ?: song.originalRomanizedLyric
                 )
-            }
-            val fastSidecar = readLyricsBundleFromManagedRootFast(
-                context = context,
-                song = song,
-                metadataOverride = null
-            )
-            return fastSidecar.copy(
-                lyric = fastSidecar.lyric ?: song.matchedLyric ?: song.originalLyric,
-                translatedLyric = fastSidecar.translatedLyric
-                    ?: song.matchedTranslatedLyric
-                    ?: song.originalTranslatedLyric,
-                romanizedLyric = fastSidecar.romanizedLyric
-                    ?: song.matchedRomanizedLyric
-                    ?: song.originalRomanizedLyric
             )
         }
         val indexed = resolveDownloadedLyricsBundle(
@@ -2212,42 +2330,78 @@ internal object ManagedDownloadStorage {
             readText = { reference -> readTextInternal(context, reference) },
             exists = ::existsInternal
         )
-        if (
-            indexed.hasOriginalSidecar &&
-                indexed.hasTranslatedSidecar &&
-                indexed.hasRomanizedSidecar
-        ) {
-            return indexed
-        }
-        val fresh = readLyricsBundleFromManagedRootFast(
-            context = context,
-            song = song,
-            metadataOverride = findAudioEntry(snapshot, song)
-                ?.let { audio -> snapshot.metadataByAudioName[audio.name] }
-        )
         return DownloadedLyricsBundle(
             lyric = if (indexed.hasOriginalSidecar) {
                 indexed.lyric
             } else {
-                fresh.lyric ?: indexed.lyric ?: song.matchedLyric ?: song.originalLyric
+                indexed.lyric ?: song.matchedLyric ?: song.originalLyric
             },
             translatedLyric = if (indexed.hasTranslatedSidecar) {
                 indexed.translatedLyric
             } else {
-                fresh.translatedLyric ?: indexed.translatedLyric
+                indexed.translatedLyric
                     ?: song.matchedTranslatedLyric
                     ?: song.originalTranslatedLyric
             },
             romanizedLyric = if (indexed.hasRomanizedSidecar) {
                 indexed.romanizedLyric
             } else {
-                fresh.romanizedLyric ?: indexed.romanizedLyric
+                indexed.romanizedLyric
                     ?: song.matchedRomanizedLyric
                     ?: song.originalRomanizedLyric
             },
-            hasOriginalSidecar = indexed.hasOriginalSidecar || fresh.hasOriginalSidecar,
-            hasTranslatedSidecar = indexed.hasTranslatedSidecar || fresh.hasTranslatedSidecar,
-            hasRomanizedSidecar = indexed.hasRomanizedSidecar || fresh.hasRomanizedSidecar
+            hasOriginalSidecar = indexed.hasOriginalSidecar,
+            hasTranslatedSidecar = indexed.hasTranslatedSidecar,
+            hasRomanizedSidecar = indexed.hasRomanizedSidecar
+        )
+    }
+
+    /**
+     * 冷启动索引尚未恢复时只按歌曲绝对路径读取三个侧载文件
+     */
+    private fun readLyricsBundleFromDirectSongPathFast(
+        context: Context,
+        song: SongItem
+    ): DownloadedLyricsBundle {
+        val sourcePath = listOfNotNull(song.localFilePath, song.mediaUri)
+            .asSequence()
+            .mapNotNull { reference ->
+                when {
+                    reference.startsWith("/") -> reference
+                    reference.startsWith("file:", ignoreCase = true) -> {
+                        runCatching { reference.toUri().path }.getOrNull()
+                    }
+                    else -> null
+                }
+            }
+            .firstOrNull()
+            ?: return DownloadedLyricsBundle(null, null, null)
+        val audioFile = File(sourcePath)
+        val parent = audioFile.parentFile ?: return DownloadedLyricsBundle(null, null, null)
+        val lyricDirectories = buildList {
+            add(File(parent, LYRIC_SUBDIRECTORY))
+            add(parent)
+            if (isPathInside(sourcePath, LEGACY_DOWNLOAD_ROOT_PATH)) {
+                add(File(LEGACY_DOWNLOAD_ROOT_PATH, LYRIC_SUBDIRECTORY))
+            }
+        }.distinctBy(File::getAbsolutePath)
+        val candidateBaseNames = buildManagedLyricBaseNames(
+            song = song,
+            audioName = audioFile.name
+        )
+        val entries = readLyricsFromNamedFiles(
+            context = context,
+            directories = lyricDirectories,
+            candidateBaseNames = candidateBaseNames,
+            alreadyRead = emptySet()
+        )
+        return DownloadedLyricsBundle(
+            lyric = entries[LyricKind.ORIGINAL]?.first,
+            translatedLyric = entries[LyricKind.TRANSLATED]?.first,
+            romanizedLyric = entries[LyricKind.ROMANIZED]?.first,
+            hasOriginalSidecar = entries[LyricKind.ORIGINAL]?.second == true,
+            hasTranslatedSidecar = entries[LyricKind.TRANSLATED]?.second == true,
+            hasRomanizedSidecar = entries[LyricKind.ROMANIZED]?.second == true
         )
     }
 
@@ -2257,7 +2411,23 @@ internal object ManagedDownloadStorage {
         metadataOverride: DownloadedAudioMetadata?
     ): DownloadedLyricsBundle {
         val startedAtNs = System.nanoTime()
-        val root = runCatching { resolveRootBlocking(context) }.getOrNull()
+        val configuredRoot = runCatching { resolveRootBlocking(context) }.getOrNull()
+        val sourceTreeRoot = resolveSourceTreeRootFast(context, song)
+        val root = when {
+            sourceTreeRoot != null && (
+                configuredRoot !is RootHandle.TreeRoot ||
+                    configuredRoot.tree.uri != sourceTreeRoot.tree.uri
+                ) -> {
+                NPLogger.d(
+                    "ManagedDownloadLyricsPerf",
+                    "首屏歌词改用歌曲自身 SAF 根: source=${sourceTreeRoot.tree.uri}, " +
+                        "configured=${configuredRoot?.javaClass?.simpleName}"
+                )
+                sourceTreeRoot
+            }
+            configuredRoot != null -> configuredRoot
+            else -> sourceTreeRoot
+        }
             ?: return DownloadedLyricsBundle(null, null, null)
         val audioName = resolveManagedAudioDisplayName(context, song)
         val candidateBaseNames = buildManagedLyricBaseNames(
@@ -2355,6 +2525,121 @@ internal object ManagedDownloadStorage {
             scheduleSnapshotWarmup(context)
         }
         return result
+    }
+
+    /**
+     * catalog 恢复早于 SAF 设置恢复时, 从歌曲自身的 tree/document URI 找到真实根目录
+     */
+    private fun resolveSourceTreeRootFast(
+        context: Context,
+        song: SongItem
+    ): RootHandle.TreeRoot? {
+        val references = listOfNotNull(song.mediaUri, song.localFilePath)
+        val directTreeUri = references.asSequence()
+            .mapNotNull(::managedDownloadTreeUri)
+            .firstOrNull()
+        val treeUri = directTreeUri ?: inferLegacyDownloadTreeUri(context, references)
+            ?: return null
+        val tree = runCatching { DocumentFile.fromTreeUri(context, treeUri) }.getOrNull()
+            ?: return null
+        return tree.takeIf { it.isDirectory }?.let(RootHandle::TreeRoot)
+    }
+
+    private fun inferLegacyDownloadTreeUri(
+        context: Context,
+        references: Collection<String>
+    ): Uri? {
+        val hasLegacyPath = references.any(::isLegacyDownloadReference)
+        val hasLegacyMediaStoreReference = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mediaStoreReferences = references.asSequence()
+                .filter { it.startsWith("content://", ignoreCase = true) }
+                .mapNotNull { runCatching { it.toUri() }.getOrNull() }
+                .filter { it.authority.equals("media", ignoreCase = true) }
+                .toList()
+            mediaStoreReferences.isNotEmpty() && isMediaStoreSongWithinManagedRoot(
+                context = context,
+                songReferences = mediaStoreReferences,
+                treeDocumentId = null
+            )
+        } else {
+            false
+        }
+        if (!hasLegacyPath && !hasLegacyMediaStoreReference) {
+            return null
+        }
+        return runCatching {
+            DocumentsContract.buildTreeDocumentUri(
+                EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY,
+                LEGACY_DOWNLOAD_TREE_DOCUMENT_ID
+            )
+        }.getOrNull()
+    }
+
+    private fun isLegacyDownloadReference(reference: String): Boolean {
+        val raw = reference.trim()
+        val path = when {
+            raw.startsWith("/") -> raw
+            raw.startsWith("file:", ignoreCase = true) -> {
+                runCatching { raw.toUri().path }.getOrNull()
+            }
+            else -> null
+        } ?: return false
+        return isPathInside(path, LEGACY_DOWNLOAD_ROOT_PATH)
+    }
+
+    internal fun managedDownloadTreeUri(rawReference: String?): Uri? {
+        return managedDownloadTreeReference(rawReference)
+            ?.let { treeReference -> runCatching { Uri.parse(treeReference) }.getOrNull() }
+    }
+
+    internal fun managedDownloadTreeReference(rawReference: String?): String? {
+        val rawUri = rawReference?.trim()?.takeIf(String::isNotBlank) ?: return null
+        val schemeEnd = rawUri.indexOf("://")
+        if (schemeEnd <= 0 || !rawUri.regionMatches(0, "content", 0, schemeEnd, true)) {
+            return null
+        }
+        val authorityStart = schemeEnd + 3
+        val authorityEnd = rawUri.indexOf('/', authorityStart)
+            .takeIf { it >= 0 }
+            ?: rawUri.length
+        if (authorityEnd <= authorityStart) {
+            return null
+        }
+        val treeMarkerStart = rawUri.indexOf("/tree/", authorityStart, ignoreCase = true)
+        if (treeMarkerStart >= 0) {
+            val documentMarkerStart = rawUri.indexOf(
+                "/document/",
+                treeMarkerStart,
+                ignoreCase = true
+            )
+            val treeEnd = if (documentMarkerStart >= 0) {
+                documentMarkerStart
+            } else {
+                rawUri.length
+            }
+            val treeReference = rawUri.substring(0, treeEnd).trimEnd('/')
+            val treeDocumentId = treeReference
+                .substring(treeMarkerStart + "/tree/".length)
+                .takeIf(String::isNotBlank)
+                ?: return null
+            val authority = rawUri.substring(authorityStart, authorityEnd)
+                .takeIf(String::isNotBlank)
+                ?: return null
+            return "content://$authority/tree/$treeDocumentId"
+        }
+
+        val sourceUri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return null
+        val treeSegmentIndex = sourceUri.pathSegments.indexOfFirst { segment ->
+            segment.equals("tree", ignoreCase = true)
+        }
+        val treeDocumentId = sourceUri.pathSegments
+            .getOrNull(treeSegmentIndex.takeIf { it >= 0 }?.plus(1) ?: -1)
+            ?.takeIf(String::isNotBlank)
+            ?: runCatching { DocumentsContract.getTreeDocumentId(sourceUri) }
+                .getOrNull()
+                ?.takeIf(String::isNotBlank)
+            ?: return null
+        return "${sourceUri.scheme}://${sourceUri.authority}/tree/$treeDocumentId"
     }
 
     internal fun resolveLyricsBundleFromReferences(
@@ -2780,23 +3065,51 @@ internal object ManagedDownloadStorage {
         return normalizedPath == normalizedRoot || normalizedPath.startsWith("$normalizedRoot/")
     }
 
-    private fun scheduleSnapshotWarmup(context: Context) {
+    private fun scheduleSnapshotWarmup(
+        context: Context,
+        refreshSidecars: Boolean = false
+    ) {
         val appContext = context.applicationContext
         val cacheKey = snapshotCacheStore.currentKey(appContext)
         synchronized(snapshotWarmupLock) {
             if (snapshotWarmupKey == cacheKey && snapshotWarmupJob?.isActive == true) {
+                snapshotWarmupRefreshSidecars =
+                    snapshotWarmupRefreshSidecars || refreshSidecars
                 return
             }
             snapshotWarmupKey = cacheKey
+            snapshotWarmupRefreshSidecars = refreshSidecars
             snapshotWarmupJob = snapshotScope.launch {
+                val cachedBeforeBuild = snapshotCacheStore.cachedSnapshot(
+                    context = appContext,
+                    restorePersisted = false
+                )
                 runCatching {
-                    buildDownloadLibrarySnapshotBlocking(appContext)
+                    val snapshot = if (cachedBeforeBuild == null) {
+                        buildDownloadLibrarySnapshotBlocking(appContext)
+                    } else {
+                        cachedBeforeBuild
+                    }
+                    val shouldRefreshSidecars = synchronized(snapshotWarmupLock) {
+                        snapshotWarmupRefreshSidecars
+                    }
+                    if (shouldRefreshSidecars) {
+                        refreshDownloadSidecarSnapshotBlocking(
+                            context = appContext,
+                            snapshot = snapshot,
+                            respectThrottle = true,
+                            refreshCovers = false
+                        )
+                    } else if (cachedBeforeBuild == null) {
+                        notifyLyricsRefresh()
+                    }
                 }.onFailure { error ->
                     NPLogger.w(TAG, "后台预热下载歌词索引失败: ${error.message}")
                 }
                 synchronized(snapshotWarmupLock) {
                     if (snapshotWarmupKey == cacheKey) {
                         snapshotWarmupJob = null
+                        snapshotWarmupRefreshSidecars = false
                     }
                 }
             }
@@ -3058,6 +3371,11 @@ internal object ManagedDownloadStorage {
 
     private fun invalidateSnapshotCache(context: Context? = null) {
         snapshotCacheStore.invalidate(context)
+        notifyLyricsRefresh()
+    }
+
+    private fun notifyLyricsRefresh() {
+        _lyricsRefreshVersion.value = _lyricsRefreshVersion.value + 1L
     }
 
     private fun cleanupPendingAudioWrites(context: Context): StartupRecoveryResult {
@@ -3699,6 +4017,11 @@ internal object ManagedDownloadStorage {
         bucket: SnapshotEntryBucket
     ): Boolean {
         return snapshotCacheStore.updateAfterStoredEntryWrite(context, storedEntry, bucket)
+            .also {
+                if (bucket == SnapshotEntryBucket.LYRIC) {
+                    notifyLyricsRefresh()
+                }
+            }
     }
 
     private fun updateSnapshotCacheAfterDelete(
@@ -3706,6 +4029,11 @@ internal object ManagedDownloadStorage {
         deletedReferences: Set<String>
     ): Boolean {
         return snapshotCacheStore.updateAfterDelete(context, deletedReferences)
+            .also { updated ->
+                if (updated && deletedReferences.isNotEmpty()) {
+                    notifyLyricsRefresh()
+                }
+            }
     }
 
     private fun File.toStoredEntry(): StoredEntry {

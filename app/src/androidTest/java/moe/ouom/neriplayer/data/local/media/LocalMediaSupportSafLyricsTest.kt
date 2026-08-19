@@ -87,6 +87,44 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
+    fun fastManagedLyricsReadRecoversSourceTreeBeforeSettingsRestore() {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Issue 339",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = "opaque%2Faudio-issue339"
+        )
+        try {
+            // 模拟首屏 catalog 已有歌曲, 但下载目录设置尚未恢复
+            ManagedDownloadStorage.primeSettings(null, null)
+            val lyrics = ManagedDownloadStorage.readLyricsBundleFast(targetContext, song)
+
+            assertEquals("[00:00.10]original from Lyrics", lyrics.lyric)
+            assertEquals("[00:00.10]translated from Lyrics", lyrics.translatedLyric)
+            assertEquals("[00:00.10]romanized from Lyrics", lyrics.romanizedLyric)
+            assertTrue(lyrics.hasOriginalSidecar)
+            assertTrue(lyrics.hasTranslatedSidecar)
+            assertTrue(lyrics.hasRomanizedSidecar)
+        } finally {
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
+    }
+
+    @Test
     fun managedLyricsReadRefreshesAnEmptySafLyricsCache() {
         val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
         val treeUri = DocumentsContract.buildTreeDocumentUri(
