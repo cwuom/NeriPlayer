@@ -23,6 +23,63 @@ import kotlin.math.pow
 class NowPlayingScreenTest {
 
     @Test
+    fun `edit song cover uses resolved local fallback when metadata has no cover`() {
+        val song = SongItem(
+            id = 41L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/41"
+        )
+
+        assertEquals(
+            "content://covers/41",
+            resolveEditSongInitialCoverUrl(song, "content://covers/41")
+        )
+    }
+
+    @Test
+    fun `edit song cover uses resolved fallback when stored cover is blank`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = "   ",
+            originalCoverUrl = "",
+            mediaUri = "content://media/external/audio/media/42"
+        )
+
+        assertEquals(
+            "content://covers/42",
+            resolveEditSongInitialCoverUrl(song, "content://covers/42")
+        )
+    }
+
+    @Test
+    fun `resolved edit song cover never replaces manual input`() {
+        assertFalse(
+            shouldApplyResolvedEditSongCover(
+                userHasEdited = true,
+                currentCoverUrl = "https://example.com/manual.jpg",
+                resolvedDisplayCoverUrl = "content://covers/41"
+            )
+        )
+        assertTrue(
+            shouldApplyResolvedEditSongCover(
+                userHasEdited = false,
+                currentCoverUrl = "",
+                resolvedDisplayCoverUrl = "content://covers/41"
+            )
+        )
+    }
+
+    @Test
     fun `immediate lyric state keeps current song metadata on the first composition`() {
         val song = SongItem(
             id = 41L,
@@ -930,6 +987,47 @@ class NowPlayingScreenTest {
             shouldAutoLocateNowPlayingQueue(
                 selectionMode = false,
                 queueOrderDirty = true
+            )
+        )
+    }
+
+    @Test
+    fun `queue reordering requires selection and listener control permission`() {
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            isNowPlayingQueueReorderEnabled(
+                selectionMode = false,
+                allowQueueReorder = true
+            )
+        )
+
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = false
+            )
+        )
+        assertTrue(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = true,
+                allowQueueReorder = true
+            )
+        )
+        assertFalse(
+            shouldShowNowPlayingQueueDragHandle(
+                selectionMode = false,
+                allowQueueReorder = true
             )
         )
     }

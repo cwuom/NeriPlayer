@@ -30,6 +30,7 @@ data class ListenTogetherSocketEnvelope(
     val stateName: String? = null,
     val repeatMode: Int? = null,
     val shuffleEnabled: Boolean? = null,
+    val queueMutation: ListenTogetherQueueMutation? = null,
     val clientTimeMs: Long? = null,
     val clientInstanceId: String? = null,
     val clientSequence: Long? = null,

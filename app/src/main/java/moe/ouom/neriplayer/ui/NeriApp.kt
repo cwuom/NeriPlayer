@@ -192,6 +192,7 @@ import moe.ouom.neriplayer.navigation.launcherShortcutMainTabRoute
 import moe.ouom.neriplayer.ui.component.navigation.NeriBottomBar
 import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlpha
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
+import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.common.ThemeRevealOverlay
 import moe.ouom.neriplayer.ui.component.common.blockUnderlyingTouches
@@ -3370,6 +3371,8 @@ private fun NeriAppContent(
 
                 val isMiniPlayerVisible = currentSong != null && !showNowPlaying
                 val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+                val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow
+                    .collectAsStateWithLifecycle()
                 val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
                 val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow
                     .collectAsStateWithLifecycle()
@@ -3379,7 +3382,7 @@ private fun NeriAppContent(
                     usbPlaybackPreparing = usbPlaybackPreparing
                 )
                 val reservedMiniPlayerHeightDp = if (isMiniPlayerVisible) {
-                    moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults.Height
+                    NeriMiniPlayerDefaults.Height
                 } else {
                     0.dp
                 }
@@ -4269,7 +4272,8 @@ private fun NeriAppContent(
                                     onExpand = { showNowPlaying = true },
                                     enableBlur = effectiveAdvancedBlurEnabled,
                                     offlineMode = offlineMode,
-                                    isPlaybackWaiting = isPlaybackWaiting
+                                    isPlaybackWaiting = isPlaybackWaiting,
+                                    isAudioRouteMuted = isAudioRouteMuted
                                     )
                                 }
                             }

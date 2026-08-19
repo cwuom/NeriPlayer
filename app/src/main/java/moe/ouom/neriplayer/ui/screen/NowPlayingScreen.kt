@@ -331,6 +331,7 @@ import moe.ouom.neriplayer.util.format.formatDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
+import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
 import org.burnoutcrew.reorderable.SpringDragCancelledAnimation
@@ -699,6 +700,19 @@ internal fun shouldAutoLocateNowPlayingQueue(
     selectionMode: Boolean,
     queueOrderDirty: Boolean
 ): Boolean = !selectionMode && !queueOrderDirty
+
+internal fun isNowPlayingQueueReorderEnabled(
+    selectionMode: Boolean,
+    allowQueueReorder: Boolean
+): Boolean = selectionMode && allowQueueReorder
+
+internal fun shouldShowNowPlayingQueueDragHandle(
+    selectionMode: Boolean,
+    allowQueueReorder: Boolean
+): Boolean = isNowPlayingQueueReorderEnabled(
+    selectionMode = selectionMode,
+    allowQueueReorder = allowQueueReorder
+)
 
 internal fun resolveNowPlayingQueueIndexInput(
     input: String,
@@ -1150,6 +1164,7 @@ internal fun NowPlayingQueueSheet(
     displayedQueueItems: List<PlayerQueueDisplayItem>,
     currentIndexInDisplay: Int,
     offlineMode: Boolean,
+    allowQueueReorder: Boolean,
     onDismissRequest: () -> Unit,
     onOpenCurrentPlaybackSource: (() -> Unit)? = null
 ) {
@@ -1199,6 +1214,13 @@ internal fun NowPlayingQueueSheet(
         ?: currentIndexInDisplay
     val latestCurrentEntryKey by rememberUpdatedState(currentEntryKey)
     val latestCurrentIndexInQueueEntries by rememberUpdatedState(currentIndexInQueueEntries)
+    val latestQueueReorderEnabled by rememberUpdatedState(
+        isNowPlayingQueueReorderEnabled(
+            selectionMode = selectionMode,
+            allowQueueReorder = allowQueueReorder
+        )
+    )
+    val latestSourceEntries by rememberUpdatedState(sourceEntries)
     val queueItemKeys by remember {
         derivedStateOf {
             queueEntries.mapTo(LinkedHashSet()) { it.key }
@@ -1215,7 +1237,9 @@ internal fun NowPlayingQueueSheet(
     val reorderState = rememberReorderableLazyListState(
         listState = queueListState,
         onMove = { from: ItemPosition, to: ItemPosition ->
-            if (!selectionMode) return@rememberReorderableLazyListState
+            if (!latestQueueReorderEnabled) {
+                return@rememberReorderableLazyListState
+            }
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
             val toKey = to.key as? String ?: return@rememberReorderableLazyListState
             if (moveNowPlayingQueueEntry(queueEntries, fromKey, toKey)) {
@@ -1223,7 +1247,16 @@ internal fun NowPlayingQueueSheet(
             }
         },
         onDragEnd = { _, _ ->
-            if (!queueOrderDirty) return@rememberReorderableLazyListState
+            if (!latestQueueReorderEnabled) {
+                if (queueOrderDirty) {
+                    queueOrderDirty = false
+                    syncNowPlayingQueueEntries(queueEntries, latestSourceEntries)
+                }
+                return@rememberReorderableLazyListState
+            }
+            if (!queueOrderDirty) {
+                return@rememberReorderableLazyListState
+            }
             val currentKey = latestCurrentEntryKey
             val currentIndexByKey = currentKey
                 ?.let { key -> queueEntries.indexOfFirst { it.key == key } }
@@ -1303,6 +1336,13 @@ internal fun NowPlayingQueueSheet(
 
     LaunchedEffect(sourceEntries) {
         if (!queueOrderDirty) {
+            syncNowPlayingQueueEntries(queueEntries, sourceEntries)
+        }
+    }
+
+    LaunchedEffect(allowQueueReorder) {
+        if (!allowQueueReorder && queueOrderDirty) {
+            queueOrderDirty = false
             syncNowPlayingQueueEntries(queueEntries, sourceEntries)
         }
     }
@@ -1458,7 +1498,13 @@ internal fun NowPlayingQueueSheet(
                     state = reorderState.listState,
                     modifier = Modifier
                         .weight(1f)
-                        .reorderable(reorderState)
+                        .then(
+                            if (allowQueueReorder) {
+                                Modifier.reorderable(reorderState)
+                            } else {
+                                Modifier
+                            }
+                        )
                         .bottomSheetScrollGuard(),
                     contentPadding = PaddingValues(
                         start = 16.dp,
@@ -1519,25 +1565,34 @@ internal fun NowPlayingQueueSheet(
                                 onRemoveFromQueue = {
                                     PlayerManager.removeQueueItem(index)
                                 },
-                                dragHandle = {
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(start = 8.dp)
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(
-                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+                                dragHandle = if (
+                                    shouldShowNowPlayingQueueDragHandle(
+                                        selectionMode = selectionMode,
+                                        allowQueueReorder = allowQueueReorder
+                                    )
+                                ) {
+                                    {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(start = 8.dp)
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(14.dp))
+                                                .background(
+                                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.48f)
+                                                )
+                                                .detectReorder(reorderState)
+                                                .padding(10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.DragHandle,
+                                                contentDescription = stringResource(R.string.common_drag_handle),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            .detectReorder(reorderState)
-                                            .padding(10.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.DragHandle,
-                                            contentDescription = stringResource(R.string.common_drag_handle),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        }
                                     }
+                                } else {
+                                    null
                                 }
                             )
                         }
@@ -1963,6 +2018,7 @@ fun NowPlayingScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
     val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
     val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
@@ -3125,8 +3181,10 @@ fun NowPlayingScreen(
                                 PlaybackControlIndicator(
                                     isPlaying = isPlaybackControlPlaying,
                                     isPlaybackWaiting = isPlaybackWaiting,
+                                    isAudioRouteMuted = isAudioRouteMuted,
                                     playContentDescription = stringResource(R.string.player_play),
                                     pauseContentDescription = stringResource(R.string.player_pause),
+                                    restoreVolumeContentDescription = stringResource(R.string.player_restore_volume),
                                     waitingContentDescription = stringResource(R.string.player_waiting),
                                     modifier = Modifier.size(primaryIconSize),
                                     progressIndicatorSize = primaryIconSize
@@ -3961,6 +4019,7 @@ fun NowPlayingScreen(
                     displayedQueueItems = displayedQueueItems,
                     currentIndexInDisplay = currentIndexInDisplay,
                     offlineMode = offlineMode,
+                    allowQueueReorder = playbackProgressSeekEnabled,
                     onDismissRequest = { showQueueSheet = false },
                     onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
                 )
@@ -4881,6 +4940,29 @@ private fun SheetLyricFontScaleSlider(
     }
 }
 
+internal fun resolveEditSongInitialCoverUrl(
+    song: SongItem,
+    resolvedDisplayCoverUrl: String?
+): String {
+    return song.displayCoverUrl()
+        ?.takeIf { it.isNotBlank() }
+        ?: song.originalCoverUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: resolvedDisplayCoverUrl?.takeIf { it.isNotBlank() }
+        ?: ""
+}
+
+internal fun shouldApplyResolvedEditSongCover(
+    userHasEdited: Boolean,
+    currentCoverUrl: String,
+    resolvedDisplayCoverUrl: String?
+): Boolean {
+    return !userHasEdited &&
+        currentCoverUrl.isBlank() &&
+        !resolvedDisplayCoverUrl.isNullOrBlank()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -4912,10 +4994,12 @@ fun EditSongInfoSheet(
     } else {
         originalSong
     }
+    val canReplaceCoverFromLocalFile = shouldAllowLocalCoverReplacement(actualSong, context)
+    val resolvedDisplayCoverUrl = rememberSongDisplayCoverUrl(actualSong)
 
     var coverUrl by remember {
         mutableStateOf(
-            actualSong.customCoverUrl ?: actualSong.coverUrl ?: actualSong.originalCoverUrl ?: ""
+            resolveEditSongInitialCoverUrl(actualSong, resolvedDisplayCoverUrl)
         )
     }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
@@ -4939,6 +5023,8 @@ fun EditSongInfoSheet(
     var showFillLyricsMetadataWriteBackConfirm by remember { mutableStateOf(false) }
     var lyricsEditorRequestId by remember { mutableIntStateOf(0) }
     var originalInfoRequestId by remember { mutableIntStateOf(0) }
+    var showLocalCoverSyncConfirm by remember { mutableStateOf(false) }
+    var pendingCoverReplacementSong by remember { mutableStateOf<SongItem?>(null) }
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
@@ -4947,33 +5033,40 @@ fun EditSongInfoSheet(
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { sourceUri ->
-        if (sourceUri != null) {
-            originalInfoRequestId += 1
-            isCoverImporting = true
-            coroutineScope.launch {
-                try {
-                    val importedCover = CustomSongCoverStorage.importFromUri(
-                        context = context,
-                        song = actualSong,
-                        sourceUri = sourceUri
-                    )
-                    if (importedCover == null) {
-                        snackbarHostState.showNeriSnackbar(
-                            composeResources.getString(R.string.music_cover_import_failed)
-                        )
-                    } else {
-                        coverUrl = importedCover.toString()
-                        userHasEdited = true
-                        shouldRestoreCoverBase = false
-                    }
-                } catch (error: Exception) {
-                    NPLogger.e("NowPlayingScreen", "导入本地封面失败", error)
+        val targetSong = pendingCoverReplacementSong
+        pendingCoverReplacementSong = null
+        sourceUri ?: return@rememberLauncherForActivityResult
+        val verifiedTargetSong = resolvePendingLocalCoverReplacementTarget(
+            pendingSong = targetSong,
+            currentSong = currentSong,
+            context = context
+        ) ?: return@rememberLauncherForActivityResult
+
+        originalInfoRequestId += 1
+        isCoverImporting = true
+        coroutineScope.launch {
+            try {
+                val importedCover = CustomSongCoverStorage.importFromUri(
+                    context = context,
+                    song = verifiedTargetSong,
+                    sourceUri = sourceUri
+                )
+                if (importedCover == null) {
                     snackbarHostState.showNeriSnackbar(
                         composeResources.getString(R.string.music_cover_import_failed)
                     )
-                } finally {
-                    isCoverImporting = false
+                } else {
+                    coverUrl = importedCover.toString()
+                    userHasEdited = true
+                    shouldRestoreCoverBase = false
                 }
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingScreen", "导入本地封面失败", error)
+                snackbarHostState.showNeriSnackbar(
+                    composeResources.getString(R.string.music_cover_import_failed)
+                )
+            } finally {
+                isCoverImporting = false
             }
         }
     }
@@ -4985,10 +5078,7 @@ fun EditSongInfoSheet(
     // 当歌曲信息更新时, 同步更新UI (仅在用户未手动编辑时)
     LaunchedEffect(actualSong.stableKey()) {
         if (!userHasEdited) {
-            coverUrl = actualSong.customCoverUrl
-                ?: actualSong.coverUrl
-                ?: actualSong.originalCoverUrl
-                ?: ""
+            coverUrl = resolveEditSongInitialCoverUrl(actualSong, resolvedDisplayCoverUrl)
             songName = actualSong.customName ?: actualSong.name
             artistName = actualSong.customArtist ?: actualSong.artist
             shouldRestoreCoverBase = false
@@ -4998,28 +5088,14 @@ fun EditSongInfoSheet(
         }
     }
 
-    LaunchedEffect(actualSong.stableKey()) {
-        if (
-            actualSong.isLocalSong() &&
-            !userHasEdited &&
-            coverUrl.isBlank()
+    LaunchedEffect(actualSong.stableKey(), resolvedDisplayCoverUrl) {
+        if (shouldApplyResolvedEditSongCover(
+                userHasEdited = userHasEdited,
+                currentCoverUrl = coverUrl,
+                resolvedDisplayCoverUrl = resolvedDisplayCoverUrl
+            )
         ) {
-            val requestSongKey = actualSong.stableKey()
-            val resolvedCover = withContext(Dispatchers.IO) {
-                runCatching {
-                    LocalMediaSupport.resolveNearbyCoverUri(context, actualSong)
-                        ?: LocalMediaSupport.peekMediaStoreAlbumArtUri(context, actualSong)
-                        ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, actualSong)
-                        ?: LocalMediaSupport.resolveCoverUri(context, actualSong)
-                }.getOrNull()
-            }
-            if (
-                resolvedCover != null &&
-                !userHasEdited &&
-                actualSong.stableKey() == requestSongKey
-            ) {
-                coverUrl = resolvedCover
-            }
+            coverUrl = resolvedDisplayCoverUrl.orEmpty()
         }
     }
 
@@ -5289,9 +5365,9 @@ fun EditSongInfoSheet(
                         .size(120.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable {
+                        .clickable(enabled = canReplaceCoverFromLocalFile) {
                             clearEditSongInfoFocus()
-                            coverPickerLauncher.launch("image/*")
+                            showLocalCoverSyncConfirm = true
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -5304,14 +5380,22 @@ fun EditSongInfoSheet(
                                 allowHardware = false,
                                 offlineMode = offlineMode
                             ),
-                            contentDescription = stringResource(R.string.music_edit_cover),
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            },
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
                     } else {
                         Icon(
                             Icons.Outlined.Edit,
-                            contentDescription = stringResource(R.string.music_edit_cover)
+                            contentDescription = if (canReplaceCoverFromLocalFile) {
+                                stringResource(R.string.music_edit_cover)
+                            } else {
+                                null
+                            }
                         )
                     }
                 }
@@ -5721,6 +5805,21 @@ fun EditSongInfoSheet(
     }
     } // 关闭 AnimatedVisibility
 
+    if (showLocalCoverSyncConfirm) {
+        LocalSongSyncConfirmDialog(
+            actionLabel = composeResources.getString(R.string.music_edit_cover),
+            onConfirm = {
+                showLocalCoverSyncConfirm = false
+                if (shouldAllowLocalCoverReplacement(actualSong, context)) {
+                    pendingCoverReplacementSong = actualSong
+                    clearEditSongInfoFocus()
+                    coverPickerLauncher.launch("image/*")
+                }
+            },
+            onDismiss = { showLocalCoverSyncConfirm = false }
+        )
+    }
+
     if (showLocalMetadataWriteBackConfirm) {
         AlertDialog(
             onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
@@ -6070,6 +6169,25 @@ internal fun shouldConfirmLocalMetadataWriteBack(
         currentCoverUrl?.trim() != resolvedCoverUrl
 }
 
+internal fun shouldAllowLocalCoverReplacement(
+    song: SongItem,
+    context: Context? = null
+): Boolean {
+    return !song.isSyncableRemoteSong(context)
+}
+
+internal fun resolvePendingLocalCoverReplacementTarget(
+    pendingSong: SongItem?,
+    currentSong: SongItem?,
+    context: Context? = null
+): SongItem? {
+    if (pendingSong == null || currentSong == null) return null
+    if (!pendingSong.sameIdentityAs(currentSong)) return null
+    if (!shouldAllowLocalCoverReplacement(pendingSong, context)) return null
+    if (!shouldAllowLocalCoverReplacement(currentSong, context)) return null
+    return pendingSong
+}
+
 @Composable
 private fun NowPlayingProgressSection(
     songKey: String?,
@@ -6084,8 +6202,8 @@ private fun NowPlayingProgressSection(
     activeContentColor: Color,
     useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
-    progressRowModifier: Modifier = Modifier,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    progressRowModifier: Modifier = Modifier
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current

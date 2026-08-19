@@ -124,6 +124,7 @@
     <!-- Player Controls -->
     <string name="player_play">播放</string>
     <string name="player_pause">暂停</string>
+    <string name="player_restore_volume">恢复音量</string>
     <string name="player_waiting">正在等待播放</string>
     <string name="player_previous">上一首</string>
     <string name="player_next">下一首</string>
@@ -1085,8 +1086,8 @@
     <string name="settings_personalization_playback_info_section_desc">控制标题、来源、封面歌词和进度条信息</string>
     <string name="settings_personalization_playback_controls_section">播放页控制</string>
     <string name="settings_personalization_playback_controls_section_desc">调整屏幕常亮、Dock 和 TAB 样式</string>
-    <string name="settings_personalization_lyrics_scale_section">歌词与字体</string>
-    <string name="settings_personalization_lyrics_scale_section_desc">调整歌词翻译和字号</string>
+    <string name="settings_lyrics_appearance_section">歌词与字体</string>
+    <string name="settings_lyrics_appearance_section_desc">调整歌词翻译和字号</string>
     <string name="settings_personalization_background_section">背景图</string>
     <string name="settings_personalization_background_section_desc">选择自定义背景和显示强度</string>
     <string name="settings_display">显示设置</string>
@@ -1551,7 +1552,7 @@
     <string name="settings_dynamic_island_lyrics_dependency_title">需要开启蓝牙歌词</string>
     <string name="settings_dynamic_island_lyrics_dependency_message">开启灵动岛歌词需要先打开蓝牙外接设备原文歌词，是否自动开启？</string>
     <string name="settings_lyrics_offset">歌词设置</string>
-    <string name="settings_lyrics_offset_expand">外接歌词、词幕适配与默认偏移</string>
+    <string name="settings_lyrics_offset_expand">歌词外观、外接歌词、词幕适配与默认偏移</string>
     <string name="settings_lyrics_offset_cloud_music">网易云默认歌词偏移</string>
     <string name="settings_lyrics_offset_cloud_music_desc">设置加载网易云歌词时的基础偏移</string>
     <string name="settings_lyrics_offset_qq_music">QQ 音乐默认歌词偏移</string>
@@ -1896,6 +1897,7 @@
     <string name="listen_together_last_error">最近错误</string>
     <string name="listen_together_notice">提示</string>
     <string name="listen_together_notice_controller_reconnected">房主已重连，同步已恢复</string>
+    <string name="listen_together_notice_controller_left">房主已离开，房间已结束</string>
     <string name="listen_together_notice_room_closed">房主长时间未返回，房间已自动关闭</string>
     <string name="listen_together_same_room_join_ignored">你已经在房间 %1$s 中，无需重复加入</string>
     <string name="listen_together_create_and_connect">创建</string>
@@ -1904,8 +1906,6 @@
     <string name="listen_together_leave_room">离开</string>
     <string name="listen_together_copy_invite">复制邀请信息</string>
     <string name="listen_together_invite_copied">邀请信息已复制</string>
-    <string name="listen_together_copy_join_secret">复制邀请密钥</string>
-    <string name="listen_together_join_secret_copied">邀请密钥已复制</string>
     <string name="listen_together_clipboard_invite_missing">剪贴板中没有有效的一起听邀请信息</string>
     <string name="listen_together_invite_share_text">%1$s 邀请你在 NeriPlayer 中加入房间 %2$s。复制后打开 App 加入。</string>
     <string name="listen_together_creating_room">正在创建房间</string>
@@ -1980,6 +1980,11 @@
     <string name="listen_together_status_active">当前处于一起听</string>
     <string name="listen_together_action_unavailable">当前页面状态不可执行该操作，请稍后重试</string>
     <string name="settings_listen_together_expand">配置服务器地址和唯一身份标识符</string>
+    <string name="settings_listen_together_join_room_desc">粘贴或输入邀请信息后加入房间</string>
+    <string name="settings_listen_together_join_room_disabled">当前在房间中，需先离开当前房间</string>
+    <string name="settings_listen_together_join_invite_input_label">邀请信息</string>
+    <string name="settings_listen_together_join_invite_input_placeholder">粘贴邀请信息或邀请链接</string>
+    <string name="settings_listen_together_join_invite_invalid">请输入有效的一起听邀请信息</string>
     <string name="settings_listen_together_server_title">一起听服务器</string>
     <string name="settings_listen_together_default_nickname_title">默认昵称</string>
     <string name="settings_listen_together_default_nickname_input_label">昵称</string>

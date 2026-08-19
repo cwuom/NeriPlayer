@@ -154,6 +154,7 @@ import moe.ouom.neriplayer.core.player.playback.playBiliVideoPartsImpl
 import moe.ouom.neriplayer.core.player.playback.playImpl
 import moe.ouom.neriplayer.core.player.playback.playPlaylistImpl
 import moe.ouom.neriplayer.core.player.playback.previousImpl
+import moe.ouom.neriplayer.core.player.playback.restoreAudioRouteMuteImpl
 import moe.ouom.neriplayer.core.player.playback.seekToImpl
 import moe.ouom.neriplayer.core.player.playback.setShuffleImpl
 import moe.ouom.neriplayer.core.player.playback.stopPlaybackPreservingQueueImpl
@@ -199,6 +200,7 @@ import moe.ouom.neriplayer.core.player.timer.SleepTimerMode
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
+import moe.ouom.neriplayer.core.player.url.stripListenTogetherStreamQualityMetadata
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathState
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
@@ -223,6 +225,8 @@ import moe.ouom.neriplayer.listentogether.mapping.resolvedAudioId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedPlaylistContextId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedSubAudioId
+import moe.ouom.neriplayer.listentogether.playback.authoritativeStreamUrlForCurrentTrack
+import moe.ouom.neriplayer.listentogether.playback.currentStableKey
 import moe.ouom.neriplayer.listentogether.playback.shouldHoldListenTogetherPlaybackForSafetyPause
 import moe.ouom.neriplayer.listentogether.playback.shouldMuteListenTogetherListenerForAudioRouteLoss
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
@@ -327,7 +331,12 @@ object PlayerManager {
     @Volatile
     internal var playbackStartupWatchdogToken = 0L
     internal var bluetoothDisconnectPauseJob: Job? = null
+    @Volatile
     internal var audioRouteMuteRestoreVolume: Float? = null
+    @Volatile
+    internal var audioRouteMuteRequiresExplicitRestore = false
+    internal val _audioRouteMuteSuppressedFlow = MutableStateFlow(false)
+    val audioRouteMuteSuppressedFlow: StateFlow<Boolean> = _audioRouteMuteSuppressedFlow
     @Volatile
     internal var listenTogetherSafetyPausePendingResume = false
     @Volatile
@@ -1237,11 +1246,9 @@ object PlayerManager {
     }
 
     internal fun shouldMuteListenTogetherListenerForAudioRouteLoss(): Boolean {
-        val room = activeListenTogetherRoomState()
         return shouldMuteListenTogetherListenerForAudioRouteLoss(
             listenTogetherActive = isListenTogetherActive(),
-            isCurrentUserController = isCurrentUserControllerInListenTogether(),
-            allowMemberControl = room?.settings?.allowMemberControl
+            isCurrentUserController = isCurrentUserControllerInListenTogether()
         )
     }
 
@@ -1285,12 +1292,12 @@ object PlayerManager {
 
     internal fun currentListenTogetherTargetStableKey(): String? {
         val room = activeListenTogetherRoomState() ?: return null
-        return room.track?.stableKey ?: room.queue.getOrNull(room.currentIndex)?.stableKey
+        return room.currentStableKey()
     }
 
     internal fun currentListenTogetherTargetStreamUrl(): String? {
         val room = activeListenTogetherRoomState() ?: return null
-        return room.track?.streamUrl ?: room.queue.getOrNull(room.currentIndex)?.streamUrl
+        return room.authoritativeStreamUrlForCurrentTrack()
     }
 
     internal fun SongItem.listenTogetherStableKeyOrNull(): String? {
@@ -1305,14 +1312,55 @@ object PlayerManager {
     }
 
     internal fun shouldWaitForListenTogetherAuthoritativeStream(song: SongItem): Boolean {
+        if (!isListenTogetherAuthoritativeStreamTarget(song)) return false
+        if (isListenTogetherAuthoritativeStreamConfirmedUnavailable(song)) return false
+        return !isDirectStreamUrl(currentListenTogetherTargetStreamUrl())
+    }
+
+    internal fun shouldAwaitListenTogetherSharedStreamFallback(
+        song: SongItem,
+        localResolutionRequiresSharedStream: Boolean
+    ): Boolean {
+        return moe.ouom.neriplayer.listentogether.playback
+            .shouldAwaitListenTogetherSharedStreamFallback(
+                listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled(),
+                localResolutionRequiresSharedStream = localResolutionRequiresSharedStream,
+                controllerLinkConfirmedUnavailable =
+                    isListenTogetherAuthoritativeStreamConfirmedUnavailable(song),
+                hasAuthoritativeStream = isDirectStreamUrl(currentListenTogetherTargetStreamUrl())
+            )
+    }
+
+    internal fun isListenTogetherAudioLinkFallbackEnabled(): Boolean {
         if (!isListenTogetherActive()) return false
         if (isCurrentUserControllerInListenTogether()) return false
         val room = activeListenTogetherRoomState() ?: return false
-        if (!room.settings.shareAudioLinks || room.roomStatus != "active") return false
-        if (isDirectStreamUrl(currentListenTogetherTargetStreamUrl())) return false
+        return room.settings.shareAudioLinks && room.roomStatus == "active"
+    }
+
+    internal fun isListenTogetherLocalResolutionPendingFor(song: SongItem): Boolean {
+        val targetStableKey = song.listenTogetherStableKeyOrNull() ?: return false
+        return isPendingMediaLoadActive() &&
+            playJob?.isActive == true &&
+            _currentSongFlow.value?.listenTogetherStableKeyOrNull() == targetStableKey
+    }
+
+    internal fun isListenTogetherAuthoritativeStreamTarget(song: SongItem): Boolean {
+        if (!isListenTogetherAudioLinkFallbackEnabled()) return false
+        activeListenTogetherRoomState() ?: return false
         val targetStableKey = currentListenTogetherTargetStableKey() ?: return false
         val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
         return songStableKey == targetStableKey
+    }
+
+    internal fun isListenTogetherAuthoritativeStreamConfirmedUnavailable(song: SongItem): Boolean {
+        if (!isListenTogetherAuthoritativeStreamTarget(song)) return false
+        val room = activeListenTogetherRoomState() ?: return false
+        val songStableKey = song.listenTogetherStableKeyOrNull() ?: return false
+        return AppContainer.listenTogetherSessionManager.isControllerAudioLinkUnavailable(
+            roomId = room.roomId,
+            stableKey = songStableKey
+        )
     }
 
     internal fun stopCurrentPlaybackForListenTogetherAwaitingStream() {
@@ -1332,6 +1380,8 @@ object PlayerManager {
         _isPlayingFlow.value = false
         _currentMediaUrl.value = null
         currentMediaUrlResolvedAtMs = 0L
+        pendingMediaLoadActive = false
+        pendingMediaLoadPositionMs = 0L
         clearPendingSeekPosition()
         _playbackPositionMs.value = 0L
     }
@@ -2357,14 +2407,15 @@ object PlayerManager {
         mimeType: String? = null,
         allowCustomCacheKey: Boolean = true
     ): MediaItem {
+        val mediaUrl = stripListenTogetherStreamQualityMetadata(url)
         val isLocalFile =
-            url.startsWith("file://") ||
-                url.startsWith("content://") ||
-                url.startsWith("android.resource://") ||
-                url.startsWith("/")
+            mediaUrl.startsWith("file://") ||
+                mediaUrl.startsWith("content://") ||
+                mediaUrl.startsWith("android.resource://") ||
+                mediaUrl.startsWith("/")
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
-            .setUri(url.toUri())
+            .setUri(mediaUrl.toUri())
             .apply {
                 if (!mimeType.isNullOrBlank()) {
                     setMimeType(mimeType)
@@ -2508,6 +2559,8 @@ object PlayerManager {
     ) = this.pauseImpl(forcePersist, commandSource)
 
     fun togglePlayPause() = this.togglePlayPauseImpl()
+
+    internal fun restoreAudioRouteMute() = this.restoreAudioRouteMuteImpl()
 
     fun togglePlayPauseWithoutFade() = this.togglePlayPauseImpl(allowFade = false)
 

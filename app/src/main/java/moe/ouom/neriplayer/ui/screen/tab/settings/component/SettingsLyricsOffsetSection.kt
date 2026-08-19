@@ -76,6 +76,7 @@ internal fun SettingsLyricsSection(
     scope: CoroutineScope,
     floatingLyricsPreferences: FloatingLyricsPreferences,
     onFloatingLyricsPreferencesChange: (FloatingLyricsPreferences) -> Unit,
+    lyricsAppearanceContent: @Composable () -> Unit,
     cloudMusicLyricDefaultOffsetMs: Long,
     onCloudMusicLyricDefaultOffsetMsChange: (Long) -> Unit,
     qqMusicLyricDefaultOffsetMs: Long,
@@ -179,6 +180,13 @@ internal fun SettingsLyricsSection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+            }
+            if (cardIndex == null) LyricsDetailGap(showHeader)
+            if (shouldShowCard(3)) LyricsDetailCard(
+                showCard = !showHeader,
+                highlightPulse = highlightPulse,
+            ) {
+                lyricsAppearanceContent()
             }
         }
     }

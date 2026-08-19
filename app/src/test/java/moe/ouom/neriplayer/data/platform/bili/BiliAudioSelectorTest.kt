@@ -74,6 +74,26 @@ class BiliAudioSelectorTest {
     }
 
     @Test
+    fun selectStreamByPreference_normalizesQualityTagsBeforeDowngrade() {
+        val hiresStream = BiliAudioStreamInfo(
+            id = 30251,
+            mimeType = "audio/flac",
+            bitrateKbps = 1411,
+            qualityTag = "HIRES",
+            url = "https://upos.example.bilivideo.com/30251-hires.m4s"
+        )
+        val highStream = BiliAudioStreamInfo(
+            id = 30280,
+            mimeType = "audio/mp4",
+            bitrateKbps = 200,
+            qualityTag = null,
+            url = "https://upos.example.bilivideo.com/30280.m4s"
+        )
+
+        assertEquals(30251, selectStreamByPreference(listOf(highStream, hiresStream), "hires")?.id)
+    }
+
+    @Test
     fun isBiliStreamHost_matchesMountaintoysEdgeDomain() {
         assertTrue(isBiliStreamHost("b-demo.edge.mountaintoys.cn"))
         assertTrue(isBiliStreamUrl("https://b-demo.edge.mountaintoys.cn/upgcxcode/demo.m4s"))

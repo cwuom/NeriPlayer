@@ -51,6 +51,8 @@ import moe.ouom.neriplayer.core.player.url.isCurrentListenTogetherFallbackMediaU
 import moe.ouom.neriplayer.core.player.playlist.PlayerFavoritesController
 import moe.ouom.neriplayer.core.player.policy.command.PlaybackCommandSource
 import moe.ouom.neriplayer.core.player.source.toSongItem
+import moe.ouom.neriplayer.listentogether.playback.ListenTogetherRestoredPlaybackAction
+import moe.ouom.neriplayer.listentogether.playback.resolveListenTogetherRestoredPlaybackAction
 import moe.ouom.neriplayer.data.local.media.LocalMediaMetadataWriteOutcome
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -99,6 +101,21 @@ private data class LocalMetadataWritePlaybackSnapshot(
     val positionMs: Long,
     val commandSource: PlaybackCommandSource
 )
+
+internal enum class EditableMetadataWriteMode {
+    APP_ONLY,
+    BACKGROUND_LOCAL_WRITE
+}
+
+internal fun resolveEditableMetadataWriteMode(
+    writeLocalMetadata: Boolean
+): EditableMetadataWriteMode {
+    return if (writeLocalMetadata) {
+        EditableMetadataWriteMode.BACKGROUND_LOCAL_WRITE
+    } else {
+        EditableMetadataWriteMode.APP_ONLY
+    }
+}
 
 private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) {
@@ -1214,6 +1231,28 @@ private fun queueStableKeyCounts(queue: List<SongItem>): Map<String, Int> {
     return queue.groupingBy { it.stableKey() }.eachCount()
 }
 
+internal fun resolveQueueCurrentIndexAfterReorder(
+    queue: List<SongItem>,
+    currentSong: SongItem?,
+    submittedCurrentIndex: Int,
+    fallbackCurrentIndex: Int
+): Int {
+    if (queue.isEmpty()) return -1
+    if (currentSong != null) {
+        if (
+            submittedCurrentIndex in queue.indices &&
+            queue[submittedCurrentIndex].sameIdentityAs(currentSong)
+        ) {
+            return submittedCurrentIndex
+        }
+        queue.indexOfFirst { candidate -> candidate.sameIdentityAs(currentSong) }
+            .takeIf { it >= 0 }
+            ?.let { return it }
+    }
+    return submittedCurrentIndex.takeIf { it in queue.indices }
+        ?: fallbackCurrentIndex.coerceIn(queue.indices)
+}
+
 internal fun PlayerManager.reorderQueueImpl(
     queue: List<SongItem>,
     currentIndexInQueue: Int,
@@ -1233,9 +1272,12 @@ internal fun PlayerManager.reorderQueueImpl(
     }
 
     val oldIndex = currentIndex
-    val newIndex = currentIndexInQueue.takeIf { it in queue.indices }
-        ?: _currentSongFlow.value?.let { current -> queue.indexOfFirst { it.sameIdentityAs(current) } }
-        ?: oldIndex.coerceIn(queue.indices)
+    val newIndex = resolveQueueCurrentIndexAfterReorder(
+        queue = queue,
+        currentSong = _currentSongFlow.value ?: currentPlaylist.getOrNull(oldIndex),
+        submittedCurrentIndex = currentIndexInQueue,
+        fallbackCurrentIndex = oldIndex
+    )
 
     currentPlaylist = queue.toList()
     _currentQueueFlow.value = currentPlaylist
@@ -1421,6 +1463,30 @@ internal fun PlayerManager.resumeRestoredPlaybackIfNeededImpl(): Long? {
     if (!restoredShouldResumePlayback) {
         NPLogger.d("NERI-PlayerManager", "resumeRestoredPlaybackIfNeeded(): skipped, restoredShouldResumePlayback=false")
         return null
+    }
+    when (
+        resolveListenTogetherRestoredPlaybackAction(
+            restoredPlaybackRequested = restoredShouldResumePlayback,
+            listenTogetherSessionActive = isListenTogetherActive(),
+            currentUserIsController = isCurrentUserControllerInListenTogether()
+        )
+    ) {
+        ListenTogetherRestoredPlaybackAction.SKIP -> return null
+        ListenTogetherRestoredPlaybackAction.RESUME_LOCAL_PLAYBACK -> Unit
+        ListenTogetherRestoredPlaybackAction.WAIT_FOR_AUTHORITATIVE_ROOM_STATE -> {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "resumeRestoredPlaybackIfNeeded(): defer active Listen Together listener until room state is authoritative"
+            )
+            restoredShouldResumePlayback = false
+            restoredResumePositionMs = 0L
+            scheduleStatePersist(
+                positionMs = _playbackPositionMs.value.coerceAtLeast(0L),
+                shouldResumePlayback = false,
+                debounceMs = 0L
+            )
+            return null
+        }
     }
     if (currentPlaylist.isEmpty() || currentIndex !in currentPlaylist.indices) {
         NPLogger.w(
@@ -1724,6 +1790,51 @@ private suspend fun PlayerManager.writeLocalEditableMetadata(
     }
 }
 
+private fun PlayerManager.scheduleLocalEditableMetadataWrite(
+    song: SongItem,
+    coverReference: String?,
+    writeCover: Boolean,
+    writeLyrics: Boolean
+) {
+    ioScope.launch {
+        val outcome = try {
+            runSongMetadataMutation {
+                writeLocalEditableMetadata(
+                    song = song,
+                    coverReference = coverReference,
+                    writeCover = writeCover,
+                    writeLyrics = writeLyrics
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.e(
+                "PlayerManager",
+                "后台回写本地元信息失败: ${error.message}",
+                error
+            )
+            LocalMediaMetadataWriteOutcome.FAILED
+        }
+
+        if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+            runCatching {
+                GlobalDownloadManager.syncDownloadedSongMetadata(song)
+            }.onFailure { error ->
+                NPLogger.w(
+                    "PlayerManager",
+                    "后台同步下载元数据失败: ${error.message}"
+                )
+            }
+        }
+        showLocalEditableMetadataWriteFeedback(
+            outcome = outcome,
+            downloadSyncOutcome =
+                GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+        )
+    }
+}
+
 private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     song: SongItem
 ): String? {
@@ -1982,27 +2093,6 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 return@runSongMetadataMutation true
             }
 
-            val localMetadataOutcome = if (writeLocalMetadata) {
-                writeLocalEditableMetadata(
-                    song = updatedSong,
-                    coverReference = coverWriteReference,
-                    writeCover = coverChanged,
-                    writeLyrics = writeLyrics
-                )
-            } else {
-                null
-            }
-            if (
-                localMetadataOutcome != null &&
-                    localMetadataOutcome != LocalMediaMetadataWriteOutcome.SUCCESS
-            ) {
-                showLocalEditableMetadataWriteFeedback(
-                    outcome = localMetadataOutcome,
-                    downloadSyncOutcome = GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
-                )
-                return@runSongMetadataMutation false
-            }
-
             updateSongInAllPlaces(
                 originalSong = originalSong,
                 updatedSong = updatedSong,
@@ -2012,21 +2102,15 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 deferPersistence = true
             )
 
-            if (writeLocalMetadata) {
-                ioScope.launch {
-                    runCatching {
-                        GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
-                    }.onFailure { error ->
-                        NPLogger.w(
-                            "PlayerManager",
-                            "后台同步下载元数据失败: ${error.message}"
-                        )
-                    }
-                }
-                showLocalEditableMetadataWriteFeedback(
-                    outcome = LocalMediaMetadataWriteOutcome.SUCCESS,
-                    downloadSyncOutcome =
-                        GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+            if (
+                resolveEditableMetadataWriteMode(writeLocalMetadata) ==
+                    EditableMetadataWriteMode.BACKGROUND_LOCAL_WRITE
+            ) {
+                scheduleLocalEditableMetadataWrite(
+                    song = updatedSong,
+                    coverReference = coverWriteReference,
+                    writeCover = coverChanged,
+                    writeLyrics = writeLyrics
                 )
             }
             true
@@ -2300,15 +2384,6 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         newRomanizedLyric = effectiveRomanizedLyrics
     )
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
-    val localMetadataOutcome = if (isLocalSong && writeLocalMetadata) {
-        writeLocalEditableMetadata(
-            song = updatedSong,
-            writeCover = false,
-            writeLyrics = true
-        )
-    } else {
-        null
-    }
     val sidecarsWritten = if (isLocalSong && !writeLocalMetadata) {
         val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
         runCatching {
@@ -2326,23 +2401,12 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     } else {
         true
     }
-    val localWriteSucceeded = sidecarsWritten && (
-        localMetadataOutcome == null ||
-            localMetadataOutcome == LocalMediaMetadataWriteOutcome.SUCCESS
-        )
-    if (!localWriteSucceeded) {
+    if (!sidecarsWritten) {
         NPLogger.w(
             "PlayerManager",
             "本地歌词写入未完成: song=${updatedSong.name}, " +
-                "sidecars=$sidecarsWritten, metadata=$localMetadataOutcome"
+                "sidecars=$sidecarsWritten"
         )
-        localMetadataOutcome?.let { outcome ->
-            showLocalEditableMetadataWriteFeedback(
-                outcome = outcome,
-                downloadSyncOutcome =
-                    GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
-            )
-        }
         return@runSongMetadataMutation false
     }
 
@@ -2364,8 +2428,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         return@runSongMetadataMutation false
     }
 
-    // queue/current-song state is updated only after file writes succeed. The
-    // catalog, history and usage fanout stays off the editor's critical path
+    // queue/current-song state is published immediately; catalog fanout stays off the editor's critical path
     ioScope.launch {
         runSongMetadataMutation {
             runCatching {
@@ -2378,7 +2441,9 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
                         )
                     }
                 }
-                GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+                if (!writeLocalMetadata || !isLocalSong) {
+                    GlobalDownloadManager.syncDownloadedSongMetadata(latestSong)
+                }
                 AppContainer.playHistoryRepo.updateSongMetadata(songToUpdate, latestSong)
                 AppContainer.playlistUsageRepo.syncLocalEntries(
                     playlists = localRepo.playlists.value,
@@ -2401,11 +2466,16 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
             }
         }
     }
-    if (localMetadataOutcome != null) {
-        showLocalEditableMetadataWriteFeedback(
-            outcome = localMetadataOutcome,
-            downloadSyncOutcome =
-                GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+    if (
+        isLocalSong &&
+            resolveEditableMetadataWriteMode(writeLocalMetadata) ==
+            EditableMetadataWriteMode.BACKGROUND_LOCAL_WRITE
+    ) {
+        scheduleLocalEditableMetadataWrite(
+            song = latestSong,
+            coverReference = latestSong.customCoverUrl,
+            writeCover = false,
+            writeLyrics = true
         )
     }
     NPLogger.d("PlayerManager", "updateSongLyricsAndTranslation completed")

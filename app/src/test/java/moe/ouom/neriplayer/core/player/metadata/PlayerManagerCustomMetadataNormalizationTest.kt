@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.player.metadata
 
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.core.player.persistence.EditableMetadataWriteMode
+import moe.ouom.neriplayer.core.player.persistence.resolveEditableMetadataWriteMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -215,6 +217,18 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 hasLoadedMedia = true,
                 shouldResumePlayback = true
             )
+        )
+    }
+
+    @Test
+    fun `local metadata writes use the background persistence path`() {
+        assertEquals(
+            EditableMetadataWriteMode.BACKGROUND_LOCAL_WRITE,
+            resolveEditableMetadataWriteMode(writeLocalMetadata = true)
+        )
+        assertEquals(
+            EditableMetadataWriteMode.APP_ONLY,
+            resolveEditableMetadataWriteMode(writeLocalMetadata = false)
         )
     }
 }

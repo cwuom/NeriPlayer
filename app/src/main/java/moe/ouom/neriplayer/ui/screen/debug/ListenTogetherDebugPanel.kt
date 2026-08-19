@@ -802,7 +802,6 @@ private fun InviteCopyActions(
     onShowMessage: (String) -> Unit
 ) {
     val composeResources = LocalResources.current
-    val joinSecret = sanitizeListenTogetherJoinSecretOrNull(sessionState.joinSecret)
 
     FlowRow(
         modifier = modifier.fillMaxWidth(),
@@ -830,20 +829,8 @@ private fun InviteCopyActions(
             },
             enabled = inviteUri != null
         ) {
-            Text(stringResource(R.string.listen_together_copy_invite))
-        }
-        TextButton(
-            onClick = {
-                val secret = joinSecret ?: return@TextButton
-                clipboard.copyText(clipboardScope, secret)
-                onShowMessage(
-                    composeResources.getString(R.string.listen_together_join_secret_copied)
-                )
-            },
-            enabled = joinSecret != null
-        ) {
             Icon(Icons.Outlined.ContentCopy, contentDescription = null)
-            Text(stringResource(R.string.listen_together_copy_join_secret))
+            Text(stringResource(R.string.listen_together_copy_invite))
         }
     }
 }
@@ -1444,6 +1431,7 @@ private fun String.toDisplayNotice(context: Context): String =
         startsWith("member_joined:") -> context.getString(R.string.listen_together_notice_member_joined, substringAfter(':'))
         startsWith("member_left:") -> context.getString(R.string.listen_together_notice_member_left, substringAfter(':'))
         this == "controller_reconnected" -> context.getString(R.string.listen_together_notice_controller_reconnected)
+        this == "controller_left" -> context.getString(R.string.listen_together_notice_controller_left)
         this == "controller_timeout" || this == "room_closed" || contains("room closed", ignoreCase = true) ->
             context.getString(R.string.listen_together_notice_room_closed)
         contains("unauthorized", ignoreCase = true) || contains("http=401", ignoreCase = true) || contains("(401)", ignoreCase = true) ->

@@ -4,6 +4,10 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherChannels
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+private const val MAX_NETEASE_STREAM_URL_CANDIDATES = 3
+private const val MAX_BILI_STREAM_URL_CANDIDATES = 2
+private const val MAX_YOUTUBE_STREAM_URL_CANDIDATES = 1
+
 internal fun trustedListenTogetherStreamUrl(
     channelId: String,
     streamUrl: String?
@@ -23,7 +27,9 @@ internal fun trustedListenTogetherStreamUrl(
                 host == "bilivideo.cn" ||
                 host.endsWith(".bilivideo.cn") ||
                 host == "hdslb.com" ||
-                host.endsWith(".hdslb.com")
+                host.endsWith(".hdslb.com") ||
+                host == "mountaintoys.cn" ||
+                host.endsWith(".mountaintoys.cn")
         }
         ListenTogetherChannels.YOUTUBE_MUSIC -> {
             host == "googlevideo.com" ||
@@ -52,12 +58,18 @@ internal fun trustedListenTogetherStreamUrls(
     maxCount: Int = MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 ): List<String> {
     if (maxCount <= 0) return emptyList()
+    val platformMax = when (channelId) {
+        ListenTogetherChannels.BILIBILI -> MAX_BILI_STREAM_URL_CANDIDATES
+        ListenTogetherChannels.YOUTUBE_MUSIC -> MAX_YOUTUBE_STREAM_URL_CANDIDATES
+        ListenTogetherChannels.NETEASE -> MAX_NETEASE_STREAM_URL_CANDIDATES
+        else -> maxCount
+    }
     return buildList {
         streamUrls.orEmpty().forEach { candidate ->
             trustedListenTogetherStreamUrl(channelId, candidate)?.let(::add)
         }
         trustedListenTogetherStreamUrl(channelId, legacyStreamUrl)?.let(::add)
-    }.distinct().take(maxCount)
+    }.distinct().take(minOf(maxCount, platformMax))
 }
 
 internal const val MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES = 3

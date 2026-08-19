@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,9 +31,10 @@ import kotlinx.coroutines.delay
 
 private const val PLAYBACK_WAITING_VISUAL_DELAY_MS = 1_000L
 
-private enum class PlaybackControlVisualState {
+internal enum class PlaybackControlVisualState {
     PLAY,
     PAUSE,
+    RESTORE_VOLUME,
     WAITING
 }
 
@@ -44,22 +46,26 @@ internal fun PlaybackControlIndicator(
     pauseContentDescription: String,
     waitingContentDescription: String,
     modifier: Modifier = Modifier,
+    isAudioRouteMuted: Boolean = false,
+    restoreVolumeContentDescription: String = playContentDescription,
     color: Color = LocalContentColor.current,
     progressIndicatorSize: Dp = 24.dp,
     progressStrokeWidth: Dp = 2.5.dp
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
-    val visualState = when {
-        delayedPlaybackWaiting -> PlaybackControlVisualState.WAITING
-        isPlaying -> PlaybackControlVisualState.PAUSE
-        else -> PlaybackControlVisualState.PLAY
-    }
+    val visualState = resolvePlaybackControlVisualState(
+        isPlaying = isPlaying,
+        isPlaybackWaiting = delayedPlaybackWaiting,
+        isAudioRouteMuted = isAudioRouteMuted
+    )
     val resolvedContentDescription = resolvePlaybackControlContentDescription(
         isPlaying = isPlaying,
         isPlaybackWaiting = delayedPlaybackWaiting,
         playContentDescription = playContentDescription,
         pauseContentDescription = pauseContentDescription,
-        waitingContentDescription = waitingContentDescription
+        waitingContentDescription = waitingContentDescription,
+        isAudioRouteMuted = isAudioRouteMuted,
+        restoreVolumeContentDescription = restoreVolumeContentDescription
     )
 
     AnimatedContent(
@@ -83,6 +89,12 @@ internal fun PlaybackControlIndicator(
                 tint = color
             )
 
+            PlaybackControlVisualState.RESTORE_VOLUME -> Icon(
+                imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
+                contentDescription = resolvedContentDescription,
+                tint = color
+            )
+
             PlaybackControlVisualState.WAITING -> CircularProgressIndicator(
                 modifier = Modifier
                     .size(progressIndicatorSize)
@@ -94,6 +106,19 @@ internal fun PlaybackControlIndicator(
                 strokeWidth = progressStrokeWidth
             )
         }
+    }
+}
+
+internal fun resolvePlaybackControlVisualState(
+    isPlaying: Boolean,
+    isPlaybackWaiting: Boolean,
+    isAudioRouteMuted: Boolean
+): PlaybackControlVisualState {
+    return when {
+        isAudioRouteMuted -> PlaybackControlVisualState.RESTORE_VOLUME
+        isPlaybackWaiting -> PlaybackControlVisualState.WAITING
+        isPlaying -> PlaybackControlVisualState.PAUSE
+        else -> PlaybackControlVisualState.PLAY
     }
 }
 
@@ -124,9 +149,12 @@ internal fun resolvePlaybackControlContentDescription(
     isPlaybackWaiting: Boolean,
     playContentDescription: String,
     pauseContentDescription: String,
-    waitingContentDescription: String
+    waitingContentDescription: String,
+    isAudioRouteMuted: Boolean = false,
+    restoreVolumeContentDescription: String = playContentDescription
 ): String {
     return when {
+        isAudioRouteMuted -> restoreVolumeContentDescription
         isPlaybackWaiting -> waitingContentDescription
         isPlaying -> pauseContentDescription
         else -> playContentDescription

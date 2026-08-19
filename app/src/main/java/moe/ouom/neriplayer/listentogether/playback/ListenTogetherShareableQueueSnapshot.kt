@@ -12,21 +12,27 @@ import moe.ouom.neriplayer.data.model.SongItem
 internal fun List<SongItem>.toShareableQueueSnapshot(
     currentIndex: Int,
     roomSettings: ListenTogetherRoomSettings? = null,
-    includeResolvedStreamUrl: Boolean = true
+    includeResolvedStreamUrl: Boolean = true,
+    resolvedCurrentStreamUrls: List<String>? = null
 ): Pair<List<ListenTogetherTrack>, Int> {
     if (isEmpty()) return emptyList<ListenTogetherTrack>() to 0
 
     val targetSong = getOrNull(currentIndex.coerceIn(0, lastIndex))
     val targetStableKey = targetSong?.toListenTogetherTrackOrNull()?.stableKey
-    val currentStreamUrls = PlayerManager.currentListenTogetherShareableStreamUrls()
-        .takeIf { includeResolvedStreamUrl }
-        .orEmpty()
+    val canShareResolvedStreamUrls = includeResolvedStreamUrl &&
+        roomSettings.normalized().shareAudioLinks
+    val currentStreamUrls = if (canShareResolvedStreamUrls) {
+        resolvedCurrentStreamUrls ?: PlayerManager.currentListenTogetherShareableStreamUrls()
+    } else {
+        emptyList()
+    }
     val shareableQueue = mapNotNull { song ->
         song.toListenTogetherTrackOrNull()?.let { track ->
-            if (roomSettings.normalized().shareAudioLinks && track.stableKey == targetStableKey) {
-                track.withStreamUrls(currentStreamUrls)
+            val trackWithoutRawStreamUrls = track.withStreamUrls(emptyList())
+            if (canShareResolvedStreamUrls && track.stableKey == targetStableKey) {
+                trackWithoutRawStreamUrls.withStreamUrls(currentStreamUrls)
             } else {
-                track
+                trackWithoutRawStreamUrls
             }
         }
     }.boundedAroundStableKey(targetStableKey)
@@ -39,12 +45,32 @@ internal fun List<SongItem>.toShareableQueueSnapshot(
     return shareableQueue to resolvedCurrentIndex
 }
 
+internal fun List<SongItem>.toShareableShuffleRestoreQueueSnapshot(
+    activeQueue: List<ListenTogetherTrack>
+): List<ListenTogetherTrack> {
+    if (isEmpty() || activeQueue.isEmpty()) return emptyList()
+    val remainingCounts = activeQueue.groupingBy { it.stableKey }.eachCount().toMutableMap()
+    val restoreQueue = mutableListOf<ListenTogetherTrack>()
+    for (song in this) {
+        val track = song.toListenTogetherTrackOrNull()?.withStreamUrls(emptyList()) ?: continue
+        val remaining = remainingCounts[track.stableKey] ?: continue
+        if (remaining == 1) {
+            remainingCounts.remove(track.stableKey)
+        } else {
+            remainingCounts[track.stableKey] = remaining - 1
+        }
+        restoreQueue += track
+    }
+    return restoreQueue.takeIf { it.size == activeQueue.size }.orEmpty()
+}
+
 internal fun List<ListenTogetherTrack>.mergeCurrentTrack(
     currentIndex: Int,
     currentTrack: ListenTogetherTrack?
 ): List<ListenTogetherTrack> {
     val replacement = currentTrack ?: return this
     if (currentIndex !in indices) return this
+    if (this[currentIndex].stableKey != replacement.stableKey) return this
     if (this[currentIndex] == replacement) return this
     return toMutableList().also { it[currentIndex] = replacement }
 }

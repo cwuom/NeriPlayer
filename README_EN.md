@@ -283,13 +283,15 @@ Current positioning:
   track. When session candidate sharing is enabled, Durable Objects temporarily
   cache the controller's current playback candidates so listeners can retrieve them
   without waiting for another controller response. A current track keeps at most
-  three validated candidates; listeners always resolve with their own quality policy first
-  and use those session-only candidates only
-  after local resolution fails, so they never enter song or offline caches. Reconnecting
-  with the same member credential does not trigger member-change auto-pause, and both
-  roles keep their WebSocket connection alive. Explicitly leaving a room removes the
-  member and broadcasts the departure, while a transport-only disconnect remains
-  reconnectable. Durable Objects persist room state while WebSocket keeps active
+  three validated candidates; listeners always resolve with their own quality policy first,
+  try those local candidates first, and keep the session-only candidates as isolated startup
+  fallbacks, so they never enter song or offline caches. Valid playback-mode queue snapshots
+  reuse the requester's real shuffle or restored order without reloading the current track.
+  Mode commits re-anchor projected position with the previous repeat semantics. When enabled,
+  member joins and explicit departures publish an authoritative room pause; reconnecting with
+  the same member credential does not trigger that pause, and both roles keep their WebSocket
+  connection alive. A transport-only disconnect remains reconnectable. Durable Objects persist
+  room state while WebSocket keeps active
   members in sync.
 
 ---
@@ -529,9 +531,9 @@ For release build and signing details, see
   language, platform auth, GitHub/WebDAV config, and Listen Together settings.
 - 🎧 **Listen Together**:
   create or join rooms, sync playback state over WebSocket, support host/listener
-  permissions, member-control toggles, optional auto-pause when a new member joins
-  (not when the same member reconnects),
-  repeat/shuffle mode sync, optional sharing of controller-resolved stream URLs,
+  permissions, member-control toggles, automatic pause for new members and explicit
+  departures when enabled (same-member reconnects do not pause), repeat/shuffle mode sync,
+  optional sharing of controller-resolved stream URLs,
   invite links, deep links, custom server URLs, and host-offline detection. A first join
   requires the invite secret and member reconnects use member secrets. Controllers can copy the
   complete invite or its secret separately; tapping Join reads a valid invite from the clipboard
@@ -539,10 +541,14 @@ For release build and signing details, see
   its current track. When sharing is enabled, the Worker caches and exposes only the current
   controller URL; disabling sharing clears that cache. The Worker keeps at most three
   deduplicated HTTP(S) candidates for the current track; listeners resolve their own quality
-  policy first and use candidates only as a session-scoped fallback after local resolution fails.
-  Candidates are never written to normal song or offline caches. Room position is projected from
-  track duration, and single-track repeat wraps it by that duration. Outdated client control events
-  are filtered, and `REQUEST_SET_TRACK` can only choose a song already in the current queue.
+  policy first, try local candidates first, and retain shared candidates as session-scoped startup
+  fallbacks. Candidates are never written to normal song or offline caches. Shuffle requests reuse
+  the requester's validated real queue order, disabling shuffle restores that order without
+  reloading the current song. Queue reorder/add/remove actions carry versioned replayable intents
+  so concurrent room edits converge without replacing the current track by a stale index, and
+  playback-mode commits re-anchor room position. Single-track
+  repeat wraps position by track duration. Outdated client control events are filtered, and
+  `REQUEST_SET_TRACK` can only choose a song already in the current queue.
 - 🌈 **Personalization and themes**:
   auto/light/dark mode, dynamic color, seed colors, theme styles, UI scaling,
   custom background image, haptic feedback, lyric font size (separate cover and

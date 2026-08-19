@@ -496,6 +496,26 @@ class AutoSettingsGeneratedTest {
     }
 
     @Test
+    fun lyricAppearanceSwitchesUseDistinctDedicatedIcons() {
+        val translation = AutoSettingsSchema.display.showLyricTranslation
+        val phonetic = AutoSettingsSchema.display.lyricTranslationUsePhonetic
+        val otherDisplayIcons = AutoSettingsMetadata
+            .settingsIn(AutoSettingsSections.display)
+            .filter {
+                it.keyName != "show_lyric_translation" &&
+                    it.keyName != "lyric_translation_use_phonetic"
+            }
+            .map { it.icon }
+            .filter { it != AutoSettingIcon.None }
+
+        assertEquals(AutoSettingIcon.Public, translation.icon)
+        assertEquals(AutoSettingIcon.RecordVoiceOver, phonetic.icon)
+        assertTrue(translation.icon !in otherDisplayIcons)
+        assertTrue(phonetic.icon !in otherDisplayIcons)
+        assertNotEquals(translation.icon, phonetic.icon)
+    }
+
+    @Test
     fun coverLyricsSwitchUsesAUniqueDisplayIcon() {
         val setting = AutoSettingsSchema.display.nowPlayingCoverLyricsEnabled
         val metadata = AutoSettingsMetadata.setting("nowplaying_cover_lyrics_enabled")
@@ -606,11 +626,11 @@ class AutoSettingsGeneratedTest {
             AutoSettingsSchema.display.showCoverSourceBadge.icon
         )
         assertEquals(
-            AutoSettingIcon.Subtitles,
+            AutoSettingIcon.Public,
             AutoSettingsSchema.display.showLyricTranslation.icon
         )
         assertEquals(
-            AutoSettingIcon.Keyboard,
+            AutoSettingIcon.RecordVoiceOver,
             AutoSettingsSchema.display.lyricTranslationUsePhonetic.icon
         )
         assertEquals(
