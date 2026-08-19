@@ -198,6 +198,9 @@ internal fun projectDownloadedSongMetadata(
         ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
     val customCover = updatedSong.customCoverUrl?.trim()?.takeIf(String::isNotBlank)
     val restoredLocalCover = updatedSong.coverUrl?.takeIf(::isResolvableLocalReference)
+    val updatedAlbum = updatedSong.album
+        .trim()
+        .takeIf { it.isNotBlank() }
     val updatedSourceChannel = updatedSong.channelId
         ?.trim()
         ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
@@ -223,6 +226,7 @@ internal fun projectDownloadedSongMetadata(
         id = if (preservesExistingRemoteSource) existing.id else updatedSong.id,
         name = updatedSong.name,
         artist = updatedSong.artist,
+        album = updatedAlbum ?: existing.album,
         coverPath = if (customCover == null) restoredLocalCover else existing.coverPath,
         coverUrl = updatedSong.coverUrl ?: existing.coverUrl,
         matchedLyric = updatedSong.matchedLyric,

@@ -1791,6 +1791,7 @@ object GlobalDownloadManager {
     ): Boolean {
         return downloadedSong.name == song.name &&
             downloadedSong.artist == song.artist &&
+            downloadedSong.album == song.album &&
             downloadedSong.coverUrl == song.coverUrl &&
             downloadedSong.customCoverUrl == song.customCoverUrl &&
             downloadedSong.customName == song.customName &&

@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDeta
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 
 internal class DownloadedSongBuilder(
     private val metadataStore: DownloadedAudioMetadataStore,
@@ -138,7 +139,14 @@ internal class DownloadedSongBuilder(
             artist = metadata?.artist?.takeIf(String::isNotBlank)
                 ?: localDetails?.artist?.takeIf(String::isNotBlank)
                 ?: parsedArtist,
-            album = (if (metadata == null) localDetails?.album?.takeIf(String::isNotBlank) else null)
+            album = metadata?.album?.takeIf(String::isNotBlank)
+                ?: (if (metadata == null) {
+                    localDetails?.album?.takeIf(String::isNotBlank)
+                } else {
+                    null
+                })
+                ?: metadata?.identityAlbum
+                    ?.takeUnless { it == LocalSongSupport.LOCAL_ALBUM_IDENTITY }
                 ?: context.getString(R.string.local_files),
             filePath = storedAudio.reference,
             fileSize = storedAudio.sizeBytes,

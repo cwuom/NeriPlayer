@@ -55,6 +55,25 @@ class DownloadedSongSourceMetadataTest {
     }
 
     @Test
+    fun `downloaded remote playback item keeps its display album`() {
+        val downloadedSong = DownloadedSong(
+            id = 42L,
+            name = "song",
+            artist = "artist",
+            album = "远端专辑",
+            filePath = "/storage/emulated/0/Download/song.flac",
+            fileSize = 1L,
+            downloadTime = 1L,
+            stableKey = "42|netease|",
+            sourceIdentityAlbum = "netease",
+            sourceChannelId = "netease",
+            sourceAudioId = "42"
+        )
+
+        assertEquals("远端专辑", downloadedSong.toPlaybackSongItem().album)
+    }
+
+    @Test
     fun `downloaded sidecar cover stays local while sync keeps its remote original`() {
         val remoteCover = "https://example.com/original.jpg"
         val downloadedSong = DownloadedSong(

@@ -1713,11 +1713,7 @@ private suspend fun PlayerManager.parkCurrentPlaybackForLocalMetadataWrite(
     if (!isPlayerInitialized() || currentIndex !in currentPlaylist.indices) {
         return@withContext null
     }
-    val action = resolveLocalMetadataWritePlaybackAction(
-        isTargetCurrentSong = isCurrentSong(targetSong),
-        hasLoadedMedia = player.currentMediaItem != null,
-        shouldResumePlayback = player.isPlaying || player.playWhenReady
-    )
+    val action = resolveLocalMetadataWritePlaybackAction()
     if (action == LocalMetadataWritePlaybackAction.NONE) {
         return@withContext null
     }
@@ -1794,13 +1790,52 @@ private fun PlayerManager.scheduleLocalEditableMetadataWrite(
     song: SongItem,
     coverReference: String?,
     writeCover: Boolean,
-    writeLyrics: Boolean
+    writeLyrics: Boolean,
+    originalSong: SongItem? = null,
+    preserveOriginalCover: Boolean = false
 ) {
     ioScope.launch {
+        val preparedSong = try {
+            prepareLocalEditableMetadataSong(
+                originalSong = originalSong,
+                updatedSong = song,
+                preserveOriginalCover = preserveOriginalCover
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                "PlayerManager",
+                "后台准备本地原始封面失败: ${error.message}"
+            )
+            song
+        }
+
+        if (preparedSong != song) {
+            runSongMetadataMutation {
+                runCatching {
+                    updateSongInAllPlaces(
+                        originalSong = song,
+                        updatedSong = preparedSong,
+                        triggerSync = true,
+                        syncDownloadedMetadata = false,
+                        fastLocalUsageSync = true,
+                        deferPersistence = true
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "PlayerManager",
+                        "后台发布原始封面失败: ${error.message}",
+                        error
+                    )
+                }
+            }
+        }
+
         val outcome = try {
             runSongMetadataMutation {
                 writeLocalEditableMetadata(
-                    song = song,
+                    song = preparedSong,
                     coverReference = coverReference,
                     writeCover = writeCover,
                     writeLyrics = writeLyrics
@@ -1819,7 +1854,7 @@ private fun PlayerManager.scheduleLocalEditableMetadataWrite(
 
         if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
             runCatching {
-                GlobalDownloadManager.syncDownloadedSongMetadata(song)
+                GlobalDownloadManager.syncDownloadedSongMetadata(preparedSong)
             }.onFailure { error ->
                 NPLogger.w(
                     "PlayerManager",
@@ -1833,6 +1868,46 @@ private fun PlayerManager.scheduleLocalEditableMetadataWrite(
                 GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
         )
     }
+}
+
+private suspend fun PlayerManager.prepareLocalEditableMetadataSong(
+    originalSong: SongItem?,
+    updatedSong: SongItem,
+    preserveOriginalCover: Boolean
+): SongItem {
+    if (!preserveOriginalCover || originalSong == null) return updatedSong
+    if (!LocalSongSupport.isLocalSong(originalSong, application)) return updatedSong
+
+    val customCover = originalSong.customCoverUrl
+        ?.normalizedManualMetadataValue()
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+    val existingOriginalCover = originalSong.originalCoverUrl
+        ?.normalizedManualMetadataValue()
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        ?.takeUnless { it == customCover }
+    val baseCover = originalSong.coverUrl
+        ?.normalizedManualMetadataValue()
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        ?.takeUnless { it == customCover }
+    val originalCoverReference = existingOriginalCover
+        ?: CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
+            context = application,
+            song = originalSong,
+            references = listOf(originalSong.originalCoverUrl, originalSong.coverUrl)
+        )
+        ?: LocalMediaSupport.resolveNearbyCoverUri(application, originalSong)
+        ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(application, originalSong)
+        ?: LocalMediaSupport.resolveCoverUri(application, originalSong)
+        ?: baseCover
+    val preservedOriginalCover = CustomSongCoverStorage.persistOriginalCover(
+        context = application,
+        song = originalSong,
+        reference = originalCoverReference
+    ) ?: existingOriginalCover ?: baseCover
+    if (preservedOriginalCover.isNullOrBlank() || preservedOriginalCover == updatedSong.originalCoverUrl) {
+        return updatedSong
+    }
+    return updatedSong.copy(originalCoverUrl = preservedOriginalCover)
 }
 
 private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
@@ -1976,8 +2051,13 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     previousCustomCover = currentSong.customCoverUrl
                 )
             }
+            val lightweightOriginalCoverUrl = existingOriginalCoverUrl
+                ?.takeIf { it != currentSong.customCoverUrl }
+                ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
             val legacyOriginalCoverUrl = if (
-                coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
+                coverChanged &&
+                    !writeLocalMetadata &&
+                    LocalSongSupport.isLocalSong(currentSong, application)
             ) {
                 CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
                     context = application,
@@ -1993,28 +2073,35 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
             val originalCoverReference = if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
-                existingOriginalCoverUrl
-                    ?.takeIf { reference ->
-                        LocalSongSupport.isLocalMediaUri(reference) &&
-                            reference != currentSong.customCoverUrl
-                    }
-                    ?: legacyOriginalCoverUrl
-                    ?: LocalMediaSupport.resolveNearbyCoverUri(application, currentSong)
-                    ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(application, currentSong)
-                    ?: LocalMediaSupport.resolveCoverUri(application, currentSong)
-                    ?: existingOriginalCoverUrl?.takeIf { it != currentSong.customCoverUrl }
-                    ?: baseCoverUrl?.takeIf { it != currentSong.customCoverUrl }
+                if (writeLocalMetadata) {
+                    lightweightOriginalCoverUrl
+                } else {
+                    existingOriginalCoverUrl
+                        ?.takeIf { reference ->
+                            LocalSongSupport.isLocalMediaUri(reference) &&
+                                reference != currentSong.customCoverUrl
+                        }
+                        ?: legacyOriginalCoverUrl
+                        ?: LocalMediaSupport.resolveNearbyCoverUri(application, currentSong)
+                        ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(application, currentSong)
+                        ?: LocalMediaSupport.resolveCoverUri(application, currentSong)
+                        ?: lightweightOriginalCoverUrl
+                }
             } else {
                 null
             }
             val preservedOriginalCoverUrl = if (
                 coverChanged && LocalSongSupport.isLocalSong(currentSong, application)
             ) {
-                legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
-                    context = application,
-                    song = currentSong,
-                    reference = originalCoverReference
-                ) ?: existingOriginalCoverUrl
+                if (writeLocalMetadata) {
+                    lightweightOriginalCoverUrl
+                } else {
+                    legacyOriginalCoverUrl ?: CustomSongCoverStorage.persistOriginalCover(
+                        context = application,
+                        song = currentSong,
+                        reference = originalCoverReference
+                    ) ?: existingOriginalCoverUrl
+                }
             } else {
                 existingOriginalCoverUrl
             }
@@ -2110,7 +2197,10 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     song = updatedSong,
                     coverReference = coverWriteReference,
                     writeCover = coverChanged,
-                    writeLyrics = writeLyrics
+                    writeLyrics = writeLyrics,
+                    originalSong = currentSong,
+                    preserveOriginalCover = coverChanged &&
+                        LocalSongSupport.isLocalSong(currentSong, application)
                 )
             }
             true

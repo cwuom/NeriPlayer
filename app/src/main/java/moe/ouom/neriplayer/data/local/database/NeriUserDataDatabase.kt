@@ -94,7 +94,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -170,7 +170,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_19_20,
                 MIGRATION_20_21,
                 MIGRATION_21_22,
-                MIGRATION_22_23
+                MIGRATION_22_23,
+                MIGRATION_23_24
             ).build()
         }
 
@@ -1204,6 +1205,16 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
          */
         val MIGRATION_22_23: Migration = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        val MIGRATION_23_24: Migration = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "album"
+                )
+            }
         }
 
         private fun addTextColumnIfMissing(

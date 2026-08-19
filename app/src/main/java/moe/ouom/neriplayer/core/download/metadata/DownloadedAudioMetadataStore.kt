@@ -142,6 +142,7 @@ internal class DownloadedAudioMetadataStore(
             put("stableKey", identity.stableKey())
             put("songId", song.id)
             put("identityAlbum", identity.album)
+            put("album", song.album)
             put("name", song.name)
             put("artist", song.artist)
             put("coverUrl", song.coverUrl)

@@ -96,20 +96,8 @@ internal enum class LocalMetadataWritePlaybackAction {
     RELEASE_AND_RESUME
 }
 
-internal fun resolveLocalMetadataWritePlaybackAction(
-    isTargetCurrentSong: Boolean,
-    hasLoadedMedia: Boolean,
-    shouldResumePlayback: Boolean
-): LocalMetadataWritePlaybackAction {
-    if (!isTargetCurrentSong || !hasLoadedMedia) {
-        return LocalMetadataWritePlaybackAction.NONE
-    }
-    return if (shouldResumePlayback) {
-        LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME
-    } else {
-        LocalMetadataWritePlaybackAction.RELEASE_ONLY
-    }
-}
+internal fun resolveLocalMetadataWritePlaybackAction(): LocalMetadataWritePlaybackAction =
+    LocalMetadataWritePlaybackAction.NONE
 
 internal fun SongSearchInfo.toBasicSongDetails(): SongDetails {
     return SongDetails(

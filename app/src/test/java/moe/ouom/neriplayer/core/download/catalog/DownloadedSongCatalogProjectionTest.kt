@@ -88,6 +88,7 @@ class DownloadedSongCatalogProjectionTest {
         ).copy(
             name = "Edited title",
             artist = "Edited artist",
+            album = "Remote Album",
             channelId = "local",
             audioId = "100"
         )
@@ -96,6 +97,7 @@ class DownloadedSongCatalogProjectionTest {
         val persistedSong = projected.toMetadataPersistenceSong(localEdit)
 
         assertEquals(remoteSong.id, projected.id)
+        assertEquals("Remote Album", projected.album)
         assertEquals(remoteSong.stableKey(), projected.stableKey)
         assertEquals("netease", projected.sourceChannelId)
         assertEquals("42", projected.sourceAudioId)

@@ -476,6 +476,7 @@ internal object ManagedDownloadStorage {
         val stableKey: String? = null,
         val songId: Long? = null,
         val identityAlbum: String? = null,
+        val album: String? = null,
         val name: String? = null,
         val artist: String? = null,
         val coverUrl: String? = null,

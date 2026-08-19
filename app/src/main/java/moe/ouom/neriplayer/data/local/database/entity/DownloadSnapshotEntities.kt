@@ -78,6 +78,7 @@ internal data class DownloadSnapshotMetadataEntity(
     val songId: Long?,
     @ColumnInfo(name = "identity_album")
     val identityAlbum: String?,
+    val album: String?,
     val name: String?,
     val artist: String?,
     @ColumnInfo(name = "cover_url")

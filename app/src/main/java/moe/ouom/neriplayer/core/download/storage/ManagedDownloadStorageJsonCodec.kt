@@ -172,6 +172,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("stableKey", stableKey)
             put("songId", songId)
             put("identityAlbum", identityAlbum)
+            put("album", album)
             put("name", name)
             put("artist", artist)
             put("coverUrl", coverUrl)
@@ -354,6 +355,7 @@ internal object ManagedDownloadStorageJsonCodec {
             stableKey = optString("stableKey").takeIf(String::isNotBlank),
             songId = optLong("songId").takeIf { it > 0L },
             identityAlbum = optString("identityAlbum").takeIf(String::isNotBlank),
+            album = optString("album").takeIf(String::isNotBlank),
             name = optString("name").takeIf(String::isNotBlank),
             artist = optString("artist").takeIf(String::isNotBlank),
             coverUrl = optString("coverUrl").takeIf(String::isNotBlank),

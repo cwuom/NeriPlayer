@@ -476,6 +476,31 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromVersion23AddsDownloadedRemoteAlbumColumn() {
+        helper.createDatabase(TEST_DATABASE_VERSION_23_NAME, 23).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_23_NAME,
+            24,
+            true,
+            NeriUserDataDatabase.MIGRATION_23_24
+        )
+
+        try {
+            assertEquals(24L, migrated.longFor("PRAGMA user_version"))
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info(" +
+                        "'download_snapshot_metadata') WHERE name = 'album'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertVersion1LocalPlaylistFixture() {
         val songPayload = sqlText(
             """
@@ -581,5 +606,6 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_VERSION_20_NAME = "neri-user-data-migration-v20-test"
         const val TEST_DATABASE_VERSION_21_NAME = "neri-user-data-migration-v21-test"
         const val TEST_DATABASE_VERSION_22_NAME = "neri-user-data-migration-v22-test"
+        const val TEST_DATABASE_VERSION_23_NAME = "neri-user-data-migration-v23-test"
     }
 }

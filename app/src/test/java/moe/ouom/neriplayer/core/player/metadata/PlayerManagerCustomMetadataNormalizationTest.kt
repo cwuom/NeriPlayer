@@ -173,14 +173,10 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `current loaded song is released and resumed for metadata writes`() {
+    fun `current loaded song keeps playing during metadata writes`() {
         assertEquals(
-            LocalMetadataWritePlaybackAction.RELEASE_AND_RESUME,
-            resolveLocalMetadataWritePlaybackAction(
-                isTargetCurrentSong = true,
-                hasLoadedMedia = true,
-                shouldResumePlayback = true
-            )
+            LocalMetadataWritePlaybackAction.NONE,
+            resolveLocalMetadataWritePlaybackAction()
         )
     }
 
@@ -201,22 +197,14 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `paused or unrelated metadata writes do not resume playback`() {
+    fun `paused metadata writes also keep playback untouched`() {
         assertEquals(
-            LocalMetadataWritePlaybackAction.RELEASE_ONLY,
-            resolveLocalMetadataWritePlaybackAction(
-                isTargetCurrentSong = true,
-                hasLoadedMedia = true,
-                shouldResumePlayback = false
-            )
+            LocalMetadataWritePlaybackAction.NONE,
+            resolveLocalMetadataWritePlaybackAction()
         )
         assertEquals(
             LocalMetadataWritePlaybackAction.NONE,
-            resolveLocalMetadataWritePlaybackAction(
-                isTargetCurrentSong = false,
-                hasLoadedMedia = true,
-                shouldResumePlayback = true
-            )
+            resolveLocalMetadataWritePlaybackAction()
         )
     }
 

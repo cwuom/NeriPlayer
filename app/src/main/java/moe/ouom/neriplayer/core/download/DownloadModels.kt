@@ -208,11 +208,18 @@ internal fun DownloadedSong.toPlaybackSongItem(
         }
         ?.id
         ?: id
+    val resolvedAlbum = if (remoteSourceIdentity != null) {
+        album.trim()
+            .takeIf { it.isNotBlank() && it != LocalSongSupport.LOCAL_ALBUM_IDENTITY }
+            ?: remoteSourceIdentity.album
+    } else {
+        LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    }
     return SongItem(
         id = resolvedSongId,
         name = name,
         artist = artist,
-        album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+        album = resolvedAlbum,
         albumId = 0L,
         durationMs = resolvedDurationMs.coerceAtLeast(0L),
         coverUrl = coverPath ?: coverUrl,
