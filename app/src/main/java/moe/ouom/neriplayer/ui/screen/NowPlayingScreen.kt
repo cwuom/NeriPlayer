@@ -1728,7 +1728,7 @@ internal fun hasCachedLocalDownload(song: SongItem): Boolean {
 
 internal fun hasCachedLocalDownload(context: Context, song: SongItem): Boolean {
     return hasCachedLocalDownload(song) ||
-        ManagedDownloadStorage.isLikelyManagedDownloadSong(context, song)
+        ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song)
 }
 
 
@@ -1879,6 +1879,26 @@ internal fun buildNowPlayingFastLyricsState(
     )
 }
 
+/**
+ * 为当前曲目建立无需磁盘访问的首帧歌词快照
+ */
+internal fun buildNowPlayingImmediateLyricsState(song: SongItem?): LoadedLyricsState {
+    return buildNowPlayingFastLyricsState(
+        rawLyrics = resolveStoredLyricText(
+            currentLyric = song?.matchedLyric,
+            legacyLyric = song?.originalLyric
+        ),
+        rawTranslatedLyrics = resolveStoredLyricText(
+            currentLyric = song?.matchedTranslatedLyric,
+            legacyLyric = song?.originalTranslatedLyric
+        ),
+        rawPhoneticLyrics = resolveStoredLyricText(
+            currentLyric = song?.matchedRomanizedLyric,
+            legacyLyric = song?.originalRomanizedLyric
+        )
+    )
+}
+
 internal fun shouldReplaceLyricsAfterRefresh(
     sameSong: Boolean,
     loadedHasLyrics: Boolean
@@ -1898,6 +1918,8 @@ internal fun shouldBackfillDownloadedLyricsAfterFastMiss(
         !fastLyrics.hasTranslatedSidecar ||
         !fastLyrics.hasRomanizedSidecar
 }
+
+internal fun shouldReadEmbeddedLyricsForNowPlayingFastStage(): Boolean = false
 
 internal fun resolveNowPlayingLyricsMediaReloadKey(
     song: SongItem?,
@@ -2039,6 +2061,8 @@ fun NowPlayingScreen(
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val downloadedLyricsRefreshVersion by
+        ManagedDownloadStorage.lyricsRefreshVersion.collectAsStateWithLifecycle()
     val actualCoverUrl = resolvedCoverUrl ?: visualCoverUrl
     val currentCoverUrl = visualCoverUrl ?: actualCoverUrl
     val coverSongKey = playbackSongKey ?: currentSong?.stableKey()
@@ -2160,20 +2184,44 @@ fun NowPlayingScreen(
     val volumeSheetState = rememberModalBottomSheetState()
 
     val currentLyricSourceKey = currentSong?.stableKey()
-    var lyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var translatedLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
-    var rawLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
-    var rawTranslatedLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
-    var rawPhoneticLyricsText by remember(currentLyricSourceKey) { mutableStateOf<String?>(null) }
-    var remotePhoneticLyrics by remember(currentLyricSourceKey) {
-        mutableStateOf<List<LyricEntry>>(emptyList())
+    val immediateLyricsState = remember(
+        currentLyricSourceKey,
+        currentSong?.matchedLyric,
+        currentSong?.matchedTranslatedLyric,
+        currentSong?.matchedRomanizedLyric,
+        currentSong?.originalLyric,
+        currentSong?.originalTranslatedLyric,
+        currentSong?.originalRomanizedLyric
+    ) {
+        buildNowPlayingImmediateLyricsState(currentSong)
     }
-    var plainLyrics by remember(currentLyricSourceKey) { mutableStateOf<List<LyricEntry>>(emptyList()) }
+    // 切歌时直接以歌曲对象已有文本建立首帧，侧载快读完成后再覆盖，避免歌曲和歌词错帧
+    var lyrics by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.lyrics)
+    }
+    var translatedLyrics by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.translatedLyrics)
+    }
+    var rawLyricsText by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.rawLyrics)
+    }
+    var rawTranslatedLyricsText by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.rawTranslatedLyrics)
+    }
+    var rawPhoneticLyricsText by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.rawPhoneticLyrics)
+    }
+    var remotePhoneticLyrics by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.phoneticLyrics)
+    }
+    var plainLyrics by remember(currentLyricSourceKey) {
+        mutableStateOf(immediateLyricsState.plainLyrics)
+    }
     var plainTranslatedLyrics by remember(currentLyricSourceKey) {
-        mutableStateOf<List<LyricEntry>>(emptyList())
+        mutableStateOf(immediateLyricsState.plainTranslatedLyrics)
     }
     var embeddedPhoneticLyrics by remember(currentLyricSourceKey) {
-        mutableStateOf<List<LyricEntry>>(emptyList())
+        mutableStateOf(immediateLyricsState.embeddedPhoneticLyrics)
     }
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
@@ -2335,6 +2383,7 @@ fun NowPlayingScreen(
         currentSong?.mediaUri,
         currentSong?.localFilePath,
         downloadPresenceVersion,
+        downloadedLyricsRefreshVersion,
         resolveNowPlayingLyricsMediaReloadKey(
             song = currentSong,
             currentMediaUrl = currentMediaUrl
@@ -2393,6 +2442,9 @@ fun NowPlayingScreen(
                 candidate.isLocalSong() && hasCachedLocalDownload(context, candidate)
             } == true
             managedLocalDownloadDetected = isManagedLocalDownload
+            if (isManagedLocalDownload) {
+                ManagedDownloadStorage.scheduleLyricsRefresh(context)
+            }
             val canReadManagedDownloadLyrics = song?.let { candidate ->
                 shouldReadManagedDownloadLyrics(
                     song = candidate,
@@ -2402,7 +2454,11 @@ fun NowPlayingScreen(
             managedDownloadLyricsReadable = canReadManagedDownloadLyrics
             val downloadedLyrics = song?.takeIf { canReadManagedDownloadLyrics }?.let { downloadedSong ->
                 runCatching {
-                    AudioDownloadManager.getLyricsBundleFast(context, downloadedSong)
+                    AudioDownloadManager.getLyricsBundleFast(
+                        context = context,
+                        song = downloadedSong,
+                        allowColdSafProbe = false
+                    )
                 }.onFailure { error ->
                     NPLogger.w(
                         "NowPlayingLyrics",
@@ -2418,7 +2474,8 @@ fun NowPlayingScreen(
                         context = context,
                         song = localSong,
                         includeStoredFallback = !isManagedLocalDownload,
-                        includeEmbeddedFallback = !isManagedLocalDownload
+                        // 嵌入歌词需要打开音频容器, 留到后台补全避免首帧被 TagLib 阻塞
+                        includeEmbeddedFallback = shouldReadEmbeddedLyricsForNowPlayingFastStage()
                     )
                 }
                     .onFailure { error ->
@@ -2472,12 +2529,34 @@ fun NowPlayingScreen(
             )
         }
         publishLoadedLyricsState(fastLoadedLyricsState, stage = "fast")
-        val loadedLyricsState = withContext(Dispatchers.IO) {
+        // 快读结果已经发布, 完整侧载校验必须在独立后台阶段执行, 不能阻塞切歌首帧
+        launch {
+            val loadedLyricsState = withContext(Dispatchers.IO) {
             val isLocalSong = song?.isLocalSong() == true
             val isManagedLocalDownload = managedLocalDownloadDetected
             val canReadManagedDownloadLyrics = managedDownloadLyricsReadable
-            val localLyrics = if (isLocalSong) {
-                localLyricsScan
+            val localLyrics = if (isLocalSong && !isManagedLocalDownload) {
+                val scan = localLyricsScan
+                if (
+                    scan == null ||
+                        !scan.sourceResolved ||
+                        (
+                            !scan.hasOriginalSidecar &&
+                                !scan.hasTranslatedSidecar &&
+                                !scan.hasRomanizedSidecar
+                            )
+                ) {
+                    runCatching {
+                        LocalMediaSupport.inspectLyricsFast(
+                            context = context,
+                            song = song,
+                            includeStoredFallback = true,
+                            includeEmbeddedFallback = true
+                        )
+                    }.getOrElse { scan }
+                } else {
+                    scan
+                }
             } else {
                 null
             }
@@ -2715,8 +2794,9 @@ fun NowPlayingScreen(
                     lyrics = resolvedLyrics
                 )
             )
+            }
+            publishLoadedLyricsState(loadedLyricsState, stage = "background")
         }
-        publishLoadedLyricsState(loadedLyricsState, stage = "background")
     }
     val phoneticLyrics = remember(rawPhoneticLyricsText, remotePhoneticLyrics, embeddedPhoneticLyrics) {
         remotePhoneticLyrics.takeIf { it.isNotEmpty() } ?: embeddedPhoneticLyrics
@@ -4833,13 +4913,19 @@ fun EditSongInfoSheet(
         originalSong
     }
 
-    var coverUrl by remember { mutableStateOf(actualSong.customCoverUrl ?: actualSong.coverUrl ?: "") }
+    var coverUrl by remember {
+        mutableStateOf(
+            actualSong.customCoverUrl ?: actualSong.coverUrl ?: actualSong.originalCoverUrl ?: ""
+        )
+    }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
     var artistName by remember { mutableStateOf(actualSong.customArtist ?: actualSong.artist) }
     var showSearchResults by remember { mutableStateOf(false) }
     var selectedSongForFill by remember { mutableStateOf<SongSearchInfo?>(null) }
     var lyricsEditorSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
     var pendingLyricsSourceSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
+    var isLyricsEditorOpening by remember { mutableStateOf(false) }
+    var isPendingEmbeddedLyricsLoading by remember { mutableStateOf(false) }
     var shouldClearLyrics by remember { mutableStateOf(false) }  // 标记是否应该清除歌词(B站)
     var shouldRestoreLyrics by remember { mutableStateOf(false) }  // 标记是否应该恢复歌词(网易云)
     var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
@@ -4856,26 +4942,37 @@ fun EditSongInfoSheet(
 
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
+    var isCoverImporting by remember { mutableStateOf(false) }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { sourceUri ->
         if (sourceUri != null) {
             originalInfoRequestId += 1
+            isCoverImporting = true
             coroutineScope.launch {
-                val importedCover = CustomSongCoverStorage.importFromUri(
-                    context = context,
-                    song = actualSong,
-                    sourceUri = sourceUri
-                )
-                if (importedCover == null) {
+                try {
+                    val importedCover = CustomSongCoverStorage.importFromUri(
+                        context = context,
+                        song = actualSong,
+                        sourceUri = sourceUri
+                    )
+                    if (importedCover == null) {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(R.string.music_cover_import_failed)
+                        )
+                    } else {
+                        coverUrl = importedCover.toString()
+                        userHasEdited = true
+                        shouldRestoreCoverBase = false
+                    }
+                } catch (error: Exception) {
+                    NPLogger.e("NowPlayingScreen", "导入本地封面失败", error)
                     snackbarHostState.showNeriSnackbar(
                         composeResources.getString(R.string.music_cover_import_failed)
                     )
-                } else {
-                    coverUrl = importedCover.toString()
-                    userHasEdited = true
-                    shouldRestoreCoverBase = false
+                } finally {
+                    isCoverImporting = false
                 }
             }
         }
@@ -4888,13 +4985,41 @@ fun EditSongInfoSheet(
     // 当歌曲信息更新时, 同步更新UI (仅在用户未手动编辑时)
     LaunchedEffect(actualSong.stableKey()) {
         if (!userHasEdited) {
-            coverUrl = actualSong.customCoverUrl ?: actualSong.coverUrl ?: ""
+            coverUrl = actualSong.customCoverUrl
+                ?: actualSong.coverUrl
+                ?: actualSong.originalCoverUrl
+                ?: ""
             songName = actualSong.customName ?: actualSong.name
             artistName = actualSong.customArtist ?: actualSong.artist
             shouldRestoreCoverBase = false
             shouldRestoreTitleBase = false
             shouldRestoreArtistBase = false
             shouldClearMatchedMetadata = false
+        }
+    }
+
+    LaunchedEffect(actualSong.stableKey()) {
+        if (
+            actualSong.isLocalSong() &&
+            !userHasEdited &&
+            coverUrl.isBlank()
+        ) {
+            val requestSongKey = actualSong.stableKey()
+            val resolvedCover = withContext(Dispatchers.IO) {
+                runCatching {
+                    LocalMediaSupport.resolveNearbyCoverUri(context, actualSong)
+                        ?: LocalMediaSupport.peekMediaStoreAlbumArtUri(context, actualSong)
+                        ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, actualSong)
+                        ?: LocalMediaSupport.resolveCoverUri(context, actualSong)
+                }.getOrNull()
+            }
+            if (
+                resolvedCover != null &&
+                !userHasEdited &&
+                actualSong.stableKey() == requestSongKey
+            ) {
+                coverUrl = resolvedCover
+            }
         }
     }
 
@@ -5269,6 +5394,8 @@ fun EditSongInfoSheet(
                     // 本地歌曲必须先确认侧载是否存在, 否则编辑器和来源弹窗会竞态
                     lyricsEditorSeed = null
                     pendingLyricsSourceSeed = null
+                    isLyricsEditorOpening = true
+                    isPendingEmbeddedLyricsLoading = false
 
                     coroutineScope.launch {
                         try {
@@ -5319,15 +5446,38 @@ fun EditSongInfoSheet(
                                     } else {
                                         null
                                     }
+                                    val hasSidecar = downloadedLyrics?.hasOriginalSidecar == true ||
+                                        downloadedLyrics?.hasTranslatedSidecar == true ||
+                                        downloadedLyrics?.hasRomanizedSidecar == true ||
+                                        localLyrics?.hasOriginalSidecar == true ||
+                                        localLyrics?.hasTranslatedSidecar == true ||
+                                        localLyrics?.hasRomanizedSidecar == true
+                                    val embeddedLyrics = if (!hasSidecar) {
+                                        runCatching {
+                                            LocalMediaSupport.inspectLyricsFast(
+                                                context = context,
+                                                song = actualSong,
+                                                includeStoredFallback = false,
+                                                includeEmbeddedFallback = true
+                                            )
+                                        }.onFailure { error ->
+                                            NPLogger.w(
+                                                "NowPlayingLyrics",
+                                                "编辑器读取嵌入歌词失败: ${error.message}"
+                                            )
+                                        }.getOrNull()
+                                    } else {
+                                        null
+                                    }
                                     Triple(
                                         isManagedLocalDownload,
                                         downloadedLyrics,
-                                        localLyrics
+                                        localLyrics to embeddedLyrics
                                     )
                                 }
-                                val isManagedLocalDownload = lyricsSources.first
                                 val downloadedLyrics = lyricsSources.second
-                                val localLyrics = lyricsSources.third
+                                val localLyrics = lyricsSources.third.first
+                                val embeddedLyrics = lyricsSources.third.second
                                 val sidecarLyrics = when {
                                     downloadedLyrics?.hasOriginalSidecar == true -> {
                                         downloadedLyrics.lyric
@@ -5373,16 +5523,19 @@ fun EditSongInfoSheet(
                                     embeddedLyrics = downloadedLyrics
                                         ?.takeUnless { it.hasOriginalSidecar }
                                         ?.lyric
+                                        ?: embeddedLyrics?.lyric
                                         ?: storedLyrics
                                         ?: displayedLyricsText,
                                     embeddedTranslatedLyrics = downloadedLyrics
                                         ?.takeUnless { it.hasTranslatedSidecar }
                                         ?.translatedLyric
+                                        ?: embeddedLyrics?.translatedLyric
                                         ?: storedTranslatedLyrics
                                         ?: displayedTranslatedLyricsText,
                                     embeddedRomanizedLyrics = downloadedLyrics
                                         ?.takeUnless { it.hasRomanizedSidecar }
                                         ?.romanizedLyric
+                                        ?: embeddedLyrics?.romanizedLyric
                                         ?: storedRomanizedLyrics
                                         ?: displayedRomanizedLyricsText,
                                     hasOriginalSidecar =
@@ -5400,13 +5553,15 @@ fun EditSongInfoSheet(
                                 }
                                 if (loadedEditorSeed.hasSidecar) {
                                     pendingLyricsSourceSeed = loadedEditorSeed
+                                    isLyricsEditorOpening = false
+                                    isPendingEmbeddedLyricsLoading = true
                                     // TagLib 只在来源弹窗出现后补充嵌入歌词, 不阻塞入口
                                     launch {
                                         val embedded = withContext(Dispatchers.IO) {
                                             runCatching {
                                                 LocalMediaSupport.inspectEmbeddedLyrics(
-                                                    context,
-                                                    actualSong
+                                                    context = context,
+                                                    song = actualSong
                                                 )
                                             }.getOrNull()
                                         }
@@ -5415,16 +5570,18 @@ fun EditSongInfoSheet(
                                             pendingLyricsSourceSeed?.hasSidecar == true
                                         ) {
                                             pendingLyricsSourceSeed = loadedEditorSeed.copy(
-                                                embeddedLyrics = embedded?.lyric.orEmpty(),
+                                                embeddedLyrics = embedded?.embeddedLyric.orEmpty(),
                                                 embeddedTranslatedLyrics =
-                                                    embedded?.translatedLyric.orEmpty(),
+                                                    embedded?.embeddedTranslatedLyric.orEmpty(),
                                                 embeddedRomanizedLyrics =
-                                                    embedded?.romanizedLyric.orEmpty()
+                                                    embedded?.embeddedRomanizedLyric.orEmpty()
                                             )
+                                            isPendingEmbeddedLyricsLoading = false
                                         }
                                     }
                                 } else {
                                     lyricsEditorSeed = loadedEditorSeed
+                                    isLyricsEditorOpening = false
                                 }
                             } else {
                                 lyricsEditorSeed = resolveLyricsEditorSeed(
@@ -5432,6 +5589,7 @@ fun EditSongInfoSheet(
                                     preparedLyrics = displayedLyricsText,
                                     preparedTranslatedLyrics = displayedTranslatedLyricsText
                                 )
+                                isLyricsEditorOpening = false
                             }
                         } catch (e: CancellationException) {
                             throw e
@@ -5450,15 +5608,29 @@ fun EditSongInfoSheet(
                                     hasTranslatedSidecar = false,
                                     hasRomanizedSidecar = false
                                 )
+                                isLyricsEditorOpening = false
                             } else {
                                 lyricsEditorSeed = resolveLyricsEditorSeed(song = actualSong)
+                                isLyricsEditorOpening = false
                             }
                         }
                     }
                 },
+                enabled = !isLyricsEditorOpening,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Outlined.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                if (isLyricsEditorOpening) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.Edit,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.music_edit_lyrics))
             }
@@ -5532,7 +5704,8 @@ fun EditSongInfoSheet(
                         saveEditedSongInfo(writeLocalMetadata = false)
                     }
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                enabled = !isCoverImporting
             ) {
                 Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -5658,7 +5831,10 @@ fun EditSongInfoSheet(
 
     pendingLyricsSourceSeed?.let { pendingSeed ->
         AlertDialog(
-            onDismissRequest = { pendingLyricsSourceSeed = null },
+            onDismissRequest = {
+                pendingLyricsSourceSeed = null
+                isPendingEmbeddedLyricsLoading = false
+            },
             title = { Text(stringResource(R.string.local_lyrics_source_choice_title)) },
             text = { Text(stringResource(R.string.local_lyrics_source_choice_message)) },
             confirmButton = {
@@ -5671,6 +5847,7 @@ fun EditSongInfoSheet(
                             source = LyricsEditorSource.SIDECAR
                         )
                         pendingLyricsSourceSeed = null
+                        isPendingEmbeddedLyricsLoading = false
                     }
                 ) {
                     Text(stringResource(R.string.local_lyrics_source_sidecar))
@@ -5678,6 +5855,7 @@ fun EditSongInfoSheet(
             },
             dismissButton = {
                 HapticTextButton(
+                    enabled = !isPendingEmbeddedLyricsLoading,
                     onClick = {
                         lyricsEditorSeed = pendingSeed.copy(
                             lyrics = pendingSeed.embeddedLyrics,
@@ -5686,8 +5864,16 @@ fun EditSongInfoSheet(
                             source = LyricsEditorSource.EMBEDDED
                         )
                         pendingLyricsSourceSeed = null
+                        isPendingEmbeddedLyricsLoading = false
                     }
                 ) {
+                    if (isPendingEmbeddedLyricsLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(stringResource(R.string.local_lyrics_source_embedded))
                 }
             }

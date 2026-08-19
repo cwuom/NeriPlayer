@@ -23,6 +23,37 @@ import kotlin.math.pow
 class NowPlayingScreenTest {
 
     @Test
+    fun `immediate lyric state keeps current song metadata on the first composition`() {
+        val song = SongItem(
+            id = 41L,
+            name = "Immediate",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/41",
+            matchedLyric = "[00:01.00]first line",
+            matchedTranslatedLyric = "[00:01.00]translated line",
+            matchedRomanizedLyric = "[00:01.00]romanized line"
+        )
+
+        val state = buildNowPlayingImmediateLyricsState(song)
+
+        assertEquals("[00:01.00]first line", state.rawLyrics)
+        assertEquals("[00:01.00]translated line", state.rawTranslatedLyrics)
+        assertEquals("[00:01.00]romanized line", state.rawPhoneticLyrics)
+        assertEquals("first line", state.lyrics.single().text)
+        assertEquals("translated line", state.translatedLyrics.single().text)
+        assertEquals("romanized line", state.phoneticLyrics.single().text)
+    }
+
+    @Test
+    fun `now playing fast lyric stage does not inspect embedded audio metadata`() {
+        assertFalse(shouldReadEmbeddedLyricsForNowPlayingFastStage())
+    }
+
+    @Test
     fun `empty refresh for the same song keeps existing lyrics`() {
         assertFalse(
             shouldReplaceLyricsAfterRefresh(
