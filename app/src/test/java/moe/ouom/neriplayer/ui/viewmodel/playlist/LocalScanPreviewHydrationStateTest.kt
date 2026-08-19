@@ -81,6 +81,29 @@ class LocalScanPreviewHydrationStateTest {
         assertEquals(secondSong, merged[secondSong.stableKey()])
     }
 
+    @Test
+    fun `scanned songs are ordered by source time descending`() {
+        val oldSong = localSong(id = 6L, name = "old").copy(addedAt = 100L)
+        val newestSong = localSong(id = 7L, name = "newest").copy(addedAt = 300L)
+        val middleSong = localSong(id = 8L, name = "middle").copy(addedAt = 200L)
+
+        assertEquals(
+            listOf(newestSong, middleSong, oldSong),
+            sortScannedSongsBySourceTime(listOf(oldSong, newestSong, middleSong))
+        )
+    }
+
+    @Test
+    fun `scanned songs with the same source time keep discovery order`() {
+        val firstSong = localSong(id = 9L, name = "first").copy(addedAt = 500L)
+        val secondSong = localSong(id = 10L, name = "second").copy(addedAt = 500L)
+
+        assertEquals(
+            listOf(firstSong, secondSong),
+            sortScannedSongsBySourceTime(listOf(firstSong, secondSong))
+        )
+    }
+
     private fun localSong(id: Long, name: String, album: String = "") = SongItem(
         id = id,
         name = name,

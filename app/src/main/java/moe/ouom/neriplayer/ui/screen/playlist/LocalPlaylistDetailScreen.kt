@@ -2154,11 +2154,9 @@ fun LocalPlaylistDetailScreen(
                                                 }
                                             }
 
-                                            // 滚动结束后才解析内嵌封面, 避免快速滑动积压重型任务
-                                            val resolveArtworkFallback = shouldResolveLocalPlaylistRowArtworkFallback(
-                                                isScrollInProgress = isListScrolling,
-                                                hasReachedIdleWindow = isListArtworkIdle
-                                            )
+                                            // 可见行立即排入受限的封面队列, 不让首屏等待滚动空闲
+                                            val resolveArtworkFallback =
+                                                shouldResolveLocalPlaylistRowArtworkFallback()
                                             LocalPlaylistSongArtwork(
                                                 song = song,
                                                 offlineMode = offlineMode,
@@ -3153,12 +3151,7 @@ private fun rememberRetainedLocalPlaylistArtworkUrl(
     }
 }
 
-internal fun shouldResolveLocalPlaylistRowArtworkFallback(
-    isScrollInProgress: Boolean,
-    hasReachedIdleWindow: Boolean = true
-): Boolean {
-    return !isScrollInProgress && hasReachedIdleWindow
-}
+internal fun shouldResolveLocalPlaylistRowArtworkFallback(): Boolean = true
 
 private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
     val fileTitle = fileName.substringBeforeLast('.', fileName).trim()

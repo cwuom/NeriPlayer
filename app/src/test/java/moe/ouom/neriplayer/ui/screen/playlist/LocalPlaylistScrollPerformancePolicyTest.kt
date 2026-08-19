@@ -11,36 +11,18 @@ import org.junit.Test
 class LocalPlaylistScrollPerformancePolicyTest {
 
     @Test
-    fun `row artwork fallback stays disabled while the list is scrolling`() {
-        assertFalse(shouldResolveLocalPlaylistRowArtworkFallback(isScrollInProgress = true))
+    fun `visible row artwork fallback starts immediately`() {
+        assertTrue(shouldResolveLocalPlaylistRowArtworkFallback())
     }
 
     @Test
-    fun `row artwork fallback runs once the list is idle`() {
-        assertTrue(shouldResolveLocalPlaylistRowArtworkFallback(isScrollInProgress = false))
-    }
-
-    @Test
-    fun `idle row artwork fallback enables embedded cover resolution during playback`() {
-        val resolveFallback = shouldResolveLocalPlaylistRowArtworkFallback(
-            isScrollInProgress = false,
-            hasReachedIdleWindow = true
-        )
+    fun `visible row artwork fallback enables embedded cover resolution`() {
+        val resolveFallback = shouldResolveLocalPlaylistRowArtworkFallback()
 
         assertTrue(
             shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveFallback,
                 allowEmbeddedCoverFallback = resolveFallback
-            )
-        )
-    }
-
-    @Test
-    fun `row artwork fallback waits for the idle window after scrolling stops`() {
-        assertFalse(
-            shouldResolveLocalPlaylistRowArtworkFallback(
-                isScrollInProgress = false,
-                hasReachedIdleWindow = false
             )
         )
     }

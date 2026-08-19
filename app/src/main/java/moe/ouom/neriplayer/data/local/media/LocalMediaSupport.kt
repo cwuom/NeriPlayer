@@ -177,6 +177,23 @@ internal data class LocalLyricsScanMetadata(
     val sourceResolved: Boolean = false
 )
 
+internal data class EmbeddedLyricsReadOptions(
+    val includeEmbeddedAssets: Boolean,
+    val includeEmbeddedLyrics: Boolean,
+    val includeAudioProperties: Boolean
+)
+
+internal val embeddedLyricsReadOptions = EmbeddedLyricsReadOptions(
+    includeEmbeddedAssets = false,
+    includeEmbeddedLyrics = true,
+    includeAudioProperties = false
+)
+
+internal fun isLocalLyricsSourceResolved(
+    scannedSource: Boolean,
+    embeddedSource: Boolean
+): Boolean = scannedSource || embeddedSource
+
 private data class DirectLocalLyricsInspection(
     val original: String?,
     val translated: String?,
@@ -1391,7 +1408,10 @@ object LocalMediaSupport {
             embeddedLyric = embedded?.lyric,
             embeddedTranslatedLyric = embedded?.translatedLyric,
             embeddedRomanizedLyric = embedded?.romanizedLyric,
-            sourceResolved = resolvedScan != null
+            sourceResolved = isLocalLyricsSourceResolved(
+                scannedSource = resolvedScan != null,
+                embeddedSource = embedded != null
+            )
         )
         if (cacheable) {
             synchronized(localLyricsLookupCache) {
@@ -1441,6 +1461,7 @@ object LocalMediaSupport {
         context: Context,
         song: SongItem
     ): LocalLyricsScanMetadata? {
+        val options = embeddedLyricsReadOptions
         song.localMediaUriCandidates().forEach { sourceUri ->
             val resolved = runCatching {
                 resolveInspectableLocalMedia(
@@ -1453,8 +1474,9 @@ object LocalMediaSupport {
                 context = context,
                 uri = resolved.playableUri,
                 file = resolved.file,
-                includeEmbeddedAssets = false,
-                includeAudioProperties = false
+                includeEmbeddedAssets = options.includeEmbeddedAssets,
+                includeEmbeddedLyrics = options.includeEmbeddedLyrics,
+                includeAudioProperties = options.includeAudioProperties
             ) ?: return@forEach
             return LocalLyricsScanMetadata(
                 lyric = metadata.lyrics,

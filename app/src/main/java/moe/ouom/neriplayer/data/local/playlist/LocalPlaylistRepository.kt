@@ -985,7 +985,11 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
+    private fun stampSongsForPlaylistInsert(
+        songs: List<SongItem>,
+        addedAt: Long,
+        preserveScannedSourceAddedAt: Boolean = false
+    ): List<SongItem> {
         if (songs.isEmpty()) return emptyList()
 
         val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
@@ -994,7 +998,12 @@ class LocalPlaylistRepository private constructor(
         }
         return songs.mapIndexed { index, song ->
             song.copy(
-                addedAt = (addedAt - index).coerceAtLeast(1L),
+                addedAt = if (preserveScannedSourceAddedAt) {
+                    song.addedAt.takeIf { it > 0L }
+                        ?: (addedAt - index).coerceAtLeast(1L)
+                } else {
+                    (addedAt - index).coerceAtLeast(1L)
+                },
                 syncMembershipTokens = listOf(membershipTokens[index])
             )
         }
@@ -1216,7 +1225,12 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
-        return createPlaylistWithPreparedSongs(name, songs)
+        return createPlaylistWithSongs(
+            name = name,
+            songs = songs,
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
+        )
     }
 
     suspend fun createPlaylistWithPreparedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
@@ -1230,14 +1244,16 @@ class LocalPlaylistRepository private constructor(
     private suspend fun createPlaylistWithSongs(
         name: String,
         songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
+        hydrateLocalMetadata: Boolean,
+        preserveScannedSourceAddedAt: Boolean = false
     ): LocalPlaylist {
         return withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val distinctSongs = distinctPlaylistSongs(
                 stampSongsForPlaylistInsert(
                     songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
-                    addedAt = now
+                    addedAt = now,
+                    preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                 )
             )
             commitPlaylistMutation {
@@ -1696,7 +1712,8 @@ class LocalPlaylistRepository private constructor(
             playlistId = playlistId,
             songs = songs,
             hydrateLocalMetadata = false,
-            includeLocalMetadataFallback = true
+            includeLocalMetadataFallback = true,
+            preserveScannedSourceAddedAt = true
         )
     }
 
@@ -1723,7 +1740,8 @@ class LocalPlaylistRepository private constructor(
         playlistId: Long,
         songs: List<SongItem>,
         hydrateLocalMetadata: Boolean,
-        includeLocalMetadataFallback: Boolean = false
+        includeLocalMetadataFallback: Boolean = false,
+        preserveScannedSourceAddedAt: Boolean = false
     ): LocalPlaylistSongAddResult {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext LocalPlaylistSongAddResult(emptyList())
@@ -1735,7 +1753,8 @@ class LocalPlaylistRepository private constructor(
                         playlistId = playlistId,
                         songs = hydratedSongs,
                         now = now,
-                        includeLocalMetadataFallback = includeLocalMetadataFallback
+                        includeLocalMetadataFallback = includeLocalMetadataFallback,
+                        preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                     )
                 )
             }
@@ -1746,7 +1765,8 @@ class LocalPlaylistRepository private constructor(
         playlistId: Long,
         songs: List<SongItem>,
         now: Long,
-        includeLocalMetadataFallback: Boolean = false
+        includeLocalMetadataFallback: Boolean = false,
+        preserveScannedSourceAddedAt: Boolean = false
     ): List<SongItem> {
         if (songs.isEmpty()) {
             return emptyList()
@@ -1839,13 +1859,15 @@ class LocalPlaylistRepository private constructor(
     suspend fun addScannedSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
         return addSongsToLocalFilesPlaylistAndCount(
             songs = songs,
-            hydrateLocalMetadata = false
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
         )
     }
 
     private suspend fun addSongsToLocalFilesPlaylistAndCount(
         songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
+        hydrateLocalMetadata: Boolean,
+        preserveScannedSourceAddedAt: Boolean = false
     ): Int {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext 0
@@ -1868,7 +1890,8 @@ class LocalPlaylistRepository private constructor(
                     } else {
                         val toAdd = stampSongsForPlaylistInsert(
                             songs = newSongs,
-                            addedAt = nextPlaylistSongAddedAt(playlist, now)
+                            addedAt = nextPlaylistSongAddedAt(playlist, now),
+                            preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                         )
                         addedCount += toAdd.size
                         playlist.copy(

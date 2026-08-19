@@ -197,6 +197,11 @@ internal fun applyHydratedSongsToScanPreview(
     )
 }
 
+internal fun sortScannedSongsBySourceTime(songs: List<SongItem>): List<SongItem> {
+    // sortedWith 保持相同时间的扫描顺序, 避免时间精度不足时跳来跳去
+    return songs.sortedWith(compareByDescending<SongItem> { it.addedAt.coerceAtLeast(0L) })
+}
+
 private data class LocalScanMetadataFingerprint(
     val title: String,
     val artist: String,
@@ -626,7 +631,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 }
             }
             try {
-                repo.refreshScannedLocalSongMetadata(batch)
+                repo.refreshScannedLocalSongMetadata(
+                    songs = batch,
+                    includeLyricContents = true
+                )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -819,51 +827,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     }
 
     private fun prepareScannedSongs(songs: List<SongItem>): List<SongItem> {
-        return songs.sortedWith(localScanSongComparator())
-    }
-
-    private fun localScanSongComparator(): Comparator<SongItem> {
-        return compareByDescending<SongItem> { metadataRichnessScore(it) }
-            .thenByDescending { it.durationMs.coerceAtLeast(0L) }
-            .thenBy { it.name.lowercase() }
-            .thenBy { it.artist.lowercase() }
-            .thenBy { it.album.lowercase() }
-            .thenBy { it.localFilePath.orEmpty().lowercase() }
-            .thenBy { it.stableKey() }
-    }
-
-    private fun metadataRichnessScore(song: SongItem): Int {
-        val fileTitle = song.localFileName
-            ?.substringBeforeLast('.', song.localFileName)
-            ?.trim()
-            .orEmpty()
-        var score = 0
-
-        val hasMeaningfulTitle = song.name.isNotBlank()
-        if (hasMeaningfulTitle) {
-            score += if (fileTitle.isNotBlank() && !song.name.equals(fileTitle, ignoreCase = true)) 3 else 1
-        }
-
-        if (song.artist.isMeaningfulMetadata(app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist))) {
-            score += 2
-        }
-        if (song.album.isMeaningfulAlbum(app)) {
-            score += 2
-        }
-        if (song.durationMs > 0L) {
-            score += 1
-        }
-        if (!song.coverUrl.isNullOrBlank() || !song.originalCoverUrl.isNullOrBlank()) {
-            score += 1
-        }
-        if (!song.originalName.isNullOrBlank() && !song.originalName.equals(fileTitle, ignoreCase = true)) {
-            score += 1
-        }
-        if (!song.originalArtist.isNullOrBlank()) {
-            score += 1
-        }
-
-        return score
+        return sortScannedSongsBySourceTime(songs)
     }
 
     private fun hasMeaningfulScanMetadata(song: SongItem): Boolean {

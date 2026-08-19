@@ -149,6 +149,33 @@ internal fun shouldFallbackToDocumentFileAfterTraversalFailure(error: Throwable)
     return error !is CancellationException
 }
 
+internal fun resolveMediaStoreSourceAddedAt(
+    dateAddedSeconds: Long?,
+    dateModifiedSeconds: Long?
+): Long {
+    return dateAddedSeconds.toEpochMillisOrNull()
+        ?: dateModifiedSeconds.toEpochMillisOrNull()
+        ?: 0L
+}
+
+internal fun resolveScannedSourceAddedAt(
+    preferredTimestampMs: Long?,
+    fallbackTimestampMs: Long?
+): Long {
+    return preferredTimestampMs?.takeIf { it > 0L }
+        ?: fallbackTimestampMs?.takeIf { it > 0L }
+        ?: 0L
+}
+
+private fun Long?.toEpochMillisOrNull(): Long? {
+    val seconds = this?.takeIf { it > 0L } ?: return null
+    return if (seconds > Long.MAX_VALUE / 1_000L) {
+        Long.MAX_VALUE
+    } else {
+        seconds * 1_000L
+    }
+}
+
 internal data class SidecarCopyPlan(
     val source: File,
     val target: File
@@ -161,6 +188,7 @@ internal data class QuickImportedSongSeed(
     val artist: String?,
     val album: String?,
     val durationMs: Long?,
+    val sourceAddedAt: Long? = null,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
     val mediaStoreCoverUri: String? = null,
@@ -179,6 +207,7 @@ private data class QuickImportedAudioInfo(
     val artist: String? = null,
     val album: String? = null,
     val durationMs: Long? = null,
+    val sourceAddedAt: Long? = null,
     val mediaStoreCoverUri: String? = null
 )
 
@@ -190,7 +219,8 @@ private data class ExternalAudioCopyInfo(
 private data class FolderScanCandidate(
     val uri: Uri,
     val displayName: String? = null,
-    val nearbyCoverUri: String? = null
+    val nearbyCoverUri: String? = null,
+    val sourceAddedAt: Long? = null
 )
 
 private data class FolderTraversalResult(
@@ -209,7 +239,8 @@ private data class QueriedFolderChild(
     val documentUri: Uri,
     val displayName: String,
     val mimeType: String,
-    val isDirectory: Boolean
+    val isDirectory: Boolean,
+    val lastModifiedMs: Long? = null
 )
 
 internal fun buildNearbySidecarCopyPlans(
@@ -504,6 +535,8 @@ object LocalAudioImportManager {
             MediaStore.Audio.Media.DURATION,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.RELATIVE_PATH,
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.DATE_MODIFIED,
             "_data"
         )
         val selection = if (scope.relativePath.isBlank()) {
@@ -532,6 +565,8 @@ object LocalAudioImportManager {
                 val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val displayNameIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
                 val relativePathIndex = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+                val dateAddedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val dateModifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                 val dataPathIndex = cursor.getColumnIndex("_data")
                 val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
                 val songs = ArrayList<SongItem>(totalCount.coerceAtLeast(0))
@@ -585,6 +620,14 @@ object LocalAudioImportManager {
                         ?.takeIf { it > 0L }
                         ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
                         ?.also { mediaStoreCoverHitCount++ }
+                    val sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                        dateAddedSeconds = dateAddedIndex
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong),
+                        dateModifiedSeconds = dateModifiedIndex
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong)
+                    )
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
                             sourceRef = contentUri.toString(),
@@ -601,6 +644,7 @@ object LocalAudioImportManager {
                             durationMs = durationIndex
                                 .takeIf { !cursor.isNull(it) }
                                 ?.let(cursor::getLong),
+                            sourceAddedAt = sourceAddedAt,
                             localFile = resolvedFile,
                             nearbyCoverUri = nearbyCoverUri,
                             mediaStoreCoverUri = mediaStoreCoverUri
@@ -750,6 +794,8 @@ object LocalAudioImportManager {
             if (includeRelativePath) {
                 add(MediaStore.MediaColumns.RELATIVE_PATH)
             }
+            add(MediaStore.MediaColumns.DATE_ADDED)
+            add(MediaStore.MediaColumns.DATE_MODIFIED)
             add("_data")
         }.toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC}!=0"
@@ -775,6 +821,8 @@ object LocalAudioImportManager {
                 } else {
                     -1
                 }
+                val idxDateAdded = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val idxDateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                 val idxData = cursor.getColumnIndex("_data")
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
@@ -811,6 +859,14 @@ object LocalAudioImportManager {
                         ?.takeIf { it > 0L }
                         ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
                         ?.also { mediaStoreCoverHitCount++ }
+                    val sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                        dateAddedSeconds = idxDateAdded
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong),
+                        dateModifiedSeconds = idxDateModified
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong)
+                    )
 
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -820,6 +876,7 @@ object LocalAudioImportManager {
                             artist = idxArtist.takeIf { it >= 0 }?.let(cursor::getString),
                             album = idxAlbum.takeIf { it >= 0 }?.let(cursor::getString),
                             durationMs = duration,
+                            sourceAddedAt = sourceAddedAt,
                             localFile = resolvedFile,
                             nearbyCoverUri = nearbyCoverUri,
                             mediaStoreCoverUri = mediaStoreCoverUri
@@ -915,6 +972,10 @@ object LocalAudioImportManager {
             usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
         )
         val stableId = computeStableSongId(resolvedSource)
+        val sourceAddedAt = resolveScannedSourceAddedAt(
+            preferredTimestampMs = seed.sourceAddedAt,
+            fallbackTimestampMs = seed.localFile?.lastModified()
+        )
 
         return SongItem(
             id = stableId,
@@ -941,7 +1002,8 @@ object LocalAudioImportManager {
             localFilePath = seed.localFile?.absolutePath,
             channelId = "local",
             audioId = stableId.toString(),
-            sourceStableKey = seed.sourceStableKey
+            sourceStableKey = seed.sourceStableKey,
+            addedAt = sourceAddedAt
         )
     }
 
@@ -1100,6 +1162,8 @@ object LocalAudioImportManager {
         }
         val nearbyCover = runCatching {
             LocalMediaSupport.resolveNearbyCoverUri(context, song)
+                ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
+                ?: LocalMediaSupport.resolveCoverUri(context, song)
         }.getOrNull()?.takeIf(String::isNotBlank) ?: return song
         return song.copy(
             coverUrl = nearbyCover,
@@ -1233,6 +1297,7 @@ object LocalAudioImportManager {
                 artist = details.artist,
                 album = details.album.takeUnless { details.usesFallbackAlbum },
                 durationMs = details.durationMs,
+                sourceAddedAt = details.lastModifiedMs,
                 localFile = details.filePath?.let(::File)?.takeIf(File::exists),
                 nearbyCoverUri = details.coverUri,
                 sourceStableKey = details.sourceStableKey,
@@ -1292,7 +1357,8 @@ object LocalAudioImportManager {
                                 directCoverIndex = directCoverIndex,
                                 nestedCoverIndex = nestedCoverIndex,
                                 baseName = baseName
-                            )
+                            ),
+                            sourceAddedAt = child.lastModifiedMs
                         )
                     }
                 }
@@ -1361,7 +1427,8 @@ object LocalAudioImportManager {
                                 directCoverIndex = directCoverIndex,
                                 nestedCoverIndex = nestedCoverIndex,
                                 baseName = baseName
-                            )
+                            ),
+                            sourceAddedAt = runCatching { child.lastModified() }.getOrNull()
                         )
                     }
                 }
@@ -1389,7 +1456,8 @@ object LocalAudioImportManager {
                 arrayOf(
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
                 ),
                 null,
                 null,
@@ -1398,6 +1466,9 @@ object LocalAudioImportManager {
                 val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val lastModifiedIndex = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                )
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
                     return@use emptyList()
                 }
@@ -1413,7 +1484,10 @@ object LocalAudioImportManager {
                                 documentUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocumentId),
                                 displayName = childDisplayName,
                                 mimeType = childMimeType,
-                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR
+                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR,
+                                lastModifiedMs = lastModifiedIndex
+                                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                                    ?.let(cursor::getLong)
                             )
                         )
                     }
@@ -1447,6 +1521,7 @@ object LocalAudioImportManager {
                 artist = null,
                 album = null,
                 durationMs = null,
+                sourceAddedAt = candidate.sourceAddedAt,
                 nearbyCoverUri = candidate.nearbyCoverUri
             ),
             unknownArtistLabel = unknownArtistLabel
@@ -1553,6 +1628,7 @@ object LocalAudioImportManager {
                 artist = queryInfo.artist,
                 album = queryInfo.album,
                 durationMs = queryInfo.durationMs,
+                sourceAddedAt = queryInfo.sourceAddedAt,
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,
                 mediaStoreCoverUri = queryInfo.mediaStoreCoverUri,
@@ -1581,7 +1657,9 @@ object LocalAudioImportManager {
                     MediaStore.Audio.Media.ALBUM,
                     MediaStore.Audio.Media.ALBUM_ID,
                     MediaStore.Audio.Media.DURATION,
-                    MediaStore.MediaColumns.DISPLAY_NAME
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATE_ADDED,
+                    MediaStore.MediaColumns.DATE_MODIFIED
                 ),
                 null,
                 null,
@@ -1603,6 +1681,14 @@ object LocalAudioImportManager {
                     durationMs = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong),
+                    sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                        dateAddedSeconds = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong),
+                        dateModifiedSeconds = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                            .takeIf { it >= 0 && !cursor.isNull(it) }
+                            ?.let(cursor::getLong)
+                    ),
                     mediaStoreCoverUri = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)

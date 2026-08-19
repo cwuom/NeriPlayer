@@ -287,6 +287,28 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong keeps source file time for scanned ordering`() {
+        val importedFile = tempFolder.newFile("scanned-order.flac")
+        val sourceTime = 1_725_000_000_000L
+        assertTrue(importedFile.setLastModified(sourceTime))
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals(sourceTime, song.addedAt)
+    }
+
+    @Test
     fun `buildQuickImportedSong preserves legacy stable id calculation`() {
         val sourceRef = "content://provider/audio/legacy-id"
         val song = LocalAudioImportManager.buildQuickImportedSong(

@@ -19,6 +19,35 @@ class LocalMediaSupportTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun `embedded lyric inspection reads text without decoding artwork or audio properties`() {
+        assertFalse(embeddedLyricsReadOptions.includeEmbeddedAssets)
+        assertTrue(embeddedLyricsReadOptions.includeEmbeddedLyrics)
+        assertFalse(embeddedLyricsReadOptions.includeAudioProperties)
+    }
+
+    @Test
+    fun `embedded lyric metadata counts as a resolved local lyrics source`() {
+        assertTrue(
+            isLocalLyricsSourceResolved(
+                scannedSource = false,
+                embeddedSource = true
+            )
+        )
+        assertTrue(
+            isLocalLyricsSourceResolved(
+                scannedSource = true,
+                embeddedSource = false
+            )
+        )
+        assertFalse(
+            isLocalLyricsSourceResolved(
+                scannedSource = false,
+                embeddedSource = false
+            )
+        )
+    }
+
+    @Test
     fun `media store uri skips direct sidecar and parent path access`() {
         assertEquals(
             true,
