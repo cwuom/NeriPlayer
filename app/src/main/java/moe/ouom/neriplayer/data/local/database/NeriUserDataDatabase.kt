@@ -94,7 +94,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -169,7 +169,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_18_19,
                 MIGRATION_19_20,
                 MIGRATION_20_21,
-                MIGRATION_21_22
+                MIGRATION_21_22,
+                MIGRATION_22_23
             ).build()
         }
 
@@ -1194,6 +1195,14 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
          * repairs databases that reached version 21 with the legacy Room identity hash
          */
         val MIGRATION_21_22: Migration = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        /**
+         * repairs databases that were already marked as version 22 while retaining the
+         * identity hash written by the previous schema build
+         */
+        val MIGRATION_22_23: Migration = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) = Unit
         }
 

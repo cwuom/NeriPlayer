@@ -445,6 +445,37 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromVersion22WithLegacyIdentityHashToVersion23() {
+        helper.createDatabase(TEST_DATABASE_VERSION_22_NAME, 22).apply {
+            execSQL(
+                "UPDATE room_master_table SET identity_hash = " +
+                    "'3d734fb4f12dd32bbd4876b9556f8147'"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_22_NAME,
+            23,
+            true,
+            NeriUserDataDatabase.MIGRATION_22_23
+        )
+
+        try {
+            assertEquals(
+                23L,
+                migrated.longFor("PRAGMA user_version")
+            )
+            assertEquals(
+                "361bf3ee3aec4a5d3d2059cab1c7f9f3",
+                migrated.stringFor("SELECT identity_hash FROM room_master_table")
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertVersion1LocalPlaylistFixture() {
         val songPayload = sqlText(
             """
@@ -549,5 +580,6 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_VERSION_19_NAME = "neri-user-data-migration-v19-test"
         const val TEST_DATABASE_VERSION_20_NAME = "neri-user-data-migration-v20-test"
         const val TEST_DATABASE_VERSION_21_NAME = "neri-user-data-migration-v21-test"
+        const val TEST_DATABASE_VERSION_22_NAME = "neri-user-data-migration-v22-test"
     }
 }
