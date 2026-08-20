@@ -60,11 +60,42 @@ internal class ManagedDownloadTreeChildRegistry(
     }
 
     fun refreshTreeChildren(context: Context, parent: DocumentFile): Collection<QueriedTreeChild> {
-        val refreshedAtMs = System.currentTimeMillis()
-        return queryTreeChildren(context, parent).also { children ->
-            rememberTreeChildren(parent, children, refreshedAtMs, isComplete = true)
-        }
+        return refreshTreeChildrenWithStatus(context, parent).children
     }
+
+    fun refreshTreeChildrenWithStatus(
+        context: Context,
+        parent: DocumentFile
+    ): TreeChildrenRefresh {
+        val refreshedAtMs = System.currentTimeMillis()
+        val result = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+            context = context,
+            parent = parent,
+            onQueryFailure = onTreeQueryFailed
+        )
+        rememberTreeChildren(
+            parent = parent,
+            children = result.children,
+            refreshedAtMs = refreshedAtMs,
+            isComplete = result.isComplete
+        )
+        return TreeChildrenRefresh(
+            children = result.children,
+            isComplete = result.isComplete
+        )
+    }
+
+    fun treeChildrenForWrite(
+        context: Context,
+        parent: DocumentFile
+    ): TreeChildrenRefresh {
+        return refreshTreeChildrenWithStatus(context, parent)
+    }
+
+    data class TreeChildrenRefresh(
+        val children: List<QueriedTreeChild>,
+        val isComplete: Boolean
+    )
 
     fun cachedTreeChildren(
         context: Context,
@@ -89,6 +120,24 @@ internal class ManagedDownloadTreeChildRegistry(
     ): QueriedTreeChild? {
         return cachedTreeChildren(context, parent, maxCacheAgeMs)
             .firstOrNull { child -> child.name == childName }
+    }
+
+    fun cachedTreeChildForWrite(
+        context: Context,
+        parent: DocumentFile,
+        childName: String
+    ): QueriedTreeChild? {
+        // a failed provider query is incomplete, but its fallback entries are still useful
+        peekTreeChild(parent, childName)?.let { return it }
+        return cachedTreeChild(context, parent, childName)
+    }
+
+    fun peekTreeChildren(parent: DocumentFile): Collection<QueriedTreeChild>? {
+        return treeChildCache.peekChildren(parent.uri.toString())
+    }
+
+    fun peekTreeChild(parent: DocumentFile, childName: String): QueriedTreeChild? {
+        return peekTreeChildren(parent)?.firstOrNull { child -> child.name == childName }
     }
 
     fun rememberTreeChildren(
@@ -206,11 +255,30 @@ internal class ManagedDownloadTreeChildRegistry(
         childNameReservationLocks.clear()
     }
 
-    fun toDocumentFile(context: Context, child: QueriedTreeChild): DocumentFile? {
+    fun toDocumentFile(
+        context: Context,
+        parent: DocumentFile,
+        child: QueriedTreeChild
+    ): DocumentFile? {
         return runCatching {
-            DocumentFile.fromTreeUri(context, child.documentUri)
-                ?: DocumentFile.fromSingleUri(context, child.documentUri)
+            resolveTreeChildDocumentFile(
+                child = child,
+                treeDocumentFile = {
+                    parent.findFile(child.name)?.takeIf(DocumentFile::isDirectory)
+                },
+                singleDocumentFile = { DocumentFile.fromSingleUri(context, child.documentUri) }
+            )
         }.getOrNull()
+    }
+
+    fun toTreeDocumentFile(
+        parent: DocumentFile,
+        child: DocumentFile
+    ): DocumentFile? {
+        val childName = child.name?.takeIf(String::isNotBlank) ?: return null
+        return runCatching { parent.findFile(childName) }
+            .getOrNull()
+            ?.takeIf(DocumentFile::isDirectory)
     }
 
     private fun cachedTreeChildrenNames(
@@ -227,8 +295,17 @@ internal class ManagedDownloadTreeChildRegistry(
             maxCacheAgeMs = maxCacheAgeMs,
             allowReservedNames = allowReservedNames
         )?.let { return it }
-        val refreshedChildren = queryTreeChildren(context, parent)
-        return rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
+        val refreshed = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+            context = context,
+            parent = parent,
+            onQueryFailure = onTreeQueryFailed
+        )
+        return rememberTreeChildren(
+            parent = parent,
+            children = refreshed.children,
+            refreshedAtMs = now,
+            isComplete = refreshed.isComplete
+        )
     }
 
     companion object {
@@ -249,5 +326,19 @@ internal class ManagedDownloadTreeChildRegistry(
                 isComplete = refresh.isComplete
             )
         }
+    }
+}
+
+internal fun resolveTreeChildDocumentFile(
+    child: QueriedTreeChild,
+    treeDocumentFile: () -> DocumentFile?,
+    singleDocumentFile: () -> DocumentFile?
+): DocumentFile? {
+    return if (child.isDirectory) {
+        // directory wrappers need tree permissions because sidecar writes create children
+        treeDocumentFile()
+    } else {
+        // file reads work with single-document wrappers, including opaque document IDs
+        singleDocumentFile() ?: treeDocumentFile()
     }
 }

@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -64,6 +65,64 @@ class CustomSongCoverStorageTest {
             reference = first
         )
         assertEquals(first, second)
+    }
+
+    @Test
+    fun `legacy original cover directory resolves the song cover file`() = runBlocking {
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val directory = File(tempFolder.root, "original_song_covers").apply { mkdirs() }
+        val stored = File(
+            directory,
+            CustomSongCoverStorage.originalCoverFileName(testSong(), "jpg")
+        ).apply {
+            writeBytes(byteArrayOf(8, 9, 10))
+        }
+
+        val resolved = CustomSongCoverStorage.persistOriginalCover(
+            context = context,
+            song = testSong(),
+            reference = directory.toURI().toString()
+        )
+
+        assertEquals(stored.toURI().toString(), resolved)
+    }
+
+    @Test
+    fun `legacy cover lookup skips unrelated directories and resolves the original file`() = runBlocking {
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val unrelated = tempFolder.newFolder("custom_song_covers")
+        val directory = File(tempFolder.root, "original_song_covers").apply { mkdirs() }
+        val stored = File(
+            directory,
+            CustomSongCoverStorage.originalCoverFileName(testSong(), "jpg")
+        ).apply {
+            writeBytes(byteArrayOf(8, 9, 10))
+        }
+
+        val resolved = CustomSongCoverStorage.resolveLegacyOriginalCoverReference(
+            context = context,
+            song = testSong(),
+            references = listOf(unrelated.toURI().toString(), directory.toURI().toString())
+        )
+
+        assertEquals(stored.toURI().toString(), resolved)
+    }
+
+    @Test
+    fun `unmatched original cover directory is rejected`() = runBlocking {
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val directory = tempFolder.newFolder("invalid-cover-directory")
+
+        val resolved = CustomSongCoverStorage.persistOriginalCover(
+            context = context,
+            song = testSong(),
+            reference = directory.toURI().toString()
+        )
+
+        assertNull(resolved)
     }
 
     private fun testSong(): SongItem {

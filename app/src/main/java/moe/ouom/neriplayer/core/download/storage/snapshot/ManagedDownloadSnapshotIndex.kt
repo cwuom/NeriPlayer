@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import org.json.JSONObject
 
 internal object ManagedDownloadSnapshotIndex {
@@ -13,9 +13,21 @@ internal object ManagedDownloadSnapshotIndex {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
-        val metadataEntriesByAudioName = metadataEntries.associateBy { entry ->
-            entry.name.removeSuffix(METADATA_SUFFIX)
-        }
+        val metadataEntriesByAudioName = metadataEntries
+            .mapNotNull { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name)?.let { audioName ->
+                    audioName to entry
+                }
+            }
+            .groupBy { it.first }
+            .mapValues { (audioName, entries) ->
+                entries.minWithOrNull(
+                    compareBy<Pair<String, ManagedDownloadStorage.StoredEntry>>(
+                        { ManagedDownloadTreeNaming.metadataNameOrdinal(it.second.name, audioName) ?: Int.MAX_VALUE },
+                        { it.second.name }
+                    )
+                )!!.second
+            }
         val coverEntriesByName = coverEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
         val audioEntriesByStableKey = mutableMapOf<String, MutableList<ManagedDownloadStorage.StoredEntry>>()
@@ -143,11 +155,14 @@ internal object ManagedDownloadSnapshotIndex {
         metadataEntry: ManagedDownloadStorage.StoredEntry,
         metadata: ManagedDownloadStorage.DownloadedAudioMetadata
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
-        val targetAudioName = metadataEntry.name.removeSuffix(METADATA_SUFFIX)
+        val targetAudioName = ManagedDownloadTreeNaming.metadataAudioName(metadataEntry.name)
+            ?: return snapshot
         return compose(
             audioEntries = snapshot.audioEntries,
             metadataEntries = snapshot.metadataEntriesByAudioName.values
-                .filterNot { it.name.removeSuffix(METADATA_SUFFIX) == targetAudioName } +
+                .filterNot {
+                    ManagedDownloadTreeNaming.metadataAudioName(it.name) == targetAudioName
+                } +
                 metadataEntry,
             metadataByAudioName = snapshot.metadataByAudioName.toMutableMap().apply {
                 put(targetAudioName, metadata)
@@ -189,6 +204,26 @@ internal object ManagedDownloadSnapshotIndex {
         }
     }
 
+    fun applySidecarRefresh(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        lyricEntries: List<ManagedDownloadStorage.StoredEntry>
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        if (
+            snapshot.coverEntriesByName.values.toList() == coverEntries &&
+            snapshot.lyricEntriesByName.values.toList() == lyricEntries
+        ) {
+            return snapshot
+        }
+        return compose(
+            audioEntries = snapshot.audioEntries,
+            metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
+            metadataByAudioName = snapshot.metadataByAudioName,
+            coverEntries = coverEntries,
+            lyricEntries = lyricEntries
+        )
+    }
+
     fun applyReferenceDeletes(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         references: Set<String>
@@ -198,7 +233,9 @@ internal object ManagedDownloadSnapshotIndex {
         }
         val deletedMetadataAudioNames = snapshot.metadataEntriesByAudioName.values
             .filter { entry -> entry.reference in references }
-            .mapTo(linkedSetOf()) { entry -> entry.name.removeSuffix(METADATA_SUFFIX) }
+            .mapNotNullTo(linkedSetOf()) { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+            }
         return compose(
             audioEntries = snapshot.audioEntries.filterNot { entry -> entry.reference in references },
             metadataEntries = snapshot.metadataEntriesByAudioName.values

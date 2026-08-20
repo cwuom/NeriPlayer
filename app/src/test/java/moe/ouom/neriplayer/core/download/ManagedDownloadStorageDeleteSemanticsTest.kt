@@ -45,6 +45,28 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
+    fun `reference io accepts a descriptor when document file reports missing`() {
+        assertTrue(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = false,
+                descriptorAccessible = true
+            )
+        )
+        assertTrue(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = true,
+                descriptorAccessible = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = false,
+                descriptorAccessible = false
+            )
+        )
+    }
+
+    @Test
     fun `reference io resolves file uri as a local file`() {
         val file = Files.createTempFile("neriplayer-reference", ".txt").toFile()
         try {
@@ -206,6 +228,49 @@ class ManagedDownloadStorageDeleteSemanticsTest {
         assertFalse(
             ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
                 reference = crossAuthorityChild,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+    }
+
+    @Test
+    fun `saf delete guard accepts opaque child ids when the tree token matches`() {
+        val managedTree = "content://documents.test/tree/root-opaque-id"
+        val managedChild =
+            "content://documents.test/tree/root-opaque-id/document/child-opaque-id"
+        val foreignTreeChild =
+            "content://documents.test/tree/other-opaque-id/document/child-opaque-id"
+
+        assertTrue(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = managedChild,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = foreignTreeChild,
+                trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+    }
+
+    @Test
+    fun `saf delete guard rejects opaque pure document references without a matching tree token`() {
+        val managedTree =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FNeriPlayer"
+        val outsideDocument =
+            "content://com.android.externalstorage.documents/document/primary%3ADCIM"
+
+        assertFalse(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = outsideDocument,
                 trustedReferences = emptySet(),
                 managedFileRoots = emptyList(),
                 managedTreeRoots = listOf(managedTree)

@@ -172,11 +172,13 @@ internal object ManagedDownloadStorageJsonCodec {
             put("stableKey", stableKey)
             put("songId", songId)
             put("identityAlbum", identityAlbum)
+            put("album", album)
             put("name", name)
             put("artist", artist)
             put("coverUrl", coverUrl)
             put("matchedLyric", matchedLyric)
             put("matchedTranslatedLyric", matchedTranslatedLyric)
+            put("matchedRomanizedLyric", matchedRomanizedLyric)
             put("matchedLyricSource", matchedLyricSource)
             put("matchedSongId", matchedSongId)
             put("userLyricOffsetMs", userLyricOffsetMs)
@@ -188,6 +190,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("originalCoverUrl", originalCoverUrl)
             put("originalLyric", originalLyric)
             put("originalTranslatedLyric", originalTranslatedLyric)
+            put("originalRomanizedLyric", originalRomanizedLyric)
             put("mediaUri", mediaUri)
             put("channelId", channelId)
             put("audioId", audioId)
@@ -198,6 +201,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("translatedLyricPath", translatedLyricPath)
             put("romanizedLyricPath", romanizedLyricPath)
             put("durationMs", durationMs)
+            put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
         }
     }
@@ -214,6 +218,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("mediaUri", mediaUri)
             put("matchedLyric", matchedLyric)
             put("matchedTranslatedLyric", matchedTranslatedLyric)
+            put("matchedRomanizedLyric", matchedRomanizedLyric)
             put("matchedLyricSource", matchedLyricSource?.name)
             put("matchedSongId", matchedSongId)
             put("userLyricOffsetMs", userLyricOffsetMs)
@@ -225,6 +230,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("originalCoverUrl", originalCoverUrl)
             put("originalLyric", originalLyric)
             put("originalTranslatedLyric", originalTranslatedLyric)
+            put("originalRomanizedLyric", originalRomanizedLyric)
             put("localFileName", localFileName)
             put("localFilePath", localFilePath)
             put("channelId", channelId)
@@ -299,6 +305,7 @@ internal object ManagedDownloadStorageJsonCodec {
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             matchedLyric = optPresentString("matchedLyric"),
             matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
+            matchedRomanizedLyric = optPresentString("matchedRomanizedLyric"),
             matchedLyricSource = optString("matchedLyricSource")
                 .takeIf(String::isNotBlank)
                 ?.let { value -> runCatching { MusicPlatform.valueOf(value) }.getOrNull() },
@@ -312,6 +319,7 @@ internal object ManagedDownloadStorageJsonCodec {
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
             originalLyric = optPresentString("originalLyric"),
             originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
+            originalRomanizedLyric = optPresentString("originalRomanizedLyric"),
             localFileName = optString("localFileName").takeIf(String::isNotBlank),
             localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
@@ -348,11 +356,13 @@ internal object ManagedDownloadStorageJsonCodec {
             stableKey = optString("stableKey").takeIf(String::isNotBlank),
             songId = optLong("songId").takeIf { it > 0L },
             identityAlbum = optString("identityAlbum").takeIf(String::isNotBlank),
+            album = optString("album").takeIf(String::isNotBlank),
             name = optString("name").takeIf(String::isNotBlank),
             artist = optString("artist").takeIf(String::isNotBlank),
             coverUrl = optString("coverUrl").takeIf(String::isNotBlank),
             matchedLyric = optPresentString("matchedLyric"),
             matchedTranslatedLyric = optPresentString("matchedTranslatedLyric"),
+            matchedRomanizedLyric = optPresentString("matchedRomanizedLyric"),
             matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
             matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
             userLyricOffsetMs = optLong("userLyricOffsetMs"),
@@ -364,6 +374,7 @@ internal object ManagedDownloadStorageJsonCodec {
             originalCoverUrl = optString("originalCoverUrl").takeIf(String::isNotBlank),
             originalLyric = optPresentString("originalLyric"),
             originalTranslatedLyric = optPresentString("originalTranslatedLyric"),
+            originalRomanizedLyric = optPresentString("originalRomanizedLyric"),
             mediaUri = optString("mediaUri").takeIf(String::isNotBlank),
             channelId = optString("channelId").takeIf(String::isNotBlank),
             audioId = optString("audioId").takeIf(String::isNotBlank),
@@ -374,6 +385,8 @@ internal object ManagedDownloadStorageJsonCodec {
             translatedLyricPath = optString("translatedLyricPath").takeIf(String::isNotBlank),
             romanizedLyricPath = optString("romanizedLyricPath").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs"),
+            downloadTimeMs = optLong("downloadTimeMs")
+                .takeIf { has("downloadTimeMs") && it > 0L },
             downloadFinalized = optOptionalBoolean("downloadFinalized")
         )
     }

@@ -25,8 +25,13 @@ package moe.ouom.neriplayer.data.local.playlist
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +54,9 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.playlist.model.DISPLAY_ORDER_SONG_ORDER_VERSION
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.sync.NeteaseLikeSyncPlan
@@ -79,6 +86,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.io.StringReader
 import java.security.MessageDigest
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -215,6 +223,32 @@ class LocalPlaylistRepository private constructor(
         return initialLoadFailure == null
     }
 
+    /**
+     * reads only the requested playlist for first paint; authoritative state still comes from
+     * the normal initialization flow
+     */
+    internal suspend fun readFastPlaylist(playlistId: Long): LocalPlaylist? = withContext(Dispatchers.IO) {
+        runCatching {
+            roomStore?.readPlaylistIfRoomPrimary(playlistId)
+        }.onFailure { error ->
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Fast Room playlist preview unavailable: ${error.message}"
+            )
+        }.getOrNull()?.let { return@withContext it }
+
+        val primaryText = runCatching { storage.readPrimary() }
+            .onFailure { error ->
+                NPLogger.w(
+                    "LocalPlaylistRepo",
+                    "Fast legacy playlist preview unavailable: ${error.message}"
+                )
+            }
+            .getOrNull()
+            ?: return@withContext null
+        parseFastPlaylistPreview(primaryText, playlistId)
+    }
+
     internal suspend fun requireInitialized() {
         if (!awaitInitialized()) {
             throw IOException("Local playlist initialization failed", initialLoadFailure)
@@ -240,8 +274,26 @@ class LocalPlaylistRepository private constructor(
             recoverPendingSyncMutation(
                 committedDomainDigest = LocalPlaylistRoomStore.domainDigest(roomPrimary)
             )
-            _playlists.value = roomPrimary
-            _playlistCount.value = roomPrimary.size
+            val normalizedRoomPrimary = normalizeRoomPrimaryLocalFilesCover(roomPrimary)
+            if (normalizedRoomPrimary != roomPrimary) {
+                runCatching {
+                    runBlocking {
+                        roomStore?.writeIncremental(
+                            previous = roomPrimary,
+                            next = normalizedRoomPrimary,
+                            sourceDigest = LocalPlaylistRoomStore.domainDigest(normalizedRoomPrimary)
+                        )
+                    }
+                }.onFailure { error ->
+                    NPLogger.w(
+                        "LocalPlaylistRepo",
+                        "Failed to persist normalized Room playlists",
+                        error
+                    )
+                }
+            }
+            _playlists.value = normalizedRoomPrimary
+            _playlistCount.value = normalizedRoomPrimary.size
             return
         }
 
@@ -430,6 +482,62 @@ class LocalPlaylistRepository private constructor(
         }.getOrNull()
     }
 
+    private fun parseFastPlaylistPreview(text: String, playlistId: Long): LocalPlaylist? {
+        return runCatching {
+            JsonReader(StringReader(text)).use { reader ->
+                reader.beginArray()
+                while (reader.hasNext()) {
+                    if (reader.peek() != JsonToken.BEGIN_OBJECT) {
+                        reader.skipValue()
+                        continue
+                    }
+                    reader.beginObject()
+                    var candidateId: Long? = null
+                    var targetObject: JsonObject? = null
+                    val fieldsBeforeId = LinkedHashMap<String, com.google.gson.JsonElement>()
+                    while (reader.hasNext()) {
+                        val name = reader.nextName()
+                        if (name == "id" && reader.peek() == JsonToken.NUMBER) {
+                            candidateId = reader.nextLong()
+                            if (candidateId == playlistId) {
+                                targetObject = JsonObject().apply {
+                                    addProperty("id", candidateId)
+                                    fieldsBeforeId.forEach { (key, value) -> add(key, value) }
+                                }
+                            } else {
+                                fieldsBeforeId.clear()
+                            }
+                            continue
+                        }
+                        if (candidateId == playlistId) {
+                            targetObject?.add(name, JsonParser.parseReader(reader))
+                        } else if (candidateId == null) {
+                            fieldsBeforeId[name] = JsonParser.parseReader(reader)
+                        } else {
+                            reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                    if (candidateId == playlistId && targetObject != null) {
+                        val playlist = gson.fromJson(targetObject, LocalPlaylist::class.java)
+                        return@use playlist.copy(
+                        songs = playlist.songs
+                            .filterNotNull()
+                            .toMutableList()
+                        )
+                    }
+                }
+                reader.endArray()
+                null
+            }
+        }.onFailure { error ->
+            NPLogger.w(
+                "LocalPlaylistRepo",
+                "Failed to parse fast playlist preview: ${error.message}"
+            )
+        }.getOrNull()
+    }
+
     private fun migratePlaylistSongOrder(playlists: List<LocalPlaylist>): List<LocalPlaylist> {
         if (playlists.isEmpty()) return playlists
 
@@ -461,6 +569,23 @@ class LocalPlaylistRepository private constructor(
         return migratePlaylistSongOrder(
             normalizeSongMembershipTokens(normalizePlaylists(migrated))
         )
+    }
+
+    private fun normalizeRoomPrimaryLocalFilesCover(
+        playlists: List<LocalPlaylist>
+    ): List<LocalPlaylist> {
+        var changed = false
+        val normalized = playlists.map { playlist ->
+            if (isLocalFilesPlaylist(playlist.id, playlist.name) &&
+                playlist.customCoverUrl != null
+            ) {
+                changed = true
+                playlist.copy(customCoverUrl = null)
+            } else {
+                playlist
+            }
+        }
+        return if (changed) normalized else playlists
     }
 
     private fun normalizeRemoteSourcePlaylistEntries(
@@ -657,14 +782,14 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun recoverPendingSyncMutation(committedDomainDigest: String) {
-        runCatching {
+    private fun recoverPendingSyncMutation(committedDomainDigest: String): Boolean {
+        return runCatching {
             runBlocking {
                 flushPendingSyncMutation(committedDomainDigest)
             }
         }.onFailure { error ->
             NPLogger.e("LocalPlaylistRepo", "Failed to replay playlist sync mutation", error)
-        }
+        }.isSuccess
     }
 
     private suspend fun flushPendingSyncMutation(committedDomainDigest: String): Boolean {
@@ -901,7 +1026,11 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private fun stampSongsForPlaylistInsert(songs: List<SongItem>, addedAt: Long): List<SongItem> {
+    private fun stampSongsForPlaylistInsert(
+        songs: List<SongItem>,
+        addedAt: Long,
+        preserveScannedSourceAddedAt: Boolean = false
+    ): List<SongItem> {
         if (songs.isEmpty()) return emptyList()
 
         val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
@@ -910,7 +1039,12 @@ class LocalPlaylistRepository private constructor(
         }
         return songs.mapIndexed { index, song ->
             song.copy(
-                addedAt = (addedAt - index).coerceAtLeast(1L),
+                addedAt = if (preserveScannedSourceAddedAt) {
+                    song.addedAt.takeIf { it > 0L }
+                        ?: (addedAt - index).coerceAtLeast(1L)
+                } else {
+                    (addedAt - index).coerceAtLeast(1L)
+                },
                 syncMembershipTokens = listOf(membershipTokens[index])
             )
         }
@@ -1132,7 +1266,12 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun createPlaylistWithScannedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
-        return createPlaylistWithPreparedSongs(name, songs)
+        return createPlaylistWithSongs(
+            name = name,
+            songs = songs,
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
+        )
     }
 
     suspend fun createPlaylistWithPreparedSongs(name: String, songs: List<SongItem>): LocalPlaylist {
@@ -1146,14 +1285,16 @@ class LocalPlaylistRepository private constructor(
     private suspend fun createPlaylistWithSongs(
         name: String,
         songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
+        hydrateLocalMetadata: Boolean,
+        preserveScannedSourceAddedAt: Boolean = false
     ): LocalPlaylist {
         return withContext(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             val distinctSongs = distinctPlaylistSongs(
                 stampSongsForPlaylistInsert(
                     songs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata),
-                    addedAt = now
+                    addedAt = now,
+                    preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                 )
             )
             commitPlaylistMutation {
@@ -1612,7 +1753,8 @@ class LocalPlaylistRepository private constructor(
             playlistId = playlistId,
             songs = songs,
             hydrateLocalMetadata = false,
-            includeLocalMetadataFallback = true
+            includeLocalMetadataFallback = true,
+            preserveScannedSourceAddedAt = true
         )
     }
 
@@ -1639,7 +1781,8 @@ class LocalPlaylistRepository private constructor(
         playlistId: Long,
         songs: List<SongItem>,
         hydrateLocalMetadata: Boolean,
-        includeLocalMetadataFallback: Boolean = false
+        includeLocalMetadataFallback: Boolean = false,
+        preserveScannedSourceAddedAt: Boolean = false
     ): LocalPlaylistSongAddResult {
         return withContext(Dispatchers.IO) {
             if (songs.isEmpty()) return@withContext LocalPlaylistSongAddResult(emptyList())
@@ -1651,7 +1794,8 @@ class LocalPlaylistRepository private constructor(
                         playlistId = playlistId,
                         songs = hydratedSongs,
                         now = now,
-                        includeLocalMetadataFallback = includeLocalMetadataFallback
+                        includeLocalMetadataFallback = includeLocalMetadataFallback,
+                        preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                     )
                 )
             }
@@ -1662,7 +1806,8 @@ class LocalPlaylistRepository private constructor(
         playlistId: Long,
         songs: List<SongItem>,
         now: Long,
-        includeLocalMetadataFallback: Boolean = false
+        includeLocalMetadataFallback: Boolean = false,
+        preserveScannedSourceAddedAt: Boolean = false
     ): List<SongItem> {
         if (songs.isEmpty()) {
             return emptyList()
@@ -1676,13 +1821,18 @@ class LocalPlaylistRepository private constructor(
                 return@map playlist
             }
 
+            val existingSongs = if (preserveScannedSourceAddedAt) {
+                mergeScannedMetadataIntoExistingSongs(playlist.songs, songs)
+            } else {
+                playlist.songs
+            }
             val newSongs = filterNewSongs(
-                existingSongs = playlist.songs,
+                existingSongs = existingSongs,
                 candidates = songs,
                 includeLocalMetadataFallback = includeLocalMetadataFallback
             )
             if (newSongs.isEmpty()) {
-                playlist
+                if (existingSongs == playlist.songs) playlist else playlist.copy(songs = existingSongs)
             } else {
                 val toAdd = stampSongsForPlaylistInsert(
                     songs = newSongs,
@@ -1691,7 +1841,7 @@ class LocalPlaylistRepository private constructor(
                 addedSongs = toAdd
                 syncMutation += buildPlaylistSongDeletionRemoval(playlist.id, toAdd)
                 playlist.copy(
-                    songs = mergeNewSongsFirst(playlist.songs, toAdd),
+                    songs = mergeNewSongsFirst(existingSongs, toAdd),
                     modifiedAt = now,
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
@@ -1746,63 +1896,101 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
             hydrateLocalMetadata = true
-        )
+        ).addedCount
     }
 
     suspend fun addScannedSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addScannedSongsToLocalFilesPlaylistWithResult(songs).addedCount
+    }
+
+    suspend fun addScannedSongsToLocalFilesPlaylistWithResult(
+        songs: List<SongItem>
+    ): LocalPlaylistSongAddResult {
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
-            hydrateLocalMetadata = false
+            hydrateLocalMetadata = false,
+            preserveScannedSourceAddedAt = true
         )
     }
 
-    private suspend fun addSongsToLocalFilesPlaylistAndCount(
+    private suspend fun addSongsToLocalFilesPlaylistWithResult(
         songs: List<SongItem>,
-        hydrateLocalMetadata: Boolean
-    ): Int {
+        hydrateLocalMetadata: Boolean,
+        preserveScannedSourceAddedAt: Boolean = false
+    ): LocalPlaylistSongAddResult {
         return withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext 0
+            if (songs.isEmpty()) return@withContext LocalPlaylistSongAddResult(emptyList())
             val now = System.currentTimeMillis()
             val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
             commitPlaylistMutation {
-                var addedCount = 0
+                var addedSongs = emptyList<SongItem>()
                 val updated = _playlists.value.map { playlist ->
                     if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
                         return@map playlist
                     }
 
+                    val existingSongs = if (preserveScannedSourceAddedAt) {
+                        mergeScannedMetadataIntoExistingSongs(playlist.songs, hydratedSongs)
+                    } else {
+                        playlist.songs
+                    }
                     val newSongs = filterNewSongs(
-                        existingSongs = playlist.songs,
+                        existingSongs = existingSongs,
                         candidates = hydratedSongs,
                         includeLocalMetadataFallback = true
                     )
                     if (newSongs.isEmpty()) {
-                        playlist
+                        if (existingSongs == playlist.songs) playlist else playlist.copy(
+                            songs = existingSongs,
+                            modifiedAt = now,
+                            songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                        )
                     } else {
                         val toAdd = stampSongsForPlaylistInsert(
                             songs = newSongs,
-                            addedAt = nextPlaylistSongAddedAt(playlist, now)
+                            addedAt = nextPlaylistSongAddedAt(playlist, now),
+                            preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                         )
-                        addedCount += toAdd.size
+                        addedSongs = toAdd
                         playlist.copy(
-                            songs = mergeNewSongsFirst(playlist.songs, toAdd),
+                            songs = mergeNewSongsFirst(existingSongs, toAdd),
                             modifiedAt = now,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
                     }
                 }
                 publishLocked(updated)
-                addedCount
+                LocalPlaylistSongAddResult(addedSongs)
             }
+        }
+    }
+
+    private fun mergeScannedMetadataIntoExistingSongs(
+        existingSongs: List<SongItem>,
+        scannedSongs: List<SongItem>
+    ): MutableList<SongItem> {
+        if (existingSongs.isEmpty() || scannedSongs.isEmpty()) {
+            return existingSongs.toMutableList()
+        }
+        return existingSongs.mapTo(mutableListOf()) existingSong@{ existingSong ->
+            val scannedSong = scannedSongs.firstOrNull { candidate ->
+                hasExistingSong(
+                    existingSongs = listOf(existingSong),
+                    candidate = candidate,
+                    includeLocalMetadataFallback = true
+                )
+            } ?: return@existingSong existingSong
+            mergeSongMetadataForPersistence(existingSong, scannedSong)
         }
     }
 
     suspend fun refreshScannedLocalSongMetadata(
         songs: List<SongItem>,
         includeEmbeddedAssets: Boolean = false,
+        includeLyricContents: Boolean = false,
         onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
         withContext(Dispatchers.IO) {
@@ -1817,7 +2005,10 @@ class LocalPlaylistRepository private constructor(
 
             val refreshDispatcher = Dispatchers.IO.limitedParallelism(LOCAL_METADATA_REFRESH_PARALLELISM)
             var processedCount = 0
+            val allUpdates = ArrayList<Pair<SongItem, SongItem>>()
+            val refreshStartedAt = SystemClock.elapsedRealtime()
             candidates.chunked(LOCAL_METADATA_REFRESH_BATCH_SIZE).forEach { batch ->
+                val batchStartedAt = SystemClock.elapsedRealtime()
                 val updates = coroutineScope {
                     batch.map { originalSong ->
                         async(refreshDispatcher) {
@@ -1826,8 +2017,16 @@ class LocalPlaylistRepository private constructor(
                                     context,
                                     originalSong
                                 )
+                            } else if (includeLyricContents) {
+                                LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                    context,
+                                    originalSong
+                                )
                             } else {
-                                LocalAudioImportManager.hydrateLocalSongTextMetadata(context, originalSong)
+                                LocalAudioImportManager.hydrateLocalSongCoverMetadata(
+                                    context,
+                                    originalSong
+                                )
                             }
                             originalSong to hydratedSong
                         }
@@ -1835,10 +2034,79 @@ class LocalPlaylistRepository private constructor(
                 }.filter { (originalSong, hydratedSong) ->
                     hydratedSong != originalSong
                 }
-                applySongMetadataUpdates(updates)
+                allUpdates += updates
                 processedCount += batch.size
                 onProgress(processedCount, candidates.size)
+                NPLogger.d(
+                    "LocalPlaylistRepo",
+                    "本地扫描后台批次完成: processed=$processedCount/${candidates.size}, " +
+                        "updates=${updates.size}, elapsed=" +
+                        "${SystemClock.elapsedRealtime() - batchStartedAt}ms"
+                )
             }
+            applySongMetadataUpdates(allUpdates)
+            NPLogger.d(
+                "LocalPlaylistRepo",
+                "本地扫描后台刷新完成: candidates=${candidates.size}, " +
+                    "updates=${allUpdates.size}, elapsed=" +
+                    "${SystemClock.elapsedRealtime() - refreshStartedAt}ms"
+            )
+        }
+    }
+
+    suspend fun refreshMissingLocalSongDurations(
+        songs: List<SongItem>,
+        onProgress: (processed: Int, total: Int) -> Unit = { _, _ -> }
+    ) {
+        withContext(Dispatchers.IO) {
+            val candidates = distinctPlaylistSongs(
+                songs = songs.filter {
+                    it.durationMs <= 0L && LocalSongSupport.isLocalSong(it, context)
+                },
+                includeLocalMetadataFallback = true
+            ).filter { song ->
+                song.localFilePath?.isNotBlank() == true ||
+                    song.mediaUri?.let { reference ->
+                        reference.startsWith("content://", ignoreCase = true) ||
+                            reference.startsWith("file://", ignoreCase = true) ||
+                            reference.startsWith("/")
+                    } == true
+            }
+            onProgress(0, candidates.size)
+            if (candidates.isEmpty()) return@withContext
+
+            val dispatcher = Dispatchers.IO.limitedParallelism(
+                LOCAL_DURATION_REFRESH_PARALLELISM
+            )
+            val mediaStoreDurations = LocalMediaSupport.resolveMediaStoreDurationsFast(
+                context = context,
+                sources = candidates.mapNotNull { it.localMediaUri() }
+            )
+            val updates = ArrayList<Pair<SongItem, SongItem>>(candidates.size)
+            var processed = 0
+            candidates.chunked(LOCAL_DURATION_REFRESH_BATCH_SIZE).forEach { batch ->
+                updates += coroutineScope {
+                    batch.map { originalSong ->
+                        async(dispatcher) {
+                            val bulkDuration = originalSong.localMediaUri()
+                                ?.toString()
+                                ?.let(mediaStoreDurations::get)
+                            val hydratedSong = bulkDuration?.let { durationMs ->
+                                originalSong.copy(durationMs = durationMs)
+                            } ?: LocalAudioImportManager.hydrateLocalSongDurationMetadata(
+                                context,
+                                originalSong
+                            )
+                            originalSong to hydratedSong
+                        }
+                    }.awaitAll()
+                }.filter { (originalSong, hydratedSong) ->
+                    hydratedSong != originalSong
+                }
+                processed += batch.size
+                onProgress(processed, candidates.size)
+            }
+            applySongDurationUpdates(updates)
         }
     }
 
@@ -1960,6 +2228,43 @@ class LocalPlaylistRepository private constructor(
                 }
             }
 
+            if (changed) {
+                publishLocked(
+                    playlists = updated,
+                    triggerSync = false,
+                    markLocalMutation = false
+                )
+            }
+        }
+    }
+
+    private suspend fun applySongDurationUpdates(updates: List<Pair<SongItem, SongItem>>) {
+        if (updates.isEmpty()) return
+
+        commitPlaylistMutation {
+            val updateIndex = SongMetadataUpdateIndex(updates)
+            var changed = false
+            val updated = _playlists.value.map { playlist ->
+                var playlistChanged = false
+                val refreshedSongs = playlist.songs.map { currentSong ->
+                    val hydratedSong = updateIndex.find(currentSong)
+                        ?: return@map currentSong
+                    val durationMs = hydratedSong.durationMs
+                        .takeIf { it > 0L && currentSong.durationMs <= 0L }
+                        ?: return@map currentSong
+                    changed = true
+                    playlistChanged = true
+                    currentSong.copy(durationMs = durationMs)
+                }.toMutableList()
+                if (playlistChanged) {
+                    playlist.copy(
+                        songs = refreshedSongs,
+                        songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
+                    )
+                } else {
+                    playlist
+                }
+            }
             if (changed) {
                 publishLocked(
                     playlists = updated,
@@ -3096,6 +3401,8 @@ class LocalPlaylistRepository private constructor(
         const val MAX_PLAYLIST_NAME_LENGTH = 10
         private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
         private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
+        private const val LOCAL_DURATION_REFRESH_BATCH_SIZE = 64
+        private const val LOCAL_DURATION_REFRESH_PARALLELISM = 16
         private const val NETEASE_PLAYLIST_ADD_BATCH_SIZE = 50
         private const val NETEASE_SONG_DETAIL_BATCH_SIZE = 300
         private const val NETEASE_ALBUM_PREFIX = "Netease"

@@ -22,6 +22,7 @@ data class DownloadedSong(
     val coverUrl: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
+    val matchedRomanizedLyric: String? = null,
     val matchedLyricSource: String? = null,
     val matchedSongId: String? = null,
     val userLyricOffsetMs: Long = 0L,
@@ -33,6 +34,7 @@ data class DownloadedSong(
     val originalCoverUrl: String? = null,
     val originalLyric: String? = null,
     val originalTranslatedLyric: String? = null,
+    val originalRomanizedLyric: String? = null,
     val mediaUri: String? = null,
     val durationMs: Long = 0L,
     val stableKey: String? = null,
@@ -53,6 +55,20 @@ data class DownloadedSong(
     }
 }
 
+internal fun isCompleteDownloadedSongSelection(
+    selectedSongs: Collection<DownloadedSong>,
+    availableSongs: Collection<DownloadedSong>
+): Boolean {
+    val availableIdentities = availableSongs
+        .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+    if (availableIdentities.isEmpty()) {
+        return false
+    }
+    val selectedIdentities = selectedSongs
+        .mapTo(linkedSetOf(), DownloadedSong::deletionIdentity)
+    return selectedIdentities == availableIdentities
+}
+
 internal fun DownloadedSong.remoteSourceIdentityOrNull(): SongIdentity? {
     stableKey.toRemoteSourceIdentityOrNull()?.let { return it }
     return rebuildRemoteSourceIdentity()
@@ -65,6 +81,26 @@ internal fun DownloadedSong.remoteSourceStableKeyOrNull(): String? {
 internal fun DownloadedSong.withRecoveredRemoteSourceStableKey(): DownloadedSong {
     val recoveredStableKey = remoteSourceStableKeyOrNull() ?: return this
     return if (stableKey == recoveredStableKey) this else copy(stableKey = recoveredStableKey)
+}
+
+internal fun DownloadedSong.withCachedDownloadedLyrics(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): DownloadedSong {
+    if (metadata == null) return this
+    return copy(
+        matchedLyric = metadata.matchedLyric ?: matchedLyric,
+        matchedTranslatedLyric = metadata.matchedTranslatedLyric ?: matchedTranslatedLyric,
+        matchedRomanizedLyric = metadata.matchedRomanizedLyric ?: matchedRomanizedLyric,
+        matchedLyricSource = metadata.matchedLyricSource ?: matchedLyricSource,
+        matchedSongId = metadata.matchedSongId ?: matchedSongId,
+        userLyricOffsetMs = metadata.userLyricOffsetMs.takeIf { it != 0L }
+            ?: userLyricOffsetMs,
+        originalLyric = metadata.originalLyric ?: originalLyric,
+        originalTranslatedLyric = metadata.originalTranslatedLyric
+            ?: originalTranslatedLyric,
+        originalRomanizedLyric = metadata.originalRomanizedLyric
+            ?: originalRomanizedLyric
+    )
 }
 
 private fun String?.toRemoteSourceIdentityOrNull(): SongIdentity? {
@@ -117,7 +153,7 @@ private fun DownloadedSong.rebuildRemoteSourceIdentity(): SongIdentity? {
 }
 
 internal fun DownloadedSong.toPlaybackSongItem(): SongItem {
-    val localFileName = filePath.substringAfterLast('/').takeIf(String::isNotBlank)
+    val localFileName = ManagedDownloadStorage.normalizeManagedAudioFileName(filePath)
     return toPlaybackSongItem(
         playbackUri = mediaUri?.takeIf(String::isNotBlank) ?: filePath,
         localFileName = localFileName,
@@ -172,17 +208,25 @@ internal fun DownloadedSong.toPlaybackSongItem(
         }
         ?.id
         ?: id
+    val resolvedAlbum = if (remoteSourceIdentity != null) {
+        album.trim()
+            .takeIf { it.isNotBlank() && it != LocalSongSupport.LOCAL_ALBUM_IDENTITY }
+            ?: remoteSourceIdentity.album
+    } else {
+        LocalSongSupport.LOCAL_ALBUM_IDENTITY
+    }
     return SongItem(
         id = resolvedSongId,
         name = name,
         artist = artist,
-        album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+        album = resolvedAlbum,
         albumId = 0L,
         durationMs = resolvedDurationMs.coerceAtLeast(0L),
         coverUrl = coverPath ?: coverUrl,
         mediaUri = playbackUri,
         matchedLyric = matchedLyric,
         matchedTranslatedLyric = matchedTranslatedLyric,
+        matchedRomanizedLyric = matchedRomanizedLyric,
         matchedLyricSource = matchedLyricSource?.let {
             runCatching { MusicPlatform.valueOf(it) }.getOrNull()
         },
@@ -197,6 +241,7 @@ internal fun DownloadedSong.toPlaybackSongItem(
             ?: coverUrl?.takeUnless(LocalSongSupport::isLocalMediaUri),
         originalLyric = originalLyric,
         originalTranslatedLyric = originalTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric,
         localFileName = localFileName,
         localFilePath = localFilePath,
         channelId = resolvedSourceChannel,

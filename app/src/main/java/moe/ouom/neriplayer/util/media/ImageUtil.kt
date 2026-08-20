@@ -44,7 +44,8 @@ fun offlineCachedImageRequest(
     allowHardware: Boolean = true,
     crossfade: Boolean = true,
     offlineMode: Boolean = context.isOfflineModeNow(),
-    transformations: List<Transformation> = emptyList()
+    transformations: List<Transformation> = emptyList(),
+    cacheKey: String? = null
 ): ImageRequest {
     val localSource = isLocalImageSource(data)
     val remoteSource = isRemoteImageSource(data)
@@ -56,6 +57,11 @@ fun offlineCachedImageRequest(
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
+    cacheKey?.trim()?.takeIf(String::isNotEmpty)?.let { resolvedCacheKey ->
+        builder
+            .memoryCacheKey(resolvedCacheKey)
+            .diskCacheKey(resolvedCacheKey)
+    }
     if (localSource && !resolvedAllowHardware) {
         builder.bitmapConfig(Bitmap.Config.RGB_565)
     }
@@ -80,7 +86,8 @@ fun fastScrollableImageRequest(
     data: Any?,
     sizePx: Int = 512,
     crossfade: Boolean = true,
-    offlineMode: Boolean = context.isOfflineModeNow()
+    offlineMode: Boolean = context.isOfflineModeNow(),
+    cacheKey: String? = null
 ): ImageRequest {
     val remoteSource = isRemoteImageSource(data)
     val builder = ImageRequest.Builder(context)
@@ -90,6 +97,11 @@ fun fastScrollableImageRequest(
         .diskCachePolicy(CachePolicy.ENABLED)
         .memoryCachePolicy(CachePolicy.ENABLED)
         .networkCachePolicy(if (offlineMode && remoteSource) CachePolicy.DISABLED else CachePolicy.ENABLED)
+    cacheKey?.trim()?.takeIf(String::isNotEmpty)?.let { resolvedCacheKey ->
+        builder
+            .memoryCacheKey(resolvedCacheKey)
+            .diskCacheKey(resolvedCacheKey)
+    }
     if (isLocalImageSource(data)) {
         builder
             .allowHardware(false)

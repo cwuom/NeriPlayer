@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntr
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetResolver
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -32,7 +33,6 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
                 existing.takeIf(File::isFile)?.let(ManagedDownloadStoredEntryMapper::fromFile)
             },
             reserveName = { reservedName -> treeChildRegistry.reserveUniqueFileChildName(parent, reservedName) },
-            rememberName = { childName -> treeChildRegistry.rememberFileChildName(parent, childName) },
             onReuseMetadata = { existingEntry ->
                 NPLogger.d(tag, "迁移复用目标 metadata: ${existingEntry.name}")
             },
@@ -50,13 +50,31 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry? = null
     ): StoredWriteResult {
-        val existingChildEntry = if (displayName in targetNames) {
-            treeChildRegistry.cachedTreeChild(context, parent, displayName)
-                ?.takeUnless(QueriedTreeChild::isDirectory)
-                ?.let(ManagedDownloadStoredEntryMapper::fromTreeChild)
-        } else {
-            null
-        }
+        val metadataAudioName = ManagedDownloadTreeNaming.metadataAudioName(displayName)
+        val existingChildEntry = treeChildRegistry.treeChildrenForWrite(context, parent)
+            .children
+            .asSequence()
+            .filterNot(QueriedTreeChild::isDirectory)
+            .filter { child ->
+                child.name.equals(displayName, ignoreCase = true) ||
+                    metadataAudioName?.let { audioName ->
+                        ManagedDownloadTreeNaming.metadataAudioName(child.name)
+                            ?.equals(audioName, ignoreCase = true) == true
+                    } == true
+            }
+            .minWithOrNull(
+                compareBy<QueriedTreeChild>(
+                    { if (it.name.equals(displayName, ignoreCase = true)) 0 else 1 },
+                    {
+                        metadataAudioName?.let { audioName ->
+                            ManagedDownloadTreeNaming.metadataNameOrdinal(it.name, audioName)
+                                ?: Int.MAX_VALUE
+                        } ?: Int.MAX_VALUE
+                    },
+                    QueriedTreeChild::name
+                )
+            )
+            ?.let(ManagedDownloadStoredEntryMapper::fromTreeChild)
         return ManagedDownloadMigrationTargetResolver.resolveTreeTarget(
             displayName = displayName,
             sourceEntry = sourceEntry,
@@ -64,9 +82,6 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
             targetEntry = targetEntry,
             existingChildEntry = existingChildEntry,
             reserveName = { reservedName -> treeChildRegistry.reserveUniqueTreeChildName(context, parent, reservedName) },
-            rememberName = { childName ->
-                treeChildRegistry.rememberTreeChildName(parent, childName, isReservation = true)
-            },
             onReuseMetadata = { existingEntry ->
                 NPLogger.d(tag, "迁移复用目标 SAF metadata: ${existingEntry.name}")
             },

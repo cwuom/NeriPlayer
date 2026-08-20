@@ -1,10 +1,28 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import java.io.IOException
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+
+internal class ManagedDownloadMigrationException(
+    message: String,
+    val retryable: Boolean,
+    cause: Throwable? = null
+) : IOException(message, cause) {
+    companion object {
+        fun permanent(message: String, cause: Throwable? = null): ManagedDownloadMigrationException {
+            return ManagedDownloadMigrationException(message, retryable = false, cause = cause)
+        }
+
+        fun transient(message: String, cause: Throwable? = null): ManagedDownloadMigrationException {
+            return ManagedDownloadMigrationException(message, retryable = true, cause = cause)
+        }
+    }
+}
 
 internal data class ManagedMigrationEntry(
     val subdirectory: String?,
-    val entry: ManagedDownloadStorage.StoredEntry
+    val entry: ManagedDownloadStorage.StoredEntry,
+    val metadata: ManagedDownloadStorage.DownloadedAudioMetadata? = null
 ) {
     fun toRef(): ManagedMigrationEntryRef {
         return ManagedMigrationEntryRef(
@@ -25,7 +43,8 @@ internal data class ManagedMigrationEntry(
 internal data class CopiedMigrationEntry(
     val original: ManagedMigrationEntry,
     val copiedEntry: ManagedDownloadStorage.StoredEntry,
-    val createdNew: Boolean
+    val createdNew: Boolean,
+    val sourceDigest: String? = null
 )
 
 internal data class StoredWriteResult(

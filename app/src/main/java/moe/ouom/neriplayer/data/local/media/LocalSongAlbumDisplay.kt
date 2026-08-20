@@ -34,18 +34,49 @@ internal fun normalizeLocalAlbumIdentity(
 ): String {
     val normalized = album?.trim().orEmpty()
     if (normalized.isBlank()) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
-    return if (usesFallbackAlbum) LocalSongSupport.LOCAL_ALBUM_IDENTITY else normalized
+    if (usesFallbackAlbum) return LocalSongSupport.LOCAL_ALBUM_IDENTITY
+
+    // 下载器把来源直接拼在专辑名前, 这里只清理本地导入产生的来源标记
+    val withoutSourcePrefix = if (
+        normalized.length >= LOCAL_SOURCE_ALBUM_PREFIX.length &&
+            normalized.regionMatches(
+                0,
+                LOCAL_SOURCE_ALBUM_PREFIX,
+                0,
+                LOCAL_SOURCE_ALBUM_PREFIX.length,
+                ignoreCase = true
+            ) && (
+                normalized.length == LOCAL_SOURCE_ALBUM_PREFIX.length ||
+                    !normalized[LOCAL_SOURCE_ALBUM_PREFIX.length].isWhitespace()
+                )
+    ) {
+        normalized.substring(LOCAL_SOURCE_ALBUM_PREFIX.length)
+            .trim()
+            .trimStart('-', ':', '_', '|')
+            .trim()
+    } else {
+        normalized
+    }
+    return withoutSourcePrefix.takeIf { it.isNotBlank() }
+        ?: LocalSongSupport.LOCAL_ALBUM_IDENTITY
 }
 
 fun SongItem.displayAlbum(context: Context): String {
     val normalized = album.trim()
     if (normalized.isBlank()) return normalized
-    return if (
-        normalized == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
-        LocalFilesPlaylist.matches(normalized, context)
-    ) {
-        context.getString(R.string.local_files)
+    val displayValue = if (LocalSongSupport.isLocalSong(this, context)) {
+        normalizeLocalAlbumIdentity(normalized, usesFallbackAlbum = false)
     } else {
         normalized
     }
+    return if (
+        displayValue == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
+        LocalFilesPlaylist.matches(displayValue, context)
+    ) {
+        context.getString(R.string.local_files)
+    } else {
+        displayValue
+    }
 }
+
+private const val LOCAL_SOURCE_ALBUM_PREFIX = "Netease"

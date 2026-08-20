@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntr
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 
@@ -26,29 +27,39 @@ internal class ManagedDownloadTreeFileCommitter(
         mimeType: String,
         replace: Boolean
     ): DocumentFile {
-        val childNames = treeChildRegistry.cachedTreeChildrenNamesForWrite(context, parent)
-        val existingChild = desiredName
-            .takeIf { it in childNames }
-            ?.let { treeChildRegistry.cachedTreeChild(context, parent, it) }
-        val existing = existingChild?.let { child -> treeChildRegistry.toDocumentFile(context, child) }
-        if (replace && existingChild != null && !existingChild.isDirectory && existing != null) {
-            return existing
-        }
-        if (replace && existingChild != null) {
-            deleteContentReference(context, existingChild.documentUri.toString(), existingChild.documentUri)
-            treeChildRegistry.forgetTreeChildName(parent, desiredName)
-        }
+        return ManagedDownloadTreeMutationLocks.withLock(parent.uri) {
+            val refresh = treeChildRegistry.treeChildrenForWrite(context, parent)
+            val existingChild = findExistingChildForReplace(refresh.children, desiredName)
+            if (replace && existingChild != null) {
+                if (existingChild.isDirectory) {
+                    throw IOException("下载目录同名项不是文件: ${existingChild.name}")
+                }
+                return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
+                    ?: throw IOException("无法访问已存在的下载文件: ${existingChild.name}")
+            }
+            if (!refresh.isComplete) {
+                throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
+            }
 
-        val finalName = if (replace) {
-            desiredName
-        } else {
-            ManagedDownloadStorageNaming.createUniqueName(childNames, desiredName)
-        }
-        return (
-            parent.createFile(ManagedDownloadTreeNaming.documentCreateMimeType(finalName, mimeType), finalName)
-                ?: throw IOException("无法在下载目录创建文件: $finalName")
-            ).also { created ->
-                val storedName = resolvedTreeStoredName(created, finalName)
+            val childNames = refresh.children.mapTo(mutableSetOf(), QueriedTreeChild::name)
+            val finalName = if (replace) {
+                desiredName
+            } else {
+                ManagedDownloadStorageNaming.createUniqueName(childNames, desiredName)
+            }
+            val created = parent.createFile(
+                ManagedDownloadTreeNaming.documentCreateMimeType(finalName, mimeType),
+                finalName
+            ) ?: throw IOException("无法在下载目录创建文件: $finalName")
+            val storedName = resolvedTreeStoredName(created, finalName)
+            if (replace && !ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
+                if (!deleteContentReference(context, created.uri.toString(), created.uri)) {
+                    runCatching { created.delete() }
+                }
+                treeChildRegistry.forgetTreeChildName(parent, finalName)
+                throw IOException("SAF 覆写目标被自动改名，拒绝生成副本: $finalName")
+            }
+            created.also {
                 treeChildRegistry.rememberTreeChild(
                     parent = parent,
                     child = QueriedTreeChild(
@@ -60,6 +71,25 @@ internal class ManagedDownloadTreeFileCommitter(
                     )
                 )
             }
+        }
+    }
+
+    private fun findExistingChildForReplace(
+        children: Collection<QueriedTreeChild>,
+        desiredName: String
+    ): QueriedTreeChild? {
+        return children.asSequence()
+            .filter { child ->
+                child.name.equals(desiredName, ignoreCase = true) ||
+                    ManagedDownloadTreeNaming.matchesProviderNumberedName(child.name, desiredName)
+            }
+            .minWithOrNull(
+                compareBy<QueriedTreeChild>(
+                    { if (it.name.equals(desiredName, ignoreCase = true)) 0 else 1 },
+                    { ManagedDownloadTreeNaming.providerNumberedNameOrdinal(it.name, desiredName) ?: Int.MAX_VALUE },
+                    QueriedTreeChild::name
+                )
+            )
     }
 
     fun verifiedTreeStoredEntry(
@@ -84,6 +114,18 @@ internal class ManagedDownloadTreeFileCommitter(
             knownLastModifiedMs = target.lastModified().takeIf { it > 0L } ?: fallbackLastModifiedMs,
             knownIsDirectory = false
         ) ?: throw IOException("无法读取已写入的目录文件: $description")
+    }
+
+    fun discardTreeFile(
+        context: Context,
+        parent: DocumentFile,
+        target: DocumentFile,
+        expectedName: String
+    ) {
+        runCatching {
+            deleteContentReference(context, target.uri.toString(), target.uri)
+        }
+        treeChildRegistry.forgetTreeChildName(parent, expectedName)
     }
 
     fun commitTreeAudioAfterRenameFailure(

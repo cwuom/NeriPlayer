@@ -38,5 +38,7 @@ data class SongItem(
     val streamUrl: String? = null,
     val neteaseArtists: List<NeteaseArtistSummary>? = emptyList(),
     val addedAt: Long = 0L,
-    val syncMembershipTokens: List<SyncCausalToken>? = emptyList()
+    val syncMembershipTokens: List<SyncCausalToken>? = emptyList(),
+    val matchedRomanizedLyric: String? = null,
+    val originalRomanizedLyric: String? = null
 ) : Parcelable

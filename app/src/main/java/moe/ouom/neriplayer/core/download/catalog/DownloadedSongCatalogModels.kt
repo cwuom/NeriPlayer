@@ -16,12 +16,28 @@ internal data class DownloadedSongCatalogIndex(
     val songsByLegacyIdentityKey: Map<String, DownloadedSong>
 ) {
     fun find(song: SongItem): DownloadedSong? {
+        val requiresVerifiedRemoteIdentity = song.requiresVerifiedRemoteDownloadIdentity()
+        val stableIdentityKey = song.stableKey()
+        if (requiresVerifiedRemoteIdentity) {
+            songsByStableIdentityKey[stableIdentityKey]?.let { return it }
+            val localCandidates = listOfNotNull(
+                song.localFilePath?.takeIf(String::isNotBlank),
+                song.mediaUri?.takeIf(String::isNotBlank)
+            )
+            localCandidates.firstNotNullOfOrNull(songsByLocalReference::get)
+                ?.takeIf { downloadedSong ->
+                    downloadedSong.matchesVerifiedRemoteIdentity(song)
+                }
+                ?.let { return it }
+            return songsByLegacyIdentityKey[
+                downloadedSongCatalogIdentityKey(song.id, song.name, song.artist)
+            ]?.takeIf(DownloadedSong::isLegacyRemoteIdentityMissing)
+        }
         val localCandidates = listOfNotNull(
             song.localFilePath?.takeIf(String::isNotBlank),
             song.mediaUri?.takeIf(String::isNotBlank)
         )
         localCandidates.firstNotNullOfOrNull(songsByLocalReference::get)?.let { return it }
-        val stableIdentityKey = song.stableKey()
         songsByStableIdentityKey[stableIdentityKey]?.let { return it }
         return songsByLegacyIdentityKey[
             downloadedSongCatalogIdentityKey(song.id, song.name, song.artist)
@@ -69,16 +85,16 @@ internal fun buildDownloadedSongCatalogIndex(
                     songsByStableIdentityKey[stableIdentityKey] = song
                 }
             }
-            ?: run {
-                val legacyIdentityKey = downloadedSongCatalogIdentityKey(
-                    song.id,
-                    song.name,
-                    song.artist
-                )
-                if (legacyIdentityKey !in songsByLegacyIdentityKey) {
-                    songsByLegacyIdentityKey[legacyIdentityKey] = song
-                }
+        if (song.isLegacyRemoteIdentityMissing()) {
+            val legacyIdentityKey = downloadedSongCatalogIdentityKey(
+                song.id,
+                song.name,
+                song.artist
+            )
+            if (legacyIdentityKey !in songsByLegacyIdentityKey) {
+                songsByLegacyIdentityKey[legacyIdentityKey] = song
             }
+        }
     }
     return DownloadedSongCatalogIndex(
         songsByLocalReference = songsByLocalReference,
@@ -91,6 +107,15 @@ internal fun matchesDownloadedSong(
     song: SongItem,
     downloadedSong: DownloadedSong
 ): Boolean {
+    if (song.requiresVerifiedRemoteDownloadIdentity()) {
+        return downloadedSong.matchesVerifiedRemoteIdentity(song) ||
+            (
+                downloadedSong.isLegacyRemoteIdentityMissing() &&
+                    song.id == downloadedSong.id &&
+                    song.name == downloadedSong.name &&
+                    song.artist == downloadedSong.artist
+                )
+    }
     val localCandidates = listOfNotNull(
         song.localFilePath?.takeIf(String::isNotBlank),
         song.mediaUri?.takeIf(String::isNotBlank)
@@ -128,6 +153,12 @@ internal fun matchesDownloadedSongCatalogEntry(
     val targetReference = resolveDownloadedSongPlaybackReference(target)
     if (!existingReference.isNullOrBlank() && existingReference == targetReference) {
         return true
+    }
+    if (
+        existing.requiresVerifiedRemoteDownloadIdentity() ||
+        target.requiresVerifiedRemoteDownloadIdentity()
+    ) {
+        return existing.matchesVerifiedRemoteIdentity(target)
     }
     val targetMediaUri = target.mediaUri
         ?.takeIf(String::isNotBlank)
@@ -167,6 +198,9 @@ internal fun projectDownloadedSongMetadata(
         ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
     val customCover = updatedSong.customCoverUrl?.trim()?.takeIf(String::isNotBlank)
     val restoredLocalCover = updatedSong.coverUrl?.takeIf(::isResolvableLocalReference)
+    val updatedAlbum = updatedSong.album
+        .trim()
+        .takeIf { it.isNotBlank() }
     val updatedSourceChannel = updatedSong.channelId
         ?.trim()
         ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
@@ -192,10 +226,12 @@ internal fun projectDownloadedSongMetadata(
         id = if (preservesExistingRemoteSource) existing.id else updatedSong.id,
         name = updatedSong.name,
         artist = updatedSong.artist,
+        album = updatedAlbum ?: existing.album,
         coverPath = if (customCover == null) restoredLocalCover else existing.coverPath,
         coverUrl = updatedSong.coverUrl ?: existing.coverUrl,
         matchedLyric = updatedSong.matchedLyric,
         matchedTranslatedLyric = updatedSong.matchedTranslatedLyric,
+        matchedRomanizedLyric = updatedSong.matchedRomanizedLyric,
         matchedLyricSource = updatedSong.matchedLyricSource?.name,
         matchedSongId = updatedSong.matchedSongId,
         userLyricOffsetMs = updatedSong.userLyricOffsetMs,
@@ -214,6 +250,8 @@ internal fun projectDownloadedSongMetadata(
         originalLyric = existing.originalLyric ?: updatedSong.originalLyric,
         originalTranslatedLyric = existing.originalTranslatedLyric
             ?: updatedSong.originalTranslatedLyric,
+        originalRomanizedLyric = existing.originalRomanizedLyric
+            ?: updatedSong.originalRomanizedLyric,
         mediaUri = updatedSong.mediaUri?.takeIf(::isResolvableLocalReference) ?: existing.mediaUri,
         durationMs = updatedSong.durationMs.takeIf { it > 0L } ?: existing.durationMs,
         stableKey = remoteSource?.stableKey()
@@ -249,6 +287,7 @@ internal fun DownloadedSong.toMetadataPersistenceSong(updatedSong: SongItem): So
         originalCoverUrl = originalCoverUrl ?: updatedSong.originalCoverUrl,
         originalLyric = originalLyric ?: updatedSong.originalLyric,
         originalTranslatedLyric = originalTranslatedLyric ?: updatedSong.originalTranslatedLyric,
+        originalRomanizedLyric = originalRomanizedLyric ?: updatedSong.originalRomanizedLyric,
         channelId = sourceChannel ?: updatedSong.channelId,
         audioId = resolvedSourceAudioId ?: updatedSong.audioId,
         subAudioId = sourceSubAudioId ?: updatedSong.subAudioId,
@@ -297,6 +336,7 @@ internal fun serializeDownloadedSongsCatalog(
                         put("coverUrl", song.coverUrl)
                         put("matchedLyric", song.matchedLyric)
                         put("matchedTranslatedLyric", song.matchedTranslatedLyric)
+                        put("matchedRomanizedLyric", song.matchedRomanizedLyric)
                         put("matchedLyricSource", song.matchedLyricSource)
                         put("matchedSongId", song.matchedSongId)
                         put("userLyricOffsetMs", song.userLyricOffsetMs)
@@ -345,8 +385,9 @@ internal fun deserializeDownloadedSongsCatalog(
                     downloadTime = item.optLong("downloadTime"),
                     coverPath = item.optString("coverPath").takeIf(String::isNotBlank),
                     coverUrl = item.optString("coverUrl").takeIf(String::isNotBlank),
-                    matchedLyric = item.optString("matchedLyric").takeIf(String::isNotBlank),
-                    matchedTranslatedLyric = item.optString("matchedTranslatedLyric").takeIf(String::isNotBlank),
+                    matchedLyric = item.optPresentCatalogString("matchedLyric"),
+                    matchedTranslatedLyric = item.optPresentCatalogString("matchedTranslatedLyric"),
+                    matchedRomanizedLyric = item.optPresentCatalogString("matchedRomanizedLyric"),
                     matchedLyricSource = item.optString("matchedLyricSource").takeIf(String::isNotBlank),
                     matchedSongId = item.optString("matchedSongId").takeIf(String::isNotBlank),
                     userLyricOffsetMs = item.optLong("userLyricOffsetMs"),
@@ -356,8 +397,12 @@ internal fun deserializeDownloadedSongsCatalog(
                     originalName = item.optString("originalName").takeIf(String::isNotBlank),
                     originalArtist = item.optString("originalArtist").takeIf(String::isNotBlank),
                     originalCoverUrl = item.optString("originalCoverUrl").takeIf(String::isNotBlank),
-                    originalLyric = item.optString("originalLyric").takeIf(String::isNotBlank),
-                    originalTranslatedLyric = item.optString("originalTranslatedLyric").takeIf(String::isNotBlank),
+                    // original lyric fields stay in Room and metadata snapshots; keeping the
+                    // legacy startup cache limited to list data avoids a multi-megabyte JSON
+                    // parse on devices with a large downloaded library
+                    originalLyric = null,
+                    originalTranslatedLyric = null,
+                    originalRomanizedLyric = null,
                     mediaUri = item.optString("mediaUri").takeIf(String::isNotBlank),
                     durationMs = item.optLong("durationMs"),
                     stableKey = item.optString("stableKey").takeIf(String::isNotBlank),
@@ -378,8 +423,13 @@ internal fun deserializeDownloadedSongsCatalog(
 
 internal fun isResolvableLocalReference(reference: String): Boolean {
     return reference.startsWith("/") ||
-        reference.startsWith("content://") ||
-        reference.startsWith("file://")
+        reference.startsWith("content:", ignoreCase = true) ||
+        reference.startsWith("file:", ignoreCase = true)
+}
+
+private fun JSONObject.optPresentCatalogString(fieldName: String): String? {
+    if (!has(fieldName) || isNull(fieldName)) return null
+    return optString(fieldName)
 }
 
 private fun downloadedSongCatalogIdentityKey(
@@ -392,6 +442,91 @@ private fun downloadedSongCatalogIdentityKey(
 
 private fun DownloadedSong.catalogStableKey(): String? {
     return remoteSourceStableKeyOrNull() ?: stableKey?.takeIf(String::isNotBlank)
+}
+
+private fun SongItem.requiresVerifiedRemoteDownloadIdentity(): Boolean {
+    if (!sourceStableKey.isNullOrBlank()) {
+        return true
+    }
+    val sourceChannel = channelId
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+    return sourceChannel != null && (
+        !audioId.isNullOrBlank() ||
+            !subAudioId.isNullOrBlank() ||
+            id > 0L
+        )
+}
+
+private fun DownloadedSong.requiresVerifiedRemoteDownloadIdentity(): Boolean {
+    if (remoteSourceStableKeyOrNull() != null) {
+        return true
+    }
+    val sourceChannel = sourceChannelId
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+    return sourceChannel != null && (
+        !sourceAudioId.isNullOrBlank() ||
+            !sourceSubAudioId.isNullOrBlank() ||
+            id > 0L
+        )
+}
+
+private fun DownloadedSong.isLegacyRemoteIdentityMissing(): Boolean {
+    return remoteSourceStableKeyOrNull() == null && !requiresVerifiedRemoteDownloadIdentity()
+}
+
+private fun DownloadedSong.matchesVerifiedRemoteIdentity(song: SongItem): Boolean {
+    val expectedStableKey = song.stableKey()
+    val downloadedStableKey = remoteSourceStableKeyOrNull()
+    if (downloadedStableKey != null) {
+        return downloadedStableKey == expectedStableKey
+    }
+    val downloadedTrackKey = buildRemoteTrackKey(
+        channelId = sourceChannelId,
+        audioId = sourceAudioId,
+        subAudioId = sourceSubAudioId
+    ) ?: return false
+    return downloadedTrackKey == buildRemoteTrackKey(
+        channelId = song.channelId,
+        audioId = song.audioId,
+        subAudioId = song.subAudioId
+    )
+}
+
+private fun DownloadedSong.matchesVerifiedRemoteIdentity(other: DownloadedSong): Boolean {
+    val existingStableKey = remoteSourceStableKeyOrNull()
+    val targetStableKey = other.remoteSourceStableKeyOrNull()
+    if (existingStableKey != null || targetStableKey != null) {
+        return existingStableKey != null && existingStableKey == targetStableKey
+    }
+    val existingTrackKey = buildRemoteTrackKey(
+        channelId = sourceChannelId,
+        audioId = sourceAudioId,
+        subAudioId = sourceSubAudioId
+    ) ?: return false
+    return existingTrackKey == buildRemoteTrackKey(
+        channelId = other.sourceChannelId,
+        audioId = other.sourceAudioId,
+        subAudioId = other.sourceSubAudioId
+    )
+}
+
+private fun buildRemoteTrackKey(
+    channelId: String?,
+    audioId: String?,
+    subAudioId: String?
+): String? {
+    val normalizedChannelId = channelId
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("local", ignoreCase = true) }
+        ?: return null
+    val normalizedAudioId = audioId?.trim().orEmpty()
+    val normalizedSubAudioId = subAudioId?.trim().orEmpty()
+    if (normalizedAudioId.isBlank() && normalizedSubAudioId.isBlank()) {
+        return null
+    }
+    return "$normalizedChannelId|$normalizedAudioId|$normalizedSubAudioId"
 }
 
 private fun DownloadedSong.listPresentationKey(): String {

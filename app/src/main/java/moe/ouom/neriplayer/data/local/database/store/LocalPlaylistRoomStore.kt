@@ -185,6 +185,29 @@ internal class LocalPlaylistRoomStore(
         }
     }
 
+    suspend fun readPlaylistIfRoomPrimary(playlistId: Long): LocalPlaylist? {
+        if (!isRoomPrimary()) {
+            return null
+        }
+        return database.withTransaction {
+            val dao = database.localPlaylistDao()
+            val playlist = dao.getPlaylist(playlistId) ?: return@withTransaction null
+            val members = dao.getMembersForPlaylist(playlistId)
+            val identityKeys = members.mapTo(linkedSetOf()) { it.identityKey }
+            val tracks = identityKeys
+                .chunked(500)
+                .flatMap { keys ->
+                    if (keys.isEmpty()) emptyList() else dao.getTracksByIdentityKeys(keys)
+                }
+            mapper.toDomain(
+                playlists = listOf(playlist),
+                tracks = tracks,
+                members = members,
+                memberTokens = dao.getMemberTokensForPlaylist(playlistId)
+            ).firstOrNull()
+        }
+    }
+
     suspend fun readPendingSyncMutationOutbox(): LocalPlaylistSyncMutationOutbox? {
         val entries = database.syncMetadataDao().getOutbox(
             statuses = listOf(SyncOutboxStatus.PENDING),

@@ -8,6 +8,8 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentMap
 
 internal object ManagedDownloadMediaScanIsolation {
+    private const val MARKER_CREATION_ATTEMPTS = 3
+
     fun ensureFileDirectory(
         subdirectory: String,
         directory: File,
@@ -18,14 +20,19 @@ internal object ManagedDownloadMediaScanIsolation {
         if (ensuredMarkers[cacheKey] == true) return
 
         val marker = File(directory, NO_MEDIA_FILE_NAME)
-        if (marker.exists()) {
+        if (marker.isFile) {
             ensuredMarkers[cacheKey] = true
             return
         }
-        if (!marker.createNewFile()) {
-            throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
+
+        repeat(MARKER_CREATION_ATTEMPTS) {
+            runCatching { marker.createNewFile() }
+            if (marker.isFile) {
+                ensuredMarkers[cacheKey] = true
+                return
+            }
         }
-        ensuredMarkers[cacheKey] = true
+        throw IOException("无法创建 $NO_MEDIA_FILE_NAME: ${directory.absolutePath}")
     }
 
     fun ensureTreeDirectory(
@@ -35,6 +42,7 @@ internal object ManagedDownloadMediaScanIsolation {
         ensuredMarkers: ConcurrentMap<String, Boolean>,
         hasCachedChild: (Context, DocumentFile, String) -> Boolean,
         createMarker: (DocumentFile) -> DocumentFile?,
+        isMarkerAccessible: (Context, DocumentFile) -> Boolean,
         rememberMarker: (DocumentFile, String) -> Unit
     ) {
         if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return
@@ -45,10 +53,36 @@ internal object ManagedDownloadMediaScanIsolation {
             return
         }
 
-        val marker = createMarker(directory)
-            ?: throw IOException("无法创建 $NO_MEDIA_FILE_NAME")
-        val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(marker.name, NO_MEDIA_FILE_NAME)
-        rememberMarker(marker, storedName)
-        ensuredMarkers[cacheKey] = true
+        repeat(MARKER_CREATION_ATTEMPTS) {
+            if (hasCachedChild(context, directory, NO_MEDIA_FILE_NAME)) {
+                ensuredMarkers[cacheKey] = true
+                return
+            }
+            val marker = runCatching { createMarker(directory) }.getOrNull()
+            if (
+                marker != null &&
+                    isUsableNoMediaMarker(
+                        documentExists = marker.exists(),
+                        descriptorAccessible = isMarkerAccessible(context, marker)
+                    )
+            ) {
+                val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+                    marker.name,
+                    NO_MEDIA_FILE_NAME
+                )
+                if (storedName == NO_MEDIA_FILE_NAME) {
+                    rememberMarker(marker, storedName)
+                    ensuredMarkers[cacheKey] = true
+                    return
+                }
+                runCatching { marker.delete() }
+            }
+        }
+        throw IOException("无法创建 $NO_MEDIA_FILE_NAME: ${directory.uri}")
     }
+
+    internal fun isUsableNoMediaMarker(
+        documentExists: Boolean,
+        descriptorAccessible: Boolean
+    ): Boolean = documentExists || descriptorAccessible
 }

@@ -8,6 +8,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 
 internal object ManagedDownloadCommitIo {
     fun copyFileAtomically(
@@ -15,7 +16,8 @@ internal object ManagedDownloadCommitIo {
         targetName: String,
         input: InputStream,
         bufferSizeBytes: Int,
-        onProgress: ((Long) -> Unit)? = null
+        onProgress: ((Long) -> Unit)? = null,
+        outputDigest: MessageDigest? = null
     ): Long {
         val target = File(parent, targetName)
         val partial = File.createTempFile(".np-migration-", ".partial", parent)
@@ -26,7 +28,8 @@ internal object ManagedDownloadCommitIo {
                     input = input,
                     output = output,
                     bufferSizeBytes = bufferSizeBytes,
-                    onProgress = onProgress
+                    onProgress = onProgress,
+                    outputDigest = outputDigest
                 )
                 output.fd.sync()
                 copied
@@ -47,9 +50,10 @@ internal object ManagedDownloadCommitIo {
         input: InputStream,
         output: OutputStream,
         bufferSizeBytes: Int,
-        onProgress: ((Long) -> Unit)? = null
+        onProgress: ((Long) -> Unit)? = null,
+        outputDigest: MessageDigest? = null
     ): Long {
-        if (onProgress == null) {
+        if (onProgress == null && outputDigest == null) {
             return input.copyTo(output, bufferSizeBytes)
         }
         val buffer = ByteArray(bufferSizeBytes)
@@ -63,10 +67,17 @@ internal object ManagedDownloadCommitIo {
                 continue
             }
             output.write(buffer, 0, readCount)
+            outputDigest?.update(buffer, 0, readCount)
             copiedBytes += readCount
-            onProgress(copiedBytes)
+            onProgress?.invoke(copiedBytes)
         }
         return copiedBytes
+    }
+
+    fun digestHex(digest: MessageDigest): String {
+        return digest.digest().joinToString(separator = "") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
     }
 
     fun requireVerifiedCommittedByteCount(

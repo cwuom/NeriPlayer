@@ -63,6 +63,7 @@ class DownloadMetadataValidationTest {
               "stableKey": "1|netease|",
               "songId": 1,
               "identityAlbum": "netease",
+              "album": "远端专辑",
               "name": "Song",
               "artist": "Artist",
               "downloadFinalized": false
@@ -75,6 +76,7 @@ class DownloadMetadataValidationTest {
         assertEquals("1|netease|", metadata?.stableKey)
         assertEquals(1L, metadata?.songId)
         assertEquals("netease", metadata?.identityAlbum)
+        assertEquals("远端专辑", metadata?.album)
         assertEquals("Song", metadata?.name)
         assertEquals("Artist", metadata?.artist)
         assertEquals(true, metadata?.downloadFinalized)

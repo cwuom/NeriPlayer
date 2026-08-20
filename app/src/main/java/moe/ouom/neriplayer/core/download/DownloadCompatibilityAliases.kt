@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as DownloadedAudioTagWriterDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames as candidateManagedDownloadBaseNamesDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates as candidateManagedDownloadFileNameTemplatesDelegate
+import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash as managedDownloadIdentityHashDelegate
 import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplateDelegate
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName as parseManagedDownloadBaseNameDelegate
 import moe.ouom.neriplayer.core.download.naming.renderManagedDownloadBaseName as renderManagedDownloadBaseNameDelegate
@@ -41,6 +42,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDeta
 import moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup as shouldKeepCancellationCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldProbeCompletedAudioAccessDuringPostProcessing as shouldProbeCompletedAudioAccessDuringPostProcessingDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRunInitialDownloadScan as shouldRunInitialDownloadScanDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldRepairDownloadedCover as shouldRepairDownloadedCoverDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldSkipCancelledArtifactRecovery as shouldSkipCancelledArtifactRecoveryDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldTrustFastDownloadedSongCatalogHit as shouldTrustFastDownloadedSongCatalogHitDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldUseImmediateDownloadedPlaybackHydration as shouldUseImmediateDownloadedPlaybackHydrationDelegate
@@ -76,6 +78,8 @@ internal const val DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE
+internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES =
+    moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES
 
 internal fun sanitizeManagedDownloadFileName(name: String): String =
     sanitizeManagedDownloadFileNameDelegate(name)
@@ -95,7 +99,16 @@ internal fun renderManagedDownloadBaseName(
     audioId: String = "",
     subAudioId: String = "",
     template: String? = DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE
-): String = renderManagedDownloadBaseNameDelegate(title, artist, album, source, songId, audioId, subAudioId, template)
+): String = renderManagedDownloadBaseNameDelegate(
+    title = title,
+    artist = artist,
+    album = album,
+    source = source,
+    songId = songId,
+    audioId = audioId,
+    subAudioId = subAudioId,
+    template = template
+)
 
 internal fun renderManagedDownloadBaseName(
     song: SongItem,
@@ -114,6 +127,9 @@ internal fun candidateManagedDownloadBaseNames(
 
 internal fun candidateManagedDownloadBaseNames(fileNameWithoutExtension: String): List<String> =
     candidateManagedDownloadBaseNamesDelegate(fileNameWithoutExtension)
+
+internal fun managedDownloadIdentityHash(song: SongItem): String =
+    managedDownloadIdentityHashDelegate(song)
 
 internal fun shouldRunInitialDownloadScan(catalogReady: Boolean, hasRecoveredEntries: Boolean = false): Boolean =
     shouldRunInitialDownloadScanDelegate(catalogReady, hasRecoveredEntries)
@@ -162,6 +178,14 @@ internal fun resolveCompletedDownloadFinalizationAction(
 
 internal fun resolvePreExistingDownloadedAudioAction(hasExistingAudio: Boolean): PreExistingDownloadedAudioAction =
     resolvePreExistingDownloadedAudioActionDelegate(hasExistingAudio)
+
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean = shouldRepairDownloadedCoverDelegate(
+    coverReferenceAccessible,
+    hasNetworkCoverCandidate
+)
 
 internal fun shouldUseImmediateDownloadedPlaybackHydration(
     originalSong: SongItem,

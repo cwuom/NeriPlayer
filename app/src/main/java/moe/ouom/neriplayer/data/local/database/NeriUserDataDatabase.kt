@@ -94,7 +94,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 15,
+    version = 24,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -162,7 +162,16 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_11_12,
                 MIGRATION_12_13,
                 MIGRATION_13_14,
-                MIGRATION_14_15
+                MIGRATION_14_15,
+                MIGRATION_15_16,
+                MIGRATION_16_17,
+                MIGRATION_17_18,
+                MIGRATION_18_19,
+                MIGRATION_19_20,
+                MIGRATION_20_21,
+                MIGRATION_21_22,
+                MIGRATION_22_23,
+                MIGRATION_23_24
             ).build()
         }
 
@@ -1002,6 +1011,226 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE `download_snapshot_metadata` " +
                         "ADD COLUMN `romanized_lyric_path` TEXT"
+                )
+            }
+        }
+
+        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `downloaded_song_catalog` " +
+                        "ADD COLUMN `matched_romanized_lyric` TEXT"
+                )
+                db.execSQL(
+                    "ALTER TABLE `downloaded_song_catalog` " +
+                        "ADD COLUMN `original_romanized_lyric` TEXT"
+                )
+                db.execSQL(
+                    "ALTER TABLE `download_snapshot_metadata` " +
+                        "ADD COLUMN `matched_romanized_lyric` TEXT"
+                )
+                db.execSQL(
+                    "ALTER TABLE `download_snapshot_metadata` " +
+                        "ADD COLUMN `original_romanized_lyric` TEXT"
+                )
+                db.execSQL(
+                    "ALTER TABLE `download_pending_queue` " +
+                        "ADD COLUMN `matched_romanized_lyric` TEXT"
+                )
+                db.execSQL(
+                    "ALTER TABLE `download_pending_queue` " +
+                        "ADD COLUMN `original_romanized_lyric` TEXT"
+                )
+            }
+        }
+
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "original_romanized_lyric"
+                )
+            }
+        }
+
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "original_romanized_lyric"
+                )
+            }
+        }
+
+        val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "original_romanized_lyric"
+                )
+            }
+        }
+
+        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "downloaded_song_catalog",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "original_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "matched_romanized_lyric"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_pending_queue",
+                    columnName = "original_romanized_lyric"
+                )
+            }
+        }
+
+        /**
+         * advances the schema identity after older builds wrote the same columns with a stale
+         * Room identity hash; no user tables or rows are changed
+         */
+        val MIGRATION_20_21: Migration = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        /**
+         * repairs databases that reached version 21 with the legacy Room identity hash
+         */
+        val MIGRATION_21_22: Migration = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        /**
+         * repairs databases that were already marked as version 22 while retaining the
+         * identity hash written by the previous schema build
+         */
+        val MIGRATION_22_23: Migration = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) = Unit
+        }
+
+        val MIGRATION_23_24: Migration = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "album"
+                )
+            }
+        }
+
+        private fun addTextColumnIfMissing(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String
+        ) {
+            val hasColumn = db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                nameIndex >= 0 && generateSequence {
+                    if (cursor.moveToNext()) cursor.getString(nameIndex) else null
+                }.any { it == columnName }
+            }
+            if (!hasColumn) {
+                db.execSQL(
+                    "ALTER TABLE `$tableName` ADD COLUMN `$columnName` TEXT"
                 )
             }
         }

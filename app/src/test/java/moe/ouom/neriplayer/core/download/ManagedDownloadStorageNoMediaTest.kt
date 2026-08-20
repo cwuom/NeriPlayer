@@ -15,6 +15,7 @@ class ManagedDownloadStorageNoMediaTest {
     @Test
     fun `shouldCreateNoMediaMarker only targets cover directory`() {
         assertTrue(ManagedDownloadStorage.shouldCreateNoMediaMarker("Covers"))
+        assertTrue(ManagedDownloadStorage.shouldCreateNoMediaMarker("covers"))
         assertFalse(ManagedDownloadStorage.shouldCreateNoMediaMarker("Lyrics"))
     }
 

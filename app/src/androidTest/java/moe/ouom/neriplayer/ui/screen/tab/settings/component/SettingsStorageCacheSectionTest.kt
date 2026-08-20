@@ -32,9 +32,9 @@ class SettingsStorageCacheSectionTest {
     }
 
     @Test
-    fun cancelingFileNameEditRestoresSavedTemplateInCard() {
+    fun saveableFileNameEditorComposesAndRestoresTemplateInCard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val savedTemplate = "%artist% - %title%"
+        val savedTemplate = "%id% - %audioId% - %subAudioId%"
         var currentTemplate by mutableStateOf<String?>(savedTemplate)
         var saveCallbackCount by mutableStateOf(0)
 
@@ -91,6 +91,12 @@ class SettingsStorageCacheSectionTest {
         }
 
         composeRule.onNodeWithText(savedTemplate).assertExists()
+        composeRule.onNodeWithText(
+            context.getString(
+                R.string.settings_download_file_name_format_preview,
+                "123456 - 456789 - 789012"
+            )
+        ).assertExists()
         composeRule.onNodeWithText(context.getString(R.string.action_details)).performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(" temporary")
         composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performClick()

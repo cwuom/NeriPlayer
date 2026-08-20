@@ -14,18 +14,18 @@ import moe.ouom.neriplayer.data.model.SongItem
 internal enum class TagPostProcessingAction {
     FINALIZE_TAGGED,
     FINALIZE_UNTAGGED,
-    RETRY
+    RETRY,
+    PRESERVE_UNFINALIZED
 }
 
 /**
  * 标签后处理结果 -> 收尾动作
  *
- * 标签为尽力而为的元数据: 只要音频本体完整就必须保留并按完成收尾, 绝不能因写不进标签
- * 而回滚删除完整文件并反复重下耗流量 (P1-1)
+ * 标签写入失败时必须保留音频, 但不能把可写标签的容器伪装成已完成
  * - SUCCESS: 标签已写入, 按带标签完成
  * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留音频按无标签完成, 重试无意义
- * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽仍失败 (如 SAF 持续
- * 打不开可写 fd) 也保留音频按无标签完成, 而不是删除
+ * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽后保留未最终确认文件
+ *   等待后续元数据收尾重试, 不删除音频也不发布完成状态
  */
 internal fun tagPostProcessingAction(
     outcome: DownloadedAudioTagWriteOutcome?,
@@ -35,7 +35,7 @@ internal fun tagPostProcessingAction(
     DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.FINALIZE_UNTAGGED
     DownloadedAudioTagWriteOutcome.FAILED, null ->
         if (hasRemainingAttempts) TagPostProcessingAction.RETRY
-        else TagPostProcessingAction.FINALIZE_UNTAGGED
+        else TagPostProcessingAction.PRESERVE_UNFINALIZED
 }
 
 internal fun shouldRunInitialDownloadScan(
@@ -143,6 +143,13 @@ internal fun resolvePreExistingDownloadedAudioAction(
     }
 }
 
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean {
+    return !coverReferenceAccessible && hasNetworkCoverCandidate
+}
+
 /** 完整音频已经落盘时, 元信息收尾失败也不能删除音频本体 */
 internal fun shouldPreserveCompletedAudioAfterFinalizationFailure(
     hasStoredAudio: Boolean,
@@ -171,7 +178,15 @@ internal fun resolveDownloadedPlaybackHydrationDelayMs(
     originalSong: SongItem,
     hydratedSong: SongItem
 ): Long {
-    return if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
+    val lyricsChanged = originalSong.matchedLyric != hydratedSong.matchedLyric ||
+        originalSong.matchedTranslatedLyric != hydratedSong.matchedTranslatedLyric ||
+        originalSong.matchedRomanizedLyric != hydratedSong.matchedRomanizedLyric ||
+        originalSong.originalLyric != hydratedSong.originalLyric ||
+        originalSong.originalTranslatedLyric != hydratedSong.originalTranslatedLyric ||
+        originalSong.originalRomanizedLyric != hydratedSong.originalRomanizedLyric
+    return if (lyricsChanged) {
+        0L
+    } else if (shouldUseImmediateDownloadedPlaybackHydration(originalSong, hydratedSong)) {
         GlobalDownloadManager.PLAYBACK_METADATA_HYDRATION_DELAY_MS
     } else {
         GlobalDownloadManager.LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS
@@ -228,7 +243,7 @@ internal fun resolveDownloadedLyricOverride(
     localLyricContent: String?,
     indexedLyricContent: String?
 ): String? {
-    if (!fileLyric.isNullOrBlank()) {
+    if (fileLyric != null) {
         return fileLyric
     }
     if (embeddedMatchedLyric != null) {

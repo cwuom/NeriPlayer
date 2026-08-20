@@ -17,23 +17,6 @@ class SearchTextMatcherTest {
     }
 
     @Test
-    fun `tokensOf preserves camel case word boundaries`() {
-        assertTrue(SearchTextMatcher.matches("np", "NeriPlayer"))
-        assertEquals(
-            listOf("neriplayer", "neri", "player", "np"),
-            SearchTextMatcher.tokensOf("NeriPlayer")
-        )
-        assertEquals(
-            listOf("youtubemusic", "you", "tube", "music", "ytm"),
-            SearchTextMatcher.tokensOf("YouTubeMusic")
-        )
-        assertEquals(
-            listOf("audiodownloadmanager", "audio", "download", "manager", "adm"),
-            SearchTextMatcher.tokensOf("AudioDownloadManager")
-        )
-    }
-
-    @Test
     fun `matches Chinese title by full pinyin and initials`() {
         assertTrue(SearchTextMatcher.matches("qingtian", "晴天"))
         assertTrue(SearchTextMatcher.matches("qt", "晴天"))

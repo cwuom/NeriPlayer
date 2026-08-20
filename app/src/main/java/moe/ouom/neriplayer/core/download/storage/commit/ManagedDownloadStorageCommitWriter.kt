@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -8,6 +9,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
@@ -22,6 +24,7 @@ internal class ManagedDownloadStorageCommitWriter(
         treeChildRegistry = treeChildRegistry,
         tag = tag
     )
+    private val migrationPendingWriteNames = ManagedDownloadPendingAudioWriteNames()
 
     fun writeMigrationRootStream(
         context: Context,
@@ -69,7 +72,7 @@ internal class ManagedDownloadStorageCommitWriter(
     ): ManagedDownloadStorage.StoredEntry? {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
-                val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 target.outputStream().use { it.write(bytes) }
@@ -141,7 +144,7 @@ internal class ManagedDownloadStorageCommitWriter(
     ): ManagedDownloadStorage.StoredEntry {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
-                val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 var copiedBytes = 0L
@@ -254,9 +257,12 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
                 val writtenAtMs = System.currentTimeMillis()
                 val encoded = content.toByteArray(Charsets.UTF_8)
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    output.write(encoded)
+                val output = runCatching {
+                    context.contentResolver.openOutputStream(target.uri, "rwt")
+                }.getOrElse {
+                    context.contentResolver.openOutputStream(target.uri, "wt")
                 } ?: throw IOException("无法写入元数据文件: $displayName")
+                output.use { it.write(encoded) }
                 val entry = treeFileCommitter.verifiedTreeStoredEntry(
                     context = context,
                     target = target,
@@ -303,6 +309,9 @@ internal class ManagedDownloadStorageCommitWriter(
             expectedSizeBytes = copiedBytes,
             description = target.entry.name
         )
+        sourceEntry.lastModifiedMs
+            .takeIf { it > 0L }
+            ?.let { targetFile.setLastModified(it) }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
             createdNew = true
@@ -331,32 +340,16 @@ internal class ManagedDownloadStorageCommitWriter(
         if (!targetPlan.createdNew) {
             return targetPlan
         }
-        val target = treeFileCommitter.createRootFile(context, root.tree, targetPlan.entry.name, mimeType, replace = true)
-        val writtenAtMs = System.currentTimeMillis()
-        var copiedBytes = 0L
-        context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-            copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
-                input = input,
-                output = output,
-                bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
-                onProgress = onProgress
-            )
-        } ?: throw IOException("无法写入根目录文件: ${targetPlan.entry.name}")
-        val expectedSize = if (sourceEntry.sizeBytes > 0L) {
-            sourceEntry.sizeBytes
-        } else {
-            copiedBytes.coerceAtLeast(0L)
-        }
-        val entry = treeFileCommitter.verifiedTreeStoredEntry(
+        return writeMigrationTreeStream(
             context = context,
-            target = target,
-            expectedName = targetPlan.entry.name,
-            expectedSizeBytes = expectedSize,
-            fallbackLastModifiedMs = writtenAtMs,
+            parent = root.tree,
+            finalName = targetPlan.entry.name,
+            mimeType = mimeType,
+            input = input,
+            sourceEntry = sourceEntry,
+            onProgress = onProgress,
             description = displayName
         )
-        treeChildRegistry.rememberTreeChild(root.tree, entry)
-        return StoredWriteResult(entry = entry, createdNew = true)
     }
 
     private fun writeMigrationFileSubdirectoryStream(
@@ -369,7 +362,7 @@ internal class ManagedDownloadStorageCommitWriter(
         targetEntry: ManagedDownloadStorage.StoredEntry?,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
-        val dir = File(root.dir, subdirectory).apply { mkdirs() }
+        val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
         treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
         val target = migrationTargetResolver.resolveFileTarget(
             parent = dir,
@@ -394,6 +387,9 @@ internal class ManagedDownloadStorageCommitWriter(
             expectedSizeBytes = copiedBytes,
             description = target.entry.name
         )
+        sourceEntry.lastModifiedMs
+            .takeIf { it > 0L }
+            ?.let { targetFile.setLastModified(it) }
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
             createdNew = true
@@ -426,27 +422,139 @@ internal class ManagedDownloadStorageCommitWriter(
         if (!targetPlan.createdNew) {
             return targetPlan
         }
-        val target = treeFileCommitter.createRootFile(context, directory, targetPlan.entry.name, mimeType, replace = true)
-        val writtenAtMs = System.currentTimeMillis()
-        var copiedBytes = 0L
-        context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-            copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
-                input = input,
-                output = output,
-                bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
-                onProgress = onProgress
-            )
-        } ?: throw IOException("无法写入目录文件: ${targetPlan.entry.name}")
-        val entry = treeFileCommitter.verifiedTreeStoredEntry(
+        return writeMigrationTreeStream(
             context = context,
-            target = target,
-            expectedName = targetPlan.entry.name,
-            expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
-            fallbackLastModifiedMs = writtenAtMs,
+            parent = directory,
+            finalName = targetPlan.entry.name,
+            mimeType = mimeType,
+            input = input,
+            sourceEntry = sourceEntry,
+            onProgress = onProgress,
             description = displayName
         )
-        treeChildRegistry.rememberTreeChild(directory, entry)
-        return StoredWriteResult(entry = entry, createdNew = true)
     }
 
+    private fun writeMigrationTreeStream(
+        context: Context,
+        parent: DocumentFile,
+        finalName: String,
+        mimeType: String,
+        input: InputStream,
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        onProgress: ((Long) -> Unit)?,
+        description: String
+    ): StoredWriteResult {
+        val requestedPendingName = migrationPendingWriteNames.buildPendingAudioWriteName(finalName)
+        var pendingTarget: DocumentFile? = null
+        var pendingName = requestedPendingName
+        try {
+            val writtenAtMs = System.currentTimeMillis()
+            val pending = treeFileCommitter.createRootFile(
+                context = context,
+                parent = parent,
+                desiredName = requestedPendingName,
+                mimeType = mimeType,
+                replace = false
+            )
+            pendingTarget = pending
+            pendingName = treeFileCommitter.resolvedTreeStoredName(
+                pending,
+                requestedPendingName
+            )
+            var copiedBytes = 0L
+            context.contentResolver.openOutputStream(pending.uri, "w")?.use { output ->
+                copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
+                    input = input,
+                    output = output,
+                    bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+                    onProgress = onProgress
+                )
+            } ?: throw IOException("无法写入 SAF 迁移临时文件: $finalName")
+            val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L }
+                ?: copiedBytes.coerceAtLeast(0L)
+            treeFileCommitter.verifiedTreeStoredEntry(
+                context = context,
+                target = pending,
+                expectedName = pendingName,
+                expectedSizeBytes = expectedSize,
+                fallbackLastModifiedMs = writtenAtMs,
+                description = "迁移临时文件: $description"
+            )
+            if (!pending.renameTo(finalName)) {
+                throw IOException("SAF 提供方不支持安全提交迁移文件: $finalName")
+            }
+            val committedTarget = DocumentFile.fromSingleUri(context, pending.uri) ?: pending
+            val entry = treeFileCommitter.verifiedTreeStoredEntry(
+                context = context,
+                target = committedTarget,
+                expectedName = finalName,
+                expectedSizeBytes = expectedSize,
+                fallbackLastModifiedMs = writtenAtMs,
+                description = description
+            )
+            if (entry.name != finalName) {
+                throw IOException("SAF 迁移提交后的文件名异常: expected=$finalName, actual=${entry.name}")
+            }
+            treeChildRegistry.forgetTreeChildName(parent, requestedPendingName)
+            if (pendingName != requestedPendingName) {
+                treeChildRegistry.forgetTreeChildName(parent, pendingName)
+            }
+            treeChildRegistry.rememberTreeChild(parent, entry)
+            restoreLastModified(context, committedTarget.uri, sourceEntry.lastModifiedMs)
+            return StoredWriteResult(
+                entry = entry.copy(
+                    lastModifiedMs = sourceEntry.lastModifiedMs.takeIf { it > 0L }
+                        ?: entry.lastModifiedMs
+                ),
+                createdNew = true
+            )
+        } catch (error: Throwable) {
+            pendingTarget?.let { target ->
+                treeFileCommitter.discardTreeFile(
+                    context = context,
+                    parent = parent,
+                    target = target,
+                    expectedName = pendingName
+                )
+            }
+            treeChildRegistry.forgetTreeChildName(parent, requestedPendingName)
+            throw error
+        }
+    }
+
+    private fun restoreLastModified(context: Context, uri: android.net.Uri, lastModifiedMs: Long) {
+        if (lastModifiedMs <= 0L) {
+            return
+        }
+        runCatching {
+            context.contentResolver.update(
+                uri,
+                android.content.ContentValues().apply {
+                    put(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED, lastModifiedMs)
+                },
+                null,
+                null
+            )
+        }
+    }
+
+}
+
+internal fun resolveManagedFileSubdirectory(root: File, desiredName: String): File {
+    val exactDirectory = File(root, desiredName)
+    if (exactDirectory.isDirectory) {
+        return exactDirectory
+    }
+    root.listFiles()
+        ?.firstOrNull { child ->
+            child.isDirectory && child.name.equals(desiredName, ignoreCase = true)
+        }
+        ?.let { return it }
+    if (exactDirectory.exists()) {
+        throw IOException("下载目录子目录不是目录: ${exactDirectory.path}")
+    }
+    if (!exactDirectory.mkdirs() && !exactDirectory.isDirectory) {
+        throw IOException("无法创建下载目录子目录: ${exactDirectory.path}")
+    }
+    return exactDirectory
 }

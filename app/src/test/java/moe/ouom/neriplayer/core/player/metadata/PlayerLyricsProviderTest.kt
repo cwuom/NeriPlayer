@@ -81,6 +81,46 @@ class PlayerLyricsProviderTest {
     }
 
     @Test
+    fun `managed downloads prefer indexed sidecar text for every lyric variant`() {
+        assertEquals(
+            "downloaded",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "stored",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = true,
+                localLyric = null,
+                storedLyric = "stored",
+                downloadedLyric = null
+            )
+        )
+        assertEquals(
+            "local",
+            resolveLyricTextForPlayback(
+                isManagedLocalDownload = false,
+                localLyric = "local",
+                storedLyric = "stored",
+                downloadedLyric = "downloaded"
+            )
+        )
+    }
+
+    @Test
     fun `local songs never load remote lyrics`() {
         val song = SongItem(
             id = 1L,
@@ -93,6 +133,34 @@ class PlayerLyricsProviderTest {
             mediaUri = "/tmp/local.mp3"
         )
 
+        assertFalse(shouldLoadRemoteLyrics(song))
+    }
+
+    @Test
+    fun `managed local downloads still read downloaded lyrics before remote fallback`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/song.mp3"
+        )
+
+        assertTrue(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = true
+            )
+        )
+        assertFalse(
+            shouldReadManagedDownloadLyrics(
+                song = song,
+                isManagedLocalDownload = false
+            )
+        )
         assertFalse(shouldLoadRemoteLyrics(song))
     }
 

@@ -21,6 +21,7 @@ internal object ManagedDownloadMetadataCodec {
         rewriteMetadataReferenceField(root, "coverUrl", referenceMap)
         rewriteMetadataReferenceField(root, "originalCoverUrl", referenceMap)
         rewriteMetadataReferenceField(root, "mediaUri", referenceMap)
+        rewriteMetadataReferenceField(root, "localFilePath", referenceMap)
         rewriteMetadataEmbeddedReferenceField(root, "stableKey", referenceMap)
         return root.toString()
     }
@@ -68,11 +69,26 @@ internal object ManagedDownloadMetadataCodec {
         referenceMap: Map<String, String>
     ) {
         val current = root.optString(fieldName).takeIf(String::isNotBlank) ?: return
-        val updated = referenceMap.entries.fold(current) { value, (from, to) ->
-            if (value.contains(from)) {
-                value.replace(from, to)
-            } else {
-                value
+        val replacements = referenceMap.entries
+            .filter { (from, to) -> from.isNotBlank() && from != to }
+            .sortedWith(
+                compareByDescending<Map.Entry<String, String>> { entry -> entry.key.length }
+                    .thenBy { entry -> entry.key }
+            )
+        if (replacements.isEmpty()) return
+        val updated = buildString(current.length) {
+            var index = 0
+            while (index < current.length) {
+                val replacement = replacements.firstOrNull { entry ->
+                    current.startsWith(entry.key, startIndex = index)
+                }
+                if (replacement == null) {
+                    append(current[index])
+                    index++
+                } else {
+                    append(replacement.value)
+                    index += replacement.key.length
+                }
             }
         }
         if (updated != current) {

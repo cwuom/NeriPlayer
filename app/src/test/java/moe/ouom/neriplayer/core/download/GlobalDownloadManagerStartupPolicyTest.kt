@@ -12,11 +12,86 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `download playback hydration survives local reference normalization`() {
+        val quickSong = SongItem(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/1",
+            localFileName = "song.mp3",
+            localFilePath = "/storage/emulated/0/neriplayer-download/song.mp3"
+        )
+        val normalizedSong = quickSong.copy(
+            mediaUri = "content://downloads/audio/2"
+        )
+
+        assertFalse(quickSong.stableKey() == normalizedSong.stableKey())
+        assertTrue(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong,
+                quickSong = quickSong
+            )
+        )
+        assertFalse(
+            shouldApplyDownloadedPlaybackHydration(
+                currentSong = normalizedSong.copy(
+                    mediaUri = "content://downloads/audio/3",
+                    localFilePath = null
+                ),
+                quickSong = quickSong
+            )
+        )
+    }
+
+    @Test
+    fun `unfinalized recovery only rebuilds a snapshot after deleting an artifact`() {
+        assertFalse(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 0))
+        assertTrue(shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount = 1))
+    }
+
+    @Test
+    fun `download with a network cover cannot finalize without an accessible sidecar`() {
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = false
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = true
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = false,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+    }
 
     @Test
     fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
@@ -203,6 +278,28 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `missing downloaded cover is repaired only when a network candidate exists`() {
+        assertTrue(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = true,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = false
+            )
+        )
+    }
+
+    @Test
     fun `cancel cleanup survives invalidated generation until a new request takes over`() {
         assertTrue(
             shouldKeepCancellationCleanup(
@@ -277,7 +374,8 @@ class GlobalDownloadManagerStartupPolicyTest {
             listOf(
                 song.copy(
                     originalLyric = null,
-                    originalTranslatedLyric = null
+                    originalTranslatedLyric = null,
+                    originalRomanizedLyric = null
                 )
             ),
             restored
@@ -382,6 +480,16 @@ class GlobalDownloadManagerStartupPolicyTest {
                 fileLyric = null,
                 embeddedMatchedLyric = null,
                 embeddedOriginalLyric = "",
+                localLyricContent = "[00:00.00]local",
+                indexedLyricContent = "[00:00.00]indexed"
+            )
+        )
+        assertEquals(
+            "",
+            resolveDownloadedLyricOverride(
+                fileLyric = "",
+                embeddedMatchedLyric = "[00:00.00]embedded",
+                embeddedOriginalLyric = "[00:00.00]original",
                 localLyricContent = "[00:00.00]local",
                 indexedLyricContent = "[00:00.00]indexed"
             )
@@ -803,6 +911,86 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(legacyFallback, index.find(song))
+    }
+
+    @Test
+    fun `downloaded song catalog keeps legacy remote entries without source identity`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `downloaded song catalog keeps a legacy local stable key entry for its remote song`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = song.id,
+            name = song.name,
+            artist = song.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = "42|__local_files__|/music/song.flac"
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(legacyDownloaded))
+
+        assertEquals(legacyDownloaded, index.find(song))
+        assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `catalog upsert replaces a legacy entry when the local file reference is unchanged`() {
+        val legacy = DownloadedSong(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L
+        )
+        val refreshed = legacy.copy(
+            sourceChannelId = "netease",
+            sourceAudioId = "42",
+            downloadTime = 20L
+        )
+
+        assertTrue(matchesDownloadedSongCatalogEntry(legacy, refreshed))
+        assertEquals(listOf(refreshed), upsertDownloadedSongCatalog(listOf(legacy), refreshed))
     }
 
     @Test
@@ -1338,7 +1526,7 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `lyric only downloaded playback hydration is deferred`() {
+    fun `lyric only downloaded playback hydration is immediate`() {
         val originalSong = SongItem(
             id = 1L,
             name = "Song",
@@ -1363,7 +1551,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             )
         )
         assertEquals(
-            4_000L,
+            0L,
             resolveDownloadedPlaybackHydrationDelayMs(
                 originalSong = originalSong,
                 hydratedSong = hydratedSong

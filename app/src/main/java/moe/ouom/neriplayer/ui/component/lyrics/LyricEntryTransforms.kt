@@ -18,10 +18,78 @@ fun List<LyricEntry>.flattenWordTimedEntries(): List<LyricEntry> {
 
 fun List<LyricEntry>.hasWordTimedEntries(): Boolean = any { !it.words.isNullOrEmpty() }
 
+enum class LyricsEditorSource {
+    SIDECAR,
+    EMBEDDED
+}
+
 internal data class LyricsEditorSeed(
     val lyrics: String,
-    val translatedLyrics: String
+    val translatedLyrics: String,
+    val romanizedLyrics: String = "",
+    val sidecarLyrics: String = lyrics,
+    val sidecarTranslatedLyrics: String = translatedLyrics,
+    val sidecarRomanizedLyrics: String = romanizedLyrics,
+    val embeddedLyrics: String = lyrics,
+    val embeddedTranslatedLyrics: String = translatedLyrics,
+    val embeddedRomanizedLyrics: String = romanizedLyrics,
+    val hasSidecar: Boolean = false,
+    val source: LyricsEditorSource = LyricsEditorSource.SIDECAR
 )
+
+internal fun resolveLocalLyricsEditorSeed(
+    song: SongItem,
+    sidecarLyrics: String?,
+    sidecarTranslatedLyrics: String?,
+    sidecarRomanizedLyrics: String?,
+    embeddedLyrics: String?,
+    embeddedTranslatedLyrics: String?,
+    embeddedRomanizedLyrics: String?,
+    hasOriginalSidecar: Boolean,
+    hasTranslatedSidecar: Boolean,
+    hasRomanizedSidecar: Boolean
+): LyricsEditorSeed {
+    val storedLyrics = resolveStoredLyricText(song.matchedLyric, song.originalLyric).orEmpty()
+    val storedTranslatedLyrics = resolveStoredLyricText(
+        song.matchedTranslatedLyric,
+        song.originalTranslatedLyric
+    ).orEmpty()
+    val storedRomanizedLyrics = resolveStoredLyricText(
+        song.matchedRomanizedLyric,
+        song.originalRomanizedLyric
+    ).orEmpty()
+    val resolvedEmbeddedLyrics = embeddedLyrics ?: storedLyrics
+    val resolvedEmbeddedTranslatedLyrics = embeddedTranslatedLyrics ?: storedTranslatedLyrics
+    val resolvedEmbeddedRomanizedLyrics = embeddedRomanizedLyrics ?: storedRomanizedLyrics
+    // 内容读取和存在性索引可能短暂不同步, 任意一类侧载内容都必须保留来源选择
+    val hasSidecar = hasOriginalSidecar ||
+        hasTranslatedSidecar ||
+        hasRomanizedSidecar ||
+        sidecarLyrics != null ||
+        sidecarTranslatedLyrics != null ||
+        sidecarRomanizedLyrics != null
+    return LyricsEditorSeed(
+        lyrics = if (hasOriginalSidecar) sidecarLyrics.orEmpty() else resolvedEmbeddedLyrics,
+        translatedLyrics = if (hasTranslatedSidecar) {
+            sidecarTranslatedLyrics.orEmpty()
+        } else {
+            resolvedEmbeddedTranslatedLyrics
+        },
+        romanizedLyrics = if (hasRomanizedSidecar) {
+            sidecarRomanizedLyrics.orEmpty()
+        } else {
+            resolvedEmbeddedRomanizedLyrics
+        },
+        sidecarLyrics = sidecarLyrics ?: resolvedEmbeddedLyrics,
+        sidecarTranslatedLyrics = sidecarTranslatedLyrics ?: resolvedEmbeddedTranslatedLyrics,
+        sidecarRomanizedLyrics = sidecarRomanizedLyrics ?: resolvedEmbeddedRomanizedLyrics,
+        embeddedLyrics = resolvedEmbeddedLyrics,
+        embeddedTranslatedLyrics = resolvedEmbeddedTranslatedLyrics,
+        embeddedRomanizedLyrics = resolvedEmbeddedRomanizedLyrics,
+        hasSidecar = hasSidecar,
+        source = if (hasSidecar) LyricsEditorSource.SIDECAR else LyricsEditorSource.EMBEDDED
+    )
+}
 
 internal fun resolveStoredLyricText(
     currentLyric: String?,
@@ -92,6 +160,22 @@ internal fun resolveLyricsEditorSeed(
         translatedLyrics = preparedTranslatedLyrics ?: resolveStoredLyricText(
             currentLyric = song.matchedTranslatedLyric,
             legacyLyric = song.originalTranslatedLyric
+        ).orEmpty(),
+        romanizedLyrics = resolveStoredLyricText(
+            currentLyric = song.matchedRomanizedLyric,
+            legacyLyric = song.originalRomanizedLyric
+        ).orEmpty(),
+        embeddedLyrics = preparedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedLyric,
+            legacyLyric = song.originalLyric
+        ).orEmpty(),
+        embeddedTranslatedLyrics = preparedTranslatedLyrics ?: resolveStoredLyricText(
+            currentLyric = song.matchedTranslatedLyric,
+            legacyLyric = song.originalTranslatedLyric
+        ).orEmpty(),
+        embeddedRomanizedLyrics = resolveStoredLyricText(
+            currentLyric = song.matchedRomanizedLyric,
+            legacyLyric = song.originalRomanizedLyric
         ).orEmpty()
     )
 }

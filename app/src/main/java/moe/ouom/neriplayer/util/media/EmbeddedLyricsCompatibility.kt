@@ -7,6 +7,7 @@ private val lrcTimestampRegex = Regex(
 )
 
 internal const val NERI_ORIGINAL_LYRICS_METADATA_KEY = "NERI_LYRICS_ORIGINAL"
+internal const val NERI_ROMANIZED_LYRICS_METADATA_KEY = "NERI_LYRICS_ROMANIZED"
 internal const val STANDARD_TRANSLATED_LYRICS_METADATA_KEY = "LYRICS:TRANSLATION"
 private const val LYRIC_TRANSLATION_TIMESTAMP_TOLERANCE_MS = 1_500L
 private val lrcMetadataLineRegex = Regex("""^\s*\[[^]]+:[^]]*]""")

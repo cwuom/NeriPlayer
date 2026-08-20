@@ -1,18 +1,325 @@
 package moe.ouom.neriplayer.core.download
 
+import android.content.Context
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationPolicy
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetResolver
+import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
+import kotlin.system.measureTimeMillis
 
 class ManagedDownloadStorageMigrationCompatTest {
+
+    @Test
+    fun `metadata naming recognizes provider numbering before the json extension`() {
+        val audioName = "言って。 - Neri - 言って。 - netease.mp3"
+        val canonicalName = "$audioName.npmeta.json"
+        val numberedBeforeExtension = "$audioName.npmeta (1).json"
+        val numberedAfterExtension = "$canonicalName (2)"
+
+        assertEquals(audioName, ManagedDownloadTreeNaming.metadataAudioName(canonicalName))
+        assertEquals(audioName, ManagedDownloadTreeNaming.metadataAudioName(numberedBeforeExtension))
+        assertEquals(audioName, ManagedDownloadTreeNaming.metadataAudioName(numberedAfterExtension))
+        assertEquals(0, ManagedDownloadTreeNaming.metadataNameOrdinal(canonicalName, audioName))
+        assertEquals(1, ManagedDownloadTreeNaming.metadataNameOrdinal(numberedBeforeExtension, audioName))
+        assertEquals(2, ManagedDownloadTreeNaming.metadataNameOrdinal(numberedAfterExtension, audioName))
+    }
+
+    @Test
+    fun `snapshot indexes numbered metadata before json extension by audio name`() {
+        val audioName = "言って。 - Neri - 言って。 - netease.mp3"
+        val metadata = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta (1).json",
+            reference = "/downloads/$audioName.npmeta (1).json",
+            mediaUri = "file:///downloads/$audioName.npmeta%20(1).json",
+            localFilePath = "/downloads/$audioName.npmeta (1).json",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = listOf(metadata),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(metadata, snapshot.metadataEntriesByAudioName[audioName])
+    }
+
+    @Test
+    fun `migration plan reuses numbered metadata residue`() {
+        val audioName = "言って。 - Neri - 言って。 - netease.mp3"
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "/source/$audioName.npmeta.json",
+            mediaUri = "file:///source/$audioName.npmeta.json",
+            localFilePath = "/source/$audioName.npmeta.json",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        val existing = source.copy(
+            name = "$audioName.npmeta (2).json",
+            reference = "content://target/numbered-metadata",
+            mediaUri = "content://target/numbered-metadata",
+            localFilePath = null
+        )
+        val targetIndex = ManagedMigrationTargetIndex(
+            rootEntriesByName = mapOf(existing.name to existing),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap()
+        )
+
+        val plan = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(ManagedMigrationEntryRef(subdirectory = null, entry = source)),
+            targetIndex = targetIndex
+        )
+
+        assertEquals(existing.name, plan.targetNameFor(ManagedMigrationEntryRef(null, source)))
+        assertEquals(existing, plan.reusedTargetFor(ManagedMigrationEntryRef(null, source)))
+    }
+
+    @Test
+    fun `tree migration target resolver reuses numbered metadata`() {
+        val audioName = "言って。 - Neri - 言って。 - netease.mp3"
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "/source/$audioName.npmeta.json",
+            mediaUri = "file:///source/$audioName.npmeta.json",
+            localFilePath = "/source/$audioName.npmeta.json",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        val existing = source.copy(
+            name = "$audioName.npmeta (2).json",
+            reference = "content://target/numbered-metadata",
+            mediaUri = "content://target/numbered-metadata",
+            localFilePath = null
+        )
+
+        val resolved = ManagedDownloadMigrationTargetResolver.resolveTreeTarget(
+            displayName = source.name,
+            sourceEntry = source,
+            targetNames = setOf(existing.name),
+            targetEntry = null,
+            existingChildEntry = existing,
+            reserveName = { error("numbered metadata must be reused") },
+            onReuseMetadata = {},
+            onReuseFile = {}
+        )
+
+        assertFalse(resolved.createdNew)
+        assertEquals(existing, resolved.entry)
+    }
+
+    @Test
+    fun `migration collector keeps metadata residue when audio was already cleaned`() {
+        val metadata = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/old/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///old/Artist - Song.mp3.npmeta.json",
+            localFilePath = "/old/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 42L,
+            lastModifiedMs = 100L
+        )
+
+        val entries = ManagedDownloadMigrationEntryCollector.collect(
+            rootEntries = listOf(metadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            parsedMetadataByAudioName = emptyMap(),
+            allowMetadataLessAudio = false
+        )
+
+        assertEquals(listOf(metadata), entries.map { it.entry })
+    }
+
+    @Test
+    fun `migration collector keeps sidecars linked to metadata residue`() {
+        fun entry(name: String) = ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/old/$name",
+            mediaUri = "file:///old/$name",
+            localFilePath = "/old/$name",
+            sizeBytes = 1L,
+            lastModifiedMs = 100L
+        )
+        val metadata = entry("Artist - Song.mp3.npmeta.json")
+        val cover = entry("Artist - Song.jpg")
+        val lyric = entry("Artist - Song.lrc")
+
+        val entries = ManagedDownloadMigrationEntryCollector.collect(
+            rootEntries = listOf(metadata),
+            coverEntries = listOf(cover),
+            lyricEntries = listOf(lyric),
+            parsedMetadataByAudioName = emptyMap(),
+            allowMetadataLessAudio = false
+        )
+
+        assertEquals(
+            setOf(metadata, cover, lyric),
+            entries.map { it.entry }.toSet()
+        )
+    }
+
+    @Test
+    fun `remote source identity marks a downloaded local song before catalog restore`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/42",
+            channelId = "netease",
+            audioId = "42",
+            sourceStableKey = "42|netease|"
+        )
+
+        assertTrue(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `local source identity does not classify a manually added song as downloaded`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Imported",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/music/imported.mp3",
+            channelId = "local",
+            audioId = "42",
+            sourceStableKey = "42|netease|"
+        )
+
+        assertFalse(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `legacy downloaded song without stable key still uses managed lyric path`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Downloaded",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/storage/emulated/0/neriplayer-download/Downloaded.mp3",
+            channelId = null,
+            audioId = null,
+            sourceStableKey = null
+        )
+
+        assertTrue(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `manual song in legacy download directory stays on local lyric path`() {
+        val song = SongItem(
+            id = 42L,
+            name = "Imported",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "/storage/emulated/0/neriplayer-download/Imported.mp3",
+            channelId = "local",
+            audioId = "42",
+            sourceStableKey = null
+        )
+
+        assertFalse(ManagedDownloadStorage.hasManagedDownloadIdentityHint(song))
+    }
+
+    @Test
+    fun `legacy download root matches media store relative paths with a parent directory`() {
+        assertTrue(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "Music/neriplayer-download/",
+                treeDocumentId = null
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath = "Music/other-directory/",
+                treeDocumentId = null
+            )
+        )
+    }
+
+    @Test
+    fun `download document uri recovers its SAF tree root before settings restore`() {
+        assertEquals(
+            "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download",
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://com.android.externalstorage.documents/tree/primary%3Aneriplayer-download/" +
+                    "document/primary%3Aneriplayer-download%2Ftrack.mp3"
+            )
+        )
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://media/external_primary/audio/media/42"
+            )
+        )
+    }
+
+    @Test
+    fun `non content and unrelated document references do not produce a tree root`() {
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "/storage/emulated/0/neriplayer-download/track.mp3"
+            )
+        )
+        assertEquals(
+            null,
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "content://com.android.externalstorage.documents/document/primary%3AMusic%2Ftrack.mp3"
+            )
+        )
+    }
+
+    @Test
+    fun `tree reference parser accepts encoded and case insensitive content uris`() {
+        assertEquals(
+            "content://provider/tree/primary%3Aneriplayer-download",
+            ManagedDownloadStorage.managedDownloadTreeReference(
+                "CONTENT://provider/TREE/primary%3Aneriplayer-download/document/track"
+            )
+        )
+    }
 
     @Test
     fun `rewriteManagedMetadataReferences remaps migrated sidecar references`() {
@@ -44,6 +351,26 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("new://translated", payload.getString("translatedLyricPath"))
         assertEquals("new://audio", payload.getString("mediaUri"))
         assertEquals("42|__local_files__|new://audio", payload.getString("stableKey"))
+    }
+
+    @Test
+    fun `rewriteManagedMetadataReferences prefers complete file URI in stable key`() {
+        val raw = JSONObject().apply {
+            put("stableKey", "42|__local_files__|file:/old/track.mp3")
+        }.toString()
+
+        val rewritten = ManagedDownloadStorage.rewriteManagedMetadataReferences(
+            rawJson = raw,
+            referenceMap = linkedMapOf(
+                "/old/track.mp3" to "content://target/audio",
+                "file:/old/track.mp3" to "content://target/audio"
+            )
+        )
+
+        assertEquals(
+            "42|__local_files__|content://target/audio",
+            JSONObject(rewritten).getString("stableKey")
+        )
     }
 
     @Test
@@ -156,6 +483,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     @Test
     fun `matchesManagedSubdirectoryName keeps numbered sidecar directories compatible`() {
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers", "Covers"))
+        assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("covers", "Covers"))
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers (1)", "Covers"))
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Lyrics (12)", "Lyrics"))
         assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers copy", "Covers"))
@@ -177,6 +505,13 @@ class ManagedDownloadStorageMigrationCompatTest {
             "application/octet-stream",
             ManagedDownloadStorage.documentCreateMimeType(
                 "Artist - Song.flac.npmeta.json",
+                "application/json"
+            )
+        )
+        assertEquals(
+            "application/octet-stream",
+            ManagedDownloadStorage.documentCreateMimeType(
+                "Artist - Song.flac.npmeta (2).json.npdl_pending.7",
                 "application/json"
             )
         )
@@ -239,6 +574,22 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `exact tree stored name rejects provider numbered replacement`() {
+        assertTrue(
+            ManagedDownloadTreeNaming.isExactTreeStoredName(
+                actualName = "Artist - Song.mp3.npmeta.json",
+                expectedName = "Artist - Song.mp3.npmeta.json"
+            )
+        )
+        assertFalse(
+            ManagedDownloadTreeNaming.isExactTreeStoredName(
+                actualName = "Artist - Song.mp3.npmeta (1).json",
+                expectedName = "Artist - Song.mp3.npmeta.json"
+            )
+        )
+    }
+
+    @Test
     fun `createUniqueName keeps desired name when no conflict exists`() {
         assertEquals(
             "Artist - Song.flac",
@@ -291,6 +642,17 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("[00:00.00]原始原文", metadata?.originalLyric)
         assertEquals("[00:00.00]原始翻译", metadata?.originalTranslatedLyric)
         assertEquals("/music/Lyrics/Artist - Song.lrc", metadata?.lyricPath)
+    }
+
+    @Test
+    fun `download metadata preserves original download time`() {
+        val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
+            JSONObject().apply {
+                put("downloadTimeMs", 123456789L)
+            }.toString()
+        )
+
+        assertEquals(123456789L, metadata?.downloadTimeMs)
     }
 
     @Test
@@ -375,6 +737,415 @@ class ManagedDownloadStorageMigrationCompatTest {
                 copiedSize = 1L
             )
         )
+    }
+
+    @Test
+    fun `migration verifies content with streaming sha256`() {
+        assertEquals(
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ManagedDownloadMigrationFinalizer.sha256Hex(
+                ByteArrayInputStream("abc".toByteArray())
+            )
+        )
+    }
+
+    @Test
+    fun `directory changes always require explicit migration confirmation`() {
+        assertTrue(
+            ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(
+                fromDirectoryUri = null,
+                toDirectoryUri = "content://provider/tree/downloads"
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(
+                fromDirectoryUri = "content://provider/tree/downloads",
+                toDirectoryUri = "content://provider/tree/downloads"
+            )
+        )
+        assertTrue(
+            ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(
+                fromDirectoryUri = "content://provider/tree/downloads",
+                toDirectoryUri = null
+            )
+        )
+    }
+
+    @Test
+    fun `migration scan retry classification keeps unavailable source permanent`() {
+        assertFalse(
+            ManagedDownloadMigrationException.permanent("source unavailable").retryable
+        )
+        assertTrue(
+            ManagedDownloadMigrationException.transient("incomplete SAF enumeration").retryable
+        )
+    }
+
+    @Test
+    fun `migration does not reuse an unknown same-name metadata target`() {
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "track.mp3.npmeta.json",
+            reference = "/source/track.mp3.npmeta.json",
+            mediaUri = "file:///source/track.mp3.npmeta.json",
+            localFilePath = "/source/track.mp3.npmeta.json",
+            sizeBytes = 10L,
+            lastModifiedMs = 1L
+        )
+        val target = source.copy(
+            reference = "/target/track.mp3.npmeta.json",
+            mediaUri = "file:///target/track.mp3.npmeta.json",
+            localFilePath = "/target/track.mp3.npmeta.json"
+        )
+
+        val directory = Files.createTempDirectory("neriplayer-migration-target").toFile()
+        try {
+            val resolved = ManagedDownloadMigrationTargetResolver.resolveFileTarget(
+                parent = directory,
+                displayName = source.name,
+                sourceEntry = source,
+                targetNames = setOf(source.name),
+                targetEntry = target,
+                readExistingEntry = { target },
+                reserveName = { "$it (1)" },
+                onReuseMetadata = {},
+                onReuseFile = {}
+            )
+
+            assertTrue(resolved.createdNew)
+            assertEquals("${source.name} (1)", resolved.entry.name)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration reserves even an initially available target name`() {
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "track.mp3",
+            reference = "/source/track.mp3",
+            mediaUri = "file:///source/track.mp3",
+            localFilePath = "/source/track.mp3",
+            sizeBytes = 10L,
+            lastModifiedMs = 1L
+        )
+        val directory = Files.createTempDirectory("neriplayer-migration-target").toFile()
+        try {
+            var reservedName: String? = null
+            val resolved = ManagedDownloadMigrationTargetResolver.resolveFileTarget(
+                parent = directory,
+                displayName = source.name,
+                sourceEntry = source,
+                targetNames = emptySet(),
+                targetEntry = null,
+                readExistingEntry = { null },
+                reserveName = { name ->
+                    reservedName = name
+                    name
+                },
+                onReuseMetadata = {},
+                onReuseFile = {}
+            )
+
+            assertTrue(resolved.createdNew)
+            assertEquals(source.name, reservedName)
+            assertEquals(source.name, resolved.entry.name)
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration hashes source when its provider does not report a size`() {
+        assertFalse(
+            ManagedDownloadMigrationFinalizer.shouldKeepSourceForMigrationSize(
+                sourceSize = 0L,
+                copiedSize = 100L
+            )
+        )
+    }
+
+    @Test
+    fun `migration switches directory after copies succeed even when source cleanup needs retry`() {
+        val result = ManagedDownloadStorage.MigrationResult(
+            movedFiles = 2,
+            skippedFiles = 0,
+            cleanupFailedFiles = 1
+        )
+
+        assertTrue(result.canSwitchDirectory)
+        assertFalse(result.canReleasePreviousPermission)
+    }
+
+    @Test
+    fun `migration reuses target audio when metadata identifies the same song`() {
+        val sourceAudio = ManagedDownloadStorage.StoredEntry(
+            name = "source.mp3",
+            reference = "/old/source.mp3",
+            mediaUri = "file:///old/source.mp3",
+            localFilePath = "/old/source.mp3",
+            sizeBytes = 10L,
+            lastModifiedMs = 100L
+        )
+        val targetAudio = ManagedDownloadStorage.StoredEntry(
+            name = "target.mp3",
+            reference = "/new/target.mp3",
+            mediaUri = "file:///new/target.mp3",
+            localFilePath = "/new/target.mp3",
+            sizeBytes = 10L,
+            lastModifiedMs = 200L
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "42|netease|track-42",
+            songId = 42L,
+            identityAlbum = "netease"
+        )
+        val plan = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(
+                ManagedMigrationEntryRef(null, sourceAudio)
+            ),
+            targetIndex = ManagedMigrationTargetIndex(
+                rootEntriesByName = mapOf(targetAudio.name to targetAudio),
+                coverEntriesByName = emptyMap(),
+                lyricEntriesByName = emptyMap(),
+                metadataByAudioName = mapOf(targetAudio.name to metadata)
+            ),
+            sourceMetadataByAudioName = mapOf(sourceAudio.name to metadata)
+        )
+
+        assertEquals(targetAudio.name, plan.targetNameFor(ManagedMigrationEntryRef(null, sourceAudio)))
+        assertEquals(
+            targetAudio,
+            plan.reusedTargetFor(ManagedMigrationEntryRef(null, sourceAudio))
+        )
+    }
+
+    @Test
+    fun `migration keeps unknown size non-audio source when copied content differs`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-sidecar-migration").toFile()
+        try {
+            val sourceFile = File(directory, "source-cover.jpg").apply {
+                writeText("original-cover")
+            }
+            val targetFile = File(directory, "target-cover.jpg").apply {
+                writeText("cut")
+            }
+            val sourceEntry = ManagedDownloadStorage.StoredEntry(
+                name = sourceFile.name,
+                reference = sourceFile.absolutePath,
+                mediaUri = sourceFile.toURI().toString(),
+                localFilePath = sourceFile.absolutePath,
+                sizeBytes = 0L,
+                lastModifiedMs = 1L
+            )
+            val targetEntry = ManagedDownloadStorage.StoredEntry(
+                name = targetFile.name,
+                reference = targetFile.absolutePath,
+                mediaUri = targetFile.toURI().toString(),
+                localFilePath = targetFile.absolutePath,
+                sizeBytes = targetFile.length(),
+                lastModifiedMs = 2L
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, reference, _ -> File(reference).delete() },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+
+            val cleanupFailures = finalizer.cleanupMigratedEntries(
+                context = mock(Context::class.java),
+                copiedEntries = listOf(
+                    CopiedMigrationEntry(
+                        original = ManagedMigrationEntry(null, sourceEntry),
+                        copiedEntry = targetEntry,
+                        createdNew = true
+                    )
+                ),
+                sourceRoot = ManagedDownloadRootHandle.FileRoot(directory)
+            )
+
+            assertEquals(1, cleanupFailures)
+            assertTrue(sourceFile.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration verifies rewritten metadata before deleting either source root`() = runBlocking {
+        val sourceDirectory = Files.createTempDirectory("neriplayer-migration-source").toFile()
+        val targetDirectory = Files.createTempDirectory("neriplayer-migration-target").toFile()
+        try {
+            val sourceAudio = File(sourceDirectory, "track.mp3").apply { writeText("audio") }
+            val targetAudio = File(targetDirectory, "track.mp3").apply { writeText("audio") }
+            val sourceMetadata = File(sourceDirectory, "track.mp3.npmeta.json")
+            val targetMetadata = File(targetDirectory, "track.mp3.npmeta.json")
+            val sourceMetadataText = JSONObject().apply {
+                put("mediaUri", sourceAudio.toURI().toString())
+                put("stableKey", "1|local|${sourceAudio.toURI()}")
+            }.toString()
+            sourceMetadata.writeText(sourceMetadataText)
+            targetMetadata.writeText(
+                ManagedDownloadStorage.rewriteManagedMetadataReferences(
+                    rawJson = sourceMetadataText,
+                    referenceMap = mapOf(
+                        sourceAudio.absolutePath to targetAudio.absolutePath,
+                        sourceAudio.toURI().toString() to targetAudio.toURI().toString()
+                    )
+                )
+            )
+            fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                name = file.name,
+                reference = file.absolutePath,
+                mediaUri = file.toURI().toString(),
+                localFilePath = file.absolutePath,
+                sizeBytes = file.length(),
+                lastModifiedMs = file.lastModified()
+            )
+            val copiedEntries = listOf(
+                CopiedMigrationEntry(
+                    original = ManagedMigrationEntry(null, entry(sourceAudio)),
+                    copiedEntry = entry(targetAudio),
+                    createdNew = true,
+                    sourceDigest = sourceAudio.inputStream().use(
+                        ManagedDownloadMigrationFinalizer::sha256Hex
+                    )
+                ),
+                CopiedMigrationEntry(
+                    original = ManagedMigrationEntry(null, entry(sourceMetadata)),
+                    copiedEntry = entry(targetMetadata),
+                    createdNew = true
+                )
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, reference -> File(reference).readText() },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, reference, _ -> File(reference).delete() },
+                rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
+            )
+
+            assertEquals(
+                0,
+                finalizer.verifyMigratedEntries(
+                    context = mock(Context::class.java),
+                    targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
+                    copiedEntries = copiedEntries
+                )
+            )
+
+            targetMetadata.writeText("{}")
+            assertEquals(
+                1,
+                finalizer.verifyMigratedEntries(
+                    context = mock(Context::class.java),
+                    targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
+                    copiedEntries = copiedEntries
+                )
+            )
+            assertTrue(sourceAudio.exists())
+            assertTrue(sourceMetadata.exists())
+        } finally {
+            sourceDirectory.deleteRecursively()
+            targetDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration rewrites metadata left by an interrupted copy`() = runBlocking {
+        val sourceDirectory = Files.createTempDirectory("neriplayer-migration-source").toFile()
+        val targetDirectory = Files.createTempDirectory("neriplayer-migration-target").toFile()
+        try {
+            val sourceAudio = File(sourceDirectory, "track.mp3").apply { writeText("audio") }
+            val targetAudio = File(targetDirectory, "track.mp3").apply { writeText("audio") }
+            val sourceMetadata = File(sourceDirectory, "track.mp3.npmeta.json")
+            val targetMetadata = File(targetDirectory, "track.mp3.npmeta.json")
+            val sourceMetadataText = JSONObject().apply {
+                put("mediaUri", sourceAudio.toURI().toString())
+                put("localFilePath", sourceAudio.absolutePath)
+                put("stableKey", "1|local|${sourceAudio.toURI()}")
+            }.toString()
+            sourceMetadata.writeText(sourceMetadataText)
+            targetMetadata.writeText(sourceMetadataText)
+            fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                name = file.name,
+                reference = file.absolutePath,
+                mediaUri = file.toURI().toString().replaceFirst("file:", "file://"),
+                localFilePath = file.absolutePath,
+                sizeBytes = file.length(),
+                lastModifiedMs = file.lastModified()
+            )
+            val copiedEntries = listOf(
+                CopiedMigrationEntry(
+                    original = ManagedMigrationEntry(null, entry(sourceAudio)),
+                    copiedEntry = entry(targetAudio),
+                    createdNew = false
+                ),
+                CopiedMigrationEntry(
+                    original = ManagedMigrationEntry(null, entry(sourceMetadata)),
+                    copiedEntry = entry(targetMetadata),
+                    createdNew = false
+                )
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, reference -> File(reference).readText() },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                writeRootText = { _, _, name, content ->
+                    File(targetDirectory, name).apply { writeText(content) }.let(::entry)
+                },
+                deleteReference = { _, reference, _ -> File(reference).delete() },
+                rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
+            )
+
+            assertEquals(
+                0,
+                finalizer.rewriteMigratedMetadataReferences(
+                    context = mock(Context::class.java),
+                    targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
+                    copiedEntries = copiedEntries
+                )
+            )
+            val rewritten = JSONObject(targetMetadata.readText())
+            assertEquals(targetAudio.toURI().toString(), rewritten.getString("mediaUri"))
+            assertEquals(targetAudio.absolutePath, rewritten.getString("localFilePath"))
+            assertEquals("1|local|${targetAudio.toURI()}", rewritten.getString("stableKey"))
+        } finally {
+            sourceDirectory.deleteRecursively()
+            targetDirectory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `private migration commit copies sixteen MiB within ten seconds`() {
+        val directory = Files.createTempDirectory("neriplayer-migration-performance").toFile()
+        val payload = ByteArray(512 * 1024) { index -> (index % 251).toByte() }
+        try {
+            val elapsedMs = measureTimeMillis {
+                repeat(32) { index ->
+                    ManagedDownloadCommitIo.copyFileAtomically(
+                        parent = directory,
+                        targetName = "track-$index.mp3",
+                        input = ByteArrayInputStream(payload),
+                        bufferSizeBytes = 64 * 1024
+                    )
+                }
+            }
+
+            assertTrue("private migration took ${elapsedMs}ms", elapsedMs < 10_000L)
+            assertEquals(32, directory.listFiles()?.count(File::isFile))
+        } finally {
+            directory.deleteRecursively()
+        }
     }
 
     @Test

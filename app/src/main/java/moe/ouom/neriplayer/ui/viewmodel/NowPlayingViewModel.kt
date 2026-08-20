@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.api.search.SearchManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -50,6 +51,7 @@ import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.parseNeteaseArtistsFromSongDetail
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.R
+import java.util.concurrent.atomic.AtomicLong
 
 private const val YOUTUBE_MUSIC_CREATOR_SEARCH_LIMIT = 8
 
@@ -100,6 +102,7 @@ data class ManualSearchState(
 class NowPlayingViewModel : ViewModel() {
 
     private val searchRequestCoordinator = ManualSearchRequestCoordinator()
+    private val originalInfoRequestId = AtomicLong(0L)
     private var searchJob: Job? = null
     private var nextSearchSessionId = 0L
     private var activeSearchSessionId = 0L
@@ -494,8 +497,8 @@ class NowPlayingViewModel : ViewModel() {
         clearMatchedMetadata: Boolean = false,
         writeLocalMetadata: Boolean = false,
         writeLyrics: Boolean = false
-    ) {
-        PlayerManager.updateSongCustomInfo(
+    ): Boolean {
+        return PlayerManager.updateSongCustomInfo(
             originalSong = originalSong,
             customCoverUrl = newCoverUrl,
             customName = newName,
@@ -515,17 +518,39 @@ class NowPlayingViewModel : ViewModel() {
         val coverUrl: String?,
         val shouldClearLyrics: Boolean = false,  // B站音源应该清除歌词
         val lyric: String? = null,  // 网易云音源的原始歌词
-        val translatedLyric: String? = null  // 网易云音源的原始翻译歌词
+        val translatedLyric: String? = null,  // 网易云音源的原始翻译歌词
+        val romanizedLyric: String? = null
     )
 
     fun fetchOriginalInfo(context: Context, originalSong: SongItem, onResult: (Boolean, OriginalSongInfo?, String) -> Unit) {
+        val requestId = originalInfoRequestId.incrementAndGet()
         viewModelScope.launch {
             try {
                 val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
 
                 if (!originalSong.mediaUri.isNullOrBlank()) {
-                    val info = buildLocalOriginalSongInfo(originalSong)
-                    onResult(true, info, context.getString(R.string.music_restore_success))
+                    val coverFallbackUrl = withContext(Dispatchers.IO) {
+                        val nearbyCover = runCatching {
+                            LocalMediaSupport.resolveNearbyCoverUri(context, originalSong)
+                        }.getOrNull()
+                        val storedCover = originalSong.originalCoverUrl
+                            ?.takeIf { it.isNotBlank() && it != originalSong.customCoverUrl }
+                            ?: originalSong.coverUrl
+                                ?.takeIf { it.isNotBlank() && it != originalSong.customCoverUrl }
+                        nearbyCover
+                            ?: storedCover
+                            ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, originalSong)
+                            ?: runCatching {
+                                LocalMediaSupport.resolveCoverUri(context, originalSong)
+                            }.getOrNull()
+                    }
+                    val info = buildLocalOriginalSongInfo(
+                        song = originalSong,
+                        coverFallbackUrl = coverFallbackUrl
+                    )
+                    if (originalInfoRequestId.get() == requestId) {
+                        onResult(true, info, context.getString(R.string.music_restore_success))
+                    }
                 } else if (isBili) {
                     val resolved = resolveBiliSong(originalSong, AppContainer.biliClient)
                         ?: throw IllegalStateException("无法解析 B 站视频信息")
@@ -540,7 +565,9 @@ class NowPlayingViewModel : ViewModel() {
                         coverUrl = coverUrl,
                         shouldClearLyrics = true  // B站音源应该清除歌词
                     )
-                    onResult(true, info, context.getString(R.string.music_restore_success))
+                    if (originalInfoRequestId.get() == requestId) {
+                        onResult(true, info, context.getString(R.string.music_restore_success))
+                    }
                 } else {
                     // 网易云音乐: 从网易云获取原始信息
                     val appContainer = AppContainer
@@ -558,11 +585,15 @@ class NowPlayingViewModel : ViewModel() {
                         lyric = songDetails.lyric,  // 保存原始歌词
                         translatedLyric = songDetails.translatedLyric  // 保存原始翻译歌词
                     )
-                    onResult(true, info, context.getString(R.string.music_restore_success))
+                    if (originalInfoRequestId.get() == requestId) {
+                        onResult(true, info, context.getString(R.string.music_restore_success))
+                    }
                 }
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取原始信息失败", e)
-                onResult(false, null, context.getString(R.string.music_restore_failed))
+                if (originalInfoRequestId.get() == requestId) {
+                    onResult(false, null, context.getString(R.string.music_restore_failed))
+                }
             }
         }
     }
@@ -573,16 +604,40 @@ private fun ManualSearchState.matches(request: ManualSearchRequest): Boolean {
     return keyword.trim() == request.keyword && selectedPlatform == request.platform
 }
 
-internal fun buildLocalOriginalSongInfo(song: SongItem): NowPlayingViewModel.OriginalSongInfo {
+internal fun buildLocalOriginalSongInfo(
+    song: SongItem,
+    coverFallbackUrl: String? = null
+): NowPlayingViewModel.OriginalSongInfo {
     val lyric = song.originalLyric ?: song.matchedLyric
     val translatedLyric = song.originalTranslatedLyric ?: song.matchedTranslatedLyric
-    val shouldClearLyrics = lyric.isNullOrBlank() && translatedLyric.isNullOrBlank()
+    val romanizedLyric = song.originalRomanizedLyric ?: song.matchedRomanizedLyric
+    val customCover = song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)
+    val originalCover = song.originalCoverUrl
+        ?.takeIf { it.isNotBlank() && it != customCover }
+    val baseCover = song.coverUrl
+        ?.takeIf { it.isNotBlank() && it != customCover }
+    val coverCandidates = listOfNotNull(
+        coverFallbackUrl,
+        originalCover,
+        baseCover
+    ).mapNotNull { it.trim().takeIf(String::isNotBlank) }
+    val localCover = coverCandidates.firstOrNull { !it.isRemoteCoverReference() }
+    val shouldClearLyrics = lyric.isNullOrBlank() &&
+        translatedLyric.isNullOrBlank() &&
+        romanizedLyric.isNullOrBlank()
     return NowPlayingViewModel.OriginalSongInfo(
         name = song.originalName ?: song.name,
         artist = song.originalArtist ?: song.artist,
-        coverUrl = song.originalCoverUrl ?: song.coverUrl,
+        // downloaded local artwork must win over stale remote metadata
+        coverUrl = localCover ?: coverCandidates.firstOrNull(),
         shouldClearLyrics = shouldClearLyrics,
         lyric = lyric,
-        translatedLyric = translatedLyric
+        translatedLyric = translatedLyric,
+        romanizedLyric = romanizedLyric
     )
+}
+
+private fun String.isRemoteCoverReference(): Boolean {
+    return startsWith("http://", ignoreCase = true) ||
+        startsWith("https://", ignoreCase = true)
 }

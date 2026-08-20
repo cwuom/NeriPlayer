@@ -1,21 +1,182 @@
 package moe.ouom.neriplayer.data.local.audioimport
 
+import android.content.ContentResolver
+import android.content.Context
+import android.database.Cursor
 import java.io.File
+import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class LocalAudioImportManagerTest {
 
     @get:Rule
     val tempFolder = TemporaryFolder()
+
+    @Test
+    fun `metadata sidecar lookup reuses provider numbered metadata`() {
+        val audioName = "言って。 - Neri - 言って。 - netease.mp3"
+        val numberedName = "$audioName.npmeta (2).json"
+        val canonicalName = "$audioName.npmeta.json"
+
+        assertEquals(
+            "content://downloads/numbered",
+            selectMetadataSidecarReference(
+                referencesByName = mapOf(
+                    numberedName.lowercase() to "content://downloads/numbered"
+                ),
+                audioName = audioName
+            )
+        )
+        assertEquals(
+            "content://downloads/canonical",
+            selectMetadataSidecarReference(
+                referencesByName = mapOf(
+                    numberedName.lowercase() to "content://downloads/numbered",
+                    canonicalName.lowercase() to "content://downloads/canonical"
+                ),
+                audioName = audioName
+            )
+        )
+    }
+
+    @Test
+    fun `empty media store result falls back to SAF traversal`() {
+        val indexedSong = SongItem(
+            id = 1L,
+            name = "song",
+            artist = "artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null
+        )
+
+        assertFalse(
+            shouldUseMediaStoreScanResult(
+                LocalAudioImportResult(
+                    songs = emptyList(),
+                    failedCount = 0,
+                    completed = true
+                )
+            )
+        )
+        assertTrue(
+            shouldUseMediaStoreScanResult(
+                LocalAudioImportResult(
+                    songs = listOf(indexedSong),
+                    failedCount = 0,
+                    completed = true
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `scan traversal does not fall back after cancellation`() {
+        assertFalse(
+            shouldFallbackToDocumentFileAfterTraversalFailure(
+                CancellationException("scan cancelled")
+            )
+        )
+        assertTrue(
+            shouldFallbackToDocumentFileAfterTraversalFailure(
+                IllegalStateException("provider failed")
+            )
+        )
+    }
+
+    @Test
+    fun `global media store rows skip sidecar identity hydration when metadata is complete`() {
+        val song = SongItem(
+            id = 1L,
+            name = "Display Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://media/external/audio/media/1",
+            localFileName = "song.mp3",
+            localFilePath = "/storage/emulated/0/neriplayer-download/song.mp3"
+        )
+
+        assertFalse(LocalAudioImportManager.needsLocalIdentityMetadataProbe(song))
+        assertFalse(shouldHydrateLocalSongFastIdentity(song, metadataReference = null))
+        assertTrue(
+            shouldHydrateLocalSongFastIdentity(
+                song = song.copy(artist = "<unknown>"),
+                metadataReference = null
+            )
+        )
+        assertTrue(
+            shouldHydrateLocalSongFastIdentity(
+                song = song,
+                metadataReference = "content://downloads/song.mp3.npmeta.json"
+            )
+        )
+        assertFalse(
+            shouldHydrateLocalSongFastIdentity(
+                song = song,
+                metadataReference = "content://media/external_primary/file/61458"
+            )
+        )
+    }
+
+    @Test
+    fun `metadata result helper rethrows cancellation and logs ordinary failures`() {
+        val cancellation = CancellationException("metadata cancelled")
+        assertThrows(CancellationException::class.java) {
+            Result.failure<SongItem>(cancellation).getOrRethrowCancellation { }
+        }
+
+        val failures = mutableListOf<Throwable>()
+        val recovered = Result.failure<SongItem>(IllegalStateException("metadata failed"))
+            .getOrRethrowCancellation(failures::add)
+
+        assertNull(recovered)
+        assertEquals(1, failures.size)
+    }
+
+    @Test
+    fun `device scan propagates cancellation from progress callback`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val cursor = mock(Cursor::class.java)
+        val cancellation = CancellationException("scan cancelled")
+
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(cursor.count).thenReturn(0)
+        `when`(cursor.moveToNext()).thenReturn(false)
+        doReturn(cursor).`when`(resolver).query(any(), any(), any(), any(), any())
+
+        val thrown = assertThrows(CancellationException::class.java) {
+            runBlocking {
+                LocalAudioImportManager.scanDeviceSongs(context) {
+                    throw cancellation
+                }
+            }
+        }
+
+        assertEquals(cancellation.message, thrown.message)
+    }
 
     @Test
     fun `copyNearbySidecars keeps track specific cover ahead of generic folder art`() {
@@ -141,7 +302,7 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `copyNearbySidecars preserves source directory lyric selection priority`() {
+    fun `copyNearbySidecars preserves Lyrics directory lyric selection priority`() {
         val sourceDir = tempFolder.newFolder("source-lyrics-priority")
         val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
         File(sourceDir, "song.txt").writeText("source original")
@@ -155,10 +316,13 @@ class LocalAudioImportManagerTest {
 
         LocalAudioImportManager.copyNearbySidecars(sourceAudio, targetAudio)
 
-        assertEquals("source original", File(targetDir, "imported_song.txt").readText())
-        assertFalse(File(targetDir, "imported_song.lrc").exists())
-        assertEquals("source translation", File(targetDir, "imported_song_trans.txt").readText())
-        assertFalse(File(targetDir, "imported_song_trans.lrc").exists())
+        assertEquals("nested original", File(targetDir, "imported_song.lrc").readText())
+        assertFalse(File(targetDir, "imported_song.txt").exists())
+        assertEquals(
+            "nested translation",
+            File(targetDir, "imported_song_trans.lrc").readText()
+        )
+        assertFalse(File(targetDir, "imported_song_trans.txt").exists())
     }
 
     @Test
@@ -184,6 +348,52 @@ class LocalAudioImportManagerTest {
         assertEquals(0L, song.durationMs)
         assertEquals(importedFile.absolutePath, song.mediaUri)
         assertEquals(importedFile.absolutePath, song.localFilePath)
+    }
+
+    @Test
+    fun `buildQuickImportedSong keeps source file time for scanned ordering`() {
+        val importedFile = tempFolder.newFile("scanned-order.flac")
+        val sourceTime = 1_725_000_000_000L
+        assertTrue(importedFile.setLastModified(sourceTime))
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals(sourceTime, song.addedAt)
+    }
+
+    @Test
+    fun `buildQuickImportedSong preserves legacy stable id calculation`() {
+        val sourceRef = "content://provider/audio/legacy-id"
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = sourceRef,
+                displayName = "legacy-id.flac",
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+        val expectedId = MessageDigest.getInstance("SHA-256")
+            .digest(sourceRef.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+            .take(16)
+            .toULong(16)
+            .toLong()
+
+        assertEquals(expectedId, song.id)
     }
 
     @Test
@@ -259,6 +469,36 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong cleans legacy source prefix from filename album fallback`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate(
+            "%title% - %artist% - %album% - %source%"
+        )
+        try {
+            val importedFile = tempFolder.newFile("茫 - 李润祺 - Netease茫 - netease.flac")
+
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = importedFile.absolutePath,
+                    displayName = importedFile.name,
+                    title = "content://provider/audio/123",
+                    artist = "",
+                    album = "",
+                    durationMs = null,
+                    localFile = importedFile
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("茫", song.name)
+            assertEquals("李润祺", song.artist)
+            assertEquals("茫", song.album)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
     fun `buildQuickImportedSong does not treat source prefix as artist`() {
         val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
         ManagedDownloadStorage.updateDownloadFileNameTemplate("%source% - %artist% - %title%")
@@ -307,6 +547,223 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `buildQuickImportedSong ignores provider unknown placeholders and parses file metadata`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate(
+            "%title% - %artist% - %album% - %source%"
+        )
+        try {
+            val importedFile = tempFolder.newFile(
+                "好想爱这个世界啊 - 华晨宇 - neriplayer-download - netease.mp3"
+            )
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = "content://media/external/audio/media/834",
+                    displayName = importedFile.name,
+                    title = "好想爱这个世界啊",
+                    artist = "<unknown>",
+                    album = "neriplayer-download",
+                    durationMs = 258_000L,
+                    localFile = importedFile
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("好想爱这个世界啊", song.name)
+            assertEquals("华晨宇", song.artist)
+            assertEquals("neriplayer-download", song.album)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
+    fun `buildQuickImportedSong does not keep unknown title placeholder`() {
+        val importedFile = tempFolder.newFile("real-file-title.mp3")
+
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = importedFile.absolutePath,
+                displayName = importedFile.name,
+                title = "<unknown>",
+                artist = "<unknown artist>",
+                album = "<unknown album>",
+                durationMs = null,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals("real-file-title", song.name)
+        assertEquals("Unknown Artist", song.artist)
+        assertEquals(LocalSongSupport.LOCAL_ALBUM_IDENTITY, song.album)
+    }
+
+    @Test
+    fun `mergeImportedSongMetadata does not replace parsed identity with provider placeholders`() {
+        val importedFile = tempFolder.newFile(
+            "好想爱这个世界啊 - 华晨宇 - neriplayer-download - netease.mp3"
+        )
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://media/external/audio/media/834",
+                displayName = importedFile.name,
+                title = "好想爱这个世界啊",
+                artist = "<unknown>",
+                album = "neriplayer-download",
+                durationMs = 258_000L,
+                localFile = importedFile
+            ),
+            unknownArtistLabel = "未知艺术家"
+        )
+        val detailedSong = quickSong.copy(
+            artist = "<unknown>",
+            originalArtist = "<unknown>"
+        )
+
+        val merged = LocalAudioImportManager.mergeImportedSongMetadata(
+            quickSong = quickSong,
+            detailedSong = detailedSong
+        )
+
+        assertEquals("华晨宇", merged.artist)
+        assertEquals("华晨宇", merged.originalArtist)
+        assertEquals("neriplayer-download", merged.album)
+    }
+
+    @Test
+    fun `identity hydration uses download sidecar before opening audio metadata`() {
+        val audio = tempFolder.newFile("song.mp3")
+        File(audio.parentFile, audio.name + ".npmeta.json").writeText(
+            """
+                {"name":"好想爱这个世界啊","artist":"华晨宇",
+                 "album":"neriplayer-download","channelId":"netease",
+                 "audioId":"123"}
+            """.trimIndent()
+        )
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = audio.absolutePath,
+                displayName = audio.name,
+                title = null,
+                artist = null,
+                album = null,
+                durationMs = null,
+                localFile = audio
+            ),
+            unknownArtistLabel = "未知艺术家"
+        )
+
+        val hydrated = LocalAudioImportManager.hydrateLocalSongIdentityMetadata(
+            context = mock(Context::class.java),
+            song = quickSong
+        )
+
+        assertEquals("好想爱这个世界啊", hydrated.name)
+        assertEquals("华晨宇", hydrated.artist)
+        assertEquals("netease", hydrated.channelId)
+        assertEquals("123", hydrated.audioId)
+    }
+
+    @Test
+    fun `identity hydration ignores unknown custom artist and keeps sidecar artist`() {
+        val audio = tempFolder.newFile("song.mp3")
+        File(audio.parentFile, audio.name + ".npmeta.json").writeText(
+            """
+                {"name":"好想爱这个世界啊","artist":"华晨宇",
+                 "customArtist":"<unknown>","album":"neriplayer-download"}
+            """.trimIndent()
+        )
+        val quickSong = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = audio.absolutePath,
+                displayName = audio.name,
+                title = null,
+                artist = "<unknown>",
+                album = "neriplayer-download",
+                durationMs = null,
+                localFile = audio
+            ),
+            unknownArtistLabel = "未知艺术家"
+        )
+
+        val hydrated = LocalAudioImportManager.hydrateLocalSongIdentityMetadata(
+            context = mock(Context::class.java),
+            song = quickSong
+        )
+
+        assertEquals("华晨宇", hydrated.artist)
+        assertNull(hydrated.customArtist)
+    }
+
+    @Test
+    fun `identity hydration still probes audio when sidecar leaves artist unknown`() {
+        val song = SongItem(
+            id = 1L,
+            name = "好想爱这个世界啊",
+            artist = "<unknown>",
+            album = "neriplayer-download",
+            albumId = 0L,
+            durationMs = 258_000L,
+            coverUrl = null,
+            localFileName = "好想爱这个世界啊 - 华晨宇 - netease.mp3",
+            localFilePath = "/storage/emulated/0/neriplayer-download/好想爱这个世界啊 - 华晨宇 - netease.mp3",
+            mediaUri = "content://media/external/audio/media/834"
+        )
+
+        assertTrue(LocalAudioImportManager.needsLocalIdentityMetadataProbe(song))
+        assertFalse(
+            LocalAudioImportManager.needsLocalIdentityMetadataProbe(
+                song.copy(artist = "华晨宇")
+            )
+        )
+    }
+
+    @Test
+    fun `common source suffix filename restores artist without album`() {
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "/music/好想爱这个世界啊 - 华晨宇 - netease.mp3",
+                displayName = "好想爱这个世界啊 - 华晨宇 - netease.mp3",
+                title = "好想爱这个世界啊",
+                artist = "<unknown>",
+                album = "neriplayer-download",
+                durationMs = 258_000L,
+                localFile = null
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals("华晨宇", song.artist)
+    }
+
+    @Test
+    fun `quick SAF scan keeps display name metadata without local file resolution`() {
+        val previousTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
+        ManagedDownloadStorage.updateDownloadFileNameTemplate("%artist% - %title%")
+        try {
+            val song = LocalAudioImportManager.buildQuickImportedSong(
+                seed = QuickImportedSongSeed(
+                    sourceRef = "content://tree/music/document/track-42",
+                    displayName = "Artist - Track 42.mp3",
+                    title = null,
+                    artist = null,
+                    album = null,
+                    durationMs = null
+                ),
+                unknownArtistLabel = "Unknown Artist"
+            )
+
+            assertEquals("Track 42", song.name)
+            assertEquals("Artist", song.artist)
+            assertEquals("content://tree/music/document/track-42", song.mediaUri)
+            assertEquals("Artist - Track 42.mp3", song.localFileName)
+        } finally {
+            ManagedDownloadStorage.updateDownloadFileNameTemplate(previousTemplate)
+        }
+    }
+
+    @Test
     fun `buildQuickImportedSong keeps cheap query metadata and nearby cover`() {
         val importedFile = tempFolder.newFile("cover_demo.mp3")
         val nearbyCover = File(importedFile.parentFile, "cover_demo.jpg").apply {
@@ -333,6 +790,29 @@ class LocalAudioImportManagerTest {
         assertEquals(123_000L, song.durationMs)
         assertEquals(nearbyCover.toURI().toString(), song.coverUrl)
         assertEquals(nearbyCover.toURI().toString(), song.originalCoverUrl)
+    }
+
+    @Test
+    fun `buildQuickImportedSong uses indexed MediaStore cover when no nearby cover exists`() {
+        val song = LocalAudioImportManager.buildQuickImportedSong(
+            seed = QuickImportedSongSeed(
+                sourceRef = "content://media/external/audio/media/7",
+                displayName = "indexed-cover.mp3",
+                title = "Indexed Cover",
+                artist = "Artist",
+                album = "Album",
+                durationMs = 120_000L,
+                mediaStoreCoverUri =
+                    "content://media/external/audio/albumart/17"
+            ),
+            unknownArtistLabel = "Unknown Artist"
+        )
+
+        assertEquals(
+            "content://media/external/audio/albumart/17",
+            song.coverUrl
+        )
+        assertEquals(song.coverUrl, song.originalCoverUrl)
     }
 
     @Test

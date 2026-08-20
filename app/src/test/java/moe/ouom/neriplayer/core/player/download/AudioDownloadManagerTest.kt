@@ -83,6 +83,24 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `sidecar merge preserves expected lyric artifacts across retries`() {
+        val merged = AudioDownloadManager.mergeDownloadedSidecarReferences(
+            existing = AudioDownloadManager.DownloadedSidecarReferences(
+                expectedLyric = true
+            ),
+            incoming = AudioDownloadManager.DownloadedSidecarReferences(
+                expectedTranslatedLyric = true,
+                expectedRomanizedLyric = true
+            )
+        )
+
+        assertTrue(merged.expectedLyric)
+        assertTrue(merged.expectedTranslatedLyric)
+        assertTrue(merged.expectedRomanizedLyric)
+        assertFalse(merged.isEmpty)
+    }
+
+    @Test
     fun `resolveLocalLyricForDownload keeps explicit lyrics and preserves cleared state separately`() {
         assertEquals(null, AudioDownloadManager.resolveLocalLyricForDownload(null))
         assertEquals(null, AudioDownloadManager.resolveLocalLyricForDownload(""))
@@ -295,10 +313,17 @@ class AudioDownloadManagerTest {
     }
 
     @Test
-    fun `transfer size completeness accepts unknown sizes and rejects mismatched payloads`() {
+    fun `transfer size completeness rejects short payloads while allowing bounded provider drift`() {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 256L))
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(256L, 257L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 999_000L))
+        assertTrue(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 1_001_000L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(null, 0L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 258L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 998_999L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 1_001_001L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 128L))
     }

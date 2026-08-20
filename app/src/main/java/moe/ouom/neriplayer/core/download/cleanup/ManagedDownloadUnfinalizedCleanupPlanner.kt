@@ -2,8 +2,8 @@ package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
-import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
 internal data class ManagedDownloadParsedMetadataEntry(
     val entry: ManagedDownloadStorage.StoredEntry,
@@ -32,7 +32,8 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
 
         return linkedSetOf<String>().apply {
             unfinalizedMetadataEntries.forEach { parsed ->
-                val audio = audioEntriesByName[parsed.entry.name.removeSuffix(METADATA_SUFFIX)]
+                val audio = ManagedDownloadTreeNaming.metadataAudioName(parsed.entry.name)
+                    ?.let(audioEntriesByName::get)
                 if (audio?.sizeBytes?.let { it > 0L } == true) {
                     return@forEach
                 }

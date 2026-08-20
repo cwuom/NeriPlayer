@@ -59,6 +59,15 @@ internal object ManagedDownloadArtifactPlanner {
                 ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
                 ?: candidateBaseNames
             addAll(allIndexedCoverReferences(indexedCoverBaseNames, snapshot))
+            val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank)
+            if (stableKey != null) {
+                indexedCoverBaseNames.forEach { baseName ->
+                    ManagedDownloadStorageNaming
+                        .buildStableCoverCandidateNames(baseName, stableKey)
+                        .mapNotNull { name -> snapshot.coverEntriesByName[name]?.reference }
+                        .forEach(::add)
+                }
+            }
         }
 
         return linkedSetOf<String>().apply {
@@ -132,6 +141,20 @@ internal object ManagedDownloadArtifactPlanner {
             audio = audio,
             songId = songId,
             translated = translated,
+            snapshot = snapshot
+        ) ?: return null
+        return ManagedDownloadStorage.readText(context, reference)
+    }
+
+    suspend fun indexedRomanizedLyricText(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        songId: Long?,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ): String? {
+        val reference = indexedRomanizedLyricReference(
+            audio = audio,
+            songId = songId,
             snapshot = snapshot
         ) ?: return null
         return ManagedDownloadStorage.readText(context, reference)

@@ -170,6 +170,8 @@ import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
+import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -235,11 +237,33 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
 import java.io.File
+import java.util.LinkedHashMap
 import kotlin.random.Random
 
 internal enum class LocalFilesSongTab {
     MANUALLY_ADDED,
     DOWNLOADED
+}
+
+internal class SongIdentityLookup(songs: List<SongItem>) {
+    private val identities = HashSet<SongIdentity>(songs.size)
+    private val localSourceKeys = HashSet<String>()
+
+    init {
+        songs.forEach { song ->
+            identities += song.identity()
+            if (song.isLocalSong()) {
+                localSourceKeys += LocalSongSupport.localDuplicateKeys(song)
+            }
+        }
+    }
+
+    fun contains(song: SongItem): Boolean {
+        if (identities.isEmpty() && localSourceKeys.isEmpty()) return false
+        if (song.identity() in identities) return true
+        if (!song.isLocalSong() || localSourceKeys.isEmpty()) return false
+        return LocalSongSupport.localDuplicateKeys(song).any(localSourceKeys::contains)
+    }
 }
 
 internal fun localFilesSongsForTab(
@@ -319,6 +343,10 @@ private fun SongItem.optimisticPlaylistInsertKeys(): Set<String> {
 internal fun normalizeLocalPlaylistHeaderCoverModel(headerCover: String?): String {
     return headerCover?.trim()?.takeIf { it.isNotEmpty() } ?: BLANK_COVER_MODEL
 }
+
+internal fun shouldResolveLocalPlaylistHeaderCoverFallback(
+    isListArtworkIdle: Boolean
+): Boolean = isListArtworkIdle
 
 internal fun resolveDisplayedLocalPlaylistDetailState(
     uiState: LocalPlaylistDetailUiState,
@@ -514,6 +542,7 @@ fun LocalPlaylistDetailScreen(
             val isLocalFilesPlaylist = LocalFilesPlaylist.isSystemPlaylist(playlist, context)
             val isSystemPlaylist = isFavorites || isLocalFilesPlaylist
             val isPlaying by PlayerManager.isPlayingFlow.collectAsState()
+            val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
             val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsState()
             val repeatMode by PlayerManager.repeatModeFlow.collectAsState()
 
@@ -521,6 +550,9 @@ fun LocalPlaylistDetailScreen(
             val allPlaylists by repo.playlists.collectAsState()
             val favoriteSongs = remember(allPlaylists, context) {
                 FavoritesPlaylist.firstOrNull(allPlaylists, context)?.songs.orEmpty()
+            }
+            val favoriteSongLookup = remember(favoriteSongs) {
+                SongIdentityLookup(favoriteSongs)
             }
             val scope = rememberCoroutineScope()
             var syncInProgress by remember { mutableStateOf(false) }
@@ -603,6 +635,17 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
+                if (result.addedSongs.isNotEmpty()) {
+                    scope.showPlaylistBatchExportAddedSongs(
+                        context = context,
+                        snackbarHostState = snackbarHostState,
+                        repository = repo,
+                        targetPlaylistId = LocalFilesPlaylist.SYSTEM_ID,
+                        targetPlaylistName = composeResources.getString(R.string.local_files),
+                        addedSongs = result.addedSongs
+                    )
+                    return
+                }
                 scope.launch {
                     val resources = context.resources
                     val message = when {
@@ -727,7 +770,8 @@ fun LocalPlaylistDetailScreen(
                 val persistGranted = runCatching {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                 }.isSuccess
                 if (!persistGranted) {
@@ -831,8 +875,7 @@ fun LocalPlaylistDetailScreen(
             var selectionMode by remember(playlistId) { mutableStateOf(false) }
             val selectedKeysState = remember(playlistId) { mutableStateOf<Set<String>>(emptySet()) }
 
-            fun toggleSelect(song: SongItem) {
-                val songKey = song.stableKey()
+            fun toggleSelect(songKey: String) {
                 selectedKeysState.value =
                     if (selectedKeysState.value.contains(songKey)) selectedKeysState.value - songKey
                     else selectedKeysState.value + songKey
@@ -1109,6 +1152,13 @@ fun LocalPlaylistDetailScreen(
             var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
+            val isListScrolling by remember(listState) {
+                derivedStateOf { listState.isScrollInProgress }
+            }
+            val isListArtworkIdle = rememberLocalPlaylistArtworkIdle(
+                sessionKey = playlistId to selectedLocalFilesTab,
+                isScrollInProgress = isListScrolling
+            )
             val baseQueue by remember(localSongs) {
                 derivedStateOf { snapshotDisplayOrderList(localSongs) }
             }
@@ -1153,11 +1203,16 @@ fun LocalPlaylistDetailScreen(
             val displayOrderPlaylistForCover = remember(playlist, tabSongs) {
                 playlist.copy(songs = tabSongs.toMutableList())
             }
+            val resolveHeaderCoverFallback = shouldResolveLocalPlaylistHeaderCoverFallback(
+                isListArtworkIdle
+            )
             val headerCover = rememberPlaylistDisplayCoverUrl(
                 playlist = displayOrderPlaylistForCover,
-                resolveLocalFallback = true
+                resolveLocalFallback = resolveHeaderCoverFallback,
+                allowEmbeddedCoverFallback = resolveHeaderCoverFallback
             )
-            LaunchedEffect(headerCover, offlineMode) {
+            LaunchedEffect(headerCover, offlineMode, isListArtworkIdle) {
+                if (!isListArtworkIdle) return@LaunchedEffect
                 CoverArtColorCache.preload(context, headerCover, offlineMode)
             }
             val displayedSongs = rememberPlaylistSearchResults(
@@ -1217,7 +1272,11 @@ fun LocalPlaylistDetailScreen(
             val totalDurationMs by remember(tabSongs) {
                 derivedStateOf { tabSongs.sumOf { it.durationMs } }
             }
-            val totalDurationText = formatTotalDuration(context, totalDurationMs)
+            val totalDurationText = if (tabSongs.any { it.durationMs <= 0L }) {
+                stringResource(R.string.local_playlist_duration_loading)
+            } else {
+                formatTotalDuration(context, totalDurationMs)
+            }
             val headerDisplayName = when {
                 isFavorites -> stringResource(R.string.favorite_my_music)
                 isLocalFilesPlaylist -> stringResource(R.string.local_files)
@@ -1237,8 +1296,22 @@ fun LocalPlaylistDetailScreen(
 
             // 当前播放 & FAB
             val currentSong by PlayerManager.currentSongFlow.collectAsState()
+            val currentSongLookup = remember(currentSong) {
+                SongIdentityLookup(listOfNotNull(currentSong))
+            }
             val currentIndexInSource = remember(tabSongs, currentSong) {
                 tabSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+            }
+            val currentIndexInDisplay = remember(
+                currentIndexInSource,
+                currentSong,
+                displayedSongs
+            ) {
+                if (currentIndexInSource >= 0) {
+                    displayedSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
+                } else {
+                    -1
+                }
             }
             val selectedSongsForAction by remember(tabSongs, selectedKeysState.value) {
                 derivedStateOf {
@@ -1370,6 +1443,7 @@ fun LocalPlaylistDetailScreen(
             if (scanPreviewState.visible) {
                 LocalScanPreviewScreen(
                     isScanning = scanPreviewState.isScanning,
+                    scanProgress = scanPreviewState.scanProgress,
                     songs = scanPreviewState.songs,
                     query = scanPreviewState.query,
                     onQueryChange = vm::updateScanPreviewQuery,
@@ -1383,6 +1457,7 @@ fun LocalPlaylistDetailScreen(
                     onHideDuplicateMetadataSongsChange =
                         vm::updateScanPreviewHideDuplicateMetadataSongs,
                     duplicateMetadataKeys = scanPreviewState.duplicateMetadataKeys,
+                    metadataPendingKeys = scanPreviewState.metadataPendingKeys,
                     selectedKeys = scanPreviewState.selectedKeys,
                     onSelectedKeysChange = vm::updateScanPreviewSelection,
                     snackbarHostState = snackbarHostState,
@@ -1393,7 +1468,7 @@ fun LocalPlaylistDetailScreen(
                         }
                         appendSongsOptimistically(LocalFilesPlaylist.SYSTEM_ID, selectedSongs)
                         vm.applyScannedSongs(selectedSongs, ::showAudioImportResult)
-                        dismissScanPreviewPage(cancelScan = false)
+                        dismissScanPreviewPage(cancelScan = true)
                     },
                     onSecondaryAction = {
                         showScanPlaylistExportSheet = true
@@ -2022,17 +2097,16 @@ fun LocalPlaylistDetailScreen(
                                     key = { _, song -> song.stableKey() },
                                     contentType = { _, _ -> "local_playlist_song" }
                                 ) { revIndex, song ->
-                                ReorderableItem(state = reorderState, key = song.stableKey()) { isDragging ->
+                                val songKey = remember(song) { song.stableKey() }
+                                ReorderableItem(state = reorderState, key = songKey) { isDragging ->
                                     val rowScale by animateFloatAsState(
                                         targetValue = if (isDragging) 1.02f else 1f,
                                         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
                                         label = "row-scale"
                                     )
                                     val isSelectedSong =
-                                        selectionMode && selectedKeysState.value.contains(song.stableKey())
-                                    val isFavoriteSong = favoriteSongs.any {
-                                        it.sameIdentityAs(song)
-                                    }
+                                        selectionMode && selectedKeysState.value.contains(songKey)
+                                    val isFavoriteSong = favoriteSongLookup.contains(song)
                                     val rowContainerColor = if (isSelectedSong) {
                                         MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
                                     } else {
@@ -2053,18 +2127,18 @@ fun LocalPlaylistDetailScreen(
                                                     onClick = {
                                                         context.performHapticFeedback()
                                                         if (selectionMode) {
-                                                            toggleSelect(song)
+                                                            toggleSelect(songKey)
                                                         } else {
-                                                            val pos = queueIndexBySongKey[song.stableKey()] ?: -1
+                                                            val pos = queueIndexBySongKey[songKey] ?: -1
                                                             if (pos >= 0) onSongClick(tabSongs, pos)
                                                         }
                                                     },
                                                     onLongClick = {
                                                         if (!selectionMode) {
                                                             selectionMode = true
-                                                            selectedKeysState.value = setOf(song.stableKey())
+                                                            selectedKeysState.value = setOf(songKey)
                                                         } else {
-                                                            toggleSelect(song)
+                                                            toggleSelect(songKey)
                                                         }
                                                     }
                                                 )
@@ -2082,8 +2156,8 @@ fun LocalPlaylistDetailScreen(
                                             ) {
                                                 if (selectionMode) {
                                                     Checkbox(
-                                                        checked = selectedKeysState.value.contains(song.stableKey()),
-                                                        onCheckedChange = { toggleSelect(song) }
+                                                        checked = selectedKeysState.value.contains(songKey),
+                                                        onCheckedChange = { toggleSelect(songKey) }
                                                     )
                                                 } else {
                                                     Text(
@@ -2096,32 +2170,21 @@ fun LocalPlaylistDetailScreen(
                                                 }
                                             }
 
-                                            // 封面
-                                            val itemContext = LocalContext.current
-                                            val displayCoverUrl = rememberSongDisplayCoverUrl(song)
-                                            if (!displayCoverUrl.isNullOrBlank()) {
-                                                AsyncImage(
-                                                    model = fastScrollableImageRequest(
-                                                        context = itemContext,
-                                                        data = displayCoverUrl,
-                                                        sizePx = 128,
-                                                        crossfade = false,
-                                                        offlineMode = offlineMode
-                                                    ),
-                                                    contentDescription = null,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier
-                                                        .size(48.dp)
-                                                        .clip(RoundedCornerShape(10.dp))
-                                                )
-                                            } else {
-                                                Spacer(Modifier.size(48.dp))
-                                            }
+                                            // 可见行立即排入受限的封面队列, 不让首屏等待滚动空闲
+                                            val resolveArtworkFallback =
+                                                shouldResolveLocalPlaylistRowArtworkFallback()
+                                            LocalPlaylistSongArtwork(
+                                                song = song,
+                                                offlineMode = offlineMode,
+                                                resolveLocalFallback = resolveArtworkFallback,
+                                                downloadPresenceVersion = downloadPresenceVersion,
+                                                allowEmbeddedCoverFallback = resolveArtworkFallback
+                                            )
                                             Spacer(Modifier.width(12.dp))
 
                                             // 标题/歌手
                                             Column(Modifier.weight(1f)) {
-                                                val downloaded = song.stableKey() in downloadedSongKeys
+                                                val downloaded = songKey in downloadedSongKeys
                                                 Text(
                                                     text = song.displayName(),
                                                     maxLines = 1,
@@ -2138,7 +2201,7 @@ fun LocalPlaylistDetailScreen(
                                         }
 
                                         // 右侧: 非多选为时间/播放态; 多选为手柄
-                                        val isPlayingSong = currentSong?.sameIdentityAs(song) == true
+                                        val isPlayingSong = currentSongLookup.contains(song)
                                         val trailingVisible = !isDragging && !selectionMode
 
                                         if (!selectionMode) {
@@ -2318,11 +2381,6 @@ fun LocalPlaylistDetailScreen(
                         }
                         }
                         }
-                        // 定位到正在播放
-                        val currentIndexInDisplay = if (currentIndexInSource >= 0) {
-                            displayedSongs.indexOfFirst { it.sameIdentityAs(currentSong) }
-                        } else -1
-
                         if (currentIndexInDisplay >= 0) {
                             HapticFloatingActionButton(
                                 onClick = {
@@ -2897,6 +2955,7 @@ private fun LocalMetadataProcessingCard(state: LocalMetadataProcessingState) {
 private data class LocalScanPreviewItem(
     val song: SongItem,
     val stableKey: String,
+    val rowKey: String,
     val title: String,
     val fileName: String,
     val filePath: String,
@@ -2905,7 +2964,10 @@ private data class LocalScanPreviewItem(
     val searchText: String
 )
 
-private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewItem {
+private fun SongItem.toLocalScanPreviewItem(
+    context: Context,
+    metadataPending: Boolean = false
+): LocalScanPreviewItem {
     val resolvedPath = localFilePath
         ?.takeIf { it.isNotBlank() }
         ?: mediaUri?.takeIf { it.startsWith("/") }
@@ -2919,7 +2981,7 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
         ?.name
         ?: localFileName?.takeIf { it.isNotBlank() }
         ?: displayName
-    val hasMetadata = hasMeaningfulPreviewMetadata(context, resolvedFileName)
+    val hasMetadata = metadataPending || hasMeaningfulPreviewMetadata(context, resolvedFileName)
     val subtitle = buildList {
         displayArtist.takeIf { it.isNotBlank() }?.let(::add)
         displayAlbum.takeIf { it.isNotBlank() }?.let(::add)
@@ -2929,6 +2991,7 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
     return LocalScanPreviewItem(
         song = this,
         stableKey = stableKey(),
+        rowKey = scanPreviewRowKey(),
         title = displayName,
         fileName = resolvedFileName,
         filePath = resolvedPath,
@@ -2938,6 +3001,185 @@ private fun SongItem.toLocalScanPreviewItem(context: Context): LocalScanPreviewI
             .joinToString("\n")
     )
 }
+
+private fun SongItem.scanPreviewRowKey(): String {
+    val source = mediaUri
+        ?.takeIf(String::isNotBlank)
+        ?: localFilePath?.takeIf(String::isNotBlank)
+        ?: localFileName?.takeIf(String::isNotBlank)
+    return source?.let { "local-scan:$it" } ?: "local-scan:${stableKey()}"
+}
+
+private const val LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS = 96L
+private const val LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT = 256
+private val retainedLocalPlaylistArtworkCache = object : LinkedHashMap<String, String>(
+    LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT,
+    0.75f,
+    true
+) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
+        return size > LOCAL_PLAYLIST_ARTWORK_MEMORY_CACHE_LIMIT
+    }
+}
+
+@Composable
+private fun rememberLocalPlaylistArtworkIdle(
+    sessionKey: Any,
+    isScrollInProgress: Boolean
+): Boolean {
+    var hasReachedIdleWindow by remember(sessionKey) { mutableStateOf(false) }
+    LaunchedEffect(sessionKey, isScrollInProgress) {
+        if (isScrollInProgress) {
+            hasReachedIdleWindow = false
+        } else {
+            delay(LOCAL_PLAYLIST_ARTWORK_IDLE_DELAY_MS)
+            hasReachedIdleWindow = true
+        }
+    }
+    return hasReachedIdleWindow
+}
+
+@Composable
+private fun LocalPlaylistSongArtwork(
+    song: SongItem,
+    offlineMode: Boolean,
+    resolveLocalFallback: Boolean,
+    downloadPresenceVersion: Int,
+    allowEmbeddedCoverFallback: Boolean
+) {
+    val requestedCoverUrl = rememberSongDisplayCoverUrl(
+        song = song,
+        resolveLocalFallback = resolveLocalFallback,
+        downloadPresenceVersion = downloadPresenceVersion,
+        allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
+    )
+    val context = LocalContext.current
+    val artworkIdentityKey = remember(song, downloadPresenceVersion) {
+        "${song.stableKey()}|generation=$downloadPresenceVersion"
+    }
+    var displayedCoverUrl by remember(artworkIdentityKey) {
+        mutableStateOf(
+            initialLocalPlaylistArtworkUrl(
+                retainedCoverUrl = cachedRetainedLocalPlaylistArtworkUrl(artworkIdentityKey),
+                requestedCoverUrl = requestedCoverUrl,
+                immediateCoverUrl = song.displayCoverUrl()
+            )
+        )
+    }
+    val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
+    val visibleCoverUrl = retainedLocalPlaylistArtworkUrl(
+        displayedCoverUrl = displayedCoverUrl,
+        requestedCoverUrl = requestedCoverUrl
+    )
+    val visibleImageRequest = remember(context, visibleCoverUrl, offlineMode) {
+        visibleCoverUrl?.let { coverUrl ->
+            fastScrollableImageRequest(
+                context = context,
+                data = coverUrl,
+                sizePx = 128,
+                crossfade = false,
+                offlineMode = offlineMode,
+                cacheKey = listOf(
+                    "playlist-row-cover",
+                    artworkIdentityKey,
+                    coverUrl
+                ).joinToString("|")
+            )
+        }
+    }
+    val pendingCoverUrl = requestedCoverUrl
+        ?.takeIf { displayedCoverUrl != null && it != displayedCoverUrl }
+    val pendingImageRequest = remember(context, pendingCoverUrl, offlineMode) {
+        pendingCoverUrl?.let { coverUrl ->
+            fastScrollableImageRequest(
+                context = context,
+                data = coverUrl,
+                sizePx = 128,
+                crossfade = false,
+                offlineMode = offlineMode,
+                cacheKey = listOf(
+                    "playlist-row-cover",
+                    artworkIdentityKey,
+                    coverUrl
+                ).joinToString("|")
+            )
+        }
+    }
+
+    fun promoteLoadedCover(coverUrl: String) {
+        if (latestRequestedCoverUrl == coverUrl) {
+            displayedCoverUrl = coverUrl
+            rememberRetainedLocalPlaylistArtworkUrl(artworkIdentityKey, coverUrl)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        visibleImageRequest?.let { imageRequest ->
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onSuccess = {
+                    visibleCoverUrl?.let { coverUrl ->
+                        if (displayedCoverUrl == null) {
+                            promoteLoadedCover(coverUrl)
+                        } else {
+                            rememberRetainedLocalPlaylistArtworkUrl(artworkIdentityKey, coverUrl)
+                        }
+                    }
+                }
+            )
+        }
+        pendingImageRequest?.let { imageRequest ->
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = 0f },
+                onSuccess = {
+                    pendingCoverUrl?.let(::promoteLoadedCover)
+                }
+            )
+        }
+    }
+}
+
+internal fun retainedLocalPlaylistArtworkUrl(
+    displayedCoverUrl: String?,
+    requestedCoverUrl: String?
+): String? = displayedCoverUrl ?: requestedCoverUrl
+
+internal fun initialLocalPlaylistArtworkUrl(
+    retainedCoverUrl: String?,
+    requestedCoverUrl: String?,
+    immediateCoverUrl: String?
+): String? = retainedCoverUrl ?: requestedCoverUrl ?: immediateCoverUrl
+
+private fun cachedRetainedLocalPlaylistArtworkUrl(artworkIdentityKey: String): String? {
+    return synchronized(retainedLocalPlaylistArtworkCache) {
+        retainedLocalPlaylistArtworkCache[artworkIdentityKey]
+    }
+}
+
+private fun rememberRetainedLocalPlaylistArtworkUrl(
+    artworkIdentityKey: String,
+    coverUrl: String
+) {
+    if (coverUrl.isBlank()) return
+    synchronized(retainedLocalPlaylistArtworkCache) {
+        retainedLocalPlaylistArtworkCache[artworkIdentityKey] = coverUrl
+    }
+}
+
+internal fun shouldResolveLocalPlaylistRowArtworkFallback(): Boolean = true
 
 private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: String): Boolean {
     val fileTitle = fileName.substringBeforeLast('.', fileName).trim()
@@ -2957,6 +3199,7 @@ private fun SongItem.hasMeaningfulPreviewMetadata(context: Context, fileName: St
 @Composable
 private fun LocalScanPreviewScreen(
     isScanning: Boolean,
+    scanProgress: LocalAudioScanProgress = LocalAudioScanProgress(),
     songs: List<SongItem>,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -2968,6 +3211,7 @@ private fun LocalScanPreviewScreen(
     hideDuplicateMetadataSongs: Boolean = false,
     onHideDuplicateMetadataSongsChange: ((Boolean) -> Unit)? = null,
     duplicateMetadataKeys: Set<String> = emptySet(),
+    metadataPendingKeys: Set<String> = emptySet(),
     selectedKeys: Set<String>,
     onSelectedKeysChange: (Set<String>) -> Unit,
     snackbarHostState: SnackbarHostState,
@@ -2986,10 +3230,16 @@ private fun LocalScanPreviewScreen(
     val previewItems by produceState<List<LocalScanPreviewItem>>(
         initialValue = emptyList(),
         songs,
+        metadataPendingKeys,
         appContext
     ) {
         value = withContext(Dispatchers.Default) {
-            songs.map { it.toLocalScanPreviewItem(appContext) }
+            songs.map {
+                it.toLocalScanPreviewItem(
+                    context = appContext,
+                    metadataPending = it.stableKey() in metadataPendingKeys
+                )
+            }
         }
     }
     val listState = rememberLazyListState()
@@ -3019,33 +3269,6 @@ private fun LocalScanPreviewScreen(
             SearchTextMatcher.filterAndRank(query, candidates) { item ->
                 listOf(item.title, item.fileName, item.filePath, item.subtitle, item.searchText)
             }
-        }
-    }
-    LaunchedEffect(
-        metadataOnly,
-        hideExistingLocalPlaylistSongs,
-        existingLocalPlaylistKeys,
-        hideDuplicateMetadataSongs,
-        duplicateMetadataKeys,
-        previewItems
-    ) {
-        val hiddenKeys = buildSet {
-            if (metadataOnly) {
-                previewItems
-                    .asSequence()
-                    .filterNot { it.hasMetadata }
-                    .forEach { add(it.stableKey) }
-            }
-            if (hideExistingLocalPlaylistSongs) {
-                addAll(existingLocalPlaylistKeys)
-            }
-            if (hideDuplicateMetadataSongs) {
-                addAll(duplicateMetadataKeys)
-            }
-        }
-        val nextSelectedKeys = selectedKeys - hiddenKeys
-        if (nextSelectedKeys != selectedKeys) {
-            onSelectedKeysChange(nextSelectedKeys)
         }
     }
     var showMoreMenu by remember { mutableStateOf(false) }
@@ -3203,7 +3426,7 @@ private fun LocalScanPreviewScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .padding(bottom = LocalMiniPlayerHeight.current)
                 ) {
-                    if (isScanning && songs.isEmpty()) {
+                    if (isScanning) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(10.dp))
                     }
@@ -3257,10 +3480,35 @@ private fun LocalScanPreviewScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         CircularProgressIndicator()
-                        Text(
-                            text = stringResource(R.string.download_scanning),
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = stringResource(R.string.download_scanning),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = when (scanProgress.phase) {
+                                    LocalAudioScanPhase.TRAVERSING -> stringResource(
+                                        R.string.local_playlist_scan_progress_traversing,
+                                        scanProgress.visitedDirectories,
+                                        scanProgress.discoveredSongs
+                                    )
+                                    LocalAudioScanPhase.HYDRATING_METADATA -> stringResource(
+                                        R.string.local_playlist_scan_progress_metadata,
+                                        scanProgress.processed,
+                                        scanProgress.total
+                                    )
+                                    LocalAudioScanPhase.BUILDING_ENTRIES,
+                                    LocalAudioScanPhase.COMPLETED -> stringResource(
+                                        R.string.local_playlist_scan_progress_building,
+                                        scanProgress.processed,
+                                        scanProgress.total
+                                    )
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             } else {
@@ -3334,7 +3582,7 @@ private fun LocalScanPreviewScreen(
                     ) {
                         itemsIndexed(
                             items = displayedItems,
-                            key = { _, item -> item.stableKey },
+                            key = { _, item -> item.rowKey },
                             contentType = { _, _ -> "local_scan_preview_song" }
                         ) { _, item ->
                             val selected = item.stableKey in selectedKeys
