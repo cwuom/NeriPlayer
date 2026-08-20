@@ -1534,7 +1534,12 @@ object AudioDownloadManager {
             if (error is java.util.concurrent.CancellationException) {
                 NPLogger.d(TAG, "后台 sidecar 整理已取消: ${song.name}")
             } else {
-                NPLogger.w(TAG, "后台 sidecar 整理失败: ${song.name} - ${error.message}")
+                NPLogger.w(
+                    TAG,
+                    "后台 sidecar 整理失败: ${song.name} - " +
+                        "${error.javaClass.simpleName}: ${error.message}",
+                    error
+                )
             }
             DownloadedSidecarReferences()
         }
@@ -1766,7 +1771,11 @@ object AudioDownloadManager {
                         }
                         NPLogger.w(
                             TAG,
-                            "封面下载重试失败: song=${song.name}, candidate=${candidateIndex + 1}/${coverCandidates.size}, attempt=${retryIndex + 1}/$COVER_DOWNLOAD_MAX_ATTEMPTS, ${error.message}"
+                            "封面下载重试失败: song=${song.name}, " +
+                                "candidate=${candidateIndex + 1}/${coverCandidates.size}, " +
+                                "attempt=${retryIndex + 1}/$COVER_DOWNLOAD_MAX_ATTEMPTS, " +
+                                "${error.javaClass.simpleName}: ${error.message}",
+                            error
                         )
                         null
                     }
@@ -1794,7 +1803,12 @@ object AudioDownloadManager {
             NPLogger.d(TAG, "封面整理阶段收到取消: ${song.name}")
             throw cancellation
         } catch (error: Exception) {
-            NPLogger.w(TAG, "封面后台下载失败: ${song.name} - ${error.message}")
+            NPLogger.w(
+                TAG,
+                "封面后台下载失败: ${song.name} - " +
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
         }
         return null
     }
@@ -2655,7 +2669,11 @@ object AudioDownloadManager {
             NPLogger.d(TAG, "歌词整理阶段收到取消: ${song.name}")
             throw cancellation
         } catch (e: Exception) {
-            NPLogger.w(TAG, "歌词下载失败: ${song.name} - ${e.message}")
+            NPLogger.w(
+                TAG,
+                "歌词下载失败: ${song.name} - ${e.javaClass.simpleName}: ${e.message}",
+                e
+            )
         }
         return DownloadedSidecarReferences(
             lyricReference = lyricReference,

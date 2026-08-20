@@ -89,17 +89,19 @@ internal object ManagedDownloadTreeChildQuery {
     }
 
     private fun listChildrenWithDocumentFile(parent: DocumentFile): List<QueriedTreeChild> {
-        return parent.listFiles().mapNotNull { file ->
-            file.name?.let { name ->
-                QueriedTreeChild(
-                    name = name,
-                    documentUri = file.uri,
-                    sizeBytes = file.length(),
-                    lastModifiedMs = file.lastModified(),
-                    isDirectory = file.isDirectory
-                )
+        return runCatching { parent.listFiles().toList() }
+            .getOrDefault(emptyList())
+            .mapNotNull { file ->
+                file.name?.let { name ->
+                    QueriedTreeChild(
+                        name = name,
+                        documentUri = file.uri,
+                        sizeBytes = file.length(),
+                        lastModifiedMs = file.lastModified(),
+                        isDirectory = file.isDirectory
+                    )
+                }
             }
-        }
     }
 
     private val CHILD_PROJECTION = arrayOf(

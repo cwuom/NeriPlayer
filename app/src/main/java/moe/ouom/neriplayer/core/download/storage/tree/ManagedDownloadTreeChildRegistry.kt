@@ -240,11 +240,11 @@ internal class ManagedDownloadTreeChildRegistry(
 
     fun toDocumentFile(context: Context, child: QueriedTreeChild): DocumentFile? {
         return runCatching {
-            // child.documentUri points at one document under a tree. Wrapping it
-            // as a tree URI can reset the document back to the tree root on
-            // providers that return opaque IDs
-            DocumentFile.fromSingleUri(context, child.documentUri)
-                ?: DocumentFile.fromTreeUri(context, child.documentUri)
+            resolveTreeChildDocumentFile(
+                child = child,
+                treeDocumentFile = { DocumentFile.fromTreeUri(context, child.documentUri) },
+                singleDocumentFile = { DocumentFile.fromSingleUri(context, child.documentUri) }
+            )
         }.getOrNull()
     }
 
@@ -262,8 +262,17 @@ internal class ManagedDownloadTreeChildRegistry(
             maxCacheAgeMs = maxCacheAgeMs,
             allowReservedNames = allowReservedNames
         )?.let { return it }
-        val refreshedChildren = queryTreeChildren(context, parent)
-        return rememberTreeChildren(parent, refreshedChildren, now, isComplete = true)
+        val refreshed = ManagedDownloadTreeChildQuery.queryChildrenWithStatus(
+            context = context,
+            parent = parent,
+            onQueryFailure = onTreeQueryFailed
+        )
+        return rememberTreeChildren(
+            parent = parent,
+            children = refreshed.children,
+            refreshedAtMs = now,
+            isComplete = refreshed.isComplete
+        )
     }
 
     companion object {
@@ -284,5 +293,19 @@ internal class ManagedDownloadTreeChildRegistry(
                 isComplete = refresh.isComplete
             )
         }
+    }
+}
+
+internal fun resolveTreeChildDocumentFile(
+    child: QueriedTreeChild,
+    treeDocumentFile: () -> DocumentFile?,
+    singleDocumentFile: () -> DocumentFile?
+): DocumentFile? {
+    return if (child.isDirectory) {
+        // directory wrappers must stay tree-backed because sidecar writes call createFile
+        treeDocumentFile() ?: singleDocumentFile()
+    } else {
+        // file reads work with single-document wrappers, including opaque document IDs
+        singleDocumentFile() ?: treeDocumentFile()
     }
 }

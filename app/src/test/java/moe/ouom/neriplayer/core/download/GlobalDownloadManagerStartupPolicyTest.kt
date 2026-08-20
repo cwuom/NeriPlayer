@@ -62,6 +62,38 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `download with a network cover cannot finalize without an accessible sidecar`() {
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+        assertFalse(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = false
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = "content://downloads/cover.jpg",
+                coverAccessible = true
+            )
+        )
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = false,
+                coverReference = null,
+                coverAccessible = false
+            )
+        )
+    }
+
+    @Test
     fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
         var executed = false
         var rollbackResult: String? = null

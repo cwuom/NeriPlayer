@@ -210,9 +210,13 @@ internal class ManagedDownloadTreeDirectories(
                 directory = directory,
                 ensuredMarkers = ensuredNoMediaMarkers
             )
-        }.getOrElse {
-            NPLogger.e(tag, "创建 $subdirectory 目录 .nomedia 失败: ${it.message}", it)
-            throw it
+        }.onFailure {
+            NPLogger.w(
+                tag,
+                "创建 $subdirectory 目录 .nomedia 失败，继续写入侧载文件: " +
+                    "${it.javaClass.simpleName}: ${it.message}",
+                it
+            )
         }
     }
 
@@ -247,9 +251,13 @@ internal class ManagedDownloadTreeDirectories(
                     )
                 }
             )
-        }.getOrElse {
-            NPLogger.e(tag, "创建 $subdirectory 目录 .nomedia 失败: ${it.message}", it)
-            throw it
+        }.onFailure {
+            NPLogger.w(
+                tag,
+                "创建 $subdirectory 目录 .nomedia 失败，继续写入侧载文件: " +
+                    "${it.javaClass.simpleName}: ${it.message}",
+                it
+            )
         }
     }
 

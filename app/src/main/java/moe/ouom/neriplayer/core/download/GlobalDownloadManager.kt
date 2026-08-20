@@ -81,6 +81,17 @@ internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int)
     return recoveredArtifactCount > 0
 }
 
+internal fun shouldFinalizeDownloadedSidecars(
+    hasNetworkCoverCandidate: Boolean,
+    coverReference: String?,
+    coverAccessible: Boolean
+): Boolean {
+    if (!hasNetworkCoverCandidate) {
+        return true
+    }
+    return !coverReference.isNullOrBlank() && coverAccessible
+}
+
 internal fun shouldApplyDownloadedPlaybackHydration(
     currentSong: SongItem?,
     quickSong: SongItem
@@ -979,6 +990,24 @@ object GlobalDownloadManager {
                     storedAudio = finalizedAudio
                 )
             )
+            val coverAccessible = sidecarReferences.coverReference?.let { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(appContext, reference)
+            } == true
+            if (
+                !shouldFinalizeDownloadedSidecars(
+                    hasNetworkCoverCandidate = AudioDownloadManager
+                        .buildCoverDownloadCandidateUrls(song)
+                        .isNotEmpty(),
+                    coverReference = sidecarReferences.coverReference,
+                    coverAccessible = coverAccessible
+                )
+            ) {
+                NPLogger.w(TAG, "下载封面侧载未生成，保持未完成状态: ${song.name}")
+                return CompletedDownloadMetadataFinalizationResult(
+                    finalized = false,
+                    sidecarReferences = sidecarReferences.retainCreatedOnly()
+                )
+            }
             if (isSongCancelled(songKey)) {
                 cleanupOrphanedCompletedSidecars(
                     context = appContext,

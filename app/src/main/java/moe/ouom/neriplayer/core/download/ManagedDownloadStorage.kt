@@ -117,7 +117,12 @@ internal object ManagedDownloadStorage {
         treeCacheValidateIntervalMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS,
         treeWriteCacheValidateIntervalMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS,
         onTreeQueryFailed = {
-            NPLogger.w(TAG, "查询目录子项失败，回退 DocumentFile 枚举: ${it.message}")
+            NPLogger.w(
+                TAG,
+                "查询目录子项失败，回退 DocumentFile 枚举: " +
+                    "${it.javaClass.simpleName}: ${it.message}",
+                it
+            )
         }
     )
     private val treeDirectoryLocks = ConcurrentHashMap<String, Any>()
