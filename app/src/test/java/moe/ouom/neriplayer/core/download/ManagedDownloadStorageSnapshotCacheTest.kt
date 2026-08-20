@@ -107,6 +107,33 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `forced sidecar refresh skips the snapshot that was just published`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
+
+        assertTrue(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot,
+                respectThrottle = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot,
+                respectThrottle = true
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = snapshot.copy(),
+                respectThrottle = false
+            )
+        )
+    }
+
+    @Test
     fun `metadata refresh reparses entries without a stable fingerprint`() {
         val cachedEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song.mp3.npmeta.json",

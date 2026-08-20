@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import moe.ouom.neriplayer.core.download.cleanup.requiresManagedDownloadDeleteSnapshotRefresh
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -124,6 +125,68 @@ class GlobalDownloadManagerDeleteReferenceTest {
         )
 
         assertEquals(setOf(currentAudio.reference, currentMetadataReference), references)
+    }
+
+    @Test
+    fun `artifact planner deletes stable identity cover sidecar`() {
+        val currentAudio = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - current.mp3",
+            reference = "content://downloads/audio/current.mp3",
+            mediaUri = "content://downloads/audio/current.mp3",
+            localFilePath = null,
+            sizeBytes = 1024L,
+            lastModifiedMs = 1L
+        )
+        val currentMetadataReference = ManagedDownloadStorage.metadataReferenceForAudio(currentAudio)
+            ?: error("missing current metadata reference")
+        val currentMetadata = ManagedDownloadStorage.StoredEntry(
+            name = "${currentAudio.name}.npmeta.json",
+            reference = currentMetadataReference,
+            mediaUri = currentMetadataReference,
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val stableKey = "42|netease|"
+        val stableCoverName = ManagedDownloadStorageNaming
+            .buildStableCoverCandidateNames(currentAudio.nameWithoutExtension, stableKey)
+            .first()
+        val stableCover = ManagedDownloadStorage.StoredEntry(
+            name = stableCoverName,
+            reference = "content://downloads/covers/$stableCoverName",
+            mediaUri = "content://downloads/covers/$stableCoverName",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(currentAudio),
+            audioEntriesByLookupKey = mapOf(currentAudio.reference to currentAudio),
+            metadataEntriesByAudioName = mapOf(currentAudio.name to currentMetadata),
+            metadataByAudioName = mapOf(
+                currentAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    stableKey = stableKey
+                )
+            ),
+            coverEntriesByName = mapOf(stableCover.name to stableCover),
+            knownReferences = setOf(
+                currentAudio.reference,
+                currentMetadata.reference,
+                stableCover.reference
+            )
+        )
+
+        val references = ManagedDownloadArtifactPlanner.collectArtifactReferences(
+            snapshot = snapshot,
+            storedAudio = currentAudio,
+            songId = 42L,
+            candidateBaseNames = listOf(currentAudio.nameWithoutExtension)
+        )
+
+        assertEquals(
+            setOf(currentAudio.reference, currentMetadata.reference, stableCover.reference),
+            references
+        )
     }
 
     @Test

@@ -1446,7 +1446,8 @@ object GlobalDownloadManager {
 
     fun refreshDownloadedSongsForManager(context: Context) {
         val appContext = context.applicationContext
-        scanLocalFiles(appContext, forceRefresh = true)
+        scanLocalFiles(appContext, forceRefresh = false)
+        scheduleCatalogReconcile(appContext, forceRefresh = true)
     }
 
     private fun consumePendingRefreshRequest(): Boolean? = synchronized(this) {

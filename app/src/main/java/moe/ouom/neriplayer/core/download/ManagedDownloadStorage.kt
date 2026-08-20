@@ -1355,6 +1355,15 @@ internal object ManagedDownloadStorage {
             restorePersisted = false
         ) ?: return snapshot
         val cacheKey = snapshotCacheStore.currentKey(context)
+        if (
+            shouldSkipRedundantForcedSidecarRefresh(
+                requestedSnapshot = snapshot,
+                activeSnapshot = activeSnapshot,
+                respectThrottle = respectThrottle
+            )
+        ) {
+            return activeSnapshot
+        }
         synchronized(sidecarRefreshLock) {
             val nowMs = System.currentTimeMillis()
             if (
@@ -1544,6 +1553,14 @@ internal object ManagedDownloadStorage {
             cachedEntry.sizeBytes == currentEntry.sizeBytes &&
             cachedEntry.lastModifiedMs > 0L &&
             cachedEntry.lastModifiedMs == currentEntry.lastModifiedMs
+    }
+
+    internal fun shouldSkipRedundantForcedSidecarRefresh(
+        requestedSnapshot: DownloadLibrarySnapshot,
+        activeSnapshot: DownloadLibrarySnapshot?,
+        respectThrottle: Boolean
+    ): Boolean {
+        return !respectThrottle && activeSnapshot === requestedSnapshot
     }
 
     private fun composeSnapshot(

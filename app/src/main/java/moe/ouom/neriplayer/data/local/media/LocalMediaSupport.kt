@@ -164,6 +164,11 @@ internal data class NearbyLyricReferences(
     val romanized: String?
 )
 
+internal data class LocalKnownSidecarReferences(
+    val lyrics: NearbyLyricReferences,
+    val metadata: String? = null
+)
+
 internal data class LocalLyricsScanMetadata(
     val lyric: String?,
     val translatedLyric: String?,
@@ -499,7 +504,8 @@ object LocalMediaSupport {
         val audioMimeType: String?,
         val bitrateKbps: Int?,
         val sampleRateHz: Int?,
-        val channelCount: Int?
+        val channelCount: Int?,
+        val durationMs: Long?
     )
 
     private data class RetrieverTextMetadata(
@@ -1029,7 +1035,8 @@ object LocalMediaSupport {
                     LyricKind.ROMANIZED -> nearby.romanized
                 }
                 if (content == null) {
-                    return@all existing == null || !existing.exists() || existing.delete()
+                    // null means the caller did not change this lyric field
+                    return@all true
                 }
                 val contentValue = content
                 val target = existing ?: File(
@@ -1067,12 +1074,8 @@ object LocalMediaSupport {
         )
         val written = contents.all { (kind, content) ->
             if (content == null) {
-                val reference = when (kind) {
-                    LyricKind.ORIGINAL -> existingReferences.original
-                    LyricKind.TRANSLATED -> existingReferences.translated
-                    LyricKind.ROMANIZED -> existingReferences.romanized
-                }
-                return@all reference == null || deleteDocumentReference(context, reference)
+                // null means the caller did not change this lyric field
+                return@all true
             }
             val contentValue = content
             val reference = when (kind) {
@@ -1131,13 +1134,22 @@ object LocalMediaSupport {
             parentDocumentId = targetParentId
         )
         fun ensure(kind: LyricKind, existingReference: String?): String? {
-            if (existingReference != null || kind !in requiredKinds) return existingReference
+            val readableExistingReference = existingReference?.takeIf {
+                isReadableDocumentReference(context, it)
+            }
+            if (readableExistingReference != null || kind !in requiredKinds) {
+                return readableExistingReference
+            }
             val name = lyricSidecarNames(
                 baseName = audioBaseName,
                 kind = kind,
                 extensions = listOf("lrc")
             ).first()
-            targetChildren.firstOrNull { !it.isDirectory && it.displayName == name }?.let {
+            targetChildren.firstOrNull {
+                !it.isDirectory &&
+                    it.displayName.equals(name, ignoreCase = true) &&
+                    isReadableDocumentReference(context, it.uri)
+            }?.let {
                 return it.uri
             }
             return runCatching {
@@ -1156,6 +1168,13 @@ object LocalMediaSupport {
             translated = ensure(LyricKind.TRANSLATED, existing.translated),
             romanized = ensure(LyricKind.ROMANIZED, existing.romanized)
         )
+    }
+
+    private fun isReadableDocumentReference(context: Context, reference: String): Boolean {
+        return runCatching {
+            context.contentResolver.openFileDescriptor(reference.toUri(), "r")?.use { true }
+                ?: false
+        }.getOrDefault(false)
     }
 
     private fun writeTextFileAtomically(target: File, content: String): Boolean {
@@ -1267,7 +1286,8 @@ object LocalMediaSupport {
             context = null,
             song = song,
             includeStoredFallback = includeStoredFallback,
-            includeEmbeddedFallback = false
+            includeEmbeddedFallback = false,
+            knownSidecarReferences = null
         )
     }
 
@@ -1275,7 +1295,8 @@ object LocalMediaSupport {
         context: Context?,
         song: SongItem,
         includeStoredFallback: Boolean = true,
-        includeEmbeddedFallback: Boolean = context != null
+        includeEmbeddedFallback: Boolean = context != null,
+        knownSidecarReferences: LocalKnownSidecarReferences? = null
     ): LocalLyricsScanMetadata {
         val startedAt = SystemClock.elapsedRealtime()
         val stored = if (includeStoredFallback) {
@@ -1312,7 +1333,7 @@ object LocalMediaSupport {
         // short cache instead of rescanning the provider twice per frame; the
         // TTL is deliberately small so external edits/deletes become visible
         // on the next playback/editor interaction
-        val cacheable = true
+        val cacheable = knownSidecarReferences == null
         val cacheKey = buildLocalLyricsCacheKey(
             song = song,
             source = source,
@@ -1337,7 +1358,16 @@ object LocalMediaSupport {
             }
         }
 
-        val directScanned = if (directFile != null) {
+        val directScanned = if (knownSidecarReferences != null && context != null) {
+            runCatching {
+                inspectLyricsFromKnownReferences(
+                    context = context,
+                    references = knownSidecarReferences
+                )
+            }.onFailure {
+                NPLogger.w(TAG, "known local lyrics inspection failed for $source: ${it.message}")
+            }.getOrNull()
+        } else if (directFile != null) {
             runCatching {
                 inspectLyricsFromDirectFile(
                     file = directFile
@@ -1350,7 +1380,7 @@ object LocalMediaSupport {
             null
         }
 
-        val shouldProbeContentSource = directFile == null
+        val shouldProbeContentSource = directFile == null && knownSidecarReferences == null
         val contentScanned = if (
             context != null &&
             contentSource &&
@@ -1434,6 +1464,40 @@ object LocalMediaSupport {
             result = result
         )
         return result
+    }
+
+    private fun inspectLyricsFromKnownReferences(
+        context: Context,
+        references: LocalKnownSidecarReferences
+    ): DirectLocalLyricsInspection {
+        val metadata = references.metadata?.let { reference ->
+            readTextContent(context, reference)?.let { raw ->
+                parseLocalMetadataSidecar(reference, raw)
+            }
+        }
+
+        fun read(reference: String?): String? {
+            return reference?.let { readTextContent(context, it) }
+        }
+
+        val original = read(references.lyrics.original)
+        val translated = read(references.lyrics.translated)
+        val romanized = read(references.lyrics.romanized)
+        return DirectLocalLyricsInspection(
+            original = original,
+            translated = translated,
+            romanized = romanized,
+            metadataOriginal = metadata?.takeIf { it.hasLyricOverride }?.lyric,
+            metadataTranslated = metadata
+                ?.takeIf { it.hasTranslatedLyricOverride }
+                ?.translatedLyric,
+            metadataRomanized = metadata
+                ?.takeIf { it.hasRomanizedLyricOverride }
+                ?.romanizedLyric,
+            hasOriginalSidecar = references.lyrics.original != null && original != null,
+            hasTranslatedSidecar = references.lyrics.translated != null && translated != null,
+            hasRomanizedSidecar = references.lyrics.romanized != null && romanized != null
+        )
     }
 
     private fun logLyricsInspection(
@@ -2224,7 +2288,7 @@ object LocalMediaSupport {
             file = file,
             includeEmbeddedAssets = false,
             includeEmbeddedLyrics = true,
-            includeAudioProperties = false
+            includeAudioProperties = file != null
         )
         val title = pickReadableLocalTitle(
             sourceUri = uri,
@@ -3134,7 +3198,9 @@ object LocalMediaSupport {
             year = null,
             trackNumber = null,
             discNumber = null,
-            durationMs = selectedMetadata.durationMs,
+            durationMs = selectedMetadata.durationMs.takeIf { it > 0L }
+                ?: audioTrackTechInfo?.durationMs
+                ?: 0L,
             fileExtension = resolved.fileExtension,
             mimeType = resolved.queried.mimeType,
             audioMimeType = audioTrackTechInfo?.audioMimeType,
@@ -3450,7 +3516,7 @@ object LocalMediaSupport {
         val updatedRaw = buildLocalLyricsMetadataJson(
             existingRaw = existingRaw,
             song = song,
-            clearMissingLyricFields = true
+            clearMissingLyricFields = false
         )
         if (!writeLocalMetadataReference(context, targetReference, file, updatedRaw)) {
             clearLyricsLookupCache()
@@ -3906,6 +3972,13 @@ object LocalMediaSupport {
                 val trackMimeType = format.getOptionalString(MediaFormat.KEY_MIME)
                 if (trackMimeType?.startsWith("audio/") != true) continue
 
+                val durationMs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
+                    format.getLong(MediaFormat.KEY_DURATION)
+                        .div(1_000L)
+                        .takeIf { it > 0L }
+                } else {
+                    null
+                }
                 val bitrateKbps = format.getOptionalInt(MediaFormat.KEY_BIT_RATE)
                     ?.let { max(0, (it + 500) / 1000) }
                 val sampleRateHz = format.getOptionalInt(MediaFormat.KEY_SAMPLE_RATE)
@@ -3914,7 +3987,8 @@ object LocalMediaSupport {
                     audioMimeType = trackMimeType,
                     bitrateKbps = bitrateKbps,
                     sampleRateHz = sampleRateHz,
-                    channelCount = channelCount
+                    channelCount = channelCount,
+                    durationMs = durationMs
                 )
             }
             null

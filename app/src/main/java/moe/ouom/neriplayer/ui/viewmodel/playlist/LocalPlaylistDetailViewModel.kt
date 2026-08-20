@@ -348,9 +348,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 )
                 return@launch
             }
+            var initialLocalRefreshScheduled = false
             repo.playlists.collect { list ->
+                val resolvedPlaylist = list.firstOrNull { it.id == id }
+                if (
+                    !initialLocalRefreshScheduled &&
+                    resolvedPlaylist != null &&
+                    LocalFilesPlaylist.isSystemPlaylist(resolvedPlaylist, app)
+                ) {
+                    initialLocalRefreshScheduled = true
+                    scheduleLocalMetadataRefresh(resolvedPlaylist.songs)
+                }
                 _uiState.value = LocalPlaylistDetailUiState(
-                    playlist = list.firstOrNull { it.id == id },
+                    playlist = resolvedPlaylist,
                     isResolved = true,
                     requestedPlaylistId = id
                 )
@@ -626,7 +636,6 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("applyScannedSongs") {
                 repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
             }.onSuccess { importedCount ->
-                scheduleLocalMetadataRefresh(songs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = importedCount,
@@ -648,7 +657,6 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("createPlaylistWithScannedSongs") {
                 repo.createPlaylistWithScannedSongs(name, songs)
             }.onSuccess { playlist ->
-                scheduleLocalMetadataRefresh(playlist.songs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = playlist.songs.size,
@@ -672,7 +680,6 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             runLocalPlaylistMutationSafely("addScannedSongsToPlaylist") {
                 repo.addScannedSongsToPlaylistWithResult(targetPlaylistId, songs)
             }.onSuccess { addResult ->
-                scheduleLocalMetadataRefresh(addResult.addedSongs)
                 onResult(
                     LocalAudioImportUiResult(
                         importedCount = addResult.addedCount,
@@ -689,6 +696,10 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private fun scheduleLocalMetadataRefresh(songs: List<SongItem>) {
         val candidates = songs
             .distinctBy(SongItem::stableKey)
+            .filter { song ->
+                song.durationMs <= 0L ||
+                    song.coverUrl.isNullOrBlank()
+            }
             .filter { it.localFilePath?.isNotBlank() == true || it.mediaUri?.startsWith("content://") == true }
         if (candidates.isEmpty()) return
         synchronized(localMetadataRefreshLock) {

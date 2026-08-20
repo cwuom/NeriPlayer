@@ -52,6 +52,9 @@ fun SongItem.displayCoverUrl(
             AudioDownloadManager.peekLocalCoverUri(this)
                 ?: if (!onMainThread) {
                     LocalMediaSupport.resolveCoverUri(context, this)
+                } else if (localFilePath?.startsWith("/") == true) {
+                    // direct file sidecars are bounded existence checks and are safe for the first frame
+                    LocalMediaSupport.resolveNearbyCoverUri(context, this)
                 } else {
                     null
                 }

@@ -17,7 +17,6 @@ import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadRefere
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -67,7 +66,7 @@ class LocalAudioImportSafLyricsTest {
     }
 
     @Test
-    fun scanFolderReturnsFastEntriesAndHydratesLyricsAfterImport() = runBlocking {
+    fun scanFolderReturnsCompleteEntriesWithLyrics() = runBlocking {
         val treeUri = DocumentsContract.buildTreeDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
             Issue339LyricsTestDocumentProvider.ROOT_ID
@@ -76,15 +75,11 @@ class LocalAudioImportSafLyricsTest {
         val result = LocalAudioImportManager.scanFolderSongs(targetContext, treeUri)
 
         assertEquals(0, result.failedCount)
-        assertTrue(result.metadataDeferred)
+        assertFalse(result.metadataDeferred)
         val song = result.songs.single()
-        assertNull(song.matchedLyric)
-        val hydratedSong = LocalAudioImportManager.hydrateLocalSongTextMetadata(
-            context = targetContext,
-            song = song
-        )
-        assertEquals("[00:00.10]original from Lyrics", hydratedSong.matchedLyric)
-        assertEquals("[00:00.10]translated from Lyrics", hydratedSong.matchedTranslatedLyric)
+        assertEquals("[00:00.10]original from Lyrics", song.matchedLyric)
+        assertEquals("[00:00.10]translated from Lyrics", song.matchedTranslatedLyric)
+        assertEquals("[00:00.10]romanized from Lyrics", song.matchedRomanizedLyric)
     }
 
     @Test

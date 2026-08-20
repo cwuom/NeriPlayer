@@ -34,8 +34,12 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.system.Os
 import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -46,7 +50,9 @@ import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
@@ -220,7 +226,9 @@ private data class FolderScanCandidate(
     val uri: Uri,
     val displayName: String? = null,
     val nearbyCoverUri: String? = null,
-    val sourceAddedAt: Long? = null
+    val sourceAddedAt: Long? = null,
+    val durationMs: Long? = null,
+    val knownSidecarReferences: LocalKnownSidecarReferences? = null
 )
 
 private data class FolderTraversalResult(
@@ -240,7 +248,8 @@ private data class QueriedFolderChild(
     val displayName: String,
     val mimeType: String,
     val isDirectory: Boolean,
-    val lastModifiedMs: Long? = null
+    val lastModifiedMs: Long? = null,
+    val durationMs: Long? = null
 )
 
 internal fun buildNearbySidecarCopyPlans(
@@ -306,9 +315,11 @@ object LocalAudioImportManager {
     private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
         "com.android.externalstorage.documents"
     private const val EXTERNAL_STORAGE_PRIMARY_VOLUME_ID = "primary"
-    private const val SCAN_NEARBY_COVER_LIMIT = 120
     private const val SCAN_PROGRESS_LOG_INTERVAL = 200
     private const val SLOW_SCAN_ITEM_THRESHOLD_MS = 120L
+    private const val COMPLETE_SCAN_PARALLELISM = 24
+    private const val COMPLETE_SCAN_CONTENT_PROBE_LIMIT = 512
+    private const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
     private const val MAX_EXTERNAL_IMPORT_COUNT = 500
     private const val MAX_EXTERNAL_IMPORT_BYTES = 2L * 1024L * 1024L * 1024L
     private val audioExtensions = setOf(
@@ -335,6 +346,10 @@ object LocalAudioImportManager {
     private val lyricExtensions = listOf("lrc", "txt")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
     private val coverNames = listOf("cover", "folder", "front")
+
+    private data class LocalSidecarDirectoryIndex(
+        val filesByName: Map<String, String>
+    )
 
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val songs = mutableListOf<SongItem>()
@@ -377,7 +392,7 @@ object LocalAudioImportManager {
             songs = songs.distinctBy { it.identity() },
             failedCount = failedCount,
             completed = true,
-            metadataDeferred = songs.isNotEmpty()
+            metadataDeferred = false
         )
     }
 
@@ -470,7 +485,7 @@ object LocalAudioImportManager {
             "scanFolderSongs builds filename index: candidates=$candidateCount"
         )
         val unknownArtistLabel = context.getString(R.string.music_unknown_artist)
-        val songs = buildList {
+        val quickSongs = buildList {
             traversalResult.candidates.forEachIndexed { index, candidate ->
                 coroutineContext.ensureActive()
                 runCatching {
@@ -492,11 +507,20 @@ object LocalAudioImportManager {
                 )
             }
         }
-        val failed = traversalResult.failedCount + (candidateCount - songs.size)
+        val songs = completeScannedSongs(
+            context = context,
+            songs = orderScannedSongs(quickSongs),
+            progress = progress,
+            visitedDirectories = traversalResult.visitedDirectoryCount,
+            knownSidecarReferences = traversalResult.candidates.associate {
+                it.uri.toString() to it.knownSidecarReferences
+            }
+        )
+        val failed = traversalResult.failedCount + (candidateCount - quickSongs.size)
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.size}, failed=$failed, metadataDeferred=${songs.isNotEmpty()}, totalElapsed=${totalElapsedMs}ms"
+            "scanFolderSongs finished: mode=${traversalResult.mode}, songs=${songs.size}, failed=$failed, metadataDeferred=false, totalElapsed=${totalElapsedMs}ms"
         )
 
         progress.emit(
@@ -509,10 +533,179 @@ object LocalAudioImportManager {
         )
 
         return LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
+            songs = orderScannedSongs(songs).distinctBy { it.identity() },
             failedCount = failed,
             completed = true,
-            metadataDeferred = songs.isNotEmpty()
+            metadataDeferred = false
+        )
+    }
+
+    private suspend fun completeScannedSongs(
+        context: Context,
+        songs: List<SongItem>,
+        progress: LocalAudioScanProgressEmitter,
+        visitedDirectories: Int,
+        knownSidecarReferences: Map<String, LocalKnownSidecarReferences?> = emptyMap()
+    ): List<SongItem> {
+        if (songs.isEmpty()) return emptyList()
+        val total = songs.size
+        val allowExpensiveFallback = total <= COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+        val indexedSidecarReferences = buildKnownSidecarReferencesForSongs(
+            songs = songs,
+            knownSidecarReferences = knownSidecarReferences
+        )
+        progress.emit(
+            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+            processed = 0,
+            total = total,
+            discoveredSongs = total,
+            visitedDirectories = visitedDirectories,
+            force = true
+        )
+        val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
+        val completed = coroutineScope {
+            songs.map { song ->
+                async(dispatcher) {
+                    val knownReferences = song.mediaUri
+                        ?.let(indexedSidecarReferences::get)
+                    val canProbe = allowExpensiveFallback ||
+                        !song.localFilePath.isNullOrBlank() ||
+                        knownReferences != null
+                    if (!canProbe) {
+                        song
+                    } else {
+                        try {
+                            hydrateLocalSongTextMetadataWithKnownSidecars(
+                                context = context,
+                                song = song,
+                                resolveCoverFallback = allowExpensiveFallback ||
+                                    !song.localFilePath.isNullOrBlank(),
+                                includeEmbeddedFallback = allowExpensiveFallback,
+                                includeEmbeddedCoverFallback = false,
+                                resolveDurationFallback = allowExpensiveFallback ||
+                                    !song.localFilePath.isNullOrBlank(),
+                                knownSidecarReferences = knownReferences
+                            )
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            NPLogger.w(
+                                TAG,
+                                "complete local scan metadata failed for ${song.name}: " +
+                                    error.message
+                            )
+                            song
+                        }
+                    }
+                }
+            }.awaitAll()
+        }
+        progress.emit(
+            phase = LocalAudioScanPhase.HYDRATING_METADATA,
+            processed = total,
+            total = total,
+            discoveredSongs = total,
+            visitedDirectories = visitedDirectories,
+            force = true
+        )
+        return completed
+    }
+
+    private fun buildKnownSidecarReferencesForSongs(
+        songs: List<SongItem>,
+        knownSidecarReferences: Map<String, LocalKnownSidecarReferences?>
+    ): Map<String, LocalKnownSidecarReferences?> {
+        if (songs.isEmpty()) return knownSidecarReferences
+
+        val resolved = HashMap<String, LocalKnownSidecarReferences?>(knownSidecarReferences)
+        val directoryIndexes = HashMap<String, LocalSidecarDirectoryIndex>()
+        val legacyRoot = File(LEGACY_DOWNLOAD_ROOT)
+
+        fun index(directory: File): LocalSidecarDirectoryIndex {
+            val key = directory.absolutePath
+            return directoryIndexes.getOrPut(key) {
+                LocalSidecarDirectoryIndex(
+                    filesByName = directory.listFiles()
+                        .orEmpty()
+                        .asSequence()
+                        .filter(File::isFile)
+                        .mapNotNull { file ->
+                            file.name.takeIf(String::isNotBlank)?.let { name ->
+                                name.lowercase() to file.absolutePath
+                            }
+                        }
+                        .toMap()
+                )
+            }
+        }
+
+        fun isInside(file: File, directory: File): Boolean {
+            val filePath = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+            val directoryPath = runCatching { directory.canonicalPath }
+                .getOrElse { directory.absolutePath }
+                .trimEnd(File.separatorChar)
+            return filePath == directoryPath ||
+                filePath.startsWith(directoryPath + File.separatorChar)
+        }
+
+        songs.forEach { song ->
+            val key = song.mediaUri ?: return@forEach
+            if (resolved[key] != null) return@forEach
+            val localFile = song.localFilePath
+                ?.takeIf { it.isNotBlank() && !it.startsWith("content://") }
+                ?.let { path ->
+                    if (path.startsWith("/")) {
+                        File(path)
+                    } else {
+                        runCatching { path.toUri().path }
+                            .getOrNull()
+                            ?.takeIf { it.startsWith("/") }
+                            ?.let(::File)
+                    }
+                }
+                ?: key.takeIf { it.startsWith("/") }
+                    ?.let(::File)
+            val parent = localFile?.parentFile ?: return@forEach
+            val baseName = localFile.nameWithoutExtension
+            val searchDirectories = buildList {
+                if (isInside(localFile, legacyRoot)) {
+                    add(File(legacyRoot, "Lyrics"))
+                }
+                add(File(parent, "Lyrics"))
+                add(parent)
+            }.distinctBy(File::getAbsolutePath)
+            val indexes = searchDirectories.map(::index)
+
+            fun find(kind: LyricSidecarKind): String? {
+                val names = lyricSidecarNames(baseName, kind)
+                return indexes.asSequence()
+                    .mapNotNull { directoryIndex ->
+                        names.firstNotNullOfOrNull { name ->
+                            directoryIndex.filesByName[name.lowercase()]
+                        }
+                    }
+                    .firstOrNull()
+            }
+
+            resolved[key] = LocalKnownSidecarReferences(
+                lyrics = NearbyLyricReferences(
+                    original = find(LyricSidecarKind.ORIGINAL),
+                    translated = find(LyricSidecarKind.TRANSLATED),
+                    romanized = find(LyricSidecarKind.ROMANIZED)
+                ),
+                metadata = index(parent).filesByName[
+                    (localFile.name + ".npmeta.json").lowercase()
+                ]
+            )
+        }
+        return resolved
+    }
+
+    private fun orderScannedSongs(songs: List<SongItem>): List<SongItem> {
+        return songs.sortedWith(
+            compareByDescending<SongItem> { it.addedAt.takeIf { timestamp -> timestamp > 0L } ?: Long.MIN_VALUE }
+                .thenBy { it.mediaUri.orEmpty() }
+                .thenBy { it.localFileName.orEmpty() }
         )
     }
 
@@ -548,7 +741,7 @@ object LocalAudioImportManager {
             .takeIf(String::isNotBlank)
             ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
 
-        return try {
+        val rawResult = try {
             context.contentResolver.query(
                 audioUri,
                 projection,
@@ -670,14 +863,6 @@ object LocalAudioImportManager {
                         force = processed == totalCount
                     )
                 }
-                progress.emit(
-                    phase = LocalAudioScanPhase.COMPLETED,
-                    processed = songs.size,
-                    total = totalCount,
-                    discoveredSongs = songs.size,
-                    visitedDirectories = 0,
-                    force = true
-                )
                 NPLogger.d(
                     TAG,
                     "scanFolderSongs MediaStore finished: volume=${scope.volumeName}, " +
@@ -691,7 +876,7 @@ object LocalAudioImportManager {
                     songs = songs.distinctBy { it.identity() },
                     failedCount = 0,
                     completed = true,
-                    metadataDeferred = songs.isNotEmpty()
+                    metadataDeferred = false
                 )
             }
         } catch (error: CancellationException) {
@@ -703,6 +888,25 @@ object LocalAudioImportManager {
             )
             null
         }
+        if (rawResult == null) return null
+        val completedSongs = completeScannedSongs(
+            context = context,
+            songs = rawResult.songs,
+            progress = progress,
+            visitedDirectories = 0
+        )
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = completedSongs.size,
+            total = completedSongs.size,
+            discoveredSongs = completedSongs.size,
+            visitedDirectories = 0,
+            force = true
+        )
+        return rawResult.copy(
+            songs = orderScannedSongs(completedSongs),
+            metadataDeferred = false
+        )
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -802,13 +1006,6 @@ object LocalAudioImportManager {
 
         runCatching {
             context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
-                val resolveNearbyCover = cursor.count <= SCAN_NEARBY_COVER_LIMIT
-                if (!resolveNearbyCover) {
-                    NPLogger.d(
-                        TAG,
-                        "scanDeviceSongs skips nearby cover lookup: rows=${cursor.count}, coverLimit=$SCAN_NEARBY_COVER_LIMIT"
-                    )
-                }
                 val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -848,11 +1045,9 @@ object LocalAudioImportManager {
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
-                    val nearbyCoverUri = if (resolveNearbyCover) {
-                        LocalMediaSupport.findNearbyCover(resolvedFile)?.toURI()?.toString()
-                    } else {
-                        null
-                    }
+                    val nearbyCoverUri = LocalMediaSupport.findNearbyCover(resolvedFile)
+                        ?.toURI()
+                        ?.toString()
                     val mediaStoreCoverUri = idxAlbumId
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
@@ -896,14 +1091,6 @@ object LocalAudioImportManager {
                     }
                 }
                 completed = true
-                progress.emit(
-                    phase = LocalAudioScanPhase.COMPLETED,
-                    processed = rawRowCount,
-                    total = rawRowCount,
-                    discoveredSongs = songs.size,
-                    visitedDirectories = 0,
-                    force = true
-                )
             }
         }.onFailure { error ->
             if (error is CancellationException) {
@@ -912,20 +1099,38 @@ object LocalAudioImportManager {
             NPLogger.e(TAG, "scanDeviceSongs failed: ${error.message}", error)
             failed++
         }
+        val completedSongs = if (completed) {
+            completeScannedSongs(
+                context = context,
+                songs = orderScannedSongs(songs.distinctBy { it.identity() }),
+                progress = progress,
+                visitedDirectories = 0
+            )
+        } else {
+            songs
+        }
+        progress.emit(
+            phase = LocalAudioScanPhase.COMPLETED,
+            processed = completedSongs.size,
+            total = completedSongs.size,
+            discoveredSongs = completedSongs.size,
+            visitedDirectories = 0,
+            force = true
+        )
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
         NPLogger.d(
             TAG,
-            "scanDeviceSongs finished: rows=$rawRowCount, songs=${songs.size}, " +
+            "scanDeviceSongs finished: rows=$rawRowCount, songs=${completedSongs.size}, " +
                 "failed=$failed, slowItems=$slowItemCount, " +
                 "mediaStoreCoverHits=$mediaStoreCoverHitCount, completed=$completed, " +
                 "totalElapsed=${totalElapsedMs}ms"
         )
 
         LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
+            songs = orderScannedSongs(completedSongs.distinctBy { it.identity() }),
             failedCount = failed,
             completed = completed,
-            metadataDeferred = songs.isNotEmpty()
+            metadataDeferred = false
         )
     }
 
@@ -1096,7 +1301,29 @@ object LocalAudioImportManager {
         context: Context,
         song: SongItem,
         resolveCoverFallback: Boolean = true,
-        includeEmbeddedFallback: Boolean = true
+        includeEmbeddedFallback: Boolean = true,
+        includeEmbeddedCoverFallback: Boolean = true,
+        resolveDurationFallback: Boolean = true
+    ): SongItem {
+        return hydrateLocalSongTextMetadataWithKnownSidecars(
+            context = context,
+            song = song,
+            resolveCoverFallback = resolveCoverFallback,
+            includeEmbeddedFallback = includeEmbeddedFallback,
+            includeEmbeddedCoverFallback = includeEmbeddedCoverFallback,
+            resolveDurationFallback = resolveDurationFallback,
+            knownSidecarReferences = null
+        )
+    }
+
+    internal fun hydrateLocalSongTextMetadataWithKnownSidecars(
+        context: Context,
+        song: SongItem,
+        resolveCoverFallback: Boolean = true,
+        includeEmbeddedFallback: Boolean = true,
+        includeEmbeddedCoverFallback: Boolean = true,
+        resolveDurationFallback: Boolean = true,
+        knownSidecarReferences: LocalKnownSidecarReferences? = null
     ): SongItem {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
@@ -1106,24 +1333,40 @@ object LocalAudioImportManager {
                 context = context,
                 song = song,
                 includeStoredFallback = false,
-                includeEmbeddedFallback = includeEmbeddedFallback
+                includeEmbeddedFallback = includeEmbeddedFallback,
+                knownSidecarReferences = knownSidecarReferences
             )
         }.getOrRethrowCancellation {
             NPLogger.w(TAG, "hydrate local text metadata failed for ${song.name}: ${it.message}")
         } ?: return song
-        if (!lyricMetadata.sourceResolved) {
-            return song
-        }
         val nearbyCover = if (resolveCoverFallback && song.coverUrl.isNullOrBlank()) {
             runCatching {
                 LocalMediaSupport.resolveNearbyCoverUri(context, song)
+                    ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
+                    ?: includeEmbeddedCoverFallback
+                        .takeIf { it }
+                        ?.let { LocalMediaSupport.resolveCoverUri(context, song) }
             }.getOrNull()
         } else {
             null
         }
+        val durationMs = if (song.durationMs > 0L || !resolveDurationFallback) {
+            song.durationMs
+        } else {
+            runCatching {
+                LocalMediaSupport.inspectQuick(
+                    context = context,
+                    uri = song.localMediaUri() ?: return@runCatching 0L,
+                    includeAudioTrackInfo = true
+                ).durationMs.takeIf { it > 0L } ?: 0L
+            }.onFailure {
+                NPLogger.d(TAG, "local duration fallback unavailable for ${song.name}: ${it.message}")
+            }.getOrDefault(0L)
+        }
         return song.copy(
             coverUrl = song.coverUrl ?: nearbyCover,
             originalCoverUrl = song.originalCoverUrl ?: nearbyCover,
+            durationMs = durationMs,
             matchedLyric = lyricMetadata.lyric ?: song.matchedLyric,
             matchedTranslatedLyric = lyricMetadata.translatedLyric
                 ?: song.matchedTranslatedLyric,
@@ -1157,7 +1400,7 @@ object LocalAudioImportManager {
         if (!LocalSongSupport.isLocalSong(song, context)) {
             return song
         }
-        if (!song.coverUrl.isNullOrBlank() || !song.originalCoverUrl.isNullOrBlank()) {
+        if (!song.coverUrl.isNullOrBlank()) {
             return song
         }
         val nearbyCover = runCatching {
@@ -1321,6 +1564,8 @@ object LocalAudioImportManager {
         var failed = 0
         var visitedDirectoryCount = 0
         val pendingDirectories = ArrayDeque<Uri>().apply { add(folderUri) }
+        var rootCoverIndex: Map<String, String> = emptyMap()
+        var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
             coroutineContext.ensureActive()
@@ -1342,8 +1587,18 @@ object LocalAudioImportManager {
                 .firstOrNull { it.isDirectory && it.displayName.equals("Covers", ignoreCase = true) }
                 ?.let { queryFolderChildren(context, it.documentUri) }
                 .orEmpty()
+            val lyricsChildren = children
+                .firstOrNull { it.isDirectory && it.displayName.equals("Lyrics", ignoreCase = true) }
+                ?.let { queryFolderChildren(context, it.documentUri) }
+                .orEmpty()
             val directCoverIndex = buildDocumentCoverIndex(children)
             val nestedCoverIndex = buildDocumentCoverIndex(coversChildren)
+            val directSidecarIndex = buildDocumentNameIndex(children)
+            val nestedSidecarIndex = buildDocumentNameIndex(lyricsChildren)
+            if (directoryUri == folderUri) {
+                rootCoverIndex = nestedCoverIndex
+                rootLyricsIndex = nestedSidecarIndex
+            }
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
@@ -1356,9 +1611,18 @@ object LocalAudioImportManager {
                             nearbyCoverUri = findNearbyDocumentCoverReference(
                                 directCoverIndex = directCoverIndex,
                                 nestedCoverIndex = nestedCoverIndex,
+                                rootCoverIndex = rootCoverIndex,
                                 baseName = baseName
                             ),
-                            sourceAddedAt = child.lastModifiedMs
+                            sourceAddedAt = child.lastModifiedMs,
+                            durationMs = child.durationMs,
+                            knownSidecarReferences = resolveKnownSidecarReferences(
+                                directIndex = directSidecarIndex,
+                                nestedIndex = nestedSidecarIndex,
+                                rootLyricsIndex = rootLyricsIndex,
+                                displayName = child.displayName,
+                                baseName = baseName
+                            )
                         )
                     }
                 }
@@ -1381,6 +1645,8 @@ object LocalAudioImportManager {
         var failed = 0
         var visitedDirectoryCount = 0
         val pendingDirectories = ArrayDeque<DocumentFile>().apply { add(root) }
+        var rootCoverIndex: Map<String, String> = emptyMap()
+        var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
             coroutineContext.ensureActive()
@@ -1408,8 +1674,19 @@ object LocalAudioImportManager {
                 ?.listFiles()
                 ?.filter { it.isFile }
                 .orEmpty()
+            val lyricsChildren = children
+                .firstOrNull { it.isDirectory && it.name.equals("Lyrics", ignoreCase = true) }
+                ?.listFiles()
+                ?.filter { it.isFile }
+                .orEmpty()
             val directCoverIndex = buildSafCoverIndex(children.asList())
             val nestedCoverIndex = buildSafCoverIndex(coversChildren)
+            val directSidecarIndex = buildSafDocumentNameIndex(children.asList())
+            val nestedSidecarIndex = buildSafDocumentNameIndex(lyricsChildren)
+            if (directory.uri == root.uri) {
+                rootCoverIndex = nestedCoverIndex
+                rootLyricsIndex = nestedSidecarIndex
+            }
 
             for (child in children) {
                 coroutineContext.ensureActive()
@@ -1426,9 +1703,18 @@ object LocalAudioImportManager {
                             nearbyCoverUri = findNearbySafCoverReference(
                                 directCoverIndex = directCoverIndex,
                                 nestedCoverIndex = nestedCoverIndex,
+                                rootCoverIndex = rootCoverIndex,
                                 baseName = baseName
                             ),
-                            sourceAddedAt = runCatching { child.lastModified() }.getOrNull()
+                            sourceAddedAt = runCatching { child.lastModified() }.getOrNull(),
+                            durationMs = null,
+                            knownSidecarReferences = resolveKnownSidecarReferences(
+                                directIndex = directSidecarIndex,
+                                nestedIndex = nestedSidecarIndex,
+                                rootLyricsIndex = rootLyricsIndex,
+                                displayName = displayName.orEmpty(),
+                                baseName = baseName
+                            )
                         )
                     }
                 }
@@ -1457,7 +1743,8 @@ object LocalAudioImportManager {
                     DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                     DocumentsContract.Document.COLUMN_DISPLAY_NAME,
                     DocumentsContract.Document.COLUMN_MIME_TYPE,
-                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                    MediaStore.Audio.Media.DURATION
                 ),
                 null,
                 null,
@@ -1469,6 +1756,7 @@ object LocalAudioImportManager {
                 val lastModifiedIndex = cursor.getColumnIndex(
                     DocumentsContract.Document.COLUMN_LAST_MODIFIED
                 )
+                val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
                     return@use emptyList()
                 }
@@ -1486,6 +1774,9 @@ object LocalAudioImportManager {
                                 mimeType = childMimeType,
                                 isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR,
                                 lastModifiedMs = lastModifiedIndex
+                                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                                    ?.let(cursor::getLong),
+                                durationMs = durationIndex
                                     .takeIf { it >= 0 && !cursor.isNull(it) }
                                     ?.let(cursor::getLong)
                             )
@@ -1520,7 +1811,7 @@ object LocalAudioImportManager {
                 title = null,
                 artist = null,
                 album = null,
-                durationMs = null,
+                durationMs = candidate.durationMs,
                 sourceAddedAt = candidate.sourceAddedAt,
                 nearbyCoverUri = candidate.nearbyCoverUri
             ),
@@ -1558,9 +1849,86 @@ object LocalAudioImportManager {
             .mapValues { (_, references) -> references.first() }
     }
 
+    private fun buildDocumentNameIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .map { child -> child.displayName.lowercase() to child.documentUri.toString() }
+            .toMap()
+    }
+
+    private fun buildSafDocumentNameIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filter(DocumentFile::isFile)
+            .mapNotNull { child ->
+                child.name
+                    ?.takeIf(String::isNotBlank)
+                    ?.lowercase()
+                    ?.let { name -> name to child.uri.toString() }
+            }
+            .toMap()
+    }
+
+    private fun resolveKnownSidecarReferences(
+        directIndex: Map<String, String>,
+        nestedIndex: Map<String, String>,
+        rootLyricsIndex: Map<String, String> = emptyMap(),
+        displayName: String,
+        baseName: String
+    ): LocalKnownSidecarReferences {
+        fun find(names: List<String>): String? {
+            return names.firstNotNullOfOrNull { name ->
+                rootLyricsIndex[name.lowercase()]
+                    ?: nestedIndex[name.lowercase()]
+                    ?: directIndex[name.lowercase()]
+            }
+        }
+
+        val original = find(lyricSidecarNames(baseName, LyricSidecarKind.ORIGINAL))
+        val translated = find(lyricSidecarNames(baseName, LyricSidecarKind.TRANSLATED))
+        val romanized = find(lyricSidecarNames(baseName, LyricSidecarKind.ROMANIZED))
+        val metadata = directIndex["${displayName}.npmeta.json".lowercase()]
+        return LocalKnownSidecarReferences(
+            lyrics = NearbyLyricReferences(
+                original = original,
+                translated = translated,
+                romanized = romanized
+            ),
+            metadata = metadata
+        )
+    }
+
+    private fun lyricSidecarNames(baseName: String, kind: LyricSidecarKind): List<String> {
+        val prefixes = when (kind) {
+            LyricSidecarKind.ORIGINAL -> listOf(baseName)
+            LyricSidecarKind.TRANSLATED -> listOf("${baseName}_trans")
+            LyricSidecarKind.ROMANIZED -> listOf(
+                "${baseName}_roma",
+                "${baseName}_romalrc",
+                "${baseName}_romanized"
+            )
+        }
+        return buildList {
+            prefixes.forEach { prefix ->
+                lyricExtensions.forEach { extension -> add("$prefix.$extension") }
+                add("$prefix.lrc.txt")
+            }
+        }
+    }
+
+    private enum class LyricSidecarKind {
+        ORIGINAL,
+        TRANSLATED,
+        ROMANIZED
+    }
+
     private fun findNearbyDocumentCoverReference(
         directCoverIndex: Map<String, String>,
         nestedCoverIndex: Map<String, String>,
+        rootCoverIndex: Map<String, String>,
         baseName: String
     ): String? {
         fun findSpecific(index: Map<String, String>): String? {
@@ -1571,9 +1939,12 @@ object LocalAudioImportManager {
 
         findSpecific(directCoverIndex)?.let { return it }
         findSpecific(nestedCoverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
         return coverNames.firstNotNullOfOrNull { coverName ->
             imageExtensions.firstNotNullOfOrNull { extension ->
                 directCoverIndex["$coverName.$extension".lowercase()]
+                    ?: nestedCoverIndex["$coverName.$extension".lowercase()]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase()]
             }
         }
     }
@@ -1581,6 +1952,7 @@ object LocalAudioImportManager {
     private fun findNearbySafCoverReference(
         directCoverIndex: Map<String, String>,
         nestedCoverIndex: Map<String, String>,
+        rootCoverIndex: Map<String, String>,
         baseName: String
     ): String? {
         fun findSpecific(index: Map<String, String>): String? {
@@ -1591,9 +1963,12 @@ object LocalAudioImportManager {
 
         findSpecific(directCoverIndex)?.let { return it }
         findSpecific(nestedCoverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
         return coverNames.firstNotNullOfOrNull { coverName ->
             imageExtensions.firstNotNullOfOrNull { extension ->
                 directCoverIndex["$coverName.$extension".lowercase()]
+                    ?: nestedCoverIndex["$coverName.$extension".lowercase()]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase()]
             }
         }
     }
@@ -1605,6 +1980,16 @@ object LocalAudioImportManager {
     ): SongItem {
         val resolvedFile = resolveSourceFile(context, uri)
         val queryInfo = queryQuickImportedAudioInfo(context, uri)
+        val durationMs = queryInfo.durationMs?.takeIf { it > 0L }
+            ?: runCatching {
+                LocalMediaSupport.inspectQuick(
+                    context = context,
+                    uri = uri,
+                    includeAudioTrackInfo = true
+                ).durationMs.takeIf { it > 0L }
+            }.onFailure {
+                NPLogger.d(TAG, "quick duration fallback unavailable for $uri: ${it.message}")
+            }.getOrNull()
         val displayName = resolvedFile?.name
             ?: queryInfo.displayName
             ?: uri.lastPathSegment
@@ -1627,7 +2012,7 @@ object LocalAudioImportManager {
                 title = queryInfo.title,
                 artist = queryInfo.artist,
                 album = queryInfo.album,
-                durationMs = queryInfo.durationMs,
+                durationMs = durationMs,
                 sourceAddedAt = queryInfo.sourceAddedAt,
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,

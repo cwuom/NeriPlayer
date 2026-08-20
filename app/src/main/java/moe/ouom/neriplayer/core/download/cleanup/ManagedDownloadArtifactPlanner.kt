@@ -59,6 +59,15 @@ internal object ManagedDownloadArtifactPlanner {
                 ?.let { candidateManagedDownloadBaseNames(it.nameWithoutExtension) }
                 ?: candidateBaseNames
             addAll(allIndexedCoverReferences(indexedCoverBaseNames, snapshot))
+            val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank)
+            if (stableKey != null) {
+                indexedCoverBaseNames.forEach { baseName ->
+                    ManagedDownloadStorageNaming
+                        .buildStableCoverCandidateNames(baseName, stableKey)
+                        .mapNotNull { name -> snapshot.coverEntriesByName[name]?.reference }
+                        .forEach(::add)
+                }
+            }
         }
 
         return linkedSetOf<String>().apply {
