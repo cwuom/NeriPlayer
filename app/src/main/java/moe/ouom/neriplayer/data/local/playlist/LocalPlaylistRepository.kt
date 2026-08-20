@@ -1891,31 +1891,37 @@ class LocalPlaylistRepository private constructor(
     }
 
     suspend fun addSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
             hydrateLocalMetadata = true
-        )
+        ).addedCount
     }
 
     suspend fun addScannedSongsToLocalFilesPlaylistAndCount(songs: List<SongItem>): Int {
-        return addSongsToLocalFilesPlaylistAndCount(
+        return addScannedSongsToLocalFilesPlaylistWithResult(songs).addedCount
+    }
+
+    suspend fun addScannedSongsToLocalFilesPlaylistWithResult(
+        songs: List<SongItem>
+    ): LocalPlaylistSongAddResult {
+        return addSongsToLocalFilesPlaylistWithResult(
             songs = songs,
             hydrateLocalMetadata = false,
             preserveScannedSourceAddedAt = true
         )
     }
 
-    private suspend fun addSongsToLocalFilesPlaylistAndCount(
+    private suspend fun addSongsToLocalFilesPlaylistWithResult(
         songs: List<SongItem>,
         hydrateLocalMetadata: Boolean,
         preserveScannedSourceAddedAt: Boolean = false
-    ): Int {
+    ): LocalPlaylistSongAddResult {
         return withContext(Dispatchers.IO) {
-            if (songs.isEmpty()) return@withContext 0
+            if (songs.isEmpty()) return@withContext LocalPlaylistSongAddResult(emptyList())
             val now = System.currentTimeMillis()
             val hydratedSongs = hydrateLocalSongsForPersistence(songs, hydrateLocalMetadata)
             commitPlaylistMutation {
-                var addedCount = 0
+                var addedSongs = emptyList<SongItem>()
                 val updated = _playlists.value.map { playlist ->
                     if (!isLocalFilesPlaylist(playlist.id, playlist.name)) {
                         return@map playlist
@@ -1934,7 +1940,7 @@ class LocalPlaylistRepository private constructor(
                             addedAt = nextPlaylistSongAddedAt(playlist, now),
                             preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                         )
-                        addedCount += toAdd.size
+                        addedSongs = toAdd
                         playlist.copy(
                             songs = mergeNewSongsFirst(playlist.songs, toAdd),
                             modifiedAt = now,
@@ -1943,7 +1949,7 @@ class LocalPlaylistRepository private constructor(
                     }
                 }
                 publishLocked(updated)
-                addedCount
+                LocalPlaylistSongAddResult(addedSongs)
             }
         }
     }

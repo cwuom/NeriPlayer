@@ -635,6 +635,17 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun showAudioImportResult(result: moe.ouom.neriplayer.ui.viewmodel.playlist.LocalAudioImportUiResult) {
+                if (result.addedSongs.isNotEmpty()) {
+                    scope.showPlaylistBatchExportAddedSongs(
+                        context = context,
+                        snackbarHostState = snackbarHostState,
+                        repository = repo,
+                        targetPlaylistId = LocalFilesPlaylist.SYSTEM_ID,
+                        targetPlaylistName = context.getString(R.string.local_files),
+                        addedSongs = result.addedSongs
+                    )
+                    return
+                }
                 scope.launch {
                     val resources = context.resources
                     val message = when {
@@ -759,7 +770,8 @@ fun LocalPlaylistDetailScreen(
                 val persistGranted = runCatching {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                 }.isSuccess
                 if (!persistGranted) {

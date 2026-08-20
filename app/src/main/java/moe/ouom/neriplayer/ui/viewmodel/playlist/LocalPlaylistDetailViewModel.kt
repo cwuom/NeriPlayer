@@ -644,12 +644,13 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     ) {
         viewModelScope.launch {
             runLocalPlaylistMutationSafely("applyScannedSongs") {
-                repo.addScannedSongsToLocalFilesPlaylistAndCount(songs)
-            }.onSuccess { importedCount ->
+                repo.addScannedSongsToLocalFilesPlaylistWithResult(songs)
+            }.onSuccess { addResult ->
                 onResult(
                     LocalAudioImportUiResult(
-                        importedCount = importedCount,
-                        failedCount = 0
+                        importedCount = addResult.addedCount,
+                        failedCount = 0,
+                        addedSongs = addResult.addedSongs
                     )
                 )
             }.onFailure {

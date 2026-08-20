@@ -719,7 +719,7 @@ object LocalMediaSupport {
         writeCover: Boolean = coverReference != null,
         writeLyrics: Boolean = false
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(song)
+        val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) {
             return@withContext LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         }
@@ -809,7 +809,7 @@ object LocalMediaSupport {
         context: Context,
         song: SongItem
     ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(song)
+        val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) return@withContext false
         val written = candidates.any { sourceUri ->
             val file = sourceUri
@@ -835,7 +835,7 @@ object LocalMediaSupport {
         coverReference: String?,
         writeCover: Boolean
     ): Boolean = withContext(Dispatchers.IO) {
-        val candidates = editableLocalMediaUriCandidates(song)
+        val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty() || !writeCover) return@withContext true
         candidates.any { sourceUri ->
             val file = sourceUri
@@ -855,10 +855,24 @@ object LocalMediaSupport {
         }
     }
 
-    private fun editableLocalMediaUriCandidates(song: SongItem): List<Uri> {
-        return song.localMediaUriCandidates().sortedBy { uri ->
-            if (uri.scheme.equals("file", ignoreCase = true)) 0 else 1
-        }
+    private fun editableLocalMediaUriCandidates(
+        context: Context,
+        song: SongItem
+    ): List<Uri> {
+        val directCandidates = song.localMediaUriCandidates()
+        val safCandidates = directCandidates.asSequence()
+            .filter(::isMediaStoreUri)
+            .mapNotNull { source -> resolveWritableLocalMediaUri(context, source) }
+            .toList()
+        return (safCandidates + directCandidates)
+            .distinctBy(Uri::toString)
+            .sortedBy { uri ->
+                when {
+                    uri.scheme.equals("file", ignoreCase = true) -> 0
+                    isMediaStoreUri(uri) -> 2
+                    else -> 1
+                }
+            }
     }
 
     private fun writeLocalCoverSidecar(
@@ -2459,11 +2473,12 @@ object LocalMediaSupport {
             ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
             ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
             ?: context.getString(R.string.music_unknown_artist)
-        val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+        val rawAlbum = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
             ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
             ?: queried.album.takeMeaningfulLocalMetadata()
             ?: localMetadata?.album.takeMeaningfulLocalMetadata()
-        val usesFallbackAlbum = album == null
+        val usesFallbackAlbum = rawAlbum == null
+        val album = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
         val nearbyCover = findNearbyCover(file)
         val nearbyLyricFiles = findNearbyLyricFiles(file)
         val nearbyLyricReferences = findNearbyLyricReferences(
@@ -2518,7 +2533,7 @@ object LocalMediaSupport {
             displayName = resolved.displayName,
             title = title,
             artist = artist,
-            album = album ?: context.getString(R.string.local_files),
+            album = album,
             usesFallbackAlbum = usesFallbackAlbum,
             albumArtist = tagLibMetadata?.albumArtist ?: containerMetadata?.albumArtist,
             composer = tagLibMetadata?.composer ?: containerMetadata?.composer,
@@ -2703,13 +2718,13 @@ object LocalMediaSupport {
             ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
             ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
             ?: context.getString(R.string.music_unknown_artist)
-        val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+        val rawAlbum = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
             ?: retrieverMetadata.album.takeMeaningfulLocalMetadata()
             ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
             ?: queried.album.takeMeaningfulLocalMetadata()
             ?: localMetadata?.album.takeMeaningfulLocalMetadata()
-        val usesFallbackAlbum = album == null
-        val resolvedAlbum = album ?: context.getString(R.string.local_files)
+        val usesFallbackAlbum = rawAlbum == null
+        val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
         val nearbyLyricFiles = findNearbyLyricFiles(file)
         val nearbyLyricReferences = findNearbyLyricReferences(
             context = context,
@@ -3091,14 +3106,14 @@ object LocalMediaSupport {
                 ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
                 ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: context.getString(R.string.music_unknown_artist)
-            val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+            val rawAlbum = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
                     .takeMeaningfulLocalMetadata()
                 ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
                 ?: queried.album.takeMeaningfulLocalMetadata()
                 ?: localMetadata?.album.takeMeaningfulLocalMetadata()
-            val usesFallbackAlbum = album == null
-            val resolvedAlbum = album ?: context.getString(R.string.local_files)
+            val usesFallbackAlbum = rawAlbum == null
+            val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
             val albumArtist = tagLibMetadata?.albumArtist
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                 ?.takeIf { it.isNotBlank() }
@@ -3240,12 +3255,12 @@ object LocalMediaSupport {
                 ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
                 ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: context.getString(R.string.music_unknown_artist)
-            val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+            val rawAlbum = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
                 ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
                 ?: queried.album.takeMeaningfulLocalMetadata()
                 ?: localMetadata?.album.takeMeaningfulLocalMetadata()
-            val usesFallbackAlbum = album == null
-            val resolvedAlbum = album ?: context.getString(R.string.local_files)
+            val usesFallbackAlbum = rawAlbum == null
+            val resolvedAlbum = normalizeLocalAlbumIdentity(rawAlbum, usesFallbackAlbum)
             val tagLibCoverUri = tagLibMetadata?.coverBytes
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { saveEmbeddedCover(context, "${resolvedPath ?: uri}#taglib", it) }
@@ -3369,7 +3384,10 @@ object LocalMediaSupport {
             displayName = resolved.displayName,
             title = selectedMetadata.title,
             artist = selectedMetadata.artist,
-            album = selectedMetadata.album,
+            album = normalizeLocalAlbumIdentity(
+                selectedMetadata.album,
+                selectedMetadata.usesFallbackAlbum
+            ),
             usesFallbackAlbum = selectedMetadata.usesFallbackAlbum,
             albumArtist = null,
             composer = null,
@@ -3988,6 +4006,25 @@ object LocalMediaSupport {
             treeUri = treeUri,
             parentDocumentId = parentDocumentId
         )
+    }
+
+    internal fun resolveWritableLocalMediaUri(
+        context: Context,
+        sourceUri: Uri
+    ): Uri? {
+        if (!isMediaStoreUri(sourceUri)) return sourceUri
+        val contentInfo = queryContentInfo(context, sourceUri)
+        val displayName = contentInfo.displayName?.trim()?.takeIf(String::isNotBlank)
+            ?: return null
+        val navigation = resolveMediaStoreDocumentNavigation(context, sourceUri) ?: return null
+        val parentDocumentId = navigation.parentDocumentId ?: return null
+        val baseUri = navigation.treeUri ?: navigation.baseUri
+        return queryDocumentChildren(context, baseUri, parentDocumentId)
+            .firstOrNull { child ->
+                !child.isDirectory && child.displayName.equals(displayName, ignoreCase = true)
+            }
+            ?.uri
+            ?.toUri()
     }
 
     private fun resolveExternalStorageTreeUri(

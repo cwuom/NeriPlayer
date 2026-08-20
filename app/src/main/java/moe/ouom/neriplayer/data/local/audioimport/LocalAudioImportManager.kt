@@ -199,6 +199,7 @@ internal data class QuickImportedSongSeed(
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
     val mediaStoreCoverUri: String? = null,
+    val stableIdentitySource: String? = null,
     val sourceStableKey: String? = null,
     val matchedLyric: String? = null,
     val matchedTranslatedLyric: String? = null,
@@ -271,18 +272,16 @@ private class MediaStoreSidecarResolver(
         val root = directoryIndex(emptyList()) ?: return@lazy emptyMap()
         root.lyricsIndex
     }
+    private val rootCoverIndex: Map<String, String> by lazy {
+        val root = directoryIndex(emptyList()) ?: return@lazy emptyMap()
+        root.coverIndex
+    }
 
     fun resolve(
         relativePath: String?,
         displayName: String
     ): LocalKnownSidecarReferences? {
-        val rowSegments = splitStoragePath(relativePath ?: selectedPath)
-        if (rowSegments.size < selectedSegments.size ||
-            rowSegments.take(selectedSegments.size) != selectedSegments
-        ) {
-            return null
-        }
-        val directory = directoryIndex(rowSegments.drop(selectedSegments.size)) ?: return null
+        val directory = directoryFor(relativePath) ?: return null
         val baseName = displayName.substringBeforeLast('.', displayName)
         val resolved = resolveSidecarReferences(
             directIndex = directory.directIndex,
@@ -292,6 +291,50 @@ private class MediaStoreSidecarResolver(
             baseName = baseName
         )
         return resolved
+    }
+
+    fun resolveAudioReference(
+        relativePath: String?,
+        displayName: String
+    ): String? {
+        val directory = directoryFor(relativePath) ?: return null
+        return directory.directIndex[displayName.lowercase(Locale.ROOT)]
+    }
+
+    fun resolveNearbyCoverReference(
+        relativePath: String?,
+        displayName: String
+    ): String? {
+        val directory = directoryFor(relativePath) ?: return null
+        val baseName = displayName.substringBeforeLast('.', displayName)
+        val extensions = listOf("jpg", "jpeg", "png", "webp")
+
+        fun findSpecific(index: Map<String, String>): String? {
+            return extensions.firstNotNullOfOrNull { extension ->
+                index["$baseName.$extension".lowercase(Locale.ROOT)]
+            }
+        }
+
+        findSpecific(directory.directIndex)?.let { return it }
+        findSpecific(directory.coverIndex)?.let { return it }
+        findSpecific(rootCoverIndex)?.let { return it }
+        return listOf("cover", "folder", "front").firstNotNullOfOrNull { coverName ->
+            extensions.firstNotNullOfOrNull { extension ->
+                directory.directIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+                    ?: directory.coverIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+                    ?: rootCoverIndex["$coverName.$extension".lowercase(Locale.ROOT)]
+            }
+        }
+    }
+
+    private fun directoryFor(relativePath: String?): DirectorySidecarIndex? {
+        val rowSegments = splitStoragePath(relativePath ?: selectedPath)
+        if (rowSegments.size < selectedSegments.size ||
+            rowSegments.take(selectedSegments.size) != selectedSegments
+        ) {
+            return null
+        }
+        return directoryIndex(rowSegments.drop(selectedSegments.size))
     }
 
     private fun resolveSidecarReferences(
@@ -361,20 +404,24 @@ private class MediaStoreSidecarResolver(
             it.isDirectory && it.displayName.equals("Lyrics", ignoreCase = true)
         }
         val lyricsChildren = lyricsDirectory?.let { children(it.documentUri) }.orEmpty()
+        val coversDirectory = directChildren.firstOrNull {
+            it.isDirectory && it.displayName.equals("Covers", ignoreCase = true)
+        }
+        val coversChildren = coversDirectory?.let { children(it.documentUri) }.orEmpty()
         return DirectorySidecarIndex(
             directIndex = buildDocumentNameIndex(directChildren),
-            lyricsIndex = buildDocumentNameIndex(lyricsChildren)
+            lyricsIndex = buildDocumentNameIndex(lyricsChildren),
+            coverIndex = buildDocumentNameIndex(coversChildren)
         ).also { directoryCache[cacheKey] = it }
     }
 
     private fun children(parentUri: Uri): List<QueriedFolderChild> {
         val key = parentUri.toString()
         childrenCache[key]?.let { return it }
-        val documentId = runCatching {
-            DocumentsContract.getTreeDocumentId(parentUri)
-        }.getOrElse {
-            runCatching { DocumentsContract.getDocumentId(parentUri) }.getOrNull()
-        }
+        val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }
+            .getOrElse {
+                runCatching { DocumentsContract.getTreeDocumentId(parentUri) }.getOrNull()
+            }
         if (documentId.isNullOrBlank()) return emptyList()
         val childrenUri = runCatching {
             DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
@@ -438,7 +485,8 @@ private class MediaStoreSidecarResolver(
 
     private data class DirectorySidecarIndex(
         val directIndex: Map<String, String>,
-        val lyricsIndex: Map<String, String>
+        val lyricsIndex: Map<String, String>,
+        val coverIndex: Map<String, String>
     )
 
     private companion object {
@@ -1102,11 +1150,24 @@ object LocalAudioImportManager {
                         ?.takeIf { it > 0L }
                         ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
                         ?.also { mediaStoreCoverHitCount++ }
-                    sidecarResolver.resolve(
+                    val sidecarReferences = sidecarResolver.resolve(
                         relativePath = rowRelativePath,
                         displayName = displayName
-                    )?.let { references ->
-                        knownSidecarReferences[contentUri.toString()] = references
+                    )
+                    val safAudioReference = sidecarResolver.resolveAudioReference(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val nearbyCoverUri = sidecarResolver.resolveNearbyCoverReference(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val sourceReference = safAudioReference ?: contentUri.toString()
+                    sidecarReferences?.let { references ->
+                        knownSidecarReferences[sourceReference] = references
+                        if (sourceReference != contentUri.toString()) {
+                            knownSidecarReferences[contentUri.toString()] = references
+                        }
                     }
                     val sourceAddedAt = resolveMediaStoreSourceAddedAt(
                         dateAddedSeconds = dateAddedIndex
@@ -1118,7 +1179,7 @@ object LocalAudioImportManager {
                     )
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
-                            sourceRef = contentUri.toString(),
+                            sourceRef = sourceReference,
                             displayName = displayName,
                             title = titleIndex
                                 .takeIf { !cursor.isNull(it) }
@@ -1134,7 +1195,9 @@ object LocalAudioImportManager {
                                 ?.let(cursor::getLong),
                             sourceAddedAt = sourceAddedAt,
                             localFile = resolvedFile,
-                            mediaStoreCoverUri = mediaStoreCoverUri
+                            nearbyCoverUri = nearbyCoverUri,
+                            mediaStoreCoverUri = mediaStoreCoverUri,
+                            stableIdentitySource = contentUri.toString()
                         ),
                         unknownArtistLabel = unknownArtistLabel
                     )
@@ -1470,7 +1533,7 @@ object LocalAudioImportManager {
             album = resolvedAlbumSeed,
             usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
         )
-        val stableId = computeStableSongId(resolvedSource)
+        val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
         val sourceAddedAt = resolveScannedSourceAddedAt(
             preferredTimestampMs = seed.sourceAddedAt,
             fallbackTimestampMs = seed.localFile?.lastModified()
@@ -1515,8 +1578,10 @@ object LocalAudioImportManager {
             ?: quickSong.name
         val resolvedArtist = normalizeQuickImportedMetadata(detailedSong.artist)
             ?: quickSong.artist
-        val resolvedAlbum = normalizeQuickImportedMetadata(detailedSong.album)
-            ?: quickSong.album
+        val resolvedAlbum = normalizeLocalAlbumIdentity(
+            album = normalizeQuickImportedMetadata(detailedSong.album) ?: quickSong.album,
+            usesFallbackAlbum = false
+        )
         val resolvedCoverUrl = quickSong.coverUrl
             ?.takeIf { it.isNotBlank() }
             ?: detailedSong.coverUrl
@@ -1671,7 +1736,9 @@ object LocalAudioImportManager {
             metadata.artist,
             metadata.originalArtist
         )
-        val resolvedAlbum = firstMeaningfulMetadataValue(metadata.album)
+        val resolvedAlbum = firstMeaningfulMetadataValue(metadata.album)?.let {
+            normalizeLocalAlbumIdentity(it, usesFallbackAlbum = false)
+        }
         val resolvedCover = firstMeaningfulMetadataValue(
             metadata.customCoverUrl,
             metadata.coverUrl,
@@ -1688,7 +1755,10 @@ object LocalAudioImportManager {
             id = metadata.songId ?: song.id,
             name = resolvedName ?: song.name,
             artist = resolvedArtist ?: song.artist,
-            album = resolvedAlbum ?: song.album,
+            album = resolvedAlbum ?: normalizeLocalAlbumIdentity(
+                album = song.album,
+                usesFallbackAlbum = song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
+            ),
             durationMs = metadata.durationMs.takeIf { it > 0L } ?: song.durationMs,
             coverUrl = song.coverUrl ?: resolvedCover,
             originalCoverUrl = song.originalCoverUrl ?: metadata.originalCoverUrl ?: resolvedCover,
@@ -1746,7 +1816,10 @@ object LocalAudioImportManager {
                 parsedTitle ?: song.name
             },
             artist = if (unknownArtist) parsedArtist ?: song.artist else song.artist,
-            album = if (unknownAlbum) parsedAlbum ?: song.album else song.album,
+            album = normalizeLocalAlbumIdentity(
+                album = if (unknownAlbum) parsedAlbum ?: song.album else song.album,
+                usesFallbackAlbum = unknownAlbum && parsedAlbum == null
+            ),
             originalArtist = if (unknownArtist) parsedArtist ?: song.originalArtist else song.originalArtist
         )
     }
