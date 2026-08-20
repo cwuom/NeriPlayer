@@ -12,7 +12,17 @@ import java.net.URI
 internal object ManagedDownloadReferenceIo {
     fun readText(context: Context, reference: String): String? {
         return when {
-            reference.startsWith("/") -> File(reference).takeIf(File::exists)?.readText(Charsets.UTF_8)
+            reference.startsWith("/") -> {
+                runCatching { File(reference).inputStream().bufferedReader(Charsets.UTF_8).use { it.readText() } }
+                    .getOrNull()
+                    ?: legacyDocumentUri(reference)?.let { uri ->
+                        runCatching {
+                            context.contentResolver.openInputStream(uri)
+                                ?.bufferedReader(Charsets.UTF_8)
+                                ?.use { it.readText() }
+                        }.getOrNull()
+                    }
+            }
             else -> {
                 reference.toLocalFileReference()
                     ?.takeIf(File::exists)
@@ -37,7 +47,16 @@ internal object ManagedDownloadReferenceIo {
     fun exists(context: Context, reference: String?): Boolean {
         if (reference.isNullOrBlank()) return false
         return when {
-            reference.startsWith("/") -> File(reference).exists()
+            reference.startsWith("/") -> {
+                runCatching { File(reference).inputStream().use { }; true }.getOrDefault(false) ||
+                    legacyDocumentUri(reference)?.let { uri ->
+                    resolveDocumentFile(context, uri)?.exists()
+                        ?: runCatching {
+                            context.contentResolver.openFileDescriptor(uri, "r")
+                                ?.use { true } ?: false
+                        }.getOrDefault(false)
+                    } == true
+            }
             else -> {
                 reference.toLocalFileReference()?.let(File::exists)?.let { return it }
                 val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
@@ -133,5 +152,23 @@ internal object ManagedDownloadReferenceIo {
         val filePath = path?.takeIf(String::isNotBlank)
             ?: schemeSpecificPart?.substringBefore('?')?.takeIf(String::isNotBlank)
         return filePath?.let(::File)
+    }
+
+    private fun legacyDocumentUri(reference: String): Uri? {
+        val root = "/storage/emulated/0/neriplayer-download"
+        val normalized = runCatching { File(reference).canonicalPath }.getOrNull() ?: return null
+        val prefix = "$root/"
+        if (!normalized.startsWith(prefix)) return null
+        val relativePath = normalized.removePrefix(prefix).takeIf(String::isNotBlank) ?: return null
+        val treeUri = runCatching {
+            DocumentsContract.buildTreeDocumentUri(
+                "com.android.externalstorage.documents",
+                "primary:neriplayer-download"
+            )
+        }.getOrNull() ?: return null
+        val documentId = "primary:neriplayer-download/$relativePath"
+        return runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        }.getOrNull()
     }
 }

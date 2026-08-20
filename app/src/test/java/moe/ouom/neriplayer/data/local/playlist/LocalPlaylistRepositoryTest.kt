@@ -95,6 +95,30 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `fast playlist preview reads only the requested playlist object`() = runTest {
+        val first = playlistJson(id = 301L, name = "first")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val second = playlistJson(id = 302L, name = "target")
+            .trim()
+            .removePrefix("[")
+            .removeSuffix("]")
+        val storage = RecordingStorage(primary = "[$first,$second]")
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "fast_preview.json"),
+            autoSyncEnabled = false,
+            storage = storage
+        )
+
+        val preview = repository.readFastPlaylist(302L)
+
+        assertEquals("target", preview?.name)
+        assertEquals(302L, preview?.id)
+    }
+
+    @Test
     fun `failed async initial load remains read only`() = runTest {
         val storage = RecordingStorage(
             primary = playlistJson(id = 202L, name = "persisted")
@@ -149,7 +173,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `scanned adds skip local metadata duplicates in regular playlist`() = runTest {
+    fun `scanned adds keep distinct files with matching local metadata`() = runTest {
         val playlistId = 43L
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(),
@@ -174,10 +198,12 @@ class LocalPlaylistRepositoryTest {
         val playlist = repository.playlists.value.single { it.id == playlistId }
 
         assertEquals(1, firstAdd)
-        assertEquals(0, secondAdd)
-        assertEquals(1, playlist.songs.size)
-        assertEquals(contentAlias.mediaUri, playlist.songs.single().mediaUri)
-        assertEquals(contentAlias.localFileName, playlist.songs.single().localFileName)
+        assertEquals(1, secondAdd)
+        assertEquals(2, playlist.songs.size)
+        assertEquals(
+            setOf(contentAlias.mediaUri, pathAlias.mediaUri),
+            playlist.songs.map { it.mediaUri }.toSet()
+        )
     }
 
     @Test

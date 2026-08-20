@@ -138,8 +138,9 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `restoring a custom cover never promotes the custom image to base`() {
-        assertNull(
+    fun `restoring a custom cover keeps it when no other base reference exists`() {
+        assertEquals(
+            "file:///cache/custom-cover.jpg",
             resolveRestoredBaseCoverUrl(
                 originalCoverUrl = "file:///cache/custom-cover.jpg",
                 baseCoverUrl = "file:///cache/custom-cover.jpg",

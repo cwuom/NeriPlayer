@@ -55,13 +55,13 @@ internal object ManagedDownloadLyricStore {
                 snapshot = snapshot,
                 songId = resolvedMetadata?.songId ?: song.id,
                 candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
-            )?.let { return it }
+            )?.takeIf { exists(context, it) }?.let { return it }
         }
         findRomanizedLyricLocation(
             snapshot = snapshot,
             songId = song.id,
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
-        )?.let { return it }
+        )?.takeIf { exists(context, it) }?.let { return it }
         return resolvedMetadata?.romanizedLyricPath
             ?.takeIf { exists(context, it) }
     }
@@ -91,7 +91,7 @@ internal object ManagedDownloadLyricStore {
                 } else {
                     ManagedDownloadStorageNaming.LyricKind.ORIGINAL
                 }
-            )?.let { return it }
+            )?.takeIf { exists(context, it) }?.let { return it }
         }
 
         findIndexedLyricReference(
@@ -103,7 +103,7 @@ internal object ManagedDownloadLyricStore {
             } else {
                 ManagedDownloadStorageNaming.LyricKind.ORIGINAL
             }
-        )?.let { return it }
+        )?.takeIf { exists(context, it) }?.let { return it }
         return metadataReference?.takeIf { exists(context, it) }
     }
 

@@ -143,7 +143,7 @@ class SystemPlaylistIdentityTest {
     }
 
     @Test
-    fun `local files merge skips metadata fallback duplicates`() {
+    fun `local files merge keeps distinct source references`() {
         val firstLocalSong = localFileSong(
             id = 1L,
             mediaUri = "content://media/external/audio/media/1"
@@ -160,8 +160,11 @@ class SystemPlaylistIdentityTest {
 
         val merged = LocalFilesPlaylist.merge(listOf(legacyLocalFiles), inertContext)
 
-        assertEquals(1, merged.songs.size)
-        assertEquals(firstLocalSong, merged.songs.single())
+        assertEquals(2, merged.songs.size)
+        assertEquals(
+            setOf(firstLocalSong.mediaUri, secondLocalSong.mediaUri),
+            merged.songs.map { it.mediaUri }.toSet()
+        )
     }
 
     @Test

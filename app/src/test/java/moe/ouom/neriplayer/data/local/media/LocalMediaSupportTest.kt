@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.media
 
+import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
@@ -12,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
 
 class LocalMediaSupportTest {
 
@@ -296,6 +298,23 @@ class LocalMediaSupportTest {
         assertEquals("Album", selection.album)
         assertEquals(false, selection.usesFallbackAlbum)
         assertEquals(0L, selection.durationMs)
+    }
+
+    @Test
+    fun `selectQuickLocalMetadata ignores provider placeholders`() {
+        val selection = LocalMediaSupport.selectQuickLocalMetadata(
+            title = "Track Name",
+            queriedArtist = "<unknown>",
+            queriedAlbum = "unknown album",
+            queriedDurationMs = 12_000L,
+            unknownArtistLabel = "Unknown Artist",
+            defaultAlbumLabel = "Local Files"
+        )
+
+        assertEquals("Unknown Artist", selection.artist)
+        assertEquals("Local Files", selection.album)
+        assertEquals(true, selection.usesFallbackAlbum)
+        assertEquals(12_000L, selection.durationMs)
     }
 
     @Test
@@ -699,6 +718,63 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `recreating deleted sidecars keeps an existing Lyrics directory authoritative`() {
+        val sourceDir = tempFolder.newFolder("lyrics-recreate-target")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val lyricsDirectory = File(sourceDir, "Lyrics").apply { mkdirs() }
+
+        val target = LocalMediaSupport.resolveLocalLyricsTargetDirectory(
+            file = audioFile,
+            nearby = NearbyLyricFiles(null, null, null)
+        )
+
+        assertEquals(lyricsDirectory.canonicalPath, target.canonicalPath)
+    }
+
+    @Test
+    fun `recreating managed download sidecars uses the managed Lyrics root`() {
+        val managedRoot = tempFolder.newFolder("managed-download")
+        val audioDirectory = File(managedRoot, "Artist").apply { mkdirs() }
+        val audioFile = File(audioDirectory, "song.flac").apply { writeText("audio") }
+        val expectedLyricsDirectory = File(managedRoot, "Lyrics")
+
+        val target = LocalMediaSupport.resolveLocalLyricsTargetDirectory(
+            file = audioFile,
+            nearby = NearbyLyricFiles(null, null, null),
+            legacyRoot = managedRoot,
+            isLegacyDownload = true
+        )
+
+        assertEquals(expectedLyricsDirectory.canonicalPath, target.canonicalPath)
+    }
+
+    @Test
+    fun `fast lyric cache follows an updated stored lyric model`() {
+        val sourceDir = tempFolder.newFolder("fast-lyrics-model-state")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val song = SongItem(
+            id = 14L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 120_000L,
+            coverUrl = null,
+            mediaUri = audioFile.toURI().toString(),
+            localFileName = audioFile.name,
+            localFilePath = audioFile.absolutePath,
+            matchedLyric = "first",
+            channelId = "local"
+        )
+
+        assertEquals("first", LocalMediaSupport.inspectLyricsFast(song).lyric)
+        assertEquals(
+            "second",
+            LocalMediaSupport.inspectLyricsFast(song.copy(matchedLyric = "second")).lyric
+        )
+    }
+
+    @Test
     fun `local metadata sidecar keeps fields independent and preserves existing values`() {
         val existing = """
             {"matchedLyric":"matched","originalLyric":"original",
@@ -726,6 +802,89 @@ class LocalMediaSupportTest {
         assertEquals(null, parsed?.originalTranslatedLyric)
         assertEquals("romanized", parsed?.matchedRomanizedLyric)
         assertEquals(true, org.json.JSONObject(updated).has("custom"))
+    }
+
+    @Test
+    fun `download metadata sidecar preserves identity fields for local scans`() {
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar(
+            "/tmp/song.mp3.npmeta.json",
+            """
+                {
+                  "name":"好想爱这个世界啊",
+                  "artist":"华晨宇",
+                  "album":"neriplayer-download",
+                  "originalName":"旧标题",
+                  "originalArtist":"旧歌手",
+                  "identityAlbum":"旧专辑"
+                }
+            """.trimIndent()
+        )
+
+        assertEquals("好想爱这个世界啊", parsed?.name)
+        assertEquals("华晨宇", parsed?.artist)
+        assertEquals("neriplayer-download", parsed?.album)
+    }
+
+    @Test
+    fun `fast local metadata sidecar lookup avoids opening the audio file`() {
+        val audio = tempFolder.newFile("song.mp3")
+        File(audio.parentFile, audio.name + ".npmeta.json").writeText(
+            """
+                {"name":"好想爱这个世界啊","artist":"华晨宇",
+                 "album":"neriplayer-download","channelId":"netease",
+                 "audioId":"123"}
+            """.trimIndent()
+        )
+        val song = SongItem(
+            id = 1L,
+            name = audio.nameWithoutExtension,
+            artist = "未知艺术家",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            mediaUri = audio.absolutePath,
+            localFileName = audio.name,
+            localFilePath = audio.absolutePath
+        )
+
+        val metadata = LocalMediaSupport.readLocalMetadataSidecarFast(
+            context = mock(Context::class.java),
+            song = song
+        )
+
+        assertEquals("华晨宇", metadata?.artist)
+        assertEquals("netease", metadata?.channelId)
+        assertEquals("123", metadata?.audioId)
+    }
+
+    @Test
+    fun `fast local metadata lookup falls back when an indexed reference was deleted`() {
+        val audio = tempFolder.newFile("song.mp3")
+        val adjacent = File(audio.parentFile, audio.name + ".npmeta.json").apply {
+            writeText("""{"artist":"华晨宇","name":"好想爱这个世界啊"}""")
+        }
+        val song = SongItem(
+            id = 1L,
+            name = audio.nameWithoutExtension,
+            artist = "未知艺术家",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            mediaUri = audio.absolutePath,
+            localFileName = audio.name,
+            localFilePath = audio.absolutePath
+        )
+
+        val metadata = LocalMediaSupport.readLocalMetadataSidecarFast(
+            context = mock(Context::class.java),
+            song = song,
+            metadataReference = File(audio.parentFile, "deleted.npmeta.json").absolutePath
+        )
+
+        assertEquals(adjacent.absolutePath, metadata?.reference)
+        assertEquals("华晨宇", metadata?.artist)
     }
 
     @Test

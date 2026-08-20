@@ -56,7 +56,7 @@ class SystemPlaylistSongDeduperTest {
     }
 
     @Test
-    fun `keeps first local song when metadata fallback matches`() {
+    fun `keeps distinct local sources when metadata fallback matches`() {
         val contentAlias = localSong(
             id = 1L,
             mediaUri = "content://media/external/audio/media/100"
@@ -70,7 +70,7 @@ class SystemPlaylistSongDeduperTest {
 
         val distinct = listOf(contentAlias, pathAlias).distinctSystemSongs()
 
-        assertEquals(listOf(contentAlias), distinct)
+        assertEquals(listOf(contentAlias, pathAlias), distinct)
     }
 
     @Test

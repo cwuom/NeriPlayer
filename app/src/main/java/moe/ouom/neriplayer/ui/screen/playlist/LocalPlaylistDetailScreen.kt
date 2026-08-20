@@ -1260,7 +1260,11 @@ fun LocalPlaylistDetailScreen(
             val totalDurationMs by remember(tabSongs) {
                 derivedStateOf { tabSongs.sumOf { it.durationMs } }
             }
-            val totalDurationText = formatTotalDuration(context, totalDurationMs)
+            val totalDurationText = if (tabSongs.any { it.durationMs <= 0L }) {
+                stringResource(R.string.local_playlist_duration_loading)
+            } else {
+                formatTotalDuration(context, totalDurationMs)
+            }
             val headerDisplayName = when {
                 isFavorites -> stringResource(R.string.favorite_my_music)
                 isLocalFilesPlaylist -> stringResource(R.string.local_files)

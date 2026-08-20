@@ -618,6 +618,7 @@
     <string name="local_playlist_export_to">导出到歌单</string>
     <string name="local_playlist_import_audio">导入本地音频</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d 首 · 播放 %3$s 次</string>
+    <string name="local_playlist_duration_loading">正在读取时长</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d 首</string>
     <string name="local_playlist_play_next">接下来播放…</string>
     <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>

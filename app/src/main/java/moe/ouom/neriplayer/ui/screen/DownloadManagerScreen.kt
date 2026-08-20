@@ -209,7 +209,7 @@ fun DownloadManagerScreen(
                     IconButton(
                         onClick = {
                             context.performHapticFeedback()
-                            viewModel.refreshDownloadedSongs()
+                            viewModel.refreshDownloadedSongs(forceRefresh = true)
                         }
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.action_refresh))

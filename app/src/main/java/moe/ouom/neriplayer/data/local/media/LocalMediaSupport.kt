@@ -96,6 +96,7 @@ private const val DOCUMENT_CHILDREN_CACHE_LIMIT = 512
 private const val DOCUMENT_CHILDREN_CACHE_TTL_MS = 750L
 private const val DOCUMENT_NAVIGATION_CACHE_LIMIT = 512
 private const val LOCAL_LYRICS_PERF_LOG_LIMIT = 96
+private const val MAX_MEDIASTORE_DURATION_QUERY_IDS = 400
 private const val MAX_EDITABLE_COVER_BYTES = 8L * 1024L * 1024L
 private const val MAX_EMBEDDED_COVER_CACHE_BYTES = 1024 * 1024
 private const val MAX_EMBEDDED_COVER_CACHE_DIMENSION_PX = 512
@@ -110,6 +111,18 @@ private val EDITABLE_COVER_JPEG_QUALITIES = intArrayOf(95, 90, 85, 80, 75, 70, 6
 private const val STAGED_METADATA_WRITE_DIRECTORY = "staged_metadata_writes"
 private const val LOCAL_METADATA_SUFFIX = ".npmeta.json"
 private const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
+private val LOCAL_METADATA_PLACEHOLDERS = setOf(
+    "<unknown>",
+    "<unknown artist>",
+    "<unknown album>",
+    "unknown",
+    "unknown artist",
+    "unknown album",
+    "未知",
+    "未知歌手",
+    "未知艺术家",
+    "未知专辑"
+)
 private val STAGED_CONTENT_REWRITE_EXTENSIONS = setOf(
     "aac", "aif", "aiff", "ape", "flac", "m4a", "m4b", "mp3", "mp4",
     "ogg", "opus", "tta", "wav", "wv"
@@ -213,6 +226,23 @@ private data class DirectLocalLyricsInspection(
 
 internal data class LocalMetadataSidecar(
     val reference: String,
+    val name: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val customName: String? = null,
+    val customArtist: String? = null,
+    val originalName: String? = null,
+    val originalArtist: String? = null,
+    val stableKey: String? = null,
+    val songId: Long? = null,
+    val channelId: String? = null,
+    val audioId: String? = null,
+    val subAudioId: String? = null,
+    val playlistContextId: String? = null,
+    val coverUrl: String? = null,
+    val originalCoverUrl: String? = null,
+    val customCoverUrl: String? = null,
+    val durationMs: Long = 0L,
     val hasLyricOverride: Boolean,
     val hasTranslatedLyricOverride: Boolean,
     val hasRomanizedLyricOverride: Boolean,
@@ -630,12 +660,10 @@ object LocalMediaSupport {
         defaultAlbumLabel: String
     ): QuickLocalMetadataSelection {
         val artist = queriedArtist
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+            .takeMeaningfulLocalMetadata()
             ?: unknownArtistLabel
         val album = queriedAlbum
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+            .takeMeaningfulLocalMetadata()
         val resolvedAlbum = album ?: defaultAlbumLabel
         return QuickLocalMetadataSelection(
             title = title,
@@ -1012,28 +1040,31 @@ object LocalMediaSupport {
         )
         if (file != null) {
             val nearby = findNearbyLyricFiles(file)
-            val parent = file.parentFile ?: return false
             val legacyRoot = File(LEGACY_DOWNLOAD_ROOT)
             val isLegacyDownload = runCatching {
                 isFileInsideDirectory(file, legacyRoot)
             }.getOrDefault(false)
-            val targetDirectory = when {
-                nearby.original?.parentFile != null -> nearby.original.parentFile
-                nearby.translated?.parentFile != null -> nearby.translated.parentFile
-                nearby.romanized?.parentFile != null -> nearby.romanized.parentFile
-                isLegacyDownload -> File(legacyRoot, "Lyrics")
-                else -> parent
-            }
+            val targetDirectory = resolveLocalLyricsTargetDirectory(
+                file = file,
+                nearby = nearby,
+                legacyRoot = legacyRoot,
+                isLegacyDownload = isLegacyDownload
+            )
             val needsDirectory = contents.any { (_, content) -> content != null }
             if (needsDirectory && !targetDirectory.exists() && !targetDirectory.mkdirs()) {
                 return false
+            }
+            fun isInTargetDirectory(candidate: File): Boolean {
+                return runCatching {
+                    candidate.canonicalFile.parentFile == targetDirectory.canonicalFile
+                }.getOrDefault(false)
             }
             val written = contents.all { (kind, content) ->
                 val existing = when (kind) {
                     LyricKind.ORIGINAL -> nearby.original
                     LyricKind.TRANSLATED -> nearby.translated
                     LyricKind.ROMANIZED -> nearby.romanized
-                }
+                }?.takeIf(::isInTargetDirectory)
                 if (content == null) {
                     // null means the caller did not change this lyric field
                     return@all true
@@ -1087,6 +1118,28 @@ object LocalMediaSupport {
         }
         clearLyricsLookupCache()
         return written
+    }
+
+    internal fun resolveLocalLyricsTargetDirectory(
+        file: File,
+        nearby: NearbyLyricFiles,
+        legacyRoot: File = File(LEGACY_DOWNLOAD_ROOT),
+        isLegacyDownload: Boolean = runCatching {
+            isFileInsideDirectory(file, legacyRoot)
+        }.getOrDefault(false)
+    ): File {
+        val parent = file.parentFile ?: return file
+        if (isLegacyDownload) {
+            return File(legacyRoot, "Lyrics")
+        }
+        val lyricsDirectory = File(parent, "Lyrics")
+        if (lyricsDirectory.isDirectory) {
+            return lyricsDirectory
+        }
+        return nearby.original?.parentFile
+            ?: nearby.translated?.parentFile
+            ?: nearby.romanized?.parentFile
+            ?: parent
     }
 
     private fun ensureDocumentLyricReferences(
@@ -1287,7 +1340,8 @@ object LocalMediaSupport {
             song = song,
             includeStoredFallback = includeStoredFallback,
             includeEmbeddedFallback = false,
-            knownSidecarReferences = null
+            knownSidecarReferences = null,
+            forceRefresh = false
         )
     }
 
@@ -1296,9 +1350,13 @@ object LocalMediaSupport {
         song: SongItem,
         includeStoredFallback: Boolean = true,
         includeEmbeddedFallback: Boolean = context != null,
-        knownSidecarReferences: LocalKnownSidecarReferences? = null
+        knownSidecarReferences: LocalKnownSidecarReferences? = null,
+        forceRefresh: Boolean = false
     ): LocalLyricsScanMetadata {
         val startedAt = SystemClock.elapsedRealtime()
+        if (forceRefresh) {
+            clearLyricsLookupCache()
+        }
         val stored = if (includeStoredFallback) {
             LocalLyricsScanMetadata(
                 lyric = song.matchedLyric ?: song.originalLyric,
@@ -1340,7 +1398,7 @@ object LocalMediaSupport {
             includeEmbeddedFallback = includeEmbeddedFallback,
             includeStoredFallback = includeStoredFallback
         )
-        if (cacheable) {
+        if (cacheable && !forceRefresh) {
                 synchronized(localLyricsLookupCache) {
                 localLyricsLookupCache[cacheKey]?.let { cached ->
                     if (System.currentTimeMillis() - cached.cachedAtMs <= LOCAL_LYRICS_CACHE_TTL_MS) {
@@ -1443,7 +1501,7 @@ object LocalMediaSupport {
                 embeddedSource = embedded != null
             )
         )
-        if (cacheable) {
+        if (cacheable && !forceRefresh) {
             synchronized(localLyricsLookupCache) {
                 localLyricsLookupCache[cacheKey] = LocalLyricsCacheEntry(
                     value = result,
@@ -1716,9 +1774,23 @@ object LocalMediaSupport {
             source?.toString(),
             includeEmbeddedFallback,
             includeStoredFallback,
+            localLyricsModelState(song),
             localFileState,
             localLyricsCacheState(localFile)
         ).joinToString("|")
+    }
+
+    private fun localLyricsModelState(song: SongItem): String {
+        return listOf(
+            song.matchedLyric,
+            song.matchedTranslatedLyric,
+            song.matchedRomanizedLyric,
+            song.originalLyric,
+            song.originalTranslatedLyric,
+            song.originalRomanizedLyric
+        ).joinToString("|") { value ->
+            value?.let { "${it.length}:${it.hashCode()}" }.orEmpty()
+        }
     }
 
     private fun localLyricsCacheState(localFile: File?): String {
@@ -2273,6 +2345,82 @@ object LocalMediaSupport {
         )
     }
 
+    /**
+     * reads only the duration exposed by the provider or audio track header
+     */
+    fun resolveDurationFast(context: Context, uri: Uri): Long {
+        val queriedDuration = runCatching {
+            queryContentInfo(context, uri).durationMs
+        }.getOrNull()?.takeIf { it > 0L }
+        if (queriedDuration != null) {
+            return queriedDuration
+        }
+        return runCatching {
+            inspectAudioTrackInfo(context, uri)?.durationMs ?: 0L
+        }.getOrDefault(0L)
+    }
+
+    fun resolveMediaStoreDurationsFast(
+        context: Context,
+        sources: List<Uri>
+    ): Map<String, Long> {
+        val sourcesByCollection = sources.asSequence()
+            .filter(::isMediaStoreUri)
+            .mapNotNull { source ->
+                val id = source.lastPathSegment
+                    ?.toLongOrNull()
+                    ?.takeIf { it > 0L }
+                    ?: return@mapNotNull null
+                val collectionUri = source.mediaStoreAudioCollectionUri() ?: return@mapNotNull null
+                collectionUri to (id to source.toString())
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, entries) -> entries.toMap() }
+        if (sourcesByCollection.isEmpty()) return emptyMap()
+
+        val result = HashMap<String, Long>(sourcesByCollection.values.sumOf { it.size })
+        sourcesByCollection.forEach { (audioUri, sourceById) ->
+            sourceById.keys.chunked(MAX_MEDIASTORE_DURATION_QUERY_IDS).forEach { ids ->
+                runCatching {
+                    val placeholders = ids.joinToString(",") { "?" }
+                    context.contentResolver.query(
+                        audioUri,
+                        arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DURATION),
+                        "${MediaStore.Audio.Media._ID} IN ($placeholders)",
+                        ids.map(Long::toString).toTypedArray(),
+                        null
+                    )?.use { cursor ->
+                        val idIndex = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                        val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                        if (idIndex < 0 || durationIndex < 0) return@use
+                        while (cursor.moveToNext()) {
+                            val durationMs = cursor.getLong(durationIndex)
+                                .takeIf { it > 0L }
+                                ?: continue
+                            sourceById[cursor.getLong(idIndex)]?.let { source ->
+                                result[source] = durationMs
+                            }
+                        }
+                    }
+                }.onFailure { error ->
+                    NPLogger.d(
+                        TAG,
+                        "bulk MediaStore duration query unavailable for $audioUri: " +
+                            error.message
+                    )
+                }
+            }
+        }
+        return result
+    }
+
+    private fun Uri.mediaStoreAudioCollectionUri(): Uri? {
+        val path = path ?: return null
+        val collectionPath = path.substringBeforeLast('/', missingDelimiterValue = "")
+        if (collectionPath.isBlank()) return null
+        return buildUpon().path(collectionPath).build()
+    }
+
     fun inspectForScan(context: Context, uri: Uri): LocalMediaDetails {
         val resolved = resolveInspectableLocalMedia(
             context = context,
@@ -2290,28 +2438,33 @@ object LocalMediaSupport {
             includeEmbeddedLyrics = true,
             includeAudioProperties = file != null
         )
-        val title = pickReadableLocalTitle(
-            sourceUri = uri,
-            fallbackTitle = resolved.fallbackTitle,
-            tagLibMetadata?.title,
-            containerMetadata?.title,
-            queried.title
-        ) ?: resolved.fallbackTitle
-        val artist = tagLibMetadata?.artist
-            ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-            ?: queried.artist?.takeIf { it.isNotBlank() }
-            ?: context.getString(R.string.music_unknown_artist)
-        val album = tagLibMetadata?.album
-            ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
-            ?: queried.album?.takeIf { it.isNotBlank() }
-        val usesFallbackAlbum = album == null
-        val nearbyCover = findNearbyCover(file)
         val localMetadata = readLocalMetadataSidecar(
             context = context,
             sourceUri = uri,
             file = file,
             displayName = resolved.displayName
         )
+        val title = pickReadableLocalTitle(
+            sourceUri = uri,
+            fallbackTitle = resolved.fallbackTitle,
+            tagLibMetadata?.title,
+            containerMetadata?.title,
+            queried.title,
+            localMetadata?.customName,
+            localMetadata?.name
+        ) ?: resolved.fallbackTitle
+        val artist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: queried.artist.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: context.getString(R.string.music_unknown_artist)
+        val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+            ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
+            ?: queried.album.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.album.takeMeaningfulLocalMetadata()
+        val usesFallbackAlbum = album == null
+        val nearbyCover = findNearbyCover(file)
         val nearbyLyricFiles = findNearbyLyricFiles(file)
         val nearbyLyricReferences = findNearbyLyricReferences(
             context = context,
@@ -2403,9 +2556,11 @@ object LocalMediaSupport {
                 else -> null
             },
             originalTitle = title,
-            originalArtist = tagLibMetadata?.artist
-                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-                ?: queried.artist?.takeIf { it.isNotBlank() }
+            originalArtist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: queried.artist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: artist,
             embeddedCover = false,
             sourceStableKey = tagLibMetadata?.sourceStableKey,
@@ -2524,32 +2679,37 @@ object LocalMediaSupport {
             includeAudioProperties = false
         )
         val retrieverMetadata = readRetrieverTextMetadata(context, resolved.playableUri)
-        val title = pickReadableLocalTitle(
-            sourceUri = uri,
-            fallbackTitle = resolved.fallbackTitle,
-            tagLibMetadata?.title,
-            retrieverMetadata.title,
-            containerMetadata?.title,
-            queried.title
-        ) ?: resolved.fallbackTitle
-        val artist = tagLibMetadata?.artist
-            ?: retrieverMetadata.artist
-            ?: retrieverMetadata.albumArtist
-            ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-            ?: queried.artist?.takeIf { it.isNotBlank() }
-            ?: context.getString(R.string.music_unknown_artist)
-        val album = tagLibMetadata?.album
-            ?: retrieverMetadata.album
-            ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
-            ?: queried.album?.takeIf { it.isNotBlank() }
-        val usesFallbackAlbum = album == null
-        val resolvedAlbum = album ?: context.getString(R.string.local_files)
         val localMetadata = readLocalMetadataSidecar(
             context = context,
             sourceUri = uri,
             file = file,
             displayName = resolved.displayName
         )
+        val title = pickReadableLocalTitle(
+            sourceUri = uri,
+            fallbackTitle = resolved.fallbackTitle,
+            tagLibMetadata?.title,
+            retrieverMetadata.title,
+            containerMetadata?.title,
+            queried.title,
+            localMetadata?.customName,
+            localMetadata?.name
+        ) ?: resolved.fallbackTitle
+        val artist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: retrieverMetadata.artist.takeMeaningfulLocalMetadata()
+            ?: retrieverMetadata.albumArtist.takeMeaningfulLocalMetadata()
+            ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: queried.artist.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
+            ?: context.getString(R.string.music_unknown_artist)
+        val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+            ?: retrieverMetadata.album.takeMeaningfulLocalMetadata()
+            ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
+            ?: queried.album.takeMeaningfulLocalMetadata()
+            ?: localMetadata?.album.takeMeaningfulLocalMetadata()
+        val usesFallbackAlbum = album == null
+        val resolvedAlbum = album ?: context.getString(R.string.local_files)
         val nearbyLyricFiles = findNearbyLyricFiles(file)
         val nearbyLyricReferences = findNearbyLyricReferences(
             context = context,
@@ -2661,10 +2821,12 @@ object LocalMediaSupport {
                 else -> null
             },
             originalTitle = title,
-            originalArtist = tagLibMetadata?.artist
-                ?: retrieverMetadata.artist
-                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-                ?: queried.artist?.takeIf { it.isNotBlank() }
+            originalArtist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: retrieverMetadata.artist.takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: queried.artist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: artist,
             embeddedCover = false,
             sourceStableKey = tagLibMetadata?.sourceStableKey,
@@ -2914,22 +3076,27 @@ object LocalMediaSupport {
                 tagLibMetadata?.title,
                 retrieverTitle,
                 containerMetadata?.title,
-                queried.title
+                queried.title,
+                localMetadata?.customName,
+                localMetadata?.name
             )
             val title = rawTitle ?: fallbackTitle
-            val artist = tagLibMetadata?.artist
+            val artist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                ?.takeIf { it.isNotBlank() }
+                    .takeMeaningfulLocalMetadata()
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
-                    ?.takeIf { it.isNotBlank() }
-                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-                ?: queried.artist?.takeIf { it.isNotBlank() }
+                    .takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: queried.artist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: context.getString(R.string.music_unknown_artist)
-            val album = tagLibMetadata?.album
+            val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                    ?.takeIf { it.isNotBlank() }
-                ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
-                ?: queried.album?.takeIf { it.isNotBlank() }
+                    .takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
+                ?: queried.album.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.album.takeMeaningfulLocalMetadata()
             val usesFallbackAlbum = album == null
             val resolvedAlbum = album ?: context.getString(R.string.local_files)
             val albumArtist = tagLibMetadata?.albumArtist
@@ -3046,7 +3213,12 @@ object LocalMediaSupport {
                 translatedLyricContent = effectiveTranslatedLyricContent,
                 romanizedLyricContent = effectiveRomanizedLyricContent,
                 originalTitle = title,
-                originalArtist = tagLibMetadata?.artist ?: containerMetadata?.artist ?: queried.artist ?: artist,
+                originalArtist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+                    ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                    ?: queried.artist.takeMeaningfulLocalMetadata()
+                    ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                    ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
+                    ?: artist,
                 embeddedCover = embeddedCover || tagLibCoverUri != null,
                 sourceStableKey = tagLibMetadata?.sourceStableKey
             )
@@ -3057,16 +3229,21 @@ object LocalMediaSupport {
                 fallbackTitle = fallbackTitle,
                 tagLibMetadata?.title,
                 containerMetadata?.title,
-                queried.title
+                queried.title,
+                localMetadata?.customName,
+                localMetadata?.name
             )
             val title = rawTitle ?: fallbackTitle
-            val artist = tagLibMetadata?.artist
-                ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-                ?: queried.artist?.takeIf { it.isNotBlank() }
+            val artist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                ?: queried.artist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                 ?: context.getString(R.string.music_unknown_artist)
-            val album = tagLibMetadata?.album
-                ?: containerMetadata?.album?.takeIf { it.isNotBlank() }
-                ?: queried.album?.takeIf { it.isNotBlank() }
+            val album = tagLibMetadata?.album.takeMeaningfulLocalMetadata()
+                ?: containerMetadata?.album.takeMeaningfulLocalMetadata()
+                ?: queried.album.takeMeaningfulLocalMetadata()
+                ?: localMetadata?.album.takeMeaningfulLocalMetadata()
             val usesFallbackAlbum = album == null
             val resolvedAlbum = album ?: context.getString(R.string.local_files)
             val tagLibCoverUri = tagLibMetadata?.coverBytes
@@ -3118,9 +3295,11 @@ object LocalMediaSupport {
                 translatedLyricContent = effectiveTranslatedLyricContent,
                 romanizedLyricContent = effectiveRomanizedLyricContent,
                 originalTitle = title,
-                originalArtist = tagLibMetadata?.artist
-                    ?: containerMetadata?.artist?.takeIf { it.isNotBlank() }
-                    ?: queried.artist?.takeIf { it.isNotBlank() }
+                originalArtist = tagLibMetadata?.artist.takeMeaningfulLocalMetadata()
+                    ?: containerMetadata?.artist.takeMeaningfulLocalMetadata()
+                    ?: queried.artist.takeMeaningfulLocalMetadata()
+                    ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
+                    ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                     ?: artist,
                 embeddedCover = tagLibCoverUri != null,
                 sourceStableKey = tagLibMetadata?.sourceStableKey
@@ -3404,8 +3583,71 @@ object LocalMediaSupport {
             file = file,
             displayName = displayName
         ) ?: return null
-        val raw = readTextContent(context, reference) ?: return null
-        return parseLocalMetadataSidecar(reference, raw)
+        readTextContent(context, reference)
+            ?.let { raw -> parseLocalMetadataSidecar(reference, raw) }
+            ?.let { return it }
+
+        // SAF 文件可能同时暴露出不可直接读取的绝对路径, 失败后重新走文档树
+        if (sourceUri.scheme.equals("content", ignoreCase = true) && file != null) {
+            val documentReference = resolveLocalMetadataReference(
+                context = context,
+                sourceUri = sourceUri,
+                file = null,
+                displayName = displayName
+            )?.takeUnless { it == reference }
+            if (documentReference != null) {
+                readTextContent(context, documentReference)
+                    ?.let { raw -> parseLocalMetadataSidecar(documentReference, raw) }
+                    ?.let { return it }
+            }
+        }
+        return null
+    }
+
+    internal fun readLocalMetadataSidecarFast(
+        context: Context,
+        song: SongItem,
+        metadataReference: String? = null
+    ): LocalMetadataSidecar? {
+        val explicitReference = metadataReference
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (explicitReference != null) {
+            readTextContent(context, explicitReference)
+                ?.let { raw -> parseLocalMetadataSidecar(explicitReference, raw) }
+                ?.let { return it }
+        }
+
+        val file = song.localFilePath
+            ?.takeIf { it.isNotBlank() && !it.startsWith("content://", ignoreCase = true) }
+            ?.let(::File)
+            ?.takeIf(File::isFile)
+        if (file != null) {
+            val reference = File(
+                file.parentFile ?: return null,
+                file.name + LOCAL_METADATA_SUFFIX
+            ).takeIf(File::isFile)?.absolutePath
+            if (reference != null) {
+                readTextContent(context, reference)
+                    ?.let { raw -> parseLocalMetadataSidecar(reference, raw) }
+                    ?.let { return it }
+            }
+        }
+
+        val sourceUri = song.localMediaUri() ?: return null
+        val resolved = runCatching {
+            resolveInspectableLocalMedia(
+                context = context,
+                uri = sourceUri,
+                allowDescriptorFallback = false
+            )
+        }.getOrNull() ?: return null
+        return readLocalMetadataSidecar(
+            context = context,
+            sourceUri = sourceUri,
+            file = resolved.file,
+            displayName = resolved.displayName
+        )
     }
 
     internal fun parseLocalMetadataSidecar(
@@ -3416,6 +3658,24 @@ object LocalMediaSupport {
             val root = JSONObject(raw)
             LocalMetadataSidecar(
                 reference = reference,
+                name = root.optPresentLocalMetadataString("name"),
+                artist = root.optPresentLocalMetadataString("artist"),
+                album = root.optPresentLocalMetadataString("album")
+                    ?: root.optPresentLocalMetadataString("identityAlbum"),
+                customName = root.optPresentLocalMetadataString("customName"),
+                customArtist = root.optPresentLocalMetadataString("customArtist"),
+                originalName = root.optPresentLocalMetadataString("originalName"),
+                originalArtist = root.optPresentLocalMetadataString("originalArtist"),
+                stableKey = root.optPresentLocalMetadataString("stableKey"),
+                songId = root.optLong("songId").takeIf { root.has("songId") && it != 0L },
+                channelId = root.optPresentLocalMetadataString("channelId"),
+                audioId = root.optPresentLocalMetadataString("audioId"),
+                subAudioId = root.optPresentLocalMetadataString("subAudioId"),
+                playlistContextId = root.optPresentLocalMetadataString("playlistContextId"),
+                coverUrl = root.optPresentLocalMetadataString("coverUrl"),
+                originalCoverUrl = root.optPresentLocalMetadataString("originalCoverUrl"),
+                customCoverUrl = root.optPresentLocalMetadataString("customCoverUrl"),
+                durationMs = root.optLong("durationMs").coerceAtLeast(0L),
                 hasLyricOverride = root.has("matchedLyric") || root.has("originalLyric"),
                 hasTranslatedLyricOverride = root.has("matchedTranslatedLyric") ||
                     root.has("originalTranslatedLyric"),
@@ -5748,7 +6008,19 @@ object LocalMediaSupport {
         return candidates.firstNotNullOfOrNull { candidate ->
             candidate
                 ?.trim()
-                ?.takeIf { it.isNotBlank() && isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle) }
+                ?.takeIf {
+                    it.isNotBlank() &&
+                        it.takeMeaningfulLocalMetadata() != null &&
+                        isReadableLocalTitleCandidate(it, sourceUri, fallbackTitle)
+                }
+        }
+    }
+
+    private fun String?.takeMeaningfulLocalMetadata(): String? {
+        val value = this?.trim().orEmpty()
+        if (value.isBlank()) return null
+        return value.takeUnless {
+            it.lowercase(Locale.ROOT) in LOCAL_METADATA_PLACEHOLDERS
         }
     }
 

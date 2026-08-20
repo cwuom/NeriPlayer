@@ -84,6 +84,16 @@ data class LocalFilesDownloadedSongDeleteUiResult(
     val notDeletedCount: Int
 )
 
+internal fun shouldScheduleLocalDurationRefresh(song: SongItem): Boolean {
+    if (song.durationMs > 0L) return false
+    return song.localFilePath?.isNotBlank() == true ||
+        song.mediaUri?.let { reference ->
+            reference.startsWith("content://", ignoreCase = true) ||
+                reference.startsWith("file://", ignoreCase = true) ||
+                reference.startsWith("/")
+        } == true
+}
+
 data class LocalScanPreviewState(
     val visible: Boolean = false,
     val isScanning: Boolean = false,
@@ -159,7 +169,8 @@ internal fun applyHydratedSongsToScanPreview(
     state: LocalScanPreviewState,
     hydratedSongs: List<SongItem?>,
     progress: LocalAudioScanProgress,
-    startIndex: Int = 0
+    startIndex: Int = 0,
+    targetKeys: List<String>? = null
 ): LocalScanPreviewState {
     require(startIndex >= 0) { "startIndex must be non-negative" }
     val resolvedProgress = if (state.scanProgress.processed > progress.processed) {
@@ -177,7 +188,11 @@ internal fun applyHydratedSongsToScanPreview(
     var duplicateMetadataKeys = state.duplicateMetadataKeys
     var metadataPendingKeys = state.metadataPendingKeys
     hydratedSongs.forEachIndexed { index, hydratedSong ->
-        val targetIndex = startIndex + index
+        val targetIndex = targetKeys
+            ?.getOrNull(index)
+            ?.let { key -> updatedSongs.indexOfFirst { it.stableKey() == key } }
+            ?.takeIf { it >= 0 }
+            ?: (startIndex + index)
         if (hydratedSong == null || targetIndex !in updatedSongs.indices) {
             return@forEachIndexed
         }
@@ -297,7 +312,7 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private companion object {
         const val TAG = "LocalPlaylistScanVM"
         const val SCAN_PREVIEW_HYDRATION_BATCH_SIZE = 32
-        const val SCAN_PREVIEW_HYDRATION_PARALLELISM = 4
+        const val SCAN_PREVIEW_HYDRATION_PARALLELISM = 8
     }
 
     private val app = application
@@ -316,15 +331,16 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
     private var playlistCollectJob: Job? = null
     private var scanJob: Job? = null
     private var scanPreviewHydrationJob: Job? = null
-    private var localMetadataRefreshJob: Job? = null
-    private val localMetadataRefreshLock = Any()
-    private val pendingLocalMetadataRefresh = LinkedHashMap<String, SongItem>()
+    private var localDurationRefreshJob: Job? = null
     private var scanSessionId: Long = 0L
 
     fun start(id: Long) {
         if (playlistId == id && _uiState.value.playlist?.id == id) return
         playlistId = id
         playlistCollectJob?.cancel()
+        localDurationRefreshJob?.cancel()
+        localDurationRefreshJob = null
+        _metadataProcessingState.value = LocalMetadataProcessingState()
         _uiState.value = LocalPlaylistDetailUiState(requestedPlaylistId = id)
         playlistCollectJob = viewModelScope.launch {
             launch {
@@ -348,16 +364,16 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 )
                 return@launch
             }
-            var initialLocalRefreshScheduled = false
+            var initialLocalDurationRefreshScheduled = false
             repo.playlists.collect { list ->
                 val resolvedPlaylist = list.firstOrNull { it.id == id }
                 if (
-                    !initialLocalRefreshScheduled &&
+                    !initialLocalDurationRefreshScheduled &&
                     resolvedPlaylist != null &&
                     LocalFilesPlaylist.isSystemPlaylist(resolvedPlaylist, app)
                 ) {
-                    initialLocalRefreshScheduled = true
-                    scheduleLocalMetadataRefresh(resolvedPlaylist.songs)
+                    initialLocalDurationRefreshScheduled = true
+                    scheduleMissingLocalDurationRefresh(resolvedPlaylist.songs)
                 }
                 _uiState.value = LocalPlaylistDetailUiState(
                     playlist = resolvedPlaylist,
@@ -570,28 +586,23 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         songs: List<SongItem>
     ) {
         scanPreviewHydrationJob?.cancel()
-        if (songs.isEmpty()) return
+        val candidates = songs.filter(::shouldHydrateScanPreviewMetadata)
+        if (candidates.isEmpty()) return
 
         val hydrationDispatcher = Dispatchers.IO.limitedParallelism(
             SCAN_PREVIEW_HYDRATION_PARALLELISM
         )
         scanPreviewHydrationJob = viewModelScope.launch {
             try {
-                val batches = songs.chunked(SCAN_PREVIEW_HYDRATION_BATCH_SIZE)
-                var hydratedOffset = 0
+                val batches = candidates.chunked(SCAN_PREVIEW_HYDRATION_BATCH_SIZE)
                 batches.forEach { batch ->
                     val hydrated = coroutineScope {
                         batch.map { song ->
                             async(hydrationDispatcher) {
                                 try {
-                                    val coverHydrated =
-                                        LocalAudioImportManager.hydrateLocalSongCoverMetadata(
-                                            context = app,
-                                            song = song
-                                        )
-                                    LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                    LocalAudioImportManager.hydrateLocalSongIdentityMetadata(
                                         context = app,
-                                        song = coverHydrated
+                                        song = song
                                     )
                                 } catch (error: CancellationException) {
                                     throw error
@@ -616,9 +627,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                         state = _scanPreviewState.value,
                         hydratedSongs = hydrated,
                         progress = _scanPreviewState.value.scanProgress,
-                        startIndex = hydratedOffset
+                        targetKeys = batch.map(SongItem::stableKey)
                     )
-                    hydratedOffset += batch.size
                 }
             } finally {
                 if (scanPreviewHydrationJob === coroutineContext[Job]) {
@@ -693,50 +703,19 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         }
     }
 
-    private fun scheduleLocalMetadataRefresh(songs: List<SongItem>) {
+    private fun scheduleMissingLocalDurationRefresh(songs: List<SongItem>) {
         val candidates = songs
             .distinctBy(SongItem::stableKey)
-            .filter { song ->
-                song.durationMs <= 0L ||
-                    song.coverUrl.isNullOrBlank()
-            }
-            .filter { it.localFilePath?.isNotBlank() == true || it.mediaUri?.startsWith("content://") == true }
+            .filter(::shouldScheduleLocalDurationRefresh)
         if (candidates.isEmpty()) return
-        synchronized(localMetadataRefreshLock) {
-            val merged = mergeLocalMetadataRefreshCandidates(
-                pending = pendingLocalMetadataRefresh,
-                incoming = candidates
-            )
-            pendingLocalMetadataRefresh.clear()
-            pendingLocalMetadataRefresh.putAll(merged)
-            if (localMetadataRefreshJob?.isActive != true) {
-                localMetadataRefreshJob = viewModelScope.launch {
-                    drainLocalMetadataRefreshQueue()
+        localDurationRefreshJob?.cancel()
+        localDurationRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                repo.refreshMissingLocalSongDurations(candidates)
+            }.onFailure { error ->
+                if (error !is CancellationException) {
+                    NPLogger.w(TAG, "后台补全本地歌曲时长失败: ${error.message}")
                 }
-            }
-        }
-    }
-
-    private suspend fun drainLocalMetadataRefreshQueue() {
-        while (true) {
-            val batch = synchronized(localMetadataRefreshLock) {
-                if (pendingLocalMetadataRefresh.isEmpty()) {
-                    localMetadataRefreshJob = null
-                    return
-                }
-                pendingLocalMetadataRefresh.values.toList().also {
-                    pendingLocalMetadataRefresh.clear()
-                }
-            }
-            try {
-                repo.refreshScannedLocalSongMetadata(
-                    songs = batch,
-                    includeLyricContents = true
-                )
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                NPLogger.w(TAG, "后台补全本地歌曲元数据失败: ${error.message}")
             }
         }
     }
@@ -941,6 +920,27 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
             song.album.isMeaningfulAlbum(app) ||
             !song.coverUrl.isNullOrBlank() ||
             !song.originalCoverUrl.isNullOrBlank()
+    }
+
+    private fun shouldHydrateScanPreviewMetadata(song: SongItem): Boolean {
+        // 文件名或下载 metadata 已经给出有效身份时, 不再为首屏重复打开音频容器
+        val unknownArtist = app.getString(moe.ouom.neriplayer.R.string.music_unknown_artist)
+        val artistNeedsRepair = song.artist.trim().let { artist ->
+            artist.isBlank() ||
+                artist.equals(unknownArtist, ignoreCase = true) ||
+                artist.equals("<unknown>", ignoreCase = true) ||
+                artist.equals("<unknown artist>", ignoreCase = true) ||
+                artist.equals("unknown artist", ignoreCase = true) ||
+                artist.equals("未知艺术家", ignoreCase = true)
+        }
+        if (!artistNeedsRepair && hasMeaningfulScanMetadata(song)) return false
+        val fileTitle = song.localFileName
+            ?.substringBeforeLast('.', song.localFileName)
+            ?.trim()
+            .orEmpty()
+        return artistNeedsRepair ||
+            song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY ||
+            (fileTitle.isNotBlank() && song.name.trim().equals(fileTitle, ignoreCase = true))
     }
 }
 

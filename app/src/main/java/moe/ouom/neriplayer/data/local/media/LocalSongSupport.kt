@@ -105,7 +105,8 @@ object LocalSongSupport {
                 ?.takeIf { it.isNotBlank() }
                 ?.let { add("source:$it") }
 
-            if (includeMetadataFallback) {
+            // 元信息只能识别历史上丢失来源引用的条目, 不能把两个真实文件合并
+            if (includeMetadataFallback && isEmpty()) {
                 addMetadataFallbackKeys(song)
             }
         }

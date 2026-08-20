@@ -83,10 +83,10 @@ internal fun resolveRestoredBaseCoverUrl(
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
     val baseCover = baseCoverUrl
-            ?.trim()
-            ?.takeIf { it.isNotBlank() && it != customCover }
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it != customCover }
     return originalCover ?: baseCover ?: customCover.takeIf {
-        originalCoverUrl.isNullOrBlank() && baseCoverUrl.isNullOrBlank()
+        originalCover == null && baseCover == null
     }
 }
 

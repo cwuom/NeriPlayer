@@ -232,6 +232,7 @@ class LocalAudioImportSafLyricsTest {
 
             assertEquals(0, result.failedCount)
             assertEquals(audioCount, result.songs.size)
+            assertTrue(result.metadataDeferred)
             assertEquals(0, queryCount)
             assertTrue(
                 "large SAF scan took ${elapsedMs}ms",

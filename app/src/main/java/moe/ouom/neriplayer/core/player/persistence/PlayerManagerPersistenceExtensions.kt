@@ -73,6 +73,7 @@ import moe.ouom.neriplayer.util.io.writeTextAtomically
 import java.io.File
 import java.lang.reflect.Type
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
 
@@ -94,6 +95,7 @@ internal data class RestoredPlayerStateSnapshot(
 private val songMetadataRequestCoordinator = SongMetadataRequestCoordinator()
 private val songMetadataMutationMutex = Mutex()
 private val favoriteMutationMutex = Mutex()
+private val localEditableMetadataWriteLocks = ConcurrentHashMap<String, Mutex>()
 
 private data class LocalMetadataWritePlaybackSnapshot(
     val song: SongItem,
@@ -1795,78 +1797,83 @@ private fun PlayerManager.scheduleLocalEditableMetadataWrite(
     preserveOriginalCover: Boolean = false
 ) {
     ioScope.launch {
-        val preparedSong = try {
-            prepareLocalEditableMetadataSong(
-                originalSong = originalSong,
-                updatedSong = song,
-                preserveOriginalCover = preserveOriginalCover
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(
-                "PlayerManager",
-                "后台准备本地原始封面失败: ${error.message}"
-            )
-            song
+        val writeLock = localEditableMetadataWriteLocks.computeIfAbsent(song.stableKey()) {
+            Mutex()
         }
+        writeLock.withLock {
+            val preparedSong = try {
+                prepareLocalEditableMetadataSong(
+                    originalSong = originalSong,
+                    updatedSong = song,
+                    preserveOriginalCover = preserveOriginalCover
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    "PlayerManager",
+                    "后台准备本地原始封面失败: ${error.message}"
+                )
+                song
+            }
 
-        if (preparedSong != song) {
-            runSongMetadataMutation {
-                runCatching {
-                    updateSongInAllPlaces(
-                        originalSong = song,
-                        updatedSong = preparedSong,
-                        triggerSync = true,
-                        syncDownloadedMetadata = false,
-                        fastLocalUsageSync = true,
-                        deferPersistence = true
+            if (preparedSong != song) {
+                runSongMetadataMutation {
+                    runCatching {
+                        updateSongInAllPlaces(
+                            originalSong = song,
+                            updatedSong = preparedSong,
+                            triggerSync = true,
+                            syncDownloadedMetadata = false,
+                            fastLocalUsageSync = true,
+                            deferPersistence = true
+                        )
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            "PlayerManager",
+                            "后台发布原始封面失败: ${error.message}",
+                            error
+                        )
+                    }
+                }
+            }
+
+            val outcome = try {
+                runSongMetadataMutation {
+                    writeLocalEditableMetadata(
+                        song = preparedSong,
+                        coverReference = coverReference,
+                        writeCover = writeCover,
+                        writeLyrics = writeLyrics
                     )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e(
+                    "PlayerManager",
+                    "后台回写本地元信息失败: ${error.message}",
+                    error
+                )
+                LocalMediaMetadataWriteOutcome.FAILED
+            }
+
+            if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
+                runCatching {
+                    GlobalDownloadManager.syncDownloadedSongMetadata(preparedSong)
                 }.onFailure { error ->
                     NPLogger.w(
                         "PlayerManager",
-                        "后台发布原始封面失败: ${error.message}",
-                        error
+                        "后台同步下载元数据失败: ${error.message}"
                     )
                 }
             }
-        }
-
-        val outcome = try {
-            runSongMetadataMutation {
-                writeLocalEditableMetadata(
-                    song = preparedSong,
-                    coverReference = coverReference,
-                    writeCover = writeCover,
-                    writeLyrics = writeLyrics
-                )
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.e(
-                "PlayerManager",
-                "后台回写本地元信息失败: ${error.message}",
-                error
+            showLocalEditableMetadataWriteFeedback(
+                outcome = outcome,
+                downloadSyncOutcome =
+                    GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
             )
-            LocalMediaMetadataWriteOutcome.FAILED
         }
-
-        if (outcome == LocalMediaMetadataWriteOutcome.SUCCESS) {
-            runCatching {
-                GlobalDownloadManager.syncDownloadedSongMetadata(preparedSong)
-            }.onFailure { error ->
-                NPLogger.w(
-                    "PlayerManager",
-                    "后台同步下载元数据失败: ${error.message}"
-                )
-            }
-        }
-        showLocalEditableMetadataWriteFeedback(
-            outcome = outcome,
-            downloadSyncOutcome =
-                GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
-        )
     }
 }
 
@@ -2128,6 +2135,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 requestedCoverReference = requestedCoverReference,
                 restoredBaseCoverReference = restoredBaseCoverUrl
             )
+            val shouldWriteCoverToAudio = coverChanged && coverWriteReference != null
 
             val nextBaseName = if (restoreBaseName) restoredBaseName else baseName
             val nextBaseArtist = if (restoreBaseArtist) restoredBaseArtist else baseArtist
@@ -2196,7 +2204,7 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 scheduleLocalEditableMetadataWrite(
                     song = updatedSong,
                     coverReference = coverWriteReference,
-                    writeCover = coverChanged,
+                    writeCover = shouldWriteCoverToAudio,
                     writeLyrics = writeLyrics,
                     originalSong = currentSong,
                     preserveOriginalCover = coverChanged &&
@@ -2474,7 +2482,7 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         newRomanizedLyric = effectiveRomanizedLyrics
     )
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
-    val sidecarsWritten = if (isLocalSong && !writeLocalMetadata) {
+    val sidecarsWritten = if (isLocalSong) {
         val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
         runCatching {
             LocalMediaSupport.writeLocalLyricsSidecars(

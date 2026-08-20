@@ -5029,6 +5029,7 @@ fun EditSongInfoSheet(
     // 标记用户是否手动编辑过, 避免自动重置
     var userHasEdited by remember { mutableStateOf(false) }
     var isCoverImporting by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -5160,6 +5161,8 @@ fun EditSongInfoSheet(
     }
 
     fun saveEditedSongInfo(writeLocalMetadata: Boolean) {
+        if (isSaving) return
+        isSaving = true
         originalInfoRequestId += 1
         coroutineScope.launch {
             try {
@@ -5250,11 +5253,15 @@ fun EditSongInfoSheet(
                 snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
                 )
+            } finally {
+                isSaving = false
             }
         }
     }
 
     fun writeFetchedLyricsToLocalMetadata() {
+        if (isSaving) return
+        isSaving = true
         coroutineScope.launch {
             try {
                 val latestSong = PlayerManager.currentSongFlow.value
@@ -5278,6 +5285,8 @@ fun EditSongInfoSheet(
                 snackbarHostState.showNeriSnackbar(
                     composeResources.getString(R.string.toast_save_failed, error.message.orEmpty())
                 )
+            } finally {
+                isSaving = false
             }
         }
     }
@@ -5517,7 +5526,8 @@ fun EditSongInfoSheet(
                                                 context = context,
                                                 song = sidecarProbeSong,
                                                 includeStoredFallback = !isManagedLocalDownload,
-                                                includeEmbeddedFallback = false
+                                                includeEmbeddedFallback = false,
+                                                forceRefresh = true
                                             )
                                         }
                                             .onFailure { error ->
@@ -5542,7 +5552,8 @@ fun EditSongInfoSheet(
                                                 context = context,
                                                 song = actualSong,
                                                 includeStoredFallback = false,
-                                                includeEmbeddedFallback = true
+                                                includeEmbeddedFallback = true,
+                                                forceRefresh = true
                                             )
                                         }.onFailure { error ->
                                             NPLogger.w(
@@ -5789,9 +5800,20 @@ fun EditSongInfoSheet(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isCoverImporting
+                enabled = !isCoverImporting && !isSaving
             ) {
-                Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        Icons.Outlined.Save,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 Spacer(Modifier.width(4.dp))
                 Text(
                     text = stringResource(R.string.music_save_changes),
@@ -5827,6 +5849,7 @@ fun EditSongInfoSheet(
             text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
             confirmButton = {
                 HapticTextButton(
+                    enabled = !isSaving,
                     onClick = {
                         showLocalMetadataWriteBackConfirm = false
                         saveEditedSongInfo(writeLocalMetadata = true)
@@ -5837,6 +5860,7 @@ fun EditSongInfoSheet(
             },
             dismissButton = {
                 HapticTextButton(
+                    enabled = !isSaving,
                     onClick = {
                         showLocalMetadataWriteBackConfirm = false
                         saveEditedSongInfo(writeLocalMetadata = false)

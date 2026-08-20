@@ -618,6 +618,7 @@
     <string name="local_playlist_export_to">Export to Playlist</string>
     <string name="local_playlist_import_audio">Import Local Audio</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d songs · %3$s plays</string>
+    <string name="local_playlist_duration_loading">Reading duration</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d songs</string>
     <string name="local_playlist_play_next">Play Next…</string>
     <string name="local_artist_detail_empty">This artist has no playable local songs</string>
