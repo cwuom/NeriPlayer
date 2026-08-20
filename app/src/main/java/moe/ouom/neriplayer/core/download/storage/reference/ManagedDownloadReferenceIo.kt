@@ -50,24 +50,22 @@ internal object ManagedDownloadReferenceIo {
             reference.startsWith("/") -> {
                 runCatching { File(reference).inputStream().use { }; true }.getOrDefault(false) ||
                     legacyDocumentUri(reference)?.let { uri ->
-                    resolveDocumentFile(context, uri)?.exists()
-                        ?: runCatching {
-                            context.contentResolver.openFileDescriptor(uri, "r")
-                                ?.use { true } ?: false
-                        }.getOrDefault(false)
+                        isAccessibleDocumentReference(context, uri)
                     } == true
             }
             else -> {
                 reference.toLocalFileReference()?.let(File::exists)?.let { return it }
                 val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
                 uri.toLocalFile()?.let(File::exists)?.let { return it }
-                resolveDocumentFile(context, uri)?.exists()
-                    ?: runCatching {
-                        context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
-                    }.getOrDefault(false)
+                isAccessibleDocumentReference(context, uri)
             }
         }
     }
+
+    internal fun isAccessibleDocumentReference(
+        documentExists: Boolean,
+        descriptorAccessible: Boolean
+    ): Boolean = documentExists || descriptorAccessible
 
     fun deleteContentReference(
         context: Context,
@@ -97,6 +95,19 @@ internal object ManagedDownloadReferenceIo {
     fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
         return DocumentFile.fromSingleUri(context, uri)
             ?: DocumentFile.fromTreeUri(context, uri)
+    }
+
+    private fun isAccessibleDocumentReference(context: Context, uri: Uri): Boolean {
+        val documentExists = runCatching {
+            resolveDocumentFile(context, uri)?.exists() == true
+        }.getOrDefault(false)
+        if (isAccessibleDocumentReference(documentExists, descriptorAccessible = false)) {
+            return true
+        }
+        val descriptorAccessible = runCatching {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+        }.getOrDefault(false)
+        return isAccessibleDocumentReference(documentExists, descriptorAccessible)
     }
 
     fun isMissingDocumentFailure(error: Throwable): Boolean {

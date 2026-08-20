@@ -928,7 +928,7 @@ object LocalMediaSupport {
         mutation: EditableCoverMutation
     ): Boolean {
         val parent = file.parentFile ?: return false
-        val coverDirectory = File(parent, "Covers")
+        val coverDirectory = findCoversDirectory(parent) ?: File(parent, "Covers")
         val baseName = file.nameWithoutExtension
         val existingSpecificFiles = imageExtensions.map { extension ->
             File(coverDirectory, "$baseName.$extension")
@@ -2945,6 +2945,17 @@ object LocalMediaSupport {
      */
     fun peekCachedEmbeddedCoverUri(context: Context, song: SongItem): String? {
         return embeddedCoverCacheLookupKeys(song)
+            .asSequence()
+            .flatMap { key -> sequenceOf(key, "$key#taglib") }
+            .mapNotNull { key -> findCachedEmbeddedCover(context, key) }
+            .firstOrNull()
+    }
+
+    internal fun peekCachedEmbeddedCoverUri(context: Context, source: Uri): String? {
+        return listOfNotNull(source.toString(), source.path)
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
             .asSequence()
             .flatMap { key -> sequenceOf(key, "$key#taglib") }
             .mapNotNull { key -> findCachedEmbeddedCover(context, key) }
@@ -5284,7 +5295,14 @@ object LocalMediaSupport {
             if (!localCoverLookupCache.containsKey(cacheKey)) return null
             localCoverLookupCache[cacheKey]
         }
-        if (coverUri != null && !isUsableCachedCoverUri(context, coverUri)) {
+        if (coverUri == null) {
+            // 没有封面时不保留负缓存，避免后续写入或恢复元信息后永远跳过重试
+            synchronized(localCoverLookupCache) {
+                localCoverLookupCache.remove(cacheKey)
+            }
+            return null
+        }
+        if (!isUsableCachedCoverUri(context, coverUri)) {
             synchronized(localCoverLookupCache) {
                 if (localCoverLookupCache[cacheKey] == coverUri) {
                     localCoverLookupCache.remove(cacheKey)
@@ -5970,8 +5988,8 @@ object LocalMediaSupport {
             if (sameName.exists()) return sameName
         }
 
-        val coverDir = File(parent, "Covers")
-        if (coverDir.exists()) {
+        val coverDir = findCoversDirectory(parent)
+        if (coverDir != null) {
             imageExtensions.forEach { ext ->
                 val nested = File(coverDir, "$baseName.$ext")
                 if (nested.exists()) return nested
@@ -5981,6 +5999,15 @@ object LocalMediaSupport {
         findDirectoryCover(parent)?.let { return it }
 
         return null
+    }
+
+    private fun findCoversDirectory(parent: File): File? {
+        val canonical = File(parent, "Covers")
+        if (canonical.isDirectory) return canonical
+        return parent.listFiles()
+            ?.firstOrNull { child ->
+                child.isDirectory && child.name.equals("Covers", ignoreCase = true)
+            }
     }
 
     private fun findDirectoryCover(parent: File): File? {

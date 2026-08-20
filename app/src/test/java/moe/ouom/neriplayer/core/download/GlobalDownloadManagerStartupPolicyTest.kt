@@ -246,6 +246,28 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `missing downloaded cover is repaired only when a network candidate exists`() {
+        assertTrue(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = true,
+                hasNetworkCoverCandidate = true
+            )
+        )
+        assertFalse(
+            shouldRepairDownloadedCover(
+                coverReferenceAccessible = false,
+                hasNetworkCoverCandidate = false
+            )
+        )
+    }
+
+    @Test
     fun `cancel cleanup survives invalidated generation until a new request takes over`() {
         assertTrue(
             shouldKeepCancellationCleanup(

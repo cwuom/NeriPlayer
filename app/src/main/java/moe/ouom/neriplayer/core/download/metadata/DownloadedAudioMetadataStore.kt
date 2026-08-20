@@ -80,6 +80,35 @@ internal class DownloadedAudioMetadataStore(
         return ManagedDownloadStorage.parseDownloadedAudioMetadataJson(raw)
     }
 
+    suspend fun persistCoverReference(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        coverReference: String
+    ): Boolean {
+        val metadataEntry = ManagedDownloadStorage.findMetadataForAudio(context, audio)
+            ?: return false
+        val raw = ManagedDownloadStorage.readText(context, metadataEntry.reference)
+            ?: return false
+        val patchedPayload = patchDownloadedMetadataCoverReference(raw, coverReference)
+            ?: return false
+        var lastError: Throwable? = null
+        repeat(maxWriteAttempts) { attempt ->
+            val result = runCatching {
+                ManagedDownloadStorage.saveMetadata(context, audio, patchedPayload)
+            }
+            if (result.getOrDefault(false)) {
+                NPLogger.d(loggerTag, "补写下载封面侧载引用: file=${audio.name}, coverPath=$coverReference")
+                return true
+            }
+            lastError = result.exceptionOrNull()
+            if (attempt < maxWriteAttempts - 1) {
+                delay(writeRetryDelayMs)
+            }
+        }
+        NPLogger.e(loggerTag, "补写下载封面侧载引用失败: ${audio.name}", lastError)
+        return false
+    }
+
     private suspend fun resolveSidecarReferences(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
@@ -181,6 +210,17 @@ internal class DownloadedAudioMetadataStore(
         val translatedLyricReference: String?,
         val romanizedLyricReference: String?
     )
+}
+
+internal fun patchDownloadedMetadataCoverReference(
+    rawMetadata: String,
+    coverReference: String
+): String? {
+    return runCatching {
+        JSONObject(rawMetadata)
+            .put("coverPath", coverReference)
+            .toString()
+    }.getOrNull()
 }
 
 internal fun resolveDownloadedMetadataCoverReference(

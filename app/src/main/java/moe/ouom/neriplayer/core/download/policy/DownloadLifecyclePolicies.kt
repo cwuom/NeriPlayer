@@ -143,6 +143,13 @@ internal fun resolvePreExistingDownloadedAudioAction(
     }
 }
 
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean {
+    return !coverReferenceAccessible && hasNetworkCoverCandidate
+}
+
 /** 完整音频已经落盘时, 元信息收尾失败也不能删除音频本体 */
 internal fun shouldPreserveCompletedAudioAfterFinalizationFailure(
     hasStoredAudio: Boolean,

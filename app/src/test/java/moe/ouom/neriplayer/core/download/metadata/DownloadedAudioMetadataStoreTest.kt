@@ -2,7 +2,9 @@ package moe.ouom.neriplayer.core.download.metadata
 
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.json.JSONObject
 import org.junit.Test
 
 class DownloadedAudioMetadataStoreTest {
@@ -39,6 +41,33 @@ class DownloadedAudioMetadataStoreTest {
                 existingCoverReference = "file:///data/user/0/app/files/custom_song_covers/custom.jpg",
                 song = restoredSong,
                 previousCustomCoverReference = "file:///data/user/0/app/files/custom_song_covers/custom.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `patching cover reference preserves the other metadata fields`() {
+        val patched = patchDownloadedMetadataCoverReference(
+            rawMetadata = "{\"stableKey\":\"song-key\",\"lyricPath\":\"lyrics.lrc\"}",
+            coverReference = "content://downloads/Covers/song.jpg"
+        )
+
+        assertNotNull(patched)
+        val payload = JSONObject(patched.orEmpty())
+        assertEquals("song-key", payload.getString("stableKey"))
+        assertEquals("lyrics.lrc", payload.getString("lyricPath"))
+        assertEquals(
+            "content://downloads/Covers/song.jpg",
+            payload.getString("coverPath")
+        )
+    }
+
+    @Test
+    fun `patching invalid metadata returns no payload`() {
+        assertNull(
+            patchDownloadedMetadataCoverReference(
+                rawMetadata = "not-json",
+                coverReference = "content://downloads/Covers/song.jpg"
             )
         )
     }

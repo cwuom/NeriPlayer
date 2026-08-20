@@ -45,6 +45,28 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
+    fun `reference io accepts a descriptor when document file reports missing`() {
+        assertTrue(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = false,
+                descriptorAccessible = true
+            )
+        )
+        assertTrue(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = true,
+                descriptorAccessible = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
+                documentExists = false,
+                descriptorAccessible = false
+            )
+        )
+    }
+
+    @Test
     fun `reference io resolves file uri as a local file`() {
         val file = Files.createTempFile("neriplayer-reference", ".txt").toFile()
         try {

@@ -42,6 +42,7 @@ import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDeta
 import moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup as shouldKeepCancellationCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldProbeCompletedAudioAccessDuringPostProcessing as shouldProbeCompletedAudioAccessDuringPostProcessingDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRunInitialDownloadScan as shouldRunInitialDownloadScanDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldRepairDownloadedCover as shouldRepairDownloadedCoverDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldSkipCancelledArtifactRecovery as shouldSkipCancelledArtifactRecoveryDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldTrustFastDownloadedSongCatalogHit as shouldTrustFastDownloadedSongCatalogHitDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldUseImmediateDownloadedPlaybackHydration as shouldUseImmediateDownloadedPlaybackHydrationDelegate
@@ -177,6 +178,14 @@ internal fun resolveCompletedDownloadFinalizationAction(
 
 internal fun resolvePreExistingDownloadedAudioAction(hasExistingAudio: Boolean): PreExistingDownloadedAudioAction =
     resolvePreExistingDownloadedAudioActionDelegate(hasExistingAudio)
+
+internal fun shouldRepairDownloadedCover(
+    coverReferenceAccessible: Boolean,
+    hasNetworkCoverCandidate: Boolean
+): Boolean = shouldRepairDownloadedCoverDelegate(
+    coverReferenceAccessible,
+    hasNetworkCoverCandidate
+)
 
 internal fun shouldUseImmediateDownloadedPlaybackHydration(
     originalSong: SongItem,

@@ -423,8 +423,8 @@ internal fun deserializeDownloadedSongsCatalog(
 
 internal fun isResolvableLocalReference(reference: String): Boolean {
     return reference.startsWith("/") ||
-        reference.startsWith("content://") ||
-        reference.startsWith("file://")
+        reference.startsWith("content:", ignoreCase = true) ||
+        reference.startsWith("file:", ignoreCase = true)
 }
 
 private fun JSONObject.optPresentCatalogString(fieldName: String): String? {

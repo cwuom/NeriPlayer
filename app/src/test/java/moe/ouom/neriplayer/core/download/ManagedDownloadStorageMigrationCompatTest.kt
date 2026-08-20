@@ -300,6 +300,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     @Test
     fun `matchesManagedSubdirectoryName keeps numbered sidecar directories compatible`() {
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers", "Covers"))
+        assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("covers", "Covers"))
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers (1)", "Covers"))
         assertTrue(ManagedDownloadStorage.matchesManagedSubdirectoryName("Lyrics (12)", "Lyrics"))
         assertFalse(ManagedDownloadStorage.matchesManagedSubdirectoryName("Covers copy", "Covers"))

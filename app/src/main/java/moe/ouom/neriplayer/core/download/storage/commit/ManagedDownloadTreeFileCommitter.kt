@@ -31,7 +31,12 @@ internal class ManagedDownloadTreeFileCommitter(
             .takeIf { it in childNames }
             ?.let { treeChildRegistry.cachedTreeChild(context, parent, it) }
         val existing = existingChild?.let { child -> treeChildRegistry.toDocumentFile(context, child) }
-        if (replace && existingChild != null && !existingChild.isDirectory && existing != null) {
+        if (
+            replace &&
+            existingChild != null &&
+            !existingChild.isDirectory &&
+            existing?.exists() == true
+        ) {
             return existing
         }
         if (replace && existingChild != null) {

@@ -210,8 +210,9 @@ internal class ManagedDownloadTreeDirectories(
                 directory = directory,
                 ensuredMarkers = ensuredNoMediaMarkers
             )
-        }.onFailure {
-            NPLogger.w(tag, "创建封面目录 .nomedia 失败: ${it.message}")
+        }.getOrElse {
+            NPLogger.e(tag, "创建 $subdirectory 目录 .nomedia 失败: ${it.message}", it)
+            throw it
         }
     }
 
@@ -227,10 +228,13 @@ internal class ManagedDownloadTreeDirectories(
                 directory = directory,
                 ensuredMarkers = ensuredNoMediaMarkers,
                 hasCachedChild = { lookupContext, parent, childName ->
-                    treeChildRegistry.cachedTreeChild(lookupContext, parent, childName) != null
+                    hasExistingNoMediaMarker(lookupContext, parent, childName)
                 },
                 createMarker = { parent ->
-                    parent.createFile("application/octet-stream", NO_MEDIA_FILE_NAME)
+                    createNoMediaMarker(context, parent)
+                },
+                isMarkerAccessible = { lookupContext, marker ->
+                    isAccessibleMarker(lookupContext, marker)
                 },
                 rememberMarker = { marker, storedName ->
                     treeChildRegistry.updateRememberedTreeChild(
@@ -243,8 +247,9 @@ internal class ManagedDownloadTreeDirectories(
                     )
                 }
             )
-        }.onFailure {
-            NPLogger.w(tag, "创建封面目录 .nomedia 失败: ${it.message}")
+        }.getOrElse {
+            NPLogger.e(tag, "创建 $subdirectory 目录 .nomedia 失败: ${it.message}", it)
+            throw it
         }
     }
 
@@ -286,6 +291,102 @@ internal class ManagedDownloadTreeDirectories(
                 )
             )
             .firstNotNullOfOrNull { child -> treeChildRegistry.toDocumentFile(context, child) }
+    }
+
+    private fun hasExistingNoMediaMarker(
+        context: Context,
+        directory: DocumentFile,
+        childName: String
+    ): Boolean {
+        if (childName != NO_MEDIA_FILE_NAME) return false
+        val cached = treeChildRegistry.cachedTreeChild(context, directory, childName)
+        if (cached != null) {
+            treeChildRegistry.toDocumentFile(context, cached)
+                ?.takeIf { isAccessibleMarker(context, it) }
+                ?.let { return true }
+        }
+        val refreshed = treeChildRegistry.refreshTreeChildren(context, directory)
+            .firstOrNull { child ->
+                child.name == childName && !child.isDirectory
+            }
+        val marker = refreshed?.let { child ->
+            treeChildRegistry.toDocumentFile(context, child)
+        }
+        return marker?.let { isAccessibleMarker(context, it) } == true
+    }
+
+    private fun createNoMediaMarker(context: Context, parent: DocumentFile): DocumentFile? {
+        val mimeTypes = listOf("application/octet-stream", "text/plain")
+        mimeTypes.forEach { mimeType ->
+            createNoMediaMarkerWithName(
+                context = context,
+                parent = parent,
+                mimeType = mimeType,
+                requestedName = NO_MEDIA_FILE_NAME
+            )?.let { return it }
+        }
+        val temporaryName = NO_MEDIA_FILE_NAME.removePrefix(".")
+        mimeTypes.forEach { mimeType ->
+            createNoMediaMarkerWithName(
+                context = context,
+                parent = parent,
+                mimeType = mimeType,
+                requestedName = temporaryName
+            )?.let { marker ->
+                if (runCatching { marker.renameTo(NO_MEDIA_FILE_NAME) }.getOrDefault(false)) {
+                    val renamedMarker = parent.findFile(NO_MEDIA_FILE_NAME) ?: marker
+                    val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+                        renamedMarker.name,
+                        NO_MEDIA_FILE_NAME
+                    )
+                    if (storedName == NO_MEDIA_FILE_NAME && isAccessibleMarker(context, renamedMarker)) {
+                        return renamedMarker
+                    }
+                }
+                runCatching { marker.delete() }
+            }
+        }
+        return null
+    }
+
+    private fun createNoMediaMarkerWithName(
+        context: Context,
+        parent: DocumentFile,
+        mimeType: String,
+        requestedName: String
+    ): DocumentFile? {
+        val marker = runCatching { parent.createFile(mimeType, requestedName) }.getOrNull()
+            ?: return null
+        val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
+            marker.name,
+            requestedName
+        )
+        if (storedName != requestedName) {
+            runCatching { marker.delete() }
+            return null
+        }
+        return marker.takeIf { isAccessibleMarker(context, it) }
+            ?: run {
+                runCatching { marker.delete() }
+                null
+            }
+    }
+
+    private fun isAccessibleMarker(context: Context, marker: DocumentFile): Boolean {
+        if (marker.isFile && marker.exists()) return true
+        return runCatching {
+            val resolver = context.contentResolver
+            if (resolver.openFileDescriptor(marker.uri, "r")?.use { true } == true) {
+                return@runCatching true
+            }
+            if (resolver.openInputStream(marker.uri)?.use { true } == true) {
+                return@runCatching true
+            }
+            resolver.openOutputStream(marker.uri, "w")?.use {
+                return@runCatching true
+            }
+            false
+        }.getOrDefault(false)
     }
 
     private fun listDirectoryChildren(

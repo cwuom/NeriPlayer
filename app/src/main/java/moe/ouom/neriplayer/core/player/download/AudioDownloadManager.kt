@@ -1543,6 +1543,41 @@ object AudioDownloadManager {
         mergeDownloadedSidecarReferences(downloadedReferences, createdReferences)
     }
 
+    internal suspend fun repairCoverForCompletedAudio(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
+        val songKey = song.stableKey()
+        clearPartialSidecarReferences(songKey)
+        val coverReference = runCatching {
+            cacheCover(
+                context = context,
+                song = song,
+                songKey = songKey,
+                baseName = storedAudio.nameWithoutExtension,
+                storedAudio = storedAudio,
+                requireActiveAttempt = false,
+                allowIndexedLookup = true
+            )
+        }.getOrElse { error ->
+            if (error is java.util.concurrent.CancellationException) {
+                throw error
+            }
+            NPLogger.w(TAG, "已下载封面修复请求失败: ${song.name} - ${error.message}")
+            null
+        }
+        val createdReferences = consumePartialSidecarReferences(songKey)
+            ?.retainCreatedOnly()
+        return@withContext mergeDownloadedSidecarReferences(
+            DownloadedSidecarReferences(
+                coverReference = coverReference,
+                createdCover = !coverReference.isNullOrBlank()
+            ),
+            createdReferences
+        )
+    }
+
     private suspend fun <T> withConfiguredDownloadPermit(
         context: Context,
         block: suspend () -> T
@@ -1683,12 +1718,15 @@ object AudioDownloadManager {
         requireActiveAttempt: Boolean = true,
         allowIndexedLookup: Boolean = true
     ): String? {
-        val existingCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
+        val indexedCover = ManagedDownloadStorage.peekCoverReference(storedAudio)
             ?: if (allowIndexedLookup && ManagedDownloadStorage.ensureSnapshotCacheReady(context)) {
                 ManagedDownloadStorage.peekCoverReference(storedAudio)
             } else {
                 null
             }
+        val existingCover = indexedCover?.takeIf { reference ->
+            ManagedDownloadStorage.isReferenceAccessible(context, reference)
+        }
         if (!existingCover.isNullOrBlank()) {
             rememberPartialSidecarReferences(
                 songKey,

@@ -2407,7 +2407,16 @@ object GlobalDownloadManager {
                         return@withSongExecutionLock
                     }
 
-                    if (findFastCachedDownloadedSong(appContext, song) != null) {
+                    val fastCachedSong = findFastCachedDownloadedSong(appContext, song)
+                    if (fastCachedSong != null) {
+                        val repairedSong = repairDownloadedCoverIfMissing(
+                            context = appContext,
+                            song = song,
+                            downloadedSong = fastCachedSong
+                        )
+                        if (repairedSong != fastCachedSong) {
+                            publishOptimisticDownloadedSongs(appContext, listOf(repairedSong))
+                        }
                         NPLogger.d(TAG, "单曲下载命中下载目录缓存并直接完成: song=${song.name}, songKey=$songKey")
                         removeDownloadTask(songKey, expectedAttemptId = attemptId)
                         forgetPendingDownloadQueueEntriesIfCurrent(
@@ -2434,9 +2443,17 @@ object GlobalDownloadManager {
                             return@withSongExecutionLock
                         }
                         if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
+                            val optimisticSong = repairDownloadedCoverIfMissing(
+                                context = appContext,
+                                song = song,
+                                downloadedSong = buildOptimisticDownloadedSong(
+                                    song = song,
+                                    storedAudio = existingAudio
+                                )
+                            )
                             publishOptimisticDownloadedSongs(
                                 appContext,
-                                listOf(buildOptimisticDownloadedSong(song, existingAudio))
+                                listOf(optimisticSong)
                             )
                             removeDownloadTask(songKey, expectedAttemptId = attemptId)
                             forgetPendingDownloadQueueEntriesIfCurrent(
@@ -2647,30 +2664,39 @@ object GlobalDownloadManager {
                 val downloadLibrarySnapshot = buildBatchDownloadLibrarySnapshot(appContext)
                 val settledAttemptIds = linkedMapOf<String, Long>()
                 val optimisticDownloadedSongs = mutableListOf<DownloadedSong>()
-                currentRequestedSongs.forEach { song ->
+                for (song in currentRequestedSongs) {
                     val songKey = song.stableKey()
                     if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
                         settledSongKeys += songKey
-                        return@forEach
+                        continue
                     }
                     AudioDownloadManager.clearNetworkPolicyPause(setOf(songKey))
                     val attemptId = preparedAttemptIds[songKey]
-                        ?: return@forEach
+                        ?: continue
                     if (shouldSkipDownload(appContext, song)) {
                         skippedLocalSongs++
                         settledSongKeys += songKey
                         settledAttemptIds[songKey] = attemptId
                         NPLogger.d(TAG, "批量下载跳过本地歌曲: song=${song.name}, songKey=$songKey")
-                        return@forEach
+                        continue
                     }
-                    if (findFastCachedDownloadedSong(appContext, song) != null) {
+                    val fastCachedSong = findFastCachedDownloadedSong(appContext, song)
+                    if (fastCachedSong != null) {
+                        val repairedSong = repairDownloadedCoverIfMissing(
+                            context = appContext,
+                            song = song,
+                            downloadedSong = fastCachedSong
+                        )
                         settledSongKeys += songKey
                         settledAttemptIds[songKey] = attemptId
+                        if (repairedSong != fastCachedSong) {
+                            optimisticDownloadedSongs += repairedSong
+                        }
                         NPLogger.d(
                             TAG,
                             "批量下载命中下载目录缓存并直接完成: song=${song.name}, songKey=$songKey"
                         )
-                        return@forEach
+                        continue
                     }
                     val existingAudio = findExistingDownloadedAudio(
                         context = appContext,
@@ -2685,15 +2711,19 @@ object GlobalDownloadManager {
                         if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
                             settledSongKeys += songKey
                             settledAttemptIds[songKey] = attemptId
-                            optimisticDownloadedSongs += buildOptimisticDownloadedSong(
+                            optimisticDownloadedSongs += repairDownloadedCoverIfMissing(
+                                context = appContext,
                                 song = song,
-                                storedAudio = existingAudio
+                                downloadedSong = buildOptimisticDownloadedSong(
+                                    song = song,
+                                    storedAudio = existingAudio
+                                )
                             )
                             NPLogger.d(
                                 TAG,
                                 "批量下载命中已存在音频并直接完成: song=${song.name}, songKey=$songKey, file=${existingAudio.name}"
                             )
-                            return@forEach
+                            continue
                         }
                     }
                     preparedQueuedSongs++
@@ -2999,6 +3029,70 @@ object GlobalDownloadManager {
             scheduleCatalogReconcile(context, forceRefresh = false)
         }
         return downloadedSong
+    }
+
+    private suspend fun repairDownloadedCoverIfMissing(
+        context: Context,
+        song: SongItem,
+        downloadedSong: DownloadedSong
+    ): DownloadedSong {
+        val existingCoverAccessible = downloadedSong.coverPath
+            ?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+            } != null
+        val hasNetworkCoverCandidate = AudioDownloadManager
+            .buildCoverDownloadCandidateUrls(song)
+            .isNotEmpty()
+        if (!shouldRepairDownloadedCover(existingCoverAccessible, hasNetworkCoverCandidate)) {
+            return downloadedSong
+        }
+
+        val storedAudio = resolveStoredAudio(context, song)
+            ?: resolveStoredAudio(context, downloadedSong.filePath)
+        if (storedAudio == null) {
+            NPLogger.w(TAG, "缺少封面但无法定位已下载音频，跳过侧载修复: ${song.name}")
+            return downloadedSong
+        }
+
+        val sidecarReferences = try {
+            AudioDownloadManager.repairCoverForCompletedAudio(
+                context = context,
+                song = song,
+                storedAudio = storedAudio
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "已下载歌曲封面侧载修复失败: ${song.name} - ${error.message}")
+            return downloadedSong
+        }
+        val repairedCover = sidecarReferences.coverReference
+            ?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+            }
+        if (repairedCover == null) {
+            NPLogger.w(TAG, "封面侧载修复未生成可访问文件: ${song.name}")
+            return downloadedSong
+        }
+
+        val metadataPatched = downloadedAudioMetadataStore.persistCoverReference(
+            context = context,
+            audio = storedAudio,
+            coverReference = repairedCover
+        )
+        val metadataWritten = metadataPatched || persistDownloadedMetadata(
+            context = context,
+            audio = storedAudio,
+            song = song,
+            sidecarReferences = sidecarReferences,
+            downloadFinalized = true,
+            resolveExistingSidecars = true
+        )
+        if (!metadataWritten) {
+            NPLogger.w(TAG, "封面侧载已生成但元数据回写失败: ${song.name}")
+            scheduleCatalogReconcile(context, forceRefresh = true)
+        }
+        return downloadedSong.copy(coverPath = repairedCover)
     }
 
     private suspend fun validateExistingDownloadedAudio(

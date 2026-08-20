@@ -41,13 +41,28 @@ internal class DownloadedSongBuilder(
         val (parsedArtist, parsedTitle) = parseDownloadedFileName(storedAudio.name)
         val cachedCoverReference = resolveAccessibleManagedReference(
             context = context,
-            snapshot = effectiveSnapshot,
             metadata?.coverPath,
             metadata?.coverUrl,
             metadata?.originalCoverUrl
         )
         val indexedCoverReference = if (shouldUseIndexedDownloadedCoverFallback(metadata)) {
-            ManagedDownloadArtifactPlanner.indexedCoverReference(storedAudio, effectiveSnapshot)
+            ManagedDownloadArtifactPlanner
+                .indexedCoverReference(storedAudio, effectiveSnapshot)
+                ?.takeIf { reference ->
+                    ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                }
+        } else {
+            null
+        }
+        val metadataCoverReference = if (
+            cachedCoverReference == null && indexedCoverReference == null
+        ) {
+            resolveCachedAudioMetadataCoverReference(context, storedAudio)
+                ?: if (allowSlowLocalInspection) {
+                    resolveAudioMetadataCoverReference(context, storedAudio)
+                } else {
+                    null
+                }
         } else {
             null
         }
@@ -79,7 +94,9 @@ internal class DownloadedSongBuilder(
                 shouldInspectDownloadedAudioDetails(
                     allowSlowLocalInspection = allowSlowLocalInspection,
                     metadata = metadata,
-                    coverReference = cachedCoverReference ?: indexedCoverReference,
+                    coverReference = cachedCoverReference
+                        ?: indexedCoverReference
+                        ?: metadataCoverReference,
                     needsLocalLyricFallback = needsLocalLyricFallback
                 )
             ) {
@@ -88,7 +105,10 @@ internal class DownloadedSongBuilder(
                 null
             }
         }
-        val coverReference = cachedCoverReference ?: indexedCoverReference ?: localDetails?.coverUri
+        val coverReference = cachedCoverReference
+            ?: indexedCoverReference
+            ?: metadataCoverReference
+            ?: localDetails?.coverUri
         val matchedLyric = if (loadLyricContents) {
             resolveDownloadedLyricOverride(
                 fileLyric = lyricContent.fileLyric,
@@ -188,6 +208,43 @@ internal class DownloadedSongBuilder(
     }.onFailure { error ->
         NPLogger.w(loggerTag, "读取已下载音频标签失败: ${storedAudio.name} - ${error.message}")
     }.getOrNull()
+
+    private fun resolveAudioMetadataCoverReference(
+        context: Context,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ): String? {
+        val candidate = runCatching {
+            LocalMediaSupport.resolveCoverUri(
+                context = context,
+                uri = storedAudio.playbackUri.toUri()
+            )
+        }.onFailure { error ->
+            NPLogger.d(
+                loggerTag,
+                "读取已下载音频元信息封面失败: ${storedAudio.name} - ${error.message}"
+            )
+        }.getOrNull()
+        return candidate
+            ?.takeIf(::isResolvableLocalReference)
+            ?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+            }
+    }
+
+    private fun resolveCachedAudioMetadataCoverReference(
+        context: Context,
+        storedAudio: ManagedDownloadStorage.StoredEntry
+    ): String? {
+        val sourceUri = runCatching { storedAudio.playbackUri.toUri() }.getOrNull()
+            ?: return null
+        val candidate = LocalMediaSupport.peekMediaStoreAlbumArtUri(context, sourceUri)
+            ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, sourceUri)
+        return candidate
+            ?.takeIf(::isResolvableLocalReference)
+            ?.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+            }
+    }
 
     private suspend fun resolveLyricContent(
         context: Context,
@@ -308,8 +365,7 @@ internal class DownloadedSongBuilder(
         val normalizedMetadataReference = metadataReference?.takeIf(::isResolvableLocalReference)
         return DownloadedLyricReference(
             resolvedReference = resolveAccessibleManagedReference(
-                context = context,
-                snapshot = snapshot,
+                context,
                 indexedReference,
                 normalizedMetadataReference
             ),
@@ -425,16 +481,15 @@ internal class DownloadedSongBuilder(
         }
     }
 
-    private suspend fun resolveAccessibleManagedReference(
+    private fun resolveAccessibleManagedReference(
         context: Context,
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         vararg references: String?
     ): String? {
         return references.firstNotNullOfOrNull { reference ->
             val candidate = reference?.takeIf(::isResolvableLocalReference)
                 ?: return@firstNotNullOfOrNull null
-            candidate.takeIf {
-                candidate in snapshot.knownReferences || ManagedDownloadStorage.exists(context, candidate)
+            candidate.takeIf { reference ->
+                ManagedDownloadStorage.isReferenceAccessible(context, reference)
             }
         }
     }

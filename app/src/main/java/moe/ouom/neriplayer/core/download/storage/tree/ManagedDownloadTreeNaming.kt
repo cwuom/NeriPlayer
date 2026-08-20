@@ -34,26 +34,30 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
-        return subdirectory == COVER_SUBDIRECTORY
+        return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true)
     }
 
     fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
-        if (actualName == desiredName) {
+        if (actualName.equals(desiredName, ignoreCase = true)) {
             return true
         }
-        if (!actualName.startsWith("$desiredName (") || !actualName.endsWith(")")) {
+        val prefix = "$desiredName ("
+        if (!actualName.startsWith(prefix, ignoreCase = true) || !actualName.endsWith(")")) {
             return false
         }
-        val suffix = actualName.removePrefix("$desiredName (").removeSuffix(")")
+        val suffix = actualName.substring(prefix.length, actualName.length - 1)
         return suffix.isNotBlank() && suffix.all(Char::isDigit)
     }
 
     fun managedSubdirectoryOrdinal(actualName: String, desiredName: String): Int {
-        if (actualName == desiredName) {
+        if (actualName.equals(desiredName, ignoreCase = true)) {
             return 0
         }
-        return actualName.removePrefix("$desiredName (")
-            .removeSuffix(")")
+        val prefix = "$desiredName ("
+        if (!actualName.startsWith(prefix, ignoreCase = true) || !actualName.endsWith(")")) {
+            return Int.MAX_VALUE
+        }
+        return actualName.substring(prefix.length, actualName.length - 1)
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

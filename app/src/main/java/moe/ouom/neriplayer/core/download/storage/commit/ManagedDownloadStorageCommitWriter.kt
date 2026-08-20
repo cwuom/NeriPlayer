@@ -69,7 +69,7 @@ internal class ManagedDownloadStorageCommitWriter(
     ): ManagedDownloadStorage.StoredEntry? {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
-                val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 target.outputStream().use { it.write(bytes) }
@@ -141,7 +141,7 @@ internal class ManagedDownloadStorageCommitWriter(
     ): ManagedDownloadStorage.StoredEntry {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
-                val dir = File(root.dir, subdirectory).apply { mkdirs() }
+                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 var copiedBytes = 0L
@@ -372,7 +372,7 @@ internal class ManagedDownloadStorageCommitWriter(
         targetEntry: ManagedDownloadStorage.StoredEntry?,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
-        val dir = File(root.dir, subdirectory).apply { mkdirs() }
+        val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
         treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
         val target = migrationTargetResolver.resolveFileTarget(
             parent = dir,
@@ -452,4 +452,23 @@ internal class ManagedDownloadStorageCommitWriter(
         return StoredWriteResult(entry = entry, createdNew = true)
     }
 
+}
+
+internal fun resolveManagedFileSubdirectory(root: File, desiredName: String): File {
+    val exactDirectory = File(root, desiredName)
+    if (exactDirectory.isDirectory) {
+        return exactDirectory
+    }
+    root.listFiles()
+        ?.firstOrNull { child ->
+            child.isDirectory && child.name.equals(desiredName, ignoreCase = true)
+        }
+        ?.let { return it }
+    if (exactDirectory.exists()) {
+        throw IOException("下载目录子目录不是目录: ${exactDirectory.path}")
+    }
+    if (!exactDirectory.mkdirs() && !exactDirectory.isDirectory) {
+        throw IOException("无法创建下载目录子目录: ${exactDirectory.path}")
+    }
+    return exactDirectory
 }

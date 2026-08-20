@@ -360,6 +360,19 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyCover accepts a lowercase covers directory`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-lowercase")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        val coversDir = File(sourceDir, "covers").apply { mkdirs() }
+        val specific = File(coversDir, "song.jpg").apply { writeText("specific") }
+
+        assertEquals(
+            specific.canonicalPath,
+            LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath
+        )
+    }
+
+    @Test
     fun `fast lyric inspection reads direct file sidecars without content resolver`() {
         val sourceDir = tempFolder.newFolder("fast-lyrics")
         val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
