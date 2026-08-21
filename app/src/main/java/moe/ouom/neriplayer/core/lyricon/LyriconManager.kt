@@ -8,6 +8,7 @@ import com.hchen.superlyricapi.SuperLyricLine
 import com.hchen.superlyricapi.SuperLyricWord
 import io.github.proify.lyricon.provider.LyriconFactory
 import io.github.proify.lyricon.provider.LyriconProvider
+import io.github.proify.lyricon.provider.ProviderLogo
 import io.github.proify.lyricon.lyric.model.LyricWord
 import io.github.proify.lyricon.lyric.model.RichLyricLine
 import io.github.proify.lyricon.lyric.model.Song
@@ -24,6 +25,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.R
 
 object LyriconManager {
     private var provider: LyriconProvider? = null
@@ -51,7 +53,15 @@ object LyriconManager {
             if (SuperLyricHelper.isAvailable()) {
                 SuperLyricHelper.registerPublisher()
             }
-            provider = LyriconFactory.createProvider(context)
+            provider = LyriconFactory.createProvider(
+                context = context.applicationContext,
+                // Lyricon 的状态栏歌词会优先使用 ProviderLogo。
+                // 使用与前台通知相同的纯白透明图标，便于中心服务按状态栏颜色统一着色。
+                logo = ProviderLogo.fromDrawable(
+                    context.applicationContext,
+                    R.drawable.ic_notification_small
+                )
+            )
             provider?.register()
 
             provider?.service?.addConnectionListener {
