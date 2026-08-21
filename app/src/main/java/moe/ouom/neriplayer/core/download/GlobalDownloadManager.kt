@@ -51,6 +51,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongNewestFirstComparator
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
@@ -817,13 +818,17 @@ object GlobalDownloadManager {
         song: SongItem,
         refreshCatalog: Boolean,
         expectedAttemptId: Long? = null,
-        storedAudioHint: ManagedDownloadStorage.StoredEntry? = null
+        storedAudioHint: ManagedDownloadStorage.StoredEntry? = null,
+        allowMissingTask: Boolean = false
     ) {
         val songKey = song.stableKey()
         val completedAudio = AudioDownloadManager.consumeCompletedAudioReference(songKey)
         val sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
         val currentTask = taskStore.findTask(songKey)
-        if (!shouldApplyTaskMutation(currentTask, expectedAttemptId)) {
+        if (
+            (currentTask == null && !allowMissingTask) ||
+            (currentTask != null && !shouldApplyTaskMutation(currentTask, expectedAttemptId))
+        ) {
             NPLogger.d(
                 TAG,
                 "忽略过期下载完成回调: song=${song.name}, expectedAttemptId=$expectedAttemptId, currentAttemptId=${currentTask?.attemptId}"
@@ -1029,7 +1034,7 @@ object GlobalDownloadManager {
                 audio = finalizedAudio,
                 song = song,
                 sidecarReferences = sidecarReferences,
-                downloadFinalized = !postProcessingEnabled,
+                downloadFinalized = false,
                 resolveExistingSidecars = false
             )
             if (!metadataSeedWritten) {
@@ -1068,30 +1073,39 @@ object GlobalDownloadManager {
                         sidecarReferences = sidecarReferences.retainCreatedOnly()
                     )
                 }
-                val finalizedMetadataWritten = persistDownloadedMetadata(
-                    context = appContext,
-                    audio = finalizedAudio,
-                    song = song,
-                    sidecarReferences = sidecarReferences,
-                    downloadFinalized = true,
-                    resolveExistingSidecars = false
-                )
-                if (!finalizedMetadataWritten) {
-                    NPLogger.w(TAG, "下载 finalized metadata 写入失败，保持未完成状态: ${song.name}")
-                    return CompletedDownloadMetadataFinalizationResult(
-                        finalized = false,
-                        sidecarReferences = sidecarReferences.retainCreatedOnly()
-                    )
-                }
             }
 
-            CompletedDownloadMetadataFinalizationResult(
-                finalized = !isSongCancelled(songKey) && verifyFinalizedDownloadedAudio(
-                    context = appContext,
-                    audio = finalizedAudio,
-                    song = song,
+            val artifactsVerified = !isSongCancelled(songKey) && verifyFinalizedDownloadedAudio(
+                context = appContext,
+                audio = finalizedAudio,
+                song = song,
+                sidecarReferences = sidecarReferences
+            )
+            if (!artifactsVerified) {
+                return CompletedDownloadMetadataFinalizationResult(
+                    finalized = false,
+                    storedAudio = finalizedAudio,
                     sidecarReferences = sidecarReferences
-                ),
+                )
+            }
+            val finalizedMetadataWritten = persistDownloadedMetadata(
+                context = appContext,
+                audio = finalizedAudio,
+                song = song,
+                sidecarReferences = sidecarReferences,
+                downloadFinalized = true,
+                resolveExistingSidecars = false
+            )
+            if (!finalizedMetadataWritten) {
+                NPLogger.w(TAG, "下载 finalized metadata 写入失败，保持未完成状态: ${song.name}")
+                return CompletedDownloadMetadataFinalizationResult(
+                    finalized = false,
+                    storedAudio = finalizedAudio,
+                    sidecarReferences = sidecarReferences
+                )
+            }
+            CompletedDownloadMetadataFinalizationResult(
+                finalized = true,
                 storedAudio = finalizedAudio,
                 sidecarReferences = sidecarReferences
             )
@@ -1620,14 +1634,14 @@ object GlobalDownloadManager {
                 isUnfinalizedDownloadedMetadata(snapshot.metadataByAudioName[storedAudio.name])
             }
             if (unfinalizedAudios.isNotEmpty()) {
-                val recoveredArtifactCount = unfinalizedAudios.count { storedAudio ->
-                    recoverUnfinalizedDownloadedAudio(
+                val finalizedArtifactCount = unfinalizedAudios.count { storedAudio ->
+                    finalizeUnfinalizedDownloadedAudio(
                         context = context,
                         storedAudio = storedAudio,
                         snapshot = snapshot
                     )
                 }
-                if (shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount)) {
+                if (shouldRebuildDownloadedLibrarySnapshot(finalizedArtifactCount)) {
                     snapshot = ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                         context = context,
                         forceRefresh = true
@@ -1662,7 +1676,7 @@ object GlobalDownloadManager {
                     .toList()
                     .awaitAll()
                     .filterNotNull()
-                    .sortedByDescending { it.downloadTime }
+                    .sortedWith(downloadedSongNewestFirstComparator)
             }
             downloadedSongMetadataSyncMutex.withLock {
                 if (metadataRevisionAtScanStart != downloadedSongMetadataRevision.get()) {
@@ -1725,7 +1739,7 @@ object GlobalDownloadManager {
         }
     }
 
-    private suspend fun recoverUnfinalizedDownloadedAudio(
+    private suspend fun finalizeUnfinalizedDownloadedAudio(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
@@ -1735,26 +1749,72 @@ object GlobalDownloadManager {
             NPLogger.d(TAG, "跳过活跃下载的未最终确认文件: file=${storedAudio.name}")
             return false
         }
-        NPLogger.w(TAG, "扫描发现未最终确认下载半成品，隐藏并等待重试: file=${storedAudio.name}")
-        if (ManagedDownloadStorage.hasReadableContent(context, storedAudio)) {
+        if (!ManagedDownloadStorage.hasReadableContent(context, storedAudio)) {
+            NPLogger.w(TAG, "扫描发现未最终确认且音频不可读，回滚后等待重试: file=${storedAudio.name}")
+            val removal = runCatching {
+                removeManagedDownloadArtifacts(
+                    context = context,
+                    songName = storedAudio.nameWithoutExtension,
+                    storedAudio = storedAudio,
+                    songId = metadata?.songId ?: 0L,
+                    candidateBaseNames = candidateManagedDownloadBaseNames(storedAudio.nameWithoutExtension)
+                )
+            }.onFailure { error ->
+                NPLogger.e(TAG, "扫描回滚未完成下载半成品失败: ${storedAudio.name}, ${error.message}", error)
+            }.getOrNull()
+            return removal?.deletedReferences?.isNotEmpty() == true
+        }
+        val song = buildSongForUnfinalizedRecovery(storedAudio, metadata) ?: run {
+            NPLogger.w(TAG, "未最终确认音频缺少可恢复歌曲身份，跳过收尾: file=${storedAudio.name}")
             return false
         }
-        val removal = runCatching {
-            removeManagedDownloadArtifacts(
-                context = context,
-                songName = storedAudio.nameWithoutExtension,
-                storedAudio = storedAudio,
-                songId = metadata?.songId ?: 0L,
-                candidateBaseNames = candidateManagedDownloadBaseNames(storedAudio.nameWithoutExtension)
-            )
-        }.onFailure { error ->
-            NPLogger.e(TAG, "扫描回滚未完成下载半成品失败: ${storedAudio.name}, ${error.message}", error)
-        }.getOrNull() ?: return false
-        val deleted = removal.deletedReferences.isNotEmpty()
-        if (deleted) {
-            NPLogger.d(TAG, "扫描回滚未完成下载半成品完成: file=${storedAudio.name}")
-        }
-        return deleted
+        NPLogger.d(TAG, "扫描发现完整但未最终确认音频，执行收尾重试: file=${storedAudio.name}")
+        finalizeCompletedDownload(
+            context = context,
+            song = song,
+            refreshCatalog = false,
+            storedAudioHint = storedAudio,
+            allowMissingTask = true
+        )
+        return true
+    }
+
+    private fun buildSongForUnfinalizedRecovery(
+        audio: ManagedDownloadStorage.StoredEntry,
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+    ): SongItem? {
+        val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank) ?: return null
+        return SongItem(
+            id = metadata.songId ?: 0L,
+            name = metadata.name ?: audio.nameWithoutExtension,
+            artist = metadata.artist ?: "",
+            album = metadata.identityAlbum ?: metadata.album ?: "local",
+            albumId = 0L,
+            durationMs = metadata.durationMs,
+            coverUrl = metadata.coverUrl,
+            mediaUri = metadata.mediaUri ?: audio.mediaUri,
+            matchedLyric = metadata.matchedLyric,
+            matchedTranslatedLyric = metadata.matchedTranslatedLyric,
+            matchedRomanizedLyric = metadata.matchedRomanizedLyric,
+            matchedSongId = metadata.matchedSongId,
+            customCoverUrl = metadata.customCoverUrl,
+            customName = metadata.customName,
+            customArtist = metadata.customArtist,
+            originalName = metadata.originalName,
+            originalArtist = metadata.originalArtist,
+            originalCoverUrl = metadata.originalCoverUrl,
+            originalLyric = metadata.originalLyric,
+            originalTranslatedLyric = metadata.originalTranslatedLyric,
+            originalRomanizedLyric = metadata.originalRomanizedLyric,
+            channelId = metadata.channelId,
+            audioId = metadata.audioId,
+            subAudioId = metadata.subAudioId,
+            playlistContextId = metadata.playlistContextId,
+            sourceStableKey = stableKey,
+            localFileName = audio.name,
+            localFilePath = audio.localFilePath,
+            addedAt = metadata.createdAtMs ?: metadata.downloadTimeMs ?: audio.lastModifiedMs
+        )
     }
 
     private fun isUnfinalizedDownloadStillActive(
@@ -2571,13 +2631,27 @@ object GlobalDownloadManager {
                         snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(appContext),
                         allowStorageLookup = false
                     )
+                    val needsFinalization = existingAudio?.let { audio ->
+                        isUnfinalizedDownloadedMetadata(readDownloadedMetadata(appContext, audio))
+                    } == true
                     val existingAudioAction = resolvePreExistingDownloadedAudioAction(
-                        hasExistingAudio = existingAudio != null
+                        hasExistingAudio = existingAudio != null,
+                        needsFinalization = needsFinalization
                     )
                     if (existingAudio != null) {
                         if (!isDownloadRequestGenerationCurrent(songKey, requestGeneration)) {
                             NPLogger.d(TAG, "单曲下载命中已存在文件时已过期: song=${song.name}, generation=$requestGeneration")
                             removeDownloadTask(songKey, expectedAttemptId = attemptId)
+                            return@withSongExecutionLock
+                        }
+                        if (existingAudioAction == PreExistingDownloadedAudioAction.FINALIZE_EXISTING) {
+                            finalizeCompletedDownload(
+                                context = appContext,
+                                song = song,
+                                refreshCatalog = true,
+                                expectedAttemptId = attemptId,
+                                storedAudioHint = existingAudio
+                            )
                             return@withSongExecutionLock
                         }
                         if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
@@ -2842,10 +2916,26 @@ object GlobalDownloadManager {
                         snapshot = downloadLibrarySnapshot,
                         allowStorageLookup = false
                     )
+                    val needsFinalization = existingAudio?.let { audio ->
+                        isUnfinalizedDownloadedMetadata(readDownloadedMetadata(appContext, audio))
+                    } == true
                     val existingAudioAction = resolvePreExistingDownloadedAudioAction(
-                        hasExistingAudio = existingAudio != null
+                        hasExistingAudio = existingAudio != null,
+                        needsFinalization = needsFinalization
                     )
                     if (existingAudio != null) {
+                        if (existingAudioAction == PreExistingDownloadedAudioAction.FINALIZE_EXISTING) {
+                            finalizeCompletedDownload(
+                                context = appContext,
+                                song = song,
+                                refreshCatalog = false,
+                                expectedAttemptId = attemptId,
+                                storedAudioHint = existingAudio
+                            )
+                            settledSongKeys += songKey
+                            settledAttemptIds[songKey] = attemptId
+                            continue
+                        }
                         if (existingAudioAction == PreExistingDownloadedAudioAction.DIRECT_SETTLE) {
                             settledSongKeys += songKey
                             settledAttemptIds[songKey] = attemptId
@@ -3218,12 +3308,13 @@ object GlobalDownloadManager {
             audio = storedAudio,
             coverReference = repairedCover
         )
+        val existingMetadata = readDownloadedMetadata(context, storedAudio)
         val metadataWritten = metadataPatched || persistDownloadedMetadata(
             context = context,
             audio = storedAudio,
             song = song,
             sidecarReferences = sidecarReferences,
-            downloadFinalized = true,
+            downloadFinalized = existingMetadata?.downloadFinalized == true,
             resolveExistingSidecars = true
         )
         if (!metadataWritten) {
@@ -3255,7 +3346,15 @@ object GlobalDownloadManager {
                 NPLogger.w(TAG, "未最终确认文件不属于当前歌曲，跳过回滚: song=${song.name}, file=${audio.name}")
                 return null
             }
-            NPLogger.w(TAG, "发现未最终确认下载文件，等待重新下载收尾: song=${song.name}, file=${audio.name}")
+            if (ManagedDownloadStorage.hasReadableContent(context, audio)) {
+                NPLogger.w(
+                    TAG,
+                    "发现未最终确认但音频已完整，保留文件并进入收尾重试: " +
+                        "song=${song.name}, file=${audio.name}"
+                )
+                return audio
+            }
+            NPLogger.w(TAG, "发现未最终确认且音频不可读，回滚后重新下载: song=${song.name}, file=${audio.name}")
             rollbackCancelledDownload(context = context, song = song, storedAudio = audio)
             return null
         }
@@ -3354,6 +3453,14 @@ object GlobalDownloadManager {
         ) ?: return
         val metadata = readDownloadedMetadata(context, audio)
         if (!isUnfinalizedDownloadedMetadata(metadata)) {
+            return
+        }
+        if (ManagedDownloadStorage.hasReadableContent(context, audio)) {
+            NPLogger.d(
+                TAG,
+                "重试前保留已完整但未最终确认音频，后续只执行收尾: " +
+                    "song=${song.name}, file=${audio.name}"
+            )
             return
         }
         NPLogger.w(TAG, "重试前清理未最终确认下载文件: song=${song.name}, file=${audio.name}")

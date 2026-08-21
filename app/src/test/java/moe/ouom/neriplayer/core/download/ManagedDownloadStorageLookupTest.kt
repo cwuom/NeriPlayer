@@ -34,6 +34,90 @@ class ManagedDownloadStorageLookupTest {
     }
 
     @Test
+    fun `audio lookup prefers canonical name over numbered duplicate`() {
+        val numbered = storedEntry(
+            name = "Artist - Song (2).flac",
+            reference = "/music/Artist - Song (2).flac",
+            mediaUri = "/music/Artist - Song (2).flac"
+        )
+        val canonical = storedEntry(
+            name = "Artist - Song.flac",
+            reference = "/music/Artist - Song.flac",
+            mediaUri = "/music/Artist - Song.flac"
+        )
+
+        assertEquals(
+            canonical,
+            ManagedDownloadStorageLookup.findAudioEntry(
+                audioEntries = listOf(numbered, canonical),
+                baseNames = listOf("Artist - Song")
+            )
+        )
+    }
+
+    @Test
+    fun `canonical selection keeps different stable identities`() {
+        val canonical = storedEntry(
+            name = "same.flac",
+            reference = "/music/same.flac",
+            mediaUri = "/music/same.flac"
+        )
+        val duplicate = storedEntry(
+            name = "same (1).flac",
+            reference = "/music/same (1).flac",
+            mediaUri = "/music/same (1).flac"
+        )
+        val metadata = mapOf(
+            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|"
+            ),
+            duplicate.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "2|netease|"
+            )
+        )
+
+        assertEquals(
+            listOf(canonical, duplicate),
+            ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+                audioEntries = listOf(canonical, duplicate),
+                metadataByAudioName = metadata
+            )
+        )
+    }
+
+    @Test
+    fun `canonical selection prefers finalized canonical name for same stable identity`() {
+        val numbered = storedEntry(
+            name = "same (1).flac",
+            reference = "/music/same (1).flac",
+            mediaUri = "/music/same (1).flac"
+        )
+        val canonical = storedEntry(
+            name = "same.flac",
+            reference = "/music/same.flac",
+            mediaUri = "/music/same.flac"
+        )
+        val metadata = mapOf(
+            numbered.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|",
+                downloadFinalized = true
+            ),
+            canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                stableKey = "1|netease|",
+                downloadFinalized = false
+            )
+        )
+
+        assertEquals(
+            listOf(numbered),
+            ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+                audioEntries = listOf(numbered, canonical),
+                metadataByAudioName = metadata
+            )
+        )
+    }
+
+    @Test
     fun `local SAF playback reference wins over retained remote identity`() {
         val localMediaUri =
             "content://com.android.externalstorage.documents/tree/primary%3AMusic%2Fmy/" +

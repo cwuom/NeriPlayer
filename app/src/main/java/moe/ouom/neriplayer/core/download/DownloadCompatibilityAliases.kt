@@ -176,8 +176,13 @@ internal fun resolveCompletedDownloadFinalizationAction(
 ): CompletedDownloadFinalizationAction =
     resolveCompletedDownloadFinalizationActionDelegate(hasStoredAudio, cancelled)
 
-internal fun resolvePreExistingDownloadedAudioAction(hasExistingAudio: Boolean): PreExistingDownloadedAudioAction =
-    resolvePreExistingDownloadedAudioActionDelegate(hasExistingAudio)
+internal fun resolvePreExistingDownloadedAudioAction(
+    hasExistingAudio: Boolean,
+    needsFinalization: Boolean = false
+): PreExistingDownloadedAudioAction = resolvePreExistingDownloadedAudioActionDelegate(
+    hasExistingAudio = hasExistingAudio,
+    needsFinalization = needsFinalization
+)
 
 internal fun shouldRepairDownloadedCover(
     coverReferenceAccessible: Boolean,

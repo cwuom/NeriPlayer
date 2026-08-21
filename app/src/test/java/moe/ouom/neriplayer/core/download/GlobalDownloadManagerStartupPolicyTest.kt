@@ -20,6 +20,24 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `existing unfinalized audio selects finalization only`() {
+        assertEquals(
+            PreExistingDownloadedAudioAction.FINALIZE_EXISTING,
+            resolvePreExistingDownloadedAudioAction(
+                hasExistingAudio = true,
+                needsFinalization = true
+            )
+        )
+        assertEquals(
+            PreExistingDownloadedAudioAction.DIRECT_SETTLE,
+            resolvePreExistingDownloadedAudioAction(
+                hasExistingAudio = true,
+                needsFinalization = false
+            )
+        )
+    }
+
+    @Test
     fun `download playback hydration survives local reference normalization`() {
         val quickSong = SongItem(
             id = 1L,
@@ -619,6 +637,29 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertEquals(listOf(firstSong, thirdSong, secondSong), merged)
+    }
+
+    @Test
+    fun `catalog order is stable when download times are equal`() {
+        val first = DownloadedSong(
+            id = 1L,
+            name = "First",
+            artist = "Artist",
+            album = "Album",
+            filePath = "/music/z.flac",
+            fileSize = 1L,
+            downloadTime = 100L
+        )
+        val second = first.copy(
+            id = 2L,
+            name = "Second",
+            filePath = "/music/a.flac"
+        )
+
+        assertEquals(
+            listOf(second, first),
+            upsertDownloadedSongCatalog(listOf(first), second)
+        )
     }
 
     @Test

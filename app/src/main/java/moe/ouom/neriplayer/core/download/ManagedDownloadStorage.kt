@@ -517,7 +517,9 @@ internal object ManagedDownloadStorage {
         val romanizedLyricPath: String? = null,
         val durationMs: Long = 0L,
         val downloadTimeMs: Long? = null,
-        val downloadFinalized: Boolean? = null
+        val downloadFinalized: Boolean? = null,
+        val createdAtMs: Long? = null,
+        val createdAtSource: String? = null
     )
 
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
@@ -1637,6 +1639,10 @@ internal object ManagedDownloadStorage {
                 allowMetadataLessAudio = allowMetadataLessAudio
             )
         }
+        val canonicalAudioEntries = ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+            audioEntries = managedAudioEntries,
+            metadataByAudioName = metadataByAudioName
+        )
         val skippedForeignAudioCount = audioEntries.size - managedAudioEntries.size
         if (skippedForeignAudioCount > 0) {
             NPLogger.d(
@@ -1645,7 +1651,7 @@ internal object ManagedDownloadStorage {
             )
         }
         return@synchronized composeSnapshot(
-            audioEntries = managedAudioEntries,
+            audioEntries = canonicalAudioEntries,
             metadataEntries = metadataEntriesByAudioName.values.toList(),
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
@@ -2162,8 +2168,14 @@ internal object ManagedDownloadStorage {
             restorePersisted = false
         )
         val snapshot = cached ?: buildDownloadLibrarySnapshotBlocking(context)
-        return snapshot.audioEntriesByStableKey[stableKey]
-            ?.maxByOrNull(StoredEntry::lastModifiedMs)
+        return ManagedDownloadStorageLookup.selectCanonicalAudioEntries(
+            audioEntries = snapshot.audioEntriesByStableKey[stableKey].orEmpty(),
+            metadataByAudioName = snapshot.metadataByAudioName
+        ).maxWithOrNull(
+            compareByDescending<StoredEntry> { it.lastModifiedMs }
+                .thenByDescending { it.sizeBytes }
+                .thenBy { it.name }
+        )
     }
 
     private fun replaceFileTarget(

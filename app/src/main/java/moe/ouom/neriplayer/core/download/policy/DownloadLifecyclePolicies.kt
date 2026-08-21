@@ -119,6 +119,7 @@ internal enum class CompletedDownloadFinalizationAction {
 
 internal enum class PreExistingDownloadedAudioAction {
     DIRECT_SETTLE,
+    FINALIZE_EXISTING,
     CONTINUE_DOWNLOAD
 }
 
@@ -134,12 +135,15 @@ internal fun resolveCompletedDownloadFinalizationAction(
 }
 
 internal fun resolvePreExistingDownloadedAudioAction(
-    hasExistingAudio: Boolean
+    hasExistingAudio: Boolean,
+    needsFinalization: Boolean = false
 ): PreExistingDownloadedAudioAction {
-    return if (hasExistingAudio) {
-        PreExistingDownloadedAudioAction.DIRECT_SETTLE
-    } else {
+    return if (!hasExistingAudio) {
         PreExistingDownloadedAudioAction.CONTINUE_DOWNLOAD
+    } else if (needsFinalization) {
+        PreExistingDownloadedAudioAction.FINALIZE_EXISTING
+    } else {
+        PreExistingDownloadedAudioAction.DIRECT_SETTLE
     }
 }
 
