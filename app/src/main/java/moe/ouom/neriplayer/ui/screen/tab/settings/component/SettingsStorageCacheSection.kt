@@ -145,6 +145,7 @@ internal fun SettingsStorageCacheSection(
     showHeader: Boolean = true,
     currentDownloadDirectorySummary: String,
     isCustomDownloadDirectory: Boolean,
+    downloadDirectoryPermissionLost: Boolean = false,
     downloadDirectoryChangeEnabled: Boolean,
     onPickDownloadDirectory: () -> Unit,
     onResetDownloadDirectory: () -> Unit,
@@ -273,6 +274,15 @@ internal fun SettingsStorageCacheSection(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
+                            if (downloadDirectoryPermissionLost) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.settings_download_directory_permission_lost
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                             if (!downloadDirectoryChangeEnabled) {
                                 Text(
                                     text = stringResource(

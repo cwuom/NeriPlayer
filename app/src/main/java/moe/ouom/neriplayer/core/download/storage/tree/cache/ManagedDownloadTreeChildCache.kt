@@ -46,29 +46,64 @@ internal class ManagedDownloadTreeChildCache {
             ?.values
     }
 
+    fun peekAllChildren(cacheKey: String): Collection<QueriedTreeChild>? {
+        return childrenByParent[cacheKey]?.childrenByName?.values
+    }
+
     fun rememberChildren(
         cacheKey: String,
         children: Collection<QueriedTreeChild>,
         refreshedAtMs: Long,
         isComplete: Boolean
     ): Set<String> {
-        val refreshedNames = mergeNamesAfterRefresh(
+        val cachedNames = namesByParent[cacheKey]
+        val refreshedNames = TreeChildNameRefreshMerger.mergeAfterRefresh(
             refreshedNames = children.map(QueriedTreeChild::name),
-            cachedNames = namesByParent[cacheKey]?.names,
-            cachedNamesComplete = namesByParent[cacheKey]?.isComplete,
+            cachedNames = cachedNames?.names,
+            cachedNamesComplete = cachedNames?.isComplete,
             refreshedComplete = isComplete
         )
+        val previousChildren = childrenByParent[cacheKey]
+            ?.childrenByName
+            ?.values
+            .orEmpty()
+        val effectiveChildren = if (isComplete) {
+            children.toList()
+        } else {
+            mergeChildren(
+                previous = previousChildren,
+                refreshed = children
+            )
+        }
+        val effectiveNames = if (isComplete) {
+            refreshedNames.names
+        } else {
+            (refreshedNames.names + effectiveChildren.map(QueriedTreeChild::name))
+                .toCollection(linkedSetOf())
+        }
         childrenByParent[cacheKey] = CachedTreeChildren(
-            initialChildren = children,
+            initialChildren = effectiveChildren,
             initialRefreshedAtMs = refreshedAtMs,
             initialComplete = isComplete
         )
         namesByParent[cacheKey] = CachedChildNames(
-            initialNames = refreshedNames.names,
+            initialNames = effectiveNames,
             initialRefreshedAtMs = refreshedAtMs,
             initialComplete = refreshedNames.isComplete
         )
-        return namesByParent[cacheKey]?.names ?: refreshedNames.names
+        return namesByParent[cacheKey]?.names ?: effectiveNames
+    }
+
+    private fun mergeChildren(
+        previous: Collection<QueriedTreeChild>,
+        refreshed: Collection<QueriedTreeChild>
+    ): List<QueriedTreeChild> {
+        val byUri = LinkedHashMap<String, QueriedTreeChild>()
+        previous.forEach { child -> byUri[child.documentUri.toString()] = child }
+        refreshed.forEach { child -> byUri[child.documentUri.toString()] = child }
+        val byName = LinkedHashMap<String, QueriedTreeChild>()
+        byUri.values.forEach { child -> byName[child.name] = child }
+        return byName.values.toList()
     }
 
     fun rememberChildName(
@@ -104,6 +139,17 @@ internal class ManagedDownloadTreeChildCache {
             isReservation = false
         )
         childrenByParent[cacheKey]?.let { cached ->
+            val staleNames = cached.childrenByName.values
+                .filter { existing ->
+                    existing.documentUri.toString() == child.documentUri.toString() &&
+                        existing.name != child.name
+                }
+                .map(QueriedTreeChild::name)
+            staleNames.forEach(cached.childrenByName::remove)
+            namesByParent[cacheKey]?.let { names ->
+                staleNames.forEach(names.names::remove)
+                names.names += child.name
+            }
             cached.childrenByName[child.name] = child
             cached.refreshedAtMs = refreshedAtMs
             return

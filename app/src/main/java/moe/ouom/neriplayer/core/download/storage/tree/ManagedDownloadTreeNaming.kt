@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.download.storage.tree
 
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import java.text.Normalizer
+import java.util.Locale
 
 internal object ManagedDownloadTreeNaming {
     fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
@@ -9,8 +11,7 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun isExactTreeStoredName(actualName: String?, expectedName: String): Boolean {
-        return resolveTreeStoredName(actualName, expectedName)
-            .equals(expectedName, ignoreCase = true)
+        return canonicalName(resolveTreeStoredName(actualName, expectedName)) == canonicalName(expectedName)
     }
 
     fun documentCreateMimeType(desiredName: String, mimeType: String): String {
@@ -46,8 +47,17 @@ internal object ManagedDownloadTreeNaming {
         return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true)
     }
 
+    fun externalStorageChildDocumentId(
+        parentDocumentId: String,
+        displayName: String
+    ): String? {
+        if (parentDocumentId.isBlank() || displayName.isBlank()) return null
+        if (displayName.contains('/') || displayName.contains('\\')) return null
+        return "${parentDocumentId.trimEnd('/')}/$displayName"
+    }
+
     fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
-        return actualName.equals(desiredName, ignoreCase = true) ||
+        return canonicalName(actualName) == canonicalName(desiredName) ||
             providerNumberedNameOrdinal(actualName, desiredName) != null
     }
 
@@ -108,7 +118,7 @@ internal object ManagedDownloadTreeNaming {
 
     fun metadataNameOrdinal(actualName: String, audioName: String): Int? {
         val expectedName = "$audioName$METADATA_SUFFIX"
-        if (actualName.equals(expectedName, ignoreCase = true)) return 0
+        if (canonicalName(actualName) == canonicalName(expectedName)) return 0
         return providerNumberedNameOrdinal(actualName, expectedName)
     }
 
@@ -146,5 +156,9 @@ internal object ManagedDownloadTreeNaming {
             return null
         }
         return actualName.substring(prefix.length, numberEnd - 1).toIntOrNull()
+    }
+
+    private fun canonicalName(value: String): String {
+        return Normalizer.normalize(value, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 }

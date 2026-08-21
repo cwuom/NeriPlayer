@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPending
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
@@ -257,9 +258,11 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
                 val writtenAtMs = System.currentTimeMillis()
                 val encoded = content.toByteArray(Charsets.UTF_8)
-                val output = runCatching {
+                val output = try {
                     context.contentResolver.openOutputStream(target.uri, "rwt")
-                }.getOrElse {
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
                     context.contentResolver.openOutputStream(target.uri, "wt")
                 } ?: throw IOException("无法写入元数据文件: $displayName")
                 output.use { it.write(encoded) }
@@ -483,7 +486,11 @@ internal class ManagedDownloadStorageCommitWriter(
             if (!pending.renameTo(finalName)) {
                 throw IOException("SAF 提供方不支持安全提交迁移文件: $finalName")
             }
-            val committedTarget = DocumentFile.fromSingleUri(context, pending.uri) ?: pending
+            val committedTarget = treeChildRegistry.toTreeDocumentFile(
+                context = context,
+                parent = parent,
+                child = pending
+            ) ?: DocumentFile.fromSingleUri(context, pending.uri) ?: pending
             val entry = treeFileCommitter.verifiedTreeStoredEntry(
                 context = context,
                 target = committedTarget,
@@ -526,7 +533,7 @@ internal class ManagedDownloadStorageCommitWriter(
         if (lastModifiedMs <= 0L) {
             return
         }
-        runCatching {
+        try {
             context.contentResolver.update(
                 uri,
                 android.content.ContentValues().apply {
@@ -535,6 +542,10 @@ internal class ManagedDownloadStorageCommitWriter(
                 null,
                 null
             )
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(tag, "恢复迁移文件时间失败: ${uri}, ${error.message}", error)
         }
     }
 

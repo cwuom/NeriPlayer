@@ -29,6 +29,7 @@ internal class ManagedDownloadRootResolver(
         resolveTreeRoot(context, configuredUri)?.let { return it }
         if (configuredUri != null) {
             onUnavailableTreeRoot(configuredUri)
+            throw ManagedDownloadRootUnavailableException(configuredUri)
         }
         return createDefaultRoot(context)
     }
@@ -46,6 +47,12 @@ internal class ManagedDownloadRootResolver(
         val normalizedUri = ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(directoryUriString)
             ?: return null
         val identity = ManagedDownloadDirectoryIdentity.directoryIdentity(normalizedUri) ?: normalizedUri
+        if (requiresPersistedPermission(normalizedUri) &&
+            !hasPersistedWritePermissionForIdentity(context, identity)
+        ) {
+            invalidateCachedTreeRoot(normalizedUri, identity)
+            return null
+        }
         resolveCachedTreeRoot(normalizedUri, identity)?.let { return it }
 
         val lock = locks.computeIfAbsent("tree_root:$identity") { Any() }
@@ -53,14 +60,20 @@ internal class ManagedDownloadRootResolver(
             resolveCachedTreeRoot(normalizedUri, identity)?.let { return@synchronized it }
             val treeUri = runCatching { normalizedUri.toUri() }.getOrNull() ?: return@synchronized null
             val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return@synchronized null
-            tree.takeIf { it.exists() && it.isDirectory }
+            tree.takeIf { isAccessibleDirectory(it) }
                 ?.let { rememberCachedTreeRoot(normalizedUri, identity, ManagedDownloadRootHandle.TreeRoot(it)) }
         }
     }
 
+    fun hasPersistedWritePermission(context: Context, directoryUriString: String?): Boolean {
+        val normalizedUri = ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(directoryUriString)
+            ?: return false
+        val identity = ManagedDownloadDirectoryIdentity.directoryIdentity(normalizedUri) ?: normalizedUri
+        return hasPersistedWritePermissionForIdentity(context, identity)
+    }
+
     fun createDefaultRoot(context: Context): ManagedDownloadRootHandle.FileRoot {
-        val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        val dir = File(baseDir, ROOT_DIR_NAME).apply { mkdirs() }
+        val dir = defaultRootDirectory(context).apply { mkdirs() }
         return ManagedDownloadRootHandle.FileRoot(dir)
     }
 
@@ -80,10 +93,50 @@ internal class ManagedDownloadRootResolver(
             return cachedRoot.root
         }
         return cachedRoot.root
-            .takeIf { it.tree.exists() && it.tree.isDirectory }
+            .takeIf { isAccessibleDirectory(it.tree) }
             ?.also {
                 cachedTreeRoot = cachedRoot.copy(validatedAtMs = now)
             }
+    }
+
+    private fun hasPersistedWritePermissionForIdentity(
+        context: Context,
+        identity: String
+    ): Boolean {
+        val permissions = runCatching {
+            context.contentResolver.persistedUriPermissions
+        }.getOrNull() ?: return false
+        return permissions.any { permission ->
+            permission.isReadPermission &&
+                permission.isWritePermission &&
+                ManagedDownloadDirectoryIdentity.directoryIdentity(permission.uri.toString()) == identity
+        }
+    }
+
+    private fun isAccessibleDirectory(directory: DocumentFile): Boolean {
+        return runCatching { directory.exists() && directory.isDirectory }
+            .getOrDefault(false)
+    }
+
+    private fun invalidateCachedTreeRoot(normalizedUri: String, identity: String) {
+        if (cachedTreeRoot?.normalizedUri == normalizedUri && cachedTreeRoot?.identity == identity) {
+            cachedTreeRoot = null
+        }
+    }
+
+    private fun requiresPersistedPermission(normalizedUri: String): Boolean {
+        return runCatching { normalizedUri.toUri().authority }
+            .getOrNull() == EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY
+    }
+
+    companion object {
+        const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+            "com.android.externalstorage.documents"
+
+        internal fun defaultRootDirectory(context: Context): File {
+            val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+            return File(baseDir, ROOT_DIR_NAME)
+        }
     }
 
     private fun rememberCachedTreeRoot(

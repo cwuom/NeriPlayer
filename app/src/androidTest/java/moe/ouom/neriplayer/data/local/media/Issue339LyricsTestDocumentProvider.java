@@ -77,6 +77,10 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String FAIL_CHILD_DOCUMENT_QUERIES = "test:failChildDocumentQueries";
     public static final String RESET_CHILD_DOCUMENT_QUERY_FAILURE =
         "test:resetChildDocumentQueryFailure";
+    public static final String FAIL_WITH_SECURITY_EXCEPTION =
+        "test:failWithSecurityException";
+    public static final String RESET_SECURITY_EXCEPTION =
+        "test:resetSecurityException";
     public static final String EMPTY_CHILD_DOCUMENT_QUERIES = "test:emptyChildDocumentQueries";
     public static final String RESET_EMPTY_CHILD_DOCUMENT_QUERIES =
         "test:resetEmptyChildDocumentQueries";
@@ -87,6 +91,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static final String LYRICS_FIXTURE_DIRECTORY_NAME = "issue339-lyrics";
     private static volatile int configuredAudioCount = 1;
     private static volatile boolean failChildDocumentQueries;
+    private static volatile boolean failWithSecurityException;
     private static volatile boolean emptyChildDocumentQueries;
     private static volatile boolean useNumberedSidecars;
     private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
@@ -121,6 +126,9 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     ) {
         if (isChildDocumentsUri(uri) && failChildDocumentQueries) {
             throw new IllegalStateException("configured child document query failure");
+        }
+        if (isChildDocumentsUri(uri) && failWithSecurityException) {
+            throw new SecurityException("configured SAF permission failure");
         }
         if (!isChildDocumentsUri(uri) && isLargeAudioDocument(documentId(uri))) {
             largeAudioDocumentQueryCount.incrementAndGet();
@@ -233,6 +241,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if (RESET_LYRICS.equals(method)) {
             resetLyricsFixtures();
             failChildDocumentQueries = false;
+            failWithSecurityException = false;
             emptyChildDocumentQueries = false;
             useNumberedSidecars = false;
             metadataCreateCount.set(0);
@@ -273,6 +282,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             failChildDocumentQueries = false;
             return new Bundle();
         }
+        if (FAIL_WITH_SECURITY_EXCEPTION.equals(method)) {
+            failWithSecurityException = true;
+            return new Bundle();
+        }
+        if (RESET_SECURITY_EXCEPTION.equals(method)) {
+            failWithSecurityException = false;
+            return new Bundle();
+        }
         if (EMPTY_CHILD_DOCUMENT_QUERIES.equals(method)) {
             emptyChildDocumentQueries = true;
             return new Bundle();
@@ -298,9 +315,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             return result;
         }
         if ("android:createDocument".equals(method)) {
-            String displayName = extras == null
-                ? null
-                : extras.getString("android.provider.extra.DISPLAY_NAME");
+            String displayName = requestedDisplayName(extras);
             if (METADATA_NAME.equals(displayName)) {
                 metadataCreateCount.incrementAndGet();
             }
@@ -349,6 +364,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         } catch (ReflectiveOperationException ignored) {
             return null;
         }
+    }
+
+    private static String requestedDisplayName(Bundle extras) {
+        if (extras == null) return null;
+        String displayName = extras.getString("_display_name");
+        return displayName != null
+            ? displayName
+            : extras.getString("android.provider.extra.DISPLAY_NAME");
     }
 
     private static void writePipe(ParcelFileDescriptor writeSide, byte[] content) {

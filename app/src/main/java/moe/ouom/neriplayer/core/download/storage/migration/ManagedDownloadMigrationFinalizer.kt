@@ -1,12 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
 import android.content.Context
-import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.net.URI
-import java.math.BigDecimal
-import java.security.MessageDigest
+import android.provider.DocumentsContract
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -21,6 +17,12 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import java.math.BigDecimal
+import java.net.URI
+import java.security.MessageDigest
 
 internal class ManagedDownloadMigrationFinalizer(
     private val tag: String,
@@ -320,19 +322,49 @@ internal class ManagedDownloadMigrationFinalizer(
                 val source = copied.original.entry
                 val target = copied.copiedEntry
                 source.reference.takeIf(String::isNotBlank)?.let { reference ->
-                    put(reference, target.reference)
+                    contentReferenceAliases(reference).forEach { alias ->
+                        put(alias, target.reference)
+                    }
                 }
                 source.localFilePath?.takeIf(String::isNotBlank)?.let { localPath ->
                     put(localPath, target.localFilePath ?: target.reference)
                 }
                 source.mediaUri.takeIf(String::isNotBlank)?.let { mediaUri ->
-                    put(mediaUri, target.metadataReference())
+                    contentReferenceAliases(mediaUri).forEach { alias ->
+                        put(alias, target.metadataReference())
+                    }
                 }
                 source.localFileUriAliases(target).forEach { (sourceUri, targetUri) ->
                     put(sourceUri, targetUri)
                 }
             }
         }
+    }
+
+    private fun contentReferenceAliases(reference: String): Set<String> {
+        val normalized = reference.trim().takeIf(String::isNotBlank) ?: return emptySet()
+        val uri = runCatching { normalized.toUri() }.getOrNull()
+            ?: return setOf(normalized)
+        if (!uri.scheme.equals("content", ignoreCase = true) || uri.authority.isNullOrBlank()) {
+            return setOf(normalized)
+        }
+        val documentId = try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return setOf(normalized)
+        val aliases = linkedSetOf(normalized)
+        runCatching {
+            DocumentsContract.buildDocumentUri(uri.authority, documentId).toString()
+        }.getOrNull()?.let(aliases::add)
+        if (uri.pathSegments.any { it == "tree" }) {
+            runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(uri, documentId).toString()
+            }.getOrNull()?.let(aliases::add)
+        }
+        return aliases
     }
 
     private fun ManagedDownloadStorage.StoredEntry.localFileUriAliases(

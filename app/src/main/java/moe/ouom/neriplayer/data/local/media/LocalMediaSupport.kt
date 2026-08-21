@@ -70,6 +70,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.RandomAccessFile
+import java.text.Normalizer
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
 import java.net.URLConnection
@@ -97,6 +98,7 @@ private const val LOCAL_LYRICS_LOOKUP_CACHE_LIMIT = 768
 private const val LOCAL_LYRICS_CACHE_TTL_MS = 750L
 private const val DOCUMENT_CHILDREN_CACHE_LIMIT = 512
 private const val DOCUMENT_CHILDREN_CACHE_TTL_MS = 750L
+private const val EMPTY_DOCUMENT_REFRESH_CONFIRMATION_COUNT = 2
 private const val DOCUMENT_NAVIGATION_CACHE_LIMIT = 512
 private const val LOCAL_LYRICS_PERF_LOG_LIMIT = 96
 private const val MAX_MEDIASTORE_DURATION_QUERY_IDS = 400
@@ -537,7 +539,8 @@ object LocalMediaSupport {
     }
     private data class DocumentChildrenCacheEntry(
         val children: List<DocumentChild>,
-        val cachedAtMs: Long
+        val cachedAtMs: Long,
+        val isComplete: Boolean
     )
     private val documentChildrenCache = object : LinkedHashMap<String, DocumentChildrenCacheEntry>(
         DOCUMENT_CHILDREN_CACHE_LIMIT,
@@ -550,6 +553,7 @@ object LocalMediaSupport {
             return size > DOCUMENT_CHILDREN_CACHE_LIMIT
         }
     }
+    private val consecutiveEmptyDocumentRefreshes = ConcurrentHashMap<String, Int>()
     private data class DocumentNavigationCacheEntry(
         val navigation: LocalDocumentNavigation?,
         val cachedAtMs: Long
@@ -1029,9 +1033,13 @@ object LocalMediaSupport {
             )
         }
         if (shouldSkipLocalCoverSidecar(sourceUri.toString(), localFile)) {
-            val navigation = runCatching {
+            val navigation = try {
                 resolveLocalDocumentNavigation(context, sourceUri)
-            }.getOrNull()
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
             if (navigation?.parentDocumentId.isNullOrBlank()) {
                 return true
             }
@@ -1488,17 +1496,27 @@ object LocalMediaSupport {
         val bytes = content.toByteArray(Charsets.UTF_8)
         var lastError: Throwable? = null
         for (mode in listOf("wt", "w")) {
-            val written = runCatching {
+            val written = try {
                 val output = context.contentResolver.openOutputStream(reference.toUri(), mode)
-                    ?: return@runCatching false
-                output.use {
-                    it.write(bytes)
-                    it.flush()
+                    ?: run {
+                        lastError = IllegalStateException("provider returned no output stream")
+                        null
+                    }
+                if (output == null) {
+                    false
+                } else {
+                    output.use {
+                        it.write(bytes)
+                        it.flush()
+                    }
+                    true
                 }
-                true
-            }.onFailure { error ->
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
                 lastError = error
-            }.getOrDefault(false)
+                false
+            }
             if (written) return true
         }
         NPLogger.w(TAG, "write lyric sidecar failed for $reference: ${lastError?.message}")
@@ -1506,22 +1524,25 @@ object LocalMediaSupport {
     }
 
     private fun writeBytesContent(context: Context, reference: String, bytes: ByteArray): Boolean {
-        return runCatching {
-            context.contentResolver.openOutputStream(reference.toUri(), "rwt")?.use { output ->
-                output.write(bytes)
-                output.flush()
-            } ?: context.contentResolver.openOutputStream(reference.toUri(), "wt")?.use { output ->
-                output.write(bytes)
-                output.flush()
-            } ?: return@runCatching false
+        return try {
+            val output = context.contentResolver.openOutputStream(reference.toUri(), "rwt")
+                ?: context.contentResolver.openOutputStream(reference.toUri(), "wt")
+                ?: return false
+            output.use {
+                it.write(bytes)
+                it.flush()
+            }
             true
-        }.onFailure {
-            NPLogger.w(TAG, "write cover sidecar failed for $reference: ${it.message}")
-        }.getOrDefault(false)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "write cover sidecar failed for $reference: ${error.message}")
+            false
+        }
     }
 
     private fun readBytesContent(context: Context, reference: String): ByteArray? {
-        return runCatching {
+        return try {
             if (reference.startsWith("/")) {
                 File(reference).inputStream().use { input ->
                     input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
@@ -1531,17 +1552,23 @@ object LocalMediaSupport {
                     input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
                 }
             }
-        }.onFailure {
-            NPLogger.w(TAG, "read cover sidecar failed for $reference: ${it.message}")
-        }.getOrNull()
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "read cover sidecar failed for $reference: ${error.message}")
+            null
+        }
     }
 
     private fun deleteDocumentReference(context: Context, reference: String): Boolean {
-        return runCatching {
+        return try {
             DocumentsContract.deleteDocument(context.contentResolver, reference.toUri())
-        }.onFailure {
-            NPLogger.w(TAG, "delete cover sidecar failed for $reference: ${it.message}")
-        }.getOrDefault(false)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "delete cover sidecar failed for $reference: ${error.message}")
+            false
+        }
     }
 
     /**
@@ -1633,21 +1660,26 @@ object LocalMediaSupport {
         }
 
         val directScanned = if (knownSidecarReferences != null && context != null) {
-            runCatching {
+            try {
                 inspectLyricsFromKnownReferences(
                     context = context,
                     references = knownSidecarReferences
                 )
-            }.onFailure {
-                NPLogger.w(TAG, "known local lyrics inspection failed for $source: ${it.message}")
-            }.getOrNull()
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "known local lyrics inspection failed for $source: ${error.message}")
+                null
+            }
         } else if (directFile != null) {
-            runCatching {
+            try {
                 inspectLyricsFromDirectFile(
                     file = directFile
                 )
-            }.getOrElse {
-                NPLogger.w(TAG, "fast local lyrics inspection failed for $source: ${it.message}")
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "fast local lyrics inspection failed for $source: ${error.message}")
                 null
             }
         } else {
@@ -1661,7 +1693,7 @@ object LocalMediaSupport {
             source != null &&
             shouldProbeContentSource
         ) {
-            runCatching {
+            try {
                 inspectLyricsFromContentUri(
                     context = context,
                     sourceUri = source,
@@ -1670,9 +1702,12 @@ object LocalMediaSupport {
                         song = song
                     ) ?: source.lastPathSegment.orEmpty()
                 )
-            }.onFailure {
-                NPLogger.w(TAG, "fast SAF lyrics inspection failed for $source: ${it.message}")
-            }.getOrNull()
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "fast SAF lyrics inspection failed for $source: ${error.message}")
+                null
+            }
         } else {
             null
         }
@@ -1687,11 +1722,14 @@ object LocalMediaSupport {
                 !resolvedScan.hasRomanizedSidecar
             )
         val embedded = context?.takeIf { needsEmbeddedFallback }?.let { embeddedContext ->
-            runCatching { inspectEmbeddedLyrics(embeddedContext, song) }
-                .onFailure {
-                    NPLogger.w(TAG, "fast embedded lyrics inspection failed for $source: ${it.message}")
-                }
-                .getOrNull()
+            try {
+                inspectEmbeddedLyrics(embeddedContext, song)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "fast embedded lyrics inspection failed for $source: ${error.message}")
+                null
+            }
         }
         val result = LocalLyricsScanMetadata(
             lyric = resolvedScan?.original
@@ -1805,21 +1843,31 @@ object LocalMediaSupport {
     ): LocalLyricsScanMetadata? {
         val options = embeddedLyricsReadOptions
         song.localMediaUriCandidates().forEach { sourceUri ->
-            val resolved = runCatching {
+            val resolved = try {
                 resolveInspectableLocalMedia(
                     context = context,
                     uri = sourceUri,
                     allowDescriptorFallback = true
                 )
-            }.getOrNull() ?: return@forEach
-            val metadata = inspectTagLibMetadata(
-                context = context,
-                uri = resolved.playableUri,
-                file = resolved.file,
-                includeEmbeddedAssets = options.includeEmbeddedAssets,
-                includeEmbeddedLyrics = options.includeEmbeddedLyrics,
-                includeAudioProperties = options.includeAudioProperties
-            ) ?: return@forEach
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: return@forEach
+            val metadata = try {
+                inspectTagLibMetadata(
+                    context = context,
+                    uri = resolved.playableUri,
+                    file = resolved.file,
+                    includeEmbeddedAssets = options.includeEmbeddedAssets,
+                    includeEmbeddedLyrics = options.includeEmbeddedLyrics,
+                    includeAudioProperties = options.includeAudioProperties
+                )
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            } ?: return@forEach
             return LocalLyricsScanMetadata(
                 lyric = metadata.lyrics,
                 translatedLyric = metadata.translatedLyrics,
@@ -1958,6 +2006,7 @@ object LocalMediaSupport {
         synchronized(documentChildrenCache) {
             documentChildrenCache.clear()
         }
+        consecutiveEmptyDocumentRefreshes.clear()
         synchronized(documentNavigationCache) {
             documentNavigationCache.clear()
         }
@@ -3729,14 +3778,23 @@ object LocalMediaSupport {
 
     fun readTextContent(context: Context, reference: String): String? {
         val bytes = when {
-            reference.startsWith("/") -> runCatching { readLimitedTextFile(File(reference)) }
-                .onFailure { NPLogger.w(TAG, "read bytes failed for $reference: ${it.message}") }
-                .getOrNull()
-            else -> runCatching {
-                context.contentResolver.openInputStream(reference.toUri())?.use(::readLimitedTextStream)
-            }.onFailure {
-                NPLogger.w(TAG, "read stream failed for $reference: ${it.message}")
-            }.getOrNull()
+            reference.startsWith("/") -> try {
+                readLimitedTextFile(File(reference))
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "read bytes failed for $reference: ${error.message}")
+                null
+            }
+            else -> try {
+                context.contentResolver.openInputStream(reference.toUri())
+                    ?.use(::readLimitedTextStream)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "read stream failed for $reference: ${error.message}")
+                null
+            }
         } ?: return null
 
         return decodeTextBytes(bytes)
@@ -4161,26 +4219,33 @@ object LocalMediaSupport {
             val temp = runCatching {
                 File.createTempFile(".${target.name}.", ".tmp", parent)
             }.getOrNull() ?: return false
-            return runCatching {
+            return try {
                 temp.writeText(content, Charsets.UTF_8)
                 if (!temp.renameTo(target)) {
                     temp.copyTo(target, overwrite = true)
                     temp.delete()
                 }
                 true
-            }.onFailure {
+            } catch (error: SecurityException) {
                 temp.delete()
-                NPLogger.w(TAG, "write local metadata sidecar failed for $reference: ${it.message}")
-            }.getOrDefault(false)
+                throw error
+            } catch (error: Exception) {
+                temp.delete()
+                NPLogger.w(TAG, "write local metadata sidecar failed for $reference: ${error.message}")
+                false
+            }
         }
-        return runCatching {
+        return try {
             context.contentResolver.openOutputStream(reference.toUri(), "wt")
                 ?.use { output -> output.write(content.toByteArray(Charsets.UTF_8)) }
-                ?: return@runCatching false
-            true
-        }.onFailure {
-            NPLogger.w(TAG, "write local metadata sidecar failed for $reference: ${it.message}")
-        }.getOrDefault(false)
+                ?.let { true }
+                ?: false
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "write local metadata sidecar failed for $reference: ${error.message}")
+            false
+        }
     }
 
     private fun resolveLocalDocumentNavigation(
@@ -4200,14 +4265,32 @@ object LocalMediaSupport {
         val navigation = if (isMediaStoreUri(uri)) {
             resolveMediaStoreDocumentNavigation(context, uri)
         } else {
-            val treeDocumentId = runCatching {
+            val treeDocumentId = try {
                 DocumentsContract.getTreeDocumentId(uri)
-            }.getOrNull()
-            val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-            val treeUri = runCatching {
-                val authority = uri.authority ?: return@runCatching null
-                treeDocumentId?.let { DocumentsContract.buildTreeDocumentUri(authority, it) }
-            }.getOrNull()
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            val documentId = try {
+                DocumentsContract.getDocumentId(uri)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            val treeUri = try {
+                val authority = uri.authority
+                if (authority == null) {
+                    null
+                } else {
+                    treeDocumentId?.let { DocumentsContract.buildTreeDocumentUri(authority, it) }
+                }
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
             val documentUri = if (treeUri != null && documentId != null) {
                 DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
             } else {
@@ -4244,9 +4327,13 @@ object LocalMediaSupport {
             ?.takeIf(String::isNotBlank)
             ?: return null
         val treeUri = resolveExternalStorageTreeUri(context, relativePath) ?: return null
-        val treeDocumentId = runCatching {
+        val treeDocumentId = try {
             DocumentsContract.getTreeDocumentId(treeUri)
-        }.getOrNull() ?: return null
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
         val rootSegments = documentPathSegments(treeDocumentId)
         val relativeSegments = documentPathSegments(relativePath)
         val targetSegments = when {
@@ -4290,6 +4377,44 @@ object LocalMediaSupport {
             }
             ?.uri
             ?.toUri()
+            ?.takeIf { isWritableDocumentUri(context, it) }
+            ?: buildWritableExternalStorageDocumentUri(
+                treeUri = baseUri,
+                parentDocumentId = parentDocumentId,
+                displayName = displayName
+            )?.takeIf { isWritableDocumentUri(context, it) }
+    }
+
+    internal fun buildWritableExternalStorageDocumentUri(
+        treeUri: Uri,
+        parentDocumentId: String,
+        displayName: String
+    ): Uri? {
+        if (!treeUri.scheme.equals("content", ignoreCase = true)) return null
+        if (treeUri.authority != "com.android.externalstorage.documents") return null
+        val documentId = buildExternalStorageDocumentId(parentDocumentId, displayName) ?: return null
+        return runCatching {
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        }.getOrNull()
+    }
+
+    internal fun buildExternalStorageDocumentId(
+        parentDocumentId: String,
+        displayName: String
+    ): String? {
+        if (parentDocumentId.isBlank() || displayName.isBlank()) return null
+        if (displayName.contains('/') || displayName.contains('\\')) return null
+        return "${parentDocumentId.trimEnd('/')}/$displayName"
+    }
+
+    private fun isWritableDocumentUri(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "rw")?.use { true } == true
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun resolveExternalStorageTreeUri(
@@ -4312,9 +4437,13 @@ object LocalMediaSupport {
 
         val relativeSegments = documentPathSegments(relativePath)
         return candidates.firstOrNull { treeUri ->
-            val treeId = runCatching {
+            val treeId = try {
                 DocumentsContract.getTreeDocumentId(treeUri)
-            }.getOrNull()
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
             val rootSegments = documentPathSegments(treeId)
             rootSegments.isEmpty() || relativeSegments.startsWithSegments(rootSegments)
         }
@@ -6048,9 +6177,13 @@ object LocalMediaSupport {
         displayName: String,
         parentDocumentId: String
     ): Boolean {
-        val sourceDocumentId = runCatching {
+        val sourceDocumentId = try {
             DocumentsContract.getDocumentId(sourceUri)
-        }.getOrNull()
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
         val containsSource = parentChildren.any { child ->
             !child.isDirectory &&
                 (
@@ -6058,25 +6191,42 @@ object LocalMediaSupport {
                         child.displayName.equals(displayName, ignoreCase = true)
                     )
         }
-        if (!containsSource) {
+        val sourceDocumentPathMatches = if (!containsSource && isExternalStorageDocumentUri(sourceUri)) {
+            sourceDocumentId?.let { documentId ->
+                normalizedDocumentId(documentId) == normalizedDocumentId(
+                    "$parentDocumentId/$displayName"
+                )
+            } == true
+        } else {
+            false
+        }
+        if (!containsSource && !sourceDocumentPathMatches) {
             NPLogger.w(
                 TAG,
                 "SAF 子项枚举未包含当前音频，拒绝创建侧载: " +
                     "source=$sourceUri, parent=$parentDocumentId, name=$displayName"
             )
         }
-        return containsSource
+        return containsSource || sourceDocumentPathMatches
+    }
+
+    private fun normalizedDocumentId(value: String): String {
+        return Uri.decode(value).trimEnd('/').lowercase(Locale.ROOT)
     }
 
     private fun findDocumentParentId(context: Context, documentUri: Uri): String? {
         if (isMediaStoreUri(documentUri)) return null
-        return runCatching {
+        return try {
             DocumentsContract.findDocumentPath(context.contentResolver, documentUri)
                 ?.path
                 ?.dropLast(1)
                 ?.lastOrNull()
                 ?.takeIf(String::isNotBlank)
-        }.getOrNull()
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun resolveDocumentLyricReferences(
@@ -6103,13 +6253,22 @@ object LocalMediaSupport {
         val uri: String
     )
 
+    private data class DocumentChildrenQueryResult(
+        val children: List<DocumentChild>,
+        val isComplete: Boolean
+    )
+
     internal fun isManagedSidecarDirectoryName(actualName: String, desiredName: String): Boolean {
-        if (actualName.equals(desiredName, ignoreCase = true)) return true
-        val prefix = "$desiredName ("
-        if (!actualName.startsWith(prefix, ignoreCase = true) || !actualName.endsWith(")")) {
+        if (canonicalSafName(actualName) == canonicalSafName(desiredName)) return true
+        val normalizedActual = Normalizer.normalize(actualName, Normalizer.Form.NFC)
+        val normalizedDesired = Normalizer.normalize(desiredName, Normalizer.Form.NFC)
+        val prefix = "$normalizedDesired ("
+        if (!normalizedActual.startsWith(prefix, ignoreCase = true) ||
+            !normalizedActual.endsWith(")")
+        ) {
             return false
         }
-        return actualName.substring(prefix.length, actualName.length - 1)
+        return normalizedActual.substring(prefix.length, normalizedActual.length - 1)
             .toIntOrNull() != null
     }
 
@@ -6123,7 +6282,7 @@ object LocalMediaSupport {
             .filter { child -> isManagedSidecarDirectoryName(child.displayName, desiredName) }
             .minWithOrNull(
                 compareBy<DocumentChild>(
-                    { if (it.displayName.equals(desiredName, ignoreCase = true)) 0 else 1 },
+                    { if (canonicalSafName(it.displayName) == canonicalSafName(desiredName)) 0 else 1 },
                     { it.displayName.substringAfter("(", "").removeSuffix(")").toIntOrNull() ?: Int.MAX_VALUE }
                 )
             )
@@ -6154,7 +6313,7 @@ object LocalMediaSupport {
     }
 
     internal fun sidecarNameMatches(actualName: String, canonicalName: String): Boolean {
-        return actualName.equals(canonicalName, ignoreCase = true) ||
+        return canonicalSafName(actualName) == canonicalSafName(canonicalName) ||
             numberedSidecarNameMatches(actualName, canonicalName)
     }
 
@@ -6186,17 +6345,19 @@ object LocalMediaSupport {
     }
 
     private fun numberedSidecarNameOrdinalOrNull(actualName: String, canonicalName: String): Int? {
+        val normalizedActualName = Normalizer.normalize(actualName, Normalizer.Form.NFC)
+        val normalizedCanonicalName = Normalizer.normalize(canonicalName, Normalizer.Form.NFC)
         parseNumberedSidecarNameOrdinal(
-            actualName = actualName,
-            prefix = "$canonicalName (",
+            actualName = normalizedActualName,
+            prefix = "$normalizedCanonicalName (",
             suffix = ""
         )?.let { return it }
-        val extensionIndex = canonicalName.lastIndexOf('.')
-        if (extensionIndex <= 0 || extensionIndex == canonicalName.lastIndex) return null
+        val extensionIndex = normalizedCanonicalName.lastIndexOf('.')
+        if (extensionIndex <= 0 || extensionIndex == normalizedCanonicalName.lastIndex) return null
         return parseNumberedSidecarNameOrdinal(
-            actualName = actualName,
-            prefix = canonicalName.substring(0, extensionIndex) + " (",
-            suffix = canonicalName.substring(extensionIndex)
+            actualName = normalizedActualName,
+            prefix = normalizedCanonicalName.substring(0, extensionIndex) + " (",
+            suffix = normalizedCanonicalName.substring(extensionIndex)
         )
     }
 
@@ -6254,12 +6415,17 @@ object LocalMediaSupport {
         synchronized(documentChildrenCache) {
             documentChildrenCache.remove(cacheKey)
         }
+        consecutiveEmptyDocumentRefreshes.remove(cacheKey)
     }
 
     private fun documentParentCacheKey(baseUri: Uri, parentDocumentId: String): String {
-        val treeDocumentId = runCatching {
+        val treeDocumentId = try {
             DocumentsContract.getTreeDocumentId(baseUri)
-        }.getOrNull()?.takeIf(String::isNotBlank)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }?.takeIf(String::isNotBlank)
         val scope = treeDocumentId ?: baseUri.toString()
         return "${baseUri.authority.orEmpty()}|$scope|$parentDocumentId"
     }
@@ -6286,14 +6452,16 @@ object LocalMediaSupport {
     ) {
         val cacheKey = documentParentCacheKey(baseUri, parentDocumentId)
         synchronized(documentChildrenCache) {
-            val children = documentChildrenCache[cacheKey]
+            val childrenByUri = LinkedHashMap<String, DocumentChild>()
+            documentChildrenCache[cacheKey]
                 ?.children
                 .orEmpty()
-                .plus(child)
-                .distinctBy(DocumentChild::uri)
+                .forEach { cached -> childrenByUri[cached.uri] = cached }
+            childrenByUri[child.uri] = child
             documentChildrenCache[cacheKey] = DocumentChildrenCacheEntry(
-                children = children,
-                cachedAtMs = System.currentTimeMillis()
+                children = childrenByUri.values.toList(),
+                cachedAtMs = System.currentTimeMillis(),
+                isComplete = documentChildrenCache[cacheKey]?.isComplete ?: false
             )
         }
     }
@@ -6303,13 +6471,24 @@ object LocalMediaSupport {
         baseUri: Uri,
         parentDocumentId: String?
     ): List<DocumentChild>? {
-        return queryDocumentChildrenDirect(
+        val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return null
+        val result = queryDocumentChildrenUncached(
             context = context,
             baseUri = baseUri,
-            parentDocumentId = parentDocumentId
-        )?.also { children ->
-            cacheDocumentChildren(baseUri, parentDocumentId, children)
-        }
+            parentDocumentId = resolvedParentId
+        ) ?: return null
+        val stabilized = stabilizeDocumentChildrenRefresh(
+            baseUri = baseUri,
+            parentDocumentId = resolvedParentId,
+            result = result
+        )
+        cacheDocumentChildren(
+            baseUri = baseUri,
+            parentDocumentId = resolvedParentId,
+            children = stabilized.children,
+            isComplete = stabilized.isComplete
+        )
+        return stabilized.children.takeIf { stabilized.isComplete }
     }
 
     private fun ensureDocumentSidecarDirectoryForMutation(
@@ -6336,29 +6515,42 @@ object LocalMediaSupport {
             refreshedChildren + cachedDocumentChildren(baseUri, parentDocumentId)
             ).distinctBy(DocumentChild::uri)
         findManagedSidecarDirectory(refreshedKnownChildren, directoryName)?.let { return it }
+        findCanonicalExternalStorageChildForMutation(
+            context = context,
+            baseUri = baseUri,
+            parentDocumentId = parentDocumentId,
+            displayName = directoryName,
+            isDirectory = true
+        )?.let { canonical ->
+            rememberDocumentChild(baseUri, parentDocumentId, canonical)
+            return canonical
+        }
         val parentUri = buildDocumentReferenceUri(baseUri, parentDocumentId)
         NPLogger.d(
             TAG,
             "create local SAF sidecar directory: name=$directoryName, parent=$parentDocumentId, " +
                 "known=${refreshedKnownChildren.joinToString { child -> child.displayName }}"
         )
-        val createdUri = runCatching {
+        val createdUri = try {
             DocumentsContract.createDocument(
                 context.contentResolver,
                 parentUri,
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 directoryName
             )
-        }.onFailure { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(TAG, "create sidecar directory failed for $parentUri: ${error.message}")
-        }.getOrNull() ?: return null
+            null
+        } ?: return null
         val childrenAfterCreate = queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
             parentDocumentId = parentDocumentId
-        ) ?: return null
+        ).orEmpty()
         val resolved = findManagedSidecarDirectory(childrenAfterCreate, directoryName)
-            ?: documentChildFromUri(createdUri, directoryName, isDirectory = true)
+            ?: documentChildFromUri(context, createdUri, directoryName, isDirectory = true)
             ?: return null
         rememberDocumentChild(baseUri, parentDocumentId, resolved)
         return resolved
@@ -6389,48 +6581,117 @@ object LocalMediaSupport {
             refreshedChildren + cachedDocumentChildren(baseUri, parentDocumentId)
             ).distinctBy(DocumentChild::uri)
         findDocumentSidecarChild(refreshedKnownChildren, displayName)?.let { return it }
+        findCanonicalExternalStorageChildForMutation(
+            context = context,
+            baseUri = baseUri,
+            parentDocumentId = parentDocumentId,
+            displayName = displayName,
+            isDirectory = false
+        )?.let { canonical ->
+            rememberDocumentChild(baseUri, parentDocumentId, canonical)
+            return canonical
+        }
         val parentUri = buildDocumentReferenceUri(baseUri, parentDocumentId)
         NPLogger.d(
             TAG,
             "create local SAF sidecar file: name=$displayName, parent=$parentDocumentId, " +
                 "known=${refreshedKnownChildren.joinToString { child -> child.displayName }}"
         )
-        val createdUri = runCatching {
+        val createdUri = try {
             DocumentsContract.createDocument(
                 context.contentResolver,
                 parentUri,
                 mimeType,
                 displayName
             )
-        }.onFailure { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(TAG, "create sidecar document failed for $parentUri: ${error.message}")
-        }.getOrNull() ?: return null
+            null
+        } ?: return null
         val childrenAfterCreate = queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
             parentDocumentId = parentDocumentId
-        ) ?: return null
+        ).orEmpty()
         val resolved = findDocumentSidecarChild(childrenAfterCreate, displayName)
-            ?: documentChildFromUri(createdUri, displayName, isDirectory = false)
+            ?: documentChildFromUri(context, createdUri, displayName, isDirectory = false)
             ?: return null
         rememberDocumentChild(baseUri, parentDocumentId, resolved)
         return resolved
     }
 
     private fun documentChildFromUri(
+        context: Context,
         uri: Uri,
         displayName: String,
         isDirectory: Boolean
     ): DocumentChild? {
-        val documentId = runCatching {
+        val documentId = try {
             DocumentsContract.getDocumentId(uri)
-        }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }?.takeIf(String::isNotBlank) ?: return null
+        val document = try {
+            DocumentFile.fromSingleUri(context, uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+        val actualName = try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: document?.name ?: return null
         return DocumentChild(
             documentId = documentId,
-            displayName = displayName,
-            isDirectory = isDirectory,
+            displayName = actualName,
+            isDirectory = document?.isDirectory ?: isDirectory,
             uri = uri.toString()
         )
+    }
+
+    private fun findCanonicalExternalStorageChildForMutation(
+        context: Context,
+        baseUri: Uri,
+        parentDocumentId: String,
+        displayName: String,
+        isDirectory: Boolean
+    ): DocumentChild? {
+        if (baseUri.authority != "com.android.externalstorage.documents") return null
+        val childDocumentId = buildExternalStorageDocumentId(parentDocumentId, displayName)
+            ?: return null
+        val childUri = try {
+            DocumentsContract.buildDocumentUriUsingTree(baseUri, childDocumentId)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            return null
+        }
+        return documentChildFromUri(
+            context = context,
+            uri = childUri,
+            displayName = displayName,
+            isDirectory = isDirectory
+        )?.takeIf { child ->
+            child.isDirectory == isDirectory &&
+                canonicalSafName(child.displayName) == canonicalSafName(displayName)
+        }
     }
 
     private fun findDocumentSidecarChild(
@@ -6442,11 +6703,15 @@ object LocalMediaSupport {
             .filter { child -> sidecarNameMatches(child.displayName, canonicalName) }
             .minWithOrNull(
                 compareBy<DocumentChild>(
-                    { if (it.displayName.equals(canonicalName, ignoreCase = true)) 0 else 1 },
+                    { if (canonicalSafName(it.displayName) == canonicalSafName(canonicalName)) 0 else 1 },
                     { numberedSidecarNameOrdinal(it.displayName, canonicalName) },
                     DocumentChild::displayName
                 )
             )
+    }
+
+    private fun canonicalSafName(value: String): String {
+        return Normalizer.normalize(value, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
     private fun queryDocumentChildren(
@@ -6469,15 +6734,25 @@ object LocalMediaSupport {
             baseUri = baseUri,
             parentDocumentId = resolvedParentId
         ) ?: return emptyList()
-        cacheDocumentChildren(baseUri, resolvedParentId, children)
-        return children
+        val stabilized = stabilizeDocumentChildrenRefresh(
+            baseUri = baseUri,
+            parentDocumentId = resolvedParentId,
+            result = children
+        )
+        cacheDocumentChildren(
+            baseUri = baseUri,
+            parentDocumentId = resolvedParentId,
+            children = stabilized.children,
+            isComplete = stabilized.isComplete
+        )
+        return stabilized.children
     }
 
     private fun queryDocumentChildrenUncached(
         context: Context,
         baseUri: Uri,
         parentDocumentId: String?
-    ): List<DocumentChild>? {
+    ): DocumentChildrenQueryResult? {
         val queriedChildren = queryDocumentChildrenDirect(
             context = context,
             baseUri = baseUri,
@@ -6485,10 +6760,13 @@ object LocalMediaSupport {
         )
         if (queriedChildren != null) return queriedChildren
         val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return null
-        return listDocumentChildrenWithDocumentFile(
-            context = context,
-            baseUri = baseUri,
-            parentDocumentId = resolvedParentId
+        return DocumentChildrenQueryResult(
+            children = listDocumentChildrenWithDocumentFile(
+                context = context,
+                baseUri = baseUri,
+                parentDocumentId = resolvedParentId
+            ),
+            isComplete = false
         )
     }
 
@@ -6496,21 +6774,24 @@ object LocalMediaSupport {
         context: Context,
         baseUri: Uri,
         parentDocumentId: String?
-    ): List<DocumentChild>? {
+    ): DocumentChildrenQueryResult? {
         val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return null
-        val childrenUri = runCatching {
+        val childrenUri = try {
             if (DocumentsContract.isTreeUri(baseUri)) {
                 DocumentsContract.buildChildDocumentsUriUsingTree(baseUri, resolvedParentId)
             } else {
                 DocumentsContract.buildChildDocumentsUri(
-                    baseUri.authority ?: return@runCatching null,
+                    baseUri.authority ?: return null,
                     resolvedParentId
                 )
             }
-        }.onFailure { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(TAG, "build document children uri failed for $baseUri: ${error.message}")
-        }.getOrNull() ?: return null
-        val queriedChildren = runCatching {
+            null
+        } ?: return null
+        val queriedChildren = try {
             context.contentResolver.query(
                 childrenUri,
                 arrayOf(
@@ -6528,7 +6809,7 @@ object LocalMediaSupport {
                 if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
                     return@use null
                 }
-                buildList<DocumentChild> {
+                val children = buildList<DocumentChild> {
                     while (cursor.moveToNext()) {
                         val childId = cursor.getString(idIndex)
                         if (childId.isNullOrBlank()) continue
@@ -6545,29 +6826,84 @@ object LocalMediaSupport {
                         )
                     }
                 }
+                val extras = cursor.extras
+                val loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
+                val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
+                DocumentChildrenQueryResult(
+                    children = children,
+                    isComplete = !loading && providerError.isNullOrBlank()
+                )
             }
-        }.onFailure { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(TAG, "query document children failed for $baseUri: ${error.message}")
-        }.getOrNull()
+            null
+        }
         return queriedChildren
+    }
+
+    private fun stabilizeDocumentChildrenRefresh(
+        baseUri: Uri,
+        parentDocumentId: String,
+        result: DocumentChildrenQueryResult
+    ): DocumentChildrenQueryResult {
+        val cacheKey = documentParentCacheKey(baseUri, parentDocumentId)
+        val previous = synchronized(documentChildrenCache) {
+            documentChildrenCache[cacheKey]?.children.orEmpty()
+        }
+        if (!result.isComplete) {
+            consecutiveEmptyDocumentRefreshes.remove(cacheKey)
+            return DocumentChildrenQueryResult(
+                children = mergeDocumentChildren(previous, result.children),
+                isComplete = false
+            )
+        }
+        if (result.children.isNotEmpty() || previous.isEmpty()) {
+            consecutiveEmptyDocumentRefreshes.remove(cacheKey)
+            return result
+        }
+        val count = consecutiveEmptyDocumentRefreshes.merge(cacheKey, 1) { current, _ -> current + 1 }
+            ?: 1
+        if (count < EMPTY_DOCUMENT_REFRESH_CONFIRMATION_COUNT) {
+            return DocumentChildrenQueryResult(
+                children = previous,
+                isComplete = false
+            )
+        }
+        consecutiveEmptyDocumentRefreshes.remove(cacheKey)
+        return result
+    }
+
+    private fun mergeDocumentChildren(
+        previous: Collection<DocumentChild>,
+        refreshed: Collection<DocumentChild>
+    ): List<DocumentChild> {
+        val childrenByUri = LinkedHashMap<String, DocumentChild>()
+        previous.forEach { child -> childrenByUri[child.uri] = child }
+        refreshed.forEach { child -> childrenByUri[child.uri] = child }
+        return childrenByUri.values.toList()
     }
 
     private fun cacheDocumentChildren(
         baseUri: Uri,
         parentDocumentId: String?,
-        children: List<DocumentChild>
+        children: List<DocumentChild>,
+        isComplete: Boolean = true
     ) {
         val resolvedParentId = parentDocumentId?.takeIf(String::isNotBlank) ?: return
         val cacheKey = documentParentCacheKey(baseUri, resolvedParentId)
         synchronized(documentChildrenCache) {
-            val mergedChildren = documentChildrenCache[cacheKey]
-                ?.children
-                .orEmpty()
-                .plus(children)
-                .distinctBy(DocumentChild::uri)
+            val oldEntry = documentChildrenCache[cacheKey]
+            val mergedChildren = if (isComplete) {
+                children
+            } else {
+                mergeDocumentChildren(oldEntry?.children.orEmpty(), children)
+            }
             documentChildrenCache[cacheKey] = DocumentChildrenCacheEntry(
                 children = mergedChildren,
-                cachedAtMs = System.currentTimeMillis()
+                cachedAtMs = System.currentTimeMillis(),
+                isComplete = isComplete
             )
         }
     }
@@ -6577,19 +6913,31 @@ object LocalMediaSupport {
         baseUri: Uri,
         parentDocumentId: String
     ): List<DocumentChild> {
-        val parentUri = runCatching {
+        val parentUri = try {
             buildDocumentReferenceUri(baseUri, parentDocumentId)
-        }.getOrNull() ?: return emptyList()
-        val parent = runCatching {
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        val parent = try {
             DocumentFile.fromTreeUri(context, parentUri)
                 ?: DocumentFile.fromSingleUri(context, parentUri)
-        }.getOrNull() ?: return emptyList()
-        return runCatching {
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return try {
             parent.listFiles().mapNotNull { child ->
                 val name = child.name?.takeIf(String::isNotBlank) ?: return@mapNotNull null
-                val documentId = runCatching {
+                val documentId = try {
                     DocumentsContract.getDocumentId(child.uri)
-                }.getOrNull()?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }?.takeIf(String::isNotBlank) ?: return@mapNotNull null
                 DocumentChild(
                     documentId = documentId,
                     displayName = name,
@@ -6597,7 +6945,11 @@ object LocalMediaSupport {
                     uri = child.uri.toString()
                 )
             }
-        }.getOrDefault(emptyList())
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun buildDocumentReferenceUri(baseUri: Uri, documentId: String): Uri {

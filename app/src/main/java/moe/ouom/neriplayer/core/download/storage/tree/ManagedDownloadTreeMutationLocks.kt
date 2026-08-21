@@ -18,13 +18,21 @@ internal object ManagedDownloadTreeMutationLocks {
     }
 
     fun keyFor(baseUri: Uri, parentDocumentId: String? = null): String {
-        val treeDocumentId = runCatching {
+        val treeDocumentId = try {
             DocumentsContract.getTreeDocumentId(baseUri)
-        }.getOrNull()?.takeIf(String::isNotBlank)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }?.takeIf(String::isNotBlank)
         val documentId = parentDocumentId?.takeIf(String::isNotBlank)
-            ?: runCatching { DocumentsContract.getDocumentId(baseUri) }
-                .getOrNull()
-                ?.takeIf(String::isNotBlank)
+            ?: try {
+                DocumentsContract.getDocumentId(baseUri)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }?.takeIf(String::isNotBlank)
         val scope = treeDocumentId ?: baseUri.toString()
         return "${baseUri.authority.orEmpty()}|$scope|${documentId.orEmpty()}"
     }

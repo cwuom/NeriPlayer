@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
@@ -37,6 +38,20 @@ internal class ManagedDownloadTreeFileCommitter(
                 return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
                     ?: throw IOException("无法访问已存在的下载文件: ${existingChild.name}")
             }
+            if (replace) {
+                treeChildRegistry.findCanonicalExternalStorageChild(
+                    context = context,
+                    parent = parent,
+                    displayName = desiredName,
+                    isDirectory = false
+                )?.let { canonical ->
+                    return@withLock treeChildRegistry.toTreeDocumentFile(
+                        context = context,
+                        parent = parent,
+                        child = canonical
+                    ) ?: canonical
+                }
+            }
             if (!refresh.isComplete) {
                 throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
             }
@@ -47,24 +62,102 @@ internal class ManagedDownloadTreeFileCommitter(
             } else {
                 ManagedDownloadStorageNaming.createUniqueName(childNames, desiredName)
             }
-            val created = parent.createFile(
-                ManagedDownloadTreeNaming.documentCreateMimeType(finalName, mimeType),
-                finalName
-            ) ?: throw IOException("无法在下载目录创建文件: $finalName")
-            val storedName = resolvedTreeStoredName(created, finalName)
-            if (replace && !ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
-                if (!deleteContentReference(context, created.uri.toString(), created.uri)) {
-                    runCatching { created.delete() }
-                }
-                treeChildRegistry.forgetTreeChildName(parent, finalName)
-                throw IOException("SAF 覆写目标被自动改名，拒绝生成副本: $finalName")
+            val createdUri = try {
+                DocumentsContract.createDocument(
+                    context.contentResolver,
+                    parent.uri,
+                    ManagedDownloadTreeNaming.documentCreateMimeType(finalName, mimeType),
+                    finalName
+                )
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    tag,
+                    "SAF 创建文件失败: name=$finalName, parent=${parent.uri}, " +
+                        "error=${error.message}",
+                    error
+                )
+                null
             }
-            created.also {
+            val resolvedCreated = createdUri
+                ?.let { DocumentFile.fromSingleUri(context, it) }
+                ?.let { createdFile ->
+                    treeChildRegistry.toTreeDocumentFile(
+                        context = context,
+                        parent = parent,
+                        child = createdFile
+                    ) ?: createdFile
+                }
+                ?: run {
+                    // provider may have committed an existing target before returning null
+                    if (!replace) {
+                        throw IOException("无法在下载目录创建文件: $finalName")
+                    }
+                    val existing = try {
+                        parent.findFile(finalName)
+                    } catch (security: SecurityException) {
+                        throw security
+                    } catch (_: Exception) {
+                        null
+                    }
+                    existing?.takeIf { it.isFile }
+                        ?: throw IOException("无法在下载目录创建文件: $finalName")
+                }
+            val storedName = resolvedTreeStoredName(resolvedCreated, finalName)
+            if (!ManagedDownloadTreeNaming.isExactTreeStoredName(resolvedCreated.name, finalName)) {
+                val canonicalChild = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = parent
+                ).children.firstOrNull { child ->
+                    !child.isDirectory &&
+                        ManagedDownloadTreeNaming.isExactTreeStoredName(
+                            child.name,
+                            finalName
+                        ) &&
+                        child.documentUri != resolvedCreated.uri
+                }
+                if (canonicalChild != null) {
+                    if (!deleteContentReference(context, resolvedCreated.uri.toString(), resolvedCreated.uri)) {
+                        throw IOException("无法清理 SAF 重复文件: $storedName")
+                    }
+                    treeChildRegistry.forgetTreeChildName(parent, storedName)
+                    return@withLock treeChildRegistry.toDocumentFile(
+                        context = context,
+                        parent = parent,
+                        child = canonicalChild
+                    ) ?: throw IOException("无法访问已存在的下载文件: ${canonicalChild.name}")
+                }
+                if (replace) {
+                    val canonicalTarget = treeChildRegistry.findCanonicalExternalStorageChild(
+                        context = context,
+                        parent = parent,
+                        displayName = finalName,
+                        isDirectory = false
+                    )
+                    if (!deleteContentReference(context, resolvedCreated.uri.toString(), resolvedCreated.uri)) {
+                        throw IOException("无法清理 SAF 覆写副本: $storedName")
+                    }
+                    treeChildRegistry.forgetTreeChildName(parent, storedName)
+                    canonicalTarget?.let { target ->
+                        return@withLock target
+                    }
+                    throw IOException(
+                        "SAF 提供方拒绝使用目标文件名，无法安全覆写: " +
+                            "expected=$finalName, actual=$storedName"
+                    )
+                }
+                NPLogger.w(
+                    tag,
+                    "SAF 提供方返回了实际文件名称: expected=$finalName, actual=$storedName"
+                )
+            }
+            resolvedCreated.also {
                 treeChildRegistry.rememberTreeChild(
                     parent = parent,
                     child = QueriedTreeChild(
                         name = storedName,
-                        documentUri = created.uri,
+                        documentUri = resolvedCreated.uri,
                         sizeBytes = 0L,
                         lastModifiedMs = System.currentTimeMillis(),
                         isDirectory = false
@@ -79,14 +172,9 @@ internal class ManagedDownloadTreeFileCommitter(
         desiredName: String
     ): QueriedTreeChild? {
         return children.asSequence()
-            .filter { child ->
-                child.name.equals(desiredName, ignoreCase = true) ||
-                    ManagedDownloadTreeNaming.matchesProviderNumberedName(child.name, desiredName)
-            }
+            .filter { child -> ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, desiredName) }
             .minWithOrNull(
                 compareBy<QueriedTreeChild>(
-                    { if (it.name.equals(desiredName, ignoreCase = true)) 0 else 1 },
-                    { ManagedDownloadTreeNaming.providerNumberedNameOrdinal(it.name, desiredName) ?: Int.MAX_VALUE },
                     QueriedTreeChild::name
                 )
             )
@@ -122,8 +210,12 @@ internal class ManagedDownloadTreeFileCommitter(
         target: DocumentFile,
         expectedName: String
     ) {
-        runCatching {
+        try {
             deleteContentReference(context, target.uri.toString(), target.uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(tag, "删除 SAF 临时文件失败: ${error.message}", error)
         }
         treeChildRegistry.forgetTreeChildName(parent, expectedName)
     }
@@ -141,10 +233,13 @@ internal class ManagedDownloadTreeFileCommitter(
     ): ManagedDownloadStorage.StoredEntry {
         NPLogger.w(tag, "SAF 重命名失败，回退为直接写入最终文件: $finalName")
         return try {
-            val target = parent.createFile(
-                ManagedDownloadTreeNaming.documentCreateMimeType(finalName, mimeType),
-                finalName
-            ) ?: throw IOException("无法在下载目录创建文件: $finalName")
+            val target = createRootFile(
+                context = context,
+                parent = parent,
+                desiredName = finalName,
+                mimeType = mimeType,
+                replace = true
+            )
             val storedName = resolvedTreeStoredName(target, finalName)
 
             try {

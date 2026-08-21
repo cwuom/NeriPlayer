@@ -194,7 +194,10 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                         }
                         val reference = references[index]
                         val succeeded = runCatching { operation(reference) }
-                            .getOrElse {
+                            .getOrElse { error ->
+                                if (error is SecurityException) {
+                                    throw error
+                                }
                                 operationFailures.incrementAndGet()
                                 false
                             }

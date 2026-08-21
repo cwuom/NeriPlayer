@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.naming
 
 import moe.ouom.neriplayer.core.download.storage.imageExtensions
+import java.text.Normalizer
+import java.util.Locale
 
 internal object ManagedDownloadStorageNaming {
     internal enum class LyricKind {
@@ -66,18 +68,23 @@ internal object ManagedDownloadStorageNaming {
     }
 
     fun createUniqueName(existingNames: Set<String>, desiredName: String): String {
-        if (desiredName !in existingNames) return desiredName
+        val canonicalExistingNames = existingNames.mapTo(HashSet()) { canonicalName(it) }
+        if (canonicalName(desiredName) !in canonicalExistingNames) return desiredName
         val base = desiredName.substringBeforeLast('.', desiredName)
         val ext = desiredName.substringAfterLast('.', "")
         var index = 1
         while (index < 10_000) {
             val candidate = if (ext.isBlank()) "$base ($index)" else "$base ($index).$ext"
-            if (candidate !in existingNames) {
+            if (canonicalName(candidate) !in canonicalExistingNames) {
                 return candidate
             }
             index++
         }
         return desiredName
+    }
+
+    private fun canonicalName(value: String): String {
+        return Normalizer.normalize(value, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
     fun mimeTypeFromName(name: String, fallback: String?): String {

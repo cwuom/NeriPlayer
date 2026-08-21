@@ -206,8 +206,10 @@ internal fun resolveScannedSourceAddedAt(
 
 internal fun selectMetadataSidecarReference(
     referencesByName: Map<String, String>,
-    audioName: String
+    audioName: String,
+    indexedReference: String? = null
 ): String? {
+    indexedReference?.takeIf(String::isNotBlank)?.let { return it }
     return referencesByName.entries
         .asSequence()
         .filter { entry ->
@@ -223,6 +225,28 @@ internal fun selectMetadataSidecarReference(
             )
         )
         ?.value
+}
+
+private fun buildLocalSidecarMetadataIndex(
+    filesByName: Map<String, String>
+): Map<String, String> {
+    val best = HashMap<String, Pair<Int, String>>()
+    filesByName.forEach { (normalizedName, reference) ->
+        val audioName = ManagedDownloadTreeNaming.metadataAudioName(normalizedName)
+            ?: return@forEach
+        val key = audioName.lowercase(Locale.ROOT)
+        val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+            actualName = normalizedName,
+            audioName = audioName
+        ) ?: Int.MAX_VALUE
+        val previous = best[key]
+        if (previous == null || ordinal < previous.first ||
+            (ordinal == previous.first && reference < previous.second)
+        ) {
+            best[key] = ordinal to reference
+        }
+    }
+    return best.mapValues { (_, value) -> value.second }
 }
 
 private fun Long?.toEpochMillisOrNull(): Long? {
@@ -339,7 +363,8 @@ private class MediaStoreSidecarResolver(
             nestedIndex = directory.lyricsIndex,
             rootLyricsIndex = rootLyricsIndex,
             displayName = displayName,
-            baseName = baseName
+            baseName = baseName,
+            metadataIndex = directory.metadataIndex
         )
         return resolved
     }
@@ -393,7 +418,8 @@ private class MediaStoreSidecarResolver(
         nestedIndex: Map<String, String>,
         rootLyricsIndex: Map<String, String>,
         displayName: String,
-        baseName: String
+        baseName: String,
+        metadataIndex: Map<String, String>
     ): LocalKnownSidecarReferences {
         fun find(names: List<String>): String? {
             return names.firstNotNullOfOrNull { name ->
@@ -421,7 +447,7 @@ private class MediaStoreSidecarResolver(
                 translated = translated,
                 romanized = romanized
             ),
-            metadata = selectMetadataSidecarReference(directIndex, displayName)
+            metadata = metadataIndex[displayName.lowercase(Locale.ROOT)]
         )
     }
 
@@ -462,8 +488,33 @@ private class MediaStoreSidecarResolver(
         return DirectorySidecarIndex(
             directIndex = buildDocumentNameIndex(directChildren),
             lyricsIndex = buildDocumentNameIndex(lyricsChildren),
-            coverIndex = buildDocumentNameIndex(coversChildren)
+            coverIndex = buildDocumentNameIndex(coversChildren),
+            metadataIndex = buildDocumentMetadataIndex(directChildren)
         ).also { directoryCache[cacheKey] = it }
+    }
+
+    private fun buildDocumentMetadataIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .forEach { child ->
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = child.displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.documentUri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.documentUri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
     }
 
     private fun children(parentUri: Uri): List<QueriedFolderChild> {
@@ -537,7 +588,8 @@ private class MediaStoreSidecarResolver(
     private data class DirectorySidecarIndex(
         val directIndex: Map<String, String>,
         val lyricsIndex: Map<String, String>,
-        val coverIndex: Map<String, String>
+        val coverIndex: Map<String, String>,
+        val metadataIndex: Map<String, String>
     )
 
     private companion object {
@@ -705,7 +757,8 @@ object LocalAudioImportManager {
     )
 
     private data class LocalSidecarDirectoryIndex(
-        val filesByName: Map<String, String>
+        val filesByName: Map<String, String>,
+        val metadataByAudioName: Map<String, String>
     )
 
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
@@ -980,22 +1033,32 @@ object LocalAudioImportManager {
             // 大批量扫描先读取轻量 metadata 侧车, 音频容器解析放到播放或编辑时
             val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
             val sidecarHydrated = coroutineScope {
-                songs.map { song ->
-                    async(dispatcher) {
-                        val metadataReference = song.mediaUri
-                            ?.let(indexedSidecarReferences::get)
-                            ?.metadata
-                        if (shouldHydrateLocalSongFastIdentity(song, metadataReference)) {
+                val pending = songs.map { song ->
+                    val metadataReference = song.mediaUri
+                        ?.let(indexedSidecarReferences::get)
+                        ?.metadata
+                    // 大目录首屏只消费目录行和已经建立的侧车索引。
+                    // 没有侧车时探测 SAF 音频本身会退化为每首一次
+                    // DocumentsProvider query, 将嵌入元信息留到后续详情页。
+                    val canHydrateWithoutAudioProbe = metadataReference != null ||
+                        !song.localFilePath.isNullOrBlank()
+                    if (!canHydrateWithoutAudioProbe ||
+                        !shouldHydrateLocalSongFastIdentity(song, metadataReference)
+                    ) {
+                        null
+                    } else {
+                        async(dispatcher) {
                             hydrateLocalSongFastIdentity(
                                 context = context,
                                 song = song,
                                 metadataReference = metadataReference
                             )
-                        } else {
-                            song
                         }
                     }
-                }.awaitAll()
+                }
+                pending.mapIndexed { index, deferred ->
+                    deferred?.await() ?: songs[index]
+                }
             }
             progress.emit(
                 phase = LocalAudioScanPhase.HYDRATING_METADATA,
@@ -1103,17 +1166,20 @@ object LocalAudioImportManager {
         fun index(directory: File): LocalSidecarDirectoryIndex {
             val key = directory.absolutePath
             return directoryIndexes.getOrPut(key) {
-                LocalSidecarDirectoryIndex(
-                    filesByName = directory.listFiles()
-                        .orEmpty()
-                        .asSequence()
-                        .filter(File::isFile)
-                        .mapNotNull { file ->
-                            file.name.takeIf(String::isNotBlank)?.let { name ->
-                                name.lowercase() to file.absolutePath
-                            }
+                val filesByName = directory.listFiles()
+                    .orEmpty()
+                    .asSequence()
+                    .filter(File::isFile)
+                    .mapNotNull { file ->
+                        file.name.takeIf(String::isNotBlank)?.let { name ->
+                            name.lowercase(Locale.ROOT) to file.absolutePath
                         }
-                        .toMap()
+                    }
+                    .toMap()
+                val metadataByAudioName = buildLocalSidecarMetadataIndex(filesByName)
+                LocalSidecarDirectoryIndex(
+                    filesByName = filesByName,
+                    metadataByAudioName = metadataByAudioName
                 )
             }
         }
@@ -1176,14 +1242,10 @@ object LocalAudioImportManager {
                     .firstOrNull()
             }
 
-            val metadataReference = searchDirectories.asSequence()
-                .mapNotNull { directory ->
-                    selectMetadataSidecarReference(
-                        referencesByName = index(directory).filesByName,
-                        audioName = localFile.name
-                    )
+            val metadataReference =
+                searchDirectories.firstNotNullOfOrNull { directory ->
+                    index(directory).metadataByAudioName[localFile.name.lowercase(Locale.ROOT)]
                 }
-                .firstOrNull()
             resolved[key] = LocalKnownSidecarReferences(
                 lyrics = NearbyLyricReferences(
                     original = existing?.lyrics?.original
@@ -2396,6 +2458,7 @@ object LocalAudioImportManager {
             val directCoverIndex = buildDocumentCoverIndex(children)
             val nestedCoverIndex = buildDocumentCoverIndex(coversChildren)
             val directSidecarIndex = buildDocumentNameIndex(children)
+            val directMetadataIndex = buildDocumentMetadataIndex(children)
             val nestedSidecarIndex = buildDocumentNameIndex(lyricsChildren)
             if (directoryUri == folderUri) {
                 rootCoverIndex = nestedCoverIndex
@@ -2423,7 +2486,8 @@ object LocalAudioImportManager {
                                 nestedIndex = nestedSidecarIndex,
                                 rootLyricsIndex = rootLyricsIndex,
                                 displayName = child.displayName,
-                                baseName = baseName
+                                baseName = baseName,
+                                metadataIndex = directMetadataIndex
                             )
                         )
                     }
@@ -2484,6 +2548,7 @@ object LocalAudioImportManager {
             val directCoverIndex = buildSafCoverIndex(children.asList())
             val nestedCoverIndex = buildSafCoverIndex(coversChildren)
             val directSidecarIndex = buildSafDocumentNameIndex(children.asList())
+            val directMetadataIndex = buildSafDocumentMetadataIndex(children.asList())
             val nestedSidecarIndex = buildSafDocumentNameIndex(lyricsChildren)
             if (directory.uri == root.uri) {
                 rootCoverIndex = nestedCoverIndex
@@ -2515,7 +2580,8 @@ object LocalAudioImportManager {
                                 nestedIndex = nestedSidecarIndex,
                                 rootLyricsIndex = rootLyricsIndex,
                                 displayName = displayName.orEmpty(),
-                                baseName = baseName
+                                baseName = baseName,
+                                metadataIndex = directMetadataIndex
                             )
                         )
                     }
@@ -2682,6 +2748,30 @@ object LocalAudioImportManager {
             .toMap()
     }
 
+    private fun buildDocumentMetadataIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filterNot(QueriedFolderChild::isDirectory)
+            .forEach { child ->
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = child.displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.documentUri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.documentUri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
+    }
+
     private fun buildSafDocumentNameIndex(
         children: Collection<DocumentFile>
     ): Map<String, String> {
@@ -2696,12 +2786,38 @@ object LocalAudioImportManager {
             .toMap()
     }
 
+    private fun buildSafDocumentMetadataIndex(
+        children: Collection<DocumentFile>
+    ): Map<String, String> {
+        val best = HashMap<String, Pair<Int, String>>()
+        children.asSequence()
+            .filter(DocumentFile::isFile)
+            .forEach { child ->
+                val displayName = child.name ?: return@forEach
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(displayName)
+                    ?: return@forEach
+                val key = audioName.lowercase(Locale.ROOT)
+                val ordinal = ManagedDownloadTreeNaming.metadataNameOrdinal(
+                    actualName = displayName,
+                    audioName = audioName
+                ) ?: Int.MAX_VALUE
+                val previous = best[key]
+                if (previous == null || ordinal < previous.first ||
+                    (ordinal == previous.first && child.uri.toString() < previous.second)
+                ) {
+                    best[key] = ordinal to child.uri.toString()
+                }
+            }
+        return best.mapValues { (_, value) -> value.second }
+    }
+
     private fun resolveKnownSidecarReferences(
         directIndex: Map<String, String>,
         nestedIndex: Map<String, String>,
         rootLyricsIndex: Map<String, String> = emptyMap(),
         displayName: String,
-        baseName: String
+        baseName: String,
+        metadataIndex: Map<String, String>? = null
     ): LocalKnownSidecarReferences {
         fun find(names: List<String>): String? {
             return names.firstNotNullOfOrNull { name ->
@@ -2714,7 +2830,11 @@ object LocalAudioImportManager {
         val original = find(lyricSidecarNames(baseName, LyricSidecarKind.ORIGINAL))
         val translated = find(lyricSidecarNames(baseName, LyricSidecarKind.TRANSLATED))
         val romanized = find(lyricSidecarNames(baseName, LyricSidecarKind.ROMANIZED))
-        val metadata = selectMetadataSidecarReference(directIndex, displayName)
+        val metadata = if (metadataIndex != null) {
+            metadataIndex[displayName.lowercase(Locale.ROOT)]
+        } else {
+            selectMetadataSidecarReference(directIndex, displayName)
+        }
         return LocalKnownSidecarReferences(
             lyrics = NearbyLyricReferences(
                 original = original,

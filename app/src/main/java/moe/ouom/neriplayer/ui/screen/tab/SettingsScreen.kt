@@ -703,6 +703,7 @@ fun SettingsScreen(
     var showDownloadDirectorySwitchWarningDialog by remember { mutableStateOf(false) }
     var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
+    var downloadDirectoryPermissionLost by remember { mutableStateOf(false) }
     var activeMigrationWorkId by rememberSaveable { mutableStateOf<String?>(null) }
     val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
     val hasActiveDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
@@ -722,6 +723,11 @@ fun SettingsScreen(
     val localPlaylistCount = backupRestoreUiState.currentPlaylistCount
     val defaultDownloadDirectorySummary = composeResources.getString(R.string.settings_download_directory_default_label)
     val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
+
+    LaunchedEffect(downloadDirectoryUri) {
+        downloadDirectoryPermissionLost = !downloadDirectoryUri.isNullOrBlank() &&
+            !ManagedDownloadStorage.isStorageRootResolvable(context)
+    }
 
     LaunchedEffect(Unit) {
         val runningWork = withContext(Dispatchers.IO) {
@@ -839,6 +845,7 @@ fun SettingsScreen(
         ManagedDownloadStorage.updateConfiguredTreeUri(targetUri)
         ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
         onDownloadDirectoryUriChange(targetUri, targetLabel)
+        downloadDirectoryPermissionLost = false
         GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
         if (shouldReleasePreviousPermission) {
             ManagedDownloadStorage.releasePersistedDirectoryPermission(context, previousUri)
@@ -939,8 +946,20 @@ fun SettingsScreen(
         }
     )
 
+    val downloadDirectoryContract = remember {
+        object : ActivityResultContracts.OpenDocumentTree() {
+            override fun createIntent(context: Context, input: Uri?): Intent {
+                return super.createIntent(context, input).addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                )
+            }
+        }
+    }
     val downloadDirectoryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
+        contract = downloadDirectoryContract
     ) { uri ->
         if (uri == null) {
             return@rememberLauncherForActivityResult
@@ -951,6 +970,7 @@ fun SettingsScreen(
         try {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(uri, flags)
+            downloadDirectoryPermissionLost = false
             val targetUri = uri.toString()
             scope.launch {
                 val targetSummary = withContext(Dispatchers.IO) {
@@ -2043,6 +2063,7 @@ fun SettingsScreen(
                                 showHeader = false,
                                 currentDownloadDirectorySummary = downloadDirectorySummary,
                                 isCustomDownloadDirectory = !downloadDirectoryUri.isNullOrBlank(),
+                                downloadDirectoryPermissionLost = downloadDirectoryPermissionLost,
                                 downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
                                 onPickDownloadDirectory = {
                                     if (!guardDownloadDirectoryChange()) {

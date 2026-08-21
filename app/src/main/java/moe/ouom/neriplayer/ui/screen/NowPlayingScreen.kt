@@ -223,6 +223,7 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.core.download.shouldHideRemoteDownloadAction
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -4953,13 +4954,24 @@ internal fun resolveEditSongInitialCoverUrl(
     song: SongItem,
     resolvedDisplayCoverUrl: String?
 ): String {
-    return song.displayCoverUrl()
+    val directCover = song.displayCoverUrl()
         ?.takeIf { it.isNotBlank() }
-        ?: song.originalCoverUrl
-            ?.takeIf { it.isNotBlank() }
-            ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
-        ?: resolvedDisplayCoverUrl?.takeIf { it.isNotBlank() }
-        ?: ""
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+    val localDownloadedCover = AudioDownloadManager.peekLocalCoverUri(song)
+        ?.takeIf { it.isNotBlank() }
+        ?.takeUnless { CustomSongCoverStorage.isRemoteReference(it) }
+    val originalCover = song.originalCoverUrl
+        ?.takeIf { it.isNotBlank() }
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+    val resolvedCover = resolvedDisplayCoverUrl?.takeIf { it.isNotBlank() }
+    return when {
+        directCover != null && !CustomSongCoverStorage.isRemoteReference(directCover) -> directCover
+        localDownloadedCover != null -> localDownloadedCover
+        directCover != null -> directCover
+        originalCover != null -> originalCover
+        resolvedCover != null -> resolvedCover
+        else -> ""
+    }
 }
 
 internal fun shouldApplyResolvedEditSongCover(
@@ -5516,14 +5528,17 @@ fun EditSongInfoSheet(
                                         actualSong
                                     )
                                     val downloadedLyrics = if (isManagedLocalDownload) {
-                                        runCatching {
+                                        try {
                                             AudioDownloadManager.getLyricsBundleFast(context, actualSong)
-                                        }.onFailure { error ->
+                                        } catch (error: SecurityException) {
+                                            throw error
+                                        } catch (error: Exception) {
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
                                                 "编辑器读取下载歌词索引失败: ${error.message}"
                                             )
-                                        }.getOrNull()
+                                            null
+                                        }
                                     } else {
                                         null
                                     }
@@ -5535,7 +5550,7 @@ fun EditSongInfoSheet(
                                     val localLyrics = if (shouldProbeLocalSidecars) {
                                         // 保留绝对路径, 否则 managed fast miss 时无法找到同目录 Lyrics/
                                         val sidecarProbeSong = actualSong
-                                        runCatching {
+                                        try {
                                             LocalMediaSupport.inspectLyricsFast(
                                                 context = context,
                                                 song = sidecarProbeSong,
@@ -5543,14 +5558,15 @@ fun EditSongInfoSheet(
                                                 includeEmbeddedFallback = false,
                                                 forceRefresh = true
                                             )
+                                        } catch (error: SecurityException) {
+                                            throw error
+                                        } catch (error: Exception) {
+                                            NPLogger.w(
+                                                "NowPlayingLyrics",
+                                                "编辑器读取本地歌词快速失败: ${error.message}"
+                                            )
+                                            null
                                         }
-                                            .onFailure { error ->
-                                                NPLogger.w(
-                                                    "NowPlayingLyrics",
-                                                    "编辑器读取本地歌词快速失败: ${error.message}"
-                                                )
-                                            }
-                                            .getOrNull()
                                     } else {
                                         null
                                     }
@@ -5561,7 +5577,7 @@ fun EditSongInfoSheet(
                                         localLyrics?.hasTranslatedSidecar == true ||
                                         localLyrics?.hasRomanizedSidecar == true
                                     val embeddedLyrics = if (!hasSidecar) {
-                                        runCatching {
+                                        try {
                                             LocalMediaSupport.inspectLyricsFast(
                                                 context = context,
                                                 song = actualSong,
@@ -5569,12 +5585,15 @@ fun EditSongInfoSheet(
                                                 includeEmbeddedFallback = true,
                                                 forceRefresh = true
                                             )
-                                        }.onFailure { error ->
+                                        } catch (error: SecurityException) {
+                                            throw error
+                                        } catch (error: Exception) {
                                             NPLogger.w(
                                                 "NowPlayingLyrics",
                                                 "编辑器读取嵌入歌词失败: ${error.message}"
                                             )
-                                        }.getOrNull()
+                                            null
+                                        }
                                     } else {
                                         null
                                     }
@@ -5666,13 +5685,35 @@ fun EditSongInfoSheet(
                                     isPendingEmbeddedLyricsLoading = true
                                     // TagLib 只在来源弹窗出现后补充嵌入歌词, 不阻塞入口
                                     launch {
-                                        val embedded = withContext(Dispatchers.IO) {
-                                            runCatching {
+                                        val embedded = try {
+                                            withContext(Dispatchers.IO) {
                                                 LocalMediaSupport.inspectEmbeddedLyrics(
                                                     context = context,
                                                     song = actualSong
                                                 )
-                                            }.getOrNull()
+                                            }
+                                        } catch (error: SecurityException) {
+                                            NPLogger.e(
+                                                "NowPlayingLyrics",
+                                                "补充读取嵌入歌词时目录授权失效",
+                                                error
+                                            )
+                                            if (lyricsEditorRequestId == requestId) {
+                                                pendingLyricsSourceSeed = null
+                                                isPendingEmbeddedLyricsLoading = false
+                                                snackbarHostState.showNeriSnackbar(
+                                                    composeResources.getString(
+                                                        R.string.settings_download_directory_permission_lost
+                                                    )
+                                                )
+                                            }
+                                            return@launch
+                                        } catch (error: Exception) {
+                                            NPLogger.w(
+                                                "NowPlayingLyrics",
+                                                "补充读取嵌入歌词失败: ${error.message}"
+                                            )
+                                            null
                                         }
                                         if (
                                             lyricsEditorRequestId == requestId &&
@@ -5702,6 +5743,32 @@ fun EditSongInfoSheet(
                             }
                         } catch (e: CancellationException) {
                             throw e
+                        } catch (e: ManagedDownloadRootUnavailableException) {
+                            NPLogger.e("NowPlayingScreen", "歌词编辑器配置的下载目录授权已失效", e)
+                            if (actualSong.isLocalSong() && lyricsEditorRequestId == requestId) {
+                                lyricsEditorSeed = null
+                                pendingLyricsSourceSeed = null
+                                isPendingEmbeddedLyricsLoading = false
+                                isLyricsEditorOpening = false
+                                snackbarHostState.showNeriSnackbar(
+                                    composeResources.getString(
+                                        R.string.settings_download_directory_permission_lost
+                                    )
+                                )
+                            }
+                        } catch (e: SecurityException) {
+                            NPLogger.e("NowPlayingScreen", "歌词编辑器读取本地文件权限失效", e)
+                            if (actualSong.isLocalSong() && lyricsEditorRequestId == requestId) {
+                                lyricsEditorSeed = null
+                                pendingLyricsSourceSeed = null
+                                isPendingEmbeddedLyricsLoading = false
+                                isLyricsEditorOpening = false
+                                snackbarHostState.showNeriSnackbar(
+                                    composeResources.getString(
+                                        R.string.settings_download_directory_permission_lost
+                                    )
+                                )
+                            }
                         } catch (e: Exception) {
                             NPLogger.e("NowPlayingScreen", "歌词编辑器初始化失败", e)
                             if (actualSong.isLocalSong() && lyricsEditorRequestId == requestId) {

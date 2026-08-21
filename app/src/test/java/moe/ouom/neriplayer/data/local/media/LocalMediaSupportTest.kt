@@ -334,6 +334,33 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `media store fallback builds a safe external storage document id`() {
+        assertEquals(
+            "primary:neriplayer-download/Artist - Song.mp3",
+            LocalMediaSupport.buildExternalStorageDocumentId(
+                parentDocumentId = "primary:neriplayer-download",
+                displayName = "Artist - Song.mp3"
+            )
+        )
+        assertNull(
+            LocalMediaSupport.buildExternalStorageDocumentId(
+                parentDocumentId = "primary:neriplayer-download",
+                displayName = "invalid/name.mp3"
+            )
+        )
+    }
+
+    @Test
+    fun `media store fallback rejects unsafe external storage document names`() {
+        assertNull(
+            LocalMediaSupport.buildExternalStorageDocumentId(
+                parentDocumentId = "primary:neriplayer-download",
+                displayName = "invalid\\name.mp3"
+            )
+        )
+    }
+
+    @Test
     fun `retriever probe skips MediaStore rows without a readable file`() {
         assertFalse(
             LocalMediaSupport.shouldProbeRetrieverTextMetadata(

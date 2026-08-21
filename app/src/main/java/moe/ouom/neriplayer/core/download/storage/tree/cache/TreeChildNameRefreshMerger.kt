@@ -7,10 +7,10 @@ internal object TreeChildNameRefreshMerger {
         cachedNamesComplete: Boolean?,
         refreshedComplete: Boolean
     ): TreeChildNameRefresh {
-        if (cachedNamesComplete != false) {
+        if (refreshedComplete && cachedNamesComplete != false) {
             return TreeChildNameRefresh(
                 names = refreshedNames.toCollection(linkedSetOf()),
-                isComplete = refreshedComplete
+                isComplete = true
             )
         }
         return TreeChildNameRefresh(

@@ -187,6 +187,16 @@ class LocalMediaSupportSafLyricsTest {
                 null,
                 null
             )
+            val fastAfterRecreate = ManagedDownloadStorage.readLyricsBundleFast(
+                targetContext,
+                song
+            )
+            assertEquals("[00:00.10]original from Lyrics", fastAfterRecreate.lyric)
+            assertEquals("[00:00.10]translated from Lyrics", fastAfterRecreate.translatedLyric)
+            assertEquals("[00:00.10]romanized from Lyrics", fastAfterRecreate.romanizedLyric)
+            assertTrue(fastAfterRecreate.hasOriginalSidecar)
+            assertTrue(fastAfterRecreate.hasTranslatedSidecar)
+            assertTrue(fastAfterRecreate.hasRomanizedSidecar)
             val refreshed = ManagedDownloadStorage.readLyricsBundle(targetContext, song)
 
             assertEquals("[00:00.10]original from Lyrics", refreshed.lyric)
@@ -409,6 +419,45 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
+    fun safMetadataWritePropagatesPermissionFailureWithoutCreatingSidecars() = runBlocking {
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val song = SongItem(
+            id = 342L,
+            name = "Revoked SAF permission",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            matchedLyric = "[00:01.00]permission failure",
+            localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        )
+        setSecurityException(enabled = true)
+        var permissionFailure: SecurityException? = null
+        try {
+            LocalMediaSupport.writeEditableMetadata(
+                context = targetContext,
+                song = song,
+                writeCover = false,
+                writeLyrics = true
+            )
+        } catch (error: SecurityException) {
+            permissionFailure = error
+        } finally {
+            setSecurityException(enabled = false)
+        }
+
+        assertNotNull(permissionFailure)
+        assertEquals(0, metadataCreateCount())
+        assertEquals(0, lyricsDirectoryCreateCount())
+        assertNull(findMetadataUri())
+    }
+
+    @Test
     fun safMetadataWriteDoesNotCreateSidecarWhenChildrenQueryOmitsSource() = runBlocking {
         val audioUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,
@@ -509,6 +558,15 @@ class LocalMediaSupportSafLyricsTest {
             Issue339LyricsTestDocumentProvider.FAIL_CHILD_DOCUMENT_QUERIES
         } else {
             Issue339LyricsTestDocumentProvider.RESET_CHILD_DOCUMENT_QUERY_FAILURE
+        }
+        targetContext.contentResolver.call(providerUri, method, null, null)
+    }
+
+    private fun setSecurityException(enabled: Boolean) {
+        val method = if (enabled) {
+            Issue339LyricsTestDocumentProvider.FAIL_WITH_SECURITY_EXCEPTION
+        } else {
+            Issue339LyricsTestDocumentProvider.RESET_SECURITY_EXCEPTION
         }
         targetContext.contentResolver.call(providerUri, method, null, null)
     }

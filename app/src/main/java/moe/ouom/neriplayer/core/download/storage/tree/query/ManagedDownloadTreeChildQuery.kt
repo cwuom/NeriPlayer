@@ -28,14 +28,19 @@ internal object ManagedDownloadTreeChildQuery {
         onQueryFailure: (Throwable) -> Unit
     ): QueryResult {
         val parentUri = parent.uri
-        val documentId = runCatching { DocumentsContract.getDocumentId(parentUri) }.getOrNull()
-            ?: return QueryResult(
-                children = listChildrenWithDocumentFile(parent),
-                isComplete = false
-            )
+        val documentId = try {
+            DocumentsContract.getDocumentId(parentUri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return QueryResult(
+            children = listChildrenWithDocumentFile(parent),
+            isComplete = false
+        )
 
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
-        return runCatching {
+        return try {
             val cursor = context.contentResolver.query(
                 childrenUri,
                 CHILD_PROJECTION,
@@ -43,7 +48,7 @@ internal object ManagedDownloadTreeChildQuery {
                 null,
                 null
             ) ?: throw IOException("DocumentsProvider returned null cursor for $childrenUri")
-            cursor.use { cursor ->
+            val queryResult = cursor.use { cursor ->
                 val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                 val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
                 val mimeTypeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
@@ -52,7 +57,7 @@ internal object ManagedDownloadTreeChildQuery {
                 if (idIndex < 0 || nameIndex < 0 || mimeTypeIndex < 0) {
                     throw IllegalStateException("DocumentsProvider omitted required child columns")
                 }
-                buildList {
+                val children = buildList {
                     while (cursor.moveToNext()) {
                         val childDocumentId = cursor.getString(idIndex) ?: continue
                         val childName = cursor.getString(nameIndex) ?: continue
@@ -77,10 +82,20 @@ internal object ManagedDownloadTreeChildQuery {
                         )
                     }
                 }
+                val extras = cursor.extras
+                QueryResult(
+                    children = children,
+                    isComplete = isCompleteQuery(
+                        loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true,
+                        providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
+                    )
+                )
             }
-        }.map { children ->
-            QueryResult(children = children, isComplete = true)
-        }.onFailure(onQueryFailure).getOrElse {
+            queryResult
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            onQueryFailure(error)
             QueryResult(
                 children = listChildrenWithDocumentFile(parent),
                 isComplete = false
@@ -89,8 +104,14 @@ internal object ManagedDownloadTreeChildQuery {
     }
 
     private fun listChildrenWithDocumentFile(parent: DocumentFile): List<QueriedTreeChild> {
-        return runCatching { parent.listFiles().toList() }
-            .getOrDefault(emptyList())
+        val files = try {
+            parent.listFiles().toList()
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return files
             .mapNotNull { file ->
                 file.name?.let { name ->
                     QueriedTreeChild(
@@ -102,6 +123,10 @@ internal object ManagedDownloadTreeChildQuery {
                     )
                 }
             }
+    }
+
+    internal fun isCompleteQuery(loading: Boolean, providerError: String?): Boolean {
+        return !loading && providerError.isNullOrBlank()
     }
 
     private val CHILD_PROJECTION = arrayOf(

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.tree
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -26,9 +27,17 @@ internal class ManagedDownloadTreeDirectories(
         subdirectoryCache[cacheKey]
             ?.takeIf { it.isDirectory }
             ?.let { return it }
+        findCanonicalExternalStorageDirectory(context, parent, displayName)
+            ?.also { directory ->
+                subdirectoryCache[cacheKey] = directory
+            }
+            ?.let { return it }
         return ManagedDownloadTreeMutationLocks.withLock(parent.uri) {
             subdirectoryCache[cacheKey]
                 ?.takeIf { it.isDirectory }
+                ?.let { return@withLock it }
+            findCanonicalExternalStorageDirectory(context, parent, displayName)
+                ?.also { directory -> subdirectoryCache[cacheKey] = directory }
                 ?.let { return@withLock it }
             findKnownManagedSubdirectory(context, parent, displayName)
                 ?.also { subdirectoryCache[cacheKey] = it }
@@ -47,16 +56,42 @@ internal class ManagedDownloadTreeDirectories(
                 return@withLock null
             }
 
-            val createdDirectory = parent.createDirectory(displayName)
+            val createdDirectory = try {
+                parent.createDirectory(displayName)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: Exception) {
+                // DocumentsProvider 可能在目录已存在但枚举尚未刷新时拒绝重复创建
+                NPLogger.w(
+                    tag,
+                    "SAF 创建目录失败，准备重新查找已有目录: name=$displayName, " +
+                        "parent=${parent.uri}, error=${error.message}"
+                )
+                subdirectoryCache.remove(cacheKey)
+                null
+            }
             val resolvedDirectory = createdDirectory?.let { created ->
                 treeChildRegistry.toTreeDocumentFile(
+                    context = context,
                     parent = parent,
                     child = created
-                )
+                ) ?: created
             } ?: run {
+                val knownDirectory = try {
+                    parent.findFile(displayName)
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+                knownDirectory
+                    ?.takeIf(DocumentFile::isDirectory)
+                    ?.also { directory -> subdirectoryCache[cacheKey] = directory }
+                    ?: run {
                 val retry = treeChildRegistry.refreshTreeChildrenWithStatus(context, parent)
                 findManagedSubdirectoryChild(retry.children, displayName)
                     ?.let { child -> treeChildRegistry.toDocumentFile(context, parent, child) }
+                    }
             }
             if (resolvedDirectory == null) {
                 return@withLock null
@@ -68,12 +103,36 @@ internal class ManagedDownloadTreeDirectories(
                         displayName
                     )
             ) {
-                val deleted = runCatching { resolvedDirectory.delete() }.getOrDefault(false)
+                val canonicalChild = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = parent
+                ).children.firstOrNull { child ->
+                    child.isDirectory &&
+                        ManagedDownloadTreeNaming.isExactTreeStoredName(
+                            child.name,
+                            displayName
+                        ) &&
+                        child.documentUri != resolvedDirectory.uri
+                }
+                if (canonicalChild != null) {
+                    deleteContentReference(context, createdDirectory.uri)
+                    treeChildRegistry.toDocumentFile(context, parent, canonicalChild)
+                        ?.also { canonicalDirectory ->
+                            subdirectoryCache[cacheKey] = canonicalDirectory
+                        }
+                        ?.let { return@withLock it }
+                }
+                findCanonicalExternalStorageDirectory(context, parent, displayName)
+                    ?.also { canonicalDirectory ->
+                        deleteContentReference(context, createdDirectory.uri)
+                        subdirectoryCache[cacheKey] = canonicalDirectory
+                    }
+                    ?.let { return@withLock it }
                 NPLogger.w(
                     tag,
-                    "SAF 子目录被自动改名，拒绝保留副本: $displayName, deleted=$deleted"
+                    "SAF 提供方返回了实际子目录名称: expected=$displayName, " +
+                        "actual=${resolvedDirectory.name}"
                 )
-                return@withLock null
             }
             subdirectoryCache[cacheKey] = resolvedDirectory
             val createdName = ManagedDownloadTreeNaming.resolveTreeStoredName(
@@ -89,6 +148,63 @@ internal class ManagedDownloadTreeDirectories(
                 isDirectory = true
             )
             resolvedDirectory
+        }
+    }
+
+    private fun findCanonicalExternalStorageDirectory(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String
+    ): DocumentFile? {
+        if (parent.uri.authority != EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY) return null
+        val parentDocumentId = try {
+            try {
+                DocumentsContract.getDocumentId(parent.uri)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                DocumentsContract.getTreeDocumentId(parent.uri)
+            }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val childDocumentId = ManagedDownloadTreeNaming.externalStorageChildDocumentId(
+            parentDocumentId = parentDocumentId,
+            displayName = displayName
+        ) ?: return null
+        val childDocumentUri = try {
+            // 保留原授权树的 tree id, 不能把子目录重新包装成新的 tree 根
+            DocumentsContract.buildDocumentUriUsingTree(parent.uri, childDocumentId)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val directory = try {
+            DocumentFile.fromSingleUri(context, childDocumentUri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        return try {
+            directory.takeIf { it.exists() && it.isDirectory }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun deleteContentReference(context: Context, uri: android.net.Uri): Boolean {
+        return try {
+            context.contentResolver.delete(uri, null, null) > 0
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -392,7 +508,7 @@ internal class ManagedDownloadTreeDirectories(
         subdirectory: String,
         directory: DocumentFile
     ) {
-        runCatching {
+        try {
             ManagedDownloadMediaScanIsolation.ensureTreeDirectory(
                 context = context,
                 subdirectory = subdirectory,
@@ -418,12 +534,14 @@ internal class ManagedDownloadTreeDirectories(
                     )
                 }
             )
-        }.onFailure {
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             NPLogger.w(
                 tag,
                 "创建 $subdirectory 目录 .nomedia 失败，继续写入侧载文件: " +
-                    "${it.javaClass.simpleName}: ${it.message}",
-                it
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
             )
         }
     }
@@ -460,6 +578,11 @@ internal class ManagedDownloadTreeDirectories(
                 )
             )
             .firstOrNull()
+    }
+
+    private companion object {
+        const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
+            "com.android.externalstorage.documents"
     }
 
     private fun findKnownManagedSubdirectory(
@@ -514,7 +637,14 @@ internal class ManagedDownloadTreeDirectories(
                 mimeType = mimeType,
                 requestedName = temporaryName
             )?.let { marker ->
-                if (runCatching { marker.renameTo(NO_MEDIA_FILE_NAME) }.getOrDefault(false)) {
+                val renamed = try {
+                    marker.renameTo(NO_MEDIA_FILE_NAME)
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
+                    false
+                }
+                if (renamed) {
                     val renamedMarker = parent.findFile(NO_MEDIA_FILE_NAME) ?: marker
                     val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
                         renamedMarker.name,
@@ -524,7 +654,7 @@ internal class ManagedDownloadTreeDirectories(
                         return renamedMarker
                     }
                 }
-                runCatching { marker.delete() }
+                deleteDocument(marker)
             }
         }
         return null
@@ -536,38 +666,63 @@ internal class ManagedDownloadTreeDirectories(
         mimeType: String,
         requestedName: String
     ): DocumentFile? {
-        val marker = runCatching { parent.createFile(mimeType, requestedName) }.getOrNull()
-            ?: return null
+        val createdUri = try {
+            DocumentsContract.createDocument(
+                context.contentResolver,
+                parent.uri,
+                mimeType,
+                requestedName
+            )
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        val marker = DocumentFile.fromSingleUri(context, createdUri) ?: return null
         val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
             marker.name,
             requestedName
         )
         if (storedName != requestedName) {
-            runCatching { marker.delete() }
+            deleteDocument(marker)
             return null
         }
         return marker.takeIf { isAccessibleMarker(context, it) }
             ?: run {
-                runCatching { marker.delete() }
+                deleteDocument(marker)
                 null
             }
     }
 
     private fun isAccessibleMarker(context: Context, marker: DocumentFile): Boolean {
         if (marker.isFile && marker.exists()) return true
-        return runCatching {
+        return try {
             val resolver = context.contentResolver
             if (resolver.openFileDescriptor(marker.uri, "r")?.use { true } == true) {
-                return@runCatching true
+                return true
             }
             if (resolver.openInputStream(marker.uri)?.use { true } == true) {
-                return@runCatching true
+                return true
             }
             resolver.openOutputStream(marker.uri, "w")?.use {
-                return@runCatching true
+                return true
             }
             false
-        }.getOrDefault(false)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun deleteDocument(document: DocumentFile): Boolean {
+        return try {
+            document.delete()
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun listDirectoryChildren(

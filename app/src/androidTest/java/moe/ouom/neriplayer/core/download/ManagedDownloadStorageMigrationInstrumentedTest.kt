@@ -152,7 +152,8 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     @Test
-    fun privateAndSafSixteenMiBMigrationCompletesWithinTenSecondsPerDirection() = runBlocking {
+    fun privateAndSafSixteenMiBMigrationCompletesWithinTenSecondsPerDirection() {
+        runBlocking {
         val context = isolatedPrivateContext()
         val root = defaultRoot(context).apply { mkdirs() }
         val payload = ByteArray(1024 * 1024) { index -> (index % 251).toByte() }
@@ -215,10 +216,11 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
                 JSONObject(restoredMetadata.readText()).getString("mediaUri")
             )
         }
-        Log.i(
-            MIGRATION_TEST_TAG,
-            "private_to_saf_ms=$toSafElapsedMs saf_to_private_ms=$toPrivateElapsedMs bytes=${payload.size * 16}"
-        )
+            Log.i(
+                MIGRATION_TEST_TAG,
+                "private_to_saf_ms=$toSafElapsedMs saf_to_private_ms=$toPrivateElapsedMs bytes=${payload.size * 16}"
+            )
+        }
     }
 
     @Test

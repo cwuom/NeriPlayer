@@ -517,6 +517,37 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `incomplete tree refresh keeps previously confirmed names`() {
+        val refresh = ManagedDownloadStorage.mergeTreeChildNamesAfterRefresh(
+            refreshedNames = listOf("new.txt"),
+            cachedNames = listOf("old.txt"),
+            cachedNamesComplete = true,
+            refreshedComplete = false
+        )
+
+        assertEquals(setOf("new.txt", "old.txt"), refresh.names)
+        assertFalse(refresh.isComplete)
+    }
+
+    @Test
+    fun `provider numbered name is not an exact replace target`() {
+        assertFalse(
+            moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+                .isExactTreeStoredName(
+                    actualName = "song.npmeta.json (1)",
+                    expectedName = "song.npmeta.json"
+                )
+        )
+        assertTrue(
+            moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+                .isExactTreeStoredName(
+                    actualName = "song.npmeta.json",
+                    expectedName = "song.npmeta.json"
+                )
+        )
+    }
+
+    @Test
     fun `reference delete updates snapshot without dropping unrelated SAF indexes`() {
         val audioEntry = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song.flac",
@@ -999,6 +1030,20 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertFalse(bundle.hasOriginalSidecar)
         assertFalse(bundle.hasTranslatedSidecar)
         assertFalse(bundle.hasRomanizedSidecar)
+    }
+
+    @Test(expected = SecurityException::class)
+    fun `fast lyric references do not hide a revoked SAF permission`() {
+        ManagedDownloadStorage.resolveLyricsBundleFromReferences(
+            metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                matchedLyric = "metadata original"
+            ),
+            originalReference = "content://com.android.externalstorage.documents/document/" +
+                "primary%3Aneriplayer-download%2FLyrics%2FSong.lrc",
+            translatedReference = null,
+            romanizedReference = null,
+            readText = { throw SecurityException("permission revoked") }
+        )
     }
 
     private fun ManagedDownloadStorage.StoredEntry.lyricEntry(name: String):

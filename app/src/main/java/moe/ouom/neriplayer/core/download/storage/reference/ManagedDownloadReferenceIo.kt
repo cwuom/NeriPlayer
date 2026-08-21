@@ -13,15 +13,24 @@ internal object ManagedDownloadReferenceIo {
     fun readText(context: Context, reference: String): String? {
         return when {
             reference.startsWith("/") -> {
-                runCatching { File(reference).inputStream().bufferedReader(Charsets.UTF_8).use { it.readText() } }
-                    .getOrNull()
-                    ?: legacyDocumentUri(reference)?.let { uri ->
-                        runCatching {
-                            context.contentResolver.openInputStream(uri)
-                                ?.bufferedReader(Charsets.UTF_8)
-                                ?.use { it.readText() }
-                        }.getOrNull()
+                val localContent = try {
+                    File(reference).inputStream().bufferedReader(Charsets.UTF_8).use { it.readText() }
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (_: Exception) {
+                    null
+                }
+                localContent ?: legacyDocumentUri(reference)?.let { uri ->
+                    try {
+                        context.contentResolver.openInputStream(uri)
+                            ?.bufferedReader(Charsets.UTF_8)
+                            ?.use { it.readText() }
+                    } catch (error: SecurityException) {
+                        throw error
+                    } catch (_: Exception) {
+                        null
                     }
+                }
             }
             else -> {
                 reference.toLocalFileReference()
@@ -87,9 +96,13 @@ internal object ManagedDownloadReferenceIo {
     }
 
     fun isContentReferenceGone(context: Context, uri: Uri): Boolean {
-        return runCatching {
+        return try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { false } ?: false
-        }.getOrElse { error -> isMissingDocumentFailure(error) }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            isMissingDocumentFailure(error)
+        }
     }
 
     fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
@@ -98,15 +111,23 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun isAccessibleDocumentReference(context: Context, uri: Uri): Boolean {
-        val documentExists = runCatching {
+        val documentExists = try {
             resolveDocumentFile(context, uri)?.exists() == true
-        }.getOrDefault(false)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
         if (isAccessibleDocumentReference(documentExists, descriptorAccessible = false)) {
             return true
         }
-        val descriptorAccessible = runCatching {
+        val descriptorAccessible = try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
-        }.getOrDefault(false)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
         return isAccessibleDocumentReference(documentExists, descriptorAccessible)
     }
 
@@ -126,9 +147,14 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun deleteContentReferenceOnce(context: Context, uri: Uri): Boolean {
-        val deletedByContract = runCatching {
+        if (isContentReferenceGone(context, uri)) {
+            return true
+        }
+        val deletedByContract = try {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
-        }.getOrElse { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             if (isMissingDocumentFailure(error)) {
                 return true
             }
@@ -138,9 +164,11 @@ internal object ManagedDownloadReferenceIo {
             return true
         }
 
-        return runCatching {
+        return try {
             resolveDocumentFile(context, uri)?.delete() ?: false
-        }.getOrElse { error ->
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
             if (isMissingDocumentFailure(error)) {
                 return true
             }

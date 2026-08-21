@@ -601,6 +601,18 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `createUniqueName treats canonically equivalent unicode names as a conflict`() {
+        val decomposed = "Cafe\u0301 - Artist.mp3"
+        assertEquals(
+            "Cafe\u0301 - Artist (1).mp3",
+            ManagedDownloadStorage.createUniqueName(
+                existingNames = setOf("Café - Artist.mp3"),
+                desiredName = decomposed
+            )
+        )
+    }
+
+    @Test
     fun `createUniqueName increments numbered suffix on conflict`() {
         assertEquals(
             "Artist - Song (2).flac",
