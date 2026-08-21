@@ -77,7 +77,9 @@ internal object ManagedDownloadSnapshotRoomMapper {
                     translatedLyricPath = metadata.translatedLyricPath,
                     romanizedLyricPath = metadata.romanizedLyricPath,
                     durationMs = metadata.durationMs,
-                    downloadFinalized = metadata.downloadFinalized
+                    downloadFinalized = metadata.downloadFinalized,
+                    createdAtMs = metadata.createdAtMs,
+                    createdAtSource = metadata.createdAtSource
                 )
             }
     }
@@ -168,7 +170,9 @@ internal object ManagedDownloadSnapshotRoomMapper {
             translatedLyricPath = translatedLyricPath,
             romanizedLyricPath = romanizedLyricPath,
             durationMs = durationMs,
-            downloadFinalized = downloadFinalized
+            downloadFinalized = downloadFinalized,
+            createdAtMs = createdAtMs,
+            createdAtSource = createdAtSource
         )
     }
 

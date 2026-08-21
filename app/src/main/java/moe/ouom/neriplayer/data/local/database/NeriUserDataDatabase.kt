@@ -94,7 +94,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -171,7 +171,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_20_21,
                 MIGRATION_21_22,
                 MIGRATION_22_23,
-                MIGRATION_23_24
+                MIGRATION_23_24,
+                MIGRATION_24_25
             ).build()
         }
 
@@ -1213,6 +1214,39 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     db = db,
                     tableName = "download_snapshot_metadata",
                     columnName = "album"
+                )
+            }
+        }
+
+        val MIGRATION_24_25: Migration = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                addIntegerColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "created_at_ms"
+                )
+                addTextColumnIfMissing(
+                    db = db,
+                    tableName = "download_snapshot_metadata",
+                    columnName = "created_at_source"
+                )
+            }
+        }
+
+        private fun addIntegerColumnIfMissing(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String
+        ) {
+            val hasColumn = db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                nameIndex >= 0 && generateSequence {
+                    if (cursor.moveToNext()) cursor.getString(nameIndex) else null
+                }.any { it == columnName }
+            }
+            if (!hasColumn) {
+                db.execSQL(
+                    "ALTER TABLE `$tableName` ADD COLUMN `$columnName` INTEGER"
                 )
             }
         }

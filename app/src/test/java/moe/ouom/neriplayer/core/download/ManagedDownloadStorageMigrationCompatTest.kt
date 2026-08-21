@@ -668,6 +668,20 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `download metadata restores immutable created at fields`() {
+        val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
+            JSONObject().apply {
+                put("schemaVersion", 3)
+                put("createdAtMs", 123456789L)
+                put("createdAtSource", "MANAGED_COMMIT")
+            }.toString()
+        )
+
+        assertEquals(123456789L, metadata?.createdAtMs)
+        assertEquals("MANAGED_COMMIT", metadata?.createdAtSource)
+    }
+
+    @Test
     fun `parseDownloadedAudioMetadataJson keeps explicit cleared lyrics as blank string`() {
         val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(
             JSONObject().apply {

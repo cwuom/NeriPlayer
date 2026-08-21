@@ -64,6 +64,9 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.io.File
 import java.security.MessageDigest
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
 
@@ -202,6 +205,29 @@ internal fun resolveScannedSourceAddedAt(
     return preferredTimestampMs?.takeIf { it > 0L }
         ?: fallbackTimestampMs?.takeIf { it > 0L }
         ?: 0L
+}
+
+internal fun resolveFilesystemCreationTime(file: File): Long? {
+    return runCatching {
+        val attributes = Files.readAttributes(
+            file.toPath(),
+            BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS
+        )
+        val creationTimeMs = attributes.creationTime().toMillis()
+        val lastModifiedTimeMs = attributes.lastModifiedTime().toMillis()
+        creationTimeMs
+            .takeIf { it > 0L && it != lastModifiedTimeMs }
+    }.getOrNull()
+}
+
+internal fun localSongNewestFirstComparator(): Comparator<SongItem> {
+    return compareByDescending<SongItem> { song ->
+        song.addedAt.takeIf { timestamp -> timestamp > 0L } ?: Long.MIN_VALUE
+    }
+        .thenBy { it.sourceStableKey.orEmpty() }
+        .thenBy { it.mediaUri.orEmpty() }
+        .thenBy { it.localFileName.orEmpty() }
 }
 
 internal fun selectMetadataSidecarReference(
@@ -1263,11 +1289,7 @@ object LocalAudioImportManager {
     }
 
     private fun orderScannedSongs(songs: List<SongItem>): List<SongItem> {
-        return songs.sortedWith(
-            compareByDescending<SongItem> { it.addedAt.takeIf { timestamp -> timestamp > 0L } ?: Long.MIN_VALUE }
-                .thenBy { it.mediaUri.orEmpty() }
-                .thenBy { it.localFileName.orEmpty() }
-        )
+        return songs.sortedWith(localSongNewestFirstComparator())
     }
 
     private suspend fun scanExternalStorageFolderWithMediaStore(
@@ -1395,13 +1417,17 @@ object LocalAudioImportManager {
                             knownSidecarReferences[contentUri.toString()] = references
                         }
                     }
-                    val sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                    val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
                         dateAddedSeconds = dateAddedIndex
                             .takeIf { it >= 0 && !cursor.isNull(it) }
                             ?.let(cursor::getLong),
                         dateModifiedSeconds = dateModifiedIndex
                             .takeIf { it >= 0 && !cursor.isNull(it) }
                             ?.let(cursor::getLong)
+                    )
+                    val sourceAddedAt = resolveScannedSourceAddedAt(
+                        preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
+                        fallbackTimestampMs = mediaStoreSourceAddedAt
                     )
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -1653,13 +1679,17 @@ object LocalAudioImportManager {
                     managedSidecarReferences?.let { references ->
                         indexedManagedSidecarReferences[contentUri.toString()] = references
                     }
-                    val sourceAddedAt = resolveMediaStoreSourceAddedAt(
+                    val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
                         dateAddedSeconds = idxDateAdded
                             .takeIf { it >= 0 && !cursor.isNull(it) }
                             ?.let(cursor::getLong),
                         dateModifiedSeconds = idxDateModified
                             .takeIf { it >= 0 && !cursor.isNull(it) }
                             ?.let(cursor::getLong)
+                    )
+                    val sourceAddedAt = resolveScannedSourceAddedAt(
+                        preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
+                        fallbackTimestampMs = mediaStoreSourceAddedAt
                     )
 
                     songs += buildQuickImportedSong(
@@ -1785,7 +1815,8 @@ object LocalAudioImportManager {
         val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
         val sourceAddedAt = resolveScannedSourceAddedAt(
             preferredTimestampMs = seed.sourceAddedAt,
-            fallbackTimestampMs = seed.localFile?.lastModified()
+            fallbackTimestampMs = seed.localFile?.let(::resolveFilesystemCreationTime)
+                ?: seed.localFile?.lastModified()
         )
 
         return SongItem(
@@ -2404,7 +2435,11 @@ object LocalAudioImportManager {
                 artist = details.artist,
                 album = details.album.takeUnless { details.usesFallbackAlbum },
                 durationMs = details.durationMs,
-                sourceAddedAt = details.lastModifiedMs,
+                sourceAddedAt = details.filePath
+                    ?.let(::File)
+                    ?.takeIf(File::exists)
+                    ?.let(::resolveFilesystemCreationTime)
+                    ?: details.lastModifiedMs,
                 localFile = details.filePath?.let(::File)?.takeIf(File::exists),
                 nearbyCoverUri = details.coverUri,
                 sourceStableKey = details.sourceStableKey,
@@ -2957,7 +2992,10 @@ object LocalAudioImportManager {
                 artist = queryInfo.artist,
                 album = queryInfo.album,
                 durationMs = durationMs,
-                sourceAddedAt = queryInfo.sourceAddedAt,
+                sourceAddedAt = resolveScannedSourceAddedAt(
+                    preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
+                    fallbackTimestampMs = queryInfo.sourceAddedAt
+                ),
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,
                 mediaStoreCoverUri = queryInfo.mediaStoreCoverUri,

@@ -134,5 +134,9 @@ internal data class DownloadSnapshotMetadataEntity(
     @ColumnInfo(name = "duration_ms")
     val durationMs: Long,
     @ColumnInfo(name = "download_finalized")
-    val downloadFinalized: Boolean?
+    val downloadFinalized: Boolean?,
+    @ColumnInfo(name = "created_at_ms")
+    val createdAtMs: Long?,
+    @ColumnInfo(name = "created_at_source")
+    val createdAtSource: String?
 )

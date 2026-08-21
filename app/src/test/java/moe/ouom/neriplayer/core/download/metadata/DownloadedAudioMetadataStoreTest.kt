@@ -11,6 +11,19 @@ import org.junit.Test
 class DownloadedAudioMetadataStoreTest {
 
     @Test
+    fun `metadata writes preserve the original download time`() {
+        assertEquals(
+            123L,
+            resolveDownloadedAudioTime(existingTimeMs = 123L, fallbackTimeMs = 999L)
+        )
+        assertEquals(
+            999L,
+            resolveDownloadedAudioTime(existingTimeMs = null, fallbackTimeMs = 999L)
+        )
+        assertNull(resolveDownloadedAudioTime(existingTimeMs = 0L, fallbackTimeMs = 0L))
+    }
+
+    @Test
     fun `restoring a custom cover clears the stale downloaded sidecar path`() {
         val customCover = "file:///data/user/0/app/files/custom_song_covers/custom.jpg"
         val staleDownloadedCover = "content://downloads/Covers/song-custom.jpg"

@@ -305,8 +305,14 @@ fun upsertDownloadedSongCatalog(
             matchesDownloadedSongCatalogEntry(existing, updatedSong)
         }
         .plus(updatedSong)
-        .sortedByDescending { it.downloadTime }
+        .sortedWith(downloadedSongNewestFirstComparator)
 }
+
+internal val downloadedSongNewestFirstComparator: Comparator<DownloadedSong> =
+    compareByDescending<DownloadedSong> { it.downloadTime }
+        .thenBy { it.catalogStableKey().orEmpty() }
+        .thenBy { it.filePath }
+        .thenBy { it.mediaUri.orEmpty() }
 
 internal fun shouldPublishDownloadedSongCatalogUpdate(
     currentSong: DownloadedSong,

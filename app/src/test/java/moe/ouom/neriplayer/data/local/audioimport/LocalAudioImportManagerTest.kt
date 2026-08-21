@@ -351,7 +351,7 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `buildQuickImportedSong keeps source file time for scanned ordering`() {
+    fun `buildQuickImportedSong prefers reliable filesystem creation time`() {
         val importedFile = tempFolder.newFile("scanned-order.flac")
         val sourceTime = 1_725_000_000_000L
         assertTrue(importedFile.setLastModified(sourceTime))
@@ -369,7 +369,37 @@ class LocalAudioImportManagerTest {
             unknownArtistLabel = "Unknown Artist"
         )
 
-        assertEquals(sourceTime, song.addedAt)
+        assertEquals(
+            resolveFilesystemCreationTime(importedFile) ?: sourceTime,
+            song.addedAt
+        )
+    }
+
+    @Test
+    fun `local song ordering uses stable identity after equal timestamps`() {
+        val first = SongItem(
+            id = 1L,
+            name = "first",
+            artist = "artist",
+            album = "local",
+            albumId = 0L,
+            durationMs = 1L,
+            coverUrl = null,
+            mediaUri = "/music/z.flac",
+            sourceStableKey = "z",
+            addedAt = 100L
+        )
+        val second = first.copy(
+            id = 2L,
+            name = "second",
+            mediaUri = "/music/a.flac",
+            sourceStableKey = "a"
+        )
+
+        assertEquals(
+            listOf(second, first),
+            listOf(first, second).sortedWith(localSongNewestFirstComparator())
+        )
     }
 
     @Test

@@ -169,6 +169,7 @@ internal object ManagedDownloadStorageJsonCodec {
 
     private fun ManagedDownloadStorage.DownloadedAudioMetadata.toJson(): JSONObject {
         return JSONObject().apply {
+            put("schemaVersion", 3)
             put("stableKey", stableKey)
             put("songId", songId)
             put("identityAlbum", identityAlbum)
@@ -203,6 +204,8 @@ internal object ManagedDownloadStorageJsonCodec {
             put("durationMs", durationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
+            put("createdAtMs", createdAtMs)
+            put("createdAtSource", createdAtSource)
         }
     }
 
@@ -387,7 +390,11 @@ internal object ManagedDownloadStorageJsonCodec {
             durationMs = optLong("durationMs"),
             downloadTimeMs = optLong("downloadTimeMs")
                 .takeIf { has("downloadTimeMs") && it > 0L },
-            downloadFinalized = optOptionalBoolean("downloadFinalized")
+            downloadFinalized = optOptionalBoolean("downloadFinalized"),
+            createdAtMs = optLong("createdAtMs")
+                .takeIf { has("createdAtMs") && it > 0L },
+            createdAtSource = optString("createdAtSource")
+                .takeIf(String::isNotBlank)
         )
     }
 

@@ -171,6 +171,7 @@ internal class DownloadedSongBuilder(
             filePath = storedAudio.reference,
             fileSize = storedAudio.sizeBytes,
             downloadTime = existingDownloadTime
+                ?: metadata?.createdAtMs
                 ?: metadata?.downloadTimeMs
                 ?: storedAudio.lastModifiedMs,
             coverPath = coverReference,

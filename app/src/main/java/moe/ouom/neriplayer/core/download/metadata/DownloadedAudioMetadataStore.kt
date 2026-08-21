@@ -35,14 +35,26 @@ internal class DownloadedAudioMetadataStore(
             existingMetadata = existingMetadata,
             resolveExistingSidecars = resolveExistingSidecars
         )
+        val createdAtMs = existingMetadata?.createdAtMs
+            ?: existingMetadata?.downloadTimeMs
+            ?: audio.lastModifiedMs.takeIf { it > 0L }
+            ?: System.currentTimeMillis()
+        val createdAtSource = existingMetadata?.createdAtSource
+            ?: "MANAGED_COMMIT"
         val payload = buildMetadataPayload(
             song = preserveMissingDownloadedMetadataLyrics(song, existingMetadata),
             coverReference = sidecars.coverReference,
             lyricReference = sidecars.lyricReference,
             translatedLyricReference = sidecars.translatedLyricReference,
             romanizedLyricReference = sidecars.romanizedLyricReference,
-            downloadTimeMs = audio.lastModifiedMs.takeIf { it > 0L },
-            downloadFinalized = downloadFinalized
+            // 元信息、歌词和封面写回不应把歌曲重新标记为最新下载
+            downloadTimeMs = resolveDownloadedAudioTime(
+                existingTimeMs = existingMetadata?.downloadTimeMs,
+                fallbackTimeMs = createdAtMs
+            ),
+            downloadFinalized = downloadFinalized,
+            createdAtMs = createdAtMs,
+            createdAtSource = createdAtSource
         )
 
         var lastError: Throwable? = null
@@ -173,10 +185,13 @@ internal class DownloadedAudioMetadataStore(
         translatedLyricReference: String?,
         romanizedLyricReference: String?,
         downloadTimeMs: Long?,
-        downloadFinalized: Boolean
+        downloadFinalized: Boolean,
+        createdAtMs: Long,
+        createdAtSource: String
     ): JSONObject {
         val identity = song.identity()
         return JSONObject().apply {
+            put("schemaVersion", 3)
             put("stableKey", identity.stableKey())
             put("songId", song.id)
             put("identityAlbum", identity.album)
@@ -211,6 +226,8 @@ internal class DownloadedAudioMetadataStore(
             put("durationMs", song.durationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
+            put("createdAtMs", createdAtMs)
+            put("createdAtSource", createdAtSource)
         }
     }
 
@@ -220,6 +237,14 @@ internal class DownloadedAudioMetadataStore(
         val translatedLyricReference: String?,
         val romanizedLyricReference: String?
     )
+}
+
+internal fun resolveDownloadedAudioTime(
+    existingTimeMs: Long?,
+    fallbackTimeMs: Long?
+): Long? {
+    return existingTimeMs?.takeIf { it > 0L }
+        ?: fallbackTimeMs?.takeIf { it > 0L }
 }
 
 internal fun preserveMissingDownloadedMetadataLyrics(
