@@ -52,7 +52,10 @@ internal class ManagedDownloadTreeFileCommitter(
                     ) ?: canonical
                 }
             }
-            if (!refresh.isComplete) {
+            if (
+                !refresh.isComplete &&
+                    !ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(parent.uri)
+            ) {
                 throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
             }
 

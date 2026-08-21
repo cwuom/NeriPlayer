@@ -1,11 +1,27 @@
 package moe.ouom.neriplayer.core.download.storage.tree
 
+import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import java.text.Normalizer
 import java.util.Locale
 
 internal object ManagedDownloadTreeNaming {
+    fun canCreateWhenChildrenQueryIsIncomplete(parentUri: Uri): Boolean {
+        return canCreateWhenChildrenQueryIsIncomplete(
+            scheme = parentUri.scheme,
+            authority = parentUri.authority
+        )
+    }
+
+    internal fun canCreateWhenChildrenQueryIsIncomplete(
+        scheme: String?,
+        authority: String?
+    ): Boolean {
+        // 不完整枚举无法证明目标不存在, 继续创建会让 ExternalStorageProvider 产生副本
+        return false
+    }
+
     fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
         return actualName?.takeIf(String::isNotBlank) ?: expectedName
     }

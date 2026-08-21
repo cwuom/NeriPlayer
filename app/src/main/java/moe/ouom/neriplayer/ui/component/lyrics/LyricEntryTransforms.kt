@@ -34,6 +34,7 @@ internal data class LyricsEditorSeed(
     val embeddedTranslatedLyrics: String = translatedLyrics,
     val embeddedRomanizedLyrics: String = romanizedLyrics,
     val hasSidecar: Boolean = false,
+    val hasEmbeddedLyrics: Boolean = false,
     val source: LyricsEditorSource = LyricsEditorSource.SIDECAR
 )
 
@@ -47,7 +48,8 @@ internal fun resolveLocalLyricsEditorSeed(
     embeddedRomanizedLyrics: String?,
     hasOriginalSidecar: Boolean,
     hasTranslatedSidecar: Boolean,
-    hasRomanizedSidecar: Boolean
+    hasRomanizedSidecar: Boolean,
+    hasEmbeddedLyrics: Boolean = false
 ): LyricsEditorSeed {
     val storedLyrics = resolveStoredLyricText(song.matchedLyric, song.originalLyric).orEmpty()
     val storedTranslatedLyrics = resolveStoredLyricText(
@@ -87,6 +89,7 @@ internal fun resolveLocalLyricsEditorSeed(
         embeddedTranslatedLyrics = resolvedEmbeddedTranslatedLyrics,
         embeddedRomanizedLyrics = resolvedEmbeddedRomanizedLyrics,
         hasSidecar = hasSidecar,
+        hasEmbeddedLyrics = hasEmbeddedLyrics,
         source = if (hasSidecar) LyricsEditorSource.SIDECAR else LyricsEditorSource.EMBEDDED
     )
 }

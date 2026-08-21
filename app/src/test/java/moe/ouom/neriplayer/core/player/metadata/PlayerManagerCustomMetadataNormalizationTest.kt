@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.player.persistence.EditableMetadataWriteMode
 import moe.ouom.neriplayer.core.player.persistence.resolveEditableMetadataWriteMode
 import moe.ouom.neriplayer.core.player.persistence.shouldPersistLyricsSidecarsSynchronously
+import moe.ouom.neriplayer.core.player.persistence.shouldSyncDownloadedMetadataAfterMetadataUpdate
 import moe.ouom.neriplayer.core.player.persistence.shouldSyncDownloadedMetadataAfterLyricsUpdate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +58,24 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 restoreBaseCover = false,
                 requestedCoverReference = baseCover,
                 restoredBaseCoverReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `local cover sidecar decision is independent from embedded metadata writeback`() {
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = false,
+                nextCustomCover = "content://local/covers/new.jpg",
+                previousCustomCover = null
+            )
+        )
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
+                restoreBaseCover = true,
+                nextCustomCover = null,
+                previousCustomCover = "content://local/covers/old.jpg"
             )
         )
     }
@@ -190,6 +209,18 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
+    fun `restoring a local song without a local cover does not keep a remote url`() {
+        assertNull(
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "https://example.com/original-cover.jpg",
+                baseCoverUrl = "https://example.com/current-cover.jpg",
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg",
+                localOnly = true
+            )
+        )
+    }
+
+    @Test
     fun `current loaded song keeps playing during metadata writes`() {
         assertEquals(
             LocalMetadataWritePlaybackAction.NONE,
@@ -260,7 +291,7 @@ class PlayerManagerCustomMetadataNormalizationTest {
     }
 
     @Test
-    fun `local lyric update can suppress duplicate download metadata sync`() {
+    fun `local lyric update syncs downloaded catalog after embedded write`() {
         assertTrue(
             shouldSyncDownloadedMetadataAfterLyricsUpdate(
                 writeLocalMetadata = false,
@@ -268,7 +299,7 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 syncDownloadedMetadata = true
             )
         )
-        assertFalse(
+        assertTrue(
             shouldSyncDownloadedMetadataAfterLyricsUpdate(
                 writeLocalMetadata = true,
                 isLocalSong = true,
@@ -280,6 +311,28 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 writeLocalMetadata = false,
                 isLocalSong = true,
                 syncDownloadedMetadata = false
+            )
+        )
+    }
+
+    @Test
+    fun `local embedded metadata write still syncs downloaded catalog`() {
+        assertTrue(
+            shouldSyncDownloadedMetadataAfterMetadataUpdate(
+                writeLocalMetadata = true,
+                isLocalSong = true
+            )
+        )
+        assertTrue(
+            shouldSyncDownloadedMetadataAfterMetadataUpdate(
+                writeLocalMetadata = false,
+                isLocalSong = true
+            )
+        )
+        assertFalse(
+            shouldSyncDownloadedMetadataAfterMetadataUpdate(
+                writeLocalMetadata = true,
+                isLocalSong = false
             )
         )
     }

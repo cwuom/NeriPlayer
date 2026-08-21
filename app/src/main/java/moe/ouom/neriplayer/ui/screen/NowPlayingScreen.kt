@@ -5186,6 +5186,7 @@ fun EditSongInfoSheet(
         isSaving = true
         originalInfoRequestId += 1
         coroutineScope.launch {
+            var dismissed = false
             try {
                 val latestSong = PlayerManager.currentSongFlow.value
                     ?.takeIf { it.sameIdentityAs(actualSong) }
@@ -5197,20 +5198,23 @@ fun EditSongInfoSheet(
                 if (shouldClearLyrics) {
                     // B站音源: 清除歌词
                     NPLogger.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
-                    NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
+                    NPLogger.d("NowPlayingScreen", "actualSong 详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
                     NPLogger.d("NowPlayingScreen", "当前歌词状态: matchedLyric=${actualSong.matchedLyric?.take(50)}, matchedTranslatedLyric=${actualSong.matchedTranslatedLyric?.take(50)}")
 
-                    NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation清除歌词")
+                    NPLogger.d("NowPlayingScreen", "准备调用 PlayerManager.updateSongLyricsAndTranslation 清除歌词")
                     lyricsWriteSucceeded = PlayerManager.updateSongLyricsAndTranslation(
                         latestSong,
                         "",  // 清空歌词
                         "",  // 清空翻译歌词
                         newRomanizedLyrics = "",
                         writeLocalMetadata = false,
-                        persistLocalSidecars = false,
+                        persistLocalSidecars = shouldPersistEditedSongLyricsLocally(
+                            isLocalSong = actualSong.isLocalSong(),
+                            writeLocalMetadata = writeLocalMetadata
+                        ),
                         syncDownloadedMetadata = false
                     )
-                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation 调用完成")
                     NPLogger.d("NowPlayingScreen", "=== 清除歌词流程完成 ===")
                 } else if (shouldRestoreLyrics) {
                     // 网易云音源: 恢复歌词
@@ -5218,17 +5222,20 @@ fun EditSongInfoSheet(
                     NPLogger.d("NowPlayingScreen", "actualSong详情: id=${actualSong.id}, album='${actualSong.album}'")
                     NPLogger.d("NowPlayingScreen", "原始歌词: lyric=${originalLyric?.take(50)}, translatedLyric=${originalTranslatedLyric?.take(50)}")
 
-                    NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation恢复歌词")
+                    NPLogger.d("NowPlayingScreen", "准备调用PlayerManager.updateSongLyricsAndTranslation 恢复歌词")
                     lyricsWriteSucceeded = PlayerManager.updateSongLyricsAndTranslation(
                         latestSong,
                         originalLyric,  // 恢复原始歌词
                         originalTranslatedLyric,  // 恢复原始翻译歌词
                         newRomanizedLyrics = originalRomanizedLyric,
                         writeLocalMetadata = false,
-                        persistLocalSidecars = false,
+                        persistLocalSidecars = shouldPersistEditedSongLyricsLocally(
+                            isLocalSong = actualSong.isLocalSong(),
+                            writeLocalMetadata = writeLocalMetadata
+                        ),
                         syncDownloadedMetadata = false
                     )
-                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation调用完成")
+                    NPLogger.d("NowPlayingScreen", "PlayerManager.updateSongLyricsAndTranslation 调用完成")
                     NPLogger.d("NowPlayingScreen", "=== 恢复歌词流程完成 ===")
                 }
 
@@ -5276,6 +5283,8 @@ fun EditSongInfoSheet(
                 originalTranslatedLyric = null
                 originalRomanizedLyric = null
                 clearEditSongInfoFocus()
+                dismissed = true
+                isSaving = false
                 onDismiss()
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
@@ -5283,7 +5292,9 @@ fun EditSongInfoSheet(
                     composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
                 )
             } finally {
-                isSaving = false
+                if (!dismissed) {
+                    isSaving = false
+                }
             }
         }
     }
@@ -5542,7 +5553,9 @@ fun EditSongInfoSheet(
                                     } else {
                                         null
                                     }
-                                    val shouldProbeLocalSidecars = !isManagedLocalDownload ||
+                                    // 下载索引可能落后于用户在 Lyrics/ 中手动删除或新建的文件,
+                                    // 编辑入口必须对当前歌曲做一次轻量真实探测
+                                    val shouldProbeLocalSidecars = isManagedLocalDownload ||
                                         downloadedLyrics == null ||
                                         !downloadedLyrics.hasOriginalSidecar ||
                                         !downloadedLyrics.hasTranslatedSidecar ||
@@ -5674,7 +5687,12 @@ fun EditSongInfoSheet(
                                             localLyrics?.hasTranslatedSidecar == true,
                                     hasRomanizedSidecar =
                                         downloadedLyrics?.hasRomanizedSidecar == true ||
-                                            localLyrics?.hasRomanizedSidecar == true
+                                            localLyrics?.hasRomanizedSidecar == true,
+                                    hasEmbeddedLyrics = listOf(
+                                        embeddedLyrics?.embeddedLyric,
+                                        embeddedLyrics?.embeddedTranslatedLyric,
+                                        embeddedLyrics?.embeddedRomanizedLyric
+                                    ).any { !it.isNullOrBlank() }
                                 )
                                 if (lyricsEditorRequestId != requestId) {
                                     return@launch
@@ -5698,7 +5716,13 @@ fun EditSongInfoSheet(
                                                 "补充读取嵌入歌词时目录授权失效",
                                                 error
                                             )
-                                            if (lyricsEditorRequestId == requestId) {
+                                            if (shouldPublishPendingEmbeddedLyricsResult(
+                                                    requestIsCurrent = lyricsEditorRequestId == requestId,
+                                                    pendingSourceHasSidecar =
+                                                        pendingLyricsSourceSeed?.hasSidecar == true,
+                                                    editorAlreadySelected = lyricsEditorSeed != null
+                                                )
+                                            ) {
                                                 pendingLyricsSourceSeed = null
                                                 isPendingEmbeddedLyricsLoading = false
                                                 snackbarHostState.showNeriSnackbar(
@@ -5715,17 +5739,32 @@ fun EditSongInfoSheet(
                                             )
                                             null
                                         }
-                                        if (
-                                            lyricsEditorRequestId == requestId &&
-                                            pendingLyricsSourceSeed?.hasSidecar == true
-                                        ) {
-                                            pendingLyricsSourceSeed = loadedEditorSeed.copy(
-                                                embeddedLyrics = embedded?.embeddedLyric.orEmpty(),
-                                                embeddedTranslatedLyrics =
-                                                    embedded?.embeddedTranslatedLyric.orEmpty(),
-                                                embeddedRomanizedLyrics =
-                                                    embedded?.embeddedRomanizedLyric.orEmpty()
+                                        if (shouldPublishPendingEmbeddedLyricsResult(
+                                                requestIsCurrent = lyricsEditorRequestId == requestId,
+                                                pendingSourceHasSidecar =
+                                                    pendingLyricsSourceSeed?.hasSidecar == true,
+                                                editorAlreadySelected = lyricsEditorSeed != null
                                             )
+                                        ) {
+                                            val hasEmbeddedLyrics = listOf(
+                                                embedded?.embeddedLyric,
+                                                embedded?.embeddedTranslatedLyric,
+                                                embedded?.embeddedRomanizedLyric
+                                            ).any { !it.isNullOrBlank() }
+                                            if (hasEmbeddedLyrics) {
+                                                pendingLyricsSourceSeed = loadedEditorSeed.copy(
+                                                    embeddedLyrics = embedded?.embeddedLyric.orEmpty(),
+                                                    embeddedTranslatedLyrics =
+                                                        embedded?.embeddedTranslatedLyric.orEmpty(),
+                                                    embeddedRomanizedLyrics =
+                                                        embedded?.embeddedRomanizedLyric.orEmpty(),
+                                                    hasEmbeddedLyrics = true
+                                                )
+                                            } else {
+                                                // 嵌入标签为空时不显示一个无效的来源选择弹窗
+                                                lyricsEditorSeed = loadedEditorSeed
+                                                pendingLyricsSourceSeed = null
+                                            }
                                             isPendingEmbeddedLyricsLoading = false
                                         }
                                     }
@@ -6033,7 +6072,9 @@ fun EditSongInfoSheet(
         )
     }
 
-    pendingLyricsSourceSeed?.let { pendingSeed ->
+    pendingLyricsSourceSeed
+        ?.takeIf { it.hasEmbeddedLyrics || isPendingEmbeddedLyricsLoading }
+        ?.let { pendingSeed ->
         AlertDialog(
             onDismissRequest = {
                 pendingLyricsSourceSeed = null
@@ -6279,6 +6320,21 @@ internal fun shouldAllowLocalCoverReplacement(
     context: Context? = null
 ): Boolean {
     return !song.isSyncableRemoteSong(context)
+}
+
+internal fun shouldPublishPendingEmbeddedLyricsResult(
+    requestIsCurrent: Boolean,
+    pendingSourceHasSidecar: Boolean,
+    editorAlreadySelected: Boolean
+): Boolean {
+    return requestIsCurrent && pendingSourceHasSidecar && !editorAlreadySelected
+}
+
+internal fun shouldPersistEditedSongLyricsLocally(
+    isLocalSong: Boolean,
+    writeLocalMetadata: Boolean
+): Boolean {
+    return isLocalSong && !writeLocalMetadata
 }
 
 internal fun resolvePendingLocalCoverReplacementTarget(
@@ -6571,8 +6627,10 @@ fun LyricsEditorSheet(
     }
 
     fun saveLyrics(writeLocalMetadata: Boolean) {
+        if (isSaving) return
         isSaving = true
         coroutineScope.launch {
+            var dismissed = false
             try {
                 val writeSucceeded = PlayerManager.updateSongLyricsAndTranslation(
                     songToUpdate = originalSong,
@@ -6582,6 +6640,8 @@ fun LyricsEditorSheet(
                     writeLocalMetadata = writeLocalMetadata
                 )
                 if (writeSucceeded) {
+                    dismissed = true
+                    isSaving = false
                     dismissLyricsEditor()
                 } else {
                     AppFeedback.show(
@@ -6596,7 +6656,9 @@ fun LyricsEditorSheet(
                     message = resources.getString(R.string.local_song_lyrics_write_failed)
                 )
             } finally {
-                isSaving = false
+                if (!dismissed) {
+                    isSaving = false
+                }
             }
         }
     }

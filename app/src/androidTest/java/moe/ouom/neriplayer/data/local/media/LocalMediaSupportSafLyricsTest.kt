@@ -343,6 +343,61 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
+    fun writeAllLyricVariantsToSafRecreatesDeletedSidecars() = runBlocking {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.CLEAR_LYRICS,
+            null,
+            null
+        )
+        val song = SongItem(
+            id = 345L,
+            name = "SAF all variants",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            matchedLyric = "[00:01.00]saf original recreated",
+            matchedTranslatedLyric = "[00:01.00]saf translation recreated",
+            matchedRomanizedLyric = "[00:01.00]saf romanized recreated",
+            localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        )
+
+        try {
+            assertEquals(
+                "SUCCESS",
+                LocalMediaSupport.writeEditableMetadata(
+                    context = targetContext,
+                    song = song,
+                    writeCover = false,
+                    writeLyrics = true
+                ).name
+            )
+            val details = LocalMediaSupport.inspect(targetContext, audioUri)
+            assertEquals("[00:01.00]saf original recreated", details.lyricContent)
+            assertEquals("[00:01.00]saf translation recreated", details.translatedLyricContent)
+            assertEquals("[00:01.00]saf romanized recreated", details.romanizedLyricContent)
+        } finally {
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.RESET_LYRICS,
+                null,
+                null
+            )
+        }
+    }
+
+    @Test
     fun concurrentSafMetadataWritesCreateOneSidecar() = runBlocking {
         val audioUri = DocumentsContract.buildDocumentUri(
             Issue339LyricsTestDocumentProvider.AUTHORITY,

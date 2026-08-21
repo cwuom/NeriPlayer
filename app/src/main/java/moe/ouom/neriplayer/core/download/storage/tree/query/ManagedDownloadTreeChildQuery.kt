@@ -7,10 +7,20 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import java.io.IOException
 
 internal object ManagedDownloadTreeChildQuery {
+    internal enum class State {
+        COMPLETE,
+        LOADING,
+        PROVIDER_ERROR,
+        FAILED
+    }
+
     internal data class QueryResult(
         val children: List<QueriedTreeChild>,
+        val state: State
+    ) {
         val isComplete: Boolean
-    )
+            get() = state == State.COMPLETE
+    }
 
     fun queryChildren(
         context: Context,
@@ -36,7 +46,7 @@ internal object ManagedDownloadTreeChildQuery {
             null
         } ?: return QueryResult(
             children = listChildrenWithDocumentFile(parent),
-            isComplete = false
+            state = State.FAILED
         )
 
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
@@ -83,12 +93,15 @@ internal object ManagedDownloadTreeChildQuery {
                     }
                 }
                 val extras = cursor.extras
+                val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
+                val loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
                 QueryResult(
                     children = children,
-                    isComplete = isCompleteQuery(
-                        loading = extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true,
-                        providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
-                    )
+                    state = when {
+                        loading -> State.LOADING
+                        !providerError.isNullOrBlank() -> State.PROVIDER_ERROR
+                        else -> State.COMPLETE
+                    }
                 )
             }
             queryResult
@@ -98,7 +111,7 @@ internal object ManagedDownloadTreeChildQuery {
             onQueryFailure(error)
             QueryResult(
                 children = listChildrenWithDocumentFile(parent),
-                isComplete = false
+                state = State.FAILED
             )
         }
     }

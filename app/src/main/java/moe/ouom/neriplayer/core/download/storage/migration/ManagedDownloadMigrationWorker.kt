@@ -18,7 +18,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collectLatest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -30,8 +34,33 @@ class ManagedDownloadMigrationWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        try {
+        coroutineScope {
             setForeground(createForegroundInfo())
+            val progressJob = launch {
+                ManagedDownloadStorage.migrationProgressFlow.collectLatest { progress ->
+                    progress ?: return@collectLatest
+                    setProgress(
+                        workDataOf(
+                            KEY_PROGRESS_STAGE to progress.stage.name,
+                            KEY_PROGRESS_FRACTION to progress.fraction,
+                            KEY_PROGRESS_PROCESSED_FILES to progress.processedFiles,
+                            KEY_PROGRESS_TOTAL_FILES to progress.totalFiles,
+                            KEY_PROGRESS_CURRENT_FILE to (progress.currentFileName ?: "")
+                        )
+                    )
+                    setForeground(createForegroundInfo(progress))
+                }
+            }
+            try {
+                runMigration()
+            } finally {
+                progressJob.cancelAndJoin()
+            }
+        }
+    }
+
+    private suspend fun runMigration(): Result {
+        try {
             val fromDirectoryUri = inputData.getString(KEY_FROM_DIRECTORY_URI)
             val toDirectoryUri = inputData.getString(KEY_TO_DIRECTORY_URI)
             val targetLabel = inputData.getString(KEY_TARGET_LABEL)
@@ -54,21 +83,25 @@ class ManagedDownloadMigrationWorker(
                 }
             )
             if (!migrationResult.canSwitchDirectory) {
-                return@withContext Result.failure(
+                return Result.failure(
                     workDataOf(
                         KEY_SKIPPED_FILES to migrationResult.skippedFiles,
                         KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles
                     )
                 )
             }
-            GlobalDownloadManager.scanLocalFiles(applicationContext, forceRefresh = true)
+            // 目录切换只有在最终扫描发布后才算完成, 否则 UI 可能短暂显示空列表
+            GlobalDownloadManager.scanLocalFilesAwait(
+                applicationContext,
+                forceRefresh = true
+            )
             if (releasePreviousPermission && migrationResult.canReleasePreviousPermission) {
                 ManagedDownloadStorage.releasePersistedDirectoryPermission(
                     applicationContext,
                     fromDirectoryUri
                 )
             }
-            Result.success(
+            return Result.success(
                 workDataOf(
                     KEY_MOVED_FILES to migrationResult.movedFiles,
                     KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles
@@ -78,36 +111,49 @@ class ManagedDownloadMigrationWorker(
             throw error
         } catch (error: ManagedDownloadMigrationException) {
             if (error.retryable && runAttemptCount < MAX_RETRY_ATTEMPTS) {
-                Result.retry()
+                return Result.retry()
             } else {
-                Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+                return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
             }
         } catch (error: IOException) {
-            Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+            return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
         } catch (error: Exception) {
-            Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+            return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
         }
     }
 
-    private fun createForegroundInfo(): ForegroundInfo {
+    private fun createForegroundInfo(
+        progress: ManagedDownloadStorage.MigrationProgress? = null
+    ): ForegroundInfo {
         val notificationManager =
             applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    applicationContext.getString(R.string.settings_download_directory_migrating),
-                    NotificationManager.IMPORTANCE_LOW
-                )
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                applicationContext.getString(R.string.settings_download_directory_migrating),
+                NotificationManager.IMPORTANCE_LOW
             )
-        }
+        )
+        val progressPercent = progress?.fraction
+            ?.coerceIn(0f, 1f)
+            ?.times(100f)
+            ?.toInt()
         val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setContentTitle(applicationContext.getString(R.string.settings_download_directory_migrating))
-            .setContentText(applicationContext.getString(R.string.settings_download_directory_migrating_desc))
+            .setContentText(
+                progress?.currentFileName?.takeIf(String::isNotBlank)
+                    ?: applicationContext.getString(
+                        R.string.settings_download_directory_migrating_desc
+                    )
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setProgress(0, 0, true)
+            .setProgress(
+                100,
+                progressPercent ?: 0,
+                progressPercent == null
+            )
             .build()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
@@ -131,6 +177,11 @@ class ManagedDownloadMigrationWorker(
         const val KEY_SKIPPED_FILES = "skipped_files"
         const val KEY_CLEANUP_FAILED_FILES = "cleanup_failed_files"
         const val KEY_ERROR_MESSAGE = "error_message"
+        const val KEY_PROGRESS_STAGE = "progress_stage"
+        const val KEY_PROGRESS_FRACTION = "progress_fraction"
+        const val KEY_PROGRESS_PROCESSED_FILES = "progress_processed_files"
+        const val KEY_PROGRESS_TOTAL_FILES = "progress_total_files"
+        const val KEY_PROGRESS_CURRENT_FILE = "progress_current_file"
 
         private const val NOTIFICATION_CHANNEL_ID = "managed_download_migration"
         private const val NOTIFICATION_ID = 1004

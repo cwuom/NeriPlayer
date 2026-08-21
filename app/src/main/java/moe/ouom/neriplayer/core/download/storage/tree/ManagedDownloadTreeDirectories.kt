@@ -48,7 +48,10 @@ internal class ManagedDownloadTreeDirectories(
                 return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
                     ?.also { directory -> subdirectoryCache[cacheKey] = directory }
             }
-            if (!refresh.isComplete) {
+            if (
+                !refresh.isComplete &&
+                    !ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(parent.uri)
+            ) {
                 NPLogger.w(
                     tag,
                     "SAF 子目录枚举不完整，跳过创建 $displayName: parent=${parent.uri}"

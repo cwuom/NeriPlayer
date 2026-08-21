@@ -80,6 +80,53 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `late embedded lyric result is ignored after sidecar source was selected`() {
+        assertFalse(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = false,
+                editorAlreadySelected = false
+            )
+        )
+        assertFalse(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = true,
+                editorAlreadySelected = true
+            )
+        )
+        assertTrue(
+            shouldPublishPendingEmbeddedLyricsResult(
+                requestIsCurrent = true,
+                pendingSourceHasSidecar = true,
+                editorAlreadySelected = false
+            )
+        )
+    }
+
+    @Test
+    fun `local restore persists lyric sidecars unless metadata writeback is selected`() {
+        assertTrue(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = true,
+                writeLocalMetadata = false
+            )
+        )
+        assertFalse(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = true,
+                writeLocalMetadata = true
+            )
+        )
+        assertFalse(
+            shouldPersistEditedSongLyricsLocally(
+                isLocalSong = false,
+                writeLocalMetadata = false
+            )
+        )
+    }
+
+    @Test
     fun `immediate lyric state keeps current song metadata on the first composition`() {
         val song = SongItem(
             id = 41L,

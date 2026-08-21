@@ -77,7 +77,8 @@ internal fun resolveRestoredBaseCoverUrl(
     originalCoverUrl: String?,
     baseCoverUrl: String?,
     currentCustomCoverUrl: String?,
-    preferredLocalCoverUrl: String? = null
+    preferredLocalCoverUrl: String? = null,
+    localOnly: Boolean = false
 ): String? {
     val preferredLocalCover = preferredLocalCoverUrl
         ?.trim()
@@ -89,6 +90,11 @@ internal fun resolveRestoredBaseCoverUrl(
     val baseCover = baseCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
+    if (localOnly) {
+        return preferredLocalCover ?: originalCover
+            ?.takeUnless(String::isRemoteCoverReference)
+            ?: baseCover?.takeUnless(String::isRemoteCoverReference)
+    }
     return preferredLocalCover ?: originalCover ?: baseCover ?: customCover.takeIf {
         originalCover == null && baseCover == null
     }

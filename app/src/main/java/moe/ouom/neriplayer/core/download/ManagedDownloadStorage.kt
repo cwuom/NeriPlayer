@@ -2017,8 +2017,7 @@ internal object ManagedDownloadStorage {
                 val finalName = existingAudio?.name
                     ?: treeChildRegistry.reserveUniqueFileChildName(root.dir, fileName)
                 val pendingTarget = File(root.dir, buildPendingAudioWriteName(finalName))
-                var seedMetadataEntry: StoredEntry? = null
-                try {
+                val audioEntry = try {
                     tempFile.inputStream().use { input ->
                         pendingTarget.outputStream().use { output ->
                             input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
@@ -2028,12 +2027,6 @@ internal object ManagedDownloadStorage {
                         target = pendingTarget,
                         expectedSizeBytes = actualSizeBytes,
                         description = pendingTarget.name
-                    )
-                    seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
-                        context = context,
-                        root = root,
-                        audioName = finalName,
-                        seedMetadataJson = seedMetadataJson
                     )
                     val target = File(root.dir, finalName)
                     replaceFileTarget(pendingTarget, target, finalName)
@@ -2047,20 +2040,25 @@ internal object ManagedDownloadStorage {
                     if (pendingTarget.exists()) {
                         pendingTarget.delete()
                     }
-                    deleteSeedMetadataAfterAudioCommitFailure(context, root, seedMetadataEntry)
                     treeChildRegistry.forgetFileChildName(root.dir, finalName)
                     throw error
                 }
+                writeSeedMetadataAfterAudioCommit(
+                    context = context,
+                    root = root,
+                    audioName = finalName,
+                    seedMetadataJson = seedMetadataJson
+                )
+                audioEntry
             }
 
             is RootHandle.TreeRoot -> {
                 val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
                 val finalName = existingAudio?.name
                     ?: treeChildRegistry.reserveUniqueTreeChildName(context, root.tree, fileName)
-                var seedMetadataEntry: StoredEntry? = null
                 var pendingTarget: DocumentFile? = null
                 var pendingName: String? = null
-                try {
+                val audioEntry = try {
                     val committedAtMs = System.currentTimeMillis()
                     val createdPendingName = buildPendingAudioWriteName(finalName)
                     pendingName = createdPendingName
@@ -2086,12 +2084,6 @@ internal object ManagedDownloadStorage {
                         uri = pendingTarget.uri,
                         expectedSizeBytes = actualSizeBytes,
                         description = "staging→SAF: $createdPendingName"
-                    )
-                    seedMetadataEntry = writeSeedMetadataBeforeAudioCommit(
-                        context = context,
-                        root = root,
-                        audioName = finalName,
-                        seedMetadataJson = seedMetadataJson
                     )
                     if (pendingTarget.renameTo(finalName)) {
                         val entry = verifiedTreeStoredEntry(
@@ -2126,10 +2118,16 @@ internal object ManagedDownloadStorage {
                         deleteContentReference(context, target.uri.toString(), target.uri)
                     }
                     pendingName?.let { treeChildRegistry.forgetTreeChildName(root.tree, it) }
-                    deleteSeedMetadataAfterAudioCommitFailure(context, root, seedMetadataEntry)
                     treeChildRegistry.forgetTreeChildName(root.tree, finalName)
                     throw error
                 }
+                writeSeedMetadataAfterAudioCommit(
+                    context = context,
+                    root = root,
+                    audioName = finalName,
+                    seedMetadataJson = seedMetadataJson
+                )
+                audioEntry
             }
         }
         if (tempFile.exists() && !tempFile.delete()) {
@@ -2195,34 +2193,27 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun writeSeedMetadataBeforeAudioCommit(
+    private fun writeSeedMetadataAfterAudioCommit(
         context: Context,
         root: RootHandle,
         audioName: String,
         seedMetadataJson: String?
-    ): StoredEntry? {
-        val content = seedMetadataJson?.takeIf(String::isNotBlank) ?: return null
-        return writeRootText(
-            context = context,
-            root = root,
-            displayName = "$audioName$METADATA_SUFFIX",
-            content = content,
-            invalidateSnapshot = false
-        )
-    }
-
-    private fun deleteSeedMetadataAfterAudioCommitFailure(
-        context: Context,
-        root: RootHandle,
-        metadataEntry: StoredEntry?
     ) {
-        metadataEntry ?: return
-        runCatching {
-            deleteInternal(
+        val content = seedMetadataJson?.takeIf(String::isNotBlank) ?: return
+        try {
+            writeRootText(
                 context = context,
-                reference = metadataEntry.reference,
-                allowedRoot = root,
+                root = root,
+                displayName = "$audioName$METADATA_SUFFIX",
+                content = content,
                 invalidateSnapshot = false
+            )
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "音频已提交但 seed metadata 写入失败，保留音频等待收尾重试: " +
+                    "audio=$audioName, error=${error.message}",
+                error
             )
         }
     }

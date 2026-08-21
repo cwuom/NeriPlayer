@@ -31,6 +31,24 @@ class ManagedDownloadTreeDirectoriesTest {
     }
 
     @Test
+    fun `incomplete child listing never permits creation`() {
+        assertEquals(
+            false,
+            ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(
+                scheme = "content",
+                authority = "com.android.externalstorage.documents"
+            )
+        )
+        assertEquals(
+            false,
+            ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(
+                scheme = "content",
+                authority = "example"
+            )
+        )
+    }
+
+    @Test
     fun `exact tree stored name accepts canonically equivalent unicode`() {
         assertEquals(
             true,

@@ -27,20 +27,17 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.core.net.toUri
-import java.io.File
-import java.util.Collections
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -53,19 +50,19 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
-import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
-import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
-import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
-import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
+import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
+import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.sameIdentityAs
@@ -73,9 +70,11 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
+import java.io.File
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
     return recoveredArtifactCount > 0
@@ -202,6 +201,7 @@ object GlobalDownloadManager {
     private val downloadedSongMetadataRevision = AtomicLong(0L)
     private val cancelledArtifactRecoveryLock = Any()
     private var refreshJob: Job? = null
+    private val refreshWaiters = mutableSetOf<CompletableDeferred<Unit>>()
     private var catalogPersistJob: Job? = null
     private var catalogReconcileJob: Job? = null
     private var pendingCatalogReconcileForceRefresh = false
@@ -1530,18 +1530,55 @@ object GlobalDownloadManager {
     fun scanLocalFiles(context: Context, forceRefresh: Boolean = false) {
         val appContext = context.applicationContext
         synchronized(this) {
-            if (refreshJob?.isActive == true) {
-                pendingRefresh = true
-                pendingForceRefresh = pendingForceRefresh || forceRefresh
-                return
-            }
+            requestLocalScanLocked(appContext, forceRefresh)
+        }
+    }
 
-            refreshJob = scope.launch {
+    /**
+     * 请求一次最终扫描并等待列表发布完成，迁移等需要强一致结果的流程使用此接口
+     */
+    suspend fun scanLocalFilesAwait(
+        context: Context,
+        forceRefresh: Boolean = false
+    ) {
+        val waiter = CompletableDeferred<Unit>()
+        val appContext = context.applicationContext
+        synchronized(this) {
+            refreshWaiters += waiter
+            requestLocalScanLocked(appContext, forceRefresh)
+        }
+        try {
+            waiter.await()
+        } finally {
+            synchronized(this) {
+                refreshWaiters.remove(waiter)
+            }
+        }
+    }
+
+    private fun requestLocalScanLocked(
+        context: Context,
+        forceRefresh: Boolean
+    ) {
+        if (refreshJob?.isActive == true) {
+            pendingRefresh = true
+            pendingForceRefresh = pendingForceRefresh || forceRefresh
+            return
+        }
+
+        refreshJob = scope.launch {
+            try {
                 var nextForceRefresh = forceRefresh
                 while (true) {
-                    reloadDownloadedSongs(appContext, forceRefresh = nextForceRefresh)
+                    reloadDownloadedSongs(context, forceRefresh = nextForceRefresh)
                     nextForceRefresh = consumePendingRefreshRequest() ?: break
                 }
+            } finally {
+                val waiters = synchronized(this@GlobalDownloadManager) {
+                    refreshJob = null
+                    refreshWaiters.toList()
+                }
+                waiters.forEach { waiter -> waiter.complete(Unit) }
             }
         }
     }
@@ -1561,7 +1598,6 @@ object GlobalDownloadManager {
         pendingRefresh = false
         pendingForceRefresh = false
         if (!shouldRefreshAgain) {
-            refreshJob = null
             return null
         }
         shouldForceRefresh

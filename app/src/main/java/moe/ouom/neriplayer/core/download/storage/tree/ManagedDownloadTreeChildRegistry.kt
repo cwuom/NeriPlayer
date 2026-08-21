@@ -415,7 +415,7 @@ internal class ManagedDownloadTreeChildRegistry(
         if (count < EMPTY_REFRESH_CONFIRMATION_COUNT) {
             return ManagedDownloadTreeChildQuery.QueryResult(
                 children = previous,
-                isComplete = false
+                state = ManagedDownloadTreeChildQuery.State.LOADING
             )
         }
         consecutiveEmptyRefreshes.remove(cacheKey)

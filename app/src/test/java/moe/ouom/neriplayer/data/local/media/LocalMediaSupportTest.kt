@@ -21,6 +21,66 @@ import org.mockito.Mockito.`when`
 class LocalMediaSupportTest {
 
     @Test
+    fun `metadata write does not mask an embedded write failure when cover is unchanged`() {
+        assertEquals(
+            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+            combineEditableMetadataWriteOutcome(
+                directOutcome = LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,
+                lyricsSidecarWritten = true,
+                coverSidecarWritten = true
+            )
+        )
+    }
+
+    @Test
+    fun `metadata write fails when any requested sidecar cannot be committed`() {
+        assertEquals(
+            LocalMediaMetadataWriteOutcome.FAILED,
+            combineEditableMetadataWriteOutcome(
+                directOutcome = LocalMediaMetadataWriteOutcome.SUCCESS,
+                lyricsSidecarWritten = false,
+                coverSidecarWritten = true
+            )
+        )
+    }
+
+    @Test
+    fun `embedded failure does not prevent sidecar write attempt`() {
+        assertEquals(
+            LocalMediaMetadataWriteOutcome.FAILED,
+            combineEditableMetadataWriteOutcome(
+                directOutcome = LocalMediaMetadataWriteOutcome.FAILED,
+                lyricsSidecarWritten = true,
+                coverSidecarWritten = true
+            )
+        )
+    }
+
+    @Test
+    fun `missing lyric sidecar is repaired only for variants that have content`() {
+        assertTrue(
+            LocalMediaSupport.shouldRebuildLyricSidecars(
+                expectedOriginal = true,
+                expectedTranslated = true,
+                expectedRomanized = true,
+                hasOriginalSidecar = true,
+                hasTranslatedSidecar = false,
+                hasRomanizedSidecar = true
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.shouldRebuildLyricSidecars(
+                expectedOriginal = true,
+                expectedTranslated = false,
+                expectedRomanized = false,
+                hasOriginalSidecar = true,
+                hasTranslatedSidecar = false,
+                hasRomanizedSidecar = false
+            )
+        )
+    }
+
+    @Test
     fun `sidecar name matching accepts provider numbering before extension`() {
         assertTrue(
             LocalMediaSupport.sidecarNameMatches(
@@ -1018,6 +1078,42 @@ class LocalMediaSupportTest {
         assertEquals(null, parsed?.originalTranslatedLyric)
         assertEquals("romanized", parsed?.matchedRomanizedLyric)
         assertEquals(true, org.json.JSONObject(updated).has("custom"))
+    }
+
+    @Test
+    fun `editable local metadata sidecar keeps identity and writes all lyric variants`() {
+        val updated = LocalMediaSupport.buildEditableLocalMetadataJson(
+            existingRaw = "{\"custom\":\"keep\",\"coverPath\":\"old-cover\"}",
+            song = SongItem(
+                id = 8L,
+                name = "New title",
+                artist = "New artist",
+                album = "Album",
+                albumId = 0L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                customName = "Custom title",
+                matchedLyric = "original",
+                matchedTranslatedLyric = "translation",
+                matchedRomanizedLyric = "romanized"
+            ),
+            writeLyrics = true,
+            coverReference = "new-cover",
+            clearCoverReference = false
+        )
+        val parsed = LocalMediaSupport.parseLocalMetadataSidecar(
+            "/tmp/song.mp3.npmeta.json",
+            updated
+        )
+
+        assertEquals("New title", parsed?.name)
+        assertEquals("New artist", parsed?.artist)
+        assertEquals("Custom title", parsed?.customName)
+        assertEquals("original", parsed?.matchedLyric)
+        assertEquals("translation", parsed?.matchedTranslatedLyric)
+        assertEquals("romanized", parsed?.matchedRomanizedLyric)
+        assertEquals("new-cover", parsed?.coverPath)
+        assertTrue(org.json.JSONObject(updated).has("custom"))
     }
 
     @Test
