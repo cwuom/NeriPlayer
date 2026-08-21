@@ -1201,7 +1201,9 @@ object GlobalDownloadManager {
             expectCover = expectCover,
             expectOriginalLyric = expectOriginalLyric,
             expectTranslatedLyric = expectTranslatedLyric,
-            expectRomanizedLyric = expectRomanizedLyric
+            expectRomanizedLyric = expectRomanizedLyric,
+            // final 标记要在产物校验通过后写入，这一步只校验实际文件和引用
+            requireFinalizedMetadata = false
         )
         if (!result.isValid) {
             NPLogger.w(

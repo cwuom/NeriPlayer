@@ -28,6 +28,24 @@ class DownloadedArtifactIntegrityTest {
     }
 
     @Test
+    fun `complete artifacts pass pre-finalization verification`() {
+        val song = remoteSong()
+        val result = verifyDownloadedArtifactIntegrity(
+            song = song,
+            metadata = completeMetadata(song).copy(downloadFinalized = false),
+            references = readableReferences(),
+            expectCover = true,
+            expectOriginalLyric = true,
+            expectTranslatedLyric = true,
+            expectRomanizedLyric = true,
+            requireFinalizedMetadata = false
+        )
+
+        assertTrue(result.isValid)
+        assertTrue(result.issues.isEmpty())
+    }
+
+    @Test
     fun `missing expected cover is rejected`() {
         val song = remoteSong()
         val result = verifyDownloadedArtifactIntegrity(

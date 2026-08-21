@@ -57,7 +57,8 @@ internal fun verifyDownloadedArtifactIntegrity(
     expectCover: Boolean,
     expectOriginalLyric: Boolean,
     expectTranslatedLyric: Boolean,
-    expectRomanizedLyric: Boolean
+    expectRomanizedLyric: Boolean,
+    requireFinalizedMetadata: Boolean = true
 ): DownloadedArtifactIntegrityResult {
     val issues = linkedSetOf<DownloadedArtifactIntegrityIssue>()
     if (!references.audioReadable) {
@@ -68,7 +69,7 @@ internal fun verifyDownloadedArtifactIntegrity(
         issues += DownloadedArtifactIntegrityIssue.METADATA_MISSING
         return DownloadedArtifactIntegrityResult(issues)
     }
-    if (metadata.downloadFinalized != true) {
+    if (requireFinalizedMetadata && metadata.downloadFinalized != true) {
         issues += DownloadedArtifactIntegrityIssue.METADATA_NOT_FINALIZED
     }
 
