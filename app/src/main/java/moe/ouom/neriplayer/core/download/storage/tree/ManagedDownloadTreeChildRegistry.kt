@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.FileNotFoundException
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.file.cache.ManagedDownloadFileChildNameCache
@@ -21,6 +22,14 @@ internal class ManagedDownloadTreeChildRegistry(
     private val treeWriteCacheValidateIntervalMs: Long,
     private val onTreeQueryFailed: (Throwable) -> Unit
 ) {
+    internal sealed interface CanonicalExternalStorageChildProbe {
+        data class Found(val document: DocumentFile) : CanonicalExternalStorageChildProbe
+
+        data object Missing : CanonicalExternalStorageChildProbe
+
+        data object Unknown : CanonicalExternalStorageChildProbe
+    }
+
     private val treeChildCache = ManagedDownloadTreeChildCache()
     private val fileChildNameCache = ManagedDownloadFileChildNameCache(
         writeCacheValidateIntervalMs = writeCacheValidateIntervalMs
@@ -341,7 +350,29 @@ internal class ManagedDownloadTreeChildRegistry(
         displayName: String,
         isDirectory: Boolean
     ): DocumentFile? {
-        if (parent.uri.authority != "com.android.externalstorage.documents") return null
+        return when (
+            val probe = probeCanonicalExternalStorageChild(
+                context = context,
+                parent = parent,
+                displayName = displayName,
+                isDirectory = isDirectory
+            )
+        ) {
+            is CanonicalExternalStorageChildProbe.Found -> probe.document
+            CanonicalExternalStorageChildProbe.Missing,
+            CanonicalExternalStorageChildProbe.Unknown -> null
+        }
+    }
+
+    fun probeCanonicalExternalStorageChild(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String,
+        isDirectory: Boolean
+    ): CanonicalExternalStorageChildProbe {
+        if (parent.uri.authority != "com.android.externalstorage.documents") {
+            return CanonicalExternalStorageChildProbe.Unknown
+        }
         val parentDocumentId = try {
             DocumentsContract.getDocumentId(parent.uri)
         } catch (error: SecurityException) {
@@ -354,19 +385,63 @@ internal class ManagedDownloadTreeChildRegistry(
             } catch (_: Exception) {
                 null
             }
-        } ?: return null
+        } ?: return CanonicalExternalStorageChildProbe.Unknown
         val childDocumentId = ManagedDownloadTreeNaming.externalStorageChildDocumentId(
             parentDocumentId = parentDocumentId,
             displayName = displayName
-        ) ?: return null
-        val childUri = DocumentsContract.buildDocumentUriUsingTree(parent.uri, childDocumentId)
-        val child = DocumentFile.fromSingleUri(context, childUri) ?: return null
-        return try {
-            child.takeIf { it.exists() && it.isDirectory == isDirectory }
+        ) ?: return CanonicalExternalStorageChildProbe.Unknown
+        val childUri = try {
+            DocumentsContract.buildDocumentUriUsingTree(parent.uri, childDocumentId)
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
-            null
+            return CanonicalExternalStorageChildProbe.Unknown
+        }
+        return try {
+            val cursor = context.contentResolver.query(
+                childUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                ),
+                null,
+                null,
+                null
+            ) ?: return CanonicalExternalStorageChildProbe.Unknown
+            cursor.use {
+                if (!it.moveToFirst()) {
+                    CanonicalExternalStorageChildProbe.Missing
+                } else {
+                    val mimeIndex = it.getColumnIndex(
+                        DocumentsContract.Document.COLUMN_MIME_TYPE
+                    )
+                    if (mimeIndex < 0 || it.isNull(mimeIndex)) {
+                        CanonicalExternalStorageChildProbe.Unknown
+                    } else {
+                        val actualIsDirectory = it.getString(mimeIndex) ==
+                            DocumentsContract.Document.MIME_TYPE_DIR
+                        if (actualIsDirectory != isDirectory) {
+                            CanonicalExternalStorageChildProbe.Unknown
+                        } else {
+                            DocumentFile.fromSingleUri(context, childUri)
+                                ?.let(CanonicalExternalStorageChildProbe::Found)
+                                ?: CanonicalExternalStorageChildProbe.Unknown
+                        }
+                    }
+                }
+            }
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: FileNotFoundException) {
+            CanonicalExternalStorageChildProbe.Missing
+        } catch (error: IllegalArgumentException) {
+            if (error.message?.contains("Missing file", ignoreCase = true) == true) {
+                CanonicalExternalStorageChildProbe.Missing
+            } else {
+                CanonicalExternalStorageChildProbe.Unknown
+            }
+        } catch (_: Exception) {
+            CanonicalExternalStorageChildProbe.Unknown
         }
     }
 

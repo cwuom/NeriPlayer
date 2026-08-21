@@ -1273,6 +1273,7 @@ object LocalMediaSupport {
                     parentDocumentId = parentId
                 ) ?: return@withDocumentMutationLock false
                 if (!documentChildrenContainSource(
+                        context = context,
                         parentChildren = parentChildren,
                         sourceUri = sourceUri,
                         displayName = displayName,
@@ -1323,6 +1324,7 @@ object LocalMediaSupport {
                 parentDocumentId = parentId
             ) ?: return@withDocumentMutationLock false
             if (!documentChildrenContainSource(
+                    context = context,
                     parentChildren = parentChildren,
                     sourceUri = sourceUri,
                     displayName = displayName,
@@ -1605,6 +1607,7 @@ object LocalMediaSupport {
                 parentDocumentId = parentId
             ) ?: return@withDocumentMutationLock existing
             if (!documentChildrenContainSource(
+                    context = context,
                     parentChildren = parentChildren,
                     sourceUri = uri,
                     displayName = displayName,
@@ -4464,6 +4467,7 @@ object LocalMediaSupport {
                     parentDocumentId = parentId
                 ) ?: return@withDocumentMutationLock false
                 if (!documentChildrenContainSource(
+                        context = context,
                         parentChildren = parentChildren,
                         sourceUri = sourceUri,
                         displayName = displayName,
@@ -4637,6 +4641,7 @@ object LocalMediaSupport {
                 parentDocumentId = parentId
             ) ?: return@withDocumentMutationLock null
             if (!documentChildrenContainSource(
+                    context = context,
                     parentChildren = parentChildren,
                     sourceUri = sourceUri,
                     displayName = displayName,
@@ -6644,6 +6649,7 @@ object LocalMediaSupport {
     }
 
     private fun documentChildrenContainSource(
+        context: Context,
         parentChildren: Collection<DocumentChild>,
         sourceUri: Uri,
         displayName: String,
@@ -6673,6 +6679,21 @@ object LocalMediaSupport {
             false
         }
         if (!containsSource && !sourceDocumentPathMatches) {
+            if (
+                directSourceProbeMatchesParent(
+                    context = context,
+                    sourceUri = sourceUri,
+                    displayName = displayName,
+                    parentDocumentId = parentDocumentId
+                )
+            ) {
+                NPLogger.d(
+                    TAG,
+                    "SAF 子项枚举未包含当前音频，但直接 URI 已确认属于当前父目录: " +
+                        "source=$sourceUri, parent=$parentDocumentId"
+                )
+                return true
+            }
             NPLogger.w(
                 TAG,
                 "SAF 子项枚举未包含当前音频，拒绝创建侧载: " +
@@ -6682,8 +6703,70 @@ object LocalMediaSupport {
         return containsSource || sourceDocumentPathMatches
     }
 
+    internal fun matchesDocumentPathParent(
+        path: List<String>,
+        parentDocumentId: String,
+        sourceDocumentId: String?,
+        displayName: String,
+        actualDisplayName: String?
+    ): Boolean {
+        if (
+            actualDisplayName != null &&
+            !actualDisplayName.equals(displayName, ignoreCase = true)
+        ) {
+            return false
+        }
+        if (path.dropLast(1).lastOrNull() == parentDocumentId) {
+            return true
+        }
+        if (sourceDocumentId.isNullOrBlank()) {
+            return false
+        }
+        val expectedDocumentId = "$parentDocumentId/$displayName"
+        return normalizedDocumentId(sourceDocumentId) == normalizedDocumentId(expectedDocumentId)
+    }
+
+    private fun directSourceProbeMatchesParent(
+        context: Context,
+        sourceUri: Uri,
+        displayName: String,
+        parentDocumentId: String
+    ): Boolean {
+        val sourceChild = try {
+            documentChildFromUri(
+                context = context,
+                uri = sourceUri,
+                isDirectory = false
+            )
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        if (sourceChild.isDirectory ||
+            !sourceChild.displayName.equals(displayName, ignoreCase = true)
+        ) {
+            return false
+        }
+        val sourcePath = try {
+            DocumentsContract.findDocumentPath(context.contentResolver, sourceUri)?.path
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }.orEmpty()
+        return matchesDocumentPathParent(
+            path = sourcePath,
+            parentDocumentId = parentDocumentId,
+            sourceDocumentId = sourceChild.documentId,
+            displayName = displayName,
+            actualDisplayName = sourceChild.displayName
+        )
+    }
+
     private fun normalizedDocumentId(value: String): String {
-        return Uri.decode(value).trimEnd('/').lowercase(Locale.ROOT)
+        val decoded = runCatching { Uri.decode(value) }.getOrNull() ?: value
+        return decoded.trimEnd('/').lowercase(Locale.ROOT)
     }
 
     private fun findDocumentParentId(context: Context, documentUri: Uri): String? {
@@ -6797,8 +6880,22 @@ object LocalMediaSupport {
     }
 
     internal fun sidecarNameMatches(actualName: String, canonicalName: String): Boolean {
-        return canonicalSafName(actualName) == canonicalSafName(canonicalName) ||
+        if (
+            canonicalSafName(actualName) == canonicalSafName(canonicalName) ||
             numberedSidecarNameMatches(actualName, canonicalName)
+        ) {
+            return true
+        }
+        // 部分 DocumentsProvider 会为非 txt 文本 MIME 自动补 .txt
+        if (
+            !canonicalName.endsWith(".txt", ignoreCase = true) &&
+            actualName.endsWith(".txt", ignoreCase = true)
+        ) {
+            val providerNameWithoutTextExtension = actualName.dropLast(".txt".length)
+            return canonicalSafName(providerNameWithoutTextExtension) == canonicalSafName(canonicalName) ||
+                numberedSidecarNameMatches(providerNameWithoutTextExtension, canonicalName)
+        }
+        return false
     }
 
     private fun coverSidecarNameMatches(
@@ -7041,7 +7138,6 @@ object LocalMediaSupport {
         val resolved = documentChildFromCreatedUri(
             context = context,
             uri = createdUri,
-            displayName = directoryName,
             isDirectory = true
         )
             ?: queryDocumentChildrenForMutation(
@@ -7101,7 +7197,10 @@ object LocalMediaSupport {
             DocumentsContract.createDocument(
                 context.contentResolver,
                 parentUri,
-                mimeType,
+                ManagedDownloadStorage.documentCreateMimeType(
+                    desiredName = displayName,
+                    mimeType = mimeType
+                ),
                 displayName
             )
         } catch (error: SecurityException) {
@@ -7114,7 +7213,6 @@ object LocalMediaSupport {
         val resolved = documentChildFromCreatedUri(
             context = context,
             uri = createdUri,
-            displayName = displayName,
             isDirectory = false
         )
             ?: queryDocumentChildrenForMutation(
@@ -7132,7 +7230,6 @@ object LocalMediaSupport {
     private fun documentChildFromUri(
         context: Context,
         uri: Uri,
-        displayName: String,
         isDirectory: Boolean
     ): DocumentChild? {
         val documentId = try {
@@ -7176,29 +7273,12 @@ object LocalMediaSupport {
     private fun documentChildFromCreatedUri(
         context: Context,
         uri: Uri,
-        displayName: String,
         isDirectory: Boolean
     ): DocumentChild? {
-        val documentId = try {
-            DocumentsContract.getDocumentId(uri)
-        } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            null
-        }?.takeIf(String::isNotBlank)
-        if (documentId != null) {
-            // createDocument 已经返回 provider 确认的 URI, 不要立即重新查询刚创建的条目
-            return DocumentChild(
-                documentId = documentId,
-                displayName = displayName,
-                isDirectory = isDirectory,
-                uri = uri.toString()
-            )
-        }
+        // createDocument 返回的 URI 可能对应 provider 改写后的名字, 立即查询实际条目
         return documentChildFromUri(
             context = context,
             uri = uri,
-            displayName = displayName,
             isDirectory = isDirectory
         )
     }
@@ -7223,7 +7303,6 @@ object LocalMediaSupport {
         return documentChildFromUri(
             context = context,
             uri = childUri,
-            displayName = displayName,
             isDirectory = isDirectory
         )?.takeIf { child ->
             child.isDirectory == isDirectory &&

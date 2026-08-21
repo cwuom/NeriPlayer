@@ -96,6 +96,50 @@ class LocalMediaSupportTest {
         )
     }
 
+    @Test
+    fun `sidecar name matching accepts provider text suffix variants`() {
+        assertTrue(
+            LocalMediaSupport.sidecarNameMatches(
+                actualName = "song_roma.lrc.txt",
+                canonicalName = "song_roma.lrc"
+            )
+        )
+        assertTrue(
+            LocalMediaSupport.sidecarNameMatches(
+                actualName = "song_roma.lrc (13).txt",
+                canonicalName = "song_roma.lrc"
+            )
+        )
+        assertTrue(
+            LocalMediaSupport.sidecarNameMatches(
+                actualName = "song_roma (2).lrc.txt",
+                canonicalName = "song_roma.lrc"
+            )
+        )
+    }
+
+    @Test
+    fun `direct document probe accepts an omitted child when parent path matches`() {
+        assertTrue(
+            LocalMediaSupport.matchesDocumentPathParent(
+                path = listOf("primary:", "primary:Music", "primary:Music/song.mp3"),
+                parentDocumentId = "primary:Music",
+                sourceDocumentId = "primary:Music/song.mp3",
+                displayName = "song.mp3",
+                actualDisplayName = "song.mp3"
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.matchesDocumentPathParent(
+                path = listOf("primary:", "primary:Other", "primary:Other/song.mp3"),
+                parentDocumentId = "primary:Music",
+                sourceDocumentId = "primary:Other/song.mp3",
+                displayName = "song.mp3",
+                actualDisplayName = "song.mp3"
+            )
+        )
+    }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 

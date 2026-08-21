@@ -56,7 +56,33 @@ internal class ManagedDownloadTreeFileCommitter(
                 !refresh.isComplete &&
                     !ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(parent.uri)
             ) {
-                throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
+                if (!replace) {
+                    throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
+                }
+                when (
+                    val probe = treeChildRegistry.probeCanonicalExternalStorageChild(
+                        context = context,
+                        parent = parent,
+                        displayName = desiredName,
+                        isDirectory = false
+                    )
+                ) {
+                    is ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Found -> {
+                        return@withLock treeChildRegistry.toTreeDocumentFile(
+                            context = context,
+                            parent = parent,
+                            child = probe.document
+                        ) ?: probe.document
+                    }
+
+                    ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Missing -> {
+                        // a direct URI probe confirmed that the canonical target is absent
+                    }
+
+                    ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Unknown -> {
+                        throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
+                    }
+                }
             }
 
             val childNames = refresh.children.mapTo(mutableSetOf(), QueriedTreeChild::name)
