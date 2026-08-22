@@ -12,6 +12,7 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import java.io.File
+import java.util.UUID
 
 internal object ManagedDownloadRecoveryFiles {
     private const val TAG = "ManagedDownloadStorage"
@@ -26,6 +27,26 @@ internal object ManagedDownloadRecoveryFiles {
 
     fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
         return ManagedDownloadWorkingStore.createWorkingFile(context.filesDir, songKey, fileName)
+    }
+
+    fun createSidecarStagingFile(
+        context: Context,
+        songKey: String,
+        suffix: String
+    ): File {
+        val directory = stagingDir(context)
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+        val safeSuffix = suffix
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .take(24)
+            .ifBlank { "artifact" }
+        return File(
+            directory,
+            "npdl_sidecar_${buildWorkingSongKeyHash(songKey)}_" +
+                "${UUID.randomUUID()}.$safeSuffix"
+        )
     }
 
     fun buildWorkingHlsCheckpointFile(workingFile: File): File {

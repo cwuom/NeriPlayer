@@ -45,6 +45,39 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
+    fun `verified transfer does not reject a post processing size change`() {
+        assertFalse(
+            ManagedDownloadStorage.shouldRejectTransferSize(
+                expectedSizeBytes = 3_758_751L,
+                actualSizeBytes = 4_551_323L,
+                transferSizeVerified = true
+            )
+        )
+    }
+
+    @Test
+    fun `unverified transfer still rejects a materially short payload`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldRejectTransferSize(
+                expectedSizeBytes = 1_000_000L,
+                actualSizeBytes = 900_000L,
+                transferSizeVerified = false
+            )
+        )
+    }
+
+    @Test
+    fun `unknown transfer length is never rejected by storage size guard`() {
+        assertFalse(
+            ManagedDownloadStorage.shouldRejectTransferSize(
+                expectedSizeBytes = null,
+                actualSizeBytes = 128L,
+                transferSizeVerified = false
+            )
+        )
+    }
+
+    @Test
     fun `reference io accepts a descriptor when document file reports missing`() {
         assertTrue(
             ManagedDownloadReferenceIo.isAccessibleDocumentReference(

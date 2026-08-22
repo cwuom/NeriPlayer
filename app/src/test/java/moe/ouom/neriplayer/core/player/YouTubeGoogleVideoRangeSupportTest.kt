@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
 import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -145,6 +146,13 @@ class YouTubeGoogleVideoRangeSupportTest {
         val total = YouTubeGoogleVideoRangeSupport.resolveTotalContentLength(url, headers)
 
         assertEquals(1_234_567L, total)
+    }
+
+    @Test
+    fun resolveContentRangeTotal_doesNotTrustQueryLengthWithoutRangeHeader() {
+        val headers = mapOf("Content-Length" to listOf("1048576"))
+
+        assertNull(YouTubeGoogleVideoRangeSupport.resolveContentRangeTotal(headers))
     }
 
     @Test

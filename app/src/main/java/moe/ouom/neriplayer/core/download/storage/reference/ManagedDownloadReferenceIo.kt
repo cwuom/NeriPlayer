@@ -20,17 +20,7 @@ internal object ManagedDownloadReferenceIo {
                 } catch (_: Exception) {
                     null
                 }
-                localContent ?: legacyDocumentUri(reference)?.let { uri ->
-                    try {
-                        context.contentResolver.openInputStream(uri)
-                            ?.bufferedReader(Charsets.UTF_8)
-                            ?.use { it.readText() }
-                    } catch (error: SecurityException) {
-                        throw error
-                    } catch (_: Exception) {
-                        null
-                    }
-                }
+                localContent
             }
             else -> {
                 reference.toLocalFileReference()
@@ -57,10 +47,7 @@ internal object ManagedDownloadReferenceIo {
         if (reference.isNullOrBlank()) return false
         return when {
             reference.startsWith("/") -> {
-                runCatching { File(reference).inputStream().use { }; true }.getOrDefault(false) ||
-                    legacyDocumentUri(reference)?.let { uri ->
-                        isAccessibleDocumentReference(context, uri)
-                    } == true
+                runCatching { File(reference).inputStream().use { }; true }.getOrDefault(false)
             }
             else -> {
                 reference.toLocalFileReference()?.let(File::exists)?.let { return it }
@@ -193,21 +180,4 @@ internal object ManagedDownloadReferenceIo {
         return filePath?.let(::File)
     }
 
-    private fun legacyDocumentUri(reference: String): Uri? {
-        val root = "/storage/emulated/0/neriplayer-download"
-        val normalized = runCatching { File(reference).canonicalPath }.getOrNull() ?: return null
-        val prefix = "$root/"
-        if (!normalized.startsWith(prefix)) return null
-        val relativePath = normalized.removePrefix(prefix).takeIf(String::isNotBlank) ?: return null
-        val treeUri = runCatching {
-            DocumentsContract.buildTreeDocumentUri(
-                "com.android.externalstorage.documents",
-                "primary:neriplayer-download"
-            )
-        }.getOrNull() ?: return null
-        val documentId = "primary:neriplayer-download/$relativePath"
-        return runCatching {
-            DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-        }.getOrNull()
-    }
 }

@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.Request
@@ -326,6 +327,40 @@ class AudioDownloadManagerTest {
         assertFalse(AudioDownloadManager.isTransferSizeComplete(1_000_000L, 1_001_001L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 512L))
         assertFalse(AudioDownloadManager.isTransferSizeComplete(256L, 128L))
+        assertFalse(AudioDownloadManager.isTransferSizeComplete(3_758_751L, 5_129_657L))
+    }
+
+    @Test
+    fun `commit size validation drops transfer expectation after metadata changes file`() {
+        assertNull(
+            AudioDownloadManager.resolveAudioCommitExpectedSize(
+                transferExpectedBytes = 5_129_657L,
+                bytesBeforeMetadata = 5_129_657L,
+                bytesAtCommit = 4_551_323L
+            )
+        )
+        assertEquals(
+            3_758_751L,
+            AudioDownloadManager.resolveAudioCommitExpectedSize(
+                transferExpectedBytes = 3_758_751L,
+                bytesBeforeMetadata = 3_758_751L,
+                bytesAtCommit = 3_758_751L
+            )
+        )
+        assertNull(
+            AudioDownloadManager.resolveAudioCommitExpectedSize(
+                transferExpectedBytes = null,
+                bytesBeforeMetadata = 1_024L,
+                bytesAtCommit = 1_024L
+            )
+        )
+        assertNull(
+            AudioDownloadManager.resolveAudioCommitExpectedSize(
+                transferExpectedBytes = 3_758_751L,
+                bytesBeforeMetadata = 5_129_657L,
+                bytesAtCommit = 4_551_323L
+            )
+        )
     }
 
     @Test
@@ -379,6 +414,35 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `resume working file is discarded when source url changes`() {
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = "https://example.com/audio.m4a?token=old",
+            etag = "\"same-validator\"",
+            lastModified = null,
+            expectedContentLength = 4_096L
+        )
+
+        assertTrue(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/audio.m4a?token=new",
+                fingerprint = fingerprint
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/audio.m4a?token=old",
+                fingerprint = fingerprint
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/audio.m4a",
+                fingerprint = null
+            )
+        )
+    }
+
+    @Test
     fun `response expected bytes keeps full size when resuming partial payload`() {
         val headers = mapOf("Content-Range" to listOf("bytes 1024-4095/4096"))
 
@@ -390,6 +454,49 @@ class AudioDownloadManagerTest {
                 bodyLength = 3_072L,
                 resumedBytes = 1_024L,
                 isPartialResponse = true
+            )
+        )
+    }
+
+    @Test
+    fun `response content length wins over stale non youtube query length`() {
+        val headers = mapOf("Content-Length" to listOf("5129657"))
+
+        assertEquals(
+            5_129_657L,
+            AudioDownloadManager.resolveResponseExpectedBytes(
+                requestUrl = "https://m801.music.126.net/audio.mp3?clen=3758751",
+                headers = headers,
+                bodyLength = 5_129_657L,
+                resumedBytes = 0L,
+                isPartialResponse = false
+            )
+        )
+    }
+
+    @Test
+    fun `non youtube query length is ignored when response length is unavailable`() {
+        assertNull(
+            AudioDownloadManager.resolveResponseExpectedBytes(
+                requestUrl = "https://m801.music.126.net/audio.mp3?clen=3758751",
+                headers = emptyMap(),
+                bodyLength = -1L,
+                resumedBytes = 0L,
+                isPartialResponse = false
+            )
+        )
+    }
+
+    @Test
+    fun `google video query length remains a fallback when response length is unavailable`() {
+        assertEquals(
+            3_758_751L,
+            AudioDownloadManager.resolveResponseExpectedBytes(
+                requestUrl = "https://rr1---sn-abcd.googlevideo.com/videoplayback?clen=3758751&source=youtube",
+                headers = emptyMap(),
+                bodyLength = -1L,
+                resumedBytes = 0L,
+                isPartialResponse = false
             )
         )
     }

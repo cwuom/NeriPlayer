@@ -92,6 +92,49 @@ class LocalMediaSupportSafLyricsTest {
     }
 
     @Test
+    fun nearbyCoverReadDoesNotCrashWhenProviderReturnsOutOfScopeChild() {
+        val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+        val treeUri = DocumentsContract.buildTreeDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val audioUri = DocumentsContract.buildDocumentUriUsingTree(
+            treeUri,
+            Issue339LyricsTestDocumentProvider.AUDIO_ID
+        )
+        val song = SongItem(
+            id = 339L,
+            name = "Issue 339",
+            artist = "Artist",
+            album = "Local",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = audioUri.toString(),
+            localFileName = Issue339LyricsTestDocumentProvider.AUDIO_NAME
+        )
+        try {
+            ManagedDownloadStorage.primeSettings(treeUri.toString(), "Issue 339")
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.USE_OUT_OF_SCOPE_COVERS,
+                null,
+                null
+            )
+
+            assertNull(LocalMediaSupport.resolveNearbyCoverUri(targetContext, song))
+        } finally {
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.RESET_OUT_OF_SCOPE_COVERS,
+                null,
+                null
+            )
+            ManagedDownloadStorage.primeSettings(previousDirectoryUri, null)
+        }
+    }
+
+    @Test
     fun fastManagedLyricsReadRecoversSourceTreeBeforeSettingsRestore() {
         val previousDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
         val treeUri = DocumentsContract.buildTreeDocumentUri(

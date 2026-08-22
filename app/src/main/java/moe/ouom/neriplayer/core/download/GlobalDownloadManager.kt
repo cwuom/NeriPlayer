@@ -60,9 +60,12 @@ import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.player.download.PreparedDownloadArtifacts
+import moe.ouom.neriplayer.core.player.download.PreparedDownloadArtifactsStore
 import moe.ouom.neriplayer.core.startup.LegacyJsonCleanupScheduler
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
@@ -330,6 +333,7 @@ object GlobalDownloadManager {
         reason: String
     ) {
         runCatching {
+            recoverPreparedDownloadArtifacts(context)
             val recoveryPlan = resolvePendingDownloadRecoveryPlan(context)
             removeObsoleteWaitingNetworkTasks(recoveryPlan.recoveryCandidateKeys)
             if (recoveryPlan.recoveryCandidates.isEmpty()) {
@@ -361,6 +365,96 @@ object GlobalDownloadManager {
         }.onFailure { error ->
             NPLogger.e(TAG, "自动恢复未完成下载失败: ${error.message}", error)
         }
+    }
+
+    private suspend fun recoverPreparedDownloadArtifacts(context: Context) {
+        PreparedDownloadArtifactsStore.list(context).forEach { artifacts ->
+            val audio = artifacts.audioReference?.let { reference ->
+                ManagedDownloadStorage.queryStoredEntry(context, reference)
+            } ?: artifacts.audioTargetName?.let { name ->
+                ManagedDownloadStorage.findDownloadedAudioByName(context, name)
+            }
+            if (audio == null) {
+                NPLogger.d(
+                    TAG,
+                    "prepared manifest 缺少已提交音频，保留普通下载恢复路径: " +
+                        "songKey=${artifacts.songKey}"
+                )
+                artifacts.cleanup()
+                return@forEach
+            }
+            if (artifacts.audioTargetName != null &&
+                audio.name != artifacts.audioTargetName
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "prepared manifest 音频目标名不匹配，保留普通恢复路径: " +
+                        "expected=${artifacts.audioTargetName}, actual=${audio.name}"
+                )
+                artifacts.cleanup()
+                return@forEach
+            }
+            val song = buildSongForPreparedRecovery(context, artifacts, audio)
+            if (song == null) {
+                NPLogger.w(
+                    TAG,
+                    "prepared manifest 缺少歌曲身份，清理暂存: songKey=${artifacts.songKey}"
+                )
+                artifacts.cleanup()
+                return@forEach
+            }
+            val task = taskStore.findTask(artifacts.songKey)
+            finalizeCompletedDownload(
+                context = context,
+                song = song,
+                refreshCatalog = true,
+                expectedAttemptId = task?.attemptId,
+                storedAudioHint = audio,
+                allowMissingTask = true
+            )
+        }
+    }
+
+    private suspend fun buildSongForPreparedRecovery(
+        context: Context,
+        artifacts: PreparedDownloadArtifacts,
+        audio: ManagedDownloadStorage.StoredEntry
+    ): SongItem? {
+        val metadata = readDownloadedMetadata(context, audio)
+        val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank)
+            ?: artifacts.songKey.takeIf(String::isNotBlank)
+            ?: return null
+        return SongItem(
+            id = metadata?.songId ?: 0L,
+            name = metadata?.name ?: artifacts.audioTargetName?.substringBeforeLast('.')
+                ?: audio.nameWithoutExtension,
+            artist = metadata?.artist.orEmpty(),
+            album = metadata?.identityAlbum ?: metadata?.album ?: "local",
+            albumId = 0L,
+            durationMs = metadata?.durationMs ?: 0L,
+            coverUrl = metadata?.coverUrl,
+            mediaUri = metadata?.mediaUri ?: audio.mediaUri,
+            matchedLyric = metadata?.matchedLyric,
+            matchedTranslatedLyric = metadata?.matchedTranslatedLyric,
+            matchedRomanizedLyric = metadata?.matchedRomanizedLyric,
+            matchedSongId = metadata?.matchedSongId,
+            customCoverUrl = metadata?.customCoverUrl,
+            customName = metadata?.customName,
+            customArtist = metadata?.customArtist,
+            originalName = metadata?.originalName,
+            originalArtist = metadata?.originalArtist,
+            originalCoverUrl = metadata?.originalCoverUrl,
+            originalLyric = metadata?.originalLyric,
+            originalTranslatedLyric = metadata?.originalTranslatedLyric,
+            originalRomanizedLyric = metadata?.originalRomanizedLyric,
+            channelId = metadata?.channelId,
+            audioId = metadata?.audioId,
+            subAudioId = metadata?.subAudioId,
+            playlistContextId = metadata?.playlistContextId,
+            sourceStableKey = stableKey,
+            localFileName = audio.name,
+            localFilePath = audio.localFilePath
+        )
     }
 
     private data class PendingDownloadRecoveryPlan(
@@ -640,6 +734,9 @@ object GlobalDownloadManager {
 
     fun hasPendingRecoveryCandidates(context: Context): Boolean {
         val appContext = context.applicationContext
+        if (PreparedDownloadArtifactsStore.list(appContext).isNotEmpty()) {
+            return true
+        }
         if (ManagedDownloadStorage.listPendingQueuedDownloads(appContext).isNotEmpty()) {
             return true
         }
@@ -761,23 +858,39 @@ object GlobalDownloadManager {
         songs: List<DownloadedSong>,
         persistCatalog: Boolean
     ) {
+        val previousSongs = _downloadedSongs.value
+        val changedSongKeys = changedDownloadedSongKeys(
+            previousSongs = previousSongs,
+            currentSongs = songs
+        )
         // 先发布索引再通知列表, 避免界面首帧看到歌曲时索引仍为空
         downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
         downloadedSongCatalogReady = true
         _downloadedSongs.value = songs
-        // 下载音频和歌词侧车可能在同一收尾阶段写入, 让本地歌词查找重新读取文件
-        LocalMediaSupport.clearLyricsLookupCache()
-        // 封面侧车与下载元信息可能同时落盘, 不能复用收尾前的解析结果
-        LocalMediaSupport.clearCoverLookupCache()
+        LocalAssetInvalidationBus.bumpSongs(changedSongKeys)
         _downloadPresenceVersion.value += 1
         if (persistCatalog) {
             scheduleDownloadedSongsCatalogPersist(context, songs)
         }
     }
 
+    private fun changedDownloadedSongKeys(
+        previousSongs: List<DownloadedSong>,
+        currentSongs: List<DownloadedSong>
+    ): Set<String> {
+        fun keyOf(song: DownloadedSong): String {
+            return song.stableKey?.takeIf(String::isNotBlank)
+                ?: song.filePath
+        }
+        val previousByKey = previousSongs.associateBy(::keyOf)
+        val currentByKey = currentSongs.associateBy(::keyOf)
+        return (previousByKey.keys + currentByKey.keys)
+            .filterTo(linkedSetOf()) { key ->
+                previousByKey[key] != currentByKey[key]
+            }
+    }
+
     private fun notifyDownloadPresenceChanged() {
-        LocalMediaSupport.clearLyricsLookupCache()
-        LocalMediaSupport.clearCoverLookupCache()
         _downloadPresenceVersion.value += 1
     }
 
@@ -823,6 +936,7 @@ object GlobalDownloadManager {
     ) {
         val songKey = song.stableKey()
         val completedAudio = AudioDownloadManager.consumeCompletedAudioReference(songKey)
+        val preparedArtifacts = AudioDownloadManager.consumePreparedDownloadArtifacts(context, songKey)
         val sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
         val currentTask = taskStore.findTask(songKey)
         if (
@@ -839,6 +953,7 @@ object GlobalDownloadManager {
                 storedAudio = storedAudioHint ?: completedAudio,
                 sidecarReferences = sidecarReferences
             )
+            preparedArtifacts?.cleanup()
             return
         }
         val storedAudio = storedAudioHint
@@ -860,6 +975,7 @@ object GlobalDownloadManager {
                     sidecarReferences = sidecarReferences,
                     expectedAttemptId = expectedAttemptId
                 )
+                preparedArtifacts?.cleanup()
                 return
             }
             CompletedDownloadFinalizationAction.COMPLETE_WITHOUT_STORED_AUDIO -> {
@@ -876,11 +992,15 @@ object GlobalDownloadManager {
                 )
                 forgetPendingDownloadQueueEntries(context, setOf(songKey))
                 scheduleCatalogReconcile(context, forceRefresh = true)
+                preparedArtifacts?.cleanup()
                 return
             }
             CompletedDownloadFinalizationAction.COMPLETE -> Unit
         }
-        val resolvedStoredAudio = storedAudio ?: return
+        val resolvedStoredAudio = storedAudio ?: run {
+            preparedArtifacts?.cleanup()
+            return
+        }
 
         if (
             handleCancelledCompletedDownload(
@@ -892,6 +1012,7 @@ object GlobalDownloadManager {
                 expectedAttemptId = expectedAttemptId
             )
         ) {
+            preparedArtifacts?.cleanup()
             return
         }
         val finalization = finalizeCompletedDownloadMetadata(
@@ -899,6 +1020,7 @@ object GlobalDownloadManager {
             song = song,
             storedAudio = resolvedStoredAudio,
             initialSidecarReferences = sidecarReferences,
+            preparedArtifacts = preparedArtifacts,
         )
         if (!finalization.finalized) {
             if (
@@ -911,6 +1033,7 @@ object GlobalDownloadManager {
                     expectedAttemptId = expectedAttemptId
                 )
             ) {
+                preparedArtifacts?.cleanup()
                 return
             }
             val audioStillExists = ManagedDownloadStorage.exists(
@@ -929,6 +1052,7 @@ object GlobalDownloadManager {
                     storedAudio = resolvedStoredAudio,
                     sidecarReferences = finalization.sidecarReferences
                 )
+                preparedArtifacts?.cleanup()
             }
             updateTaskStatus(
                 songKey,
@@ -969,7 +1093,8 @@ object GlobalDownloadManager {
         context: Context,
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        initialSidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        initialSidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        preparedArtifacts: PreparedDownloadArtifacts?
     ): CompletedDownloadMetadataFinalizationResult {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
@@ -992,16 +1117,25 @@ object GlobalDownloadManager {
             }
             sidecarReferences = AudioDownloadManager.mergeDownloadedSidecarReferences(
                 sidecarReferences,
-                AudioDownloadManager.downloadSidecarsForCompletedAudio(
-                    context = appContext,
-                    song = song,
-                    storedAudio = finalizedAudio
-                )
+                if (preparedArtifacts != null) {
+                    AudioDownloadManager.commitPreparedDownloadArtifacts(
+                        context = appContext,
+                        song = song,
+                        storedAudio = finalizedAudio,
+                        artifacts = preparedArtifacts
+                    )
+                } else {
+                    AudioDownloadManager.downloadSidecarsForCompletedAudio(
+                        context = appContext,
+                        song = song,
+                        storedAudio = finalizedAudio
+                    )
+                }
             )
             val coverAccessible = sidecarReferences.coverReference?.let { reference ->
                 ManagedDownloadStorage.isReferenceAccessible(appContext, reference)
             } == true
-            if (
+            if (preparedArtifacts == null &&
                 !shouldFinalizeDownloadedSidecars(
                     hasNetworkCoverCandidate = AudioDownloadManager
                         .buildCoverDownloadCandidateUrls(song)
@@ -1028,59 +1162,73 @@ object GlobalDownloadManager {
                 )
             }
 
-            val postProcessingEnabled = isDownloadMetadataPostProcessingEnabled(appContext)
-            val metadataSeedWritten = persistDownloadedMetadata(
-                context = appContext,
-                audio = finalizedAudio,
-                song = song,
-                sidecarReferences = sidecarReferences,
-                downloadFinalized = false,
-                resolveExistingSidecars = false
-            )
-            if (!metadataSeedWritten) {
-                NPLogger.w(TAG, "下载 metadata 写入失败，保持未完成状态: ${song.name}")
-                return CompletedDownloadMetadataFinalizationResult(
+            if (preparedArtifacts == null) {
+                val postProcessingEnabled = isDownloadMetadataPostProcessingEnabled(appContext)
+                if (postProcessingEnabled) {
+                    val tagWritten = runDownloadedAudioMetadataPostProcessing(
+                        context = appContext,
+                        audio = finalizedAudio,
+                        song = song,
+                        sidecarReferences = sidecarReferences
+                    )
+                    if (!tagWritten) {
+                        NPLogger.w(TAG, "音频标签后处理失败，保持未完成状态: ${song.name}")
+                        return CompletedDownloadMetadataFinalizationResult(
+                            finalized = false,
+                            sidecarReferences = sidecarReferences.retainCreatedOnly()
+                        )
+                    }
+                    finalizedAudio = ManagedDownloadStorage.refreshStoredEntry(
+                        context = appContext,
+                        reference = finalizedAudio.reference
+                    ) ?: return CompletedDownloadMetadataFinalizationResult(
+                        finalized = false,
+                        sidecarReferences = sidecarReferences.retainCreatedOnly()
+                    )
+                    if (!ManagedDownloadStorage.hasReadableContent(appContext, finalizedAudio)) {
+                        NPLogger.w(TAG, "标签写入后音频校验失败，保持未完成状态: ${song.name}")
+                        return CompletedDownloadMetadataFinalizationResult(
+                            finalized = false,
+                            sidecarReferences = sidecarReferences.retainCreatedOnly()
+                        )
+                    }
+                }
+            }
+
+            if (preparedArtifacts == null) {
+                persistDownloadedMetadata(
+                    context = appContext,
+                    audio = finalizedAudio,
+                    song = song,
+                    sidecarReferences = sidecarReferences,
+                    downloadFinalized = false,
+                    resolveExistingSidecars = false
+                )
+                .also { metadataWritten ->
+                    if (!metadataWritten) {
+                        NPLogger.w(TAG, "下载 metadata 写入失败，保持未完成状态: ${song.name}")
+                    }
+                }
+                .takeIf { it }
+                ?: return CompletedDownloadMetadataFinalizationResult(
                     finalized = false,
                     sidecarReferences = sidecarReferences.retainCreatedOnly()
                 )
             }
-
-            if (postProcessingEnabled) {
-                val tagWritten = runDownloadedAudioMetadataPostProcessing(
+            val artifactsVerified = if (preparedArtifacts != null) {
+                !isSongCancelled(songKey) && verifyPreparedDownloadArtifacts(
+                    context = appContext,
+                    audio = finalizedAudio,
+                    sidecarReferences = sidecarReferences
+                )
+            } else {
+                !isSongCancelled(songKey) && verifyFinalizedDownloadedAudio(
                     context = appContext,
                     audio = finalizedAudio,
                     song = song,
                     sidecarReferences = sidecarReferences
                 )
-                if (!tagWritten) {
-                    NPLogger.w(TAG, "音频标签后处理失败，保持未完成状态: ${song.name}")
-                    return CompletedDownloadMetadataFinalizationResult(
-                        finalized = false,
-                        sidecarReferences = sidecarReferences.retainCreatedOnly()
-                    )
-                }
-                finalizedAudio = ManagedDownloadStorage.refreshStoredEntry(
-                    context = appContext,
-                    reference = finalizedAudio.reference
-                ) ?: return CompletedDownloadMetadataFinalizationResult(
-                    finalized = false,
-                    sidecarReferences = sidecarReferences.retainCreatedOnly()
-                )
-                if (!ManagedDownloadStorage.hasReadableContent(appContext, finalizedAudio)) {
-                    NPLogger.w(TAG, "标签写入后音频校验失败，保持未完成状态: ${song.name}")
-                    return CompletedDownloadMetadataFinalizationResult(
-                        finalized = false,
-                        sidecarReferences = sidecarReferences.retainCreatedOnly()
-                    )
-                }
             }
-
-            val artifactsVerified = !isSongCancelled(songKey) && verifyFinalizedDownloadedAudio(
-                context = appContext,
-                audio = finalizedAudio,
-                song = song,
-                sidecarReferences = sidecarReferences
-            )
             if (!artifactsVerified) {
                 return CompletedDownloadMetadataFinalizationResult(
                     finalized = false,
@@ -1104,6 +1252,7 @@ object GlobalDownloadManager {
                     sidecarReferences = sidecarReferences
                 )
             }
+            preparedArtifacts?.cleanup()
             CompletedDownloadMetadataFinalizationResult(
                 finalized = true,
                 storedAudio = finalizedAudio,
@@ -1125,6 +1274,7 @@ object GlobalDownloadManager {
                         rollbackError
                     )
                 }
+                preparedArtifacts?.cleanup()
             } else {
                 cleanupOrphanedCompletedSidecars(
                     context = appContext,
@@ -1140,6 +1290,81 @@ object GlobalDownloadManager {
                 sidecarReferences = sidecarReferences.retainCreatedOnly()
             )
         }
+    }
+
+    private suspend fun verifyPreparedDownloadArtifacts(
+        context: Context,
+        audio: ManagedDownloadStorage.StoredEntry,
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences
+    ): Boolean = coroutineScope {
+        val audioReadable = async {
+            ManagedDownloadStorage.hasReadableContent(context, audio)
+        }
+        val coverReadable = async {
+            verifyPreparedReference(
+                context = context,
+                reference = sidecarReferences.coverReference,
+                expected = sidecarReferences.expectedCover
+            )
+        }
+        val lyricReadable = async {
+            verifyPreparedLyric(
+                context = context,
+                reference = sidecarReferences.lyricReference,
+                expected = sidecarReferences.expectedLyric
+            )
+        }
+        val translatedReadable = async {
+            verifyPreparedLyric(
+                context = context,
+                reference = sidecarReferences.translatedLyricReference,
+                expected = sidecarReferences.expectedTranslatedLyric
+            )
+        }
+        val romanizedReadable = async {
+            verifyPreparedLyric(
+                context = context,
+                reference = sidecarReferences.romanizedLyricReference,
+                expected = sidecarReferences.expectedRomanizedLyric
+            )
+        }
+        val audioValid = audioReadable.await()
+        val coverValid = coverReadable.await()
+        val lyricValid = lyricReadable.await()
+        val translatedValid = translatedReadable.await()
+        val romanizedValid = romanizedReadable.await()
+        val valid = audioValid && coverValid && lyricValid && translatedValid && romanizedValid
+        if (!valid) {
+            NPLogger.w(
+                TAG,
+                "prepared 下载产物完整性校验失败: audio=${audio.name}, " +
+                    "cover=$coverValid, lyric=$lyricValid, " +
+                    "translated=$translatedValid, romanized=$romanizedValid"
+            )
+        }
+        valid
+    }
+
+    private suspend fun verifyPreparedReference(
+        context: Context,
+        reference: String?,
+        expected: Boolean
+    ): Boolean {
+        if (!expected && reference.isNullOrBlank()) return true
+        return !reference.isNullOrBlank() &&
+            ManagedDownloadStorage.hasReadableReference(context, reference)
+    }
+
+    private suspend fun verifyPreparedLyric(
+        context: Context,
+        reference: String?,
+        expected: Boolean
+    ): Boolean {
+        if (!expected && reference.isNullOrBlank()) return true
+        if (reference.isNullOrBlank() || !ManagedDownloadStorage.hasReadableReference(context, reference)) {
+            return false
+        }
+        return ManagedDownloadStorage.readText(context, reference)?.isNotBlank() == true
     }
 
     private suspend fun verifyFinalizedDownloadedAudio(
@@ -1170,30 +1395,48 @@ object GlobalDownloadManager {
                 romanizedLyricReadable = romanizedLyric.await()
             )
         }
-        val hasNetworkCoverCandidate = AudioDownloadManager
-            .buildCoverDownloadCandidateUrls(song)
-            .isNotEmpty()
-        val expectCover = hasNetworkCoverCandidate ||
+        val prepared = sidecarReferences?.prepared == true
+        val expectCover = if (prepared) {
             !metadata.coverPath.isNullOrBlank() ||
-            !sidecarReferences?.coverReference.isNullOrBlank() ||
-            !metadata.coverUrl.isNullOrBlank() ||
-            !metadata.customCoverUrl.isNullOrBlank() ||
-            !metadata.originalCoverUrl.isNullOrBlank()
-        val expectOriginalLyric = sidecarReferences?.expectedLyric == true ||
+                !sidecarReferences.coverReference.isNullOrBlank()
+        } else {
+            AudioDownloadManager.buildCoverDownloadCandidateUrls(song).isNotEmpty() ||
+                !metadata.coverPath.isNullOrBlank() ||
+                !sidecarReferences?.coverReference.isNullOrBlank() ||
+                !metadata.coverUrl.isNullOrBlank() ||
+                !metadata.customCoverUrl.isNullOrBlank() ||
+                !metadata.originalCoverUrl.isNullOrBlank()
+        }
+        val expectOriginalLyric = if (prepared) {
             !metadata.lyricPath.isNullOrBlank() ||
-            !sidecarReferences?.lyricReference.isNullOrBlank() ||
-            !metadata.matchedLyric.isNullOrBlank() ||
-            !metadata.originalLyric.isNullOrBlank()
-        val expectTranslatedLyric = sidecarReferences?.expectedTranslatedLyric == true ||
+                !sidecarReferences.lyricReference.isNullOrBlank()
+        } else {
+            sidecarReferences?.expectedLyric == true ||
+                !metadata.lyricPath.isNullOrBlank() ||
+                !sidecarReferences?.lyricReference.isNullOrBlank() ||
+                !metadata.matchedLyric.isNullOrBlank() ||
+                !metadata.originalLyric.isNullOrBlank()
+        }
+        val expectTranslatedLyric = if (prepared) {
             !metadata.translatedLyricPath.isNullOrBlank() ||
-            !sidecarReferences?.translatedLyricReference.isNullOrBlank() ||
-            !metadata.matchedTranslatedLyric.isNullOrBlank() ||
-            !metadata.originalTranslatedLyric.isNullOrBlank()
-        val expectRomanizedLyric = sidecarReferences?.expectedRomanizedLyric == true ||
+                !sidecarReferences.translatedLyricReference.isNullOrBlank()
+        } else {
+            sidecarReferences?.expectedTranslatedLyric == true ||
+                !metadata.translatedLyricPath.isNullOrBlank() ||
+                !sidecarReferences?.translatedLyricReference.isNullOrBlank() ||
+                !metadata.matchedTranslatedLyric.isNullOrBlank() ||
+                !metadata.originalTranslatedLyric.isNullOrBlank()
+        }
+        val expectRomanizedLyric = if (prepared) {
             !metadata.romanizedLyricPath.isNullOrBlank() ||
-            !sidecarReferences?.romanizedLyricReference.isNullOrBlank() ||
-            !metadata.matchedRomanizedLyric.isNullOrBlank() ||
-            !metadata.originalRomanizedLyric.isNullOrBlank()
+                !sidecarReferences.romanizedLyricReference.isNullOrBlank()
+        } else {
+            sidecarReferences?.expectedRomanizedLyric == true ||
+                !metadata.romanizedLyricPath.isNullOrBlank() ||
+                !sidecarReferences?.romanizedLyricReference.isNullOrBlank() ||
+                !metadata.matchedRomanizedLyric.isNullOrBlank() ||
+                !metadata.originalRomanizedLyric.isNullOrBlank()
+        }
         val result = verifyDownloadedArtifactIntegrity(
             song = song,
             metadata = metadata,
@@ -4154,6 +4397,7 @@ object GlobalDownloadManager {
         storedAudio: ManagedDownloadStorage.StoredEntry,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null
     ) {
+        LocalMediaSupport.invalidateSongAssetCaches(song)
         publishOptimisticDownloadedSongs(
             context = context,
             songs = listOf(

@@ -77,6 +77,8 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
+import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
@@ -93,9 +95,6 @@ internal object ManagedDownloadStorage {
     private const val TAG = "ManagedDownloadStorage"
     private const val LEGACY_DOWNLOAD_ROOT_PATH = "/storage/emulated/0/neriplayer-download"
     private const val LEGACY_DOWNLOAD_ROOT_RELATIVE_PATH = "neriplayer-download"
-    private const val LEGACY_DOWNLOAD_TREE_DOCUMENT_ID = "primary:neriplayer-download"
-    private const val EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY =
-        "com.android.externalstorage.documents"
     private const val LOG_HOT_AUDIO_HITS = false
     private const val SIDECAR_REFRESH_THROTTLE_MS = 400L
     private const val FAST_LYRICS_SLOW_LOG_MS = 120L
@@ -528,12 +527,16 @@ internal object ManagedDownloadStorage {
             directoryLabel = directoryLabel,
             fileNameTemplate = fileNameTemplate
         )
+        val generation = LocalStorageRootGeneration.update(directoryUri)
+        LocalAssetInvalidationBus.publishRootChanged(generation)
         clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
 
     fun updateCustomDirectoryUri(uri: String?) {
         settings.updateDirectoryUri(uri)
+        val generation = LocalStorageRootGeneration.update(uri)
+        LocalAssetInvalidationBus.publishRootChanged(generation)
         clearTreeDirectoryCache()
         invalidateSnapshotCache()
     }
@@ -1098,7 +1101,7 @@ internal object ManagedDownloadStorage {
 
         val configuredRoot = settings.configuredDirectoryUri
             ?.takeIf(String::isNotBlank)
-            ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+            ?.let { runCatching { it.toUri() }.getOrNull() }
         val songTree = listOfNotNull(song.mediaUri, song.localFilePath)
             .asSequence()
             .mapNotNull(::managedDownloadTreeUri)
@@ -1369,6 +1372,17 @@ internal object ManagedDownloadStorage {
         forceRefresh: Boolean = false
     ): StoredEntry? = withContext(Dispatchers.IO) {
         findDownloadedAudioBlocking(context, song, forceRefresh)
+    }
+
+    internal suspend fun findDownloadedAudioByName(
+        context: Context,
+        name: String,
+        forceRefresh: Boolean = false
+    ): StoredEntry? = withContext(Dispatchers.IO) {
+        val normalizedName = name.trim().takeIf(String::isNotBlank) ?: return@withContext null
+        buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
+            .audioEntries
+            .firstOrNull { entry -> entry.name == normalizedName }
     }
 
     fun findDownloadedAudio(snapshot: DownloadLibrarySnapshot, song: SongItem): StoredEntry? {
@@ -1984,6 +1998,7 @@ internal object ManagedDownloadStorage {
         fileName: String,
         mimeType: String?,
         expectedSizeBytes: Long? = null,
+        transferSizeVerified: Boolean = false,
         seedMetadataJson: String? = null
     ): StoredEntry = withContext(Dispatchers.IO) {
         saveAudioFromTempBlocking(
@@ -1992,6 +2007,7 @@ internal object ManagedDownloadStorage {
             fileName = fileName,
             mimeType = mimeType,
             expectedSizeBytes = expectedSizeBytes,
+            transferSizeVerified = transferSizeVerified,
             seedMetadataJson = seedMetadataJson
         )
     }
@@ -2002,20 +2018,35 @@ internal object ManagedDownloadStorage {
         fileName: String,
         mimeType: String?,
         expectedSizeBytes: Long?,
+        transferSizeVerified: Boolean,
         seedMetadataJson: String?
     ): StoredEntry {
         val actualSizeBytes = tempFile.length().coerceAtLeast(0L)
         if (actualSizeBytes <= 0L) {
             throw IOException("下载文件为空: ${tempFile.name}")
         }
+        if (shouldRejectTransferSize(
+                expectedSizeBytes = expectedSizeBytes,
+                actualSizeBytes = actualSizeBytes,
+                transferSizeVerified = transferSizeVerified
+            )
+        ) {
+            throw IOException("下载文件大小不匹配: $actualSizeBytes/$expectedSizeBytes")
+        }
         if (
+            transferSizeVerified &&
             expectedSizeBytes != null &&
             !ManagedDownloadSizePolicy.isTransferSizeComplete(
                 expectedSizeBytes = expectedSizeBytes,
                 actualSizeBytes = actualSizeBytes
             )
         ) {
-            throw IOException("下载文件大小不匹配: $actualSizeBytes/$expectedSizeBytes")
+            NPLogger.d(
+                TAG,
+                "提交阶段忽略传输期长度提示: file=${tempFile.name}, " +
+                    "actual=$actualSizeBytes, expected=$expectedSizeBytes, " +
+                    "transferAlreadyVerified=$transferSizeVerified"
+            )
         }
         val storedEntry = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
@@ -2840,12 +2871,18 @@ internal object ManagedDownloadStorage {
         if (!hasLegacyPath && !hasLegacyMediaStoreReference) {
             return null
         }
-        return runCatching {
-            DocumentsContract.buildTreeDocumentUri(
-                EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY,
-                LEGACY_DOWNLOAD_TREE_DOCUMENT_ID
-            )
-        }.getOrNull()
+        return context.contentResolver.persistedUriPermissions
+            .asSequence()
+            .filter { permission ->
+                permission.isReadPermission &&
+                    DocumentsContract.isTreeUri(permission.uri) &&
+                    permission.uri.authority == "com.android.externalstorage.documents"
+            }
+            .map { permission -> permission.uri }
+            .firstOrNull { uri ->
+                runCatching { DocumentsContract.getTreeDocumentId(uri) }
+                    .getOrNull() == "primary:neriplayer-download"
+            }
     }
 
     private fun isLegacyDownloadReference(reference: String): Boolean {
@@ -2862,7 +2899,7 @@ internal object ManagedDownloadStorage {
 
     internal fun managedDownloadTreeUri(rawReference: String?): Uri? {
         return managedDownloadTreeReference(rawReference)
-            ?.let { treeReference -> runCatching { Uri.parse(treeReference) }.getOrNull() }
+            ?.let { treeReference -> runCatching { treeReference.toUri() }.getOrNull() }
     }
 
     internal fun managedDownloadTreeReference(rawReference: String?): String? {
@@ -2901,7 +2938,7 @@ internal object ManagedDownloadStorage {
             return "content://$authority/tree/$treeDocumentId"
         }
 
-        val sourceUri = runCatching { Uri.parse(rawUri) }.getOrNull() ?: return null
+        val sourceUri = runCatching { rawUri.toUri() }.getOrNull() ?: return null
         val treeSegmentIndex = sourceUri.pathSegments.indexOfFirst { segment ->
             segment.equals("tree", ignoreCase = true)
         }
@@ -3937,6 +3974,19 @@ internal object ManagedDownloadStorage {
             countedSizeBytes = countedSizeBytes,
             toleranceBytes = toleranceBytes
         )
+    }
+
+    internal fun shouldRejectTransferSize(
+        expectedSizeBytes: Long?,
+        actualSizeBytes: Long,
+        transferSizeVerified: Boolean
+    ): Boolean {
+        return !transferSizeVerified &&
+            expectedSizeBytes != null &&
+            !ManagedDownloadSizePolicy.isTransferSizeComplete(
+                expectedSizeBytes = expectedSizeBytes,
+                actualSizeBytes = actualSizeBytes
+            )
     }
 
     private fun verifyFileCommittedLength(

@@ -200,9 +200,7 @@ internal object YouTubeGoogleVideoRangeSupport {
     }
 
     fun resolveTotalContentLength(url: String, headers: Map<String, List<String>>): Long? {
-        val fromContentRange = firstHeaderValue(headers, "Content-Range")
-            ?.let(::parseContentRangeTotal)
-            ?.takeIf { it > 0L }
+        val fromContentRange = resolveContentRangeTotal(headers)
         if (fromContentRange != null) {
             return fromContentRange
         }
@@ -214,6 +212,12 @@ internal object YouTubeGoogleVideoRangeSupport {
 
         return firstHeaderValue(headers, "Content-Length")
             ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+    }
+
+    fun resolveContentRangeTotal(headers: Map<String, List<String>>): Long? {
+        return firstHeaderValue(headers, "Content-Range")
+            ?.let(::parseContentRangeTotal)
             ?.takeIf { it > 0L }
     }
 

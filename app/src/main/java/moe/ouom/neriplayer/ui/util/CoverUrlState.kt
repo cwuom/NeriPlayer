@@ -8,8 +8,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.net.Uri
 import android.os.SystemClock
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.currentCoroutineContext
@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -96,11 +97,17 @@ fun rememberSongDisplayCoverUrl(
     song: SongItem?,
     resolveLocalFallback: Boolean = true
 ): String? {
-    val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val songRevisionKey = song?.stableKey().orEmpty()
+    val songRevision by LocalAssetInvalidationBus
+        .revisionFlow(songRevisionKey)
+        .collectAsStateWithLifecycle()
+    val rootGeneration by LocalAssetInvalidationBus.rootGenerationFlow
+        .collectAsStateWithLifecycle()
     return rememberSongDisplayCoverUrl(
         song = song,
         resolveLocalFallback = resolveLocalFallback,
-        downloadPresenceVersion = downloadPresenceVersion
+        downloadPresenceVersion = 0,
+        localAssetGeneration = "$rootGeneration:$songRevision"
     )
 }
 
@@ -109,7 +116,8 @@ internal fun rememberSongDisplayCoverUrl(
     song: SongItem?,
     resolveLocalFallback: Boolean,
     downloadPresenceVersion: Int,
-    allowEmbeddedCoverFallback: Boolean = true
+    allowEmbeddedCoverFallback: Boolean = true,
+    localAssetGeneration: String? = null
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -119,7 +127,9 @@ internal fun rememberSongDisplayCoverUrl(
     val songKey = remember(song) {
         song?.coverResolutionKey()
     }
-    val resolvedCacheKey = versionedCoverCacheKey(songDisplayKey, downloadPresenceVersion)
+    val effectiveGeneration = localAssetGeneration ?: "global=$downloadPresenceVersion"
+    val probeGeneration = effectiveGeneration.hashCode()
+    val resolvedCacheKey = versionedCoverCacheKey(songDisplayKey, effectiveGeneration)
     var coverUrl by remember(resolvedCacheKey) {
         mutableStateOf(
             cachedResolvedCover(resolvedCacheKey)
@@ -131,7 +141,7 @@ internal fun rememberSongDisplayCoverUrl(
         songDisplayKey,
         songKey,
         appContext,
-        downloadPresenceVersion,
+        effectiveGeneration,
         resolveLocalFallback,
         allowEmbeddedCoverFallback
     ) {
@@ -170,7 +180,7 @@ internal fun rememberSongDisplayCoverUrl(
                 resolveCachedSongDisplayCoverUrl(
                     context = appContext,
                     song = song,
-                    probeGeneration = downloadPresenceVersion
+                    probeGeneration = probeGeneration
                 )
             } else {
                 memoryCover?.takeIf { isUsableCoverReference(appContext, it) }
@@ -284,7 +294,19 @@ private fun resolveCachedSongDisplayCoverUrlUncached(
     usable(AudioDownloadManager.peekLocalCoverUri(song))?.let { return it }
     if (song.isLocalSong()) {
         // sidecars are authoritative for local files and do not depend on MediaStore grants
-        usable(LocalMediaSupport.resolveNearbyCoverUri(context, song))?.let { return it }
+        val nearbyCover = runCatching {
+            LocalMediaSupport.resolveNearbyCoverUri(context, song)
+        }.onFailure { error ->
+            if (error is SecurityException) {
+                LocalMediaSupport.invalidateSafReadCaches()
+                NPLogger.w(
+                    "LocalCover",
+                    "SAF cover probe out of scope: song=${song.stableKey()}, " +
+                        "message=${error.message}"
+                )
+            }
+        }.getOrNull()
+        usable(nearbyCover)?.let { return it }
         usable(LocalMediaSupport.peekMediaStoreAlbumArtUri(context, song))?.let { return it }
         usable(LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song))?.let { return it }
     }
@@ -310,7 +332,7 @@ internal fun isFastCoverReference(reference: String): Boolean {
     ) {
         return true
     }
-    val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return false
+    val uri = runCatching { normalized.toUri() }.getOrNull() ?: return false
     return when (uri.scheme?.lowercase()) {
         "file" -> uri.path?.let(::File)?.isFile == true
         null, "" -> normalized.startsWith("/") && File(normalized).isFile
@@ -542,6 +564,10 @@ private fun cachedResolvedCover(key: String?): String? {
 }
 
 internal fun versionedCoverCacheKey(baseKey: String?, generation: Int): String? {
+    return versionedCoverCacheKey(baseKey, generation.toString())
+}
+
+internal fun versionedCoverCacheKey(baseKey: String?, generation: String): String? {
     if (baseKey.isNullOrBlank()) return null
     return "$baseKey|generation=$generation"
 }

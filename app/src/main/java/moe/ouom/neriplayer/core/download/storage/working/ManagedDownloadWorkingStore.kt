@@ -252,8 +252,24 @@ internal object ManagedDownloadWorkingStore {
         var cleanedCount = 0
         var failedCount = 0
         var preservedCount = 0
+        val preparedManifestFiles = stagingEntries
+            .asSequence()
+            .filter { entry ->
+                entry.isFile && entry.name.startsWith("npdl_sidecar_manifest_") &&
+                    entry.name.endsWith(".json")
+            }
+            .filter { entry ->
+                runCatching {
+                    val root = org.json.JSONObject(entry.readText(Charsets.UTF_8))
+                    root.optInt("version") == 1 &&
+                        root.optString("songKey").isNotBlank()
+                }.getOrDefault(false)
+            }
+            .mapTo(hashSetOf()) { entry -> entry.absolutePath }
         stagingEntries.forEach { entry ->
             if (
+                entry.absolutePath in preparedManifestFiles ||
+                isPreparedArtifactReferencedByManifest(entry, stagingEntries.toList(), preparedManifestFiles) ||
                 shouldPreserveWorkingFileForResume(entry, nowMs) ||
                 shouldPreserveWorkingCheckpointForResume(entry, nowMs) ||
                 shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
@@ -278,6 +294,25 @@ internal object ManagedDownloadWorkingStore {
             cleanedCount = cleanedCount,
             failedCount = failedCount
         )
+    }
+
+    private fun isPreparedArtifactReferencedByManifest(
+        entry: File,
+        stagingEntries: Collection<File>,
+        preparedManifestFiles: Set<String>
+    ): Boolean {
+        if (entry.isDirectory || entry.absolutePath in preparedManifestFiles) return false
+        return preparedManifestFiles.any { manifestPath ->
+            val manifest = stagingEntries.firstOrNull { file -> file.absolutePath == manifestPath }
+                ?: return@any false
+            runCatching {
+                val root = org.json.JSONObject(manifest.readText(Charsets.UTF_8))
+                listOf("lyric", "translatedLyric", "romanizedLyric", "cover")
+                    .asSequence()
+                    .mapNotNull { key -> root.optJSONObject(key)?.optString("file") }
+                    .any { filePath -> filePath == entry.absolutePath }
+            }.getOrDefault(false)
+        }
     }
 
     private fun isFreshNamedNonEmptyWorkingFile(

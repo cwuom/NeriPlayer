@@ -140,6 +140,28 @@ class LocalMediaSupportTest {
         )
     }
 
+    @Test
+    fun `opaque document ids are compared exactly without path fabrication`() {
+        assertTrue(
+            LocalMediaSupport.matchesDocumentPathParent(
+                path = listOf("opaque-root", "opaque/parent", "opaque/child/token"),
+                parentDocumentId = "opaque/parent",
+                sourceDocumentId = "opaque/child/token",
+                displayName = "song.mp3",
+                actualDisplayName = "song.mp3"
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.matchesDocumentPathParent(
+                path = listOf("opaque-root", "opaque/parent", "opaque/child/token"),
+                parentDocumentId = "opaque/parent",
+                sourceDocumentId = "opaque/CHILD/token",
+                displayName = "song.mp3",
+                actualDisplayName = "song.mp3"
+            )
+        )
+    }
+
     @get:Rule
     val tempFolder = TemporaryFolder()
 

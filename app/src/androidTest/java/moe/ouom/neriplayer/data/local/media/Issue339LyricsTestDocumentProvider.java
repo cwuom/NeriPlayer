@@ -38,6 +38,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     public static final String TRANSLATED_ID = "opaque/translated-issue339";
     public static final String ROMANIZED_ID = "opaque/romanized-issue339";
     public static final String METADATA_ID = "opaque/metadata-issue339";
+    public static final String STALE_COVERS_ID = "legacy/covers-issue339";
     public static final String AUDIO_NAME = "netease - 茶太 - だんご大家族.wav";
     public static final String ORIGINAL_NAME = "netease - 茶太 - だんご大家族.lrc";
     public static final String TRANSLATED_NAME = "netease - 茶太 - だんご大家族_trans.lrc";
@@ -86,6 +87,8 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         "test:resetEmptyChildDocumentQueries";
     public static final String USE_NUMBERED_SIDECARS = "test:useNumberedSidecars";
     public static final String RESET_NUMBERED_SIDECARS = "test:resetNumberedSidecars";
+    public static final String USE_OUT_OF_SCOPE_COVERS = "test:useOutOfScopeCovers";
+    public static final String RESET_OUT_OF_SCOPE_COVERS = "test:resetOutOfScopeCovers";
     private static final String COUNT_EXTRA = "count";
     private static final String RESULT_EXTRA = "result";
     private static final String LYRICS_FIXTURE_DIRECTORY_NAME = "issue339-lyrics";
@@ -94,6 +97,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     private static volatile boolean failWithSecurityException;
     private static volatile boolean emptyChildDocumentQueries;
     private static volatile boolean useNumberedSidecars;
+    private static volatile boolean useOutOfScopeCovers;
     private static final AtomicInteger largeAudioDocumentQueryCount = new AtomicInteger();
     private static final AtomicInteger metadataCreateCount = new AtomicInteger();
     private static final AtomicInteger lyricsDirectoryCreateCount = new AtomicInteger();
@@ -129,6 +133,11 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         }
         if (isChildDocumentsUri(uri) && failWithSecurityException) {
             throw new SecurityException("configured SAF permission failure");
+        }
+        if (isChildDocumentsUri(uri) && STALE_COVERS_ID.equals(documentId(uri))) {
+            throw new SecurityException(
+                "Document " + STALE_COVERS_ID + " is not a descendant of " + ROOT_ID
+            );
         }
         if (!isChildDocumentsUri(uri) && isLargeAudioDocument(documentId(uri))) {
             largeAudioDocumentQueryCount.incrementAndGet();
@@ -244,6 +253,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
             failWithSecurityException = false;
             emptyChildDocumentQueries = false;
             useNumberedSidecars = false;
+            useOutOfScopeCovers = false;
             metadataCreateCount.set(0);
             lyricsDirectoryCreateCount.set(0);
             return new Bundle();
@@ -304,6 +314,14 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         }
         if (RESET_NUMBERED_SIDECARS.equals(method)) {
             useNumberedSidecars = false;
+            return new Bundle();
+        }
+        if (USE_OUT_OF_SCOPE_COVERS.equals(method)) {
+            useOutOfScopeCovers = true;
+            return new Bundle();
+        }
+        if (RESET_OUT_OF_SCOPE_COVERS.equals(method)) {
+            useOutOfScopeCovers = false;
             return new Bundle();
         }
         if ("android:findDocumentPath".equals(method)) {
@@ -418,15 +436,22 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
                     children.add(largeAudioId(index));
                 }
                 children.add(LYRICS_ID);
+                if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
                 if (metadataFile().isFile()) {
                     children.add(METADATA_ID);
                 }
                 return children;
             }
             if (metadataFile().isFile()) {
-                return Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID);
+                List<String> children = new ArrayList<>(
+                    Arrays.asList(AUDIO_ID, LYRICS_ID, METADATA_ID)
+                );
+                if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
+                return children;
             }
-            return Arrays.asList(AUDIO_ID, LYRICS_ID);
+            List<String> children = new ArrayList<>(Arrays.asList(AUDIO_ID, LYRICS_ID));
+            if (useOutOfScopeCovers) children.add(STALE_COVERS_ID);
+            return children;
         }
         if (LYRICS_ID.equals(parentDocumentId)) {
             synchronized (lyricDocuments) {
@@ -465,6 +490,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
         if (LYRICS_ID.equals(documentId)) {
             return useNumberedSidecars ? "Lyrics (1)" : "Lyrics";
         }
+        if (STALE_COVERS_ID.equals(documentId)) return "Covers";
         if (ORIGINAL_ID.equals(documentId)) return ORIGINAL_NAME;
         if (TRANSLATED_ID.equals(documentId)) return TRANSLATED_NAME;
         if (ROMANIZED_ID.equals(documentId)) return ROMANIZED_NAME;
@@ -488,7 +514,7 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
 
     private static String mimeTypeFor(String documentId) {
         if (ROOT_ID.equals(documentId) || MUSIC_ID.equals(documentId) ||
-            LYRICS_ID.equals(documentId)) {
+            LYRICS_ID.equals(documentId) || STALE_COVERS_ID.equals(documentId)) {
             return DocumentsContract.Document.MIME_TYPE_DIR;
         }
         if (AUDIO_ID.equals(documentId)) return "audio/wav";
