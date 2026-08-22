@@ -141,6 +141,8 @@ internal fun shouldSyncDownloadedMetadataAfterMetadataUpdate(
     return syncDownloadedMetadata && (isLocalSong || !writeLocalMetadata)
 }
 
+internal fun shouldSyncDownloadedMetadataAfterPlaybackHydration(): Boolean = false
+
 private suspend fun <T> runSongMetadataMutation(block: suspend () -> T): T {
     return withContext(Dispatchers.IO) {
         songMetadataMutationMutex.withLock { block() }
@@ -2223,7 +2225,8 @@ internal fun PlayerManager.hydrateSongMetadataImpl(originalSong: SongItem, updat
             updateSongInAllPlaces(
                 originalSong = originalSong,
                 updatedSong = updatedSong,
-                triggerSync = false
+                triggerSync = false,
+                syncDownloadedMetadata = shouldSyncDownloadedMetadataAfterPlaybackHydration()
             )
         }
     }

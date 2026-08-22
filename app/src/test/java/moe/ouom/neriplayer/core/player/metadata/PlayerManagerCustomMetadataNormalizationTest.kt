@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.player.persistence.resolveEditableMetadataWriteM
 import moe.ouom.neriplayer.core.player.persistence.shouldPersistLyricsSidecarsSynchronously
 import moe.ouom.neriplayer.core.player.persistence.shouldSyncDownloadedMetadataAfterMetadataUpdate
 import moe.ouom.neriplayer.core.player.persistence.shouldSyncDownloadedMetadataAfterLyricsUpdate
+import moe.ouom.neriplayer.core.player.persistence.shouldSyncDownloadedMetadataAfterPlaybackHydration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -335,5 +336,10 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 isLocalSong = false
             )
         )
+    }
+
+    @Test
+    fun `playback hydration never syncs downloaded metadata`() {
+        assertFalse(shouldSyncDownloadedMetadataAfterPlaybackHydration())
     }
 }
