@@ -32,12 +32,39 @@ internal object ManagedLibraryFastIndex {
     const val FORMAT_VERSION = 1
     const val DEFAULT_SHARD_COUNT = 32
 
+    internal data class RootEntry(
+        val name: String,
+        val reference: String
+    )
+
     fun shardFor(stableKey: String, shardCount: Int = DEFAULT_SHARD_COUNT): String {
         val normalizedCount = shardCount.coerceAtLeast(1)
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(stableKey.toByteArray(Charsets.UTF_8))
         val value = ((digest[0].toInt() and 0xff) shl 8) or (digest[1].toInt() and 0xff)
         return (value % normalizedCount).toString().padStart(2, '0')
+    }
+
+    fun changedShards(
+        previous: Map<String, List<ManagedLibraryIndexEntry>>,
+        next: Map<String, List<ManagedLibraryIndexEntry>>
+    ): Set<String> {
+        return (previous.keys + next.keys).filterTo(linkedSetOf()) { shard ->
+            previous[shard].orEmpty().sortedBy(ManagedLibraryIndexEntry::stableKey) !=
+                next[shard].orEmpty().sortedBy(ManagedLibraryIndexEntry::stableKey)
+        }
+    }
+
+    fun joinAudioReferences(
+        indexEntries: List<ManagedLibraryIndexEntry>,
+        rootEntries: List<RootEntry>
+    ): Map<String, String> {
+        val referencesByName = rootEntries.associate { entry -> entry.name to entry.reference }
+        return indexEntries.mapNotNull { entry ->
+            referencesByName[entry.audioName]?.let { reference ->
+                entry.audioName to reference
+            }
+        }.toMap()
     }
 
     fun encode(

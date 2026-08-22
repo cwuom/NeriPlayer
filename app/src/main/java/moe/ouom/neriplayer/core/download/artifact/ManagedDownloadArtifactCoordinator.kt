@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -118,13 +119,11 @@ internal class ManagedDownloadArtifactCoordinator {
                     !artifact.audioReference.isNullOrBlank()
             }
         staleCandidates.forEach { artifact ->
-            val missing = runCatching {
-                !ManagedDownloadStorage.isReferenceAccessible(
-                    appContext,
-                    artifact.audioReference
-                )
-            }.getOrNull() == true
-            if (missing) {
+            val evidence = ManagedDownloadReferenceLookup.inspect(
+                context = appContext,
+                reference = artifact.audioReference
+            )
+            if (ManagedDownloadReferenceLookup.canMarkMissing(evidence)) {
                 database.managedDownloadArtifactDao().markMissingIfUnchanged(
                     rootKey = rootKey,
                     stableKey = artifact.stableKey,
@@ -615,7 +614,12 @@ internal class ManagedDownloadArtifactCoordinator {
         val matchingByReference = snapshot.audioEntries.any { entry ->
             entry.reference == current.audioReference || entry.name == current.audioName
         }
-        return !matchingByReference
+        if (matchingByReference) return false
+        val evidence = ManagedDownloadReferenceLookup.inspect(
+            context = context,
+            reference = current.audioReference
+        )
+        return ManagedDownloadReferenceLookup.canMarkMissing(evidence)
     }
 
     private suspend fun loadDiscoverySnapshot(

@@ -39,6 +39,42 @@ class ManagedLibraryFastIndexTest {
         directory.deleteRecursively()
     }
 
+    @Test
+    fun `changed shards only include shards whose entries changed`() {
+        val unchanged = entry("same")
+        val previous = mapOf(
+            "00" to listOf(unchanged),
+            "01" to listOf(entry("old"))
+        )
+        val next = mapOf(
+            "00" to listOf(unchanged),
+            "01" to listOf(entry("new"))
+        )
+
+        assertEquals(
+            setOf("01"),
+            ManagedLibraryFastIndex.changedShards(previous, next)
+        )
+    }
+
+    @Test
+    fun `root entries are joined in memory without per-entry lookup`() {
+        val entries = listOf(entry("a"), entry("b"))
+
+        val joined = ManagedLibraryFastIndex.joinAudioReferences(
+            indexEntries = entries,
+            rootEntries = listOf(
+                ManagedLibraryFastIndex.RootEntry("b.mp3", "content://b"),
+                ManagedLibraryFastIndex.RootEntry("a.mp3", "content://a")
+            )
+        )
+
+        assertEquals(
+            mapOf("a.mp3" to "content://a", "b.mp3" to "content://b"),
+            joined
+        )
+    }
+
     private fun entry(stableKey: String): ManagedLibraryIndexEntry {
         return ManagedLibraryIndexEntry(
             stableKey = stableKey,

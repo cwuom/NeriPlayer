@@ -317,6 +317,21 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `cover sidecar identity uses a collision resistant digest`() {
+        val first = AudioDownloadManager.buildCoverSidecarFileName(
+            baseName = "Artist - Song",
+            songKey = "FB"
+        )
+        val second = AudioDownloadManager.buildCoverSidecarFileName(
+            baseName = "Artist - Song",
+            songKey = "Ea"
+        )
+
+        assertNotEquals(first, second)
+        assertTrue(Regex("-[0-9a-f]{32}\\.jpg$").containsMatchIn(first))
+    }
+
+    @Test
     fun `transfer size completeness rejects short payloads while allowing bounded provider drift`() {
         assertTrue(AudioDownloadManager.isTransferSizeComplete(null, 128L))
         assertTrue(AudioDownloadManager.isTransferSizeComplete(0L, 128L))

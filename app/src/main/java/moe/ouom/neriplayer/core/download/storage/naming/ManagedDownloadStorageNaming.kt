@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.naming
 
 import moe.ouom.neriplayer.core.download.storage.imageExtensions
 import java.text.Normalizer
+import java.security.MessageDigest
 import java.util.Locale
 
 internal object ManagedDownloadStorageNaming {
@@ -22,8 +23,25 @@ internal object ManagedDownloadStorageNaming {
     }
 
     fun buildStableCoverCandidateNames(baseName: String, stableKey: String): List<String> {
-        val suffix = java.lang.Long.toHexString(stableKey.hashCode().toLong() and 0xffffffffL)
-        return imageExtensions.map { extension -> "$baseName-$suffix.$extension" }
+        val suffix = stableKeySuffix(stableKey)
+        val legacySuffix = legacyStableKeySuffix(stableKey)
+        return imageExtensions.flatMap { extension ->
+            listOf(
+                "$baseName-$suffix.$extension",
+                "$baseName-$legacySuffix.$extension"
+            )
+        }.distinct()
+    }
+
+    fun stableKeySuffix(stableKey: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(stableKey.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+            .take(32)
+    }
+
+    fun legacyStableKeySuffix(stableKey: String): String {
+        return java.lang.Long.toHexString(stableKey.hashCode().toLong() and 0xffffffffL)
     }
 
     fun buildLyricCandidateNames(

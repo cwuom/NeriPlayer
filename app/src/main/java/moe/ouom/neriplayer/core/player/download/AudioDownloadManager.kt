@@ -35,6 +35,7 @@ import android.net.Uri
 import android.os.Looper
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -57,12 +58,15 @@ import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelled
+import moe.ouom.neriplayer.core.download.DownloadCoreCommitPhase
 import moe.ouom.neriplayer.core.download.ManagedDownloadRecoveryFiles
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
+import moe.ouom.neriplayer.core.download.shouldRollbackCancelledAudio
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.policy.shouldUseIndexedSidecarLookup
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
@@ -192,8 +196,6 @@ object AudioDownloadManager {
         ConcurrentHashMap<String, ManagedDownloadStorage.StoredEntry>()
     private val partialSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
-    private val preparedDownloadArtifactsBySongKey =
-        ConcurrentHashMap<String, PreparedDownloadArtifacts>()
     private val hlsResumeStatesByWorkingPath =
         ConcurrentHashMap<String, HlsResumeState>()
     private val retryWakeSignalVersion = MutableStateFlow(0L)
@@ -1219,46 +1221,6 @@ object AudioDownloadManager {
         partialSidecarReferencesBySongKey.remove(songKey)
     }
 
-    private fun rememberPreparedDownloadArtifacts(
-        context: android.content.Context,
-        songKey: String,
-        artifacts: PreparedDownloadArtifacts
-    ) {
-        val persisted = runCatching {
-            PreparedDownloadArtifactsStore.persist(context, artifacts)
-        }.getOrElse { error ->
-            NPLogger.w(TAG, "保存 sidecar prepare manifest 失败: ${error.message}")
-            artifacts
-        }
-        val previous = preparedDownloadArtifactsBySongKey.put(songKey, persisted)
-        if (previous != null && previous.stagedFilePaths != persisted.stagedFilePaths) {
-            previous.cleanup()
-        }
-    }
-
-    internal fun consumePreparedDownloadArtifacts(
-        context: android.content.Context,
-        songKey: String
-    ): PreparedDownloadArtifacts? {
-        return preparedDownloadArtifactsBySongKey.remove(songKey)
-            ?: PreparedDownloadArtifactsStore.restore(context, songKey)
-    }
-
-    internal fun clearPreparedDownloadArtifactsForCancellation(
-        context: android.content.Context,
-        songKey: String
-    ) {
-        clearPreparedDownloadArtifacts(context, songKey)
-    }
-
-    private fun clearPreparedDownloadArtifacts(
-        context: android.content.Context,
-        songKey: String
-    ) {
-        preparedDownloadArtifactsBySongKey.remove(songKey)?.cleanup()
-        PreparedDownloadArtifactsStore.delete(context, songKey)
-    }
-
     internal fun mergeDownloadedSidecarReferences(
         existing: DownloadedSidecarReferences?,
         incoming: DownloadedSidecarReferences?
@@ -1454,18 +1416,21 @@ object AudioDownloadManager {
         context: Context,
         song: SongItem,
         batchSessionId: Long? = null,
-        attemptId: Long? = null
+        attemptId: Long? = null,
+        operationId: String? = null
     ) {
         withConfiguredDownloadPermit(context) {
             withContext(Dispatchers.IO) {
                 val songKey = song.stableKey()
-                val operationId = UUID.randomUUID().toString()
+                val effectiveOperationId = operationId?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?: UUID.randomUUID().toString()
                 var storedAudio: ManagedDownloadStorage.StoredEntry? = null
                 var tempFile: File? = null
+                var coreCommitPhase = DownloadCoreCommitPhase.STAGING
                 beginSongDownloadOperation(songKey)
                 clearCompletedAudioReference(songKey)
                 clearPartialSidecarReferences(songKey)
-                clearPreparedDownloadArtifacts(context, songKey)
                 try {
                     ensureSongDownloadNotCancelled(songKey, "prepare", batchSessionId, attemptId)
                     if (LocalSongSupport.isLocalSong(song, context)) {
@@ -1620,7 +1585,7 @@ object AudioDownloadManager {
                                     context = context,
                                     songKey = songKey,
                                     fileName = fileName,
-                                    operationId = operationId
+                                    operationId = effectiveOperationId
                                 )
                                 activeWorkingFileName = fileName
                                 activeTransportKind = transportKind
@@ -1631,7 +1596,7 @@ object AudioDownloadManager {
                             ManagedDownloadStorage.saveWorkingResumeMetadata(
                                 workingFile = workingFile,
                                 song = workingSong,
-                                operationId = operationId
+                                operationId = effectiveOperationId
                             )
                             val client = backgroundDownloadClient
 
@@ -1673,7 +1638,7 @@ object AudioDownloadManager {
                                 context = context,
                                 song = workingSong,
                                 audioTargetName = fileName,
-                                operationId = operationId
+                                operationId = effectiveOperationId
                             )
                             if (!ManagedDownloadStorage.writePendingAudioMetadata(
                                     context = context,
@@ -1710,26 +1675,31 @@ object AudioDownloadManager {
                                 attemptId = attemptId
                             )
                             ensureSongDownloadNotCancelled(songKey, "audio_commit", batchSessionId, attemptId)
-                            storedAudio = ManagedDownloadStorage.saveAudioFromTemp(
-                                context = context,
-                                fileName = fileName,
-                                tempFile = workingFile,
-                                mimeType = mime,
-                                expectedSizeBytes = commitExpectedBytes,
-                                transferSizeVerified = true,
-                                // 元数据收尾由完成回调负责，不能阻塞音频 core commit
-                                seedMetadataJson = null
-                            )
-                            val coreMetadata = JSONObject(pendingMetadata).apply {
-                                put("artifactState", "CORE_COMMITTED")
-                            }.toString()
-                            storedAudio = ManagedDownloadStorage.promoteCoreAudioMetadata(
-                                context = context,
-                                audio = storedAudio,
-                                json = coreMetadata
-                            ) ?: throw IOException(
-                                "无法提升下载音频，core metadata 尚未完成: ${workingSong.name}"
-                            )
+                            coreCommitPhase = DownloadCoreCommitPhase.COMMITTING
+                            storedAudio = withContext(NonCancellable) {
+                                var committedAudio = ManagedDownloadStorage.saveAudioFromTemp(
+                                    context = context,
+                                    fileName = fileName,
+                                    tempFile = workingFile,
+                                    mimeType = mime,
+                                    expectedSizeBytes = commitExpectedBytes,
+                                    transferSizeVerified = true,
+                                    // 元数据收尾由完成回调负责，不能阻塞音频 core commit
+                                    seedMetadataJson = null
+                                )
+                                val coreMetadata = JSONObject(pendingMetadata).apply {
+                                    put("artifactState", "CORE_COMMITTED")
+                                }.toString()
+                                committedAudio = ManagedDownloadStorage.promoteCoreAudioMetadata(
+                                    context = context,
+                                    audio = committedAudio,
+                                    json = coreMetadata
+                                ) ?: throw IOException(
+                                    "无法提升下载音频，core metadata 尚未完成: ${workingSong.name}"
+                                )
+                                committedAudio
+                            }
+                            coreCommitPhase = DownloadCoreCommitPhase.CORE_COMMITTED
                             if (storedAudio.isPendingAudioWrite) {
                                 NPLogger.w(
                                     TAG,
@@ -1738,7 +1708,6 @@ object AudioDownloadManager {
                                 )
                             }
                             ManagedDownloadStorage.deleteWorkingResumeMetadata(workingFile)
-                            ensureSongDownloadNotCancelled(songKey, "audio_committed", batchSessionId, attemptId)
                             publishFinalizingProgress(
                                 songId = workingSong.id,
                                 songKey = workingSong.stableKey(),
@@ -1766,7 +1735,6 @@ object AudioDownloadManager {
                                     GlobalDownloadManager.isSongCancelled(songKey)
                                 )
                             ) {
-                                clearPreparedDownloadArtifacts(context, songKey)
                             }
                             if (
                                 error is java.util.concurrent.CancellationException ||
@@ -1778,6 +1746,7 @@ object AudioDownloadManager {
                                 NPLogger.d(TAG, "下载已取消: ${song.name}")
                                 if (
                                     !preserveArtifacts &&
+                                    shouldRollbackCancelledAudio(coreCommitPhase) &&
                                     (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
                                 ) {
                                     runCatching {
@@ -1890,6 +1859,7 @@ object AudioDownloadManager {
                         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
                         if (
                             !preserveArtifacts &&
+                            shouldRollbackCancelledAudio(coreCommitPhase) &&
                             (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
                         ) {
                             runCatching {
@@ -2006,456 +1976,6 @@ object AudioDownloadManager {
             ),
             createdReferences
         )
-    }
-
-    private data class ResolvedLyricsForPreparation(
-        val lyric: String?,
-        val translatedLyric: String?,
-        val romanizedLyric: String?
-    )
-
-    internal suspend fun prepareDownloadArtifacts(
-        context: Context,
-        song: SongItem,
-        songKey: String,
-        baseName: String,
-        audioTargetName: String,
-        batchSessionId: Long? = null,
-        attemptId: Long? = null,
-        operationId: String = UUID.randomUUID().toString()
-    ): PreparedDownloadArtifacts = coroutineScope {
-        val lyricJob = async(Dispatchers.IO) {
-            try {
-                ensureSongDownloadNotCancelled(
-                    songKey = songKey,
-                    stage = "lyrics_prepare",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId
-                )
-                resolveLyricsForPreparation(context, song)
-            } catch (error: java.util.concurrent.CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                NPLogger.w(TAG, "下载前歌词准备失败: ${song.name}, ${error.message}")
-                null
-            }
-        }
-        val coverJob = async(Dispatchers.IO) {
-            try {
-                prepareCoverArtifact(
-                    context = context,
-                    song = song,
-                    songKey = songKey,
-                    baseName = baseName,
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId,
-                    operationId = operationId
-                )
-            } catch (error: java.util.concurrent.CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                NPLogger.w(TAG, "下载前封面准备失败: ${song.name}, ${error.message}")
-                null
-            }
-        }
-        val lyrics = lyricJob.await()
-        val cover = coverJob.await()
-        val lyricArtifact = lyrics?.lyric?.let { text ->
-            stageTextArtifact(
-                context = context,
-                songKey = songKey,
-                suffix = "lrc",
-                targetName = buildLyricSidecarFileName(baseName, songKey, translated = false),
-                content = text,
-                operationId = operationId
-            )
-        }
-        val translatedArtifact = lyrics?.translatedLyric?.let { text ->
-            stageTextArtifact(
-                context = context,
-                songKey = songKey,
-                suffix = "translated.lrc",
-                targetName = buildLyricSidecarFileName(baseName, songKey, translated = true),
-                content = text,
-                operationId = operationId
-            )
-        }
-        val romanizedArtifact = lyrics?.romanizedLyric?.let { text ->
-            stageTextArtifact(
-                context = context,
-                songKey = songKey,
-                suffix = "romanized.lrc",
-                targetName = buildRomanizedLyricSidecarFileName(baseName, songKey),
-                content = text,
-                operationId = operationId
-            )
-        }
-        PreparedDownloadArtifacts(
-            songKey = songKey,
-            attemptId = attemptId,
-            operationId = operationId,
-            audioTargetName = audioTargetName,
-            lyric = lyricArtifact,
-            translatedLyric = translatedArtifact,
-            romanizedLyric = romanizedArtifact,
-            cover = cover,
-            expectedLyric = !lyrics?.lyric.isNullOrBlank(),
-            expectedTranslatedLyric = !lyrics?.translatedLyric.isNullOrBlank(),
-            expectedRomanizedLyric = !lyrics?.romanizedLyric.isNullOrBlank()
-        )
-    }
-
-    internal suspend fun commitPreparedDownloadArtifacts(
-        context: Context,
-        song: SongItem,
-        storedAudio: ManagedDownloadStorage.StoredEntry,
-        artifacts: PreparedDownloadArtifacts
-    ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
-        var coverReference: String? = null
-        var lyricReference: String? = null
-        var translatedLyricReference: String? = null
-        var romanizedLyricReference: String? = null
-        fun <T> commitOne(label: String, block: () -> T?): T? {
-            return try {
-                block()
-            } catch (error: java.util.concurrent.CancellationException) {
-                throw error
-            } catch (error: Throwable) {
-                NPLogger.w(TAG, "已准备 $label 提交失败: ${song.name}, ${error.message}")
-                null
-            }
-        }
-        try {
-            coverReference = commitOne("封面") {
-                artifacts.cover?.let { cover ->
-                ManagedDownloadStorage.commitCoverFile(
-                    context = context,
-                    tempFile = cover.file,
-                    fileName = cover.targetName,
-                    mimeType = cover.mimeType
-                )?.reference
-                }
-            }
-            lyricReference = commitOne("原文歌词") {
-                commitPreparedTextArtifact(
-                    context = context,
-                    song = song,
-                    baseName = storedAudio.nameWithoutExtension,
-                    artifact = artifacts.lyric,
-                    translated = false
-                )
-            }
-            translatedLyricReference = commitOne("翻译歌词") {
-                commitPreparedTextArtifact(
-                    context = context,
-                    song = song,
-                    baseName = storedAudio.nameWithoutExtension,
-                    artifact = artifacts.translatedLyric,
-                    translated = true
-                )
-            }
-            romanizedLyricReference = commitOne("音译歌词") {
-                artifacts.romanizedLyric?.readText()?.let { text ->
-                ManagedDownloadStorage.writeRomanizedLyrics(
-                    context = context,
-                    songId = song.id,
-                    baseName = storedAudio.nameWithoutExtension,
-                    content = text
-                )
-                }
-            }
-        } catch (error: java.util.concurrent.CancellationException) {
-            throw error
-        }
-        DownloadedSidecarReferences(
-            coverReference = coverReference,
-            lyricReference = lyricReference,
-            translatedLyricReference = translatedLyricReference,
-            romanizedLyricReference = romanizedLyricReference,
-            expectedCover = artifacts.cover != null,
-            expectedLyric = artifacts.expectedLyric,
-            expectedTranslatedLyric = artifacts.expectedTranslatedLyric,
-            expectedRomanizedLyric = artifacts.expectedRomanizedLyric,
-            createdCover = !coverReference.isNullOrBlank(),
-            createdLyric = !lyricReference.isNullOrBlank(),
-            createdTranslatedLyric = !translatedLyricReference.isNullOrBlank(),
-            createdRomanizedLyric = !romanizedLyricReference.isNullOrBlank(),
-            prepared = true
-        )
-    }
-
-    private suspend fun prepareEmbeddedMetadataOnTemp(
-        context: Context,
-        tempFile: File,
-        targetFileName: String,
-        song: SongItem,
-        artifacts: PreparedDownloadArtifacts
-    ): EmbeddedTagPreparationState {
-        val enabled = runCatching {
-            context.applicationContext
-                .autoSettingFlow(AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled)
-                .first()
-        }.getOrElse { error ->
-            NPLogger.w(TAG, "读取临时音频标签设置失败: ${error.message}")
-            AutoSettingsSchema.download.downloadMetadataPostProcessingEnabled.defaultValue
-        }
-        if (!enabled) {
-            return EmbeddedTagPreparationState.NOT_REQUESTED
-        }
-        val tempAudio = ManagedDownloadStorage.StoredEntry(
-            // taglib selects the container from the final extension, not the staging suffix
-            name = targetFileName,
-            reference = tempFile.absolutePath,
-            mediaUri = Uri.fromFile(tempFile).toString(),
-            localFilePath = tempFile.absolutePath,
-            sizeBytes = tempFile.length(),
-            lastModifiedMs = tempFile.lastModified()
-        )
-        val sidecarReferences = DownloadedSidecarReferences(
-            coverReference = artifacts.cover?.file?.absolutePath,
-            lyricReference = artifacts.lyric?.file?.absolutePath,
-            translatedLyricReference = artifacts.translatedLyric?.file?.absolutePath,
-            romanizedLyricReference = artifacts.romanizedLyric?.file?.absolutePath,
-            expectedCover = artifacts.cover != null,
-            expectedLyric = artifacts.expectedLyric,
-            expectedTranslatedLyric = artifacts.expectedTranslatedLyric,
-            expectedRomanizedLyric = artifacts.expectedRomanizedLyric,
-            prepared = true
-        )
-        val standardizedLyricEmbeddingEnabled = runCatching {
-            context.applicationContext
-                .autoSettingFlow(AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled)
-                .first()
-        }.getOrElse { error ->
-            NPLogger.w(TAG, "读取临时音频歌词标签设置失败: ${error.message}")
-            AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled.defaultValue
-        }
-        val result = try {
-            DownloadedAudioTagWriter.write(
-                context = context,
-                audio = tempAudio,
-                song = song,
-                sidecarReferences = sidecarReferences,
-                standardizedLyricEmbeddingEnabled = standardizedLyricEmbeddingEnabled
-            )
-        } catch (error: java.util.concurrent.CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            NPLogger.w(TAG, "临时音频标签写入失败: ${song.name}, ${error.message}")
-            return EmbeddedTagPreparationState.RETRYABLE_FAILURE
-        }
-        return when (result) {
-            moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome.SUCCESS ->
-                EmbeddedTagPreparationState.PREPARED_ON_TEMP_AUDIO
-            moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER ->
-                EmbeddedTagPreparationState.UNSUPPORTED
-            moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome.FAILED ->
-                EmbeddedTagPreparationState.RETRYABLE_FAILURE
-        }
-    }
-
-    private fun commitPreparedTextArtifact(
-        context: Context,
-        song: SongItem,
-        baseName: String,
-        artifact: PreparedTextArtifact?,
-        translated: Boolean
-    ): String? {
-        val content = artifact?.readText() ?: return null
-        return ManagedDownloadStorage.writeLyrics(
-            context = context,
-            songId = song.id,
-            baseName = baseName,
-            content = content,
-            translated = translated
-        )
-    }
-
-    private suspend fun resolveLyricsForPreparation(
-        context: Context,
-        song: SongItem
-    ): ResolvedLyricsForPreparation {
-        var lyricText = resolveLocalLyricForDownload(song.matchedLyric)
-        var translatedText = resolveLocalLyricForDownload(song.matchedTranslatedLyric)
-        var romanizedText: String? = null
-        val shouldFetchPrimaryLyric = shouldFetchRemoteLyricForDownload(song.matchedLyric)
-        val shouldFetchTranslatedLyric =
-            shouldFetchRemoteLyricForDownload(song.matchedTranslatedLyric)
-        val shouldFetchRomanizedLyric = shouldFetchRomanizedLyricForDownload(
-            shouldFetchPrimaryLyric = shouldFetchPrimaryLyric,
-            shouldFetchTranslatedLyric = shouldFetchTranslatedLyric
-        )
-        if (lyricText != null) {
-            NPLogger.d(TAG, context.getString(R.string.download_lyrics_matched, song.name))
-        }
-        val isYouTubeMusic = isYouTubeMusicSong(song)
-        val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
-        when {
-            isYouTubeMusic -> {
-                if (lyricText == null && shouldFetchPrimaryLyric) {
-                    lyricText = downloadYouTubeMusicLyrics(song)
-                }
-            }
-            isBili -> Unit
-            else -> {
-                val downloaded = downloadNeteaseLyrics(
-                    song = song,
-                    shouldFetchPrimaryLyric = shouldFetchPrimaryLyric && lyricText == null,
-                    shouldFetchTranslatedLyric =
-                        shouldFetchTranslatedLyric && translatedText == null,
-                    shouldFetchRomanizedLyric = shouldFetchRomanizedLyric && romanizedText == null
-                )
-                if (lyricText == null && shouldFetchPrimaryLyric) {
-                    lyricText = downloaded.lyricText
-                }
-                if (translatedText == null && shouldFetchTranslatedLyric) {
-                    translatedText = downloaded.translatedText
-                }
-                if (romanizedText == null && shouldFetchRomanizedLyric) {
-                    romanizedText = downloaded.romanizedText
-                }
-            }
-        }
-        return ResolvedLyricsForPreparation(
-            lyric = lyricText?.takeIf(String::isNotBlank),
-            translatedLyric = translatedText?.takeIf(String::isNotBlank),
-            romanizedLyric = romanizedText?.takeIf(String::isNotBlank)
-        )
-    }
-
-    private suspend fun prepareCoverArtifact(
-        context: Context,
-        song: SongItem,
-        songKey: String,
-        baseName: String,
-        batchSessionId: Long?,
-        attemptId: Long?,
-        operationId: String
-    ): PreparedBinaryArtifact? {
-        val candidates = buildCoverDownloadCandidateUrls(song)
-        if (candidates.isEmpty()) return null
-        val targetName = buildCoverSidecarFileName(baseName, songKey)
-        candidates.forEachIndexed { candidateIndex, coverUrl ->
-            repeat(COVER_DOWNLOAD_MAX_ATTEMPTS) { retryIndex ->
-                ensureSongDownloadNotCancelled(
-                    songKey = songKey,
-                    stage = "cover_prepare",
-                    batchSessionId = batchSessionId,
-                    attemptId = attemptId
-                )
-                val prepared = runCatching {
-                    downloadCoverCandidateToStaging(
-                        context = context,
-                        songKey = songKey,
-                        coverUrl = coverUrl,
-                        targetName = targetName,
-                        batchSessionId = batchSessionId,
-                        attemptId = attemptId,
-                        operationId = operationId
-                    )
-                }.getOrElse { error ->
-                    if (error is java.util.concurrent.CancellationException) throw error
-                    NPLogger.w(
-                        TAG,
-                        "下载前封面准备失败: song=${song.name}, " +
-                            "candidate=${candidateIndex + 1}/${candidates.size}, " +
-                            "attempt=${retryIndex + 1}/$COVER_DOWNLOAD_MAX_ATTEMPTS, " +
-                            "message=${error.message}"
-                    )
-                    null
-                }
-                if (prepared != null) return prepared
-                if (retryIndex + 1 < COVER_DOWNLOAD_MAX_ATTEMPTS) {
-                    delay(COVER_DOWNLOAD_RETRY_DELAY_MS * (retryIndex + 1))
-                }
-            }
-        }
-        return null
-    }
-
-    private fun downloadCoverCandidateToStaging(
-        context: Context,
-        songKey: String,
-        coverUrl: String,
-        targetName: String,
-        batchSessionId: Long?,
-        attemptId: Long?,
-        operationId: String
-    ): PreparedBinaryArtifact? {
-        val request = Request.Builder().url(coverUrl).build()
-        return executeTrackedCall(
-            client = backgroundDownloadClient,
-            request = request,
-            songKey = songKey
-        ) { response ->
-            if (!response.isSuccessful) {
-                throw IOException("封面请求失败: HTTP ${response.code}")
-            }
-            val body = response.body
-            val contentType = body.contentType()?.toString()
-                ?.takeIf { it.startsWith("image/", ignoreCase = true) }
-                ?: "image/jpeg"
-            val bytes = body.bytes()
-            ensureSongDownloadNotCancelled(
-                songKey = songKey,
-                stage = "cover_staged",
-                batchSessionId = batchSessionId,
-                attemptId = attemptId
-            )
-            if (bytes.isEmpty() || !isUsableCoverBytes(bytes)) {
-                throw IOException("封面文件校验失败")
-            }
-            val target = ManagedDownloadRecoveryFiles.createSidecarStagingFile(
-                context = context,
-                songKey = songKey,
-                suffix = "jpg",
-                operationId = operationId
-            )
-            FileOutputStream(target).use { output ->
-                output.write(bytes)
-                output.fd.sync()
-            }
-            PreparedBinaryArtifact(
-                file = target,
-                size = bytes.size.toLong(),
-                sha256 = sha256(bytes),
-                mimeType = contentType,
-                targetName = targetName
-            )
-        }
-    }
-
-    private fun stageTextArtifact(
-        context: Context,
-        songKey: String,
-        suffix: String,
-        targetName: String,
-        content: String,
-        operationId: String
-    ): PreparedTextArtifact? {
-        if (content.isBlank()) return null
-        val file = ManagedDownloadRecoveryFiles.createSidecarStagingFile(
-            context = context,
-            songKey = songKey,
-            suffix = suffix,
-            operationId = operationId
-        )
-        return runCatching {
-            ManagedDownloadAtomicFile.writeTextAtomically(file, content)
-            PreparedTextArtifact(
-                file = file,
-                sha256 = sha256(content.toByteArray(Charsets.UTF_8)),
-                targetName = targetName
-            )
-        }.onFailure {
-            runCatching { file.delete() }
-        }.getOrNull()
-    }
-
-    private fun sha256(bytes: ByteArray): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { byte -> "%02x".format(byte) }
     }
 
     private suspend fun <T> withConfiguredDownloadPermit(
@@ -2695,7 +2215,7 @@ object AudioDownloadManager {
     }
 
     internal fun buildCoverSidecarFileName(baseName: String, songKey: String): String {
-        val suffix = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(songKey)
         return "$baseName-$suffix.jpg"
     }
 
@@ -2704,7 +2224,7 @@ object AudioDownloadManager {
         songKey: String,
         translated: Boolean
     ): String {
-        val suffix = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(songKey)
         val variant = if (translated) "_trans" else ""
         return "$baseName$variant-$suffix.lrc"
     }
@@ -2713,7 +2233,7 @@ object AudioDownloadManager {
         baseName: String,
         songKey: String
     ): String {
-        val suffix = java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(songKey)
         return "$baseName-roma-$suffix.lrc"
     }
 

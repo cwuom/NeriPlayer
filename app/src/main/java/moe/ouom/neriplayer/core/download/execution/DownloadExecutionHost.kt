@@ -72,7 +72,11 @@ private object ExistingDownloadOperationEntryPoint : DownloadOperationEntryPoint
         song: SongItem
     ) {
         // keep the engine behind one entry point so hosts do not duplicate transfer logic
-        GlobalDownloadManager.startDownload(context, song)
+        GlobalDownloadManager.startDownload(
+            context = context,
+            song = song,
+            operationId = operationId
+        )
     }
 }
 

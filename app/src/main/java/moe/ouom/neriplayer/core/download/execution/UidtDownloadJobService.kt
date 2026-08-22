@@ -65,11 +65,10 @@ class UidtDownloadJobService : JobService() {
 
     override fun onStopJob(params: JobParameters): Boolean {
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.stopReason != JobParameters.STOP_REASON_USER
-        } else {
-            true
-        }
+        return shouldRescheduleUidtJob(
+            stopReason = params.stopReason,
+            sdkInt = Build.VERSION.SDK_INT
+        )
     }
 
     override fun onDestroy() {

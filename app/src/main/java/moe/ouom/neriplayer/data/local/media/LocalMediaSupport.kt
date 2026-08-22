@@ -50,6 +50,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
@@ -6817,7 +6818,7 @@ object LocalMediaSupport {
     ): String {
         val normalizedKey = stableIdentityKey?.trim()?.takeIf(String::isNotBlank)
             ?: return "$baseName.$extension"
-        val suffix = java.lang.Long.toHexString(normalizedKey.hashCode().toLong() and 0xffffffffL)
+        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(normalizedKey)
         return "$baseName-$suffix.$extension"
     }
 
@@ -6826,8 +6827,15 @@ object LocalMediaSupport {
         extension: String,
         stableIdentityKey: String?
     ): List<String> {
+        val legacyName = stableIdentityKey
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { key ->
+                "$baseName-${ManagedDownloadStorageNaming.legacyStableKeySuffix(key)}.$extension"
+            }
         return listOfNotNull(
             localCoverSidecarName(baseName, extension, stableIdentityKey),
+            legacyName,
             "$baseName.$extension".takeUnless {
                 stableIdentityKey.isNullOrBlank()
             }

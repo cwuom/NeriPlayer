@@ -35,6 +35,7 @@ import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
@@ -565,7 +566,8 @@ internal object ManagedDownloadStorage {
         val libraryId: String? = null,
         val libraryAddedAtMs: Long? = null,
         val sourceCreatedAtMs: Long? = null,
-        val sourceModifiedAtMs: Long? = null
+        val sourceModifiedAtMs: Long? = null,
+        val restorableMetadata: ManagedDownloadRestorableMetadata? = null
     )
 
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
@@ -1582,13 +1584,28 @@ internal object ManagedDownloadStorage {
             )
         }
         val entriesByShard = entries.groupBy { entry -> ManagedLibraryFastIndex.shardFor(entry.stableKey) }
+        val existingShards = listSubdirectoryEntries(
+            context = context,
+            root = resolveRootBlocking(context),
+            subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME
+        ).asSequence()
+            .filter { entry -> entry.name.startsWith("shard-") && entry.name.endsWith(".json") }
+            .mapNotNull { entry ->
+                readTextInternal(context, entry.reference)
+                    ?.let(ManagedLibraryFastIndex::decode)
+            }
+            .filter { shard -> shard.libraryId == libraryId }
+            .associate { shard -> shard.shard to shard.entries }
+        val allShards = (existingShards.keys + entriesByShard.keys).associateWith { shard ->
+            entriesByShard[shard].orEmpty()
+        }
+        val changedShards = ManagedLibraryFastIndex.changedShards(existingShards, allShards)
         val nowMs = System.currentTimeMillis()
-        (0 until ManagedLibraryFastIndex.DEFAULT_SHARD_COUNT).forEach { shardNumber ->
-            val shard = shardNumber.toString().padStart(2, '0')
+        changedShards.forEach { shard ->
             val payload = ManagedLibraryFastIndex.encode(
                 libraryId = libraryId,
                 shard = shard,
-                entries = entriesByShard[shard].orEmpty(),
+                entries = allShards[shard].orEmpty(),
                 generatedAtMs = nowMs
             )
             writeSubdirectoryBytesBlocking(
@@ -1647,8 +1664,17 @@ internal object ManagedDownloadStorage {
             }
         if (entries.isEmpty()) return false
         val root = resolveRootBlocking(context)
+        val rootEntries = listChildren(context, root)
+            .filterNot(StoredEntry::isDirectory)
+            .map { entry ->
+                ManagedLibraryFastIndex.RootEntry(
+                    name = entry.name,
+                    reference = entry.reference
+                )
+            }
+        val currentReferences = ManagedLibraryFastIndex.joinAudioReferences(entries, rootEntries)
         val audioEntries = entries.mapNotNull { entry ->
-            val currentReference = findRootNamedEntry(root, entry.audioName)?.reference
+            val currentReference = currentReferences[entry.audioName]
                 ?: (root as? RootHandle.FileRoot)
                     ?.let { entry.audioReference.takeIf(String::isNotBlank) }
                 ?: return@mapNotNull null
