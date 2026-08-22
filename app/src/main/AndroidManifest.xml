@@ -46,6 +46,9 @@
         <meta-data android:name="lyricon_module" android:value="true" />
         <meta-data android:name="lyricon_module_author" android:value="NeriPlayer" />
         <meta-data android:name="lyricon_module_description" android:value="NeriPlayer Lyricon Provider" />
+        <meta-data
+            android:name="lyricon_module_tags"
+            android:resource="@array/lyricon_module_tags" />
 
         <activity
             android:name=".activity.MainActivity"
