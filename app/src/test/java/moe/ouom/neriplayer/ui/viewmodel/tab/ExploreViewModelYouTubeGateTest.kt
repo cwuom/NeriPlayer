@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +19,45 @@ class ExploreViewModelYouTubeGateTest {
         coverUrl = "",
         durationMs = 1_000L
     )
+
+    @Test
+    fun `valid Netease auth keeps search available`() {
+        assertTrue(isNeteaseExploreSearchAvailable(SavedCookieAuthState.Valid))
+    }
+
+    @Test
+    fun `missing Netease auth blocks search`() {
+        assertFalse(isNeteaseExploreSearchAvailable(SavedCookieAuthState.Missing))
+    }
+
+    @Test
+    fun `missing Netease auth clears stale paginated results`() {
+        val state = ExploreUiState(
+            selectedSearchSource = SearchSource.NETEASE,
+            searching = false,
+            searchResults = listOf(result),
+            searchItems = listOf(ExploreSearchResult.Song(result)),
+            searchHasMore = true,
+            searchLoadingMore = true,
+            searchLoadMoreError = "temporary error",
+            searchPage = 3,
+            searchKeyword = "song",
+            searchDisplayQuery = "song"
+        )
+
+        val blocked = state.withNeteaseAuthRequired("login required")
+
+        assertFalse(blocked.searching)
+        assertEquals("login required", blocked.searchError)
+        assertTrue(blocked.searchResults.isEmpty())
+        assertTrue(blocked.searchItems.isEmpty())
+        assertFalse(blocked.searchHasMore)
+        assertFalse(blocked.searchLoadingMore)
+        assertNull(blocked.searchLoadMoreError)
+        assertEquals(0, blocked.searchPage)
+        assertEquals("song", blocked.searchKeyword)
+        assertEquals("song", blocked.searchDisplayQuery)
+    }
 
     @Test
     fun `disabling YouTube preserves another source search state`() {

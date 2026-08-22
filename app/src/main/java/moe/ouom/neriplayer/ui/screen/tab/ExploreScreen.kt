@@ -278,6 +278,14 @@ internal fun shouldResetExploreSearchScroll(
     return currentContextKey != null && previousContextKey != currentContextKey
 }
 
+internal fun shouldRenderExploreSearchResults(
+    page: Int,
+    currentPage: Int
+): Boolean = page == currentPage
+
+internal fun exploreSearchResultsBottomPadding(miniPlayerHeight: Dp): Dp =
+    16.dp + miniPlayerHeight
+
 internal fun shouldShowBiliPartsPicker(song: SongItem): Boolean {
     return song.album == PlayerManager.BILI_SOURCE_TAG ||
         song.album.startsWith("${PlayerManager.BILI_SOURCE_TAG}|")
@@ -856,48 +864,51 @@ fun ExploreScreen(
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
             ) { page ->
                 val currentSource = orderedSearchSources[page]
                 if (searchQuery.isNotEmpty()) {
-                    when {
-                        ui.searching -> {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(bottom = miniPlayerHeight),
-                                Alignment.Center
-                            ) { CircularProgressIndicator() }
-                        }
-                        ui.searchError != null -> {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(bottom = miniPlayerHeight),
-                                Alignment.Center
-                            ) {
-                                Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
+                    if (shouldRenderExploreSearchResults(page, pagerState.currentPage)) {
+                        when {
+                            ui.searching -> {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(bottom = miniPlayerHeight),
+                                    Alignment.Center
+                                ) { CircularProgressIndicator() }
                             }
-                        }
-                        ui.searchItems.isEmpty() -> {
-                            Box(
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(bottom = miniPlayerHeight),
-                                Alignment.Center
-                            ) { Text(stringResource(R.string.search_no_result)) }
-                        }
-                        else -> {
-                            LazyColumn(
-                                state = searchListState,
-                                contentPadding = PaddingValues(
-                                    start = searchResultHorizontalPadding,
-                                    end = searchResultHorizontalPadding,
-                                    top = 8.dp,
-                                    bottom = 16.dp + miniPlayerHeight
-                                ),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
+                            ui.searchError != null -> {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(bottom = miniPlayerHeight),
+                                    Alignment.Center
+                                ) {
+                                    Text(ui.searchError!!, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            ui.searchItems.isEmpty() -> {
+                                Box(
+                                    Modifier
+                                        .fillMaxSize()
+                                        .padding(bottom = miniPlayerHeight),
+                                    Alignment.Center
+                                ) { Text(stringResource(R.string.search_no_result)) }
+                            }
+                            else -> {
+                                LazyColumn(
+                                    state = searchListState,
+                                    contentPadding = PaddingValues(
+                                        start = searchResultHorizontalPadding,
+                                        end = searchResultHorizontalPadding,
+                                        top = 8.dp,
+                                        bottom = exploreSearchResultsBottomPadding(miniPlayerHeight)
+                                    ),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
                                 itemsIndexed(
                                     items = ui.searchItems,
                                     key = { _, item -> item.stableKey }
@@ -1021,8 +1032,11 @@ fun ExploreScreen(
                                         )
                                     }
                                 }
+                                }
                             }
                         }
+                    } else {
+                        Box(Modifier.fillMaxSize())
                     }
                 } else {
                     when (currentSource) {
