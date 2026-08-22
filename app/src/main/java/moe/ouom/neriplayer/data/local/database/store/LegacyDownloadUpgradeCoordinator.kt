@@ -326,8 +326,7 @@ internal class LegacyDownloadUpgradeCoordinator(
 
     private fun cleanTemporaryTable(database: androidx.sqlite.db.SupportSQLiteDatabase): Boolean {
         return runCatching {
-            // Room v16 keeps the schema anchor so the next open validates consistently
-            database.execSQL("DELETE FROM $PAYLOAD_TABLE")
+            database.execSQL("DROP TABLE IF EXISTS $PAYLOAD_TABLE")
             true
         }.getOrDefault(false)
     }

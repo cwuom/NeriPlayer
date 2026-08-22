@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 16,
-    "identityHash": "79f3c67597d69c0894a123dd1371f7c5",
+    "identityHash": "c206f757a690805b258df5951a012525",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -3541,30 +3541,6 @@
         ]
       },
       {
-        "tableName": "legacy_download_upgrade_payload",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stable_key` TEXT NOT NULL, `payload_json` TEXT NOT NULL, PRIMARY KEY(`stable_key`))",
-        "fields": [
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "payloadJson",
-            "columnName": "payload_json",
-            "affinity": "TEXT",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "stable_key"
-          ]
-        }
-      },
-      {
         "tableName": "platform_playlist_cache",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`platform` TEXT NOT NULL, `cache_key` TEXT NOT NULL, `source_id` INTEGER, `alternate_key` TEXT, `kind` TEXT, `title` TEXT, `subtitle` TEXT, `creator_name` TEXT, `cover_url` TEXT, `play_count` INTEGER, `track_count` INTEGER NOT NULL, `total_count` INTEGER NOT NULL, `signature_primary` TEXT, `signature_secondary` TEXT, `has_more` INTEGER, `saved_at_ms` INTEGER NOT NULL, PRIMARY KEY(`platform`, `cache_key`))",
         "fields": [
@@ -3899,7 +3875,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '79f3c67597d69c0894a123dd1371f7c5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c206f757a690805b258df5951a012525')"
     ]
   }
 }

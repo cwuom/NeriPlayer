@@ -115,6 +115,26 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
+    fun `reference inspection distinguishes missing local files`() {
+        val file = Files.createTempFile("neriplayer-reference", ".txt").toFile()
+        val missing = file.resolveSibling(file.name + ".missing")
+        try {
+            val context = mock(Context::class.java)
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.Accessible,
+                ManagedDownloadReferenceIo.inspect(context, file.absolutePath)
+            )
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.Missing,
+                ManagedDownloadReferenceIo.inspect(context, missing.absolutePath)
+            )
+        } finally {
+            file.delete()
+            missing.delete()
+        }
+    }
+
+    @Test
     fun `unrelated delete failures are not swallowed as missing document`() {
         assertFalse(
             ManagedDownloadStorage.isMissingManagedDocumentFailure(

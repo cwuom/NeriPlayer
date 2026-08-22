@@ -28,6 +28,12 @@ interface DownloadExecutionHost {
         songKey: String
     )
 
+    fun stopForSong(
+        context: Context,
+        songKey: String,
+        preventReschedule: Boolean = false
+    )
+
     fun stop(
         context: Context,
         operationId: String,
@@ -47,7 +53,8 @@ interface DownloadExecutionHost {
 data class DownloadExecutionRequest(
     val operationId: String,
     val song: SongItem,
-    val preserveStaging: Boolean = false
+    val preserveStaging: Boolean = false,
+    val attemptId: Long? = null
 ) {
     init {
         require(normalizeDownloadOperationId(operationId) == operationId) {
@@ -91,12 +98,16 @@ private object ExistingDownloadOperationEntryPoint : DownloadOperationEntryPoint
         song: SongItem,
         preserveStaging: Boolean
     ) {
+        val preparedAttemptId = DownloadExecutionOperationStore()
+            .read(context.applicationContext, operationId)
+            ?.attemptId
         // keep the engine behind one entry point so hosts do not duplicate transfer logic
         GlobalDownloadManager.startDownload(
             context = context,
             song = song,
             operationId = operationId,
-            preserveStaging = preserveStaging
+            preserveStaging = preserveStaging,
+            preparedAttemptId = preparedAttemptId
         )
     }
 }
@@ -174,6 +185,8 @@ class DefaultDownloadExecutionHost(
             cancelUidt(appContext, normalizedId)
         }
         ForegroundDownloadWorker.cancel(appContext, normalizedId)
+        request?.song?.stableKey()?.let(GlobalDownloadManager::cancelDownloadOperationFromHost)
+        GlobalDownloadManager.removeDownloadOperationRecordFromHost(appContext, normalizedId)
         operationStore.remove(appContext, normalizedId)
         request?.song?.stableKey()?.let { songKey ->
             operationIdsBySongKey.remove(songKey, normalizedId)
@@ -191,6 +204,18 @@ class DefaultDownloadExecutionHost(
         cancel(appContext, operationId)
     }
 
+    override fun stopForSong(
+        context: Context,
+        songKey: String,
+        preventReschedule: Boolean
+    ) {
+        val appContext = context.applicationContext
+        val operationId = operationIdsBySongKey[songKey]
+            ?: operationStore.findOperationIdForSong(appContext, songKey)
+            ?: return
+        stop(appContext, operationId, preventReschedule)
+    }
+
     override fun stop(
         context: Context,
         operationId: String,
@@ -203,6 +228,10 @@ class DefaultDownloadExecutionHost(
         if (preventReschedule) {
             operationStore.markStopped(appContext, normalizedId)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            cancelUidt(appContext, normalizedId)
+        }
+        ForegroundDownloadWorker.cancel(appContext, normalizedId)
         GlobalDownloadManager.stopDownloadOperation(
             context = appContext,
             songKey = request.song.stableKey()
@@ -236,8 +265,23 @@ class DefaultDownloadExecutionHost(
             if (result == DownloadExecutionResult.Accepted ||
                 result == DownloadExecutionResult.Cancelled
             ) {
+                runCatching {
+                    DownloadExecutionRoomStore.delete(
+                        context = context.applicationContext,
+                        operationId = normalizedId
+                    )
+                }
                 operationStore.remove(context.applicationContext, normalizedId)
                 operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+            } else if (result is DownloadExecutionResult.Failed) {
+                runCatching {
+                    DownloadExecutionRoomStore.updateState(
+                        context = context.applicationContext,
+                        operationId = normalizedId,
+                        state = "RETRYABLE",
+                        errorCode = result.error.javaClass.simpleName
+                    )
+                }
             }
             result
         } catch (cancellation: CancellationException) {

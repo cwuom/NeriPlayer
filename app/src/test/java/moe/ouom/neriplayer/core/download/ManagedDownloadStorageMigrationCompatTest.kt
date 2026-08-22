@@ -209,6 +209,44 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `migration marks same stable key with different audio size as conflict`() {
+        val sourceAudio = ManagedDownloadStorage.StoredEntry(
+            name = "track.mp3",
+            reference = "/source/track.mp3",
+            mediaUri = "file:///source/track.mp3",
+            localFilePath = "/source/track.mp3",
+            sizeBytes = 20L,
+            lastModifiedMs = 1L
+        )
+        val targetAudio = sourceAudio.copy(
+            reference = "/target/track.mp3",
+            mediaUri = "file:///target/track.mp3",
+            localFilePath = "/target/track.mp3",
+            sizeBytes = 10L
+        )
+        val sourceMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-key"
+        )
+        val targetMetadata = sourceMetadata.copy(
+            mediaUri = targetAudio.mediaUri
+        )
+        val sourceRef = ManagedMigrationEntryRef(null, sourceAudio)
+        val plan = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(sourceRef),
+            targetIndex = ManagedMigrationTargetIndex(
+                rootEntriesByName = mapOf(targetAudio.name to targetAudio),
+                coverEntriesByName = emptyMap(),
+                lyricEntriesByName = emptyMap(),
+                metadataByAudioName = mapOf(targetAudio.name to targetMetadata)
+            ),
+            sourceMetadataByAudioName = mapOf(sourceAudio.name to sourceMetadata)
+        )
+
+        assertTrue(plan.conflictFor(sourceRef)?.contains("different audio sizes") == true)
+        assertTrue(plan.reusedTargetFor(sourceRef) == null)
+    }
+
+    @Test
     fun `migration collector keeps metadata residue when audio was already cleaned`() {
         val metadata = ManagedDownloadStorage.StoredEntry(
             name = "Artist - Song.mp3.npmeta.json",

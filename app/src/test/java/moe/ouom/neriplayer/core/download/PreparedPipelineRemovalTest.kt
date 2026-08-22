@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import java.io.File
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PreparedPipelineRemovalTest {
@@ -18,6 +19,34 @@ class PreparedPipelineRemovalTest {
                 source.contains("PreparedDownloadArtifacts")
             )
         }
+    }
+
+    @Test
+    fun `production sources do not reference the removed prepared artifact types`() {
+        val sourceRoot = locateProjectDirectory()
+            .resolve("app/src/main/java")
+        val references = sourceRoot.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { file ->
+                file.readText().contains("PreparedDownloadArtifacts")
+            }
+            .toList()
+
+        assertTrue(
+            "removed PreparedDownloadArtifacts types are still referenced: $references",
+            references.isEmpty()
+        )
+    }
+
+    private fun locateProjectDirectory(): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        var attempts = 0
+        while (attempts++ < 5) {
+            if (File(directory, "app/src/main/java").isDirectory) return directory
+            val parent = directory.parentFile ?: break
+            directory = parent
+        }
+        error("project source directory not found")
     }
 
     private fun locateProjectFile(path: String): File {

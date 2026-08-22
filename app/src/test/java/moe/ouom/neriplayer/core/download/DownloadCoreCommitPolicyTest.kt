@@ -27,4 +27,13 @@ class DownloadCoreCommitPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `metadata state protects durable audio from late cancellation`() {
+        assertTrue(shouldPreserveAudioAfterCancellation(false, "CORE_COMMITTED"))
+        assertTrue(shouldPreserveAudioAfterCancellation(false, "ASSETS_ENRICHING"))
+        assertTrue(shouldPreserveAudioAfterCancellation(true, "COMMITTING"))
+        assertFalse(shouldPreserveAudioAfterCancellation(false, "COMMITTING"))
+        assertFalse(shouldPreserveAudioAfterCancellation(false, null))
+    }
 }

@@ -28,11 +28,15 @@ class FileStorageBackendTest {
                 assertEquals("audio", (content as StorageLookupResult.Found).value)
                 assertEquals(
                     StorageMutationResult.Deleted,
-                    backend.delete(StorageReference.FileRef("nested/song.mp3"))
+                    backend.delete(
+                        TrustedManagedRef(StorageReference.FileRef("nested/song.mp3"))
+                    )
                 )
                 assertEquals(
                     StorageMutationResult.Missing,
-                    backend.delete(StorageReference.FileRef("nested/song.mp3"))
+                    backend.delete(
+                        TrustedManagedRef(StorageReference.FileRef("nested/song.mp3"))
+                    )
                 )
             } finally {
                 root.deleteRecursively()

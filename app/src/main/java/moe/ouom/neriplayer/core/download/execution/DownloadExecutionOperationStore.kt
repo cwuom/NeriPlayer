@@ -126,6 +126,7 @@ class DownloadExecutionOperationStore(
             put("version", PAYLOAD_VERSION)
             put("operationId", request.operationId)
             put("preserveStaging", request.preserveStaging)
+            request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
             put(STATE_KEY, ACTIVE_STATE)
             put(
                 "song",
@@ -168,7 +169,8 @@ class DownloadExecutionOperationStore(
             DownloadExecutionRequest(
                 operationId = normalizedId,
                 song = song,
-                preserveStaging = root.optBoolean("preserveStaging", false)
+                preserveStaging = root.optBoolean("preserveStaging", false),
+                attemptId = root.optLong("attemptId", 0L).takeIf { it > 0L }
             )
         }.getOrNull()
     }

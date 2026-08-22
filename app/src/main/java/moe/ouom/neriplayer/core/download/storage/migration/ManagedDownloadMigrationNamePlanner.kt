@@ -73,7 +73,8 @@ internal data class ManagedMigrationTargetIndex(
 
 internal data class ManagedMigrationNamePlan(
     val targetNamesByReference: Map<String, String>,
-    val reusedTargetsByReference: Map<String, ManagedDownloadStorage.StoredEntry> = emptyMap()
+    val reusedTargetsByReference: Map<String, ManagedDownloadStorage.StoredEntry> = emptyMap(),
+    val conflictsByReference: Map<String, String> = emptyMap()
 ) {
     fun targetNameFor(entry: ManagedMigrationEntryRef): String {
         return targetNamesByReference[entry.entry.reference] ?: entry.entry.name
@@ -81,6 +82,10 @@ internal data class ManagedMigrationNamePlan(
 
     fun reusedTargetFor(entry: ManagedMigrationEntryRef): ManagedDownloadStorage.StoredEntry? {
         return reusedTargetsByReference[entry.entry.reference]
+    }
+
+    fun conflictFor(entry: ManagedMigrationEntryRef): String? {
+        return conflictsByReference[entry.entry.reference]
     }
 }
 
@@ -92,6 +97,7 @@ internal object ManagedDownloadMigrationNamePlanner {
     ): ManagedMigrationNamePlan {
         val plannedNames = mutableMapOf<String, String>()
         val reusedTargets = mutableMapOf<String, ManagedDownloadStorage.StoredEntry>()
+        val conflicts = mutableMapOf<String, String>()
         val reservedRootNames = targetIndex.rootEntriesByName.keys.toMutableSet()
         val audioEntriesByName = entries
             .filter { it.subdirectory == null && it.entry.extension in audioExtensions }
@@ -112,6 +118,14 @@ internal object ManagedDownloadMigrationNamePlanner {
                         .firstOrNull()
                 }
                 if (duplicateTarget != null) {
+                    val sourceSize = audioEntry.entry.sizeBytes.takeIf { it >= 0L }
+                    val targetSize = duplicateTarget.sizeBytes.takeIf { it >= 0L }
+                    if (sourceSize != null && targetSize != null && sourceSize != targetSize) {
+                        conflicts[audioEntry.entry.reference] =
+                            "same stableKey has different audio sizes: " +
+                                "source=$sourceSize target=$targetSize"
+                        return@forEach
+                    }
                     plannedNames[audioEntry.entry.reference] = duplicateTarget.name
                     reusedTargets[audioEntry.entry.reference] = duplicateTarget
                     metadataEntryForAudio(entries, audioEntry.entry.name)?.let { metadataEntry ->
@@ -179,7 +193,8 @@ internal object ManagedDownloadMigrationNamePlanner {
 
         return ManagedMigrationNamePlan(
             targetNamesByReference = plannedNames,
-            reusedTargetsByReference = reusedTargets
+            reusedTargetsByReference = reusedTargets,
+            conflictsByReference = conflicts
         )
     }
 

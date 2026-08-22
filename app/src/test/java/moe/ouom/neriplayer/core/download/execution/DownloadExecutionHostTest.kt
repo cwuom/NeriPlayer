@@ -40,7 +40,8 @@ class DownloadExecutionHostTest {
                 durationMs = 1234L,
                 coverUrl = "https://example.invalid/cover.jpg",
                 sourceStableKey = "netease:42"
-            )
+            ),
+            attemptId = 7L
         )
 
         store.saveTo(directory, request)
@@ -52,6 +53,7 @@ class DownloadExecutionHostTest {
         assertEquals(request.song.id, restoredRequest.song.id)
         assertEquals(request.song.name, restoredRequest.song.name)
         assertEquals(request.song.sourceStableKey, restoredRequest.song.sourceStableKey)
+        assertEquals(request.attemptId, restoredRequest.attemptId)
         assertTrue(DownloadExecutionOperationStore.fileName(request.operationId).endsWith(".json"))
 
         val tampered = directory.resolve(

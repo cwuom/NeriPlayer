@@ -18,6 +18,15 @@ sealed interface StorageReference {
     data class SafRef(val uri: Uri) : StorageReference
 }
 
+/** marks a reference whose identity came from a managed root operation */
+class TrustedManagedRef internal constructor(
+    val reference: StorageReference
+)
+
+internal fun StorageStat.asTrustedManagedRef(): TrustedManagedRef {
+    return TrustedManagedRef(reference)
+}
+
 sealed interface StorageTarget {
     data class FileTarget(val logicalPath: String) : StorageTarget
     data class SafTarget(
@@ -98,7 +107,7 @@ interface StorageBackend {
         writer: suspend (OutputStream) -> Unit
     ): StorageWriteResult
 
-    suspend fun delete(reference: StorageReference): StorageMutationResult
+    suspend fun delete(reference: TrustedManagedRef): StorageMutationResult
 
     suspend fun capabilities(reference: StorageReference): StorageCapabilities
 }
@@ -189,8 +198,8 @@ internal class FileStorageBackend(
         }
     }
 
-    override suspend fun delete(reference: StorageReference): StorageMutationResult = withContext(Dispatchers.IO) {
-        val file = resolve(reference) ?: return@withContext StorageMutationResult.PermissionLost
+    override suspend fun delete(reference: TrustedManagedRef): StorageMutationResult = withContext(Dispatchers.IO) {
+        val file = resolve(reference.reference) ?: return@withContext StorageMutationResult.PermissionLost
         if (!file.exists()) StorageMutationResult.Missing
         else if (file.deleteRecursively()) StorageMutationResult.Deleted
         else StorageMutationResult.ProviderFailure(IllegalStateException("delete failed"))
@@ -490,8 +499,8 @@ internal class SafStorageBackend(
         }
     }
 
-    override suspend fun delete(reference: StorageReference): StorageMutationResult = withContext(Dispatchers.IO) {
-        val safReference = reference as? StorageReference.SafRef
+    override suspend fun delete(reference: TrustedManagedRef): StorageMutationResult = withContext(Dispatchers.IO) {
+        val safReference = reference.reference as? StorageReference.SafRef
             ?: return@withContext StorageMutationResult.Unsupported("SAF reference required")
         when (val result = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> return@withContext StorageMutationResult.Missing

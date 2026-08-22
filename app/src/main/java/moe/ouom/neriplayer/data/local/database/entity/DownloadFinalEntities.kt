@@ -57,15 +57,3 @@ internal data class ManagedLibraryItemEntity(
     @ColumnInfo(name = "downloaded_at_ms") val downloadedAtMs: Long?,
     @ColumnInfo(name = "metadata_revision") val metadataRevision: Long
 )
-
-/**
- * Room schema anchor for the one-shot upgrade payload; rows are cleared after bootstrap
- */
-@Entity(
-    tableName = "legacy_download_upgrade_payload",
-    primaryKeys = ["stable_key"]
-)
-internal data class LegacyDownloadUpgradePayloadEntity(
-    @ColumnInfo(name = "stable_key") val stableKey: String,
-    @ColumnInfo(name = "payload_json") val payloadJson: String
-)

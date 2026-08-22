@@ -14,3 +14,16 @@ internal fun shouldRollbackCancelledAudio(
 ): Boolean {
     return phase == DownloadCoreCommitPhase.STAGING
 }
+
+internal fun shouldPreserveAudioAfterCancellation(
+    downloadFinalized: Boolean?,
+    artifactState: String?
+): Boolean {
+    if (downloadFinalized == true) return true
+    return artifactState in setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "FINALIZED",
+        "DEGRADED_COMPLETE"
+    )
+}

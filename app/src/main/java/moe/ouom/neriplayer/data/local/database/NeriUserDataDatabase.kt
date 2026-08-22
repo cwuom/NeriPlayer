@@ -21,6 +21,8 @@ import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
 import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
+import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
+import moe.ouom.neriplayer.data.local.database.dao.ManagedLibraryItemDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadSnapshotDao
 import moe.ouom.neriplayer.data.local.database.dao.ManagedDownloadArtifactDao
@@ -59,7 +61,6 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEn
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
-import moe.ouom.neriplayer.data.local.database.entity.LegacyDownloadUpgradePayloadEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
@@ -100,7 +101,6 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         ManagedDownloadArtifactEntity::class,
         DownloadOperationEntity::class,
         ManagedLibraryItemEntity::class,
-        LegacyDownloadUpgradePayloadEntity::class,
         PlatformPlaylistCacheEntity::class,
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
@@ -130,6 +130,10 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun biliVideoSkipDao(): BiliVideoSkipDao
 
     abstract fun downloadRecoveryDao(): DownloadRecoveryDao
+
+    abstract fun downloadOperationDao(): DownloadOperationDao
+
+    abstract fun managedLibraryItemDao(): ManagedLibraryItemDao
 
     abstract fun downloadedSongCatalogDao(): DownloadedSongCatalogDao
 

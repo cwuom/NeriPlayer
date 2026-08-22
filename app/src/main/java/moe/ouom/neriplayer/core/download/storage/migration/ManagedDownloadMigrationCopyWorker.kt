@@ -96,6 +96,11 @@ internal class ManagedDownloadMigrationCopyWorker(
         coroutineContext.ensureActive()
         progressTracker?.startCopy(migrationEntry)
         return try {
+            namePlan.conflictFor(migrationEntry.toRef())?.let { detail ->
+                throw ManagedDownloadMigrationException.permanent(
+                    "迁移目标冲突: ${migrationEntry.entry.name}, $detail"
+                )
+            }
             namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
                 return WrittenMigrationEntry(
                     result = StoredWriteResult(

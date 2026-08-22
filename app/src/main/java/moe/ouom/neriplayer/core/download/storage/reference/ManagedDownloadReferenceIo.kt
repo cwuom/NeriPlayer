@@ -10,6 +10,13 @@ import java.io.FileNotFoundException
 import java.net.URI
 
 internal object ManagedDownloadReferenceIo {
+    sealed interface AccessResult {
+        data object Accessible : AccessResult
+        data object Missing : AccessResult
+        data object PermissionLost : AccessResult
+        data class ProviderFailure(val error: Throwable) : AccessResult
+    }
+
     fun readText(context: Context, reference: String): String? {
         return when {
             reference.startsWith("/") -> {
@@ -44,18 +51,21 @@ internal object ManagedDownloadReferenceIo {
     }
 
     fun exists(context: Context, reference: String?): Boolean {
-        if (reference.isNullOrBlank()) return false
-        return when {
-            reference.startsWith("/") -> {
-                runCatching { File(reference).inputStream().use { }; true }.getOrDefault(false)
-            }
-            else -> {
-                reference.toLocalFileReference()?.let(File::exists)?.let { return it }
-                val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
-                uri.toLocalFile()?.let(File::exists)?.let { return it }
-                isAccessibleDocumentReference(context, uri)
-            }
+        return inspect(context, reference) == AccessResult.Accessible
+    }
+
+    fun inspect(context: Context, reference: String?): AccessResult {
+        val normalized = reference?.trim()?.takeIf(String::isNotBlank)
+            ?: return AccessResult.Missing
+        if (normalized.startsWith("/")) {
+            return inspectFile(File(normalized))
         }
+        normalized.toLocalFileReference()?.let { return inspectFile(it) }
+        val uri = runCatching { normalized.toUri() }.getOrElse { error ->
+            return AccessResult.ProviderFailure(error)
+        }
+        uri.toLocalFile()?.let { return inspectFile(it) }
+        return inspectDocument(context, uri)
     }
 
     internal fun isAccessibleDocumentReference(
@@ -97,25 +107,49 @@ internal object ManagedDownloadReferenceIo {
             ?: DocumentFile.fromTreeUri(context, uri)
     }
 
-    private fun isAccessibleDocumentReference(context: Context, uri: Uri): Boolean {
-        val documentExists = try {
-            resolveDocumentFile(context, uri)?.exists() == true
+    private fun inspectFile(file: File): AccessResult {
+        return try {
+            if (!file.isFile) AccessResult.Missing
+            else file.inputStream().use { AccessResult.Accessible }
         } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            false
+            AccessResult.PermissionLost
+        } catch (error: FileNotFoundException) {
+            AccessResult.Missing
+        } catch (error: Throwable) {
+            AccessResult.ProviderFailure(error)
         }
-        if (isAccessibleDocumentReference(documentExists, descriptorAccessible = false)) {
-            return true
-        }
-        val descriptorAccessible = try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+    }
+
+    private fun inspectDocument(context: Context, uri: Uri): AccessResult {
+        try {
+            val cursor = context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
+                null,
+                null,
+                null
+            ) ?: return AccessResult.ProviderFailure(
+                IllegalStateException("provider returned null document cursor")
+            )
+            cursor.use {
+                if (!it.moveToFirst()) return AccessResult.Missing
+            }
+            context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                return AccessResult.Accessible
+            } ?: return AccessResult.ProviderFailure(
+                IllegalStateException("provider returned null file descriptor")
+            )
         } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            false
+            return AccessResult.PermissionLost
+        } catch (error: FileNotFoundException) {
+            return AccessResult.Missing
+        } catch (error: Throwable) {
+            return if (isMissingDocumentFailure(error)) {
+                AccessResult.Missing
+            } else {
+                AccessResult.ProviderFailure(error)
+            }
         }
-        return isAccessibleDocumentReference(documentExists, descriptorAccessible)
     }
 
     fun isMissingDocumentFailure(error: Throwable): Boolean {

@@ -33,6 +33,11 @@ class ForegroundDownloadWorker(
             setForeground(createForegroundInfo(applicationContext, operationId))
             DownloadExecutionHosts.default.execute(applicationContext, operationId)
         } catch (cancellation: CancellationException) {
+            DownloadExecutionHosts.default.stop(
+                context = applicationContext,
+                operationId = operationId,
+                preventReschedule = false
+            )
             throw cancellation
         } catch (error: Throwable) {
             if (error is IllegalStateException) {

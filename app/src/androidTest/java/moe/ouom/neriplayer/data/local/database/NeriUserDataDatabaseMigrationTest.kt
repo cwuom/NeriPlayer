@@ -183,7 +183,7 @@ class NeriUserDataDatabaseMigrationTest {
         val migrated = helper.runMigrationsAndValidate(
             TEST_DATABASE_VERSION_15_NAME,
             16,
-            true,
+            false,
             NeriUserDataDatabase.MIGRATION_15_16
         )
 
@@ -239,6 +239,49 @@ class NeriUserDataDatabaseMigrationTest {
             )
         } finally {
             migrated.close()
+        }
+    }
+
+    @Test
+    fun migrationPayloadCanBeDroppedBeforeRoomReopens() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_DROP_NAME, 15).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_DROP_NAME,
+            16,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+        try {
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'table' AND name = " +
+                        "'legacy_download_upgrade_payload'"
+                )
+            )
+            migrated.execSQL("DROP TABLE legacy_download_upgrade_payload")
+        } finally {
+            migrated.close()
+        }
+
+        val reopened = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_DROP_NAME,
+            16,
+            true
+        )
+        try {
+            assertEquals(
+                0L,
+                reopened.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'table' AND name = " +
+                        "'legacy_download_upgrade_payload'"
+                )
+            )
+        } finally {
+            reopened.close()
         }
     }
 
@@ -340,14 +383,6 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_WITH_DATA_NAME = "neri-user-data-migration-with-data-test"
         const val TEST_DATABASE_VERSION_14_NAME = "neri-user-data-migration-v14-test"
         const val TEST_DATABASE_VERSION_15_NAME = "neri-user-data-migration-v15-test"
-        const val TEST_DATABASE_VERSION_16_NAME = "neri-user-data-migration-v16-test"
-        const val TEST_DATABASE_VERSION_17_NAME = "neri-user-data-migration-v17-test"
-        const val TEST_DATABASE_VERSION_18_NAME = "neri-user-data-migration-v18-test"
-        const val TEST_DATABASE_VERSION_19_NAME = "neri-user-data-migration-v19-test"
-        const val TEST_DATABASE_VERSION_20_NAME = "neri-user-data-migration-v20-test"
-        const val TEST_DATABASE_VERSION_21_NAME = "neri-user-data-migration-v21-test"
-        const val TEST_DATABASE_VERSION_22_NAME = "neri-user-data-migration-v22-test"
-        const val TEST_DATABASE_VERSION_23_NAME = "neri-user-data-migration-v23-test"
-        const val TEST_DATABASE_VERSION_25_NAME = "neri-user-data-migration-v25-test"
+        const val TEST_DATABASE_VERSION_15_DROP_NAME = "neri-user-data-migration-v15-drop-test"
     }
 }
