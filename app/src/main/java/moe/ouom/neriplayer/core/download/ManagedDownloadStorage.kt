@@ -2187,6 +2187,22 @@ internal object ManagedDownloadStorage {
         true
     }
 
+    internal suspend fun deletePendingAudioMetadata(
+        context: Context,
+        audioName: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val normalizedName = audioName.trim().takeIf(String::isNotBlank)
+            ?: return@withContext false
+        val root = resolveRootBlocking(context)
+        val pendingName = "$normalizedName$PENDING_METADATA_SUFFIX"
+        if (findRootNamedEntry(root, pendingName) == null) {
+            return@withContext true
+        }
+        deleteRootNamedEntry(root, pendingName)
+        invalidateSnapshotCache(context)
+        findRootNamedEntry(root, pendingName) == null
+    }
+
     private fun saveMetadataBlocking(context: Context, audio: StoredEntry, json: String): Boolean {
         val metadata = parseDownloadedAudioMetadataJson(json)
         if (metadata == null) {

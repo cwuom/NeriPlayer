@@ -131,16 +131,32 @@ internal object PreparedDownloadArtifactsStore {
     fun restore(context: android.content.Context, songKey: String): PreparedDownloadArtifacts? {
         val operationCandidate = runCatching {
             operationDirectories(context).asSequence()
-                .mapNotNull { directory -> restoreManifest(File(directory, OPERATION_MANIFEST_NAME)) }
+                .mapNotNull { directory ->
+                    safeRestoreManifest(File(directory, OPERATION_MANIFEST_NAME))
+                }
                 .firstOrNull { it.songKey == songKey }
         }.getOrNull()
         return operationCandidate ?: runCatching {
-            restoreManifest(legacyManifestFile(context, songKey))
+            safeRestoreManifest(legacyManifestFile(context, songKey))
                 ?: legacyManifestCandidates(context)
                     .asSequence()
-                    .mapNotNull { manifest -> restoreManifest(manifest) }
+                    .mapNotNull(::safeRestoreManifest)
                     .firstOrNull { it.songKey == songKey }
         }.getOrNull()
+    }
+
+    /**
+     * checks for persisted manifests without opening or hashing sidecars
+     *
+     * this is used by startup probes, so a corrupt or half-written manifest
+     * must still count as a candidate for the deeper recovery pass
+     */
+    fun hasCandidates(context: android.content.Context): Boolean {
+        return runCatching {
+            operationDirectories(context).any { directory ->
+                File(directory, OPERATION_MANIFEST_NAME).isFile
+            } || legacyManifestCandidates(context).isNotEmpty()
+        }.getOrDefault(false)
     }
 
     fun list(context: android.content.Context): List<PreparedDownloadArtifacts> {
@@ -164,7 +180,7 @@ internal object PreparedDownloadArtifactsStore {
                 }
         }.getOrElse { emptySequence() }
         return (operationManifests + legacyManifests)
-            .mapNotNull { manifest -> restoreManifest(manifest) }
+            .mapNotNull(::safeRestoreManifest)
             .toList()
     }
 
@@ -184,6 +200,15 @@ internal object PreparedDownloadArtifactsStore {
     private fun PreparedDownloadArtifacts.validate(): PreparedArtifactValidation {
         if (audioTargetName.isNullOrBlank() && audioReference.isNullOrBlank()) {
             return PreparedArtifactValidation.Stale("missing audio target")
+        }
+        if (expectedLyric && lyric == null) {
+            return PreparedArtifactValidation.Stale("missing expected text sidecar")
+        }
+        if (expectedTranslatedLyric && translatedLyric == null) {
+            return PreparedArtifactValidation.Stale("missing expected translated sidecar")
+        }
+        if (expectedRomanizedLyric && romanizedLyric == null) {
+            return PreparedArtifactValidation.Stale("missing expected romanized sidecar")
         }
         listOfNotNull(lyric, translatedLyric, romanizedLyric).forEach { artifact ->
             validateTextArtifact(artifact).let { result ->
@@ -329,8 +354,8 @@ internal object PreparedDownloadArtifactsStore {
     private fun restoreManifest(
         manifest: File,
         validate: Boolean = true
-    ): PreparedDownloadArtifacts? {
-        if (!manifest.isFile) return null
+    ): PreparedDownloadArtifacts? = runCatching {
+        if (!manifest.isFile) return@runCatching null
         val restored = runCatching {
             val root = JSONObject(manifest.readText(Charsets.UTF_8))
             val version = root.optInt("version")
@@ -371,17 +396,23 @@ internal object PreparedDownloadArtifactsStore {
                 }.getOrDefault(EmbeddedTagPreparationState.NOT_REQUESTED),
                 manifestFile = manifest
             )
-        }.getOrNull()
-        if (!validate) return restored
-        if (restored == null || restored.validate() !is PreparedArtifactValidation.Valid) {
+        }.getOrThrow()
+        if (!validate) {
+            restored
+        } else if (restored == null || restored.validate() !is PreparedArtifactValidation.Valid) {
             runCatching { manifest.delete() }
             restored?.cleanup()
             if (restored != null) {
                 runCatching { manifest.parentFile?.delete() }
             }
-            return null
+            null
+        } else {
+            restored
         }
-        return restored
+    }.getOrNull()
+
+    private fun safeRestoreManifest(manifest: File): PreparedDownloadArtifacts? {
+        return runCatching { restoreManifest(manifest) }.getOrNull()
     }
 
     private fun resolveArtifactFile(value: JSONObject, operationDirectory: File): File {

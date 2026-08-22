@@ -23,7 +23,8 @@ internal class DownloadedAudioMetadataStore(
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null,
         downloadFinalized: Boolean = true,
-        resolveExistingSidecars: Boolean = true
+        resolveExistingSidecars: Boolean = true,
+        artifactStateOverride: String? = null
     ): Boolean {
         val identity = song.identity()
         val existingMetadata = read(context, audio)
@@ -57,11 +58,14 @@ internal class DownloadedAudioMetadataStore(
             createdAtSource = createdAtSource,
             artifactId = existingMetadata?.artifactId,
             operationId = existingMetadata?.operationId,
-            artifactState = if (downloadFinalized) {
-                "COMPLETE"
-            } else {
-                existingMetadata?.artifactState ?: "CORE_COMMITTED"
-            },
+            artifactState = artifactStateOverride
+                ?: if (downloadFinalized) {
+                    "COMPLETE"
+                } else {
+                    existingMetadata?.artifactState?.takeUnless {
+                        it == "COMMITTING"
+                    } ?: "CORE_COMMITTED"
+                },
             audioFileName = audio.name,
             libraryId = existingMetadata?.libraryId,
             libraryAddedAtMs = existingMetadata?.libraryAddedAtMs

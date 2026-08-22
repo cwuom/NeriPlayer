@@ -57,8 +57,13 @@ internal object ManagedDownloadArtifactPolicy {
             ManagedDownloadArtifactState.FINALIZED ->
                 ManagedDownloadArtifactDecision.AlreadyDownloaded
 
-            ManagedDownloadArtifactState.REPAIR_REQUIRED ->
-                ManagedDownloadArtifactDecision.RepairRequired
+            ManagedDownloadArtifactState.REPAIR_REQUIRED -> {
+                if (existing.audioReference.isNullOrBlank()) {
+                    ManagedDownloadArtifactDecision.Acquire
+                } else {
+                    ManagedDownloadArtifactDecision.RepairRequired
+                }
+            }
 
             ManagedDownloadArtifactState.CORE_COMMITTED,
             ManagedDownloadArtifactState.ASSETS_ENRICHING,

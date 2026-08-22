@@ -44,6 +44,20 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
+    fun `working file identity does not rely on colliding string hash codes`() {
+        val first = ManagedDownloadStorage.buildWorkingFileName(
+            songKey = "FB",
+            fileName = "Song.flac"
+        )
+        val second = ManagedDownloadStorage.buildWorkingFileName(
+            songKey = "Ea",
+            fileName = "Song.flac"
+        )
+
+        assertNotEquals(first, second)
+    }
+
+    @Test
     fun `operation staging isolates files and discovers nested resume metadata`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val context = mock(android.content.Context::class.java)
@@ -392,7 +406,7 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
-    fun `pending working artifacts are deleted by hash when resume metadata is broken`() {
+    fun `broken resume metadata does not grant ownership for deletion`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val targetSong = queuedSong(id = 81L, name = "Target")
         val keptSong = queuedSong(id = 82L, name = "Kept")
@@ -425,10 +439,10 @@ class ManagedDownloadStorageWorkingFileTest {
             songKeys = setOf(targetSong.stableKey())
         )
 
-        assertEquals(setOf(targetSong.stableKey()), deletedKeys)
-        assertFalse(targetWorkingFile.exists())
-        assertFalse(targetCheckpoint.exists())
-        assertFalse(ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).exists())
+        assertTrue(deletedKeys.isEmpty())
+        assertTrue(targetWorkingFile.exists())
+        assertTrue(targetCheckpoint.exists())
+        assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(targetWorkingFile).exists())
         assertTrue(keptWorkingFile.exists())
         assertTrue(ManagedDownloadStorage.buildWorkingResumeMetadataFile(keptWorkingFile).exists())
     }

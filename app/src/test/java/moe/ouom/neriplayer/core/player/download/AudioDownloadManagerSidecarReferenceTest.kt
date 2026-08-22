@@ -286,4 +286,19 @@ class AudioDownloadManagerSidecarReferenceTest {
         staging.deleteRecursively()
         directory.deleteRecursively()
     }
+
+    @Test
+    fun `candidate probe sees corrupt manifest without hashing sidecars`() {
+        val directory = Files.createTempDirectory("neriplayer-prepared-probe").toFile()
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(directory)
+        val staging = directory.resolve("download_staging").apply { mkdirs() }
+        staging.resolve("npdl_sidecar_manifest_corrupt.json")
+            .writeText("{not-json", Charsets.UTF_8)
+
+        assertTrue(PreparedDownloadArtifactsStore.hasCandidates(context))
+        assertTrue(PreparedDownloadArtifactsStore.list(context).isEmpty())
+
+        directory.deleteRecursively()
+    }
 }

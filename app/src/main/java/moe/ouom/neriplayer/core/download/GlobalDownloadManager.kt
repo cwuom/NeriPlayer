@@ -801,7 +801,7 @@ object GlobalDownloadManager {
 
     fun hasPendingRecoveryCandidates(context: Context): Boolean {
         val appContext = context.applicationContext
-        if (PreparedDownloadArtifactsStore.list(appContext).isNotEmpty()) {
+        if (PreparedDownloadArtifactsStore.hasCandidates(appContext)) {
             return true
         }
         if (ManagedDownloadStorage.listPendingQueuedDownloads(appContext).isNotEmpty()) {
@@ -1070,10 +1070,9 @@ object GlobalDownloadManager {
                     expectedAttemptId = expectedAttemptId
                 )
                 if (artifactLeaseId == null) {
-                    markDownloadArtifactRepairRequired(
+                    markDownloadArtifactMissingConfirmed(
                         context = context,
                         song = song,
-                        leaseId = null,
                         errorCode = "AUDIO_REFERENCE_MISSING"
                     )
                 } else {
@@ -1262,10 +1261,24 @@ object GlobalDownloadManager {
                 song = song,
                 sidecarReferences = null,
                 downloadFinalized = false,
-                resolveExistingSidecars = false
+                resolveExistingSidecars = false,
+                artifactStateOverride = ManagedDownloadArtifactState.CORE_COMMITTED.name
             )
             if (!written) {
                 NPLogger.w(TAG, "core metadata 写入失败，保留音频等待恢复: ${song.name}")
+            } else {
+                runCatching {
+                    ManagedDownloadStorage.deletePendingAudioMetadata(
+                        context = context,
+                        audioName = storedAudio.name
+                    )
+                }.onFailure { error ->
+                    NPLogger.w(
+                        TAG,
+                        "core metadata 已写入但 pending 清理失败，保留可恢复残留: " +
+                            "audio=${storedAudio.name}, error=${error.message}"
+                    )
+                }
             }
         }
 
@@ -2704,14 +2717,16 @@ object GlobalDownloadManager {
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null,
         downloadFinalized: Boolean = true,
-        resolveExistingSidecars: Boolean = true
+        resolveExistingSidecars: Boolean = true,
+        artifactStateOverride: String? = null
     ): Boolean = downloadedAudioMetadataStore.persist(
         context = context,
         audio = audio,
         song = song,
         sidecarReferences = sidecarReferences,
         downloadFinalized = downloadFinalized,
-        resolveExistingSidecars = resolveExistingSidecars
+        resolveExistingSidecars = resolveExistingSidecars,
+        artifactStateOverride = artifactStateOverride
     )
 
     private suspend fun readDownloadedMetadata(
@@ -2775,6 +2790,22 @@ object GlobalDownloadManager {
             )
         }.onFailure { error ->
             NPLogger.w(TAG, "写入下载 artifact 修复状态失败: ${error.message}")
+        }
+    }
+
+    private suspend fun markDownloadArtifactMissingConfirmed(
+        context: Context,
+        song: SongItem,
+        errorCode: String?
+    ) {
+        runCatching {
+            managedDownloadArtifactCoordinator.markMissingConfirmed(
+                context = context,
+                song = song,
+                errorCode = errorCode
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入下载 artifact 缺失确认状态失败: ${error.message}")
         }
     }
 

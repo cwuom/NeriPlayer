@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import java.io.File
+import java.security.MessageDigest
 
 internal object ManagedDownloadWorkingStore {
     private const val TAG = "ManagedDownloadStorage"
@@ -44,7 +45,9 @@ internal object ManagedDownloadWorkingStore {
     }
 
     fun buildWorkingSongKeyHash(songKey: String): String {
-        return java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(songKey.toByteArray(Charsets.UTF_8))
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
 
     fun createWorkingFile(
@@ -225,12 +228,16 @@ internal object ManagedDownloadWorkingStore {
                 deleteWorkingDownloadArtifacts(pendingDownload.workingFile)
                 songKey
             }
-        val keyHashes = keys.associateBy(::buildWorkingSongKeyHash)
+        val keyHashes = keys.flatMapTo(linkedSetOf()) { key ->
+            listOf(buildWorkingSongKeyHash(key), legacyWorkingSongKeyHash(key))
+        }
         stagingDir.listFiles()
             .orEmpty()
             .filter { entry -> matchingWorkingArtifactSongKey(entry.name, keyHashes) != null }
             .forEach { entry ->
-                val songKey = matchingWorkingArtifactSongKey(entry.name, keyHashes) ?: return@forEach
+                val songKey = readWorkingSongKey(entry)
+                    ?.takeIf { it in keys }
+                    ?: return@forEach
                 if (deleteWorkingArtifactEntry(entry)) {
                     deletedKeys += songKey
                 }
@@ -474,7 +481,7 @@ internal object ManagedDownloadWorkingStore {
 
     private fun matchingWorkingArtifactSongKey(
         fileName: String,
-        songKeyByHash: Map<String, String>
+        songKeyHashes: Set<String>
     ): String? {
         if (!fileName.startsWith(DOWNLOAD_STAGING_FILE_PREFIX)) {
             return null
@@ -484,7 +491,27 @@ internal object ManagedDownloadWorkingStore {
             .substringBefore('_', missingDelimiterValue = "")
             .takeIf(String::isNotBlank)
             ?: return null
-        return songKeyByHash[keyHash]
+        return keyHash.takeIf { it in songKeyHashes }
+    }
+
+    private fun readWorkingSongKey(entry: File): String? {
+        val workingFile = when {
+            entry.name.endsWith(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX) ->
+                File(entry.parentFile ?: return null, entry.name.removeSuffix(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX))
+            entry.name.endsWith(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX) ->
+                File(entry.parentFile ?: return null, entry.name.removeSuffix(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX))
+            else -> entry
+        }
+        val metadata = buildWorkingResumeMetadataFile(workingFile)
+        return runCatching {
+            ManagedDownloadStorage.parseWorkingResumeMetadataSong(
+                metadata.readText(Charsets.UTF_8)
+            )?.stableKey()
+        }.getOrNull()
+    }
+
+    private fun legacyWorkingSongKeyHash(songKey: String): String {
+        return java.lang.Long.toHexString(songKey.hashCode().toLong() and 0xffffffffL)
     }
 
     private fun deleteWorkingArtifactEntry(entry: File): Boolean {

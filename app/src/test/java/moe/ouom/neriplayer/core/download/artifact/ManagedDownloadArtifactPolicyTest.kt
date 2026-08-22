@@ -56,6 +56,21 @@ class ManagedDownloadArtifactPolicyTest {
         assertEquals(
             ManagedDownloadArtifactDecision.RepairRequired,
             ManagedDownloadArtifactPolicy.decide(
+                existing = artifact(
+                    state = ManagedDownloadArtifactState.REPAIR_REQUIRED,
+                    updatedAtMs = 100L,
+                    audioReference = "content://downloads/song.mp3"
+                ),
+                nowMs = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun `repair state without an audio reference can acquire a fresh file`() {
+        assertEquals(
+            ManagedDownloadArtifactDecision.Acquire,
+            ManagedDownloadArtifactPolicy.decide(
                 existing = artifact(ManagedDownloadArtifactState.REPAIR_REQUIRED, 100L),
                 nowMs = 1_000L
             )
@@ -86,7 +101,8 @@ class ManagedDownloadArtifactPolicyTest {
 
     private fun artifact(
         state: ManagedDownloadArtifactState,
-        updatedAtMs: Long
+        updatedAtMs: Long,
+        audioReference: String? = null
     ): ManagedDownloadArtifactEntity {
         return ManagedDownloadArtifactEntity(
             rootKey = "root",
@@ -94,7 +110,7 @@ class ManagedDownloadArtifactPolicyTest {
             artifactId = "managed:root:netease|1|",
             state = state.name,
             leaseId = "lease",
-            audioReference = null,
+            audioReference = audioReference,
             audioName = null,
             fileSize = null,
             contentHash = null,

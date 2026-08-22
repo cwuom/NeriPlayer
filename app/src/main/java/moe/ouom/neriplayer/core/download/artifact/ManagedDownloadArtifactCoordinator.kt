@@ -387,6 +387,19 @@ internal class ManagedDownloadArtifactCoordinator {
         )
     }
 
+    suspend fun markMissingConfirmed(
+        context: Context,
+        song: SongItem,
+        errorCode: String?
+    ) {
+        updateStateWithoutLease(
+            context = context,
+            song = song,
+            state = ManagedDownloadArtifactState.MISSING_CONFIRMED,
+            errorCode = errorCode
+        )
+    }
+
     suspend fun markCancelled(
         context: Context,
         song: SongItem,
@@ -439,6 +452,32 @@ internal class ManagedDownloadArtifactCoordinator {
                 ) {
                     ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
                 } else {
+                    val replacement = findAccessibleReplacement(
+                        context = context,
+                        current = current,
+                        stableKey = stableKey
+                    )
+                    if (replacement != null) {
+                        val refreshed = current.copy(
+                            audioReference = replacement.reference,
+                            audioName = replacement.name,
+                            fileSize = replacement.sizeBytes,
+                            updatedAtMs = System.currentTimeMillis(),
+                            needsReconcile = false,
+                            lastErrorCode = null
+                        )
+                        dao.upsert(refreshed)
+                        return ManagedDownloadArtifactClaim.AlreadyDownloaded(refreshed)
+                    }
+                    if (!isMissingConfirmed(context, current, stableKey)) {
+                        return ManagedDownloadArtifactClaim.RepairRequired(
+                            current.copy(
+                                updatedAtMs = System.currentTimeMillis(),
+                                needsReconcile = true,
+                                lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                            )
+                        )
+                    }
                     val repairUpdatedAtMs = System.currentTimeMillis()
                     val updated = dao.markMissingIfUnchanged(
                         rootKey = rootKey,
@@ -537,6 +576,46 @@ internal class ManagedDownloadArtifactCoordinator {
     ): DiscoveredAudio? {
         val snapshot = loadDiscoverySnapshot(context) ?: return null
         return discoverExistingAudio(snapshot, song)
+    }
+
+    private suspend fun findAccessibleReplacement(
+        context: Context,
+        current: ManagedDownloadArtifactEntity,
+        stableKey: String
+    ): ManagedDownloadStorage.StoredEntry? {
+        val snapshot = runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.getOrNull() ?: return null
+        if (!snapshot.rootEntriesComplete) return null
+        return snapshot.audioEntriesByStableKey[stableKey]
+            .orEmpty()
+            .firstOrNull()
+            ?: current.audioName?.let { audioName ->
+                snapshot.audioEntries.firstOrNull { entry -> entry.name == audioName }
+            }
+    }
+
+    private suspend fun isMissingConfirmed(
+        context: Context,
+        current: ManagedDownloadArtifactEntity,
+        stableKey: String
+    ): Boolean {
+        val snapshot = runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.getOrNull() ?: return false
+        if (!snapshot.rootEntriesComplete) return false
+        val matchingByIdentity = snapshot.audioEntriesByStableKey[stableKey].orEmpty()
+        if (matchingByIdentity.isNotEmpty()) return false
+        val matchingByReference = snapshot.audioEntries.any { entry ->
+            entry.reference == current.audioReference || entry.name == current.audioName
+        }
+        return !matchingByReference
     }
 
     private suspend fun loadDiscoverySnapshot(
@@ -721,7 +800,11 @@ internal class ManagedDownloadArtifactCoordinator {
                 leaseId = null,
                 updatedAtMs = System.currentTimeMillis(),
                 lastErrorCode = errorCode,
-                needsReconcile = state == ManagedDownloadArtifactState.DEGRADED_COMPLETE
+                needsReconcile = state in setOf(
+                    ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+                    ManagedDownloadArtifactState.MISSING_CONFIRMED,
+                    ManagedDownloadArtifactState.REPAIR_REQUIRED
+                )
             )
         )
     }
