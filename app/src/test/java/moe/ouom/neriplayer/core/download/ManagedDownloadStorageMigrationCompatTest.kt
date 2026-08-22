@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
@@ -184,6 +185,55 @@ class ManagedDownloadStorageMigrationCompatTest {
             setOf(metadata, cover, lyric),
             entries.map { it.entry }.toSet()
         )
+    }
+
+    @Test
+    fun `migration collector keeps stable and metadata referenced covers`() {
+        fun entry(name: String) = ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/old/Covers/$name",
+            mediaUri = "file:///old/Covers/$name",
+            localFilePath = "/old/Covers/$name",
+            sizeBytes = 1L,
+            lastModifiedMs = 100L
+        )
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3",
+            reference = "/old/Artist - Song.mp3",
+            mediaUri = "file:///old/Artist%20-%20Song.mp3",
+            localFilePath = "/old/Artist - Song.mp3",
+            sizeBytes = 10L,
+            lastModifiedMs = 100L
+        )
+        val metadata = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/old/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///old/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/old/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 10L,
+            lastModifiedMs = 100L
+        )
+        val stableKey = "netease|123|"
+        val stableCoverName = ManagedDownloadStorageNaming
+            .buildStableCoverCandidateNames("Artist - Song", stableKey)
+            .first()
+        val stableCover = entry(stableCoverName)
+        val referencedCover = entry("custom-cover.png")
+        val parsedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = stableKey,
+            coverPath = referencedCover.reference
+        )
+
+        val entries = ManagedDownloadMigrationEntryCollector.collect(
+            rootEntries = listOf(audio, metadata),
+            coverEntries = listOf(stableCover, referencedCover),
+            lyricEntries = emptyList(),
+            parsedMetadataByAudioName = mapOf(audio.name to parsedMetadata),
+            allowMetadataLessAudio = false
+        )
+
+        assertTrue(entries.any { it.subdirectory == "Covers" && it.entry == stableCover })
+        assertTrue(entries.any { it.subdirectory == "Covers" && it.entry == referencedCover })
     }
 
     @Test

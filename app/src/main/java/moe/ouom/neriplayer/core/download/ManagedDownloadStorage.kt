@@ -458,7 +458,9 @@ internal object ManagedDownloadStorage {
         val audioEntriesByRemoteTrackKey: Map<String, List<StoredEntry>>,
         val coverEntriesByName: Map<String, StoredEntry>,
         val lyricEntriesByName: Map<String, StoredEntry>,
-        val knownReferences: Set<String>
+        val knownReferences: Set<String>,
+        /** root 子项查询是否完整，false 时不能把空结果当成目录事实 */
+        val rootEntriesComplete: Boolean = true
     )
 
     data class DownloadedLyricsBundle(
@@ -1385,6 +1387,29 @@ internal object ManagedDownloadStorage {
             .firstOrNull { entry -> entry.name == normalizedName }
     }
 
+    internal suspend fun findDownloadedAudioByCandidateBaseNames(
+        context: Context,
+        candidateBaseNames: List<String>
+    ): StoredEntry? = withContext(Dispatchers.IO) {
+        val normalizedBaseNames = candidateBaseNames
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (normalizedBaseNames.isEmpty()) {
+            return@withContext null
+        }
+        val root = resolveRootBlocking(context)
+        val refresh = treeDirectories.refreshRootEntries(context, root)
+        if (!refresh.isComplete) {
+            NPLogger.w(TAG, "取消清理跳过不完整根目录查询: candidates=${normalizedBaseNames.size}")
+            return@withContext null
+        }
+        findAudioEntry(
+            audioEntries = refresh.entries,
+            baseNames = normalizedBaseNames
+        )
+    }
+
     fun findDownloadedAudio(snapshot: DownloadLibrarySnapshot, song: SongItem): StoredEntry? {
         return findAudioEntry(snapshot, song)
     }
@@ -1593,7 +1618,8 @@ internal object ManagedDownloadStorage {
             cachedSnapshot?.let { return@synchronized it }
         }
 
-        val rootEntries = listChildren(context, root).filterNot(StoredEntry::isDirectory)
+        val rootRefresh = treeDirectories.refreshRootEntries(context, root)
+        val rootEntries = rootRefresh.entries.filterNot(StoredEntry::isDirectory)
         val audioEntries = rootEntries.filter { it.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { ManagedDownloadTreeNaming.isMetadataName(it.name) }
         val metadataEntriesByAudioName = metadataEntries
@@ -1669,7 +1695,8 @@ internal object ManagedDownloadStorage {
             metadataEntries = metadataEntriesByAudioName.values.toList(),
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
-            lyricEntries = lyricEntries
+            lyricEntries = lyricEntries,
+            rootEntriesComplete = rootRefresh.isComplete
         ).also { snapshot ->
             snapshotCacheStore.putSnapshot(context, cacheKey, snapshot)
         }
@@ -1701,14 +1728,16 @@ internal object ManagedDownloadStorage {
         metadataEntries: List<StoredEntry>,
         metadataByAudioName: Map<String, DownloadedAudioMetadata>,
         coverEntries: List<StoredEntry>,
-        lyricEntries: List<StoredEntry>
+        lyricEntries: List<StoredEntry>,
+        rootEntriesComplete: Boolean = true
     ): DownloadLibrarySnapshot {
         return ManagedDownloadSnapshotIndex.compose(
             audioEntries = audioEntries,
             metadataEntries = metadataEntries,
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
-            lyricEntries = lyricEntries
+            lyricEntries = lyricEntries,
+            rootEntriesComplete = rootEntriesComplete
         )
     }
 

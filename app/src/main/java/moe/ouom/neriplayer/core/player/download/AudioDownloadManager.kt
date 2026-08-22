@@ -1063,6 +1063,13 @@ object AudioDownloadManager {
             ?: PreparedDownloadArtifactsStore.restore(context, songKey)
     }
 
+    internal fun clearPreparedDownloadArtifactsForCancellation(
+        context: android.content.Context,
+        songKey: String
+    ) {
+        clearPreparedDownloadArtifacts(context, songKey)
+    }
+
     private fun clearPreparedDownloadArtifacts(
         context: android.content.Context,
         songKey: String

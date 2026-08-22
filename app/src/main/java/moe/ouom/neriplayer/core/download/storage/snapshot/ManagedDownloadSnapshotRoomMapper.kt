@@ -98,7 +98,9 @@ internal object ManagedDownloadSnapshotRoomMapper {
                 entity.audioName to entity.toDownloadedAudioMetadata()
             },
             coverEntries = coverEntries.map { it.toStoredEntry() },
-            lyricEntries = lyricEntries.map { it.toStoredEntry() }
+            lyricEntries = lyricEntries.map { it.toStoredEntry() },
+            // Room 目前只保存已列举的条目，恢复后仍需重新确认 root
+            rootEntriesComplete = false
         )
     }
 

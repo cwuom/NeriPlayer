@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -1663,6 +1664,7 @@ object GlobalDownloadManager {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
         ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
+        AudioDownloadManager.clearPreparedDownloadArtifactsForCancellation(appContext, songKey)
         ManagedDownloadStorage.removeCancelledDownloadKeys(appContext, setOf(songKey))
         cleanupUnfinalizedDownloadForRetry(appContext, song)
     }
@@ -1676,6 +1678,7 @@ object GlobalDownloadManager {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
         ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
+        AudioDownloadManager.clearPreparedDownloadArtifactsForCancellation(appContext, songKey)
         if (!keepCancellationMarker) {
             ManagedDownloadStorage.removeCancelledDownloadKeys(appContext, setOf(songKey))
         }
@@ -1705,8 +1708,21 @@ object GlobalDownloadManager {
                 song = song,
                 forceRefresh = true
             )
+            ?: ManagedDownloadStorage.findDownloadedAudioByCandidateBaseNames(
+                context = context,
+                candidateBaseNames = ManagedDownloadStorage.buildCandidateBaseNames(song)
+            )
             ?: return false
         val metadata = readDownloadedMetadata(context, audio)
+        if (metadata == null) {
+            NPLogger.w(TAG, "发现取消下载留下无 metadata 音频，按精确文件名回滚: song=${song.name}, file=${audio.name}")
+            rollbackCancelledDownload(
+                context = context,
+                song = song,
+                storedAudio = audio
+            )
+            return true
+        }
         if (!isUnfinalizedDownloadedMetadata(metadata)) {
             return false
         }
@@ -1922,6 +1938,17 @@ object GlobalDownloadManager {
                     .awaitAll()
                     .filterNotNull()
                     .sortedWith(downloadedSongNewestFirstComparator)
+            }
+            if (!snapshot.rootEntriesComplete) {
+                NPLogger.w(
+                    TAG,
+                    "下载目录根项扫描不完整，保留既有 catalog 并等待重扫: " +
+                        "observed=${songs.size}, forceRefresh=$forceRefresh"
+                )
+                if (!forceRefresh) {
+                    scheduleCatalogReconcile(context, forceRefresh = true)
+                }
+                return
             }
             downloadedSongMetadataSyncMutex.withLock {
                 if (metadataRevisionAtScanStart != downloadedSongMetadataRevision.get()) {
@@ -2343,8 +2370,19 @@ object GlobalDownloadManager {
                 ?.let(::add)
             addAll(ManagedDownloadStorage.buildCandidateBaseNames(song))
         }.distinct()
+        val directOrphanAudio = if (resolvedStoredAudio == null) {
+            ManagedDownloadStorage.findDownloadedAudioByCandidateBaseNames(
+                context = appContext,
+                candidateBaseNames = candidateBaseNames
+            )?.takeUnless { audio ->
+                readDownloadedMetadata(appContext, audio)?.downloadFinalized == true
+            }
+        } else {
+            null
+        }
+        val audioForRemoval = resolvedStoredAudio ?: directOrphanAudio
         val explicitReferences = listOfNotNull(
-            resolvedStoredAudio?.let(ManagedDownloadStorage::metadataReferenceForAudio),
+            audioForRemoval?.let(ManagedDownloadStorage::metadataReferenceForAudio),
             sidecarReferences?.coverReference,
             sidecarReferences?.lyricReference,
             sidecarReferences?.translatedLyricReference,
@@ -2353,22 +2391,22 @@ object GlobalDownloadManager {
 
         NPLogger.d(
             TAG,
-            "回滚已取消下载: song=${song.name}, audio=${resolvedStoredAudio?.reference}, baseNames=$candidateBaseNames, sidecars=$explicitReferences"
+            "回滚已取消下载: song=${song.name}, audio=${audioForRemoval?.reference}, baseNames=$candidateBaseNames, sidecars=$explicitReferences"
         )
 
         removeManagedDownloadArtifacts(
             context = appContext,
             songName = song.name,
-            storedAudio = resolvedStoredAudio,
+            storedAudio = audioForRemoval,
             songId = song.id,
             candidateBaseNames = candidateBaseNames,
             explicitReferences = explicitReferences,
-            useCachedSnapshotOnly = true
+            useCachedSnapshotOnly = false
         )
 
         val currentSongs = _downloadedSongs.value
         val updatedSongs = currentSongs.filterNot { downloaded ->
-            (resolvedStoredAudio != null && downloaded.filePath == resolvedStoredAudio.reference) ||
+            (audioForRemoval != null && downloaded.filePath == audioForRemoval.reference) ||
                 matchesDownloadedSong(song, downloaded)
         }
         if (updatedSongs != currentSongs) {
@@ -4176,9 +4214,7 @@ object GlobalDownloadManager {
             }
         }
         awaitDownloadCancellationsSettled(activeDownloadTaskKeys)
-        batchJobs.forEach { batchJob ->
-            batchJob.join()
-        }
+        batchJobs.joinAll()
         val focusedCleanupKeys = mutableSetOf<String>()
         tasks.forEach { task ->
             val songKey = task.song.stableKey()

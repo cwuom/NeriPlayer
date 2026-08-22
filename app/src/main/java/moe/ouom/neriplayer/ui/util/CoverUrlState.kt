@@ -92,6 +92,24 @@ internal fun shouldProbeFastLocalCoverCandidate(
     immediateCover: String?
 ): Boolean = isLocalSong || immediateCover.isNullOrBlank()
 
+internal fun retainCoverDuringResolution(
+    currentCover: String?,
+    resolvedCover: String?
+): String? {
+    return resolvedCover?.takeIf(String::isNotBlank) ?: currentCover
+}
+
+internal fun finishCoverResolution(
+    currentCover: String?,
+    resolvedCover: String?,
+    resolutionComplete: Boolean
+): String? {
+    if (!resolutionComplete) {
+        return retainCoverDuringResolution(currentCover, resolvedCover)
+    }
+    return resolvedCover?.takeIf(String::isNotBlank)
+}
+
 @Composable
 fun rememberSongDisplayCoverUrl(
     song: SongItem?,
@@ -130,7 +148,7 @@ internal fun rememberSongDisplayCoverUrl(
     val effectiveGeneration = localAssetGeneration ?: "global=$downloadPresenceVersion"
     val probeGeneration = effectiveGeneration.hashCode()
     val resolvedCacheKey = versionedCoverCacheKey(songDisplayKey, effectiveGeneration)
-    var coverUrl by remember(resolvedCacheKey) {
+    var coverUrl by remember(songDisplayKey) {
         mutableStateOf(
             cachedResolvedCover(resolvedCacheKey)
                 ?: song?.displayCoverUrl()
@@ -162,10 +180,6 @@ internal fun rememberSongDisplayCoverUrl(
         val immediateCover = withContext(coverProbeDispatcher) {
             rawImmediateCover?.takeIf { isUsableCoverReference(appContext, it) }
         }
-        if (immediateCover.isNullOrBlank() && rawImmediateCover != null && coverUrl == rawImmediateCover) {
-            // a deleted sidecar must not keep the row in a permanently failed image state
-            coverUrl = null
-        }
         val memoryCover = cachedResolvedCover(resolvedCacheKey)
         if (!memoryCover.isNullOrBlank()) {
             coverUrl = memoryCover
@@ -187,9 +201,6 @@ internal fun rememberSongDisplayCoverUrl(
                     ?: immediateCover
             }
         }
-        if (cachedCover.isNullOrBlank() && memoryCover != null && coverUrl == memoryCover) {
-            coverUrl = null
-        }
         if (!cachedCover.isNullOrBlank()) {
             resolutionStage = when {
                 cachedCover == memoryCover -> "memory"
@@ -197,14 +208,16 @@ internal fun rememberSongDisplayCoverUrl(
                 else -> "local-cache"
             }
             rememberResolvedCover(resolvedCacheKey, cachedCover)
-            coverUrl = cachedCover
+            coverUrl = retainCoverDuringResolution(coverUrl, cachedCover)
         }
-        if (
-            !shouldResolveEmbeddedCoverFallback(
+        if (!shouldResolveEmbeddedCoverFallback(
                 resolveLocalFallback = resolveLocalFallback,
                 allowEmbeddedCoverFallback = allowEmbeddedCoverFallback
-            ) || !coverUrl.isNullOrBlank()
+            ) || !cachedCover.isNullOrBlank()
         ) {
+            if (cachedCover.isNullOrBlank() && immediateCover.isNullOrBlank()) {
+                coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+            }
             return@LaunchedEffect
         }
 
@@ -215,7 +228,9 @@ internal fun rememberSongDisplayCoverUrl(
         if (!resolvedCover.isNullOrBlank()) {
             resolutionStage = "fallback"
             rememberResolvedCover(resolvedCacheKey, resolvedCover)
-            coverUrl = resolvedCover
+            coverUrl = retainCoverDuringResolution(coverUrl, resolvedCover)
+        } else {
+            coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
         }
         logCoverResolution(
             song = song,
@@ -362,7 +377,7 @@ fun rememberPlaylistDisplayCoverUrl(
         playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates)
     }
     val resolvedCacheKey = versionedCoverCacheKey(playlistKey, downloadPresenceVersion)
-    var coverUrl by remember(resolvedCacheKey) {
+    var coverUrl by remember(playlistKey) {
         mutableStateOf(
             cachedResolvedCover(resolvedCacheKey)
                 ?: effectivePlaylist?.customCoverUrl?.takeIf { it.isNotBlank() }
@@ -402,9 +417,12 @@ fun rememberPlaylistDisplayCoverUrl(
         }
         if (!immediateCover.isNullOrBlank()) {
             rememberResolvedCover(resolvedCacheKey, immediateCover)
-            coverUrl = immediateCover
+            coverUrl = retainCoverDuringResolution(coverUrl, immediateCover)
         }
         if (!resolveLocalFallback || !allowEmbeddedCoverFallback) {
+            if (immediateCover.isNullOrBlank()) {
+                coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+            }
             return@LaunchedEffect
         }
         if (
@@ -425,8 +443,8 @@ fun rememberPlaylistDisplayCoverUrl(
         if (!resolvedCover.isNullOrBlank()) {
             rememberResolvedCover(resolvedCacheKey, resolvedCover)
             coverUrl = resolvedCover
-        } else if (cachedResolvedCover(resolvedCacheKey).isNullOrBlank()) {
-            coverUrl = null
+        } else if (immediateCover.isNullOrBlank()) {
+            coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
         }
     }
 
@@ -508,7 +526,7 @@ fun rememberLocalArtistDisplayCoverUrl(
         artist?.coverResolutionKey()
     }
     val resolvedCacheKey = versionedCoverCacheKey(artistKey, downloadPresenceVersion)
-    var coverUrl by remember(resolvedCacheKey) {
+    var coverUrl by remember(artistKey) {
         mutableStateOf(cachedResolvedCover(resolvedCacheKey) ?: artist?.displayCoverUrl())
     }
 
@@ -534,10 +552,11 @@ fun rememberLocalArtistDisplayCoverUrl(
         if (!immediateCover.isNullOrBlank()) {
             rememberResolvedCover(resolvedCacheKey, immediateCover)
             coverUrl = immediateCover
-        } else if (!resolveLocalFallback && cachedResolvedCover(resolvedCacheKey).isNullOrBlank()) {
-            coverUrl = null
         }
         if (!resolveLocalFallback) {
+            if (immediateCover.isNullOrBlank()) {
+                coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+            }
             return@LaunchedEffect
         }
 
@@ -548,8 +567,8 @@ fun rememberLocalArtistDisplayCoverUrl(
         if (!resolvedCover.isNullOrBlank()) {
             rememberResolvedCover(resolvedCacheKey, resolvedCover)
             coverUrl = resolvedCover
-        } else if (immediateCover.isNullOrBlank() && cachedResolvedCover(resolvedCacheKey).isNullOrBlank()) {
-            coverUrl = null
+        } else if (immediateCover.isNullOrBlank()) {
+            coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
         }
     }
 

@@ -51,7 +51,9 @@ internal object ManagedDownloadMigrationEntryCollector {
 
         val managedCoverNames = managedCoverNames(
             managedAudioEntries = managedAudioEntries,
-            metadataAudioNames = metadataEntriesByAudioName.keys
+            metadataAudioNames = metadataEntriesByAudioName.keys,
+            coverEntries = coverEntries,
+            parsedMetadataByAudioName = parsedMetadataByAudioName
         )
         val managedLyricNames = managedLyricNames(
             managedAudioEntries = managedAudioEntries,
@@ -88,12 +90,31 @@ internal object ManagedDownloadMigrationEntryCollector {
 
     private fun managedCoverNames(
         managedAudioEntries: List<ManagedDownloadStorage.StoredEntry>,
-        metadataAudioNames: Set<String>
+        metadataAudioNames: Set<String>,
+        coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
     ): Set<String> {
         return buildSet {
+            fun addStableCoverCandidates(baseNames: List<String>, stableKey: String?) {
+                stableKey
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { key ->
+                        baseNames.forEach { baseName ->
+                            ManagedDownloadStorageNaming
+                                .buildStableCoverCandidateNames(baseName, key)
+                                .forEach(::add)
+                        }
+                    }
+            }
+
             managedAudioEntries.forEach { entry ->
                 val candidateBaseNames = candidateManagedDownloadBaseNames(entry.nameWithoutExtension)
                 ManagedDownloadStorageNaming.buildSidecarCandidateNames(candidateBaseNames).forEach(::add)
+                addStableCoverCandidates(
+                    baseNames = candidateBaseNames,
+                    stableKey = parsedMetadataByAudioName[entry.name]?.stableKey
+                )
             }
             metadataAudioNames
                 .asSequence()
@@ -109,6 +130,26 @@ internal object ManagedDownloadMigrationEntryCollector {
                         .asSequence()
                 }
                 .forEach(::add)
+
+            parsedMetadataByAudioName.forEach { (audioName, metadata) ->
+                val baseNames = candidateManagedDownloadBaseNames(
+                    audioName.substringBeforeLast('.', audioName)
+                )
+                addStableCoverCandidates(baseNames, metadata.stableKey)
+                metadata.coverPath
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                    ?.let { coverPath ->
+                        coverEntries
+                            .firstOrNull { entry ->
+                                entry.reference == coverPath ||
+                                    entry.mediaUri == coverPath ||
+                                    entry.localFilePath == coverPath
+                            }
+                            ?.name
+                            ?.let(::add)
+                    }
+            }
         }
     }
 
