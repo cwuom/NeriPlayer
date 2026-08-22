@@ -2,7 +2,6 @@ package moe.ouom.neriplayer.core.download.storage
 
 internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val COVER_SUBDIRECTORY = "Covers"
-internal const val REMOTE_COVER_SUBDIRECTORY = "RemoteCovers"
 internal const val LYRIC_SUBDIRECTORY = "Lyrics"
 internal const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
 internal const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"

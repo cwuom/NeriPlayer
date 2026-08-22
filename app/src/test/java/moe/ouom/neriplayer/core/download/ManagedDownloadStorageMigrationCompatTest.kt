@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
@@ -16,6 +17,7 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
+import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
@@ -24,6 +26,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.doThrow
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -47,6 +50,74 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals(0, ManagedDownloadTreeNaming.metadataNameOrdinal(canonicalName, audioName))
         assertEquals(1, ManagedDownloadTreeNaming.metadataNameOrdinal(numberedBeforeExtension, audioName))
         assertEquals(2, ManagedDownloadTreeNaming.metadataNameOrdinal(numberedAfterExtension, audioName))
+    }
+
+    @Test
+    fun `pending audio names end with a non audio sentinel and expose logical name`() {
+        val names = ManagedDownloadPendingAudioWriteNames()
+        val finalName = "Artist - Song.mp3"
+        val pendingName = names.buildPendingAudioWriteName(finalName)
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = pendingName,
+            reference = "/downloads/$pendingName",
+            mediaUri = "file:///downloads/$pendingName",
+            localFilePath = "/downloads/$pendingName",
+            sizeBytes = 12L,
+            lastModifiedMs = 1L
+        )
+
+        assertTrue(names.isPendingAudioWriteName(pendingName))
+        assertFalse(pendingName.endsWith(".mp3", ignoreCase = true))
+        assertTrue(entry.isPendingAudioWrite)
+        assertEquals(finalName, entry.logicalName)
+        assertEquals("Song", entry.nameWithoutExtension.substringAfter(" - "))
+        assertEquals("", entry.extension)
+        assertEquals("", entry.playbackUri)
+    }
+
+    @Test
+    fun `unsupported SAF rename falls back instead of aborting download`() {
+        val document = mock(DocumentFile::class.java)
+        doThrow(UnsupportedOperationException()).`when`(document).renameTo("final.mp3")
+
+        assertFalse(ManagedDownloadStorage.tryRenameTreeDocument(document, "final.mp3"))
+        assertFalse(ManagedDownloadStorage.tryRenameTreeDocument(null, "final.mp3"))
+    }
+
+    @Test
+    fun `pending metadata cleanup recognizes provider numbered variants only`() {
+        val audioName = "Artist - Song.mp3"
+        val canonicalPending = "$audioName.npmeta.pending.json"
+        val numberedBeforeExtension = "$audioName.npmeta.pending (1).json"
+        val numberedAfterExtension = "$canonicalPending (2)"
+        val committedMetadata = "$audioName.npmeta.json"
+
+        assertTrue(ManagedDownloadTreeNaming.isPendingMetadataName(canonicalPending, audioName))
+        assertTrue(
+            ManagedDownloadTreeNaming.isPendingMetadataName(
+                numberedBeforeExtension,
+                audioName
+            )
+        )
+        assertTrue(
+            ManagedDownloadTreeNaming.isPendingMetadataName(
+                numberedAfterExtension,
+                audioName
+            )
+        )
+        assertFalse(ManagedDownloadTreeNaming.isPendingMetadataName(committedMetadata, audioName))
+        assertEquals(
+            listOf(canonicalPending, numberedAfterExtension, numberedBeforeExtension).sorted(),
+            ManagedDownloadStorage.pendingMetadataEntryNames(
+                audioName = audioName,
+                candidateNames = listOf(
+                    committedMetadata,
+                    numberedBeforeExtension,
+                    canonicalPending,
+                    numberedAfterExtension
+                )
+            )
+        )
     }
 
     @Test

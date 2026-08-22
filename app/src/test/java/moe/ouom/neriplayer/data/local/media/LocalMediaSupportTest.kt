@@ -21,6 +21,26 @@ import org.mockito.Mockito.`when`
 class LocalMediaSupportTest {
 
     @Test
+    fun `sidecar cover wins over embedded and remote fallback references`() {
+        assertEquals(
+            "file:///music/Covers/song.jpg",
+            LocalMediaSupport.resolveCoverReferenceByPriority(
+                sidecarReference = " file:///music/Covers/song.jpg ",
+                embeddedReference = "file:///cache/embedded.jpg",
+                fallbackReference = "https://example.com/cover.jpg"
+            )
+        )
+        assertEquals(
+            "file:///cache/embedded.jpg",
+            LocalMediaSupport.resolveCoverReferenceByPriority(
+                sidecarReference = null,
+                embeddedReference = "file:///cache/embedded.jpg",
+                fallbackReference = "https://example.com/cover.jpg"
+            )
+        )
+    }
+
+    @Test
     fun `metadata write does not mask an embedded write failure when cover is unchanged`() {
         assertEquals(
             LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE,

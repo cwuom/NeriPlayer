@@ -1543,15 +1543,17 @@ object AudioDownloadManager {
                             val coreMetadata = JSONObject(pendingMetadata).apply {
                                 put("artifactState", "CORE_COMMITTED")
                             }.toString()
-                            if (!ManagedDownloadStorage.promoteCoreAudioMetadata(
-                                    context = context,
-                                    audio = storedAudio,
-                                    json = coreMetadata
-                                )
-                            ) {
+                            storedAudio = ManagedDownloadStorage.promoteCoreAudioMetadata(
+                                context = context,
+                                audio = storedAudio,
+                                json = coreMetadata
+                            ) ?: throw IOException(
+                                "无法提升下载音频，core metadata 尚未完成: ${workingSong.name}"
+                            )
+                            if (storedAudio.isPendingAudioWrite) {
                                 NPLogger.w(
                                     TAG,
-                                    "音频已提交但 core metadata promote 失败，保留 pending 等待恢复: " +
+                                    "core metadata 已写入但音频仍为 pending，保留等待恢复: " +
                                         "song=${workingSong.name}, file=${storedAudio.name}"
                                 )
                             }

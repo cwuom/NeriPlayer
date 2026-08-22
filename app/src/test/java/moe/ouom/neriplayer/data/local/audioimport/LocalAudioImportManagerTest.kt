@@ -90,6 +90,72 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `stale media store rows are kept only with a real or provider-readable source`() {
+        assertTrue(
+            shouldKeepMediaStoreAudioRow(
+                hasResolvedFile = true,
+                hasProviderAudioReference = false,
+                hasReadableMediaStoreReference = false
+            )
+        )
+        assertTrue(
+            shouldKeepMediaStoreAudioRow(
+                hasResolvedFile = false,
+                hasProviderAudioReference = true,
+                hasReadableMediaStoreReference = false
+            )
+        )
+        assertTrue(
+            shouldKeepMediaStoreAudioRow(
+                hasResolvedFile = false,
+                hasProviderAudioReference = false,
+                hasReadableMediaStoreReference = true
+            )
+        )
+        assertFalse(
+            shouldKeepMediaStoreAudioRow(
+                hasResolvedFile = false,
+                hasProviderAudioReference = false,
+                hasReadableMediaStoreReference = false
+            )
+        )
+    }
+
+    @Test
+    fun `media store rows stay inside the selected folder scope`() {
+        assertTrue(
+            LocalAudioImportManager.isMediaStoreRowInFolderScope(
+                rowRelativePath = "Music/Albums/",
+                selectedRelativePath = "Music/"
+            )
+        )
+        assertFalse(
+            LocalAudioImportManager.isMediaStoreRowInFolderScope(
+                rowRelativePath = "Music2/Albums/",
+                selectedRelativePath = "Music/"
+            )
+        )
+        assertFalse(
+            LocalAudioImportManager.isMediaStoreRowInFolderScope(
+                rowRelativePath = null,
+                selectedRelativePath = "Music/"
+            )
+        )
+        assertTrue(
+            LocalAudioImportManager.isMediaStoreRowInFolderScope(
+                rowRelativePath = null,
+                selectedRelativePath = ""
+            )
+        )
+        assertFalse(
+            LocalAudioImportManager.isMediaStoreRowInFolderScope(
+                rowRelativePath = "Music/",
+                selectedRelativePath = ""
+            )
+        )
+    }
+
+    @Test
     fun `scan traversal does not fall back after cancellation`() {
         assertFalse(
             shouldFallbackToDocumentFileAfterTraversalFailure(

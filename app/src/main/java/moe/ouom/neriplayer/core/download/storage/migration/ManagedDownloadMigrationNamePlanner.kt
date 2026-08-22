@@ -4,7 +4,6 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -18,14 +17,12 @@ internal data class ManagedMigrationTargetIndex(
     val rootEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val coverEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val lyricEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
-    val remoteCoverEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry> = emptyMap(),
     val metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap()
 ) {
     fun namesFor(subdirectory: String?): Set<String> {
         return when (subdirectory) {
             null -> rootEntriesByName.keys
             COVER_SUBDIRECTORY -> coverEntriesByName.keys
-            REMOTE_COVER_SUBDIRECTORY -> remoteCoverEntriesByName.keys
             LYRIC_SUBDIRECTORY -> lyricEntriesByName.keys
             else -> emptySet()
         }
@@ -35,7 +32,6 @@ internal data class ManagedMigrationTargetIndex(
         return when (subdirectory) {
             null -> rootEntriesByName[name]
             COVER_SUBDIRECTORY -> coverEntriesByName[name]
-            REMOTE_COVER_SUBDIRECTORY -> remoteCoverEntriesByName[name]
             LYRIC_SUBDIRECTORY -> lyricEntriesByName[name]
             else -> null
         }
@@ -46,7 +42,6 @@ internal data class ManagedMigrationTargetIndex(
         return sequenceOf(
             rootEntriesByName,
             coverEntriesByName,
-            remoteCoverEntriesByName,
             lyricEntriesByName
         )
             .flatMap { it.values.asSequence() }

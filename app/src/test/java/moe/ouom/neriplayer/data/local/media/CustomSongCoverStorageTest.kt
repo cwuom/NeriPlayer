@@ -62,13 +62,13 @@ class CustomSongCoverStorageTest {
 
             assertNotNull(persisted)
             assertTrue(persisted?.startsWith("file:") == true)
-            assertTrue(persisted?.contains("RemoteCovers") == true)
-            assertTrue(File(tempFolder.root, "RemoteCovers").isDirectory)
+            assertTrue(persisted?.contains("/custom_song_covers/") == true)
+            assertTrue(File(tempFolder.root, "custom_song_covers").isDirectory)
             assertEquals(persisted, mappedLocal)
             assertEquals(reference, mappedRemote)
             assertEquals(
                 byteArrayOf(1, 2, 3).toList(),
-                File(tempFolder.root, "RemoteCovers").listFiles()?.single()?.readBytes()?.toList()
+                File(tempFolder.root, "custom_song_covers").listFiles()?.single()?.readBytes()?.toList()
             )
         } finally {
             CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
@@ -94,7 +94,7 @@ class CustomSongCoverStorageTest {
             )
 
             assertEquals(reference, resolved)
-            assertTrue(!File(tempFolder.root, "RemoteCovers").exists())
+            assertTrue(!File(tempFolder.root, "bak").exists())
         } finally {
             CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
         }
@@ -115,7 +115,7 @@ class CustomSongCoverStorageTest {
             song = testSong(),
             reference = source.absolutePath
         )
-        val storedFiles = File(tempFolder.root, "original_song_covers").listFiles()
+        val storedFiles = File(tempFolder.root, "bak").listFiles()
 
         assertNotNull(first)
         assertTrue(first?.startsWith("file:") == true)
@@ -135,10 +135,10 @@ class CustomSongCoverStorageTest {
     }
 
     @Test
-    fun `legacy original cover directory resolves the song cover file`() = runBlocking {
+    fun `backup directory resolves the song cover file`() = runBlocking {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
-        val directory = File(tempFolder.root, "original_song_covers").apply { mkdirs() }
+        val directory = File(tempFolder.root, "bak").apply { mkdirs() }
         val stored = File(
             directory,
             CustomSongCoverStorage.originalCoverFileName(testSong(), "jpg")
@@ -156,11 +156,11 @@ class CustomSongCoverStorageTest {
     }
 
     @Test
-    fun `legacy cover lookup skips unrelated directories and resolves the original file`() = runBlocking {
+    fun `backup lookup skips unrelated directories and resolves the original file`() = runBlocking {
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
         val unrelated = tempFolder.newFolder("custom_song_covers")
-        val directory = File(tempFolder.root, "original_song_covers").apply { mkdirs() }
+        val directory = File(tempFolder.root, "bak").apply { mkdirs() }
         val stored = File(
             directory,
             CustomSongCoverStorage.originalCoverFileName(testSong(), "jpg")

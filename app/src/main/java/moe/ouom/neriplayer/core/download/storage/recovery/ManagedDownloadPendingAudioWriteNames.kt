@@ -12,6 +12,12 @@ internal class ManagedDownloadPendingAudioWriteNames {
 
     fun buildPendingAudioWriteName(fileName: String): String {
         val pendingId = pendingAudioWriteIdGenerator.incrementAndGet()
-        return "$fileName$PENDING_AUDIO_WRITE_MARKER.$pendingId"
+        // pending 文件最后使用哨兵后缀, 防止 MediaStore 或播放器按音频扩展名处理
+        return "$fileName$PENDING_AUDIO_WRITE_MARKER.$pendingId.pending"
+    }
+
+    fun logicalAudioName(name: String): String {
+        val markerIndex = name.indexOf(PENDING_AUDIO_WRITE_MARKER)
+        return name.takeIf { markerIndex <= 0 } ?: name.substring(0, markerIndex)
     }
 }

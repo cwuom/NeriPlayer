@@ -31,9 +31,9 @@ import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALID
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
@@ -379,17 +379,27 @@ internal object ManagedDownloadStorage {
         val lastModifiedMs: Long,
         val isDirectory: Boolean = false
     ) {
+        val isPendingAudioWrite: Boolean
+            get() = name.contains(PENDING_AUDIO_WRITE_MARKER)
+
+        val logicalName: String
+            get() = name.substringBefore(PENDING_AUDIO_WRITE_MARKER, name)
+
         val extension: String
-            get() = name.substringAfterLast('.', "").lowercase()
+            get() = if (isPendingAudioWrite) {
+                ""
+            } else {
+                name.substringAfterLast('.', "").lowercase()
+            }
 
         val nameWithoutExtension: String
-            get() = name.substringBeforeLast('.', name)
+            get() = logicalName.substringBeforeLast('.', logicalName)
 
         val playbackUri: String
-            get() = mediaUri
+            get() = mediaUri.takeUnless { isPendingAudioWrite }.orEmpty()
 
         val displayName: String
-            get() = name
+            get() = logicalName
     }
 
     data class MigrationResult(
@@ -1446,6 +1456,23 @@ internal object ManagedDownloadStorage {
             .firstOrNull { entry -> entry.name == normalizedName }
     }
 
+    internal suspend fun listPendingAudioWrites(
+        context: Context,
+        forceRefresh: Boolean = false
+    ): List<StoredEntry> = withContext(Dispatchers.IO) {
+        val root = resolveRootBlocking(context)
+        val refresh = treeDirectories.refreshRootEntries(context, root)
+        if (!refresh.isComplete && forceRefresh) {
+            NPLogger.w(TAG, "pending 音频枚举不完整，跳过恢复: root=${root.javaClass.simpleName}")
+            return@withContext emptyList()
+        }
+        refresh.entries
+            .asSequence()
+            .filterNot(StoredEntry::isDirectory)
+            .filter(StoredEntry::isPendingAudioWrite)
+            .toList()
+    }
+
     internal suspend fun findDownloadedAudioByCandidateBaseNames(
         context: Context,
         candidateBaseNames: List<String>
@@ -1726,15 +1753,7 @@ internal object ManagedDownloadStorage {
                     root = root,
                     subdirectory = COVER_SUBDIRECTORY
                 )
-                val remoteCovers = treeDirectories.refreshSubdirectoryEntries(
-                    context = context,
-                    root = root,
-                    subdirectory = REMOTE_COVER_SUBDIRECTORY
-                )
-                ManagedDownloadTreeDirectories.SubdirectoryEntriesRefresh(
-                    entries = standardCovers.entries + remoteCovers.entries,
-                    isComplete = standardCovers.isComplete && remoteCovers.isComplete
-                )
+                standardCovers
             } else {
                 ManagedDownloadTreeDirectories.SubdirectoryEntriesRefresh(
                     entries = activeSnapshot.coverEntriesByName.values.toList(),
@@ -1892,7 +1911,6 @@ internal object ManagedDownloadStorage {
             )
         }
         val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
-            .plus(listSubdirectoryEntries(context, root, REMOTE_COVER_SUBDIRECTORY))
         val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
@@ -2062,24 +2080,26 @@ internal object ManagedDownloadStorage {
     suspend fun findMetadataForAudio(context: Context, audio: StoredEntry): StoredEntry? = withContext(Dispatchers.IO) {
         val snapshot = resolveSnapshotForIndexedLookup(context)
             ?: buildDownloadLibrarySnapshotBlocking(context)
-        snapshot.metadataEntriesByAudioName[audio.name]
+        snapshot.metadataEntriesByAudioName[audio.logicalName]
             ?: findMetadataByDirectLookup(context, audio)
     }
 
     private fun findMetadataForAudioBlocking(context: Context, audio: StoredEntry): StoredEntry? {
         val snapshot = resolveSnapshotForIndexedLookup(context)
-        return snapshot?.metadataEntriesByAudioName?.get(audio.name)
+        return snapshot?.metadataEntriesByAudioName?.get(audio.logicalName)
             ?: findMetadataByDirectLookup(context, audio)
     }
 
     internal fun metadataReferenceForAudio(audio: StoredEntry): String? {
         val reference = audio.reference.takeIf(String::isNotBlank) ?: return null
+        if (audio.isPendingAudioWrite) return null
         return "$reference$METADATA_SUFFIX"
     }
 
     private fun findMetadataByDirectLookup(context: Context, audio: StoredEntry): StoredEntry? {
-        val metadataName = "${audio.name}$METADATA_SUFFIX"
-        val pendingMetadataName = "${audio.name}$PENDING_METADATA_SUFFIX"
+        val logicalAudioName = audio.logicalName
+        val metadataName = "$logicalAudioName$METADATA_SUFFIX"
+        val pendingMetadataName = "$logicalAudioName$PENDING_METADATA_SUFFIX"
         return when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
                 val metadataFile = File(root.dir, metadataName)
@@ -2168,23 +2188,34 @@ internal object ManagedDownloadStorage {
         context: Context,
         audio: StoredEntry,
         json: String
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): StoredEntry? = withContext(Dispatchers.IO) {
         val root = resolveRootBlocking(context)
         writeTextThroughBackend(
             context = context,
             root = root,
-            displayName = "${audio.name}$METADATA_SUFFIX",
+            displayName = "${audio.logicalName}$METADATA_SUFFIX",
             content = json
         ) ?: writeRootText(
             context = context,
             root = root,
-            displayName = "${audio.name}$METADATA_SUFFIX",
+            displayName = "${audio.logicalName}$METADATA_SUFFIX",
             content = json,
             invalidateSnapshot = false
-        ) ?: return@withContext false
-        deleteRootNamedEntry(root, "${audio.name}$PENDING_METADATA_SUFFIX")
+        ) ?: return@withContext null
+        if (!deletePendingAudioMetadataBlocking(context, root, audio.logicalName)) {
+            NPLogger.w(TAG, "core metadata 已写入但 pending metadata 清理未确认: ${audio.logicalName}")
+        }
         invalidateSnapshotCache(context)
-        true
+        val promoted = promotePendingAudioBlocking(context, root, audio)
+        if (promoted != null && !updateSnapshotCacheAfterStoredEntryWrite(
+                context,
+                promoted,
+                SnapshotEntryBucket.AUDIO
+            )
+        ) {
+            invalidateSnapshotCache(context)
+        }
+        promoted
     }
 
     internal suspend fun deletePendingAudioMetadata(
@@ -2194,13 +2225,17 @@ internal object ManagedDownloadStorage {
         val normalizedName = audioName.trim().takeIf(String::isNotBlank)
             ?: return@withContext false
         val root = resolveRootBlocking(context)
-        val pendingName = "$normalizedName$PENDING_METADATA_SUFFIX"
-        if (findRootNamedEntry(root, pendingName) == null) {
-            return@withContext true
-        }
-        deleteRootNamedEntry(root, pendingName)
-        invalidateSnapshotCache(context)
-        findRootNamedEntry(root, pendingName) == null
+        deletePendingAudioMetadataBlocking(context, root, normalizedName)
+    }
+
+    internal fun pendingMetadataEntryNames(
+        audioName: String,
+        candidateNames: Collection<String>
+    ): List<String> {
+        return candidateNames
+            .filter { name -> ManagedDownloadTreeNaming.isPendingMetadataName(name, audioName) }
+            .distinct()
+            .sorted()
     }
 
     private fun saveMetadataBlocking(context: Context, audio: StoredEntry, json: String): Boolean {
@@ -2212,7 +2247,7 @@ internal object ManagedDownloadStorage {
         val metadataEntry = writeRootText(
             context = context,
             root = resolveRootBlocking(context),
-            displayName = "${audio.name}$METADATA_SUFFIX",
+            displayName = "${audio.logicalName}$METADATA_SUFFIX",
             content = json,
             invalidateSnapshot = false
         )
@@ -2276,19 +2311,47 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun deleteRootNamedEntry(root: RootHandle, displayName: String) {
-        when (root) {
+    private fun deletePendingAudioMetadataBlocking(
+        context: Context,
+        root: RootHandle,
+        audioName: String
+    ): Boolean {
+        val entries = when (root) {
             is RootHandle.FileRoot -> {
-                runCatching { File(root.dir, displayName).delete() }
+                root.dir.listFiles()?.map(ManagedDownloadStoredEntryMapper::fromFile)
+                    ?: return false
             }
-
             is RootHandle.TreeRoot -> {
-                runCatching {
-                    root.tree.findFile(displayName)?.delete()
-                    treeChildRegistry.forgetTreeChildName(root.tree, displayName)
+                val refresh = treeChildRegistry.refreshTreeChildrenWithStatus(
+                    context = context,
+                    parent = root.tree
+                )
+                if (!refresh.isComplete) {
+                    return false
                 }
+                refresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild)
             }
         }
+        val pendingNames = pendingMetadataEntryNames(
+            audioName = audioName,
+            candidateNames = entries.filterNot(StoredEntry::isDirectory).map(StoredEntry::name)
+        ).toSet()
+        val pendingEntries = entries.filter { entry -> entry.name in pendingNames }
+        if (pendingEntries.isEmpty()) {
+            return true
+        }
+        val references = pendingEntries.mapTo(linkedSetOf(), StoredEntry::reference)
+        val deletedReferences = deleteReferencesInternal(
+            context = context,
+            references = references,
+            allowedRoot = root,
+            invalidateSnapshot = false
+        )
+        if (deletedReferences.isNotEmpty()) {
+            forgetDeletedReferencesFromCaches(deletedReferences)
+            invalidateSnapshotCache(context)
+        }
+        return deletedReferences.containsAll(references)
     }
 
     suspend fun markDownloadedAudioFinalized(context: Context, audio: StoredEntry): Boolean = withContext(Dispatchers.IO) {
@@ -2451,14 +2514,7 @@ internal object ManagedDownloadStorage {
                         expectedSizeBytes = actualSizeBytes,
                         description = pendingTarget.name
                     )
-                    val target = File(root.dir, finalName)
-                    replaceFileTarget(pendingTarget, target, finalName)
-                    val verifiedSize = verifyFileCommittedLength(
-                        target = target,
-                        expectedSizeBytes = actualSizeBytes,
-                        description = finalName
-                    )
-                    target.toStoredEntry().copy(sizeBytes = verifiedSize)
+                    pendingTarget.toStoredEntry().copy(sizeBytes = actualSizeBytes)
                 } catch (error: Throwable) {
                     if (pendingTarget.exists()) {
                         pendingTarget.delete()
@@ -2508,34 +2564,16 @@ internal object ManagedDownloadStorage {
                         expectedSizeBytes = actualSizeBytes,
                         description = "staging→SAF: $createdPendingName"
                     )
-                    if (pendingTarget.renameTo(finalName)) {
-                        val entry = verifiedTreeStoredEntry(
-                            context = context,
-                            target = pendingTarget,
-                            expectedName = finalName,
-                            expectedSizeBytes = actualSizeBytes,
-                            fallbackLastModifiedMs = committedAtMs,
-                            description = finalName
-                        )
-                        treeChildRegistry.forgetTreeChildName(root.tree, createdPendingName)
-                        if (entry.name != finalName) {
-                            treeChildRegistry.forgetTreeChildName(root.tree, finalName)
-                        }
-                        treeChildRegistry.rememberTreeChild(root.tree, entry)
-                        entry
-                    } else {
-                        commitTreeAudioAfterRenameFailure(
-                            context = context,
-                            parent = root.tree,
-                            pendingTarget = pendingTarget,
-                            pendingName = createdPendingName,
-                            finalName = finalName,
-                            mimeType = mimeTypeFromName(finalName, mimeType),
-                            tempFile = tempFile,
-                            actualSizeBytes = actualSizeBytes,
-                            committedAtMs = committedAtMs
-                        )
-                    }
+                    val entry = verifiedTreeStoredEntry(
+                        context = context,
+                        target = pendingTarget,
+                        expectedName = pendingName,
+                        expectedSizeBytes = actualSizeBytes,
+                        fallbackLastModifiedMs = committedAtMs,
+                        description = createdPendingName
+                    )
+                    treeChildRegistry.rememberTreeChild(root.tree, entry)
+                    entry
                 } catch (error: Throwable) {
                     pendingTarget?.let { target ->
                         deleteContentReference(context, target.uri.toString(), target.uri)
@@ -2547,7 +2585,7 @@ internal object ManagedDownloadStorage {
                 writeSeedMetadataAfterAudioCommit(
                     context = context,
                     root = root,
-                    audioName = finalName,
+                    audioName = audioEntry.logicalName,
                     seedMetadataJson = seedMetadataJson
                 )
                 audioEntry
@@ -2622,6 +2660,107 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun promotePendingAudioBlocking(
+        context: Context,
+        root: RootHandle,
+        audio: StoredEntry
+    ): StoredEntry? {
+        if (!audio.isPendingAudioWrite) return audio
+        val finalName = audio.logicalName.takeIf(String::isNotBlank) ?: return null
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val pending = File(root.dir, audio.name)
+                    .takeIf { it.isFile }
+                    ?: return null
+                val target = File(root.dir, finalName)
+                if (target.isFile && target.length() == pending.length()) {
+                    if (!pending.delete() && pending.exists()) {
+                        return null
+                    }
+                } else {
+                    replaceFileTarget(pending, target, finalName)
+                }
+                target.toStoredEntry().takeIf { !it.isDirectory && it.sizeBytes > 0L }
+            }
+
+            is RootHandle.TreeRoot -> {
+                val pending = DocumentFile.fromSingleUri(context, audio.reference.toUri())
+                    ?.takeIf { it.exists() && it.isFile }
+                    ?: treeChildRegistry.cachedTreeChildren(
+                        context = context,
+                        parent = root.tree,
+                        maxCacheAgeMs = 0L
+                    ).firstOrNull { child ->
+                        !child.isDirectory && child.name == audio.name
+                    }?.let { child ->
+                        treeChildRegistry.toDocumentFile(context, root.tree, child)
+                    }
+                    ?: return null
+                val committedAtMs = System.currentTimeMillis()
+                val expectedSizeBytes = audio.sizeBytes.coerceAtLeast(1L)
+                val treePending = treeChildRegistry.toTreeDocumentFile(
+                    context = context,
+                    parent = root.tree,
+                    child = pending
+                ) ?: root.tree.findFile(audio.name)
+                val renamed = tryRenameTreeDocument(treePending, finalName)
+                if (renamed) {
+                    val renamedSource = treePending ?: return null
+                    val renamedTarget = root.tree.findFile(finalName)
+                        ?: treeChildRegistry.toTreeDocumentFile(
+                            context = context,
+                            parent = root.tree,
+                            child = renamedSource
+                        )
+                        ?: renamedSource
+                    return verifiedTreeStoredEntry(
+                        context = context,
+                        target = renamedTarget,
+                        expectedName = finalName,
+                        expectedSizeBytes = expectedSizeBytes,
+                        fallbackLastModifiedMs = committedAtMs,
+                        description = finalName
+                    ).also {
+                        treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
+                        treeChildRegistry.rememberTreeChild(root.tree, it)
+                    }
+                }
+
+                val finalTarget = createRootFile(
+                    context = context,
+                    parent = root.tree,
+                    desiredName = finalName,
+                    mimeType = mimeTypeFromName(finalName, null),
+                    replace = false
+                )
+                try {
+                    context.contentResolver.openInputStream(pending.uri)?.use { input ->
+                        context.contentResolver.openOutputStream(finalTarget.uri, "w")?.use { output ->
+                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        }
+                    } ?: return null
+                    val entry = verifiedTreeStoredEntry(
+                        context = context,
+                        target = finalTarget,
+                        expectedName = finalName,
+                        expectedSizeBytes = expectedSizeBytes,
+                        fallbackLastModifiedMs = committedAtMs,
+                        description = finalName
+                    )
+                    if (!deleteContentReference(context, pending.uri.toString(), pending.uri)) {
+                        NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: ${audio.name}")
+                    }
+                    treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
+                    treeChildRegistry.rememberTreeChild(root.tree, entry)
+                    entry
+                } catch (error: Throwable) {
+                    deleteContentReference(context, finalTarget.uri.toString(), finalTarget.uri)
+                    throw error
+                }
+            }
+        }
+    }
+
     private fun writeSeedMetadataAfterAudioCommit(
         context: Context,
         root: RootHandle,
@@ -2692,7 +2831,7 @@ internal object ManagedDownloadStorage {
         }
         writeSubdirectoryBytesBlocking(
             context = context,
-            subdirectory = REMOTE_COVER_SUBDIRECTORY,
+            subdirectory = COVER_SUBDIRECTORY,
             displayName = fileName,
             bytes = bytes,
             mimeType = mimeTypeFromName(fileName, mimeType)
@@ -4057,7 +4196,6 @@ internal object ManagedDownloadStorage {
         val rootEntries = refresh.rootEntries.filterNot(StoredEntry::isDirectory)
         val metadataEntries = rootEntries.filter { ManagedDownloadTreeNaming.isMetadataName(it.name) }
         val coverEntries = refresh.coverEntries
-        val remoteCoverEntries = refresh.remoteCoverEntries
         val lyricEntries = refresh.lyricEntries
         val metadataEntriesByAudioName = metadataEntries
             .mapNotNull { entry ->
@@ -4084,8 +4222,7 @@ internal object ManagedDownloadStorage {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             parsedMetadataByAudioName = parsedMetadataByAudioName,
-            allowMetadataLessAudio = allowMetadataLessAudio,
-            remoteCoverEntries = remoteCoverEntries
+            allowMetadataLessAudio = allowMetadataLessAudio
         )
     }
 
@@ -4201,9 +4338,28 @@ internal object ManagedDownloadStorage {
 
     private fun cleanupPendingAudioWrites(context: Context): StartupRecoveryResult {
         return try {
+            val root = resolveRootBlocking(context)
+            val rootEntries = runCatching { listChildren(context, root) }.getOrNull()
+            val metadataNames = rootEntries
+                ?.filterNot(StoredEntry::isDirectory)
+                ?.mapTo(linkedSetOf(), StoredEntry::name)
+            val preservePendingAudio = { pendingName: String ->
+                if (metadataNames == null) {
+                    true
+                } else {
+                    val logicalName = pendingAudioWriteNames.logicalAudioName(pendingName)
+                    metadataNames.any { candidate ->
+                        candidate == "$logicalName$METADATA_SUFFIX" ||
+                            ManagedDownloadTreeNaming.isPendingMetadataName(
+                                actualName = candidate,
+                                audioName = logicalName
+                            )
+                    }
+                }
+            }
             ManagedDownloadPendingAudioWriteCleaner.cleanup(
                 context = context,
-                root = resolveRootBlocking(context),
+                root = root,
                 names = pendingAudioWriteNames,
                 treeChildRegistry = treeChildRegistry,
                 deleteTreeChild = { child ->
@@ -4213,6 +4369,7 @@ internal object ManagedDownloadStorage {
                         uri = child.documentUri
                     )
                 },
+                preserveEntry = preservePendingAudio,
                 tag = TAG
             )
         } catch (error: SecurityException) {
@@ -4236,7 +4393,6 @@ internal object ManagedDownloadStorage {
                     ManagedDownloadParsedMetadataEntry(entry, metadata)
                 }
             val managedSidecarReferences = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
-                .plus(listSubdirectoryEntries(context, root, REMOTE_COVER_SUBDIRECTORY))
                 .plus(listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY))
                 .mapTo(linkedSetOf(), StoredEntry::reference)
             val referencesToDelete = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
@@ -4303,6 +4459,17 @@ internal object ManagedDownloadStorage {
 
     internal fun resolveTreeStoredName(actualName: String?, expectedName: String): String {
         return ManagedDownloadTreeNaming.resolveTreeStoredName(actualName, expectedName)
+    }
+
+    internal fun tryRenameTreeDocument(document: DocumentFile?, finalName: String): Boolean {
+        if (document == null) return false
+        return try {
+            document.renameTo(finalName)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun createRootFile(
@@ -4461,7 +4628,6 @@ internal object ManagedDownloadStorage {
             rootEntries = refresh.rootEntries,
             coverEntries = refresh.coverEntries,
             lyricEntries = refresh.lyricEntries,
-            remoteCoverEntries = refresh.remoteCoverEntries,
             readText = { entry -> readTextInternal(context, entry.reference) },
             parseMetadata = ::parseDownloadedAudioMetadataJson
         )
@@ -4522,7 +4688,7 @@ internal object ManagedDownloadStorage {
     ) {
         entry ?: return
         val bucket = when (subdirectory) {
-            COVER_SUBDIRECTORY, REMOTE_COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
+            COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
             LYRIC_SUBDIRECTORY -> SnapshotEntryBucket.LYRIC
             else -> null
         }
@@ -4949,6 +5115,9 @@ internal object ManagedDownloadStorage {
         storedEntry: StoredEntry,
         bucket: SnapshotEntryBucket
     ): Boolean {
+        if (bucket == SnapshotEntryBucket.AUDIO && storedEntry.isPendingAudioWrite) {
+            return false
+        }
         return snapshotCacheStore.updateAfterStoredEntryWrite(context, storedEntry, bucket)
             .also {
                 if (bucket == SnapshotEntryBucket.LYRIC) {

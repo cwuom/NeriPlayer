@@ -15,6 +15,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
         names: ManagedDownloadPendingAudioWriteNames,
         treeChildRegistry: ManagedDownloadTreeChildRegistry,
         deleteTreeChild: (QueriedTreeChild) -> Boolean,
+        preserveEntry: (String) -> Boolean = { false },
         tag: String
     ): ManagedDownloadStorage.StartupRecoveryResult {
         return runCatching {
@@ -29,7 +30,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
                     .filter { child -> names.isPendingAudioWriteName(child.name) }
             }
 
-            val result = deletePendingEntries(pendingEntries, deleteTreeChild)
+            val result = deletePendingEntries(pendingEntries, deleteTreeChild, preserveEntry)
             if (result.cleanedCount > 0 || result.failedCount > 0) {
                 NPLogger.d(
                     tag,
@@ -44,11 +45,20 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
 
     private fun deletePendingEntries(
         pendingEntries: List<Any>,
-        deleteTreeChild: (QueriedTreeChild) -> Boolean
+        deleteTreeChild: (QueriedTreeChild) -> Boolean,
+        preserveEntry: (String) -> Boolean
     ): ManagedDownloadStorage.StartupRecoveryResult {
         var cleanedCount = 0
         var failedCount = 0
         pendingEntries.forEach { entry ->
+            val name = when (entry) {
+                is File -> entry.name
+                is QueriedTreeChild -> entry.name
+                else -> ""
+            }
+            if (name.isNotBlank() && preserveEntry(name)) {
+                return@forEach
+            }
             val deleted = when (entry) {
                 is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
                 is QueriedTreeChild -> deleteTreeChild(entry)

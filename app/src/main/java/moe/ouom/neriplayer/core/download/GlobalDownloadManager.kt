@@ -276,6 +276,7 @@ object GlobalDownloadManager {
         scope.launch {
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
+            recoverPendingAudioWritesFromRoot(appContext)
             runCatching { ManagedDownloadStorage.listCancelledDownloadKeys(appContext) }
                 .onFailure { error ->
                     NPLogger.w(TAG, "预热已取消下载标记失败: ${error.message}")
@@ -295,6 +296,52 @@ object GlobalDownloadManager {
                 appContext,
                 forceRefresh = true
             )
+        }
+    }
+
+    private suspend fun recoverPendingAudioWritesFromRoot(context: Context) {
+        runCatching {
+            ManagedDownloadStorage.listPendingAudioWrites(
+                context = context,
+                forceRefresh = true
+            ).forEach { pendingAudio ->
+                val metadataEntry = ManagedDownloadStorage.findMetadataForAudio(
+                    context = context,
+                    audio = pendingAudio
+                ) ?: return@forEach
+                val rawMetadata = ManagedDownloadStorage.readText(
+                    context = context,
+                    reference = metadataEntry.reference
+                ) ?: return@forEach
+                val metadata = ManagedDownloadStorage.parseDownloadedAudioMetadataJson(rawMetadata)
+                    ?: return@forEach
+                val song = buildSongForUnfinalizedRecovery(pendingAudio, metadata)
+                    ?: return@forEach
+                val coreMetadata = org.json.JSONObject(rawMetadata).apply {
+                    put("downloadFinalized", false)
+                    put("artifactState", "CORE_COMMITTED")
+                    put("audioFileName", pendingAudio.logicalName)
+                }.toString()
+                val promotedAudio = ManagedDownloadStorage.promoteCoreAudioMetadata(
+                    context = context,
+                    audio = pendingAudio,
+                    json = coreMetadata
+                ) ?: return@forEach
+                NPLogger.d(
+                    TAG,
+                    "从 pending 音频恢复 core commit: " +
+                        "song=${song.name}, file=${promotedAudio.name}"
+                )
+                finalizeCompletedDownload(
+                    context = context,
+                    song = song,
+                    refreshCatalog = false,
+                    storedAudioHint = promotedAudio,
+                    allowMissingTask = true
+                )
+            }
+        }.onFailure { error ->
+            NPLogger.w(TAG, "恢复 pending 音频失败，保留文件等待下次启动: ${error.message}")
         }
     }
 
@@ -427,7 +474,8 @@ object GlobalDownloadManager {
                 skipTrafficRiskPrompt = true,
                 cleanupBeforeStart = false,
                 replaceExistingActiveTasks = true,
-                deferForNetworkPolicy = true
+                deferForNetworkPolicy = true,
+                materializeQueuedTasks = true
             )
         }.onFailure { error ->
             NPLogger.e(TAG, "自动恢复未完成下载失败: ${error.message}", error)
@@ -3367,7 +3415,8 @@ object GlobalDownloadManager {
         song: SongItem,
         skipTrafficRiskPrompt: Boolean,
         cleanupBeforeStart: Boolean = true,
-        deferForNetworkPolicy: Boolean = false
+        deferForNetworkPolicy: Boolean = false,
+        preparedAttemptId: Long? = null
     ) {
         val appContext = context.applicationContext
         scope.launch {
@@ -3390,7 +3439,8 @@ object GlobalDownloadManager {
                 song = song,
                 cleanupBeforeStart = cleanupBeforeStart,
                 requestGeneration = requestGeneration,
-                deferForNetworkPolicy = deferForNetworkPolicy
+                deferForNetworkPolicy = deferForNetworkPolicy,
+                preparedAttemptId = preparedAttemptId
             )
         }
     }
@@ -3400,7 +3450,8 @@ object GlobalDownloadManager {
         song: SongItem,
         cleanupBeforeStart: Boolean,
         requestGeneration: Long,
-        deferForNetworkPolicy: Boolean
+        deferForNetworkPolicy: Boolean,
+        preparedAttemptId: Long? = null
     ) {
         val appContext = context.applicationContext
         scope.launch {
@@ -3445,7 +3496,13 @@ object GlobalDownloadManager {
                 is ManagedDownloadArtifactClaim.RepairRequired,
                 null -> Unit
             }
-            val attemptId = taskStore.prepareDownloadTask(song) ?: run {
+            if (preparedAttemptId != null &&
+                !taskStore.isDownloadAttemptCurrent(songKey, preparedAttemptId)
+            ) {
+                NPLogger.d(TAG, "忽略已被替换的预创建下载任务: song=${song.name}, attempt=$preparedAttemptId")
+                return@launch
+            }
+            val attemptId = preparedAttemptId ?: taskStore.prepareDownloadTask(song) ?: run {
                 if (artifactClaim is ManagedDownloadArtifactClaim.Acquired) {
                     markDownloadArtifactRetryable(
                         context = appContext,
@@ -3707,11 +3764,21 @@ object GlobalDownloadManager {
         skipTrafficRiskPrompt: Boolean,
         cleanupBeforeStart: Boolean = true,
         replaceExistingActiveTasks: Boolean = false,
-        deferForNetworkPolicy: Boolean = false
+        deferForNetworkPolicy: Boolean = false,
+        materializeQueuedTasks: Boolean = false
     ) {
         if (songs.isEmpty()) return
 
         val appContext = context.applicationContext
+        val preMaterializedAttemptIds = if (materializeQueuedTasks) {
+            taskStore.prepareDownloadTasks(
+                songs = songs.distinctBy { it.stableKey() },
+                status = DownloadStatus.QUEUED,
+                replaceExistingActiveTasks = replaceExistingActiveTasks
+            )
+        } else {
+            emptyMap()
+        }
         scope.launch {
             val requestedSongs = songs.distinctBy { it.stableKey() }
             if (requestedSongs.isEmpty()) {
@@ -3737,7 +3804,8 @@ object GlobalDownloadManager {
                 cleanupBeforeStart = cleanupBeforeStart,
                 requestGeneration = requestGeneration,
                 replaceExistingActiveTasks = replaceExistingActiveTasks,
-                deferForNetworkPolicy = deferForNetworkPolicy
+                deferForNetworkPolicy = deferForNetworkPolicy,
+                preMaterializedAttemptIds = preMaterializedAttemptIds
             )
         }
     }
@@ -3748,7 +3816,8 @@ object GlobalDownloadManager {
         cleanupBeforeStart: Boolean,
         requestGeneration: Long,
         replaceExistingActiveTasks: Boolean,
-        deferForNetworkPolicy: Boolean
+        deferForNetworkPolicy: Boolean,
+        preMaterializedAttemptIds: Map<String, Long> = emptyMap()
     ) {
         if (songs.isEmpty()) return
 
@@ -3801,11 +3870,20 @@ object GlobalDownloadManager {
                         else -> true
                     }
                 }
-                val preparedAttemptIds = taskStore.prepareDownloadTasks(
-                    songs = songsRequiringTask,
-                    status = DownloadStatus.QUEUED,
-                    replaceExistingActiveTasks = replaceExistingActiveTasks
-                )
+                val prePreparedForSongs = preMaterializedAttemptIds
+                    .filterKeys { songKey -> songsRequiringTask.any { it.stableKey() == songKey } }
+                val preparedAttemptIds = linkedMapOf<String, Long>().apply {
+                    putAll(prePreparedForSongs)
+                    putAll(
+                        taskStore.prepareDownloadTasks(
+                            songs = songsRequiringTask.filterNot { song ->
+                                song.stableKey() in prePreparedForSongs
+                            },
+                            status = DownloadStatus.QUEUED,
+                            replaceExistingActiveTasks = replaceExistingActiveTasks
+                        )
+                    )
+                }
                 val downloadLibrarySnapshot = buildBatchDownloadLibrarySnapshot(appContext)
                 val settledAttemptIds = linkedMapOf<String, Long>()
                 val optimisticDownloadedSongs = mutableListOf<DownloadedSong>()

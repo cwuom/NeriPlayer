@@ -43,8 +43,7 @@ import okhttp3.OkHttpClient
 
 object CustomSongCoverStorage {
     private const val DIRECTORY_NAME = "custom_song_covers"
-    private const val ORIGINAL_DIRECTORY_NAME = "original_song_covers"
-    private const val REMOTE_DIRECTORY_NAME = "RemoteCovers"
+    private const val BACKUP_DIRECTORY_NAME = "bak"
     private const val MAX_COVER_BYTES = 20L * 1024L * 1024L
 
     internal var remoteCoverHttpClientProvider: () -> OkHttpClient = {
@@ -105,7 +104,7 @@ object CustomSongCoverStorage {
 
         val sourceUri = runCatching { normalizedReference.toUri() }.getOrNull()
         val sourceFile = resolveLocalFileReference(normalizedReference, sourceUri)
-        val directory = File(context.filesDir, ORIGINAL_DIRECTORY_NAME)
+        val directory = File(context.filesDir, BACKUP_DIRECTORY_NAME)
         val persistentDirectory = runCatching { directory.canonicalFile }.getOrNull()
         if (sourceFile?.isDirectory == true) {
             if (persistentDirectory == null || !isInsideDirectory(sourceFile, persistentDirectory)) {
@@ -340,8 +339,8 @@ object CustomSongCoverStorage {
 
         val contentHash = sha256(bytes)
         val extension = contentTypeExtension(sourceUrl, request.url.toString())
-        // external local media owns this app-private cache, even when downloads use a SAF root
-        val directory = File(context.filesDir, REMOTE_DIRECTORY_NAME)
+        // 网络封面先保存为应用内输入, 最终本体由音频旁的 Covers 侧载承载
+        val directory = File(context.filesDir, DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) return null
         val target = File(directory, remoteCoverFileName(contentHash, extension))
         if (target.isFile && target.length() == bytes.size.toLong()) {

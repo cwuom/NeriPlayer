@@ -66,7 +66,7 @@ internal class DownloadedAudioMetadataStore(
                         it == "COMMITTING"
                     } ?: "CORE_COMMITTED"
                 },
-            audioFileName = audio.name,
+            audioFileName = audio.logicalName,
             libraryId = existingMetadata?.libraryId,
             libraryAddedAtMs = existingMetadata?.libraryAddedAtMs
                 ?: createdAtMs.takeIf { it > 0L },

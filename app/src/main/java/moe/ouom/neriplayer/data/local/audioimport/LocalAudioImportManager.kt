@@ -158,6 +158,14 @@ internal fun shouldUseMediaStoreScanResult(result: LocalAudioImportResult?): Boo
     return result?.songs?.isNotEmpty() == true
 }
 
+internal fun shouldKeepMediaStoreAudioRow(
+    hasResolvedFile: Boolean,
+    hasProviderAudioReference: Boolean,
+    hasReadableMediaStoreReference: Boolean
+): Boolean {
+    return hasResolvedFile || hasProviderAudioReference || hasReadableMediaStoreReference
+}
+
 internal fun shouldFallbackToDocumentFileAfterTraversalFailure(error: Throwable): Boolean {
     return error !is CancellationException
 }
@@ -399,8 +407,39 @@ private class MediaStoreSidecarResolver(
         relativePath: String?,
         displayName: String
     ): String? {
-        val directory = directoryFor(relativePath) ?: return null
-        return directory.directIndex[displayName.lowercase(Locale.ROOT)]
+        if (directoryFor(relativePath) == null) return null
+        val expectedName = displayName.lowercase(Locale.ROOT)
+        return childrenFor(relativePath)
+            .firstOrNull { child ->
+                !child.isDirectory &&
+                    child.displayName.lowercase(Locale.ROOT) == expectedName &&
+                    isAudioChild(child)
+            }
+            ?.documentUri
+            ?.toString()
+    }
+
+    private fun childrenFor(relativePath: String?): List<QueriedFolderChild> {
+        val rowSegments = splitStoragePath(relativePath ?: selectedPath)
+        if (rowSegments.size < selectedSegments.size ||
+            rowSegments.take(selectedSegments.size) != selectedSegments
+        ) {
+            return emptyList()
+        }
+        var directoryUri = folderUri
+        rowSegments.drop(selectedSegments.size).forEach { segment ->
+            val child = children(directoryUri).firstOrNull {
+                it.isDirectory && it.displayName.equals(segment, ignoreCase = true)
+            } ?: return emptyList()
+            directoryUri = child.documentUri
+        }
+        return children(directoryUri)
+    }
+
+    private fun isAudioChild(child: QueriedFolderChild): Boolean {
+        if (child.mimeType.startsWith("audio/", ignoreCase = true)) return true
+        return child.displayName.substringAfterLast('.', "")
+            .lowercase(Locale.ROOT) in supportedAudioExtensions
     }
 
     fun resolveNearbyCoverReference(
@@ -620,6 +659,10 @@ private class MediaStoreSidecarResolver(
 
     private companion object {
         const val TAG = "LocalAudioImport"
+        val supportedAudioExtensions = setOf(
+            "aac", "aif", "aiff", "alac", "amr", "ape", "flac", "m4a", "m4b", "m4p",
+            "mid", "midi", "mka", "mp3", "oga", "ogg", "opus", "wav", "wma"
+        )
 
         fun splitStoragePath(path: String): List<String> {
             return Uri.decode(path)
@@ -1301,6 +1344,9 @@ object LocalAudioImportManager {
             return null
         }
         val scope = resolveExternalStorageFolderMediaStoreScope(context, folderUri) ?: return null
+        // an empty relative path represents the volume root, not a safe MediaStore
+        // folder query. Let the DocumentsContract traversal prove the exact scope
+        if (scope.relativePath.isBlank()) return null
         val audioUri = MediaStore.Audio.Media.getContentUri(scope.volumeName)
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -1329,6 +1375,9 @@ object LocalAudioImportManager {
             folderUri = folderUri,
             selectedRelativePath = scope.relativePath
         )
+        var processedRows = 0
+        var acceptedRows = 0
+        var skippedStaleRows = 0
 
         val rawResult = try {
             context.contentResolver.query(
@@ -1360,7 +1409,7 @@ object LocalAudioImportManager {
                 progress.emit(
                     phase = LocalAudioScanPhase.BUILDING_ENTRIES,
                     processed = 0,
-                    total = totalCount,
+                    total = 0,
                     discoveredSongs = 0,
                     visitedDirectories = 0,
                     force = true
@@ -1381,6 +1430,14 @@ object LocalAudioImportManager {
                     val rowRelativePath = relativePathIndex
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString)
+                    if (!isMediaStoreRowInFolderScope(
+                            rowRelativePath = rowRelativePath,
+                            selectedRelativePath = scope.relativePath
+                        )
+                    ) {
+                        skippedStaleRows++
+                        continue
+                    }
                     val resolvedPath = resolveScannedFilePath(
                         rawPath = dataPathIndex
                             .takeIf { it >= 0 && !cursor.isNull(it) }
@@ -1397,7 +1454,6 @@ object LocalAudioImportManager {
                         ?.let(cursor::getLong)
                         ?.takeIf { it > 0L }
                         ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
-                        ?.also { mediaStoreCoverHitCount++ }
                     val sidecarReferences = sidecarResolver.resolve(
                         relativePath = rowRelativePath,
                         displayName = displayName
@@ -1406,6 +1462,16 @@ object LocalAudioImportManager {
                         relativePath = rowRelativePath,
                         displayName = displayName
                     )
+                    if (!shouldKeepMediaStoreAudioRow(
+                            hasResolvedFile = resolvedFile != null,
+                            hasProviderAudioReference = !safAudioReference.isNullOrBlank(),
+                            hasReadableMediaStoreReference = false
+                        )
+                    ) {
+                        skippedStaleRows++
+                        continue
+                    }
+                    mediaStoreCoverUri?.let { mediaStoreCoverHitCount++ }
                     val nearbyCoverUri = sidecarResolver.resolveNearbyCoverReference(
                         relativePath = rowRelativePath,
                         displayName = displayName
@@ -1453,6 +1519,8 @@ object LocalAudioImportManager {
                         ),
                         unknownArtistLabel = unknownArtistLabel
                     )
+                    acceptedRows++
+                    processedRows++
                     val rowElapsedMs = SystemClock.elapsedRealtime() - rowStartedAt
                     if (rowElapsedMs >= SLOW_SCAN_ITEM_THRESHOLD_MS) {
                         slowRowCount++
@@ -1462,21 +1530,22 @@ object LocalAudioImportManager {
                                 "cost=${rowElapsedMs}ms, uri=$contentUri"
                         )
                     }
-                    val processed = songs.size
                     progress.emit(
                         phase = LocalAudioScanPhase.BUILDING_ENTRIES,
-                        processed = processed,
-                        total = totalCount,
-                        discoveredSongs = processed,
+                        processed = processedRows,
+                        total = acceptedRows,
+                        discoveredSongs = songs.size,
                         visitedDirectories = 0,
-                        force = processed == totalCount
+                        force = true
                     )
                 }
                 NPLogger.d(
                     TAG,
                         "scanFolderSongs MediaStore finished: volume=${scope.volumeName}, " +
                         "relativePath=${scope.relativePath}, songs=${songs.size}, " +
+                        "queryRows=$totalCount, acceptedRows=$acceptedRows, " +
                         "resolvedPaths=$resolvedPathCount, " +
+                        "skippedStaleRows=$skippedStaleRows, " +
                         "mediaStoreCoverHits=$mediaStoreCoverHitCount, " +
                         "slowRows=$slowRowCount, elapsed=" +
                         "${SystemClock.elapsedRealtime() - startedAt}ms"
@@ -1508,8 +1577,8 @@ object LocalAudioImportManager {
         val completedSongs = completion.songs
         progress.emit(
             phase = LocalAudioScanPhase.COMPLETED,
-            processed = completedSongs.size,
-            total = completedSongs.size,
+            processed = acceptedRows.takeIf { it > 0 } ?: completedSongs.size,
+            total = acceptedRows.takeIf { it > 0 } ?: completedSongs.size,
             discoveredSongs = completedSongs.size,
             visitedDirectories = 0,
             force = true
@@ -1572,6 +1641,28 @@ object LocalAudioImportManager {
         )
     }
 
+    internal fun isMediaStoreRowInFolderScope(
+        rowRelativePath: String?,
+        selectedRelativePath: String
+    ): Boolean {
+        fun normalize(path: String?): String {
+            return path
+                ?.trim()
+                ?.replace('\\', '/')
+                ?.trim('/')
+                ?.takeIf(String::isNotBlank)
+                ?.plus('/')
+                .orEmpty()
+        }
+        val selected = normalize(selectedRelativePath)
+        val row = normalize(rowRelativePath)
+        return if (selected.isBlank()) {
+            row.isBlank()
+        } else {
+            row == selected || row.startsWith(selected)
+        }
+    }
+
     private fun escapeMediaStoreLikeValue(value: String): String {
         return value
             .replace("\\", "\\\\")
@@ -1593,6 +1684,7 @@ object LocalAudioImportManager {
         var failed = 0
         var completed = false
         var rawRowCount = 0
+        var acceptedRowCount = 0
         var slowItemCount = 0
         var mediaStoreCoverHitCount = 0
         val managedSidecarIndex = ManagedMediaStoreSidecarIndex(
@@ -1643,13 +1735,6 @@ object LocalAudioImportManager {
                     coroutineContext.ensureActive()
                     val itemStartedAt = SystemClock.elapsedRealtime()
                     rawRowCount++
-                    progress.emit(
-                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
-                        processed = rawRowCount,
-                        total = cursor.count,
-                        discoveredSongs = songs.size,
-                        visitedDirectories = 0
-                    )
                     val id = cursor.getLong(idxId)
                     val duration = cursor.getLong(idxDuration)
                     val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
@@ -1666,6 +1751,26 @@ object LocalAudioImportManager {
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
+                    val hasReadableMediaStoreReference = resolvedFile != null ||
+                        probeReadableContentReference(context, contentUri)
+                    if (!shouldKeepMediaStoreAudioRow(
+                            hasResolvedFile = resolvedFile != null,
+                            hasProviderAudioReference = false,
+                            hasReadableMediaStoreReference = hasReadableMediaStoreReference
+                        )
+                    ) {
+                        NPLogger.d(TAG, "skip stale MediaStore audio row: uri=$contentUri, name=$displayName")
+                        continue
+                    }
+                    acceptedRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = acceptedRowCount,
+                        total = acceptedRowCount,
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0,
+                        force = true
+                    )
                     val mediaStoreCoverUri = idxAlbumId
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
@@ -1749,8 +1854,8 @@ object LocalAudioImportManager {
         val completedSongs = completion.songs
         progress.emit(
             phase = LocalAudioScanPhase.COMPLETED,
-            processed = completedSongs.size,
-            total = completedSongs.size,
+            processed = acceptedRowCount,
+            total = acceptedRowCount,
             discoveredSongs = completedSongs.size,
             visitedDirectories = 0,
             force = true
@@ -1759,6 +1864,7 @@ object LocalAudioImportManager {
         NPLogger.d(
             TAG,
             "scanDeviceSongs finished: rows=$rawRowCount, songs=${completedSongs.size}, " +
+                "acceptedRows=$acceptedRowCount, " +
                 "failed=$failed, slowItems=$slowItemCount, " +
                 "mediaStoreCoverHits=$mediaStoreCoverHitCount, completed=$completed, " +
                 "totalElapsed=${totalElapsedMs}ms"
@@ -3269,6 +3375,12 @@ object LocalAudioImportManager {
         val reconstructed = File(Environment.getExternalStorageDirectory(), safeRelativePath)
             .resolve(safeDisplayName)
         return reconstructed.absolutePath.takeIf { reconstructed.exists() }
+    }
+
+    private fun probeReadableContentReference(context: Context, uri: Uri): Boolean {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input -> input.read() != -1 } == true
+        }.getOrDefault(false)
     }
 
     internal fun copyNearbySidecars(sourceFile: File, targetFile: File) {

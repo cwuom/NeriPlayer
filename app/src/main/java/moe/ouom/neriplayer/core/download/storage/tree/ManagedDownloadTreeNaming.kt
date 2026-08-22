@@ -4,7 +4,6 @@ import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
-import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import java.text.Normalizer
 import java.util.Locale
 
@@ -62,8 +61,7 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
-        return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true) ||
-            subdirectory.equals(REMOTE_COVER_SUBDIRECTORY, ignoreCase = true)
+        return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true)
     }
 
     fun externalStorageChildDocumentId(
@@ -143,6 +141,12 @@ internal object ManagedDownloadTreeNaming {
         val pendingExpectedName = "$audioName$PENDING_METADATA_SUFFIX"
         if (canonicalName(actualName) == canonicalName(pendingExpectedName)) return 1
         return providerNumberedNameOrdinal(actualName, pendingExpectedName)?.let { it + 1 }
+    }
+
+    fun isPendingMetadataName(actualName: String, audioName: String): Boolean {
+        val expectedName = "$audioName$PENDING_METADATA_SUFFIX"
+        return canonicalName(actualName) == canonicalName(expectedName) ||
+            providerNumberedNameOrdinal(actualName, expectedName) != null
     }
 
     private fun pendingMetadataAudioName(actualName: String): String? {

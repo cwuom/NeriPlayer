@@ -3370,6 +3370,16 @@ object LocalMediaSupport {
         return localUri?.let { resolveCoverUri(context, it) }
     }
 
+    internal fun resolveCoverReferenceByPriority(
+        sidecarReference: String?,
+        embeddedReference: String?,
+        fallbackReference: String? = null
+    ): String? {
+        return sequenceOf(sidecarReference, embeddedReference, fallbackReference)
+            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+            .firstOrNull()
+    }
+
     /**
      * 只查找本地 Covers 或同目录封面，不打开音频解析内嵌图片
      */
@@ -3753,11 +3763,7 @@ object LocalMediaSupport {
             } else {
                 null
             }
-            val effectiveNearbyCover = if (embeddedCoverUri == null && tagLibCoverUri == null) {
-                nearbyCoverReference
-            } else {
-                null
-            }
+            val effectiveNearbyCover = nearbyCoverReference
 
             LocalMediaDetails(
                 sourceUri = uri,
@@ -3783,11 +3789,15 @@ object LocalMediaSupport {
                 sizeBytes = queried.sizeBytes ?: file?.length() ?: resolveSizeFromAssetDescriptor(context, uri),
                 lastModifiedMs = queried.lastModifiedMs ?: file?.lastModified(),
                 filePath = file?.absolutePath ?: queried.filePath,
-                coverUri = embeddedCoverUri ?: tagLibCoverUri ?: effectiveNearbyCover,
+                coverUri = resolveCoverReferenceByPriority(
+                    sidecarReference = effectiveNearbyCover,
+                    embeddedReference = embeddedCoverUri ?: tagLibCoverUri
+                ),
                 coverSource = when {
-                    embeddedCoverUri != null -> context.getString(R.string.local_song_cover_embedded)
-                    tagLibCoverUri != null -> context.getString(R.string.local_song_cover_embedded)
                     effectiveNearbyCover != null -> context.getString(R.string.local_song_cover_external)
+                    embeddedCoverUri != null || tagLibCoverUri != null -> {
+                        context.getString(R.string.local_song_cover_embedded)
+                    }
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
@@ -3866,12 +3876,15 @@ object LocalMediaSupport {
                 sizeBytes = queried.sizeBytes ?: file?.length() ?: resolveSizeFromAssetDescriptor(context, uri),
                 lastModifiedMs = queried.lastModifiedMs ?: file?.lastModified(),
                 filePath = file?.absolutePath ?: queried.filePath,
-                coverUri = tagLibCoverUri ?: nearbyCoverReference,
+                coverUri = resolveCoverReferenceByPriority(
+                    sidecarReference = nearbyCoverReference,
+                    embeddedReference = tagLibCoverUri
+                ),
                 coverSource = when {
-                    tagLibCoverUri != null -> context.getString(R.string.local_song_cover_embedded)
                     nearbyCoverReference != null -> {
                         context.getString(R.string.local_song_cover_external)
                     }
+                    tagLibCoverUri != null -> context.getString(R.string.local_song_cover_embedded)
                     else -> null
                 },
                 lyricContent = effectiveLyricContent,
