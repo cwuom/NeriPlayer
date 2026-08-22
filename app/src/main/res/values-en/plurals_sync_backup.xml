@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync & Backup -->
+    <plurals name="settings_config_import_restored_settings">
+        <item quantity="one">Restored %1$d app setting</item>
+        <item quantity="other">Restored %1$d app settings</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_listen_together">
+        <item quantity="one">Restored %1$d Listen Together setting</item>
+        <item quantity="other">Restored %1$d Listen Together settings</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_auth">
+        <item quantity="one">Restored %1$d sign-in state</item>
+        <item quantity="other">Restored %1$d sign-in states</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_sync">
+        <item quantity="one">Restored %1$d sync config</item>
+        <item quantity="other">Restored %1$d sync configs</item>
+    </plurals>
+    <plurals name="sync_every_minutes">
+        <item quantity="one">Every %1$d minute</item>
+        <item quantity="other">Every %1$d minutes</item>
+    </plurals>
+    <plurals name="sync_every_minutes_desc">
+        <item quantity="one">Wait at least %1$d minute between automatic play history syncs</item>
+        <item quantity="other">Wait at least %1$d minutes between automatic play history syncs</item>
+    </plurals>
+</resources>

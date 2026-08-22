@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Lyrics -->
+    <plurals name="lyrics_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+</resources>

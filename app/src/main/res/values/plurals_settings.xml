@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings -->
+    <plurals name="settings_update_every_minutes">
+        <item quantity="other">每%1$d分钟更新</item>
+    </plurals>
+</resources>

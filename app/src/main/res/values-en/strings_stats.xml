@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playback Stats -->
+    <string name="stats_title">Playback Stats</string>
+    <string name="stats_empty">No playback data yet\nStart listening to see your stats here</string>
+    <string name="stats_period_empty">No playback stats in this period yet</string>
+    <string name="stats_period_missing_breakdown">This older sync data only has total stats, not daily buckets\nUpdate the old device and sync again</string>
+    <string name="stats_period_compat_notice">This period is shown in legacy compatibility mode and only includes stats that can be restored exactly</string>
+    <string name="stats_total_plays">Plays</string>
+    <string name="stats_total_time">Listen Time</string>
+    <string name="stats_track_count">Tracks</string>
+    <string name="stats_top_tracks">Most Played</string>
+    <string name="stats_period_day">Day</string>
+    <string name="stats_period_week">Week</string>
+    <string name="stats_period_month">Month</string>
+    <string name="stats_period_year">Year</string>
+    <string name="stats_period_all">All</string>
+    <string name="stats_sort_play_count">By play count</string>
+    <string name="stats_sort_listen_time">By listen time</string>
+    <string name="stats_sort_recent">By recent</string>
+    <string name="stats_sort_first_played">By first played</string>
+    <string name="stats_clear_title">Clear Stats</string>
+    <string name="stats_clear_message">Are you sure you want to clear all playback statistics? This cannot be undone.</string>
+    <string name="stats_song_first_played">First played</string>
+    <string name="stats_song_total_listen">Total listened</string>
+    <string name="stats_song_play_count_label">Play count</string>
+    <string name="stats_song_no_record">No playback record yet</string>
+</resources>

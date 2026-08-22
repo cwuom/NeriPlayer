@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home -->
+    <string name="recommend_for_you">For You</string>
+    <string name="recommend_refresh">Refresh</string>
+    <string name="recommend_hot">Hot</string>
+    <string name="recommend_trending">Trending</string>
+    <string name="recommend_radar">Personal Radar</string>
+    <string name="settings_internationalization">Internationalization</string>
+    <string name="settings_internationalization_desc">Use YouTube Music for Home and Explore</string>
+    <string name="settings_youtube_enabled">Enable YouTube</string>
+    <string name="settings_youtube_enabled_desc">Hide YouTube and stop related requests</string>
+    <string name="home_ytmusic_playlists">YouTube Music Playlists</string>
+    <string name="home_ytmusic_guess_you_like">Guess You Like</string>
+    <string name="home_ytmusic_daily_discover">Daily Discover</string>
+    <string name="home_ytmusic_more_recommendations">More Recommendations</string>
+    <string name="home_search_hot">Hot Songs</string>
+    <string name="home_search_radar">Personal Radar</string>
+    <string name="home_netease_daily_songs">Daily Picks</string>
+    <string name="home_netease_private_fm">Private FM</string>
+    <string name="home_netease_new_songs">New Picks</string>
+    <string name="home_netease_hot_rank">Hot Songs Chart</string>
+    <string name="home_netease_new_rank">New Songs Chart</string>
+    <string name="home_netease_radar_playlists">Radar Playlists</string>
+    <string name="home_netease_radar_badge">Radar</string>
+    <string name="home_netease_daily_playlists">Daily Playlists</string>
+    <string name="home_netease_high_quality_playlists">High-Quality Playlists</string>
+    <string name="home_netease_hot_playlists">Hot Playlists</string>
+    <string name="home_netease_acg_playlists">ACG Playlists</string>
+    <string name="home_loading">Loading recommendations for you…</string>
+    <string name="home_load_failed">Load failed: %s</string>
+    <string name="home_error_network">Network or server error: %s</string>
+    <string name="home_error_unknown">Parse or unknown error: %s</string>
+    <string name="home_login_required">Sign in to enable</string>
+    <string name="home_login_required_hint">Will auto-enable after sign-in</string>
+    <string name="home_retry_hint">Tap refresh in the upper right to retry~</string>
+    <string name="home_play_count_format" formatted="false">%s · %d songs</string>
+    <string name="home_unfavorite_playlist">Unfavorite</string>
+    <string name="home_favorite_playlist">Favorite Playlist</string>
+    <string name="home_unfavorited">Unfavorited</string>
+    <string name="continue_playing_remove">Remove</string>
+    <string name="home_title_brand_loud">NeriPlayer!</string>
+    <string name="home_title_brand_wave">NeriPlayer~</string>
+    <string name="home_title_brand_call">Hey, NeriPlayer</string>
+    <string name="home_all_cards_hidden">All home cards are hidden. Re-enable them in Settings.</string>
+    <string name="home_offline_no_continue">Offline mode only shows Continue Playing. Nothing is available yet.</string>
+    <string name="offline_mode_title">Offline Mode</string>
+    <string name="offline_mode_bottom_hint">Currently in offline mode</string>
+</resources>

@@ -26,7 +26,9 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.os.Build
+import android.os.LocaleList
 import androidx.core.content.edit
 import moe.ouom.neriplayer.R
 import java.util.Locale
@@ -72,6 +74,7 @@ object LanguageManager {
             putString(KEY_LANGUAGE, language.code)
         }
         val locale = resolveLocale(context, language)
+        syncPlatformApplicationLocale(context, language, locale)
         if (Locale.getDefault() != locale) {
             Locale.setDefault(locale)
         }
@@ -89,6 +92,7 @@ object LanguageManager {
     fun applyLanguage(context: Context): Context {
         val language = getCurrentLanguage(context)
         val locale = resolveLocale(context, language)
+        syncPlatformApplicationLocale(context, language, locale)
 
         val isAppContext = context.applicationContext === context
         if (isAppContext && cachedAppContext != null && cachedAppLocale == locale) {
@@ -111,20 +115,57 @@ object LanguageManager {
 
     fun localizedContext(context: Context, language: Language): Context {
         val locale = resolveLocale(context, language)
-        val currentLocale = context.resources.configuration.locales[0]
-        if (currentLocale == locale) {
+        val currentLocales = context.resources.configuration.locales
+        if (currentLocales.size() == 1 && currentLocales[0] == locale) {
             return context
         }
         val config = Configuration(context.resources.configuration)
-        config.setLocale(locale)
+        config.setLocales(LocaleList(locale))
         return context.createConfigurationContext(config)
+    }
+
+    internal fun resolveApplicationLocale(
+        language: Language,
+        systemLocales: List<Locale>,
+        fallbackLocale: Locale = Locale.getDefault()
+    ): Locale = when (language) {
+        Language.CHINESE -> Locale.forLanguageTag("zh")
+        Language.ENGLISH -> Locale.forLanguageTag("en")
+        Language.SYSTEM -> systemLocales.firstOrNull() ?: fallbackLocale
     }
 
     private fun resolveLocale(context: Context, language: Language): Locale = when (language) {
         Language.CHINESE -> Locale.forLanguageTag("zh")
         Language.ENGLISH -> Locale.forLanguageTag("en")
-        Language.SYSTEM -> (context.applicationContext ?: context)
-            .resources.configuration.locales[0]
+        Language.SYSTEM -> resolveApplicationLocale(
+            language = language,
+            systemLocales = readSystemLocales(context)
+        )
+    }
+
+    private fun readSystemLocales(context: Context): List<Locale> {
+        val locales = Resources.getSystem()?.configuration?.locales
+            ?: context.resources.configuration.locales
+        return List(locales.size()) { index -> locales[index] }
+    }
+
+    private fun syncPlatformApplicationLocale(
+        context: Context,
+        language: Language,
+        locale: Locale
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
+            ?: return
+        val locales = when (language) {
+            Language.SYSTEM -> LocaleList.getEmptyLocaleList()
+            Language.CHINESE, Language.ENGLISH -> LocaleList(locale)
+        }
+        if (localeManager.applicationLocales != locales) {
+            localeManager.applicationLocales = locales
+        }
     }
 
     /**

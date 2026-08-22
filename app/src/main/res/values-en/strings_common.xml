@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application -->
+    <string name="app_name">NeriPlayer</string>
+
+    <!-- Common Actions -->
+    <string name="action_confirm">Confirm</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_ok">OK</string>
+    <string name="action_done">Done</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_send">Send</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_share">Share</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_search">Search</string>
+    <string name="action_create">Create</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_download_cover">Download Cover</string>
+    <string name="action_retry">Tap to Retry</string>
+    <string name="action_back">Back</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_collapse">Collapse</string>
+    <string name="action_more">More</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_paste">Paste</string>
+    <string name="action_select">Select</string>
+    <string name="action_select_all">Select All</string>
+    <string name="action_deselect_all">Deselect All</string>
+    <string name="action_inverse_select">Invert Selection</string>
+    <string name="action_multi_select">Multi-select</string>
+    <string name="action_enter_multi_select">Enter Multi-select</string>
+    <string name="action_exit_multi_select">Exit Multi-select</string>
+    <string name="action_copy_song_name">Copy Song Name</string>
+    <string name="action_copy_artist">Copy Artist</string>
+    <string name="action_copy_song_info">Copy Song Info</string>
+    <string name="action_details">Details</string>
+    <string name="action_confirm_clear">Confirm Clear</string>
+    <string name="action_later">Later</string>
+    <string name="action_unfavorite">Unfavorite</string>
+    <string name="action_favorite_playlist">Favorite Playlist</string>
+
+    <!-- Common Text & Formats -->
+    <string name="common_all">All</string>
+    <string name="common_clear_all">Clear All</string>
+    <string name="common_delete_selected">Delete Selected</string>
+    <string name="common_delete_selected_songs">Delete Selected Songs</string>
+    <string name="common_download_selected">Download Selected</string>
+    <string name="common_more_options">More Options</string>
+    <string name="common_more_actions">More Actions</string>
+    <string name="common_version">Version</string>
+    <string name="common_build_time">Build Time</string>
+    <string name="common_update_now">Update Now</string>
+    <string name="common_coming_soon">Coming Soon</string>
+    <string name="common_not_implemented">Not Implemented</string>
+    <string name="common_other_modes">Other Modes</string>
+    <string name="common_drag_handle">Drag Handle</string>
+    <string name="common_album_detail">Album Details</string>
+    <string name="color_hue">Hue</string>
+    <string name="color_saturation">Saturation</string>
+    <string name="color_value">Value</string>
+    <string name="time_just_now">Just now</string>
+    <string name="time_zero_minutes">0 minutes</string>
+    <string name="number_hundred_million">%.1fM</string>
+    <string name="number_ten_thousand">%.1fK</string>
+    <string name="number_billion">%.1fB</string>
+    <string name="number_million">%.1fM</string>
+    <string name="number_thousand">%.1fK</string>
+    <string name="common_selected">Selected</string>
+    <string name="common_youtube">YouTube</string>
+    <string name="common_github">GitHub</string>
+    <string name="common_label_value_format">%1$s - %2$s</string>
+    <string name="common_percent_int">%1$d%%</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_netease">Netease Cloud Music</string>
+    <string name="cd_bilibili">Bilibili</string>
+    <string name="cd_audio_device">Audio Device</string>
+    <string name="cd_search">Search</string>
+    <string name="cd_play_all">Play All</string>
+    <string name="cd_shuffle">Shuffle</string>
+    <string name="cd_clear">Clear</string>
+    <string name="cd_exit_select">Exit Selection</string>
+    <string name="cd_more">More</string>
+    <string name="cd_downloaded">Downloaded</string>
+    <string name="cd_more_actions">More Actions</string>
+    <string name="cd_search_songs">Search Songs</string>
+    <string name="cd_download_manager">Download Manager</string>
+    <string name="cd_export_playlist">Export to Playlist</string>
+    <string name="cd_download_selected">Download Selected</string>
+    <string name="cd_locate_playing">Locate Now Playing</string>
+    <string name="cd_open_current_playback_source">Locate Current Playlist</string>
+    <string name="cd_queue_quick_actions">Queue Quick Actions</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_recent">Recent Plays</string>
+    <string name="cd_app_background">App background</string>
+</resources>

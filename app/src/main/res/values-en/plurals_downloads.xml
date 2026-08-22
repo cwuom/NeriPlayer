@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Downloads -->
+    <plurals name="settings_download_directory_migrating_progress_files">
+        <item quantity="one">Processed %1$d / %2$d item</item>
+        <item quantity="other">Processed %1$d / %2$d items</item>
+    </plurals>
+    <plurals name="settings_download_directory_migrated">
+        <item quantity="one">Moved %1$d downloaded file and switched folders</item>
+        <item quantity="other">Moved %1$d downloaded files and switched folders</item>
+    </plurals>
+    <plurals name="settings_download_directory_migrated_partial">
+        <item quantity="one">Moved %1$d file, but cleanup left %2$d behind</item>
+        <item quantity="other">Moved %1$d files, but cleanup left %2$d behind</item>
+    </plurals>
+    <plurals name="settings_download_directory_migrate_failed">
+        <item quantity="one">Failed to move %1$d file, so the original folder was kept</item>
+        <item quantity="other">Failed to move %1$d files, so the original folder was kept</item>
+    </plurals>
+    <plurals name="download_tasks_count">
+        <item quantity="one">%d task</item>
+        <item quantity="other">%d tasks</item>
+    </plurals>
+    <plurals name="download_scan_failed">
+        <item quantity="one">Scan failed: %d item</item>
+        <item quantity="other">Scan failed: %d items</item>
+    </plurals>
+</resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playlist -->
+    <plurals name="count_songs_format">
+        <item quantity="one">%d song</item>
+        <item quantity="other">%d songs</item>
+    </plurals>
+    <plurals name="playlist_batch_export_confirm_message">
+        <item quantity="one">Export %1$d song to "%2$s"?</item>
+        <item quantity="other">Export %1$d songs to "%2$s"?</item>
+    </plurals>
+    <plurals name="playlist_batch_export_success">
+        <item quantity="one">Exported %1$d song to "%2$s"</item>
+        <item quantity="other">Exported %1$d songs to "%2$s"</item>
+    </plurals>
+</resources>

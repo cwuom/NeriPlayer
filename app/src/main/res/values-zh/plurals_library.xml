@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Library -->
+    <plurals name="artist_song_count">
+        <item quantity="other">%d 首歌曲</item>
+    </plurals>
+    <plurals name="artist_album_count">
+        <item quantity="other">%d 张专辑</item>
+    </plurals>
+    <plurals name="library_song_count">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="library_video_count">
+        <item quantity="other">%d 个视频</item>
+    </plurals>
+    <plurals name="library_delete_selected_confirm">
+        <item quantity="other">确定要删除选中的 %d 个歌单吗？删除后可通过提示撤销。</item>
+    </plurals>
+</resources>

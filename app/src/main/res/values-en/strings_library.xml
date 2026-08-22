@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Library -->
+    <string name="library_favorite_tab_playlists">Playlists</string>
+    <string name="library_favorite_tab_artists">Artists</string>
+    <string name="library_favorite_tab_hot">Hot</string>
+    <string name="library_hot_playlist_week">Weekly highlights</string>
+    <string name="library_hot_playlist_month">Monthly highlights</string>
+    <string name="library_hot_playlist_summary" formatted="false">%1$d songs · %2$s plays</string>
+    <string name="library_hot_empty">No matching hot songs yet</string>
+    <string name="library_hot_empty_hint">Start listening and hot songs will appear here</string>
+    <string name="library_no_favorite_artist">No followed artists</string>
+    <string name="library_favorite_artist_hint">Tap Follow on an artist page, and the artist will appear here</string>
+    <string name="library_favorite_source_artist">Artist</string>
+    <string name="library_local_artist_empty">No local artists</string>
+    <string name="library_local_artist_hint">After importing local audio, songs are grouped by artist automatically</string>
+    <string name="library_local_playlist_search_hint">Search local playlists / songs</string>
+    <string name="library_local_artist_search_hint">Search local artists / songs</string>
+    <string name="library_local_search_empty">No matching local content found</string>
+    <string name="library_local_search_empty_hint">Try a playlist, artist, or song name</string>
+    <string name="library_local_artist_sort">Sort local artists</string>
+    <string name="library_local_artist_sort_count">Sort by song count</string>
+    <string name="library_local_artist_sort_recent">Sort by recently added</string>
+    <string name="library_local_artist_sort_name">Sort by name</string>
+    <string name="library_favorite_search_hint">Search current favorites</string>
+    <string name="library_favorite_search_empty">No matching favorites found</string>
+    <string name="library_favorite_search_empty_hint">Try a name, source, artist, or song name</string>
+    <string name="library_tab_local">Local</string>
+    <string name="library_tab_favorite">Favorites</string>
+    <string name="library_tab_netease">Netease</string>
+    <string name="library_tab_netease_playlist">Netease - Playlists</string>
+    <string name="library_tab_netease_album">Netease - Albums</string>
+    <string name="library_tab_youtube_music">YouTube Music</string>
+    <string name="library_tab_bilibili">Bilibili</string>
+    <string name="library_tab_qqmusic">QQ Music</string>
+    <string name="library_create_playlist_default">New Playlist</string>
+    <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
+    <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
+    <string name="library_create_new">+ Create Playlist</string>
+    <string name="library_qqmusic_coming">Coming Soon</string>
+    <string name="library_netease_tab_playlists">Playlists</string>
+    <string name="library_netease_tab_albums">Albums</string>
+    <string name="library_netease_search_hint">Search playlists / albums</string>
+    <string name="library_netease_search_empty">No matching playlists or albums found</string>
+    <string name="library_netease_search_empty_hint">Try a name, ID, play count, or track count</string>
+    <string name="library_netease_playlist_empty">No NetEase playlists loaded yet</string>
+    <string name="library_netease_album_empty">No NetEase albums loaded yet</string>
+    <string name="library_bili_empty">No Bilibili favorites or collections loaded yet</string>
+    <string name="library_bili_hint">Sign in to Bilibili to load created favorites, subscribed favorites, and saved collections</string>
+    <string name="library_bili_search_hint">Search favorites / collections</string>
+    <string name="library_bili_search_empty">No matching favorites or collections found</string>
+    <string name="library_bili_search_empty_hint">Try a title, note, type name, or ID</string>
+    <string name="library_bili_created_favorite">Created favorites</string>
+    <string name="library_bili_collected_favorite">Subscribed favorites</string>
+    <string name="library_bili_collection">Collection</string>
+    <string name="library_bili_series">Series</string>
+    <string name="library_youtube_music_empty">No YouTube Music playlists yet</string>
+    <string name="library_youtube_music_hint">Make sure YouTube is signed in, then the app will load playlists from your library</string>
+    <string name="library_youtube_music_open_playlist">Open Playlist</string>
+    <string name="library_youtube_music_copy_browse_id">Copy Browse ID</string>
+    <string name="library_youtube_music_copy_playlist_id">Copy Playlist ID</string>
+    <string name="library_favorite_source_format" formatted="false">%d songs · %s</string>
+    <string name="library_favorite_sort_mode_title">Favorite Playlist Order</string>
+    <string name="library_favorite_sort_mode_desc">Long press a playlist to enter sorting mode, then drag the handle</string>
+    <string name="library_title">Library</string>
+    <string name="library_coming_soon">Coming Soon</string>
+    <string name="library_recent_played">Recent Plays</string>
+    <string name="library_delete_playlist_confirm">Delete playlist \"%1$s\"?</string>
+
+    <!-- Artist -->
+    <string name="artist_detail">Artist Details</string>
+    <string name="artist_follow">Follow</string>
+    <string name="artist_followed">Following</string>
+    <string name="artist_tab_songs">Songs</string>
+    <string name="artist_tab_albums">Albums</string>
+    <string name="artist_choose_title">Choose Artist</string>
+    <string name="artist_not_available">No NetEase artist info is available for this song</string>
+    <string name="artist_load_failed">Failed to load artist: %s</string>
+    <string name="artist_follow_failed">Follow action failed: %s</string>
+    <string name="artist_songs_empty">No songs</string>
+    <string name="artist_albums_empty">No albums</string>
+    <string name="artist_load_more">Load More</string>
+    <string name="bili_uploader_detail">Uploader profile</string>
+    <string name="bili_uploader_load_failed">Failed to load uploader profile: %1$s</string>
+    <string name="bili_uploader_open_failed">Failed to open uploader profile: %1$s</string>
+    <string name="bili_uploader_owner_unavailable">Uploader ID is unavailable</string>
+    <string name="bili_uploader_tab_videos">Videos</string>
+    <string name="bili_uploader_tab_collections">Collections</string>
+    <string name="bili_uploader_tab_series">Series</string>
+    <string name="bili_uploader_mid">UID %1$d</string>
+    <string name="bili_uploader_video_count">%1$d videos</string>
+    <string name="bili_uploader_collection_count">%1$d collections</string>
+    <string name="bili_uploader_series_count">%1$d series</string>
+    <string name="bili_uploader_content_count">%1$d videos</string>
+    <string name="bili_uploader_videos_empty">No videos</string>
+    <string name="bili_uploader_collections_empty">No collections</string>
+    <string name="bili_uploader_series_empty">No series</string>
+    <string name="bili_uploader_load_more">Load more</string>
+
+    <!-- Recent & Favorites -->
+    <string name="recent_title">Recent</string>
+    <string name="recent_no_history">No Recent Plays</string>
+    <string name="recent_clear">Clear</string>
+    <string name="recent_just_now">Just Now</string>
+    <string name="favorite_title">Favorites</string>
+    <string name="favorite_add">Favorite</string>
+    <string name="favorite_remove">Unfavorite</string>
+    <string name="favorite_success">Favorited</string>
+    <string name="favorite_added">Favorited</string>
+    <string name="favorite_removed">Unfavorited</string>
+    <string name="favorite_my_music">My Favorite Music</string>
+    <string name="recent_clear_confirm">Are you sure you want to clear all recent play history? This action cannot be undone.</string>
+</resources>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Errors & Feedback -->
+    <string name="toast_copied">已复制</string>
+    <string name="toast_copy_truncated">内容过长，仅复制了可安全写入剪贴板的部分</string>
+    <string name="toast_copy_failed">无法复制到剪贴板</string>
+    <string name="error_network">网络错误</string>
+    <string name="error_app_exception">应用异常</string>
+    <string name="error_test_handler">测试异常处理器</string>
+    <string name="error_test">异常测试</string>
+    <string name="error_cannot_open_input">无法打开输入流</string>
+    <string name="error_cannot_open_output">无法打开输出流</string>
+    <string name="error_no_play_url">无法获取播放地址</string>
+    <string name="toast_cache_cleared">已清理 %d MB 缓存</string>
+    <string name="toast_cache_clear_error">清理出错: %s</string>
+    <string name="toast_playback_stopped">多首歌曲无法播放，已停止</string>
+    <string name="toast_match_failed">匹配失败: %s</string>
+    <string name="toast_save_failed">保存失败: %s</string>
+    <string name="snackbar_cookie_empty">未读取到 Cookie，请确认已完成登录</string>
+    <string name="snackbar_read_failed">读取失败：%s</string>
+    <string name="error_parse">解析/未知错误：%s</string>
+    <string name="error_bilibili_search">哔哩哔哩搜索失败: %s</string>
+    <string name="error_netease_search">网易云搜索失败: %s</string>
+    <string name="error_youtube_search">YouTube 搜索失败: %s</string>
+    <string name="error_link_recognition">链接识别失败: %s</string>
+    <string name="error_load_playlist">加载歌单失败: %s</string>
+    <string name="error_search_failed">搜索失败: %s</string>
+    <string name="error_get_user_id">无法获取用户ID，请重新登录</string>
+    <string name="error_api_code">接口返回异常 code=%d</string>
+    <string name="error_missing_node">缺少 %s 节点</string>
+    <string name="exception_title">应用异常</string>
+    <string name="exception_occurred">发生了一个异常：</string>
+    <string name="exception_source">来源：%s</string>
+    <string name="exception_type">类型：%s</string>
+    <string name="exception_message">信息：%s</string>
+    <string name="exception_no_detail">无详细信息</string>
+    <string name="exception_logged">详细错误信息已记录到日志文件中。</string>
+    <string name="exception_contact">如果问题持续存在，请重启应用或联系开发者。</string>
+    <string name="exception_test">这是一个测试异常，用于验证异常处理器的功能</string>
+</resources>

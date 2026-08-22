@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playlist -->
+    <plurals name="count_songs_format">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="playlist_batch_export_confirm_message">
+        <item quantity="other">将导出 %1$d 首歌曲到「%2$s」。是否导出？</item>
+    </plurals>
+    <plurals name="playlist_batch_export_success">
+        <item quantity="other">已导出 %1$d 首歌曲到「%2$s」</item>
+    </plurals>
+</resources>

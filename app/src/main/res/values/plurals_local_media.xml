@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Local Media -->
+    <plurals name="local_files_delete_downloaded_success">
+        <item quantity="one">已删除 %d 首已下载歌曲及其本地文件</item>
+        <item quantity="other">已删除 %d 首已下载歌曲及其本地文件</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_success">
+        <item quantity="other">已导入 %d 首本地音频</item>
+    </plurals>
+    <plurals name="local_playlist_add_scanned_success">
+        <item quantity="other">已添加 %d 首歌曲到目标歌单</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_partial">
+        <item quantity="other">已导入 %1$d 首本地音频，%2$s</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed">
+        <item quantity="other">导入失败，%d 首音频导入失败</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed_summary">
+        <item quantity="other">%d 首音频导入失败</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_confirm">
+        <item quantity="other">确定要从歌单移除所选的 %d 首歌曲吗？删除后可通过提示撤销。</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_snackbar">
+        <item quantity="other">已删除 %d 首歌曲</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_undone">
+        <item quantity="other">已恢复 %d 首歌曲</item>
+    </plurals>
+    <plurals name="local_playlist_delete_snackbar">
+        <item quantity="other">已删除 %1$d 个歌单</item>
+    </plurals>
+    <plurals name="local_playlist_delete_undone">
+        <item quantity="other">已恢复 %1$d 个歌单</item>
+    </plurals>
+</resources>

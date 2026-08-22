@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Traffic Management -->
+    <plurals name="traffic_risk_download_batch_message">
+        <item quantity="other">当前正在使用%1$s，下载 %2$d 首歌曲可能消耗较多流量。</item>
+    </plurals>
+    <plurals name="mobile_data_download_interruption_message">
+        <item quantity="other">当前已切换到%1$s，正在下载的 %2$d 个任务已暂停。请选择如何处理。</item>
+    </plurals>
+</resources>
