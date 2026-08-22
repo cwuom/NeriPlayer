@@ -1460,6 +1460,7 @@ object GlobalDownloadManager {
                         finalized = false,
                         sidecarReferences = sidecarReferences.retainCreatedOnly()
                     )
+                }
             }
 
             persistDownloadedMetadata(
