@@ -24,6 +24,7 @@ package moe.ouom.neriplayer
  */
 
 import android.app.Application
+import android.content.res.Configuration
 import android.webkit.WebView
 import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
@@ -83,6 +84,11 @@ class NeriPlayerApplication : Application() {
             return
         }
         initializeNormalComponents()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        LanguageManager.applyLanguage(this)
     }
 
     private fun configureWebViewDataDirectoryIfNeeded(runningInMainProcess: Boolean) {
