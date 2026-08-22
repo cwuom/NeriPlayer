@@ -1,11 +1,15 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import android.content.Context
 import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 import org.junit.Test
 
 class DownloadExecutionHostTest {
@@ -64,5 +68,45 @@ class DownloadExecutionHostTest {
         val second = UidtDownloadJobService.jobIdFor("operation-01")
         assertEquals(first, second)
         assertTrue(first >= 100_000)
+    }
+
+    @Test
+    fun `execution forwards the durable operation id to the entry point`() = runTest {
+        val directory = Files.createTempDirectory("download-execution-host").toFile()
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        val request = DownloadExecutionRequest(
+            operationId = "operation-forwarded",
+            song = sampleSong()
+        )
+        val store = DownloadExecutionOperationStore { directory }
+        store.saveTo(directory, request)
+        var forwardedOperationId: String? = null
+        val entryPoint = DownloadOperationEntryPoint { _, operationId, _ ->
+            forwardedOperationId = operationId
+        }
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = entryPoint,
+            sdkInt = 28
+        )
+
+        assertEquals(
+            DownloadExecutionResult.Accepted,
+            host.execute(context, request.operationId)
+        )
+        assertEquals(request.operationId, forwardedOperationId)
+    }
+
+    private fun sampleSong(): SongItem {
+        return SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Album",
+            albumId = 7L,
+            durationMs = 1234L,
+            coverUrl = null
+        )
     }
 }
