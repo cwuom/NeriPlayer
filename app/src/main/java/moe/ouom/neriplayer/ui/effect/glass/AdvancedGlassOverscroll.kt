@@ -180,7 +180,12 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         val launch = launchAnimation ?: return
         animationJob?.cancel()
         animationJob = launch {
-            val stiffness = springStiffness(STANDARD_SPRING_PERIOD_SECONDS)
+            val stiffness = springStiffness(
+                advancedGlassOverscrollReturnPeriodSeconds(
+                    offset = offsetY,
+                    resistanceScale = resistanceScalePx
+                )
+            )
             animate(
                 initialValue = offsetY,
                 targetValue = 0f,
@@ -194,7 +199,10 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
                     visibilityThreshold = OFFSET_THRESHOLD_PX
                 )
             ) { value, _ ->
-                offsetY = value
+                offsetY = value.coerceIn(
+                    -maxAdvancedGlassOverscrollOffset(resistanceScalePx),
+                    maxAdvancedGlassOverscrollOffset(resistanceScalePx)
+                )
                 rawDragY = restoredAdvancedGlassOverscrollDrag(offsetY, resistanceScalePx)
             }
             resetOffset()
@@ -296,7 +304,8 @@ internal fun dampedAdvancedGlassOverscrollOffset(
 ): Float {
     if (rawDrag == 0f || resistanceScale <= 0f) return 0f
     val normalized = abs(rawDrag) / resistanceScale
-    return sign(rawDrag) * resistanceScale * ln(1f + normalized)
+    val maxOffset = maxAdvancedGlassOverscrollOffset(resistanceScale)
+    return sign(rawDrag) * maxOffset * (1f - exp(-normalized))
 }
 
 internal fun restoredAdvancedGlassOverscrollDrag(
@@ -304,8 +313,24 @@ internal fun restoredAdvancedGlassOverscrollDrag(
     resistanceScale: Float
 ): Float {
     if (offset == 0f || resistanceScale <= 0f) return 0f
-    val normalized = abs(offset) / resistanceScale
-    return sign(offset) * resistanceScale * (exp(normalized) - 1f)
+    val maxOffset = maxAdvancedGlassOverscrollOffset(resistanceScale)
+    val normalized = (abs(offset) / maxOffset).coerceIn(0f, 1f - INVERSE_EPSILON)
+    return sign(offset) * -resistanceScale * ln(1f - normalized)
+}
+
+internal fun maxAdvancedGlassOverscrollOffset(resistanceScale: Float): Float =
+    (resistanceScale * MAX_OVERSCROLL_OFFSET_RATIO).coerceAtLeast(0f)
+
+internal fun advancedGlassOverscrollReturnPeriodSeconds(
+    offset: Float,
+    resistanceScale: Float
+): Float {
+    if (resistanceScale <= 0f) return MIN_RETURN_SPRING_PERIOD_SECONDS
+    val progress = (
+        abs(offset) / maxAdvancedGlassOverscrollOffset(resistanceScale)
+    ).coerceIn(0f, 1f)
+    return MIN_RETURN_SPRING_PERIOD_SECONDS +
+        (MAX_RETURN_SPRING_PERIOD_SECONDS - MIN_RETURN_SPRING_PERIOD_SECONDS) * progress
 }
 
 private fun springStiffness(periodSeconds: Float): Float =
@@ -314,7 +339,10 @@ private fun springStiffness(periodSeconds: Float): Float =
 private const val OVERSCROLL_RESISTANCE_SCALE_DP = 108f
 private const val OFFSET_THRESHOLD_PX = 1f
 private const val CRITICAL_DAMPING_RATIO = 1f
-private const val STANDARD_SPRING_PERIOD_SECONDS = 0.4f
+private const val MIN_RETURN_SPRING_PERIOD_SECONDS = 0.44f
+private const val MAX_RETURN_SPRING_PERIOD_SECONDS = 0.62f
 private const val MAX_INITIAL_VELOCITY_SCALE_MULTIPLIER = 18f
 private const val REVERSE_FLING_ATTENUATION = 2.13333f
 private const val POST_FLING_ATTENUATION = 1.53333f
+private const val MAX_OVERSCROLL_OFFSET_RATIO = 0.66f
+private const val INVERSE_EPSILON = 0.0001f
