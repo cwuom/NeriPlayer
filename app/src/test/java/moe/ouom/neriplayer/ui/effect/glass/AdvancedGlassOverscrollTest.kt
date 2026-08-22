@@ -41,10 +41,24 @@ class AdvancedGlassOverscrollTest {
     fun dragDisplacementIsCappedWhileRemainingReversible() {
         val resistanceScale = 100f
         val maxOffset = maxAdvancedGlassOverscrollOffset(resistanceScale)
+        val maxRawDrag = maxAdvancedGlassOverscrollRawDrag(resistanceScale)
         val cappedOffset = dampedAdvancedGlassOverscrollOffset(10_000f, resistanceScale)
         val reversibleOffset = dampedAdvancedGlassOverscrollOffset(400f, resistanceScale)
+        val saturatedRawDrag = boundedAdvancedGlassOverscrollRawDrag(
+            rawDrag = 0f,
+            delta = 10_000f,
+            resistanceScale = resistanceScale
+        )
+        val reversedRawDrag = boundedAdvancedGlassOverscrollRawDrag(
+            rawDrag = saturatedRawDrag,
+            delta = -100f,
+            resistanceScale = resistanceScale
+        )
 
         assertEquals(maxOffset, cappedOffset, 0.001f)
+        assertEquals(maxRawDrag, saturatedRawDrag, 0.001f)
+        assertEquals(maxRawDrag - 100f, reversedRawDrag, 0.001f)
+        assertTrue(dampedAdvancedGlassOverscrollOffset(reversedRawDrag, resistanceScale) < cappedOffset)
         assertTrue(reversibleOffset < maxOffset)
         assertTrue(reversibleOffset > maxOffset * 0.98f)
         assertEquals(

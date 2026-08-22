@@ -168,7 +168,11 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
     }
 
     private fun applyDrag(delta: Float) {
-        rawDragY += delta
+        rawDragY = boundedAdvancedGlassOverscrollRawDrag(
+            rawDrag = rawDragY,
+            delta = delta,
+            resistanceScale = resistanceScalePx
+        )
         offsetY = dampedAdvancedGlassOverscrollOffset(rawDragY, resistanceScalePx)
     }
 
@@ -318,8 +322,24 @@ internal fun restoredAdvancedGlassOverscrollDrag(
     return sign(offset) * -resistanceScale * ln(1f - normalized)
 }
 
+internal fun boundedAdvancedGlassOverscrollRawDrag(
+    rawDrag: Float,
+    delta: Float,
+    resistanceScale: Float
+): Float {
+    val maxRawDrag = maxAdvancedGlassOverscrollRawDrag(resistanceScale)
+    return (rawDrag + delta).coerceIn(-maxRawDrag, maxRawDrag)
+}
+
 internal fun maxAdvancedGlassOverscrollOffset(resistanceScale: Float): Float =
     (resistanceScale * MAX_OVERSCROLL_OFFSET_RATIO).coerceAtLeast(0f)
+
+internal fun maxAdvancedGlassOverscrollRawDrag(resistanceScale: Float): Float =
+    if (resistanceScale <= 0f) {
+        0f
+    } else {
+        resistanceScale * -ln(INVERSE_EPSILON)
+    }
 
 internal fun advancedGlassOverscrollReturnPeriodSeconds(
     offset: Float,

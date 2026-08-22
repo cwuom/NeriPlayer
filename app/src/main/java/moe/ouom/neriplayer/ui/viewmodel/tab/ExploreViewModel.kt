@@ -194,6 +194,17 @@ internal fun isNeteaseExploreSearchAvailable(authState: SavedCookieAuthState): B
     return authState != SavedCookieAuthState.Missing
 }
 
+internal fun ExploreUiState.withNeteaseAuthRequired(error: String): ExploreUiState = copy(
+    searching = false,
+    searchError = error,
+    searchResults = emptyList(),
+    searchItems = emptyList(),
+    searchHasMore = false,
+    searchLoadingMore = false,
+    searchLoadMoreError = null,
+    searchPage = 0
+)
+
 internal fun ExploreUiState.withYouTubeDisabled(): ExploreUiState {
     val youtubeWasSelected = selectedSearchSource == SearchSource.YOUTUBE_MUSIC
     return copy(
@@ -327,6 +338,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             neteaseRepo.authHealthFlow.collect { health ->
                 val isLoggedIn = isNeteaseExploreSearchAvailable(health.state)
+                val currentState = _uiState.value
+                if (
+                    !isLoggedIn &&
+                    currentState.selectedSearchSource == SearchSource.NETEASE &&
+                    currentState.searchKeyword.isNotBlank()
+                ) {
+                    clearNeteaseSearchForAuthRequired()
+                }
                 _uiState.value = _uiState.value.copy(isNeteaseLoggedIn = isLoggedIn)
             }
         }
@@ -453,6 +472,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     fun loadMoreSearchResults() {
         val state = _uiState.value
+        val source = state.selectedSearchSource
+        if (source == SearchSource.NETEASE && !isNeteaseSearchAllowed()) {
+            clearNeteaseSearchForAuthRequired()
+            return
+        }
         if (
             state.searchKeyword.isBlank() ||
             !state.searchHasMore ||
@@ -463,7 +487,6 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        val source = state.selectedSearchSource
         val neteaseType = state.selectedNeteaseSearchType
         val keyword = state.searchKeyword
         val matchQuery = state.searchDisplayQuery.ifBlank { keyword }
@@ -476,6 +499,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         )
         searchMoreJob = viewModelScope.launch {
             try {
+                if (source == SearchSource.NETEASE && !isNeteaseSearchAllowed()) {
+                    clearNeteaseSearchForAuthRequired()
+                    return@launch
+                }
                 val result = when (source) {
                     SearchSource.NETEASE -> fetchNeteaseSearchPage(
                         keyword = keyword,
@@ -490,6 +517,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     )
                     SearchSource.YOUTUBE_MUSIC,
                     SearchSource.LINK_RECOGNITION -> return@launch
+                }
+                if (source == SearchSource.NETEASE && !isNeteaseSearchAllowed()) {
+                    clearNeteaseSearchForAuthRequired()
+                    return@launch
                 }
                 updateSearchStateIfCurrent(requestVersion, source) {
                     val merged = mergeExploreSearchResults(it.searchItems, result.items)
@@ -712,25 +743,22 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 搜索网易云歌曲 */
     private fun searchNetease(keyword: String, matchQuery: String, requestVersion: Long) {
-        if (!isNeteaseExploreSearchAvailable(neteaseRepo.getAuthHealthOnce().state)) {
-            updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
-                it.copy(
-                    searching = false,
-                    searchError = app.getString(R.string.netease_login_required_search),
-                    searchResults = emptyList(),
-                    searchItems = emptyList(),
-                    searchHasMore = false,
-                    searchLoadingMore = false,
-                    searchLoadMoreError = null,
-                    searchPage = 0
-                )
-            }
+        if (!isNeteaseSearchAllowed()) {
+            clearNeteaseSearchForAuthRequired()
             return
         }
         val type = _uiState.value.selectedNeteaseSearchType
         searchJob = viewModelScope.launch {
             try {
+                if (!isNeteaseSearchAllowed()) {
+                    clearNeteaseSearchForAuthRequired()
+                    return@launch
+                }
                 val result = fetchNeteaseSearchPage(keyword, matchQuery, page = 1, type = type)
+                if (!isNeteaseSearchAllowed()) {
+                    clearNeteaseSearchForAuthRequired()
+                    return@launch
+                }
                 NPLogger.d(
                     TAG,
                     "search Netease success: request=$requestVersion, keyword=$keyword, type=$type, count=${result.items.size}, hasMore=${result.hasMore}"
@@ -771,6 +799,19 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    private fun isNeteaseSearchAllowed(): Boolean {
+        return isNeteaseExploreSearchAvailable(neteaseRepo.getAuthHealthOnce().state)
+    }
+
+    private fun clearNeteaseSearchForAuthRequired() {
+        searchJob?.cancel()
+        searchMoreJob?.cancel()
+        invalidateSearchRequest()
+        _uiState.value = _uiState.value.withNeteaseAuthRequired(
+            error = app.getString(R.string.netease_login_required_search)
+        )
     }
 
     private fun searchRecognizedLink(input: String, requestVersion: Long) {
