@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
+import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
@@ -117,5 +118,18 @@ class ExploreScreenYouTubeGateTest {
         assertEquals("YOUTUBE_MUSIC|SONG|demo", songs)
         assertEquals("YOUTUBE_MUSIC|CREATOR|demo", creators)
         assertTrue(shouldResetExploreSearchScroll(songs, creators))
+    }
+
+    @Test
+    fun `only the active pager page owns the search list`() {
+        assertTrue(shouldRenderExploreSearchResults(page = 1, currentPage = 1))
+        assertFalse(shouldRenderExploreSearchResults(page = 0, currentPage = 1))
+        assertFalse(shouldRenderExploreSearchResults(page = 2, currentPage = 1))
+    }
+
+    @Test
+    fun `search results reserve the visible mini player height`() {
+        assertEquals(16.dp, exploreSearchResultsBottomPadding(0.dp))
+        assertEquals(80.dp, exploreSearchResultsBottomPadding(64.dp))
     }
 }

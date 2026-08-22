@@ -26,10 +26,46 @@ class AdvancedGlassOverscrollTest {
         val second = dampedAdvancedGlassOverscrollOffset(200f, resistanceScale)
         val third = dampedAdvancedGlassOverscrollOffset(300f, resistanceScale)
 
-        assertEquals(100f * kotlin.math.ln(2f), first, 0.001f)
+        assertEquals(
+            maxAdvancedGlassOverscrollOffset(resistanceScale) *
+                (1f - kotlin.math.exp(-1f)),
+            first,
+            0.001f
+        )
         assertEquals(-third, dampedAdvancedGlassOverscrollOffset(-300f, resistanceScale), 0.001f)
         assertTrue(third > second)
         assertTrue(third - second < second - first)
+    }
+
+    @Test
+    fun dragDisplacementIsCappedWhileRemainingReversible() {
+        val resistanceScale = 100f
+        val maxOffset = maxAdvancedGlassOverscrollOffset(resistanceScale)
+        val maxRawDrag = maxAdvancedGlassOverscrollRawDrag(resistanceScale)
+        val cappedOffset = dampedAdvancedGlassOverscrollOffset(10_000f, resistanceScale)
+        val reversibleOffset = dampedAdvancedGlassOverscrollOffset(400f, resistanceScale)
+        val saturatedRawDrag = boundedAdvancedGlassOverscrollRawDrag(
+            rawDrag = 0f,
+            delta = 10_000f,
+            resistanceScale = resistanceScale
+        )
+        val reversedRawDrag = boundedAdvancedGlassOverscrollRawDrag(
+            rawDrag = saturatedRawDrag,
+            delta = -100f,
+            resistanceScale = resistanceScale
+        )
+
+        assertEquals(maxOffset, cappedOffset, 0.001f)
+        assertEquals(maxRawDrag, saturatedRawDrag, 0.001f)
+        assertEquals(maxRawDrag - 100f, reversedRawDrag, 0.001f)
+        assertTrue(dampedAdvancedGlassOverscrollOffset(reversedRawDrag, resistanceScale) < cappedOffset)
+        assertTrue(reversibleOffset < maxOffset)
+        assertTrue(reversibleOffset > maxOffset * 0.98f)
+        assertEquals(
+            400f,
+            restoredAdvancedGlassOverscrollDrag(reversibleOffset, resistanceScale),
+            0.1f
+        )
     }
 
     @Test
@@ -83,5 +119,15 @@ class AdvancedGlassOverscrollTest {
                 viewportHeight = 320f
             )
         )
+    }
+
+    @Test
+    fun largerFingerDisplacementGetsASlowerReturnPeriod() {
+        val resistanceScale = 100f
+        val shortDrag = advancedGlassOverscrollReturnPeriodSeconds(10f, resistanceScale)
+        val longDrag = advancedGlassOverscrollReturnPeriodSeconds(60f, resistanceScale)
+
+        assertTrue(longDrag > shortDrag)
+        assertTrue(longDrag <= 0.62f)
     }
 }
