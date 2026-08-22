@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
+import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupCoordinator
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupResult
 import moe.ouom.neriplayer.data.local.database.store.LegacyJsonCleanupStatus
@@ -33,19 +35,34 @@ internal object LegacyJsonCleanupScheduler {
         AppContainer.launchBackgroundIo {
             try {
                 val coordinator = LegacyJsonCleanupCoordinator(appContext)
+                var lastUpgradeResult: LegacyDownloadUpgradeResult? = null
                 var lastResult: LegacyJsonCleanupResult? = null
                 for (attemptIndex in retryDelaysMs.indices) {
                     if (attemptIndex > 0) {
                         delay(retryDelaysMs[attemptIndex])
                     }
 
+                    lastUpgradeResult = runCatching {
+                        LegacyDownloadUpgradeCoordinator(appContext).execute()
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "Legacy download upgrade pending: ${error.message}"
+                        )
+                    }.getOrNull()
                     val plan = coordinator.buildPlan()
                     if (plan.targets.none { it.exists }) {
-                        return@launchBackgroundIo
+                        if (lastUpgradeResult?.isComplete == true) {
+                            return@launchBackgroundIo
+                        }
+                        continue
                     }
 
                     lastResult = coordinator.execute(plan, confirmed = true)
-                    if (lastResult.status == LegacyJsonCleanupStatus.COMPLETED) {
+                    if (
+                        lastResult.status == LegacyJsonCleanupStatus.COMPLETED &&
+                        lastUpgradeResult?.isComplete == true
+                    ) {
                         NPLogger.d(
                             TAG,
                             "Legacy JSON cleanup completed: reason=$reason, " +
@@ -55,6 +72,14 @@ internal object LegacyJsonCleanupScheduler {
                     }
                 }
 
+                lastUpgradeResult?.takeUnless(LegacyDownloadUpgradeResult::isComplete)?.let { result ->
+                    NPLogger.d(
+                        TAG,
+                        "Legacy download upgrade pending: rows=${result.rowsPending}, " +
+                            "completed=${result.rowsCompleted}, " +
+                            "tableCleaned=${result.temporaryTableCleaned}"
+                    )
+                }
                 lastResult?.let { result ->
                     NPLogger.d(
                         TAG,

@@ -15,6 +15,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -28,10 +29,12 @@ class ForegroundDownloadWorker(
         val operationId = inputData.getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
             ?: return@withContext Result.failure()
-        runCatching {
+        try {
             setForeground(createForegroundInfo(applicationContext, operationId))
             DownloadExecutionHosts.default.execute(applicationContext, operationId)
-        }.getOrElse { error ->
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
             if (error is IllegalStateException) {
                 return@withContext Result.retry()
             }

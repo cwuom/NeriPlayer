@@ -21,11 +21,13 @@ class PreparedPipelineRemovalTest {
     }
 
     private fun locateProjectFile(path: String): File {
-        var directory = File(System.getProperty("user.dir"))
-        repeat(5) {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        var attempts = 0
+        while (attempts++ < 5) {
             val candidate = File(directory, path)
             if (candidate.isFile) return candidate
-            directory = directory.parentFile ?: return@repeat
+            val parent = directory.parentFile ?: break
+            directory = parent
         }
         error("source file not found: $path")
     }

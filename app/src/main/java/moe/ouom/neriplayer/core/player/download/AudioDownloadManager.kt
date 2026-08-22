@@ -2640,6 +2640,19 @@ object AudioDownloadManager {
         normalizedKeys.forEach(::clearPublishedProgress)
     }
 
+    /** preserves the working file when an OS execution host is stopped externally */
+    fun pauseSongDownloadForExecutionHost(songKey: String) {
+        val normalizedKey = songKey.takeIf(String::isNotBlank) ?: return
+        networkPolicyPausedSongKeys.add(normalizedKey)
+        snapshotActiveCalls(normalizedKey).forEach { call ->
+            call.cancel()
+        }
+        clearPublishedProgress(normalizedKey)
+        if (_progressFlow.value?.songKey == normalizedKey) {
+            _progressFlow.value = null
+        }
+    }
+
     fun isDownloadPausedForNetworkPolicy(songKey: String): Boolean {
         return networkPolicyPausedSongKeys.contains(songKey)
     }

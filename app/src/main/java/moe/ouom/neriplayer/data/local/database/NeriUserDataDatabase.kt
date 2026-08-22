@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.data.local.database
 
 import android.app.Application
+import android.database.Cursor
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import org.json.JSONObject
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaylistUsageDao
@@ -55,6 +57,9 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntit
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
+import moe.ouom.neriplayer.data.local.database.entity.LegacyDownloadUpgradePayloadEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
@@ -93,11 +98,14 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         DownloadSnapshotEntryEntity::class,
         DownloadSnapshotMetadataEntity::class,
         ManagedDownloadArtifactEntity::class,
+        DownloadOperationEntity::class,
+        ManagedLibraryItemEntity::class,
+        LegacyDownloadUpgradePayloadEntity::class,
         PlatformPlaylistCacheEntity::class,
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 26,
+    version = 16,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -168,17 +176,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_12_13,
                 MIGRATION_13_14,
                 MIGRATION_14_15,
-                MIGRATION_15_16,
-                MIGRATION_16_17,
-                MIGRATION_17_18,
-                MIGRATION_18_19,
-                MIGRATION_19_20,
-                MIGRATION_20_21,
-                MIGRATION_21_22,
-                MIGRATION_22_23,
-                MIGRATION_23_24,
-                MIGRATION_24_25,
-                MIGRATION_25_26
+                MIGRATION_15_FINAL
             ).build()
         }
 
@@ -1022,265 +1020,282 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             }
         }
 
-        val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+        const val FINAL_DB_VERSION = 16
+
+        val MIGRATION_15_FINAL: Migration = object : Migration(15, FINAL_DB_VERSION) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE `downloaded_song_catalog` " +
-                        "ADD COLUMN `matched_romanized_lyric` TEXT"
-                )
-                db.execSQL(
-                    "ALTER TABLE `downloaded_song_catalog` " +
-                        "ADD COLUMN `original_romanized_lyric` TEXT"
-                )
-                db.execSQL(
-                    "ALTER TABLE `download_snapshot_metadata` " +
-                        "ADD COLUMN `matched_romanized_lyric` TEXT"
-                )
-                db.execSQL(
-                    "ALTER TABLE `download_snapshot_metadata` " +
-                        "ADD COLUMN `original_romanized_lyric` TEXT"
-                )
-                db.execSQL(
-                    "ALTER TABLE `download_pending_queue` " +
-                        "ADD COLUMN `matched_romanized_lyric` TEXT"
-                )
-                db.execSQL(
-                    "ALTER TABLE `download_pending_queue` " +
-                        "ADD COLUMN `original_romanized_lyric` TEXT"
-                )
+                addFinalDownloadColumns(db)
+                createFinalDownloadTables(db)
+                copyV15DownloadPayload(db)
             }
         }
 
-        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "original_romanized_lyric"
-                )
-            }
+        val MIGRATION_15_16: Migration = MIGRATION_15_FINAL
+
+        private fun addFinalDownloadColumns(db: SupportSQLiteDatabase) {
+            addTextColumnIfMissing(db, "downloaded_song_catalog", "matched_romanized_lyric")
+            addTextColumnIfMissing(db, "downloaded_song_catalog", "original_romanized_lyric")
+            addTextColumnIfMissing(db, "download_snapshot_metadata", "album")
+            addTextColumnIfMissing(db, "download_snapshot_metadata", "matched_romanized_lyric")
+            addTextColumnIfMissing(db, "download_snapshot_metadata", "original_romanized_lyric")
+            addIntegerColumnIfMissing(db, "download_snapshot_metadata", "created_at_ms")
+            addTextColumnIfMissing(db, "download_snapshot_metadata", "created_at_source")
+            addTextColumnIfMissing(db, "download_pending_queue", "matched_romanized_lyric")
+            addTextColumnIfMissing(db, "download_pending_queue", "original_romanized_lyric")
         }
 
-        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "matched_romanized_lyric"
+        private fun createFinalDownloadTables(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `download_operation` (
+                    `operation_id` TEXT NOT NULL PRIMARY KEY,
+                    `stable_key` TEXT NOT NULL,
+                    `library_id` TEXT NOT NULL,
+                    `state` TEXT NOT NULL,
+                    `queue_order` INTEGER NOT NULL,
+                    `source_hint_json` TEXT NOT NULL,
+                    `staging_dir_name` TEXT NOT NULL,
+                    `bytes_written` INTEGER NOT NULL,
+                    `total_bytes` INTEGER,
+                    `resume_json` TEXT,
+                    `retry_count` INTEGER NOT NULL,
+                    `next_retry_at_ms` INTEGER,
+                    `last_error_code` TEXT,
+                    `created_at_ms` INTEGER NOT NULL,
+                    `updated_at_ms` INTEGER NOT NULL
                 )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "original_romanized_lyric"
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue`
+                ON `download_operation` (`state`, `queue_order`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `managed_library_item` (
+                    `library_id` TEXT NOT NULL,
+                    `stable_key` TEXT NOT NULL,
+                    `artifact_id` TEXT NOT NULL,
+                    `state` TEXT NOT NULL,
+                    `audio_name` TEXT NOT NULL,
+                    `metadata_name` TEXT NOT NULL,
+                    `locator_hint` TEXT,
+                    `title_preview` TEXT,
+                    `artist_preview` TEXT,
+                    `cover_key_preview` TEXT,
+                    `downloaded_at_ms` INTEGER,
+                    `metadata_revision` INTEGER NOT NULL,
+                    PRIMARY KEY(`library_id`, `stable_key`)
                 )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "matched_romanized_lyric"
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_library_item_artifact`
+                ON `managed_library_item` (`artifact_id`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `legacy_download_upgrade_payload` (
+                    `stable_key` TEXT NOT NULL PRIMARY KEY,
+                    `payload_json` TEXT NOT NULL
                 )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "original_romanized_lyric"
-                )
-            }
+                """.trimIndent()
+            )
+            createManagedDownloadArtifactTable(db)
         }
 
-        val MIGRATION_18_19: Migration = object : Migration(18, 19) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "matched_romanized_lyric"
+        private fun createManagedDownloadArtifactTable(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `managed_download_artifact` (
+                    `root_key` TEXT NOT NULL,
+                    `stable_key` TEXT NOT NULL,
+                    `artifact_id` TEXT NOT NULL,
+                    `state` TEXT NOT NULL,
+                    `lease_id` TEXT,
+                    `audio_reference` TEXT,
+                    `audio_name` TEXT,
+                    `file_size` INTEGER,
+                    `content_hash` TEXT,
+                    `library_added_at_ms` INTEGER,
+                    `source_created_at_ms` INTEGER,
+                    `source_modified_at_ms` INTEGER,
+                    `downloaded_at_ms` INTEGER,
+                    `migrated_at_ms` INTEGER,
+                    `finalized_at_ms` INTEGER,
+                    `updated_at_ms` INTEGER NOT NULL,
+                    `needs_reconcile` INTEGER NOT NULL,
+                    `last_error_code` TEXT,
+                    PRIMARY KEY(`root_key`, `stable_key`)
                 )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "original_romanized_lyric"
-                )
-            }
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_managed_download_artifact_root_state`
+                ON `managed_download_artifact` (`root_key`, `state`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_download_artifact_artifact_id`
+                ON `managed_download_artifact` (`artifact_id`)
+                """.trimIndent()
+            )
         }
 
-        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "downloaded_song_catalog",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "original_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "matched_romanized_lyric"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_pending_queue",
-                    columnName = "original_romanized_lyric"
-                )
-            }
+        private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
+            copyLegacyTableRows(
+                db = db,
+                tableName = "downloaded_song_catalog",
+                stableKeyColumns = arrayOf("stable_key", "catalog_key")
+            )
+            copyLegacyTableRows(
+                db = db,
+                tableName = "download_snapshot_metadata",
+                stableKeyColumns = arrayOf("stable_key", "audio_name")
+            )
         }
 
-        /**
-         * advances the schema identity after older builds wrote the same columns with a stale
-         * Room identity hash; no user tables or rows are changed
-         */
-        val MIGRATION_20_21: Migration = object : Migration(20, 21) {
-            override fun migrate(db: SupportSQLiteDatabase) = Unit
-        }
-
-        /**
-         * repairs databases that reached version 21 with the legacy Room identity hash
-         */
-        val MIGRATION_21_22: Migration = object : Migration(21, 22) {
-            override fun migrate(db: SupportSQLiteDatabase) = Unit
-        }
-
-        /**
-         * repairs databases that were already marked as version 22 while retaining the
-         * identity hash written by the previous schema build
-         */
-        val MIGRATION_22_23: Migration = object : Migration(22, 23) {
-            override fun migrate(db: SupportSQLiteDatabase) = Unit
-        }
-
-        val MIGRATION_23_24: Migration = object : Migration(23, 24) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "album"
-                )
-            }
-        }
-
-        val MIGRATION_24_25: Migration = object : Migration(24, 25) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                addIntegerColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "created_at_ms"
-                )
-                addTextColumnIfMissing(
-                    db = db,
-                    tableName = "download_snapshot_metadata",
-                    columnName = "created_at_source"
-                )
-            }
-        }
-
-        val MIGRATION_25_26: Migration = object : Migration(25, 26) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `managed_download_artifact` (
-                        `root_key` TEXT NOT NULL,
-                        `stable_key` TEXT NOT NULL,
-                        `artifact_id` TEXT NOT NULL,
-                        `state` TEXT NOT NULL,
-                        `lease_id` TEXT,
-                        `audio_reference` TEXT,
-                        `audio_name` TEXT,
-                        `file_size` INTEGER,
-                        `content_hash` TEXT,
-                        `library_added_at_ms` INTEGER,
-                        `source_created_at_ms` INTEGER,
-                        `source_modified_at_ms` INTEGER,
-                        `downloaded_at_ms` INTEGER,
-                        `migrated_at_ms` INTEGER,
-                        `finalized_at_ms` INTEGER,
-                        `updated_at_ms` INTEGER NOT NULL,
-                        `needs_reconcile` INTEGER NOT NULL,
-                        `last_error_code` TEXT,
-                        PRIMARY KEY(`root_key`, `stable_key`)
+        private fun copyLegacyTableRows(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            stableKeyColumns: Array<String>
+        ) {
+            if (!hasTable(db, tableName)) return
+            db.query("SELECT * FROM `$tableName`").use { cursor ->
+                val columnNames = cursor.columnNames
+                val keyIndices = stableKeyColumns.map { cursor.getColumnIndex(it) }
+                while (cursor.moveToNext()) {
+                    val directStableKey = keyIndices.asSequence()
+                        .filter { it >= 0 && !cursor.isNull(it) }
+                        .map { cursor.getString(it).trim() }
+                        .firstOrNull(String::isNotBlank)
+                    val stableKey = directStableKey
+                        ?: if (tableName == "download_snapshot_metadata") {
+                            val audioNameIndex = cursor.getColumnIndex("audio_name")
+                            findCatalogStableKeyForAudioName(
+                                db = db,
+                                audioName = audioNameIndex
+                                    .takeIf { it >= 0 }
+                                    ?.let(cursor::getString)
+                            )
+                        } else {
+                            null
+                        }
+                        ?: continue
+                    val row = rowToJson(cursor, columnNames)
+                    val existing = db.query(
+                        "SELECT payload_json FROM `legacy_download_upgrade_payload` " +
+                            "WHERE stable_key = ? LIMIT 1",
+                        arrayOf(stableKey)
+                    ).use { existingCursor ->
+                        if (existingCursor.moveToFirst()) {
+                            runCatching { JSONObject(existingCursor.getString(0)) }
+                                .getOrNull()
+                        } else {
+                            null
+                        }
+                    } ?: JSONObject()
+                    existing.put(tableName, row)
+                    addCamelCaseAliases(existing, row)
+                    existing.put("stableKey", stableKey)
+                    db.execSQL(
+                        "INSERT OR REPLACE INTO `legacy_download_upgrade_payload` " +
+                            "(`stable_key`, `payload_json`) VALUES (?, ?)",
+                        arrayOf(stableKey, existing.toString())
                     )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    CREATE INDEX IF NOT EXISTS
-                    `index_managed_download_artifact_root_state`
-                    ON `managed_download_artifact` (`root_key`, `state`)
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    CREATE UNIQUE INDEX IF NOT EXISTS
-                    `index_managed_download_artifact_artifact_id`
-                    ON `managed_download_artifact` (`artifact_id`)
-                    """.trimIndent()
-                )
+                }
             }
+        }
+
+        private fun rowToJson(cursor: Cursor, columnNames: Array<String>): JSONObject {
+            return JSONObject().apply {
+                columnNames.forEachIndexed { index, columnName ->
+                    put(columnName, cursorValue(cursor, index))
+                }
+            }
+        }
+
+        private fun addCamelCaseAliases(target: JSONObject, row: JSONObject) {
+            val keys = row.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val alias = snakeToCamel(key)
+                if (alias.isNotBlank() && (!target.has(alias) || target.isNull(alias))) {
+                    target.put(alias, row.get(key))
+                }
+                if (key == "audio_name" && (!target.has("audioFileName") || target.isNull("audioFileName"))) {
+                    target.put("audioFileName", row.get(key))
+                }
+            }
+        }
+
+        private fun snakeToCamel(value: String): String {
+            return buildString(value.length) {
+                var uppercaseNext = false
+                value.forEach { character ->
+                    if (character == '_') {
+                        uppercaseNext = true
+                    } else if (uppercaseNext) {
+                        append(character.uppercaseChar())
+                        uppercaseNext = false
+                    } else {
+                        append(character)
+                    }
+                }
+            }
+        }
+
+        private fun cursorValue(cursor: Cursor, index: Int): Any {
+            if (cursor.isNull(index)) return JSONObject.NULL
+            return when (cursor.getType(index)) {
+                Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(index)
+                Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(index)
+                Cursor.FIELD_TYPE_BLOB -> String(cursor.getBlob(index), Charsets.ISO_8859_1)
+                else -> cursor.getString(index)
+            }
+        }
+
+        private fun hasTable(db: SupportSQLiteDatabase, tableName: String): Boolean {
+            db.query(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+                arrayOf(tableName)
+            ).use { cursor ->
+                return cursor.moveToFirst()
+            }
+        }
+
+        private fun findCatalogStableKeyForAudioName(
+            db: SupportSQLiteDatabase,
+            audioName: String?
+        ): String? {
+            val normalizedName = audioName?.trim()?.takeIf(String::isNotBlank) ?: return null
+            db.query(
+                "SELECT stable_key, catalog_key, file_path FROM `downloaded_song_catalog`"
+            ).use { cursor ->
+                val stableKeyIndex = cursor.getColumnIndex("stable_key")
+                val catalogKeyIndex = cursor.getColumnIndex("catalog_key")
+                val filePathIndex = cursor.getColumnIndex("file_path")
+                while (cursor.moveToNext()) {
+                    val catalogKey = cursor.getString(catalogKeyIndex).orEmpty()
+                    val filePath = cursor.getString(filePathIndex).orEmpty()
+                    if (
+                        catalogKey.endsWith(normalizedName) ||
+                        filePath.substringAfterLast('/').equals(normalizedName, ignoreCase = true)
+                    ) {
+                        val stableKey = cursor.getString(stableKeyIndex)
+                            ?.trim()
+                            ?.takeIf(String::isNotBlank)
+                        return stableKey ?: catalogKey.trim().takeIf(String::isNotBlank)
+                    }
+                }
+            }
+            return null
         }
 
         private fun addIntegerColumnIfMissing(

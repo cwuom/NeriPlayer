@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 16,
-    "identityHash": "361bf3ee3aec4a5d3d2059cab1c7f9f3",
+    "identityHash": "79f3c67597d69c0894a123dd1371f7c5",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -2965,7 +2965,7 @@
       },
       {
         "tableName": "download_snapshot_metadata",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `audio_name` TEXT NOT NULL, `stable_key` TEXT, `song_id` INTEGER, `identity_album` TEXT, `name` TEXT, `artist` TEXT, `cover_url` TEXT, `matched_lyric` TEXT, `matched_translated_lyric` TEXT, `matched_romanized_lyric` TEXT, `matched_lyric_source` TEXT, `matched_song_id` TEXT, `user_lyric_offset_ms` INTEGER NOT NULL, `custom_cover_url` TEXT, `custom_name` TEXT, `custom_artist` TEXT, `original_name` TEXT, `original_artist` TEXT, `original_cover_url` TEXT, `original_lyric` TEXT, `original_translated_lyric` TEXT, `original_romanized_lyric` TEXT, `media_uri` TEXT, `channel_id` TEXT, `audio_id` TEXT, `sub_audio_id` TEXT, `playlist_context_id` TEXT, `cover_path` TEXT, `lyric_path` TEXT, `translated_lyric_path` TEXT, `romanized_lyric_path` TEXT, `duration_ms` INTEGER NOT NULL, `download_finalized` INTEGER, PRIMARY KEY(`root_key`, `audio_name`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `audio_name` TEXT NOT NULL, `stable_key` TEXT, `song_id` INTEGER, `identity_album` TEXT, `album` TEXT, `name` TEXT, `artist` TEXT, `cover_url` TEXT, `matched_lyric` TEXT, `matched_translated_lyric` TEXT, `matched_romanized_lyric` TEXT, `matched_lyric_source` TEXT, `matched_song_id` TEXT, `user_lyric_offset_ms` INTEGER NOT NULL, `custom_cover_url` TEXT, `custom_name` TEXT, `custom_artist` TEXT, `original_name` TEXT, `original_artist` TEXT, `original_cover_url` TEXT, `original_lyric` TEXT, `original_translated_lyric` TEXT, `original_romanized_lyric` TEXT, `media_uri` TEXT, `channel_id` TEXT, `audio_id` TEXT, `sub_audio_id` TEXT, `playlist_context_id` TEXT, `cover_path` TEXT, `lyric_path` TEXT, `translated_lyric_path` TEXT, `romanized_lyric_path` TEXT, `duration_ms` INTEGER NOT NULL, `download_finalized` INTEGER, `created_at_ms` INTEGER, `created_at_source` TEXT, PRIMARY KEY(`root_key`, `audio_name`))",
         "fields": [
           {
             "fieldPath": "rootKey",
@@ -2992,6 +2992,11 @@
           {
             "fieldPath": "identityAlbum",
             "columnName": "identity_album",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "album",
+            "columnName": "album",
             "affinity": "TEXT"
           },
           {
@@ -3140,6 +3145,16 @@
             "fieldPath": "downloadFinalized",
             "columnName": "download_finalized",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "created_at_source",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -3193,6 +3208,361 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_metadata_root_remote_track` ON `${TABLE_NAME}` (`root_key`, `channel_id`, `audio_id`, `sub_audio_id`)"
           }
         ]
+      },
+      {
+        "tableName": "managed_download_artifact",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `artifact_id` TEXT NOT NULL, `state` TEXT NOT NULL, `lease_id` TEXT, `audio_reference` TEXT, `audio_name` TEXT, `file_size` INTEGER, `content_hash` TEXT, `library_added_at_ms` INTEGER, `source_created_at_ms` INTEGER, `source_modified_at_ms` INTEGER, `downloaded_at_ms` INTEGER, `migrated_at_ms` INTEGER, `finalized_at_ms` INTEGER, `updated_at_ms` INTEGER NOT NULL, `needs_reconcile` INTEGER NOT NULL, `last_error_code` TEXT, PRIMARY KEY(`root_key`, `stable_key`))",
+        "fields": [
+          {
+            "fieldPath": "rootKey",
+            "columnName": "root_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stableKey",
+            "columnName": "stable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artifactId",
+            "columnName": "artifact_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaseId",
+            "columnName": "lease_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "audioReference",
+            "columnName": "audio_reference",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "audioName",
+            "columnName": "audio_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fileSize",
+            "columnName": "file_size",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "content_hash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "libraryAddedAtMs",
+            "columnName": "library_added_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceCreatedAtMs",
+            "columnName": "source_created_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceModifiedAtMs",
+            "columnName": "source_modified_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "downloadedAtMs",
+            "columnName": "downloaded_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "migratedAtMs",
+            "columnName": "migrated_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finalizedAtMs",
+            "columnName": "finalized_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "needsReconcile",
+            "columnName": "needs_reconcile",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "last_error_code",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "root_key",
+            "stable_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_managed_download_artifact_root_state",
+            "unique": false,
+            "columnNames": [
+              "root_key",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_managed_download_artifact_root_state` ON `${TABLE_NAME}` (`root_key`, `state`)"
+          },
+          {
+            "name": "index_managed_download_artifact_artifact_id",
+            "unique": true,
+            "columnNames": [
+              "artifact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_download_artifact_artifact_id` ON `${TABLE_NAME}` (`artifact_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "download_operation",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
+        "fields": [
+          {
+            "fieldPath": "operationId",
+            "columnName": "operation_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stableKey",
+            "columnName": "stable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "libraryId",
+            "columnName": "library_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "queueOrder",
+            "columnName": "queue_order",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceHintJson",
+            "columnName": "source_hint_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stagingDirName",
+            "columnName": "staging_dir_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytesWritten",
+            "columnName": "bytes_written",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBytes",
+            "columnName": "total_bytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "resumeJson",
+            "columnName": "resume_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "retryCount",
+            "columnName": "retry_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextRetryAtMs",
+            "columnName": "next_retry_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "last_error_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "operation_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_download_operation_state_queue",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "queue_order"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue` ON `${TABLE_NAME}` (`state`, `queue_order`)"
+          }
+        ]
+      },
+      {
+        "tableName": "managed_library_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`library_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `artifact_id` TEXT NOT NULL, `state` TEXT NOT NULL, `audio_name` TEXT NOT NULL, `metadata_name` TEXT NOT NULL, `locator_hint` TEXT, `title_preview` TEXT, `artist_preview` TEXT, `cover_key_preview` TEXT, `downloaded_at_ms` INTEGER, `metadata_revision` INTEGER NOT NULL, PRIMARY KEY(`library_id`, `stable_key`))",
+        "fields": [
+          {
+            "fieldPath": "libraryId",
+            "columnName": "library_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stableKey",
+            "columnName": "stable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "artifactId",
+            "columnName": "artifact_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "audioName",
+            "columnName": "audio_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "metadataName",
+            "columnName": "metadata_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "locatorHint",
+            "columnName": "locator_hint",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titlePreview",
+            "columnName": "title_preview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artistPreview",
+            "columnName": "artist_preview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverKeyPreview",
+            "columnName": "cover_key_preview",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "downloadedAtMs",
+            "columnName": "downloaded_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "metadataRevision",
+            "columnName": "metadata_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "library_id",
+            "stable_key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_managed_library_item_artifact",
+            "unique": true,
+            "columnNames": [
+              "artifact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_library_item_artifact` ON `${TABLE_NAME}` (`artifact_id`)"
+          }
+        ]
+      },
+      {
+        "tableName": "legacy_download_upgrade_payload",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stable_key` TEXT NOT NULL, `payload_json` TEXT NOT NULL, PRIMARY KEY(`stable_key`))",
+        "fields": [
+          {
+            "fieldPath": "stableKey",
+            "columnName": "stable_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "stable_key"
+          ]
+        }
       },
       {
         "tableName": "platform_playlist_cache",
@@ -3529,7 +3899,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '361bf3ee3aec4a5d3d2059cab1c7f9f3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '79f3c67597d69c0894a123dd1371f7c5')"
     ]
   }
 }

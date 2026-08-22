@@ -260,7 +260,9 @@ class ManagedDownloadStorageSnapshotCacheTest {
         assertNotNull(restored)
         assertEquals("tree:test", restored?.first)
         assertEquals(listOf(audioEntry), restored?.second?.audioEntries)
-        assertEquals(metadata, restored?.second?.metadataByAudioName?.get("Artist - Song.mp3"))
+        val restoredMetadata = restored?.second?.metadataByAudioName?.get("Artist - Song.mp3")
+        assertEquals(metadata, restoredMetadata?.copy(restorableMetadata = null))
+        assertNotNull(restoredMetadata?.restorableMetadata)
         assertEquals(coverEntry, restored?.second?.coverEntriesByName?.get(coverEntry.name))
         assertEquals(lyricEntry, restored?.second?.lyricEntriesByName?.get(lyricEntry.name))
     }
