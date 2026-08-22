@@ -23,6 +23,9 @@
     <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
     <string name="local_playlist_scan_existing_empty">No unadded local audio</string>
     <string name="local_playlist_scan_filtered_empty">No local audio matches the filters</string>
+    <string name="local_playlist_scan_progress_traversing">Visited %1$d folders, found %2$d songs</string>
+    <string name="local_playlist_scan_progress_building">Building song index (%1$d/%2$d)</string>
+    <string name="local_playlist_scan_progress_metadata">Finalizing metadata (%1$d/%2$d)</string>
     <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
     <string name="local_playlist_add_scanned_no_new">Selected tracks are already in the target playlist</string>
     <string name="local_playlist_metadata_processing_title">Processing song info</string>
@@ -54,6 +57,7 @@
     <string name="local_playlist_export_to">Export to Playlist</string>
     <string name="local_playlist_import_audio">Import Local Audio</string>
     <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d songs · %3$s plays</string>
+    <string name="local_playlist_duration_loading">Reading duration</string>
     <string name="local_artist_total_duration" formatted="false">%1$s · %2$d songs</string>
     <string name="local_playlist_play_next">Play Next…</string>
     <string name="local_artist_detail_empty">This artist has no playable local songs</string>

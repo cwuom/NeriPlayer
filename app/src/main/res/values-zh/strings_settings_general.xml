@@ -277,6 +277,7 @@
     <string name="settings_download_directory_desc">歌曲、歌词和封面会保存到这里</string>
     <string name="settings_download_directory_current">当前：%1$s</string>
     <string name="settings_download_directory_hint">建议使用应用私有目录，性能更稳</string>
+    <string name="settings_download_directory_permission_lost">目录授权已失效，请重新选择此目录后再下载或编辑文件</string>
     <string name="settings_download_directory_choose">选择目录</string>
     <string name="settings_download_directory_reset">恢复默认目录</string>
     <string name="settings_download_directory_reset_desc">改回应用自己的下载位置</string>
