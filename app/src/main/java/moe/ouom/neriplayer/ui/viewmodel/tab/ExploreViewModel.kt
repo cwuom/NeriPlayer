@@ -45,7 +45,6 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
-import moe.ouom.neriplayer.data.auth.netease.NeteaseCookieRepository
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.platform.youtube.buildYouTubeMusicMediaUri
@@ -191,6 +190,10 @@ data class ExploreUiState(
     val ytMusicPlaylistsError: String? = null
 )
 
+internal fun isNeteaseExploreSearchAvailable(authState: SavedCookieAuthState): Boolean {
+    return authState != SavedCookieAuthState.Missing
+}
+
 internal fun ExploreUiState.withYouTubeDisabled(): ExploreUiState {
     val youtubeWasSelected = selectedSearchSource == SearchSource.YOUTUBE_MUSIC
     return copy(
@@ -308,7 +311,7 @@ private data class ExploreSearchFetchResult(
 
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
-    private val neteaseRepo = NeteaseCookieRepository(application)
+    private val neteaseRepo = AppContainer.neteaseCookieRepo
     private var highQualityLoadJob: Job? = null
     private var searchJob: Job? = null
     private var searchMoreJob: Job? = null
@@ -323,7 +326,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             neteaseRepo.authHealthFlow.collect { health ->
-                val isLoggedIn = health.state != SavedCookieAuthState.Missing
+                val isLoggedIn = isNeteaseExploreSearchAvailable(health.state)
                 _uiState.value = _uiState.value.copy(isNeteaseLoggedIn = isLoggedIn)
             }
         }
@@ -709,7 +712,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
 
     /** 搜索网易云歌曲 */
     private fun searchNetease(keyword: String, matchQuery: String, requestVersion: Long) {
-        if (neteaseRepo.getAuthHealthOnce().state == SavedCookieAuthState.Missing) {
+        if (!isNeteaseExploreSearchAvailable(neteaseRepo.getAuthHealthOnce().state)) {
             updateSearchStateIfCurrent(requestVersion, SearchSource.NETEASE) {
                 it.copy(
                     searching = false,
@@ -1189,7 +1192,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 limit = NETEASE_SEARCH_PAGE_SIZE,
                 offset = offset,
                 type = type.apiType,
-                usePersistedCookies = false
+                usePersistedCookies = true
             )
         }
         val parsed = parseNeteaseSearchResults(raw, type)

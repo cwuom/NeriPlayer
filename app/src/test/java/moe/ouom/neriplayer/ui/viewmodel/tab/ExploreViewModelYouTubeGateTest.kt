@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
+import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,6 +19,16 @@ class ExploreViewModelYouTubeGateTest {
         coverUrl = "",
         durationMs = 1_000L
     )
+
+    @Test
+    fun `valid Netease auth keeps search available`() {
+        assertTrue(isNeteaseExploreSearchAvailable(SavedCookieAuthState.Valid))
+    }
+
+    @Test
+    fun `missing Netease auth blocks search`() {
+        assertFalse(isNeteaseExploreSearchAvailable(SavedCookieAuthState.Missing))
+    }
 
     @Test
     fun `disabling YouTube preserves another source search state`() {
