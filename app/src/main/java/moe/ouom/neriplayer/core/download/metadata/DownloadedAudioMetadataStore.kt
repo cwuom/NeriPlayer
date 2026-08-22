@@ -54,7 +54,20 @@ internal class DownloadedAudioMetadataStore(
             ),
             downloadFinalized = downloadFinalized,
             createdAtMs = createdAtMs,
-            createdAtSource = createdAtSource
+            createdAtSource = createdAtSource,
+            artifactId = existingMetadata?.artifactId,
+            operationId = existingMetadata?.operationId,
+            artifactState = if (downloadFinalized) {
+                "COMPLETE"
+            } else {
+                existingMetadata?.artifactState ?: "CORE_COMMITTED"
+            },
+            audioFileName = audio.name,
+            libraryId = existingMetadata?.libraryId,
+            libraryAddedAtMs = existingMetadata?.libraryAddedAtMs
+                ?: createdAtMs.takeIf { it > 0L },
+            sourceCreatedAtMs = existingMetadata?.sourceCreatedAtMs,
+            sourceModifiedAtMs = existingMetadata?.sourceModifiedAtMs
         )
 
         var lastError: Throwable? = null
@@ -187,11 +200,19 @@ internal class DownloadedAudioMetadataStore(
         downloadTimeMs: Long?,
         downloadFinalized: Boolean,
         createdAtMs: Long,
-        createdAtSource: String
+        createdAtSource: String,
+        artifactId: String?,
+        operationId: String?,
+        artifactState: String?,
+        audioFileName: String?,
+        libraryId: String?,
+        libraryAddedAtMs: Long?,
+        sourceCreatedAtMs: Long?,
+        sourceModifiedAtMs: Long?
     ): JSONObject {
         val identity = song.identity()
         return JSONObject().apply {
-            put("schemaVersion", 3)
+            put("schemaVersion", 4)
             put("stableKey", identity.stableKey())
             put("songId", song.id)
             put("identityAlbum", identity.album)
@@ -228,6 +249,14 @@ internal class DownloadedAudioMetadataStore(
             put("downloadFinalized", downloadFinalized)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
+            put("artifactId", artifactId)
+            put("operationId", operationId)
+            put("artifactState", artifactState)
+            put("audioFileName", audioFileName)
+            put("libraryId", libraryId)
+            put("libraryAddedAtMs", libraryAddedAtMs)
+            put("sourceCreatedAtMs", sourceCreatedAtMs)
+            put("sourceModifiedAtMs", sourceModifiedAtMs)
         }
     }
 

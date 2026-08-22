@@ -109,6 +109,33 @@ internal class ManagedDownloadArtifactCoordinator {
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
+        val observedKeys = normalizedSongs.mapTo(linkedSetOf()) { (stableKey, _) -> stableKey }
+        val staleCandidates = database.managedDownloadArtifactDao()
+            .findAllByRootKey(rootKey)
+            .filter { artifact ->
+                artifact.stableKey !in observedKeys &&
+                    !isActive(artifact) &&
+                    !artifact.audioReference.isNullOrBlank()
+            }
+        staleCandidates.forEach { artifact ->
+            val missing = runCatching {
+                !ManagedDownloadStorage.isReferenceAccessible(
+                    appContext,
+                    artifact.audioReference
+                )
+            }.getOrNull() == true
+            if (missing) {
+                database.managedDownloadArtifactDao().markMissingIfUnchanged(
+                    rootKey = rootKey,
+                    stableKey = artifact.stableKey,
+                    expectedState = artifact.state,
+                    expectedUpdatedAtMs = artifact.updatedAtMs,
+                    missingState = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
+                    updatedAtMs = nowMs,
+                    errorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                )
+            }
+        }
         database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
             val existingByStableKey = dao.findAllByRootKey(rootKey).associateBy(
@@ -131,6 +158,21 @@ internal class ManagedDownloadArtifactCoordinator {
             if (updates.isNotEmpty()) {
                 dao.upsertAll(updates)
             }
+        }
+    }
+
+    suspend fun reconcileEmptyConfirmed(
+        context: Context,
+        rootKey: String
+    ) {
+        val database = database(context.applicationContext)
+        database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            dao.findAllByRootKey(rootKey)
+                .filterNot(::isActive)
+                .forEach { artifact ->
+                    dao.delete(rootKey, artifact.stableKey)
+                }
         }
     }
 
@@ -187,9 +229,76 @@ internal class ManagedDownloadArtifactCoordinator {
             val stableKey = song.stableKey().trim()
             val artifact = artifactsByStableKey[stableKey]
             artifact == null ||
-                ManagedDownloadArtifactState.fromPersisted(artifact.state) !=
-                ManagedDownloadArtifactState.FINALIZED
+                ManagedDownloadArtifactState.fromPersisted(artifact.state) !in setOf(
+                    ManagedDownloadArtifactState.CORE_COMMITTED,
+                    ManagedDownloadArtifactState.ASSETS_ENRICHING,
+                    ManagedDownloadArtifactState.FINALIZED,
+                    ManagedDownloadArtifactState.DEGRADED_COMPLETE
+                )
         }
+    }
+
+    suspend fun markCoreCommitted(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        expectedLeaseId: String? = null
+    ) {
+        val appContext = context.applicationContext
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val database = database(appContext)
+        val nowMs = System.currentTimeMillis()
+        database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val current = dao.find(rootKey, stableKey)
+            if (current != null && !matchesLease(current, expectedLeaseId)) return@withTransaction
+            val base = current ?: newLeaseArtifact(
+                rootKey = rootKey,
+                stableKey = stableKey,
+                artifactId = artifactId(rootKey, stableKey),
+                previous = null,
+                nowMs = nowMs
+            )
+            dao.upsert(
+                base.copy(
+                    state = ManagedDownloadArtifactState.CORE_COMMITTED.name,
+                    leaseId = null,
+                    audioReference = storedAudio.reference,
+                    audioName = storedAudio.name,
+                    fileSize = storedAudio.sizeBytes,
+                    downloadedAtMs = base.downloadedAtMs ?: nowMs,
+                    updatedAtMs = nowMs,
+                    needsReconcile = false,
+                    lastErrorCode = null
+                )
+            )
+        }
+    }
+
+    suspend fun markAssetsEnriching(
+        context: Context,
+        song: SongItem
+    ) {
+        updateStateWithoutLease(
+            context = context,
+            song = song,
+            state = ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            errorCode = null
+        )
+    }
+
+    suspend fun markDegradedComplete(
+        context: Context,
+        song: SongItem,
+        errorCode: String?
+    ) {
+        updateStateWithoutLease(
+            context = context,
+            song = song,
+            state = ManagedDownloadArtifactState.DEGRADED_COMPLETE,
+            errorCode = errorCode
+        )
     }
 
     suspend fun markCommitting(
@@ -331,24 +440,30 @@ internal class ManagedDownloadArtifactCoordinator {
                     ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
                 } else {
                     val repairUpdatedAtMs = System.currentTimeMillis()
-                    val updated = dao.markRepairRequiredIfUnchanged(
+                    val updated = dao.markMissingIfUnchanged(
                         rootKey = rootKey,
                         stableKey = stableKey,
                         expectedState = current.state,
                         expectedUpdatedAtMs = current.updatedAtMs,
-                        repairState = ManagedDownloadArtifactState.REPAIR_REQUIRED.name,
+                        missingState = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
                         updatedAtMs = repairUpdatedAtMs,
                         errorCode = "AUDIO_REFERENCE_UNAVAILABLE"
                     )
                     if (updated == 1) {
-                        ManagedDownloadArtifactClaim.RepairRequired(
-                            current.copy(
-                                state = ManagedDownloadArtifactState.REPAIR_REQUIRED.name,
-                                leaseId = null,
-                                updatedAtMs = repairUpdatedAtMs,
-                                needsReconcile = true,
-                                lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
-                            )
+                        val missing = current.copy(
+                            state = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
+                            leaseId = null,
+                            updatedAtMs = repairUpdatedAtMs,
+                            needsReconcile = true,
+                            lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                        )
+                        resolveExistingClaim(
+                            context = context,
+                            database = database,
+                            current = missing,
+                            nowMs = repairUpdatedAtMs,
+                            rootKey = rootKey,
+                            stableKey = stableKey
                         )
                     } else if (retryCount < 2) {
                         dao.find(rootKey, stableKey)?.let { winner ->
@@ -449,7 +564,13 @@ internal class ManagedDownloadArtifactCoordinator {
             reference = audio.reference,
             name = audio.name,
             sizeBytes = audio.sizeBytes,
-            finalized = metadata?.downloadFinalized == true
+            finalized = metadata?.downloadFinalized == true,
+            downloadedAtMs = metadata?.downloadTimeMs
+                ?: metadata?.createdAtMs
+                ?: audio.lastModifiedMs.takeIf { it > 0L },
+            libraryAddedAtMs = metadata?.libraryAddedAtMs,
+            sourceCreatedAtMs = metadata?.sourceCreatedAtMs,
+            sourceModifiedAtMs = metadata?.sourceModifiedAtMs
         )
     }
 
@@ -473,15 +594,22 @@ internal class ManagedDownloadArtifactCoordinator {
             audioName = discovered.name,
             fileSize = discovered.sizeBytes,
             contentHash = null,
-            libraryAddedAtMs = null,
-            sourceCreatedAtMs = null,
-            sourceModifiedAtMs = null,
-            downloadedAtMs = nowMs.takeIf { discovered.finalized },
+            libraryAddedAtMs = discovered.libraryAddedAtMs
+                ?: discovered.downloadedAtMs,
+            sourceCreatedAtMs = discovered.sourceCreatedAtMs,
+            sourceModifiedAtMs = discovered.sourceModifiedAtMs,
+            downloadedAtMs = discovered.downloadedAtMs
+                ?: nowMs.takeIf { discovered.finalized },
             migratedAtMs = null,
-            finalizedAtMs = nowMs.takeIf { discovered.finalized },
+            finalizedAtMs = discovered.downloadedAtMs
+                ?.takeIf { discovered.finalized },
             updatedAtMs = nowMs,
             needsReconcile = !discovered.finalized,
-            lastErrorCode = null
+            lastErrorCode = if (discovered.downloadedAtMs == null) {
+                "LEGACY_FALLBACK"
+            } else {
+                null
+            }
         )
     }
 
@@ -508,7 +636,7 @@ internal class ManagedDownloadArtifactCoordinator {
             state = if (finalized) {
                 ManagedDownloadArtifactState.FINALIZED.name
             } else {
-                ManagedDownloadArtifactState.REPAIR_REQUIRED.name
+                ManagedDownloadArtifactState.MISSING_CONFIRMED.name
             },
             leaseId = null,
             audioReference = null,
@@ -528,7 +656,7 @@ internal class ManagedDownloadArtifactCoordinator {
             state = if (finalized) {
                 ManagedDownloadArtifactState.FINALIZED.name
             } else {
-                ManagedDownloadArtifactState.REPAIR_REQUIRED.name
+                ManagedDownloadArtifactState.MISSING_CONFIRMED.name
             },
             leaseId = null,
             audioReference = audioReference,
@@ -577,6 +705,27 @@ internal class ManagedDownloadArtifactCoordinator {
         }
     }
 
+    private suspend fun updateStateWithoutLease(
+        context: Context,
+        song: SongItem,
+        state: ManagedDownloadArtifactState,
+        errorCode: String?
+    ) {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
+        val dao = database(context.applicationContext).managedDownloadArtifactDao()
+        val current = dao.find(rootKey, stableKey) ?: return
+        dao.upsert(
+            current.copy(
+                state = state.name,
+                leaseId = null,
+                updatedAtMs = System.currentTimeMillis(),
+                lastErrorCode = errorCode,
+                needsReconcile = state == ManagedDownloadArtifactState.DEGRADED_COMPLETE
+            )
+        )
+    }
+
     private fun matchesLease(
         current: ManagedDownloadArtifactEntity,
         expectedLeaseId: String?
@@ -589,7 +738,9 @@ internal class ManagedDownloadArtifactCoordinator {
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,
             ManagedDownloadArtifactState.VERIFYING,
-            ManagedDownloadArtifactState.COMMITTING
+            ManagedDownloadArtifactState.COMMITTING,
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING
         )
     }
 
@@ -698,6 +849,10 @@ internal class ManagedDownloadArtifactCoordinator {
         val reference: String,
         val name: String,
         val sizeBytes: Long,
-        val finalized: Boolean
+        val finalized: Boolean,
+        val downloadedAtMs: Long?,
+        val libraryAddedAtMs: Long?,
+        val sourceCreatedAtMs: Long?,
+        val sourceModifiedAtMs: Long?
     )
 }

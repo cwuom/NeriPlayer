@@ -46,6 +46,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -57,7 +58,14 @@ import moe.ouom.neriplayer.core.download.catalog.projectDownloadedSongMetadata
 import moe.ouom.neriplayer.core.download.catalog.toMetadataPersistenceSong
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactClaim
 import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactCoordinator
+import moe.ouom.neriplayer.core.download.artifact.ManagedDownloadArtifactState
+import moe.ouom.neriplayer.core.download.enrichment.AssetEnrichmentCoordinator
 import moe.ouom.neriplayer.core.download.policy.TagPostProcessingAction
+import moe.ouom.neriplayer.core.download.reconcile.EmptyScanDecision
+import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
+import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
+import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
+import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -82,6 +90,7 @@ import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import java.util.UUID
 
 internal fun shouldRebuildDownloadedLibrarySnapshot(recoveredArtifactCount: Int): Boolean {
     return recoveredArtifactCount > 0
@@ -189,6 +198,12 @@ object GlobalDownloadManager {
     )
     private val managedDownloadDeletePlanner = ManagedDownloadDeletePlanner()
     private val managedDownloadArtifactCoordinator = ManagedDownloadArtifactCoordinator()
+    private val assetEnrichmentCoordinator = AssetEnrichmentCoordinator(
+        scope = scope,
+        parallelism = METADATA_POST_PROCESSING_PARALLELISM,
+        timeoutMs = 120_000L
+    )
+    private val managedLibraryReconciler = ManagedLibraryReconciler()
     private val requestGenerationTracker = DownloadRequestGenerationTracker()
     val downloadTasks: StateFlow<List<DownloadTask>> = taskStore.downloadTasks
     val downloadTaskSummary: StateFlow<DownloadTaskSummary> = taskStore.downloadTaskSummary
@@ -207,6 +222,7 @@ object GlobalDownloadManager {
     private val downloadedSongMetadataSyncMutex = Mutex()
     private val downloadedSongDeleteMutex = Mutex()
     private val downloadedSongMetadataRevision = AtomicLong(0L)
+    private val emptyScanSequence = AtomicLong(0L)
     private val cancelledArtifactRecoveryLock = Any()
     private var refreshJob: Job? = null
     private val refreshWaiters = mutableSetOf<CompletableDeferred<Unit>>()
@@ -1093,6 +1109,33 @@ object GlobalDownloadManager {
             preparedArtifacts?.cleanup()
             return
         }
+
+        val existingMetadata = readDownloadedMetadata(
+            context = context.applicationContext,
+            audio = resolvedStoredAudio
+        )
+        val existingArtifactState = existingMetadata?.artifactState
+        val usesCoreCommitPath = preparedArtifacts != null ||
+            existingMetadata?.downloadFinalized != true ||
+            existingArtifactState in setOf(
+                ManagedDownloadArtifactState.COMMITTING.name,
+                ManagedDownloadArtifactState.CORE_COMMITTED.name,
+                ManagedDownloadArtifactState.ASSETS_ENRICHING.name
+            )
+        if (usesCoreCommitPath) {
+            completeCoreDownloadAndEnqueueEnrichment(
+                context = context.applicationContext,
+                song = song,
+                storedAudio = resolvedStoredAudio,
+                preparedArtifacts = preparedArtifacts,
+                existingMetadata = existingMetadata,
+                artifactLeaseId = artifactLeaseId,
+                expectedAttemptId = expectedAttemptId,
+                refreshCatalog = refreshCatalog
+            )
+            return
+        }
+
         val finalization = finalizeCompletedDownloadMetadata(
             context = context,
             song = song,
@@ -1183,6 +1226,200 @@ object GlobalDownloadManager {
         forgetPendingDownloadQueueEntries(context, setOf(songKey))
         scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
         if (refreshCatalog) {
+            scheduleCatalogReconcile(context, forceRefresh = false)
+        }
+    }
+
+    private suspend fun completeCoreDownloadAndEnqueueEnrichment(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        preparedArtifacts: PreparedDownloadArtifacts?,
+        existingMetadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+        artifactLeaseId: String?,
+        expectedAttemptId: Long?,
+        refreshCatalog: Boolean
+    ) {
+        val songKey = song.stableKey()
+        if (!ManagedDownloadStorage.hasReadableContent(context, storedAudio)) {
+            preparedArtifacts?.cleanup()
+            updateTaskStatus(songKey, DownloadStatus.FAILED, expectedAttemptId = expectedAttemptId)
+            markDownloadArtifactRetryable(
+                context = context,
+                song = song,
+                leaseId = artifactLeaseId,
+                errorCode = "AUDIO_CORE_NOT_READABLE"
+            )
+            return
+        }
+
+        val coreMetadataReady = existingMetadata?.artifactState ==
+            ManagedDownloadArtifactState.CORE_COMMITTED.name
+        if (!coreMetadataReady) {
+            val written = persistDownloadedMetadata(
+                context = context,
+                audio = storedAudio,
+                song = song,
+                sidecarReferences = null,
+                downloadFinalized = false,
+                resolveExistingSidecars = false
+            )
+            if (!written) {
+                NPLogger.w(TAG, "core metadata 写入失败，保留音频等待恢复: ${song.name}")
+            }
+        }
+
+        runCatching {
+            managedDownloadArtifactCoordinator.markCoreCommitted(
+                context = context,
+                song = song,
+                storedAudio = storedAudio,
+                expectedLeaseId = artifactLeaseId
+            )
+        }.onFailure { error ->
+            NPLogger.w(TAG, "写入 core committed artifact 状态失败: ${error.message}")
+        }
+        publishCompletedDownloadOptimistically(
+            context = context,
+            song = song,
+            storedAudio = storedAudio,
+            sidecarReferences = null
+        )
+        updateTaskStatus(songKey, DownloadStatus.COMPLETED, expectedAttemptId = expectedAttemptId)
+        managedDownloadArtifactLeases.remove(songKey, artifactLeaseId)
+        forgetPendingDownloadQueueEntries(context, setOf(songKey))
+        scheduleCompletedTaskRemoval(songKey, expectedAttemptId = expectedAttemptId)
+        if (refreshCatalog) {
+            scheduleCatalogReconcile(context, forceRefresh = false)
+        }
+
+        val operationId = existingMetadata?.operationId
+            ?: preparedArtifacts?.operationId
+            ?: UUID.randomUUID().toString()
+        assetEnrichmentCoordinator.enqueue(
+            operationId = operationId,
+            block = {
+            enrichCoreCommittedDownload(
+                context = context,
+                song = song,
+                storedAudio = storedAudio,
+                preparedArtifacts = preparedArtifacts,
+                operationId = operationId
+            )
+            },
+            onTimeout = { error ->
+                withContext(NonCancellable) {
+                    NPLogger.w(
+                        TAG,
+                        "下载资产补齐超时，保留 core audio: song=${song.name}, " +
+                            "operationId=$operationId, timeout=${error.javaClass.simpleName}"
+                    )
+                    runCatching {
+                        persistDownloadedMetadata(
+                            context = context,
+                            audio = storedAudio,
+                            song = song,
+                            sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(),
+                            downloadFinalized = false,
+                            resolveExistingSidecars = false
+                        )
+                    }
+                    runCatching {
+                        managedDownloadArtifactCoordinator.markDegradedComplete(
+                            context = context,
+                            song = song,
+                            errorCode = "ASSET_ENRICHMENT_TIMEOUT"
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    private suspend fun enrichCoreCommittedDownload(
+        context: Context,
+        song: SongItem,
+        storedAudio: ManagedDownloadStorage.StoredEntry,
+        preparedArtifacts: PreparedDownloadArtifacts?,
+        operationId: String
+    ) {
+        var sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences()
+        try {
+            managedDownloadArtifactCoordinator.markAssetsEnriching(context, song)
+            sidecarReferences = if (preparedArtifacts != null) {
+                AudioDownloadManager.commitPreparedDownloadArtifacts(
+                    context = context,
+                    song = song,
+                    storedAudio = storedAudio,
+                    artifacts = preparedArtifacts
+                )
+            } else {
+                AudioDownloadManager.downloadSidecarsForCompletedAudio(
+                    context = context,
+                    song = song,
+                    storedAudio = storedAudio
+                )
+            }
+            if (isDownloadMetadataPostProcessingEnabled(context)) {
+                check(
+                    runDownloadedAudioMetadataPostProcessing(
+                        context = context,
+                        audio = storedAudio,
+                        song = song,
+                        sidecarReferences = sidecarReferences
+                    )
+                ) { "embedded metadata post-processing failed" }
+            }
+            check(
+                persistDownloadedMetadata(
+                    context = context,
+                    audio = storedAudio,
+                    song = song,
+                    sidecarReferences = sidecarReferences,
+                    downloadFinalized = true,
+                    resolveExistingSidecars = false
+                )
+            ) { "final metadata persist failed" }
+            managedDownloadArtifactCoordinator.markFinalized(
+                context = context,
+                song = song,
+                storedAudio = storedAudio,
+                expectedLeaseId = null
+            )
+            publishCompletedDownloadOptimistically(
+                context = context,
+                song = song,
+                storedAudio = storedAudio,
+                sidecarReferences = sidecarReferences
+            )
+            NPLogger.d(TAG, "下载资产补齐完成: song=${song.name}, operationId=$operationId")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "下载资产补齐失败，保留 core audio: song=${song.name}, " +
+                    "operationId=$operationId, error=${error.message}"
+            )
+            runCatching {
+                persistDownloadedMetadata(
+                    context = context,
+                    audio = storedAudio,
+                    song = song,
+                    sidecarReferences = sidecarReferences.retainCreatedOnly(),
+                    downloadFinalized = false,
+                    resolveExistingSidecars = false
+                )
+            }
+            runCatching {
+                managedDownloadArtifactCoordinator.markDegradedComplete(
+                    context = context,
+                    song = song,
+                    errorCode = "ASSET_ENRICHMENT_FAILED"
+                )
+            }
+        } finally {
+            preparedArtifacts?.cleanup()
             scheduleCatalogReconcile(context, forceRefresh = false)
         }
     }
@@ -2023,19 +2260,26 @@ object GlobalDownloadManager {
                     )
                 }
             }
+            runCatching {
+                ManagedDownloadStorage.persistFastIndex(context, snapshot)
+            }.onFailure { error ->
+                NPLogger.w(TAG, "写入 Managed SAF fast index 失败: ${error.message}")
+            }
+            val rebuildPlan = ManagedLibraryRebuilder.plan(snapshot)
             val songs = coroutineScope {
-                snapshot.audioEntries
+                rebuildPlan
                     .asSequence()
                     .filterNot { storedAudio ->
-                        isUnfinalizedDownloadedMetadata(snapshot.metadataByAudioName[storedAudio.name])
+                        isUnfinalizedDownloadedMetadata(storedAudio.metadata)
                     }
-                    .map { storedAudio ->
+                    .map { rebuildItem ->
                         async(downloadedSongBuildDispatcher) {
                             runCatching {
                                 buildDownloadedSong(
                                     context = context,
-                                    storedAudio = storedAudio,
+                                    storedAudio = rebuildItem.audio,
                                     snapshot = snapshot,
+                                    existingDownloadTime = rebuildItem.logicalTimeMs,
                                     loadLyricContents = false,
                                     resolveLyricFallbacks = false,
                                     allowSlowLocalInspection = false
@@ -2043,7 +2287,7 @@ object GlobalDownloadManager {
                             }.onFailure { error ->
                                 NPLogger.w(
                                     TAG,
-                                    "解析下载文件失败: ${storedAudio.name} - ${error.message}"
+                                    "解析下载文件失败: ${rebuildItem.audio.name} - ${error.message}"
                                 )
                             }.getOrNull()
                         }
@@ -2088,13 +2332,41 @@ object GlobalDownloadManager {
                 if (songs.isEmpty() && existingSongs.isNotEmpty()) {
                     val storageRootResolvable = ManagedDownloadStorage.isStorageRootResolvable(context)
                     val scanMatchesCatalogRoot = downloadedSongCatalogRootKey == scanRootKey
-                    if (
-                        isSuspiciousEmptyDownloadScan(
-                            scannedSongCount = songs.size,
-                            existingSongCount = existingSongs.size,
-                            storageRootResolvable = storageRootResolvable,
-                            scanMatchesCatalogRoot = scanMatchesCatalogRoot
+                    val confidence = if (snapshot.rootEntriesComplete) {
+                        if (storageRootResolvable) {
+                            ScanConfidence.COMPLETE
+                        } else {
+                            ScanConfidence.ROOT_UNAVAILABLE
+                        }
+                    } else {
+                        ScanConfidence.PARTIAL
+                    }
+                    val knownReferences = existingSongs.mapNotNull { song ->
+                        song.filePath.takeIf(String::isNotBlank)
+                            ?: song.mediaUri?.takeIf(String::isNotBlank)
+                    }.distinct()
+                    val missingReferences = knownReferences.count { reference ->
+                        !ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                    }
+                    val emptyDecision = if (scanMatchesCatalogRoot) {
+                        managedLibraryReconciler.observeEmpty(
+                            observation = EmptyScanObservation(
+                                rootKey = scanRootKey,
+                                confidence = confidence,
+                                isUncached = forceRefresh,
+                                knownReferenceCount = knownReferences.size,
+                                missingReferenceCount = missingReferences,
+                                scanId = emptyScanSequence.incrementAndGet()
+                            ),
+                            existingCount = existingSongs.size
                         )
+                    } else {
+                        managedLibraryReconciler.reset()
+                        EmptyScanDecision.CLEAR_CONFIRMED
+                    }
+                    if (
+                        scanMatchesCatalogRoot &&
+                            emptyDecision != EmptyScanDecision.CLEAR_CONFIRMED
                     ) {
                         NPLogger.w(
                             TAG,
@@ -2108,6 +2380,18 @@ object GlobalDownloadManager {
                         }
                         return@withLock
                     }
+                    if (emptyDecision == EmptyScanDecision.CLEAR_CONFIRMED) {
+                        runCatching {
+                            managedDownloadArtifactCoordinator.reconcileEmptyConfirmed(
+                                context = context,
+                                rootKey = scanRootKey
+                            )
+                        }.onFailure { error ->
+                            NPLogger.w(TAG, "确认下载目录为空后清理 artifact 失败: ${error.message}")
+                        }
+                    }
+                } else if (songs.isNotEmpty()) {
+                    managedLibraryReconciler.reset()
                 }
                 runCatching {
                     managedDownloadArtifactCoordinator.reconcileCatalog(context, songs)
@@ -2983,7 +3267,11 @@ object GlobalDownloadManager {
     }
 
     private suspend fun restorePersistedDownloadedSongs(context: Context): Boolean {
-        val restoredSongs = downloadedSongCatalogStore.restore(context) ?: return false
+        val restoredSongs = downloadedSongCatalogStore.restore(context)
+        if (restoredSongs == null) {
+            restoreFastIndexPreview(context)
+            return false
+        }
         publishDownloadedSongs(context, restoredSongs, persistCatalog = false)
         runCatching {
             managedDownloadArtifactCoordinator.reconcileCatalog(context, restoredSongs)
@@ -2993,6 +3281,39 @@ object GlobalDownloadManager {
         // 记录 restore 出的 catalog 所属 root (当前配置目录) , 使随后同目录的启动瞬时空扫描仍受 #D4 保护
         // 若目录在离线期间被切换, 则新 root 与随后扫描一致而与真实来源不符 -- 属既有边界, 不在本次修复范围
         downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+        return true
+    }
+
+    private suspend fun restoreFastIndexPreview(context: Context): Boolean {
+        val snapshot = ManagedDownloadStorage.restoreFastIndexPreview(context) ?: return false
+        val rebuildPlan = ManagedLibraryRebuilder.plan(snapshot)
+        val songs = coroutineScope {
+            rebuildPlan.map { rebuildItem ->
+                async(downloadedSongBuildDispatcher) {
+                    runCatching {
+                        buildDownloadedSong(
+                            context = context,
+                            storedAudio = rebuildItem.audio,
+                            snapshot = snapshot,
+                            existingDownloadTime = rebuildItem.logicalTimeMs,
+                            allowSlowLocalInspection = false
+                        )
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "解析 Managed fast index 预览失败: " +
+                                "${rebuildItem.audio.name} - ${error.message}"
+                        )
+                    }.getOrNull()
+                }
+            }.awaitAll()
+                .filterNotNull()
+                .sortedWith(downloadedSongNewestFirstComparator)
+        }
+        if (songs.isEmpty()) return false
+        publishDownloadedSongs(context, songs, persistCatalog = false)
+        downloadedSongCatalogRootKey = ManagedDownloadStorage.currentSnapshotRootKey(context)
+        NPLogger.d(TAG, "从 Managed SAF fast index 恢复预览: songs=${songs.size}")
         return true
     }
 
@@ -3166,32 +3487,6 @@ object GlobalDownloadManager {
                         snapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(appContext),
                         allowStorageLookup = false
                     )
-                    if (
-                        artifactClaim is ManagedDownloadArtifactClaim.RepairRequired &&
-                            existingAudio == null
-                    ) {
-                        NPLogger.w(
-                            TAG,
-                            "下载 artifact 需要修复但未找到音频，禁止重新下载: song=${song.name}"
-                        )
-                        updateTaskStatus(
-                            songKey,
-                            DownloadStatus.FAILED,
-                            expectedAttemptId = attemptId
-                        )
-                        markDownloadArtifactRepairRequired(
-                            context = appContext,
-                            song = song,
-                            leaseId = null,
-                            errorCode = "REPAIR_AUDIO_MISSING"
-                        )
-                        forgetPendingDownloadQueueEntriesIfCurrent(
-                            appContext,
-                            setOf(songKey),
-                            requestGeneration
-                        )
-                        return@withSongExecutionLock
-                    }
                     val needsFinalization = existingAudio?.let { audio ->
                         isUnfinalizedDownloadedMetadata(readDownloadedMetadata(appContext, audio))
                     } == true
@@ -3556,29 +3851,6 @@ object GlobalDownloadManager {
                         snapshot = downloadLibrarySnapshot,
                         allowStorageLookup = false
                     )
-                    if (
-                        artifactClaims[songKey] is ManagedDownloadArtifactClaim.RepairRequired &&
-                            existingAudio == null
-                    ) {
-                        NPLogger.w(
-                            TAG,
-                            "批量下载 artifact 需要修复但未找到音频，禁止重新下载: song=${song.name}"
-                        )
-                        updateTaskStatus(
-                            songKey,
-                            DownloadStatus.FAILED,
-                            expectedAttemptId = attemptId
-                        )
-                        markDownloadArtifactRepairRequired(
-                            context = appContext,
-                            song = song,
-                            leaseId = null,
-                            errorCode = "REPAIR_AUDIO_MISSING"
-                        )
-                        settledSongKeys += songKey
-                        settledAttemptIds[songKey] = attemptId
-                        continue
-                    }
                     val needsFinalization = existingAudio?.let { audio ->
                         isUnfinalizedDownloadedMetadata(readDownloadedMetadata(appContext, audio))
                     } == true

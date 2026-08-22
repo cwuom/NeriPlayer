@@ -209,24 +209,81 @@ class AudioDownloadManagerSidecarReferenceTest {
             audioReference = "content://downloads/legacy-song.mp3"
         )
 
-        PreparedDownloadArtifactsStore.persist(context, original)
-        val manifest = directory.resolve("download_staging")
-            .listFiles()
-            .orEmpty()
-            .single { it.name.startsWith("npdl_sidecar_manifest_") }
-        val legacyPayload = JSONObject(manifest.readText(Charsets.UTF_8)).apply {
+        val persisted = PreparedDownloadArtifactsStore.persist(context, original)
+        val operationManifest = requireNotNull(persisted.manifestFile)
+        val staging = directory.resolve("download_staging")
+        val legacyManifest = staging.resolve("npdl_sidecar_manifest_legacy.json")
+        val legacyPayload = JSONObject(operationManifest.readText(Charsets.UTF_8)).apply {
+            put("version", 1)
+            remove("operationId")
             remove("audioTargetName")
             remove("expectedLyric")
             remove("expectedTranslatedLyric")
             remove("expectedRomanizedLyric")
         }
-        manifest.writeText(legacyPayload.toString(), Charsets.UTF_8)
+        legacyManifest.writeText(legacyPayload.toString(), Charsets.UTF_8)
+        operationManifest.parentFile?.deleteRecursively()
 
         val restored = PreparedDownloadArtifactsStore.restore(context, "legacy-song")
 
         assertEquals(original.audioReference, restored?.audioReference)
         assertTrue(restored?.audioTargetName == null)
         restored?.cleanup()
+        directory.deleteRecursively()
+    }
+
+    @Test
+    fun `stale prepared sidecar is isolated from candidate listing`() {
+        val directory = Files.createTempDirectory("neriplayer-prepared-stale").toFile()
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(directory)
+        val translated = directory.resolve("translated.lrc").apply {
+            writeText("[00:00.00]translated")
+        }
+        val persisted = PreparedDownloadArtifactsStore.persist(
+            context,
+            PreparedDownloadArtifacts(
+                songKey = "stale-song",
+                attemptId = 4L,
+                audioReference = "content://downloads/stale.mp3",
+                translatedLyric = PreparedTextArtifact(
+                    file = translated,
+                    sha256 = "incorrect",
+                    targetName = "stale_trans.lrc"
+                )
+            )
+        )
+        persisted.translatedLyric?.file?.delete()
+
+        assertTrue(PreparedDownloadArtifactsStore.list(context).isEmpty())
+        assertTrue(
+            directory.resolve("download_staging").listFiles().orEmpty().isEmpty()
+        )
+        directory.deleteRecursively()
+    }
+
+    @Test
+    fun `one corrupt prepared manifest does not hide a valid candidate`() {
+        val directory = Files.createTempDirectory("neriplayer-prepared-mixed").toFile()
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(directory)
+        val valid = PreparedDownloadArtifactsStore.persist(
+            context,
+            PreparedDownloadArtifacts(
+                songKey = "valid-song",
+                attemptId = 5L,
+                audioReference = "content://downloads/valid.mp3"
+            )
+        )
+        val staging = directory.resolve("download_staging")
+        staging.resolve("npdl_sidecar_manifest_corrupt.json")
+            .writeText("{not-json", Charsets.UTF_8)
+
+        val listed = PreparedDownloadArtifactsStore.list(context)
+
+        assertEquals(listOf(valid.songKey), listed.map(PreparedDownloadArtifacts::songKey))
+        listed.forEach(PreparedDownloadArtifacts::cleanup)
+        staging.deleteRecursively()
         directory.deleteRecursively()
     }
 }

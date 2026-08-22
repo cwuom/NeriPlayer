@@ -72,6 +72,24 @@ internal interface ManagedDownloadArtifactDao {
         errorCode: String
     ): Int
 
+    @Query(
+        "UPDATE managed_download_artifact SET " +
+            "state = :missingState, lease_id = NULL, updated_at_ms = :updatedAtMs, " +
+            "needs_reconcile = 1, last_error_code = :errorCode " +
+            "WHERE root_key = :rootKey AND stable_key = :stableKey " +
+            "AND state = :expectedState " +
+            "AND updated_at_ms = :expectedUpdatedAtMs"
+    )
+    suspend fun markMissingIfUnchanged(
+        rootKey: String,
+        stableKey: String,
+        expectedState: String,
+        expectedUpdatedAtMs: Long,
+        missingState: String,
+        updatedAtMs: Long,
+        errorCode: String
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ManagedDownloadArtifactEntity)
 

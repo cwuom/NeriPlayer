@@ -17,24 +17,46 @@ import java.util.UUID
 internal object ManagedDownloadRecoveryFiles {
     private const val TAG = "ManagedDownloadStorage"
 
-    fun buildWorkingFileName(songKey: String, fileName: String): String {
-        return ManagedDownloadWorkingStore.buildWorkingFileName(songKey, fileName)
+    fun buildWorkingFileName(
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): String {
+        return ManagedDownloadWorkingStore.buildWorkingFileName(songKey, fileName, operationId)
     }
 
     fun buildWorkingSongKeyHash(songKey: String): String {
         return ManagedDownloadWorkingStore.buildWorkingSongKeyHash(songKey)
     }
 
-    fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
-        return ManagedDownloadWorkingStore.createWorkingFile(context.filesDir, songKey, fileName)
+    fun createWorkingFile(
+        context: Context,
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): File {
+        return ManagedDownloadWorkingStore.createWorkingFile(
+            context.filesDir,
+            songKey,
+            fileName,
+            operationId
+        )
     }
 
     fun createSidecarStagingFile(
         context: Context,
         songKey: String,
-        suffix: String
+        suffix: String,
+        operationId: String? = null
     ): File {
-        val directory = stagingDir(context)
+        val directory = operationId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { operation ->
+                val safeId = operation.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                File(stagingDir(context), safeId)
+            }
+            ?: stagingDir(context)
         if (!directory.exists()) {
             directory.mkdirs()
         }
@@ -78,8 +100,12 @@ internal object ManagedDownloadRecoveryFiles {
         return ManagedDownloadWorkingStore.shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
     }
 
-    fun saveWorkingResumeMetadata(workingFile: File, song: SongItem) {
-        ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song)
+    fun saveWorkingResumeMetadata(
+        workingFile: File,
+        song: SongItem,
+        operationId: String? = null
+    ) {
+        ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song, operationId)
     }
 
     fun readWorkingResumeFingerprint(workingFile: File): ManagedDownloadStorage.WorkingResumeFingerprint? {

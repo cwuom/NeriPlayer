@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.tree
 import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import java.text.Normalizer
 import java.util.Locale
@@ -91,6 +92,7 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun metadataAudioName(actualName: String): String? {
+        pendingMetadataAudioName(actualName)?.let { return it }
         val wholeNameMarkerIndex = actualName.lastIndexOf(" (")
         if (wholeNameMarkerIndex >= 0 && actualName.endsWith(")")) {
             val ordinal = actualName
@@ -137,7 +139,32 @@ internal object ManagedDownloadTreeNaming {
     fun metadataNameOrdinal(actualName: String, audioName: String): Int? {
         val expectedName = "$audioName$METADATA_SUFFIX"
         if (canonicalName(actualName) == canonicalName(expectedName)) return 0
-        return providerNumberedNameOrdinal(actualName, expectedName)
+        providerNumberedNameOrdinal(actualName, expectedName)?.let { return it }
+        val pendingExpectedName = "$audioName$PENDING_METADATA_SUFFIX"
+        if (canonicalName(actualName) == canonicalName(pendingExpectedName)) return 1
+        return providerNumberedNameOrdinal(actualName, pendingExpectedName)?.let { it + 1 }
+    }
+
+    private fun pendingMetadataAudioName(actualName: String): String? {
+        val wholeNameMarkerIndex = actualName.lastIndexOf(" (")
+        if (wholeNameMarkerIndex >= 0 && actualName.endsWith(")")) {
+            val ordinal = actualName
+                .substring(wholeNameMarkerIndex + 2, actualName.length - 1)
+                .toIntOrNull()
+            if (ordinal != null) {
+                val unnumberedName = actualName.substring(0, wholeNameMarkerIndex)
+                if (unnumberedName.endsWith(PENDING_METADATA_SUFFIX, ignoreCase = true)) {
+                    return unnumberedName.substring(
+                        0,
+                        unnumberedName.length - PENDING_METADATA_SUFFIX.length
+                    )
+                }
+            }
+        }
+        if (actualName.endsWith(PENDING_METADATA_SUFFIX, ignoreCase = true)) {
+            return actualName.substring(0, actualName.length - PENDING_METADATA_SUFFIX.length)
+        }
+        return null
     }
 
     fun providerNumberedNameOrdinal(actualName: String, expectedName: String): Int? {

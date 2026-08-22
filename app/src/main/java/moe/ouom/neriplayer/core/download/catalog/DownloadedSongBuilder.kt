@@ -6,6 +6,7 @@ import kotlin.LazyThreadSafetyMode
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.withRecoveredRemoteSourceStableKey
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates
@@ -171,9 +172,8 @@ internal class DownloadedSongBuilder(
             filePath = storedAudio.reference,
             fileSize = storedAudio.sizeBytes,
             downloadTime = existingDownloadTime
-                ?: metadata?.createdAtMs
-                ?: metadata?.downloadTimeMs
-                ?: storedAudio.lastModifiedMs,
+                ?: ManagedLibraryRebuilder.logicalTimeMs(metadata, storedAudio)
+                ?: System.currentTimeMillis(),
             coverPath = coverReference,
             coverUrl = metadata?.coverUrl,
             matchedLyric = matchedLyric,

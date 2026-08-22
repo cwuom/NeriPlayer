@@ -7,8 +7,12 @@ internal enum class ManagedDownloadArtifactState {
     DOWNLOADING,
     VERIFYING,
     COMMITTING,
+    CORE_COMMITTED,
+    ASSETS_ENRICHING,
     FINALIZED,
+    DEGRADED_COMPLETE,
     REPAIR_REQUIRED,
+    MISSING_CONFIRMED,
     FAILED_RETRYABLE,
     CANCELLED;
 
@@ -55,6 +59,14 @@ internal object ManagedDownloadArtifactPolicy {
 
             ManagedDownloadArtifactState.REPAIR_REQUIRED ->
                 ManagedDownloadArtifactDecision.RepairRequired
+
+            ManagedDownloadArtifactState.CORE_COMMITTED,
+            ManagedDownloadArtifactState.ASSETS_ENRICHING,
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE ->
+                ManagedDownloadArtifactDecision.AlreadyDownloaded
+
+            ManagedDownloadArtifactState.MISSING_CONFIRMED ->
+                ManagedDownloadArtifactDecision.Acquire
 
             ManagedDownloadArtifactState.QUEUED,
             ManagedDownloadArtifactState.DOWNLOADING,

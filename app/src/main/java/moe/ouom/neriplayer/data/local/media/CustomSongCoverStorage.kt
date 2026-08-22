@@ -27,7 +27,6 @@ import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
@@ -101,20 +100,7 @@ object CustomSongCoverStorage {
             ?.takeIf { it.isNotBlank() }
             ?: return@withContext null
         if (isRemoteReference(normalizedReference)) {
-            return@withContext persistRemoteCover(
-                context = context,
-                sourceUrl = normalizedReference
-            )?.also { localReference ->
-                val mappingSink = remoteCoverMappingSink
-                if (mappingSink != null) {
-                    mappingSink(localReference, normalizedReference)
-                } else {
-                    CoverUrlMapper.getInstance(context).saveCoverMapping(
-                        localUrl = localReference,
-                        networkUrl = normalizedReference
-                    )
-                }
-            }
+            return@withContext normalizedReference
         }
 
         val sourceUri = runCatching { normalizedReference.toUri() }.getOrNull()
@@ -200,6 +186,36 @@ object CustomSongCoverStorage {
         } finally {
             if (temporary.exists()) {
                 temporary.delete()
+            }
+        }
+    }
+
+    /**
+     * downloads a remote cover only for an explicit user-selected replacement
+     */
+    suspend fun persistManuallySelectedRemoteCover(
+        context: Context,
+        sourceUrl: String?
+    ): String? = withContext(Dispatchers.IO) {
+        val normalizedSourceUrl = sourceUrl
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return@withContext null
+        if (!isRemoteReference(normalizedSourceUrl)) {
+            return@withContext normalizedSourceUrl
+        }
+        persistRemoteCover(
+            context = context,
+            sourceUrl = normalizedSourceUrl
+        )?.also { localReference ->
+            val mappingSink = remoteCoverMappingSink
+            if (mappingSink != null) {
+                mappingSink(localReference, normalizedSourceUrl)
+            } else {
+                CoverUrlMapper.getInstance(context).saveCoverMapping(
+                    localUrl = localReference,
+                    networkUrl = normalizedSourceUrl
+                )
             }
         }
     }
@@ -324,18 +340,7 @@ object CustomSongCoverStorage {
 
         val contentHash = sha256(bytes)
         val extension = contentTypeExtension(sourceUrl, request.url.toString())
-        val managedFileName = remoteCoverFileName(contentHash, extension)
-        if (!ManagedDownloadStorage.configuredDirectoryUri().isNullOrBlank()) {
-            runCatching {
-                ManagedDownloadStorage.persistRemoteCoverBytes(
-                    context = context,
-                    bytes = bytes,
-                    fileName = managedFileName,
-                    mimeType = "image/$extension"
-                )
-            }.getOrNull()?.let { return it }
-        }
-
+        // external local media owns this app-private cache, even when downloads use a SAF root
         val directory = File(context.filesDir, REMOTE_DIRECTORY_NAME)
         if (!directory.exists() && !directory.mkdirs()) return null
         val target = File(directory, remoteCoverFileName(contentHash, extension))

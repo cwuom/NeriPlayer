@@ -14,6 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class ManagedDownloadStorageWorkingFileTest {
 
@@ -39,6 +41,43 @@ class ManagedDownloadStorageWorkingFileTest {
         assertNotEquals(first, differentSong)
         assertTrue(first.startsWith("npdl_"))
         assertTrue(first.endsWith(".flac.download"))
+    }
+
+    @Test
+    fun `operation staging isolates files and discovers nested resume metadata`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val context = mock(android.content.Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val firstOperation = "operation-a"
+        val secondOperation = "operation-b"
+        val first = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = "same-song",
+            fileName = "Song.m4a",
+            operationId = firstOperation
+        ).apply { writeText("partial-a") }
+        val second = ManagedDownloadStorage.createWorkingFile(
+            context = context,
+            songKey = "same-song",
+            fileName = "Song.m4a",
+            operationId = secondOperation
+        ).apply { writeText("partial-b") }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            first,
+            queuedSong(id = 201L, name = "Song"),
+            operationId = firstOperation
+        )
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            second,
+            queuedSong(id = 202L, name = "Song 2"),
+            operationId = secondOperation
+        )
+
+        val pending = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+
+        assertEquals(2, pending.size)
+        assertNotEquals(first.parentFile?.absolutePath, second.parentFile?.absolutePath)
+        assertTrue(pending.all { it.operationId != null })
     }
 
     @Test

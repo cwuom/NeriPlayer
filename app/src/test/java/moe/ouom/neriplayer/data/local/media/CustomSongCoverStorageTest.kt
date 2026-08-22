@@ -26,7 +26,7 @@ class CustomSongCoverStorageTest {
     val tempFolder = TemporaryFolder()
 
     @Test
-    fun `remote original cover references are localized and mapped`() = runBlocking {
+    fun `explicit manual remote cover is localized and mapped`() = runBlocking {
         val reference = "HTTPS://example.com/cover.jpg"
         val context = mock(Context::class.java)
         `when`(context.filesDir).thenReturn(tempFolder.root)
@@ -55,15 +55,15 @@ class CustomSongCoverStorageTest {
             mappedRemote = remote
         }
         try {
-            val persisted = CustomSongCoverStorage.persistOriginalCover(
+            val persisted = CustomSongCoverStorage.persistManuallySelectedRemoteCover(
                 context = context,
-                song = testSong(),
-                reference = reference
+                sourceUrl = reference
             )
 
             assertNotNull(persisted)
             assertTrue(persisted?.startsWith("file:") == true)
             assertTrue(persisted?.contains("RemoteCovers") == true)
+            assertTrue(File(tempFolder.root, "RemoteCovers").isDirectory)
             assertEquals(persisted, mappedLocal)
             assertEquals(reference, mappedRemote)
             assertEquals(
@@ -74,6 +74,29 @@ class CustomSongCoverStorageTest {
             CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
             CustomSongCoverStorage.remoteCoverImageValidator = previousValidator
             CustomSongCoverStorage.remoteCoverMappingSink = previousSink
+        }
+    }
+
+    @Test
+    fun `remote cover is not downloaded without explicit persistence permission`() = runBlocking {
+        val reference = "https://example.com/cover.jpg"
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        val previousClient = CustomSongCoverStorage.remoteCoverHttpClientProvider
+        CustomSongCoverStorage.remoteCoverHttpClientProvider = {
+            error("playback must not fetch remote cover")
+        }
+        try {
+            val resolved = CustomSongCoverStorage.persistOriginalCover(
+                context = context,
+                song = testSong(),
+                reference = reference
+            )
+
+            assertEquals(reference, resolved)
+            assertTrue(!File(tempFolder.root, "RemoteCovers").exists())
+        } finally {
+            CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
         }
     }
 

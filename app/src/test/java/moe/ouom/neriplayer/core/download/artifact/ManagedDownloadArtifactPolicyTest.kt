@@ -63,6 +63,17 @@ class ManagedDownloadArtifactPolicyTest {
     }
 
     @Test
+    fun `confirmed missing artifact can be acquired again`() {
+        assertEquals(
+            ManagedDownloadArtifactDecision.Acquire,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = artifact(ManagedDownloadArtifactState.MISSING_CONFIRMED, 100L),
+                nowMs = 1_000L
+            )
+        )
+    }
+
+    @Test
     fun `retryable write cannot downgrade a repair required artifact`() {
         assertEquals(
             ManagedDownloadArtifactState.REPAIR_REQUIRED,

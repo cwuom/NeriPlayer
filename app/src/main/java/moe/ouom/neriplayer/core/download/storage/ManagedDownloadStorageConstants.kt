@@ -25,6 +25,10 @@ internal const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
 internal const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 150L
 @Suppress("SpellCheckingInspection")
 internal const val METADATA_SUFFIX = ".npmeta.json"
+internal const val PENDING_METADATA_SUFFIX = ".npmeta.pending.json"
+internal const val MANAGED_LIBRARY_MANIFEST_FILE_NAME = "NeriLibrary.json"
+internal const val MANAGED_LIBRARY_INDEX_DIR_NAME = "NeriIndex"
+internal const val OPERATION_MANIFEST_NAME = "operation.json"
 internal const val MIGRATION_COPY_PARALLELISM = 8
 internal const val MIGRATION_TREE_COPY_PARALLELISM = 2
 internal const val MIGRATION_REWRITE_PARALLELISM = 4

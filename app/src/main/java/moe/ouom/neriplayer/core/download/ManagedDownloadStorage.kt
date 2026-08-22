@@ -30,6 +30,9 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
+import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
@@ -72,10 +75,19 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolve
 import moe.ouom.neriplayer.core.download.storage.sidecar.ManagedDownloadLyricStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
+import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
@@ -83,6 +95,7 @@ import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
+import moe.ouom.neriplayer.data.model.stableKey
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -90,6 +103,8 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
+import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
 internal object ManagedDownloadStorage {
@@ -333,7 +348,8 @@ internal object ManagedDownloadStorage {
 
     internal data class PendingResumableDownload(
         val song: SongItem,
-        val workingFile: File
+        val workingFile: File,
+        val operationId: String? = null
     )
 
     internal data class WorkingResumeFingerprint(
@@ -531,7 +547,15 @@ internal object ManagedDownloadStorage {
         val downloadTimeMs: Long? = null,
         val downloadFinalized: Boolean? = null,
         val createdAtMs: Long? = null,
-        val createdAtSource: String? = null
+        val createdAtSource: String? = null,
+        val artifactId: String? = null,
+        val operationId: String? = null,
+        val artifactState: String? = null,
+        val audioFileName: String? = null,
+        val libraryId: String? = null,
+        val libraryAddedAtMs: Long? = null,
+        val sourceCreatedAtMs: Long? = null,
+        val sourceModifiedAtMs: Long? = null
     )
 
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
@@ -801,16 +825,30 @@ internal object ManagedDownloadStorage {
         return renderManagedDownloadBaseName(song, settings.fileNameTemplate)
     }
 
-    internal fun buildWorkingFileName(songKey: String, fileName: String): String {
-        return ManagedDownloadRecoveryFiles.buildWorkingFileName(songKey, fileName)
+    internal fun buildWorkingFileName(
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): String {
+        return ManagedDownloadRecoveryFiles.buildWorkingFileName(songKey, fileName, operationId)
     }
 
     internal fun buildWorkingSongKeyHash(songKey: String): String {
         return ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(songKey)
     }
 
-    fun createWorkingFile(context: Context, songKey: String, fileName: String): File {
-        return ManagedDownloadRecoveryFiles.createWorkingFile(context, songKey, fileName)
+    fun createWorkingFile(
+        context: Context,
+        songKey: String,
+        fileName: String,
+        operationId: String? = null
+    ): File {
+        return ManagedDownloadRecoveryFiles.createWorkingFile(
+            context,
+            songKey,
+            fileName,
+            operationId
+        )
     }
 
     internal fun buildWorkingHlsCheckpointFile(workingFile: File): File {
@@ -844,9 +882,19 @@ internal object ManagedDownloadStorage {
 
     internal fun saveWorkingResumeMetadata(
         workingFile: File,
-        song: SongItem
+        song: SongItem,
+        operationId: String? = null
     ) {
-        ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song)
+        ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song, operationId)
+    }
+
+    internal fun findWorkingFileForResume(
+        context: Context,
+        songKey: String
+    ): File? {
+        return ManagedDownloadRecoveryFiles.listPendingResumableDownloads(context)
+            .firstOrNull { pending -> pending.song.stableKey() == songKey }
+            ?.workingFile
     }
 
     internal fun readWorkingResumeFingerprint(workingFile: File): WorkingResumeFingerprint? {
@@ -1472,6 +1520,164 @@ internal object ManagedDownloadStorage {
         buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
     }
 
+    internal suspend fun persistFastIndex(
+        context: Context,
+        snapshot: DownloadLibrarySnapshot
+    ) = withContext(Dispatchers.IO) {
+        if (!snapshot.rootEntriesComplete) return@withContext
+        val libraryId = ensureManagedLibraryManifestBlocking(context)
+        val entries = snapshot.audioEntries.mapNotNull { audio ->
+            val metadata = snapshot.metadataByAudioName[audio.name]
+            val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            ManagedLibraryIndexEntry(
+                stableKey = stableKey,
+                artifactId = metadata.artifactId ?: "managed:$libraryId:$stableKey",
+                audioName = audio.name,
+                audioReference = audio.reference,
+                metadataName = snapshot.metadataEntriesByAudioName[audio.name]?.name,
+                state = metadata.artifactState
+                    ?: if (metadata.downloadFinalized == true) "FINALIZED" else "CORE_COMMITTED",
+                downloadTimeMs = metadata.downloadTimeMs,
+                updatedAtMs = metadata.sourceModifiedAtMs
+                    ?: metadata.createdAtMs
+                    ?: audio.lastModifiedMs,
+                songId = metadata.songId,
+                title = metadata.name,
+                artist = metadata.artist,
+                album = metadata.album ?: metadata.identityAlbum,
+                mediaUri = metadata.mediaUri,
+                channelId = metadata.channelId,
+                audioId = metadata.audioId,
+                subAudioId = metadata.subAudioId,
+                playlistContextId = metadata.playlistContextId,
+                durationMs = metadata.durationMs.takeIf { it > 0L },
+                coverPath = metadata.coverPath
+            )
+        }
+        val entriesByShard = entries.groupBy { entry -> ManagedLibraryFastIndex.shardFor(entry.stableKey) }
+        val nowMs = System.currentTimeMillis()
+        (0 until ManagedLibraryFastIndex.DEFAULT_SHARD_COUNT).forEach { shardNumber ->
+            val shard = shardNumber.toString().padStart(2, '0')
+            val payload = ManagedLibraryFastIndex.encode(
+                libraryId = libraryId,
+                shard = shard,
+                entries = entriesByShard[shard].orEmpty(),
+                generatedAtMs = nowMs
+            )
+            writeSubdirectoryBytesBlocking(
+                context = context,
+                subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME,
+                displayName = "shard-$shard.json",
+                bytes = payload.toByteArray(Charsets.UTF_8),
+                mimeType = "application/json"
+            )
+        }
+    }
+
+    internal suspend fun readFastIndex(
+        context: Context
+    ): List<ManagedLibraryIndexEntry> = withContext(Dispatchers.IO) {
+        readFastIndexBlocking(context)
+    }
+
+    internal suspend fun restoreFastIndexPreview(
+        context: Context
+    ): DownloadLibrarySnapshot? = withContext(Dispatchers.IO) {
+        if (!restoreFastIndexPreviewBlocking(context)) {
+            return@withContext null
+        }
+        snapshotCacheStore.cachedSnapshot(
+            context = context,
+            restorePersisted = false
+        )
+    }
+
+    private fun readFastIndexBlocking(context: Context): List<ManagedLibraryIndexEntry> {
+        val root = resolveRootBlocking(context)
+        val libraryId = findRootNamedEntry(root, MANAGED_LIBRARY_MANIFEST_FILE_NAME)
+            ?.let { entry -> readTextInternal(context, entry.reference) }
+            ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+            ?.optString("libraryId")
+            ?.takeIf(String::isNotBlank)
+            ?: return emptyList()
+        return listSubdirectoryEntries(context, root, MANAGED_LIBRARY_INDEX_DIR_NAME)
+            .asSequence()
+            .filter { entry -> entry.name.startsWith("shard-") && entry.name.endsWith(".json") }
+            .mapNotNull { entry ->
+                readTextInternal(context, entry.reference)
+                    ?.let(ManagedLibraryFastIndex::decode)
+            }
+            .filter { shard -> shard.libraryId == libraryId }
+            .flatMap { shard -> shard.entries.asSequence() }
+            .toList()
+    }
+
+    private fun restoreFastIndexPreviewBlocking(context: Context): Boolean {
+        val entries = runCatching { readFastIndexBlocking(context) }
+            .getOrElse { error ->
+                NPLogger.w(TAG, "读取 Managed SAF fast index 失败，回退完整重建: ${error.message}")
+                return false
+            }
+        if (entries.isEmpty()) return false
+        val root = resolveRootBlocking(context)
+        val audioEntries = entries.mapNotNull { entry ->
+            val currentReference = findRootNamedEntry(root, entry.audioName)?.reference
+                ?: (root as? RootHandle.FileRoot)
+                    ?.let { entry.audioReference.takeIf(String::isNotBlank) }
+                ?: return@mapNotNull null
+            StoredEntry(
+                name = entry.audioName,
+                reference = currentReference,
+                mediaUri = currentReference,
+                localFilePath = currentReference.takeIf { it.startsWith("/") },
+                sizeBytes = 0L,
+                lastModifiedMs = entry.updatedAtMs,
+                isDirectory = false
+            )
+        }
+        if (audioEntries.isEmpty()) return false
+        val entriesByAudioName = entries.associateBy(ManagedLibraryIndexEntry::audioName)
+        val metadataByAudioName = audioEntries.associate { audio ->
+            val entry = entriesByAudioName.getValue(audio.name)
+            entry.audioName to DownloadedAudioMetadata(
+                stableKey = entry.stableKey,
+                songId = entry.songId,
+                album = entry.album,
+                name = entry.title,
+                artist = entry.artist,
+                mediaUri = entry.mediaUri,
+                channelId = entry.channelId,
+                audioId = entry.audioId,
+                subAudioId = entry.subAudioId,
+                playlistContextId = entry.playlistContextId,
+                durationMs = entry.durationMs ?: 0L,
+                coverPath = entry.coverPath,
+                downloadTimeMs = entry.downloadTimeMs,
+                downloadFinalized = entry.state in setOf("FINALIZED", "COMPLETE"),
+                createdAtMs = entry.updatedAtMs,
+                createdAtSource = "INDEX_PREVIEW",
+                artifactId = entry.artifactId,
+                artifactState = entry.state,
+                audioFileName = entry.audioName
+            )
+        }
+        val cacheKey = snapshotCacheStore.currentKey(context)
+        snapshotCacheStore.putSnapshot(
+            context = context,
+            cacheKey = cacheKey,
+            snapshot = composeSnapshot(
+                audioEntries = audioEntries,
+                metadataEntries = emptyList(),
+                metadataByAudioName = metadataByAudioName,
+                coverEntries = emptyList(),
+                lyricEntries = emptyList(),
+                rootEntriesComplete = false
+            )
+        )
+        NPLogger.d(TAG, "使用 Managed SAF fast index 发布预览: entries=${entries.size}")
+        return true
+    }
+
     internal suspend fun refreshDownloadSidecarSnapshot(
         context: Context,
         snapshot: DownloadLibrarySnapshot,
@@ -1873,12 +2079,17 @@ internal object ManagedDownloadStorage {
 
     private fun findMetadataByDirectLookup(context: Context, audio: StoredEntry): StoredEntry? {
         val metadataName = "${audio.name}$METADATA_SUFFIX"
+        val pendingMetadataName = "${audio.name}$PENDING_METADATA_SUFFIX"
         return when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
                 val metadataFile = File(root.dir, metadataName)
                 if (metadataFile.exists() && metadataFile.isFile) {
                     metadataFile.toStoredEntry()
                 } else {
+                    val pendingFile = File(root.dir, pendingMetadataName)
+                    if (pendingFile.exists() && pendingFile.isFile) {
+                        pendingFile.toStoredEntry()
+                    } else {
                     root.dir.listFiles()
                         ?.asSequence()
                         ?.filter { file ->
@@ -1892,6 +2103,7 @@ internal object ManagedDownloadStorage {
                         )
                         ?.takeIf(File::isFile)
                         ?.toStoredEntry()
+                    }
                 }
             }
             is RootHandle.TreeRoot -> {
@@ -1925,6 +2137,56 @@ internal object ManagedDownloadStorage {
         saveMetadataBlocking(context, audio, json)
     }
 
+    internal suspend fun ensureManagedLibraryManifest(context: Context): String =
+        withContext(Dispatchers.IO) {
+            ensureManagedLibraryManifestBlocking(context)
+        }
+
+    internal suspend fun writePendingAudioMetadata(
+        context: Context,
+        audioName: String,
+        json: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        ensureManagedLibraryManifestBlocking(context)
+        val root = resolveRootBlocking(context)
+        val written = writeTextThroughBackend(
+            context = context,
+            root = root,
+            displayName = "$audioName$PENDING_METADATA_SUFFIX",
+            content = json
+        ) ?: writeRootText(
+            context = context,
+            root = root,
+            displayName = "$audioName$PENDING_METADATA_SUFFIX",
+            content = json,
+            invalidateSnapshot = false
+        )
+        written != null
+    }
+
+    internal suspend fun promoteCoreAudioMetadata(
+        context: Context,
+        audio: StoredEntry,
+        json: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val root = resolveRootBlocking(context)
+        writeTextThroughBackend(
+            context = context,
+            root = root,
+            displayName = "${audio.name}$METADATA_SUFFIX",
+            content = json
+        ) ?: writeRootText(
+            context = context,
+            root = root,
+            displayName = "${audio.name}$METADATA_SUFFIX",
+            content = json,
+            invalidateSnapshot = false
+        ) ?: return@withContext false
+        deleteRootNamedEntry(root, "${audio.name}$PENDING_METADATA_SUFFIX")
+        invalidateSnapshotCache(context)
+        true
+    }
+
     private fun saveMetadataBlocking(context: Context, audio: StoredEntry, json: String): Boolean {
         val metadata = parseDownloadedAudioMetadataJson(json)
         if (metadata == null) {
@@ -1953,6 +2215,64 @@ internal object ManagedDownloadStorage {
             invalidateSnapshotCache(context)
         }
         return true
+    }
+
+    private fun ensureManagedLibraryManifestBlocking(context: Context): String {
+        val root = resolveRootBlocking(context)
+        val existing = findRootNamedEntry(root, MANAGED_LIBRARY_MANIFEST_FILE_NAME)
+            ?.let { entry -> readTextInternal(context, entry.reference) }
+            ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+            ?.optString("libraryId")
+            ?.takeIf(String::isNotBlank)
+        if (existing != null) {
+            return existing
+        }
+        val libraryId = UUID.randomUUID().toString()
+        val payload = JSONObject().apply {
+            put("schemaVersion", 1)
+            put("libraryId", libraryId)
+            put("layoutVersion", 1)
+            put("createdAtMs", System.currentTimeMillis())
+            put("indexFormatVersion", 1)
+        }.toString()
+        val written = writeRootText(
+            context = context,
+            root = root,
+            displayName = MANAGED_LIBRARY_MANIFEST_FILE_NAME,
+            content = payload,
+            invalidateSnapshot = false
+        )
+        if (written == null) {
+            throw IOException("无法写入 Managed SAF root manifest")
+        }
+        return libraryId
+    }
+
+    private fun findRootNamedEntry(root: RootHandle, displayName: String): StoredEntry? {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                File(root.dir, displayName).takeIf { it.isFile }?.toStoredEntry()
+            }
+
+            is RootHandle.TreeRoot -> {
+                root.tree.findFile(displayName)?.toStoredEntry()
+            }
+        }
+    }
+
+    private fun deleteRootNamedEntry(root: RootHandle, displayName: String) {
+        when (root) {
+            is RootHandle.FileRoot -> {
+                runCatching { File(root.dir, displayName).delete() }
+            }
+
+            is RootHandle.TreeRoot -> {
+                runCatching {
+                    root.tree.findFile(displayName)?.delete()
+                    treeChildRegistry.forgetTreeChildName(root.tree, displayName)
+                }
+            }
+        }
     }
 
     suspend fun markDownloadedAudioFinalized(context: Context, audio: StoredEntry): Boolean = withContext(Dispatchers.IO) {
@@ -3536,7 +3856,11 @@ internal object ManagedDownloadStorage {
                         restorePersisted = false
                     )
                     val snapshot = if (cachedBeforeBuild == null) {
-                        buildDownloadLibrarySnapshotBlocking(appContext)
+                        restoreFastIndexPreviewBlocking(appContext)
+                        buildDownloadLibrarySnapshotBlocking(
+                            context = appContext,
+                            forceRefresh = true
+                        )
                     } else {
                         cachedBeforeBuild
                     }
@@ -4234,6 +4558,59 @@ internal object ManagedDownloadStorage {
             invalidateSnapshotCache(context)
         }
         return storedEntry
+    }
+
+    private suspend fun writeTextThroughBackend(
+        context: Context,
+        root: RootHandle,
+        displayName: String,
+        content: String
+    ): StoredEntry? {
+        val backend: StorageBackend
+        val target: StorageTarget
+        when (root) {
+            is RootHandle.FileRoot -> {
+                backend = FileStorageBackend(root.dir)
+                target = StorageTarget.FileTarget(displayName)
+            }
+            is RootHandle.TreeRoot -> {
+                backend = SafStorageBackend(context)
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(root.tree.uri),
+                    displayName = displayName,
+                    mimeType = "application/octet-stream"
+                )
+            }
+        }
+        return when (
+            val result = backend.writeRecoverable(target) { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+            }
+        ) {
+            is StorageWriteResult.Written -> result.stat.toStoredEntryForBackend(
+                fileRoot = (root as? RootHandle.FileRoot)?.dir
+            )
+            else -> null
+        }
+    }
+
+    private fun StorageStat.toStoredEntryForBackend(fileRoot: File?): StoredEntry {
+        val reference = when (val value = reference) {
+            is StorageReference.FileRef -> fileRoot?.let { File(it, value.logicalPath).absolutePath }
+                ?: value.logicalPath
+            is StorageReference.SafRef -> value.uri.toString()
+        }
+        val localPath = (this.reference as? StorageReference.FileRef)
+            ?.let { fileRoot?.let { root -> File(root, it.logicalPath).absolutePath } }
+        return StoredEntry(
+            name = displayName,
+            reference = reference,
+            mediaUri = reference,
+            localFilePath = localPath,
+            sizeBytes = sizeBytes ?: 0L,
+            lastModifiedMs = lastModifiedMs ?: 0L,
+            isDirectory = isDirectory
+        )
     }
 
     private fun clearTreeDirectoryCache() {

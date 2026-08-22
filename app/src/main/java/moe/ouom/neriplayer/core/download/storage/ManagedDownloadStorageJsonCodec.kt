@@ -38,9 +38,11 @@ internal object ManagedDownloadStorageJsonCodec {
 
     fun workingResumeMetadataToJson(
         song: SongItem,
-        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint? = null
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint? = null,
+        operationId: String? = null
     ): JSONObject {
         return song.toWorkingResumeMetadataJson().apply {
+            operationId?.takeIf(String::isNotBlank)?.let { put("operationId", it) }
             fingerprint?.toJson()?.let { fingerprintJson ->
                 put("resumeFingerprint", fingerprintJson)
             }
@@ -55,6 +57,11 @@ internal object ManagedDownloadStorageJsonCodec {
         return JSONObject(rawJson)
             .optJSONObject("resumeFingerprint")
             ?.toWorkingResumeFingerprint()
+    }
+
+    fun workingResumeOperationIdFromJson(rawJson: String): String? {
+        return JSONObject(rawJson).optString("operationId")
+            .takeIf(String::isNotBlank)
     }
 
     fun mergeWorkingResumeFingerprint(
@@ -169,7 +176,7 @@ internal object ManagedDownloadStorageJsonCodec {
 
     private fun ManagedDownloadStorage.DownloadedAudioMetadata.toJson(): JSONObject {
         return JSONObject().apply {
-            put("schemaVersion", 3)
+            put("schemaVersion", 4)
             put("stableKey", stableKey)
             put("songId", songId)
             put("identityAlbum", identityAlbum)
@@ -206,6 +213,14 @@ internal object ManagedDownloadStorageJsonCodec {
             put("downloadFinalized", downloadFinalized)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
+            put("artifactId", artifactId)
+            put("operationId", operationId)
+            put("artifactState", artifactState)
+            put("audioFileName", audioFileName)
+            put("libraryId", libraryId)
+            put("libraryAddedAtMs", libraryAddedAtMs)
+            put("sourceCreatedAtMs", sourceCreatedAtMs)
+            put("sourceModifiedAtMs", sourceModifiedAtMs)
         }
     }
 
@@ -394,7 +409,18 @@ internal object ManagedDownloadStorageJsonCodec {
             createdAtMs = optLong("createdAtMs")
                 .takeIf { has("createdAtMs") && it > 0L },
             createdAtSource = optString("createdAtSource")
-                .takeIf(String::isNotBlank)
+                .takeIf(String::isNotBlank),
+            artifactId = optString("artifactId").takeIf(String::isNotBlank),
+            operationId = optString("operationId").takeIf(String::isNotBlank),
+            artifactState = optString("artifactState").takeIf(String::isNotBlank),
+            audioFileName = optString("audioFileName").takeIf(String::isNotBlank),
+            libraryId = optString("libraryId").takeIf(String::isNotBlank),
+            libraryAddedAtMs = optLong("libraryAddedAtMs")
+                .takeIf { has("libraryAddedAtMs") && it > 0L },
+            sourceCreatedAtMs = optLong("sourceCreatedAtMs")
+                .takeIf { has("sourceCreatedAtMs") && it > 0L },
+            sourceModifiedAtMs = optLong("sourceModifiedAtMs")
+                .takeIf { has("sourceModifiedAtMs") && it > 0L }
         )
     }
 

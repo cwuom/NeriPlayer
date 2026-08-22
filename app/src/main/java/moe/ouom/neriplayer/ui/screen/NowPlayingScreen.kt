@@ -5032,6 +5032,9 @@ fun EditSongInfoSheet(
             resolveEditSongInitialCoverUrl(actualSong, resolvedDisplayCoverUrl)
         )
     }
+    var coverWasManuallyChanged by remember(actualSong.stableKey()) {
+        mutableStateOf(false)
+    }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
     var artistName by remember { mutableStateOf(actualSong.customArtist ?: actualSong.artist) }
     var editBaseline by remember(actualSong.stableKey()) {
@@ -5103,6 +5106,7 @@ fun EditSongInfoSheet(
                     )
                 } else {
                     coverUrl = importedCover.toString()
+                    coverWasManuallyChanged = true
                     userHasEdited = true
                     shouldRestoreCoverBase = false
                 }
@@ -5125,6 +5129,7 @@ fun EditSongInfoSheet(
     LaunchedEffect(actualSong.stableKey()) {
         if (!userHasEdited) {
             coverUrl = resolveEditSongInitialCoverUrl(actualSong, resolvedDisplayCoverUrl)
+            coverWasManuallyChanged = false
             songName = actualSong.customName ?: actualSong.name
             artistName = actualSong.customArtist ?: actualSong.artist
             shouldRestoreCoverBase = false
@@ -5144,20 +5149,9 @@ fun EditSongInfoSheet(
                 actualSong,
                 resolvedDisplayCoverUrl
             )
-            val localizedCover = if (
-                CustomSongCoverStorage.isRemoteReference(initialCover)
-            ) {
-                CustomSongCoverStorage.persistOriginalCover(
-                    context = context,
-                    song = actualSong,
-                    reference = initialCover
-                ) ?: initialCover
-            } else {
-                initialCover
-            }
-            if (!userHasEdited && localizedCover.isNotBlank()) {
-                editBaseline = editBaseline.copy(coverUrl = localizedCover)
-                coverUrl = localizedCover
+            if (!userHasEdited && initialCover.isNotBlank()) {
+                editBaseline = editBaseline.copy(coverUrl = initialCover)
+                coverUrl = initialCover
             }
         }
         if (shouldApplyResolvedEditSongCover(
@@ -5193,6 +5187,7 @@ fun EditSongInfoSheet(
         }
         if (restoreCover) {
             coverUrl = editBaseline.coverUrl
+            coverWasManuallyChanged = false
             shouldRestoreCoverBase = true
         }
         if (restoreLyrics) {
@@ -5290,7 +5285,9 @@ fun EditSongInfoSheet(
                     restoreBaseArtist = shouldRestoreArtistBase,
                     clearMatchedMetadata = shouldClearMatchedMetadata,
                     writeLocalMetadata = writeLocalMetadata,
-                    writeLyrics = writeLyricsToLocalMetadata
+                    writeLyrics = writeLyricsToLocalMetadata,
+                    persistManualRemoteCover = coverWasManuallyChanged &&
+                        !shouldRestoreCoverBase
                 )
 
                 if (!metadataWriteSucceeded) {
@@ -5342,7 +5339,9 @@ fun EditSongInfoSheet(
                     newName = latestSong.customName ?: latestSong.name,
                     newArtist = latestSong.customArtist ?: latestSong.artist,
                     writeLocalMetadata = true,
-                    writeLyrics = true
+                    writeLyrics = true,
+                    persistManualRemoteCover = coverWasManuallyChanged &&
+                        !shouldRestoreCoverBase
                 )
                 if (!writeSucceeded) {
                     snackbarHostState.showNeriSnackbar(
@@ -5407,6 +5406,7 @@ fun EditSongInfoSheet(
                 value = coverUrl,
                 onValueChange = {
                     coverUrl = it
+                    coverWasManuallyChanged = true
                     userHasEdited = true
                     shouldRestoreCoverBase = false
                 },
@@ -6057,6 +6057,7 @@ fun EditSongInfoSheet(
 
                 if (fillCover) {
                     coverUrl = selectedSongForFill!!.coverUrl?.replaceFirst("http://", "https://") ?: ""
+                    coverWasManuallyChanged = true
                     shouldRestoreCoverBase = false
                 }
                 if (fillTitle) {

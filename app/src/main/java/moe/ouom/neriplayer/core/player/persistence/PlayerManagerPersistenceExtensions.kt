@@ -1682,11 +1682,24 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
                         matchedSongId = selectedSong.id
                     )
                 } else {
+                    val selectedCoverUrl = newDetails.coverUrl?.let { coverUrl ->
+                        if (
+                            isLocalSong(latestOriginalSong) &&
+                            CustomSongCoverStorage.isRemoteReference(coverUrl)
+                        ) {
+                            CustomSongCoverStorage.persistManuallySelectedRemoteCover(
+                                context = application,
+                                sourceUrl = coverUrl
+                            ) ?: coverUrl
+                        } else {
+                            coverUrl
+                        }
+                    }
                     applyManualSearchMetadata(
                         originalSong = latestOriginalSong,
                         songName = newDetails.songName,
                         singer = newDetails.singer,
-                        coverUrl = newDetails.coverUrl,
+                        coverUrl = selectedCoverUrl,
                         lyric = newDetails.lyric,
                         translatedLyric = newDetails.translatedLyric,
                         matchedSource = selectedSong.source,
@@ -1919,7 +1932,8 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
     restoreBaseArtist: Boolean = false,
     clearMatchedMetadata: Boolean = false,
     writeLocalMetadata: Boolean = false,
-    writeLyrics: Boolean = false
+    writeLyrics: Boolean = false,
+    persistManualRemoteCover: Boolean = false
 ) : Boolean = runSongMetadataMutation {
             NPLogger.d(
                 "PlayerManager",
@@ -1941,11 +1955,14 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 .normalizedManualMetadataValue()
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
             val requestedCoverReference = requestedCoverInput?.let { reference ->
-                if (isLocalSong && CustomSongCoverStorage.isRemoteReference(reference)) {
-                    CustomSongCoverStorage.persistOriginalCover(
+                if (
+                    isLocalSong &&
+                    persistManualRemoteCover &&
+                    CustomSongCoverStorage.isRemoteReference(reference)
+                ) {
+                    CustomSongCoverStorage.persistManuallySelectedRemoteCover(
                         context = application,
-                        song = currentSong,
-                        reference = reference
+                        sourceUrl = reference
                     ) ?: return@runSongMetadataMutation false
                 } else {
                     reference
