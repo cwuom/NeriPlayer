@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import okhttp3.Request
@@ -15,6 +16,8 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
 import okio.Timeout
+import okio.Buffer
+import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
@@ -392,7 +395,7 @@ class AudioDownloadManagerTest {
     }
 
     @Test
-    fun `resume request falls back to last modified validator`() {
+    fun `resume request does not use last modified without strong etag`() {
         val request = Request.Builder()
             .url("https://example.com/audio.m4a")
             .build()
@@ -410,11 +413,34 @@ class AudioDownloadManagerTest {
         )
 
         assertEquals("bytes=1024-", resumedRequest.header("Range"))
-        assertEquals("Wed, 15 Jul 2026 12:00:00 GMT", resumedRequest.header("If-Range"))
+        assertNull(resumedRequest.header("If-Range"))
+        assertEquals("identity", resumedRequest.header("Accept-Encoding"))
     }
 
     @Test
-    fun `resume working file is discarded when source url changes`() {
+    fun `resume request rejects weak etag for if range`() {
+        val request = Request.Builder()
+            .url("https://example.com/audio.m4a")
+            .build()
+        val weakWithDate = ManagedDownloadStorage.WorkingResumeFingerprint(
+            sourceUrl = request.url.toString(),
+            etag = "W/\"weak\"",
+            lastModified = "Wed, 15 Jul 2026 12:00:00 GMT"
+        )
+        val weakOnly = weakWithDate.copy(lastModified = null)
+
+        assertNull(
+            AudioDownloadManager.buildResumeRequest(request, 1_024L, weakWithDate)
+                .header("If-Range")
+        )
+        assertNull(
+            AudioDownloadManager.buildResumeRequest(request, 1_024L, weakOnly)
+                .header("If-Range")
+        )
+    }
+
+    @Test
+    fun `signed url rotation does not discard a resumable file`() {
         val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
             sourceUrl = "https://example.com/audio.m4a?token=old",
             etag = "\"same-validator\"",
@@ -422,10 +448,22 @@ class AudioDownloadManagerTest {
             expectedContentLength = 4_096L
         )
 
-        assertTrue(
+        assertFalse(
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
                 requestUrl = "https://example.com/audio.m4a?token=new",
                 fingerprint = fingerprint
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/audio.m4a?token=new",
+                fingerprint = fingerprint.copy(etag = null, lastModified = null)
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/other.m4a?token=new",
+                fingerprint = fingerprint.copy(etag = null, lastModified = null)
             )
         )
         assertFalse(
@@ -454,6 +492,91 @@ class AudioDownloadManagerTest {
                 bodyLength = 3_072L,
                 resumedBytes = 1_024L,
                 isPartialResponse = true
+            )
+        )
+    }
+
+    @Test
+    fun `content range validation requires exact start total and body length`() {
+        val validHeaders = mapOf("Content-Range" to listOf("bytes 1024-4095/4096"))
+        assertEquals(
+            4_096L,
+            AudioDownloadManager.validatePartialContentRange(
+                headers = validHeaders,
+                expectedStart = 1_024L,
+                bodyLength = 3_072L
+            ).total
+        )
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.validatePartialContentRange(
+                headers = validHeaders,
+                expectedStart = 1_025L,
+                bodyLength = 3_072L
+            )
+        }
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.validatePartialContentRange(
+                headers = mapOf("Content-Range" to listOf("bytes 1024-4095/*")),
+                expectedStart = 1_024L,
+                bodyLength = 3_072L
+            )
+        }
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.validatePartialContentRange(
+                headers = validHeaders,
+                expectedStart = 1_024L,
+                bodyLength = 3_071L
+            )
+        }
+    }
+
+    @Test
+    fun `resume response requires the same strong etag and total`() {
+        val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
+            etag = "\"stable\"",
+            expectedContentLength = 4_096L
+        )
+        val headers = mapOf("ETag" to listOf("\"stable\""))
+
+        assertTrue(
+            AudioDownloadManager.isResumeResponseCompatible(
+                fingerprint,
+                headers,
+                4_096L
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isResumeResponseCompatible(
+                fingerprint,
+                mapOf("ETag" to listOf("\"rotated\"")),
+                4_096L
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isResumeResponseCompatible(
+                fingerprint,
+                headers,
+                4_097L
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isResumeResponseCompatible(
+                fingerprint,
+                mapOf("ETag" to listOf("W/\"stable\"")),
+                4_096L
+            )
+        )
+    }
+
+    @Test
+    fun `range not satisfiable is accepted only at exact total`() {
+        val headers = mapOf("Content-Range" to listOf("bytes */4096"))
+        assertTrue(AudioDownloadManager.isExactRangeEnd(headers, 4_096L))
+        assertFalse(AudioDownloadManager.isExactRangeEnd(headers, 4_095L))
+        assertFalse(
+            AudioDownloadManager.isExactRangeEnd(
+                mapOf("Content-Range" to listOf("bytes */4096")),
+                4_097L
             )
         )
     }
@@ -591,7 +714,7 @@ class AudioDownloadManagerTest {
     @Test
     fun `hls resume state serialization round trips`() {
         val state = AudioDownloadManager.HlsResumeState(
-            playlistFingerprint = 77,
+            playlistFingerprint = "a".repeat(64),
             nextSegmentIndex = 12,
             downloadedBytes = 34_567L
         )
@@ -601,7 +724,56 @@ class AudioDownloadManagerTest {
         )
 
         assertEquals(state, restored)
+        assertTrue(
+            AudioDownloadManager.serializeHlsResumeState(state)
+                .contains("playlistDigestSha256")
+        )
         assertEquals(null, AudioDownloadManager.deserializeHlsResumeState("{"))
+    }
+
+    @Test
+    fun `hls playlist fingerprint is stable sha256 structured summary`() {
+        val urls = listOf(
+            "https://example.com/seg-1.ts",
+            "https://example.com/seg-2.ts"
+        )
+        val fingerprint = AudioDownloadManager.buildHlsPlaylistFingerprint(urls)
+        assertEquals(64, fingerprint.length)
+        assertEquals(fingerprint, AudioDownloadManager.buildHlsPlaylistFingerprint(urls))
+        assertNotEquals(
+            fingerprint,
+            AudioDownloadManager.buildHlsPlaylistFingerprint(urls + "https://example.com/seg-3.ts")
+        )
+        assertEquals(
+            fingerprint,
+            AudioDownloadManager.buildHlsPlaylistFingerprint(
+                listOf(
+                    "https://example.com/seg-1.ts?sig=rotated&expire=2",
+                    "https://example.com/seg-2.ts?token=new"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `hls segment copy streams and strips only leading id3`() {
+        val id3TagPayload = byteArrayOf(1, 2, 3, 4)
+        val id3Header = byteArrayOf(
+            'I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(),
+            4, 0, 0, 0, 0, 0, id3TagPayload.size.toByte()
+        )
+        val payload = ByteArray(128 * 1024) { index -> (index and 0x7f).toByte() }
+        val source = Buffer()
+            .write(id3Header)
+            .write(id3TagPayload)
+            .write(payload)
+        val sink = Buffer()
+        val traffic = TrafficByteAccumulator(Long.MAX_VALUE) {}
+
+        val copied = AudioDownloadManager.copyHlsSegment(source, sink, traffic)
+
+        assertEquals(payload.size.toLong(), copied)
+        assertTrue(sink.readByteArray().contentEquals(payload))
     }
 
     @Test

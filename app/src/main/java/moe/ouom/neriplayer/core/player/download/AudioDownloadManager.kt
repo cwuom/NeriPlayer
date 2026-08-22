@@ -435,10 +435,25 @@ object AudioDownloadManager {
     )
 
     internal data class HlsResumeState(
-        val playlistFingerprint: Int,
+        val playlistFingerprint: String,
         val nextSegmentIndex: Int,
         val downloadedBytes: Long
-    )
+    ) {
+        constructor(
+            playlistFingerprint: Int,
+            nextSegmentIndex: Int,
+            downloadedBytes: Long
+        ) : this(playlistFingerprint.toString(), nextSegmentIndex, downloadedBytes)
+    }
+
+    internal data class ParsedContentRange(
+        val start: Long,
+        val end: Long,
+        val total: Long
+    ) {
+        val length: Long
+            get() = end - start + 1L
+    }
 
     internal fun buildCoverDownloadCandidateUrls(song: SongItem): List<String> {
         return listOf(
@@ -511,7 +526,15 @@ object AudioDownloadManager {
     internal fun resolveResumeValidatorHeader(
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?
     ): String? {
-        return fingerprint?.validator
+        return fingerprint?.etag?.trim()?.takeIf(::isStrongEtag)
+    }
+
+    private fun isStrongEtag(value: String): Boolean {
+        val trimmed = value.trim()
+        return trimmed.length >= 2 &&
+            !trimmed.startsWith("W/", ignoreCase = true) &&
+            trimmed.startsWith('"') &&
+            trimmed.endsWith('"')
     }
 
     internal fun shouldDiscardWorkingFileForResume(
@@ -520,7 +543,26 @@ object AudioDownloadManager {
     ): Boolean {
         val recordedUrl = fingerprint?.sourceUrl?.trim()?.takeIf(String::isNotBlank)
             ?: return false
-        return recordedUrl != requestUrl.trim()
+        if (recordedUrl == requestUrl.trim()) {
+            return false
+        }
+        if (!resolveResumeValidatorHeader(fingerprint).isNullOrBlank()) {
+            return false
+        }
+        return resumeResourceKey(recordedUrl) != resumeResourceKey(requestUrl)
+    }
+
+    private fun resumeResourceKey(url: String): String? {
+        return runCatching {
+            java.net.URI(url.trim()).let { uri ->
+                listOf(
+                    uri.scheme.orEmpty().lowercase(),
+                    uri.host.orEmpty().lowercase(),
+                    uri.port.toString(),
+                    uri.path.orEmpty()
+                ).joinToString("|")
+            }
+        }.getOrNull()
     }
 
     internal fun buildResumeRequest(
@@ -532,6 +574,7 @@ object AudioDownloadManager {
         val validator = resolveResumeValidatorHeader(fingerprint)
         return request.newBuilder()
             .header("Range", resumeRangeHeader)
+            .header("Accept-Encoding", "identity")
             .apply {
                 if (!validator.isNullOrBlank()) {
                     header("If-Range", validator)
@@ -540,15 +583,68 @@ object AudioDownloadManager {
             .build()
     }
 
-    private fun parseContentRangeStart(headers: Map<String, List<String>>): Long? {
-        val contentRangeValue = headers.entries.firstOrNull { (key, _) ->
-            key.equals("Content-Range", ignoreCase = true)
-        }?.value?.firstOrNull() ?: return null
-        return Regex("""bytes\s+(\d+)-\d+/.*""", RegexOption.IGNORE_CASE)
-            .find(contentRangeValue)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.toLongOrNull()
+    internal fun parseContentRange(headers: Map<String, List<String>>): ParsedContentRange? {
+        val value = responseHeaderValue(headers, "Content-Range") ?: return null
+        val match = Regex("""^bytes\s+(\d+)-(\d+)/(\d+)$""", RegexOption.IGNORE_CASE)
+            .matchEntire(value.trim()) ?: return null
+        val start = match.groupValues[1].toLongOrNull() ?: return null
+        val end = match.groupValues[2].toLongOrNull() ?: return null
+        val total = match.groupValues[3].toLongOrNull() ?: return null
+        if (start < 0L || end < start || total <= end) {
+            return null
+        }
+        return ParsedContentRange(start = start, end = end, total = total)
+    }
+
+    private fun parseUnsatisfiedContentRangeTotal(headers: Map<String, List<String>>): Long? {
+        val value = responseHeaderValue(headers, "Content-Range") ?: return null
+        val match = Regex("""^bytes\s+\*/(\d+)$""", RegexOption.IGNORE_CASE)
+            .matchEntire(value.trim()) ?: return null
+        return match.groupValues[1].toLongOrNull()?.takeIf { it > 0L }
+    }
+
+    internal fun isExactRangeEnd(
+        headers: Map<String, List<String>>,
+        resumedBytes: Long
+    ): Boolean {
+        return resumedBytes > 0L && parseUnsatisfiedContentRangeTotal(headers) == resumedBytes
+    }
+
+    internal fun validatePartialContentRange(
+        headers: Map<String, List<String>>,
+        expectedStart: Long,
+        bodyLength: Long? = null
+    ): ParsedContentRange {
+        val range = parseContentRange(headers)
+            ?: throw IOException("缺少或非法 Content-Range")
+        if (range.start != expectedStart) {
+            throw IOException(
+                "续传偏移不匹配: expected=$expectedStart, actual=${range.start}"
+            )
+        }
+        if (bodyLength != null && bodyLength >= 0L && bodyLength != range.length) {
+            throw IOException(
+                "Content-Range 长度不匹配: expected=${range.length}, actual=$bodyLength"
+            )
+        }
+        return range
+    }
+
+    internal fun isResumeResponseCompatible(
+        fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint?,
+        headers: Map<String, List<String>>,
+        totalBytes: Long
+    ): Boolean {
+        val expectedEtag = fingerprint?.etag?.trim()?.takeIf(::isStrongEtag) ?: return false
+        val actualEtag = responseHeaderValue(headers, "ETag")
+            ?.trim()
+            ?.takeIf(::isStrongEtag)
+            ?: return false
+        if (expectedEtag != actualEtag) {
+            return false
+        }
+        val expectedTotal = fingerprint.expectedContentLength?.takeIf { it > 0L }
+        return expectedTotal == null || expectedTotal == totalBytes
     }
 
     private fun responseHeaderValue(
@@ -588,17 +684,10 @@ object AudioDownloadManager {
         resumedBytes: Long,
         isPartialResponse: Boolean
     ): Long? {
-        val contentRangeTotal = responseHeaderValue(headers, "Content-Range")
-            ?.let { value ->
-                Regex("""bytes\s+\d+-\d+/(\d+)""", RegexOption.IGNORE_CASE)
-                    .find(value)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toLongOrNull()
-                    ?.takeIf { it > 0L }
-            }
-        if (contentRangeTotal != null) {
-            return contentRangeTotal
+        val contentRangeValue = responseHeaderValue(headers, "Content-Range")
+        if (contentRangeValue != null) {
+            return parseContentRange(headers)?.total
+                ?: parseUnsatisfiedContentRangeTotal(headers)
         }
         if (bodyLength > 0L) {
             return if (isPartialResponse) {
@@ -704,8 +793,95 @@ object AudioDownloadManager {
         return tempFile?.takeIf(File::exists)?.length()?.coerceAtLeast(0L) ?: 0L
     }
 
+    internal fun buildHlsPlaylistFingerprint(
+        segmentUrls: List<String>,
+        playlistText: String? = null
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update("neriplayer-hls-playlist-v2".toByteArray(Charsets.UTF_8))
+        digest.update(0.toByte())
+        updateHlsFingerprintField(digest, segmentUrls.size.toString())
+        segmentUrls.forEachIndexed { index, segmentUrl ->
+            updateHlsFingerprintField(digest, index.toString())
+            updateHlsFingerprintField(digest, canonicalHlsSegmentUri(segmentUrl))
+        }
+        playlistText
+            ?.lineSequence()
+            ?.map(String::trim)
+            ?.filter { line ->
+                line.startsWith("#EXT-X-MEDIA-SEQUENCE", ignoreCase = true) ||
+                    line.startsWith("#EXTINF:", ignoreCase = true) ||
+                    line.startsWith("#EXT-X-TARGETDURATION", ignoreCase = true)
+            }
+            ?.forEachIndexed { index, line ->
+                updateHlsFingerprintField(digest, "metadata:$index")
+                updateHlsFingerprintField(digest, line)
+            }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun canonicalHlsSegmentUri(url: String): String {
+        val volatileQueryKeys = setOf(
+            "alr",
+            "expire",
+            "expires",
+            "lsig",
+            "n",
+            "range",
+            "sig",
+            "signature",
+            "sp",
+            "st",
+            "token"
+        )
+        return runCatching {
+            val uri = java.net.URI(url.trim())
+            val query = uri.rawQuery
+                ?.split('&')
+                ?.mapNotNull { part ->
+                    val key = part.substringBefore('=').lowercase()
+                    part.takeIf { key.isNotBlank() && key !in volatileQueryKeys }
+                }
+                ?.sorted()
+                ?.joinToString("&")
+                ?.takeIf(String::isNotBlank)
+            buildString {
+                if (!uri.scheme.isNullOrBlank()) {
+                    append(uri.scheme.orEmpty().lowercase())
+                    append("://")
+                    append(uri.rawAuthority.orEmpty().lowercase())
+                }
+                append(uri.rawPath.orEmpty())
+                if (query != null) {
+                    append('?')
+                    append(query)
+                }
+            }
+        }.getOrElse {
+            url.substringBefore('#').substringBefore('?')
+        }
+    }
+
+    private fun updateHlsFingerprintField(
+        digest: MessageDigest,
+        value: String
+    ) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        digest.update(
+            byteArrayOf(
+                (bytes.size ushr 24).toByte(),
+                (bytes.size ushr 16).toByte(),
+                (bytes.size ushr 8).toByte(),
+                bytes.size.toByte()
+            )
+        )
+        digest.update(bytes)
+    }
+
     internal fun serializeHlsResumeState(state: HlsResumeState): String {
         return JSONObject().apply {
+            put("format", "hls-resume-v2")
+            put("playlistDigestSha256", state.playlistFingerprint)
             put("playlistFingerprint", state.playlistFingerprint)
             put("nextSegmentIndex", state.nextSegmentIndex)
             put("downloadedBytes", state.downloadedBytes.coerceAtLeast(0L))
@@ -719,7 +895,11 @@ object AudioDownloadManager {
         return runCatching {
             val json = JSONObject(raw)
             HlsResumeState(
-                playlistFingerprint = json.getInt("playlistFingerprint"),
+                playlistFingerprint = json.optString("playlistDigestSha256")
+                    .takeIf(String::isNotBlank)
+                    ?: json.optString("playlistFingerprint")
+                    .takeIf(String::isNotBlank)
+                    ?: return@runCatching null,
                 nextSegmentIndex = json.getInt("nextSegmentIndex"),
                 downloadedBytes = json.getLong("downloadedBytes").coerceAtLeast(0L)
             )
@@ -770,7 +950,7 @@ object AudioDownloadManager {
 
     private fun rememberHlsResumeState(
         destFile: File,
-        playlistFingerprint: Int,
+        playlistFingerprint: String,
         nextSegmentIndex: Int,
         downloadedBytes: Long
     ) {
@@ -785,7 +965,7 @@ object AudioDownloadManager {
 
     private fun resolveHlsResumeState(
         destFile: File,
-        playlistFingerprint: Int
+        playlistFingerprint: String
     ): HlsResumeState? {
         val state = hlsResumeStatesByWorkingPath[destFile.absolutePath]
             ?: readPersistedHlsResumeState(destFile)?.also { persisted ->
@@ -3903,7 +4083,7 @@ object AudioDownloadManager {
         if (segmentUrls.isEmpty()) {
             throw IllegalStateException("HLS playlist contains no segments")
         }
-        val playlistFingerprint = segmentUrls.joinToString("\n").hashCode()
+        val playlistFingerprint = buildHlsPlaylistFingerprint(segmentUrls, playlistText)
         val resolvedResumeState = resolveHlsResumeState(destFile, playlistFingerprint)
             ?.takeIf { resumeState ->
                 resumeState.nextSegmentIndex in 0..segmentUrls.size &&
@@ -3942,19 +4122,19 @@ object AudioDownloadManager {
                         }
                         .build()
 
-                    executeTrackedCall(
+                    downloadedBytes += executeTrackedCall(
                         client = client,
                         request = segmentRequest,
                         songKey = songKey
                     ) { response ->
                         if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
-                        val rawPayload = response.body.byteStream().use { input ->
-                            input.readBytesLimited(MAX_HLS_SEGMENT_BYTES)
+                        response.body.source().use { source ->
+                            copyHlsSegment(
+                                source = source,
+                                sink = sink,
+                                trafficAccumulator = trafficAccumulator
+                            )
                         }
-                        trafficAccumulator.add(rawPayload.size.toLong())
-                        val payload = stripLeadingId3(rawPayload)
-                        sink.write(payload)
-                        downloadedBytes += payload.size.toLong()
                     }
                     runCatching {
                         sink.flush()
@@ -4043,24 +4223,80 @@ object AudioDownloadManager {
             }
     }
 
-    private fun stripLeadingId3(bytes: ByteArray): ByteArray {
-        if (bytes.size < 10) {
-            return bytes
+    internal fun copyHlsSegment(
+        source: BufferedSource,
+        sink: okio.BufferedSink,
+        trafficAccumulator: TrafficByteAccumulator
+    ): Long {
+        val header = ByteArray(10)
+        var headerBytes = 0
+        var rawBytes = 0L
+        while (headerBytes < header.size) {
+            val read = source.read(header, headerBytes, header.size - headerBytes)
+            if (read == -1) {
+                break
+            }
+            headerBytes += read
+            rawBytes += read
+            trafficAccumulator.add(read.toLong())
         }
-        if (bytes[0] != 'I'.code.toByte() || bytes[1] != 'D'.code.toByte() || bytes[2] != '3'.code.toByte()) {
-            return bytes
+        require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
+            "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
         }
-        val tagSize =
-            ((bytes[6].toInt() and 0x7f) shl 21) or
-                ((bytes[7].toInt() and 0x7f) shl 14) or
-                ((bytes[8].toInt() and 0x7f) shl 7) or
-                (bytes[9].toInt() and 0x7f)
-        val payloadOffset = 10 + tagSize
-        return if (payloadOffset in 1 until bytes.size) {
-            bytes.copyOfRange(payloadOffset, bytes.size)
+
+        var outputBytes = 0L
+        val hasId3Header = headerBytes == header.size &&
+            header[0] == 'I'.code.toByte() &&
+            header[1] == 'D'.code.toByte() &&
+            header[2] == '3'.code.toByte()
+        if (!hasId3Header) {
+            sink.write(header, 0, headerBytes)
+            outputBytes += headerBytes
         } else {
-            bytes
+            val tagSize =
+                ((header[6].toInt() and 0x7f) shl 21) or
+                    ((header[7].toInt() and 0x7f) shl 14) or
+                    ((header[8].toInt() and 0x7f) shl 7) or
+                    (header[9].toInt() and 0x7f)
+            val remainingTagBytes = tagSize.toLong()
+            require(10L + remainingTagBytes <= MAX_HLS_SEGMENT_BYTES) {
+                "HLS ID3 tag exceeds limit: ${10L + remainingTagBytes} > $MAX_HLS_SEGMENT_BYTES"
+            }
+            var skipped = 0L
+            val skipBuffer = ByteArray(DOWNLOAD_READ_BUFFER_BYTES.toInt())
+            while (skipped < remainingTagBytes) {
+                val requested = minOf(
+                    skipBuffer.size.toLong(),
+                    remainingTagBytes - skipped
+                ).toInt()
+                val read = source.read(skipBuffer, 0, requested)
+                if (read == -1) {
+                    throw EOFException("HLS ID3 tag is truncated")
+                }
+                skipped += read
+                rawBytes += read
+                trafficAccumulator.add(read.toLong())
+                require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
+                    "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
+                }
+            }
         }
+
+        val buffer = Buffer()
+        while (true) {
+            val read = source.read(buffer, DOWNLOAD_READ_BUFFER_BYTES)
+            if (read == -1L) {
+                break
+            }
+            rawBytes += read
+            trafficAccumulator.add(read)
+            require(rawBytes <= MAX_HLS_SEGMENT_BYTES) {
+                "HLS segment exceeds limit: $rawBytes > $MAX_HLS_SEGMENT_BYTES"
+            }
+            sink.write(buffer, read)
+            outputBytes += read
+        }
+        return outputBytes
     }
 
     /** 单线程下载 */
@@ -4102,7 +4338,6 @@ object AudioDownloadManager {
             resumedBytes = 0L
         } else if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
             NPLogger.w(TAG, "续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
-            deleteWorkingFile(destFile)
             resumedBytes = 0L
         }
         val resumeRangeHeader = buildResumeRangeHeader(resumedBytes)
@@ -4134,7 +4369,7 @@ object AudioDownloadManager {
                     resumedBytes = resumedBytes,
                     isPartialResponse = true
                 )
-                if (expectedBytes != null && resumedBytes >= expectedBytes) {
+                if (isExactRangeEnd(responseHeaders, resumedBytes) && expectedBytes != null) {
                     return@executeTrackedCall DownloadedPayloadSummary(
                         actualBytes = resumedBytes,
                         expectedBytes = expectedBytes
@@ -4145,16 +4380,27 @@ object AudioDownloadManager {
             if (!resp.isSuccessful) throw IllegalStateException("HTTP ${resp.code}")
 
             val appending = resumedBytes > 0L && resp.code == 206
+            val partialRange = if (appending) {
+                val range = runCatching {
+                    validatePartialContentRange(
+                        headers = responseHeaders,
+                        expectedStart = resumedBytes,
+                        bodyLength = resp.body.contentLength()
+                    )
+                }.getOrElse { error ->
+                    deleteWorkingFile(destFile)
+                    throw error
+                }
+                if (!isResumeResponseCompatible(resumeFingerprint, responseHeaders, range.total)) {
+                    deleteWorkingFile(destFile)
+                    throw IOException("续传响应校验符或总长度不匹配")
+                }
+                range
+            } else {
+                null
+            }
             if (resumedBytes > 0L && !appending) {
                 NPLogger.w(TAG, "服务端未接受续传，回退整文件重下: ${destFile.name}, code=${resp.code}")
-            }
-            if (appending) {
-                val resumedStart = parseContentRangeStart(responseHeaders)
-                if (resumedStart != null && resumedStart != resumedBytes) {
-                    throw IOException(
-                        "续传偏移不匹配: expected=$resumedBytes, actual=$resumedStart"
-                    )
-                }
             }
             val initialBytes = if (appending) resumedBytes else 0L
             if (!appending && resumedBytes > 0L) {
@@ -4215,6 +4461,11 @@ object AudioDownloadManager {
                 trafficAccumulator.flush()
             }
             NPLogger.d(TAG, "文件下载完成: ${destFile.name}, 实际大小: $readSoFar bytes, songId=$songId")
+            if (partialRange != null && readSoFar != partialRange.total) {
+                throw IOException(
+                    "Content-Range 总长度不匹配: expected=${partialRange.total}, actual=$readSoFar"
+                )
+            }
             if (!isTransferSizeComplete(total.takeIf { it > 0L }, readSoFar)) {
                 throw IOException("下载文件不完整: ${destFile.name}, $readSoFar/$total")
             }
@@ -4246,7 +4497,6 @@ object AudioDownloadManager {
             resumedBytes = 0L
         } else if (resumedBytes > 0L && resolveResumeValidatorHeader(resumeFingerprint).isNullOrBlank()) {
             NPLogger.w(TAG, "分块续传缺少 If-Range 校验符，回退整文件重下: ${destFile.name}")
-            deleteWorkingFile(destFile)
             resumedBytes = 0L
         }
         if (resumedBytes > 0L) {
@@ -4258,6 +4508,7 @@ object AudioDownloadManager {
             request.url.toString()
         ) ?: 0L
         var totalBytes = 0L
+        var strictTotalBytes = false
         if (queryTotalHint > 0L) {
             NPLogger.d(
                 TAG,
@@ -4305,6 +4556,7 @@ object AudioDownloadManager {
                     }
                     downloadedBytes = chunkResult.value.downloadedBytes
                     totalBytes = chunkResult.value.totalBytes
+                    strictTotalBytes = strictTotalBytes || chunkResult.value.strictTotalBytes
                     if (
                         chunkResult.chunkLength !=
                         YouTubeGoogleVideoRangeSupport.candidateChunkLengths(
@@ -4321,11 +4573,7 @@ object AudioDownloadManager {
                         break
                     }
                 } catch (error: ChunkRequestIOException) {
-                    val alreadyComplete = totalBytes > 0L && downloadedBytes >= totalBytes
-                    if (error.responseCode == 416 && downloadedBytes > 0L) {
-                        // 416 = range 越界, 通常意味着当前 offset 已经到尾部
-                        break
-                    }
+                    val alreadyComplete = totalBytes > 0L && downloadedBytes == totalBytes
                     if (error.responseCode == 403 && alreadyComplete) {
                         // 403 = CDN 拒绝, 只有在总长度已满足时才接受为完成
                         break
@@ -4338,7 +4586,10 @@ object AudioDownloadManager {
 
         NPLogger.d(TAG, "分块下载完成: ${destFile.name}, 实际大小: $downloadedBytes bytes, songId=$songId")
         val expectedBytes = totalBytes.takeIf { it > 0L }
-        if (!isTransferSizeComplete(expectedBytes, downloadedBytes)) {
+        if (strictTotalBytes && expectedBytes != null && downloadedBytes != expectedBytes) {
+            throw IOException("分块 Content-Range 总长度不匹配: $downloadedBytes/$expectedBytes")
+        }
+        if (!strictTotalBytes && !isTransferSizeComplete(expectedBytes, downloadedBytes)) {
             throw IOException("分块下载不完整: ${destFile.name}, $downloadedBytes/$expectedBytes")
         }
         return@withContext DownloadedPayloadSummary(
@@ -4351,7 +4602,8 @@ object AudioDownloadManager {
         val requestedChunkLength: Long,
         val downloadedBytes: Long,
         val totalBytes: Long,
-        val isEndOfStream: Boolean
+        val isEndOfStream: Boolean,
+        val strictTotalBytes: Boolean
     )
 
     private fun downloadChunk(
@@ -4382,6 +4634,7 @@ object AudioDownloadManager {
             ?: ManagedDownloadStorage.readWorkingResumeFingerprint(destFile)
         val resumeValidator = resolveResumeValidatorHeader(effectiveResumeFingerprint)
         val chunkRequest = baseChunkRequest.newBuilder()
+            .header("Accept-Encoding", "identity")
             .apply {
                 if (start > 0L && !resumeValidator.isNullOrBlank()) {
                     header("If-Range", resumeValidator)
@@ -4391,11 +4644,30 @@ object AudioDownloadManager {
 
         val trafficAccumulator = newDownloadTrafficAccumulator()
         try {
-            executeTrackedCall(
+            return executeTrackedCall(
                 client = client,
                 request = chunkRequest,
                 songKey = songKey
             ) { response ->
+                val responseHeaders = response.headers.toMultimap()
+                if (response.code == 416) {
+                    val total = parseUnsatisfiedContentRangeTotal(responseHeaders)
+                    if (
+                        total != null &&
+                        (currentTotalBytes == 0L || currentTotalBytes == total) &&
+                        start == total &&
+                        currentDownloadedBytes == total
+                    ) {
+                        return@executeTrackedCall ChunkDownloadResult(
+                            requestedChunkLength = requestedChunkLength,
+                            downloadedBytes = currentDownloadedBytes,
+                            totalBytes = total,
+                            isEndOfStream = true,
+                            strictTotalBytes = true
+                        )
+                    }
+                    throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
+                }
                 if (!response.isSuccessful) {
                     throw ChunkRequestIOException(response.code, "HTTP ${response.code}")
                 }
@@ -4406,25 +4678,37 @@ object AudioDownloadManager {
                     )
                 }
 
-                val responseHeaders = response.headers.toMultimap()
-                val responseStart = parseContentRangeStart(responseHeaders)
-                if (responseStart != start) {
-                    throw IOException("分块响应偏移不匹配: expected=$start, actual=$responseStart")
+                val contentRange = runCatching {
+                    validatePartialContentRange(
+                        headers = responseHeaders,
+                        expectedStart = start,
+                        bodyLength = response.body.contentLength()
+                    )
+                }.getOrElse { error ->
+                    deleteWorkingFile(destFile)
+                    throw error
+                }
+                if (start > 0L && !isResumeResponseCompatible(
+                        effectiveResumeFingerprint,
+                        responseHeaders,
+                        contentRange.total
+                    )
+                ) {
+                    deleteWorkingFile(destFile)
+                    throw IOException("分块响应校验符或总长度不匹配")
                 }
                 var downloadedBytes = currentDownloadedBytes
-                var totalBytes = YouTubeGoogleVideoRangeSupport.resolveContentRangeTotal(
-                    responseHeaders
-                ) ?: currentTotalBytes
+                val totalBytes = contentRange.total
+                if (currentTotalBytes > 0L && currentTotalBytes != totalBytes) {
+                    throw IOException(
+                        "分块总长度不匹配: expected=$currentTotalBytes, actual=$totalBytes"
+                    )
+                }
                 updateWorkingResumeFingerprint(
                     destFile = destFile,
                     requestUrl = request.url.toString(),
                     headers = responseHeaders,
                     expectedContentLength = totalBytes.takeIf { it > 0L }
-                )
-                val actualChunkLength = YouTubeGoogleVideoRangeSupport.resolveChunkResponseLength(
-                    requestedLength = requestedChunkLength,
-                    headers = responseHeaders,
-                    delegateOpenLength = response.body.contentLength()
                 )
 
                 val source: BufferedSource = response.body.source()
@@ -4458,17 +4742,10 @@ object AudioDownloadManager {
                     )
                 }
 
-                if (chunkRead <= 0L) {
-                    return ChunkDownloadResult(
-                        requestedChunkLength = requestedChunkLength,
-                        downloadedBytes = downloadedBytes,
-                        totalBytes = totalBytes,
-                        isEndOfStream = true
+                if (chunkRead != contentRange.length) {
+                    throw IOException(
+                        "分块响应长度不匹配: expected=${contentRange.length}, actual=$chunkRead"
                     )
-                }
-
-                if (totalBytes <= 0L && actualChunkLength < requestedChunkLength) {
-                    totalBytes = downloadedBytes
                 }
 
                 val isEndOfStream = chunkRead < requestedChunkLength || (
@@ -4479,7 +4756,8 @@ object AudioDownloadManager {
                     requestedChunkLength = requestedChunkLength,
                     downloadedBytes = downloadedBytes,
                     totalBytes = totalBytes,
-                    isEndOfStream = isEndOfStream
+                    isEndOfStream = isEndOfStream,
+                    strictTotalBytes = true
                 )
             }
         } finally {
