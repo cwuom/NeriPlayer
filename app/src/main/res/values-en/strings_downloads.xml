@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Download -->
+    <string name="download_title">Downloads</string>
+    <string name="download_manager">Download Manager</string>
+    <string name="download_to_local">Download</string>
+    <string name="download_selected_songs">Download Selected</string>
+    <string name="download_selected_videos">Download Selected</string>
+    <string name="download_progress">Download Progress</string>
+    <string name="download_failed">Download Failed</string>
+    <string name="download_cancelled">Download Cancelled</string>
+    <string name="download_no_tasks">No Download Tasks</string>
+    <string name="download_empty">No Downloads</string>
+    <string name="download_desc">Manage downloads</string>
+    <string name="download_manage_desc">Manage downloads</string>
+    <string name="download_expand_hint">Downloads and local files</string>
+    <string name="download_select_hint">Select songs and tap download button</string>
+    <string name="downloaded">Downloaded</string>
+    <string name="downloaded_songs">Downloaded Songs</string>
+    <string name="download_songs_display">Downloaded songs will appear here</string>
+    <string name="download_clear_completed">Clear Tasks</string>
+    <string name="download_clear_confirm_title">Clear Download Tasks</string>
+    <string name="download_clear_confirm_message">Are you sure you want to clear all download tasks? Queued and active downloads will be canceled, and downloaded files will not be deleted.</string>
+    <string name="download_confirm">Confirm</string>
+    <string name="download_cancel_action">Cancel</string>
+    <string name="download_resume">Resume Download</string>
+    <string name="download_completed">Completed</string>
+    <string name="download_cancel_download">Cancel Download</string>
+    <string name="download_cancelled_status">Cancelled</string>
+    <string name="download_queued_status">Waiting to start</string>
+    <string name="download_waiting_queue_summary">The remaining tasks are queued and waiting for a free download slot</string>
+    <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
+    <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
+    <string name="download_search_hint">Search downloaded songs…</string>
+    <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
+    <string name="download_starting">Starting download: %s</string>
+    <string name="download_file_exists">File exists, skipping download: %s</string>
+    <string name="download_no_url">Cannot get download URL: %s</string>
+    <string name="download_batch_failed_song">Batch download failed: %1$s - %2$s</string>
+    <string name="download_batch_failed">Batch download failed: %s</string>
+    <string name="download_lyrics_matched">Saved with matched lyrics: %s</string>
+    <string name="download_lyrics_api">Saved with translated lyrics from API: %s</string>
+    <string name="download_local_file">Local File</string>
+    <string name="download_manager_title">Download Manager</string>
+    <string name="download_manager_subtitle">Manage downloads</string>
+    <string name="download_scan_local">Scan Local Music</string>
+    <string name="download_scanning">Scanning local audio…</string>
+    <string name="download_scan_empty">No local audio files found</string>
+    <string name="download_scan_add_selected">Add selected (%1$d)</string>
+    <string name="download_scan_add_to_playlist">Add to another playlist</string>
+    <string name="download_scan_permission_required">Grant audio read permission before scanning local music</string>
+    <string name="download_delete_selected">Delete Selected</string>
+    <string name="download_exit_selection">Exit Selection</string>
+    <string name="download_no_songs">No Downloaded Songs</string>
+    <string name="download_no_match">No Matching Songs</string>
+    <string name="download_songs_hint">Downloaded songs will appear here</string>
+    <string name="download_try_other_keywords">Try other keywords</string>
+    <string name="download_space_used">Storage Used</string>
+    <string name="download_play">Play</string>
+    <string name="download_delete">Delete</string>
+    <string name="download_cancelled_message">Download cancelled</string>
+    <string name="download_failed_message">Download failed</string>
+    <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
+    <string name="download_current_song">Downloading: %s</string>
+    <string name="download_overall_progress">Overall progress: %d%%</string>
+    <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
+    <string name="download_progress_file_label">%1$d%% - %2$s</string>
+</resources>

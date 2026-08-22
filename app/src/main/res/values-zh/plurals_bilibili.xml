@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bilibili -->
+    <plurals name="bili_content_count">
+        <item quantity="other">%d 个内容</item>
+    </plurals>
+</resources>

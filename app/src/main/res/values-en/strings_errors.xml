@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Errors & Feedback -->
+    <string name="toast_copied">Copied</string>
+    <string name="toast_copy_truncated">Content was too long; only a safe portion was copied</string>
+    <string name="toast_copy_failed">Could not copy to the clipboard</string>
+    <string name="error_network">Network Error</string>
+    <string name="error_app_exception">App Exception</string>
+    <string name="error_test_handler">Test Exception Handler</string>
+    <string name="error_test">Exception Test</string>
+    <string name="error_cannot_open_input">Cannot open input stream</string>
+    <string name="error_cannot_open_output">Cannot open output stream</string>
+    <string name="error_no_play_url">Cannot get play URL</string>
+    <string name="toast_cache_cleared">Cleared %d MB cache</string>
+    <string name="toast_cache_clear_error">Clear error: %s</string>
+    <string name="toast_playback_stopped">Multiple songs failed, playback stopped</string>
+    <string name="toast_match_failed">Match failed: %s</string>
+    <string name="toast_save_failed">Save failed: %s</string>
+    <string name="snackbar_cookie_empty">No Cookie found, please confirm login</string>
+    <string name="snackbar_read_failed">Read failed: %s</string>
+    <string name="error_parse">Parse/unknown error: %s</string>
+    <string name="error_bilibili_search">Bilibili search failed: %s</string>
+    <string name="error_netease_search">Netease search failed: %s</string>
+    <string name="error_youtube_search">YouTube search failed: %s</string>
+    <string name="error_link_recognition">Link recognition failed: %s</string>
+    <string name="error_load_playlist">Load playlist failed: %s</string>
+    <string name="error_search_failed">Search failed: %s</string>
+    <string name="error_get_user_id">Cannot get user ID, please log in again</string>
+    <string name="error_api_code">API returned error code=%d</string>
+    <string name="error_missing_node">Missing %s node</string>
+    <string name="exception_title">Application Error</string>
+    <string name="exception_occurred">An exception occurred:</string>
+    <string name="exception_source">Source: %s</string>
+    <string name="exception_type">Type: %s</string>
+    <string name="exception_message">Message: %s</string>
+    <string name="exception_no_detail">No details</string>
+    <string name="exception_logged">Detailed error logged to file.</string>
+    <string name="exception_contact">If problem persists, please restart app or contact developer.</string>
+    <string name="exception_test">This is a test exception to verify exception handler</string>
+</resources>

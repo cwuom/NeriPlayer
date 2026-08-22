@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playlist -->
+    <string name="playlist_title">歌单</string>
+    <string name="playlist_current">当前歌单</string>
+    <string name="playlist_create">新建歌单</string>
+    <string name="playlist_create_name">新建歌单名称</string>
+    <string name="playlist_rename">重命名歌单</string>
+    <string name="playlist_delete">删除歌单</string>
+    <string name="playlist_detail">歌单详情</string>
+    <string name="playlist_local_detail">本地歌单详情</string>
+    <string name="playlist_favorite">收藏歌单</string>
+    <string name="playlist_no_favorite">暂无收藏的歌单</string>
+    <string name="playlist_count">当前歌单数量</string>
+    <string name="playlist_add_to">添加到歌单</string>
+    <string name="playlist_export">导出歌单</string>
+    <string name="playlist_import">导入歌单</string>
+    <string name="playlist_export_desc">将歌单导出为备份文件</string>
+    <string name="playlist_import_desc">从备份文件恢复歌单</string>
+    <string name="playlist_export_success">导出成功</string>
+    <string name="playlist_export_failed">导出失败</string>
+    <string name="playlist_import_success">导入成功</string>
+    <string name="playlist_import_failed">导入失败</string>
+    <string name="playlist_export_progress">导出进度</string>
+    <string name="playlist_import_progress">导入进度</string>
+    <string name="playlist_exporting">正在导出歌单…</string>
+    <string name="playlist_importing">正在导入歌单…</string>
+    <string name="playlist_import_complete">导入完成！</string>
+    <string name="playlist_export_to_local">导出到本地歌单</string>
+    <string name="playlist_play_in_order">顺序播放</string>
+    <string name="playlist_playback_mode">播放模式</string>
+    <string name="playlist_mode_order">顺序模式</string>
+    <string name="playlist_mode_shuffle">随机模式</string>
+    <string name="playlist_mode_repeat_off">循环关闭</string>
+    <string name="playlist_mode_repeat_all">列表循环</string>
+    <string name="playlist_mode_repeat_one">单曲循环</string>
+    <string name="playlist_all_songs">全部歌曲</string>
+    <string name="playlist_song_count_format" formatted="false">%1$d 首 · %2$s</string>
+    <string name="playlist_export_to">导出到歌单</string>
+    <string name="playlist_create_and_export">新建并导出</string>
+    <string name="playlist_create_and_add">新建并添加</string>
+    <string name="playlist_batch_export_confirm_title">确认导出</string>
+    <string name="playlist_batch_export_confirm_button">导出</string>
+    <string name="playlist_batch_export_undo">撤销</string>
+    <string name="playlist_batch_export_undone">已撤销导出到「%s」</string>
+    <string name="playlist_batch_export_undo_failed">撤销导出失败</string>
+    <string name="local_playlist_delete_failed">删除歌单失败</string>
+    <string name="local_playlist_delete_undo_failed">恢复歌单失败</string>
+    <string name="local_playlist_delete_songs_failed">删除歌曲失败</string>
+    <string name="local_playlist_delete_songs_undo_failed">恢复歌曲失败</string>
+    <string name="playlist_name_empty">名称不能为空哦</string>
+    <string name="playlist_enter_name">输入歌单名称</string>
+    <string name="playlist_queue">播放列表</string>
+    <string name="playlist_add_to_end">添加到队尾</string>
+    <string name="playlist_search_hint">搜索歌单内歌曲</string>
+    <string name="playlist_favorite_hint">在歌单详情页点击收藏按钮，或长按首页推荐歌单收藏</string>
+    <string name="playlist_play_count_format" formatted="false">播放量 %1$s · %2$d 首</string>
+    <string name="collection_track_count_format" formatted="false">%d 首</string>
+    <string name="playlist_loading_content">正在加载歌单内容…</string>
+    <string name="youtube_music_playlist_partial_loaded">歌单还有内容没加载完，已先显示当前已获取的歌曲</string>
+    <string name="youtube_music_playlist_wait_full_load">歌单还没完整加载，稍后再试或点刷新重试</string>
+    <string name="youtube_music_playlist_tracks_unavailable">暂时未能获取歌单歌曲，请刷新重试</string>
+    <string name="playlist_load_failed_format">加载失败：%s</string>
+    <string name="local_playlist_initialization_failed">本地歌单初始化失败，请重启应用后重试</string>
+</resources>

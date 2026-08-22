@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bilibili Playlists -->
+    <string name="bili_web_login">哔哩哔哩网页登录</string>
+    <string name="bili_qr_login">哔哩哔哩扫码登录</string>
+    <string name="bili_qr_login_title">扫码连接你的哔哩哔哩账号</string>
+    <string name="bili_qr_login_subtitle">用哔哩哔哩客户端扫码并确认后，请立刻返回 NeriPlayer。</string>
+    <string name="bili_qr_login_loading">正在生成二维码…</string>
+    <string name="bili_qr_login_waiting">请使用哔哩哔哩客户端扫码登录</string>
+    <string name="bili_qr_login_scanned">已扫码，请在手机上确认登录</string>
+    <string name="bili_qr_login_expired">二维码已过期，请刷新</string>
+    <string name="bili_qr_login_failed">哔哩哔哩扫码登录失败：%1$s</string>
+    <string name="bili_qr_login_retry">刷新二维码</string>
+    <string name="bili_qr_login_web_fallback">网页登录兜底</string>
+    <string name="bili_qr_login_cookie_incomplete">登录已确认，但没有拿到完整 Cookie，请重试</string>
+    <string name="bili_qr_login_hint">二维码由哔哩哔哩接口生成，确认后会在本页监听状态并保存 Cookie。</string>
+    <string name="bili_loading_favorites">正在加载收藏夹内容…</string>
+    <string name="bili_load_failed">加载失败: %s</string>
+    <string name="bili_get_parts_failed">获取分 P 失败</string>
+    <string name="bili_download_progress_format" formatted="false">下载进度: %d/%d</string>
+    <string name="bili_downloading_current">正在下载: %s</string>
+    <string name="bili_overall_progress">总体进度: %d%%</string>
+    <string name="bili_current_file_progress" formatted="false">当前文件: %d%% (%d KB/s)</string>
+</resources>

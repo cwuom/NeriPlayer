@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dialogs -->
+    <string name="dialog_confirm_delete">Confirm Delete</string>
+    <string name="dialog_confirm_clear">Confirm Clear</string>
+    <string name="dialog_hint">Hint</string>
+    <string name="dialog_no_detail">No Details</string>
+    <string name="dialog_disclaimer">Disclaimer &amp; Privacy</string>
+    <string name="dialog_agree">I Agree</string>
+    <string name="dialog_no_remind">Don\'t Remind Again</string>
+</resources>

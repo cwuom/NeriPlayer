@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home -->
+    <plurals name="home_song_count_format">
+        <item quantity="other">%d首</item>
+    </plurals>
+</resources>

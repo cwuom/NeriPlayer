@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Storage -->
+    <plurals name="storage_details_download_index_record_count">
+        <item quantity="one">索引记录 %1$d 条</item>
+        <item quantity="other">索引记录 %1$d 条</item>
+    </plurals>
+    <plurals name="storage_details_download_index_record_and_file_count">
+        <item quantity="one">索引记录 %1$d 条 · 索引文件：%2$d 个</item>
+        <item quantity="other">索引记录 %1$d 条 · 索引文件：%2$d 个</item>
+    </plurals>
+    <plurals name="storage_details_file_count">
+        <item quantity="other">%1$d 个文件</item>
+    </plurals>
+</resources>

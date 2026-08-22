@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Background -->
+    <string name="background_custom">自定义背景图</string>
+    <string name="background_select">选择一张图片</string>
+    <string name="background_change">点击更换</string>
+    <string name="background_clear">清除背景图</string>
+    <string name="background_blur">背景模糊度</string>
+    <string name="background_opacity">背景透明度</string>
+    <string name="background_back_to_cover">返回封面</string>
+    <string name="background_clear_preview">清空预览</string>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playback Stats -->
+    <plurals name="stats_play_count_value">
+        <item quantity="other">%d 次</item>
+    </plurals>
+</resources>

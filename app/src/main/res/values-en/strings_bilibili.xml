@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Bilibili Playlists -->
+    <string name="bili_web_login">Bilibili Web Login</string>
+    <string name="bili_qr_login">Bilibili QR Login</string>
+    <string name="bili_qr_login_title">Connect your Bilibili account</string>
+    <string name="bili_qr_login_subtitle">Scan and confirm with the Bilibili app on your phone, then return to NeriPlayer immediately.</string>
+    <string name="bili_qr_login_loading">Creating QR code…</string>
+    <string name="bili_qr_login_waiting">Scan with the Bilibili app</string>
+    <string name="bili_qr_login_scanned">Scanned. Confirm sign-in on your phone</string>
+    <string name="bili_qr_login_expired">QR code expired. Refresh it</string>
+    <string name="bili_qr_login_failed">Bilibili QR login failed: %1$s</string>
+    <string name="bili_qr_login_retry">Refresh QR code</string>
+    <string name="bili_qr_login_web_fallback">Use web login fallback</string>
+    <string name="bili_qr_login_cookie_incomplete">Sign-in was confirmed, but the Cookie was incomplete. Try again</string>
+    <string name="bili_qr_login_hint">The QR code is created by the Bilibili API. The app watches its status and saves cookies after confirmation.</string>
+    <string name="bili_loading_favorites">Loading favorites…</string>
+    <string name="bili_load_failed">Load failed: %s</string>
+    <string name="bili_get_parts_failed">Failed to get parts</string>
+    <string name="bili_download_progress_format" formatted="false">Download progress: %d/%d</string>
+    <string name="bili_downloading_current">Downloading: %s</string>
+    <string name="bili_overall_progress">Overall progress: %d%%</string>
+    <string name="bili_current_file_progress" formatted="false">Current file: %d%% (%d KB/s)</string>
+</resources>

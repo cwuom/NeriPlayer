@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Local Media -->
+    <plurals name="local_files_delete_downloaded_success">
+        <item quantity="one">Deleted %d downloaded song and its local files</item>
+        <item quantity="other">Deleted %d downloaded songs and their local files</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_success">
+        <item quantity="one">Imported %d local track</item>
+        <item quantity="other">Imported %d local tracks</item>
+    </plurals>
+    <plurals name="local_playlist_add_scanned_success">
+        <item quantity="one">Added %d track to the target playlist</item>
+        <item quantity="other">Added %d tracks to the target playlist</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_partial">
+        <item quantity="one">Imported %1$d local track, %2$s</item>
+        <item quantity="other">Imported %1$d local tracks, %2$s</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed">
+        <item quantity="one">Import failed, %d track failed</item>
+        <item quantity="other">Import failed, %d tracks failed</item>
+    </plurals>
+    <plurals name="local_playlist_import_audio_failed_summary">
+        <item quantity="one">%d track failed</item>
+        <item quantity="other">%d tracks failed</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_confirm">
+        <item quantity="one">Are you sure you want to remove %d selected song from the playlist? You can undo this from the snackbar.</item>
+        <item quantity="other">Are you sure you want to remove %d selected songs from the playlist? You can undo this from the snackbar.</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_snackbar">
+        <item quantity="one">Deleted %d song</item>
+        <item quantity="other">Deleted %d songs</item>
+    </plurals>
+    <plurals name="local_playlist_delete_songs_undone">
+        <item quantity="one">Restored %d song</item>
+        <item quantity="other">Restored %d songs</item>
+    </plurals>
+    <plurals name="local_playlist_delete_snackbar">
+        <item quantity="one">Deleted playlist "%2$s"</item>
+        <item quantity="other">Deleted %1$d playlists</item>
+    </plurals>
+    <plurals name="local_playlist_delete_undone">
+        <item quantity="one">Restored playlist "%2$s"</item>
+        <item quantity="other">Restored %1$d playlists</item>
+    </plurals>
+</resources>

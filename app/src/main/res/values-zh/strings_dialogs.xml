@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dialogs -->
+    <string name="dialog_confirm_delete">确认删除</string>
+    <string name="dialog_confirm_clear">确认清除</string>
+    <string name="dialog_hint">提示</string>
+    <string name="dialog_no_detail">无详细信息</string>
+    <string name="dialog_disclaimer">免责声明与隐私说明</string>
+    <string name="dialog_agree">我已知晓并同意</string>
+    <string name="dialog_no_remind">不再提醒</string>
+</resources>

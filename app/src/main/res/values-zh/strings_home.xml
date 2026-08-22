@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home -->
+    <string name="recommend_for_you">为你推荐</string>
+    <string name="recommend_refresh">刷新推荐</string>
+    <string name="recommend_hot">热歌</string>
+    <string name="recommend_trending">热力飙升</string>
+    <string name="recommend_radar">私人雷达</string>
+    <string name="settings_internationalization">国际化</string>
+    <string name="settings_internationalization_desc">首页和探索页使用 YouTube Music</string>
+    <string name="settings_youtube_enabled">启用 YouTube</string>
+    <string name="settings_youtube_enabled_desc">关闭后隐藏 YouTube 并停止相关请求</string>
+    <string name="home_ytmusic_playlists">YouTube 歌单</string>
+    <string name="home_ytmusic_guess_you_like">猜你喜欢</string>
+    <string name="home_ytmusic_daily_discover">每日发现</string>
+    <string name="home_ytmusic_more_recommendations">更多推荐</string>
+    <string name="home_search_hot">热歌</string>
+    <string name="home_search_radar">私人雷达</string>
+    <string name="home_netease_daily_songs">每日推荐</string>
+    <string name="home_netease_private_fm">私人 FM</string>
+    <string name="home_netease_new_songs">推荐新歌</string>
+    <string name="home_netease_hot_rank">热歌榜</string>
+    <string name="home_netease_new_rank">新歌榜</string>
+    <string name="home_netease_radar_playlists">雷达歌单</string>
+    <string name="home_netease_radar_badge">雷达</string>
+    <string name="home_netease_daily_playlists">每日推荐歌单</string>
+    <string name="home_netease_high_quality_playlists">精品歌单</string>
+    <string name="home_netease_hot_playlists">热门歌单</string>
+    <string name="home_netease_acg_playlists">ACG 歌单</string>
+    <string name="home_loading">正在为你加载首页推荐…</string>
+    <string name="home_load_failed">加载失败：%s</string>
+    <string name="home_error_network">网络或服务器异常：%s</string>
+    <string name="home_error_unknown">解析或未知错误：%s</string>
+    <string name="home_login_required">请登录后启用</string>
+    <string name="home_login_required_hint">登录后会自动开启</string>
+    <string name="home_retry_hint">点右上角刷新重试~</string>
+    <string name="home_play_count_format" formatted="false">%s · %d首</string>
+    <string name="home_unfavorite_playlist">取消收藏</string>
+    <string name="home_favorite_playlist">收藏歌单</string>
+    <string name="home_unfavorited">已取消收藏</string>
+    <string name="continue_playing_remove">移除</string>
+    <string name="home_title_brand_loud">音理音理!!</string>
+    <string name="home_title_brand_wave">音理音理~</string>
+    <string name="home_title_brand_call">NeriPlayer</string>
+    <string name="home_all_cards_hidden">首页卡片已全部隐藏，可在设置中重新开启。</string>
+    <string name="home_offline_no_continue">脱机模式下仅显示继续播放，暂无可显示内容。</string>
+    <string name="offline_mode_title">脱机模式</string>
+    <string name="offline_mode_bottom_hint">当前处于脱机模式</string>
+</resources>

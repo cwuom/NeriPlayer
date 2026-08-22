@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Search -->
+    <string name="search_keyword">搜索关键词</string>
+    <string name="search_keywords">搜索关键字</string>
+    <string name="search_song">搜索歌曲</string>
+    <string name="search_video">搜索视频</string>
+    <string name="search_netease">搜索网易云</string>
+    <string name="search_playlist">搜索歌单内歌曲</string>
+    <string name="search_artist_songs">搜索歌手歌曲</string>
+    <string name="search_favorite">搜索收藏夹内视频</string>
+    <string name="search_result_play_keep_queue">播放（保留队列）</string>
+    <string name="search_result_add_to_current_queue">添加到当前播放列表</string>
+    <string name="search_recent">搜索最近播放</string>
+    <string name="search_history">搜索历史</string>
+    <string name="search_no_result">无搜索结果</string>
+    <string name="search_not_found">未找到结果</string>
+    <string name="search_no_match">未找到匹配的歌曲</string>
+    <string name="search_try_other">尝试使用其他关键词搜索</string>
+    <string name="search_error">处理搜索结果时出错</string>
+    <string name="netease_login_required_search">网易云未登录，暂不支持搜索</string>
+    <string name="netease_login_required_search_placeholder">登录网易云后才能搜索</string>
+    <string name="netease_login_required_home_search">网易云未登录，首页暂不展示网易云搜索推荐</string>
+    <string name="netease_login_required_metadata">网易云未登录，暂不支持补全歌曲信息</string>
+    <string name="explore_search_type_song">歌曲</string>
+    <string name="explore_search_type_playlist">歌单</string>
+    <string name="explore_search_type_artist">歌手</string>
+    <string name="explore_search_type_video">视频</string>
+    <string name="explore_search_type_creator">创作者</string>
+    <string name="explore_tag_link_recognition">链接识别</string>
+    <string name="explore_tab_youtube">YouTube</string>
+    <string name="explore_tab_links">链接</string>
+    <string name="explore_link_input_label">链接或分享文案</string>
+    <string name="explore_link_input_placeholder">粘贴网易云、B 站或 YouTube 链接</string>
+    <string name="explore_link_input_hint">支持歌曲、视频、歌单和歌手链接，也可直接粘贴含标题和短链接的整段分享文案</string>
+    <string name="explore_link_recognition_placeholder">粘贴音乐链接即可识别</string>
+    <string name="explore_link_invalid">无法识别这个链接</string>
+    <string name="explore_link_unsupported_title">暂不支持的链接</string>
+    <string name="explore_link_unsupported_message">%1$s 的 %2$s 链接暂不支持</string>
+    <string name="explore_link_netease_song_fallback">网易云歌曲 %1$d</string>
+    <string name="explore_link_netease_playlist_fallback">网易云歌单 %1$d</string>
+    <string name="explore_link_netease_artist_fallback">网易云歌手 %1$d</string>
+    <string name="explore_link_bili_playlist_fallback">B 站歌单 %1$d</string>
+    <string name="explore_link_youtube_video_fallback">YouTube 视频 %1$s</string>
+    <string name="explore_link_youtube_playlist_fallback">YouTube 播放列表 %1$s</string>
+    <string name="youtube_search_type_song">YouTube 歌曲</string>
+    <string name="youtube_search_type_video">YouTube 视频</string>
+    <string name="youtube_creator_load_failed">加载 YouTube 创作者主页失败：%s</string>
+    <string name="youtube_creator_sections_empty">这个创作者暂时没有可显示的内容</string>
+    <string name="youtube_creator_items_load_failed">加载 %1$s 失败：%2$s</string>
+    <string name="youtube_creator_items_empty">暂无可显示的歌曲</string>
+    <string name="youtube_creator_load_more">加载更多</string>
+    <string name="youtube_creator_view_all">查看全部 %s</string>
+    <string name="youtube_creator_choose_title">选择 YouTube 创作者</string>
+    <string name="youtube_creator_not_available">这首歌没有可打开的 YouTube 创作者信息</string>
+    <string name="youtube_creator_open_failed">无法打开 YouTube 创作者主页：%s</string>
+</resources>

@@ -1,5 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Local Playlists & Files -->
+    <string name="local_title">Local</string>
+    <string name="local_files">Local Files</string>
+    <string name="local_files_manual_added">Manually Added</string>
+    <string name="local_files_downloaded">Downloaded</string>
+    <string name="local_files_delete_downloaded_title">Delete Downloaded Songs</string>
+    <string name="local_files_delete_downloaded_confirm">Delete %d downloaded songs and their local files? This cannot be undone.</string>
+    <string name="local_files_delete_downloaded_partial">Deleted %1$d downloaded songs and their local files; %2$d were not deleted</string>
+    <string name="local_files_delete_downloaded_failed">Could not delete the downloaded files. Their download records remain.</string>
+    <string name="local_playlist_scan_mode_title">Choose Scan Mode</string>
+    <string name="local_playlist_scan_mode_message">Authorized folder scans only the selected folder and its subfolders. Global scan reads the device music library.</string>
+    <string name="local_playlist_scan_folder">Authorized Folder</string>
+    <string name="local_playlist_scan_global">Global Scan</string>
+    <string name="local_playlist_scan_preserve_existing">Invalid scan result. Kept the existing Local Files list.</string>
+    <string name="local_playlist_scan_preview_title">Preview Local Files</string>
+    <string name="local_playlist_scan_preview_search">Search local files</string>
+    <string name="local_playlist_scan_preview_apply">Import Selected Songs</string>
+    <string name="local_playlist_scan_filter_metadata">Hide tracks without metadata</string>
+    <string name="local_playlist_scan_filter_existing">Ignore added tracks</string>
+    <string name="local_playlist_scan_filter_duplicates">Deduplicate by metadata</string>
+    <string name="local_playlist_scan_metadata_empty">No local audio with metadata</string>
+    <string name="local_playlist_scan_existing_empty">No unadded local audio</string>
+    <string name="local_playlist_scan_filtered_empty">No local audio matches the filters</string>
+    <string name="local_playlist_import_audio_no_new">No new local tracks to import</string>
+    <string name="local_playlist_add_scanned_no_new">Selected tracks are already in the target playlist</string>
+    <string name="local_playlist_metadata_processing_title">Processing song info</string>
+    <string name="local_playlist_metadata_processing_message">Reading local titles, artists, and albums (%1$d/%2$d)</string>
+    <string name="local_playlist_metadata_processing_message_unknown">Reading local titles, artists, and albums</string>
+    <string name="local_playlist_rename">Rename Playlist</string>
+    <string name="local_playlist_delete">Delete Playlist</string>
+    <string name="local_playlist_delete_confirm">Are you sure you want to delete this playlist? You can undo this from the snackbar.</string>
+    <string name="local_playlist_delete_songs">Delete Selected Songs</string>
+    <string name="local_playlist_delete_count">Delete (%d)</string>
+    <string name="local_playlist_sync_netease_liked">Sync to NetEase Liked Songs</string>
+    <string name="local_playlist_sync_netease_playlist">Sync to NetEase Playlist</string>
+    <string name="local_playlist_sync_netease_confirm_title">Sync to NetEase?</string>
+    <string name="local_playlist_sync_netease_confirm_message">Sync selected songs to NetEase Liked Songs?</string>
+    <string name="local_playlist_sync_netease_preview_title">Sync to NetEase</string>
+    <string name="local_playlist_sync_netease_result">Sync finished: total %1$d, added %2$d, existing %3$d, unsupported %4$d, failed %5$d</string>
+    <string name="local_playlist_sync_netease_target">Target playlist “%s”</string>
+    <string name="local_playlist_sync_netease_picker_title">Choose a NetEase playlist</string>
+    <string name="local_playlist_sync_netease_loading_playlists">Loading NetEase playlists</string>
+    <string name="local_playlist_sync_netease_load_failed">Failed to load NetEase playlists</string>
+    <string name="local_playlist_sync_netease_no_playlists">No NetEase playlist is available for adding songs</string>
+    <string name="local_playlist_sync_netease_partial_confirm_title">Some songs cannot sync</string>
+    <string name="local_playlist_sync_netease_empty">Favorites are empty. Nothing to sync.</string>
+    <string name="local_playlist_sync_netease_no_supported">No songs available to sync.</string>
+    <string name="local_playlist_sync_netease_all_synced">Already synced to NetEase. Nothing to update.</string>
+    <string name="local_playlist_sync_selected">Sync selected (%d)</string>
+    <string name="local_playlist_sync_search">Search syncable songs</string>
+    <string name="local_playlist_sync_empty">No songs available to sync.</string>
+    <string name="local_playlist_export_to">Export to Playlist</string>
+    <string name="local_playlist_import_audio">Import Local Audio</string>
+    <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d songs · %3$s plays</string>
+    <string name="local_artist_total_duration" formatted="false">%1$s · %2$d songs</string>
+    <string name="local_playlist_play_next">Play Next…</string>
+    <string name="local_artist_detail_empty">This artist has no playable local songs</string>
+
+    <!-- Local Song Details -->
     <string name="local_song_details_title">Local Song Details</string>
     <string name="local_song_details_loading">Reading local song info…</string>
     <string name="local_song_details_failed">Failed to read local song info: %1$s</string>

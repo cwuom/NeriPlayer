@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application -->
+    <string name="app_name">音理音理!</string>
+
+    <!-- Common Actions -->
+    <string name="action_confirm">确定</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_close">关闭</string>
+    <string name="action_ok">好的</string>
+    <string name="action_done">完成</string>
+    <string name="action_apply">应用</string>
+    <string name="action_send">发送</string>
+    <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_share">分享</string>
+    <string name="action_refresh">刷新</string>
+    <string name="action_search">搜索</string>
+    <string name="action_create">创建</string>
+    <string name="action_reset">重置</string>
+    <string name="action_download_cover">下载封面</string>
+    <string name="action_retry">点我重试</string>
+    <string name="action_back">返回</string>
+    <string name="action_hide">隐藏</string>
+    <string name="action_expand">展开</string>
+    <string name="action_collapse">收起</string>
+    <string name="action_more">更多</string>
+    <string name="action_clear">清空</string>
+    <string name="action_paste">粘贴</string>
+    <string name="action_select">选择</string>
+    <string name="action_select_all">全选</string>
+    <string name="action_deselect_all">取消全选</string>
+    <string name="action_inverse_select">反选</string>
+    <string name="action_multi_select">多选</string>
+    <string name="action_enter_multi_select">进入多选</string>
+    <string name="action_exit_multi_select">退出多选</string>
+    <string name="action_copy_song_name">复制歌曲名</string>
+    <string name="action_copy_artist">复制歌手信息</string>
+    <string name="action_copy_song_info">复制歌曲信息</string>
+    <string name="action_details">详情</string>
+    <string name="action_confirm_clear">确认清除</string>
+    <string name="action_later">稍后</string>
+    <string name="action_unfavorite">取消收藏</string>
+    <string name="action_favorite_playlist">收藏歌单</string>
+
+    <!-- Common Text & Formats -->
+    <string name="common_all">全部</string>
+    <string name="common_clear_all">全部清空</string>
+    <string name="common_delete_selected">删除所选</string>
+    <string name="common_delete_selected_songs">删除所选歌曲</string>
+    <string name="common_download_selected">下载选中歌曲</string>
+    <string name="common_more_options">更多选项</string>
+    <string name="common_more_actions">更多操作</string>
+    <string name="common_version">版本</string>
+    <string name="common_build_time">编译时间</string>
+    <string name="common_update_now">立即更新</string>
+    <string name="common_coming_soon">敬请期待</string>
+    <string name="common_not_implemented">暂未实现</string>
+    <string name="common_other_modes">其他模式</string>
+    <string name="common_drag_handle">拖拽手柄</string>
+    <string name="common_album_detail">专辑详情</string>
+    <string name="color_hue">色相 Hue</string>
+    <string name="color_saturation">饱和度 Saturation</string>
+    <string name="color_value">明度 Value</string>
+    <string name="time_just_now">刚刚</string>
+    <string name="time_zero_minutes">0分钟</string>
+    <string name="number_hundred_million">%.1f亿</string>
+    <string name="number_ten_thousand">%.1f万</string>
+    <string name="number_billion">%.1f亿</string>
+    <string name="number_million">%.1f百万</string>
+    <string name="number_thousand">%.1f千</string>
+    <string name="common_selected">已选择</string>
+    <string name="common_youtube">YouTube</string>
+    <string name="common_github">GitHub</string>
+    <string name="common_label_value_format">%1$s - %2$s</string>
+    <string name="common_percent_int">%1$d%%</string>
+
+    <!-- Content Descriptions -->
+    <string name="cd_back">返回</string>
+    <string name="cd_netease">网易云音乐</string>
+    <string name="cd_bilibili">哔哩哔哩</string>
+    <string name="cd_audio_device">播放设备</string>
+    <string name="cd_search">搜索</string>
+    <string name="cd_play_all">全部播放</string>
+    <string name="cd_shuffle">随机播放</string>
+    <string name="cd_clear">清空</string>
+    <string name="cd_exit_select">退出多选</string>
+    <string name="cd_more">更多</string>
+    <string name="cd_downloaded">已下载</string>
+    <string name="cd_more_actions">更多操作</string>
+    <string name="cd_search_songs">搜索歌曲</string>
+    <string name="cd_download_manager">下载管理器</string>
+    <string name="cd_export_playlist">导出到歌单</string>
+    <string name="cd_download_selected">下载选中歌曲</string>
+    <string name="cd_locate_playing">定位到正在播放</string>
+    <string name="cd_open_current_playback_source">定位当前歌单</string>
+    <string name="cd_queue_quick_actions">播放队列快捷操作</string>
+    <string name="cd_close">关闭</string>
+    <string name="cd_recent">最近播放</string>
+    <string name="cd_app_background">应用背景</string>
+</resources>

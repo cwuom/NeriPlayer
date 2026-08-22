@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Background -->
+    <string name="background_custom">Custom</string>
+    <string name="background_select">Select Image</string>
+    <string name="background_change">Change</string>
+    <string name="background_clear">Clear</string>
+    <string name="background_blur">Background Blur</string>
+    <string name="background_opacity">Background Opacity</string>
+    <string name="background_back_to_cover">Use Cover</string>
+    <string name="background_clear_preview">Clear</string>
+</resources>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sync & Backup -->
+    <plurals name="settings_config_import_restored_settings">
+        <item quantity="other">已恢复应用设置 %1$d 项</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_listen_together">
+        <item quantity="other">已恢复一起听设置 %1$d 项</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_auth">
+        <item quantity="other">已恢复登录状态 %1$d 项</item>
+    </plurals>
+    <plurals name="settings_config_import_restored_sync">
+        <item quantity="other">已恢复同步配置 %1$d 项</item>
+    </plurals>
+    <plurals name="sync_every_minutes">
+        <item quantity="other">每%1$d分钟同步</item>
+    </plurals>
+    <plurals name="sync_every_minutes_desc">
+        <item quantity="other">播放历史变更后，至少间隔%1$d分钟再同步到云端</item>
+    </plurals>
+</resources>

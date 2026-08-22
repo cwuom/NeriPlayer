@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playback -->
+    <plurals name="sleep_timer_minutes">
+        <item quantity="other">%d 分钟</item>
+    </plurals>
+    <plurals name="nowplaying_song_count_format">
+        <item quantity="other">%d 首</item>
+    </plurals>
+    <plurals name="nowplaying_queue_count_format">
+        <item quantity="other">共 %d 首</item>
+    </plurals>
+    <plurals name="settings_playback_idle_shutdown_minutes">
+        <item quantity="other">%1$d 分钟</item>
+    </plurals>
+</resources>

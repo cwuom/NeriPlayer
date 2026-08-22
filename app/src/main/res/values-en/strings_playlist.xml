@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Playlist -->
+    <string name="playlist_title">Playlist</string>
+    <string name="playlist_current">Current Playlist</string>
+    <string name="playlist_create">New Playlist</string>
+    <string name="playlist_create_name">New Playlist Name</string>
+    <string name="playlist_rename">Rename Playlist</string>
+    <string name="playlist_delete">Delete Playlist</string>
+    <string name="playlist_detail">Playlist Details</string>
+    <string name="playlist_local_detail">Local Playlist Details</string>
+    <string name="playlist_favorite">Favorite Playlists</string>
+    <string name="playlist_no_favorite">No Favorites</string>
+    <string name="playlist_count">Playlist Count</string>
+    <string name="playlist_add_to">Add to Playlist</string>
+    <string name="playlist_export">Export Playlist</string>
+    <string name="playlist_import">Import Playlist</string>
+    <string name="playlist_export_desc">Export as backup</string>
+    <string name="playlist_import_desc">Restore from backup</string>
+    <string name="playlist_export_success">Export Successful</string>
+    <string name="playlist_export_failed">Export Failed</string>
+    <string name="playlist_import_success">Import Successful</string>
+    <string name="playlist_import_failed">Import Failed</string>
+    <string name="playlist_export_progress">Export Progress</string>
+    <string name="playlist_import_progress">Import Progress</string>
+    <string name="playlist_exporting">Exporting playlists…</string>
+    <string name="playlist_importing">Importing playlists…</string>
+    <string name="playlist_import_complete">Import Complete!</string>
+    <string name="playlist_export_to_local">Export to Local</string>
+    <string name="playlist_play_in_order">Play in Order</string>
+    <string name="playlist_playback_mode">Playback Mode</string>
+    <string name="playlist_mode_order">Order Mode</string>
+    <string name="playlist_mode_shuffle">Shuffle Mode</string>
+    <string name="playlist_mode_repeat_off">Repeat Off</string>
+    <string name="playlist_mode_repeat_all">Repeat All</string>
+    <string name="playlist_mode_repeat_one">Repeat One</string>
+    <string name="playlist_all_songs">All Songs</string>
+    <string name="playlist_song_count_format" formatted="false">%1$d songs · %2$s</string>
+    <string name="playlist_export_to">Export to Playlist</string>
+    <string name="playlist_create_and_export">Create and Export</string>
+    <string name="playlist_create_and_add">Create and Add</string>
+    <string name="playlist_batch_export_confirm_title">Confirm Export</string>
+    <string name="playlist_batch_export_confirm_button">Export</string>
+    <string name="playlist_batch_export_undo">Undo</string>
+    <string name="playlist_batch_export_undone">Export to "%s" undone</string>
+    <string name="playlist_batch_export_undo_failed">Could not undo export</string>
+    <string name="local_playlist_delete_failed">Could not delete playlist</string>
+    <string name="local_playlist_delete_undo_failed">Could not restore playlist</string>
+    <string name="local_playlist_delete_songs_failed">Could not delete songs</string>
+    <string name="local_playlist_delete_songs_undo_failed">Could not restore songs</string>
+    <string name="playlist_name_empty">Name cannot be empty</string>
+    <string name="playlist_enter_name">Enter Playlist Name</string>
+    <string name="playlist_queue">Play Queue</string>
+    <string name="playlist_add_to_end">Add to End</string>
+    <string name="playlist_search_hint">Search songs in playlist</string>
+    <string name="playlist_favorite_hint">Tap favorite button in playlist details, or long press recommended playlists on home page</string>
+    <string name="playlist_play_count_format" formatted="false">%1$s plays · %2$d tracks</string>
+    <string name="collection_track_count_format" formatted="false">%d tracks</string>
+    <string name="playlist_loading_content">Loading playlist content…</string>
+    <string name="youtube_music_playlist_partial_loaded">Some playlist items are still missing. Showing the tracks loaded so far.</string>
+    <string name="youtube_music_playlist_wait_full_load">The playlist is not fully loaded yet. Try again later or tap refresh.</string>
+    <string name="youtube_music_playlist_tracks_unavailable">Unable to load the playlist tracks. Please refresh and try again.</string>
+    <string name="playlist_load_failed_format">Load failed: %s</string>
+    <string name="local_playlist_initialization_failed">Local playlists could not be initialized. Restart the app and try again.</string>
+</resources>

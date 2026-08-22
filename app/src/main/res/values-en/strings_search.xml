@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Search -->
+    <string name="search_keyword">Search Keyword</string>
+    <string name="search_keywords">Search Keywords</string>
+    <string name="search_song">Search Songs</string>
+    <string name="search_video">Search Videos</string>
+    <string name="search_netease">Search NetEase</string>
+    <string name="search_playlist">Search in Playlist</string>
+    <string name="search_artist_songs">Search artist songs</string>
+    <string name="search_favorite">Search in Favorites</string>
+    <string name="search_result_play_keep_queue">Play (Keep Queue)</string>
+    <string name="search_result_add_to_current_queue">Add to Current Queue</string>
+    <string name="search_recent">Search Recent</string>
+    <string name="search_history">Search History</string>
+    <string name="search_no_result">No Results</string>
+    <string name="search_not_found">Not Found</string>
+    <string name="search_no_match">No Matching Songs</string>
+    <string name="search_try_other">Try other keywords</string>
+    <string name="search_error">Error processing results</string>
+    <string name="netease_login_required_search">NetEase is not signed in, search is unavailable</string>
+    <string name="netease_login_required_search_placeholder">Sign in to NetEase to search</string>
+    <string name="netease_login_required_home_search">NetEase is not signed in, home search-based recommendations are unavailable</string>
+    <string name="netease_login_required_metadata">NetEase is not signed in, metadata completion is unavailable</string>
+    <string name="explore_search_type_song">Songs</string>
+    <string name="explore_search_type_playlist">Playlists</string>
+    <string name="explore_search_type_artist">Artists</string>
+    <string name="explore_search_type_video">Videos</string>
+    <string name="explore_search_type_creator">Creators</string>
+    <string name="explore_tag_link_recognition">Link Recognition</string>
+    <string name="explore_tab_youtube">YouTube</string>
+    <string name="explore_tab_links">Links</string>
+    <string name="explore_link_input_label">Link or share text</string>
+    <string name="explore_link_input_placeholder">Paste a NetEase, Bilibili, or YouTube link</string>
+    <string name="explore_link_input_hint">Supports song, video, playlist, and artist links, including full share text containing a title and short link</string>
+    <string name="explore_link_recognition_placeholder">Paste a music link to recognize it</string>
+    <string name="explore_link_invalid">This link could not be recognized</string>
+    <string name="explore_link_unsupported_title">Unsupported link</string>
+    <string name="explore_link_unsupported_message">%1$s %2$s links are not supported yet</string>
+    <string name="explore_link_netease_song_fallback">NetEase song %1$d</string>
+    <string name="explore_link_netease_playlist_fallback">NetEase playlist %1$d</string>
+    <string name="explore_link_netease_artist_fallback">NetEase artist %1$d</string>
+    <string name="explore_link_bili_playlist_fallback">Bilibili playlist %1$d</string>
+    <string name="explore_link_youtube_video_fallback">YouTube video %1$s</string>
+    <string name="explore_link_youtube_playlist_fallback">YouTube playlist %1$s</string>
+    <string name="youtube_search_type_song">YouTube Song</string>
+    <string name="youtube_search_type_video">YouTube Video</string>
+    <string name="youtube_creator_load_failed">Failed to load YouTube creator page: %s</string>
+    <string name="youtube_creator_sections_empty">This creator has no content to display yet</string>
+    <string name="youtube_creator_items_load_failed">Failed to load %1$s: %2$s</string>
+    <string name="youtube_creator_items_empty">No songs are available to display</string>
+    <string name="youtube_creator_load_more">Load more</string>
+    <string name="youtube_creator_view_all">View all %s</string>
+    <string name="youtube_creator_choose_title">Choose YouTube creator</string>
+    <string name="youtube_creator_not_available">No YouTube creator information is available for this song</string>
+    <string name="youtube_creator_open_failed">Failed to open YouTube creator page: %s</string>
+</resources>

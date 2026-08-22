@@ -1,5 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Local Playlists & Files -->
+    <string name="local_title">本地</string>
+    <string name="local_files">本地文件</string>
+    <string name="local_files_manual_added">手动添加</string>
+    <string name="local_files_downloaded">已下载</string>
+    <string name="local_files_delete_downloaded_title">删除已下载歌曲</string>
+    <string name="local_files_delete_downloaded_confirm">确定要删除 %d 首已下载歌曲及其本地文件吗？此操作无法撤销。</string>
+    <string name="local_files_delete_downloaded_partial">已删除 %1$d 首下载文件；%2$d 首未删除</string>
+    <string name="local_files_delete_downloaded_failed">未能删除下载文件，下载记录已保留</string>
+    <string name="local_playlist_scan_mode_title">选择扫描方式</string>
+    <string name="local_playlist_scan_mode_message">授权文件夹只扫描你选择的文件夹及其子文件夹；全局扫描会读取设备音乐库。</string>
+    <string name="local_playlist_scan_folder">授权文件夹</string>
+    <string name="local_playlist_scan_global">全局扫描</string>
+    <string name="local_playlist_scan_preserve_existing">扫描结果无效，已保留现有本地文件列表</string>
+    <string name="local_playlist_scan_preview_title">预览本地文件</string>
+    <string name="local_playlist_scan_preview_search">搜索本地文件</string>
+    <string name="local_playlist_scan_preview_apply">导入所选歌曲</string>
+    <string name="local_playlist_scan_filter_metadata">隐藏无元数据歌曲</string>
+    <string name="local_playlist_scan_filter_existing">忽略已添加歌曲</string>
+    <string name="local_playlist_scan_filter_duplicates">按元信息去重</string>
+    <string name="local_playlist_scan_metadata_empty">没有带元数据的本地音频</string>
+    <string name="local_playlist_scan_existing_empty">没有未添加的本地音频</string>
+    <string name="local_playlist_scan_filtered_empty">没有符合筛选条件的本地音频</string>
+    <string name="local_playlist_import_audio_no_new">没有新的本地音频需要导入</string>
+    <string name="local_playlist_add_scanned_no_new">所选歌曲已在目标歌单中</string>
+    <string name="local_playlist_metadata_processing_title">正在处理歌曲信息</string>
+    <string name="local_playlist_metadata_processing_message">正在读取本地歌曲名、歌手和专辑信息（%1$d/%2$d）</string>
+    <string name="local_playlist_metadata_processing_message_unknown">正在读取本地歌曲名、歌手和专辑信息</string>
+    <string name="local_playlist_rename">重命名歌单</string>
+    <string name="local_playlist_delete">删除歌单</string>
+    <string name="local_playlist_delete_confirm">确定要删除此歌单吗？删除后可通过提示撤销。</string>
+    <string name="local_playlist_delete_songs">删除所选歌曲</string>
+    <string name="local_playlist_delete_count">删除（%d）</string>
+    <string name="local_playlist_sync_netease_liked">同步到网易云我喜欢的音乐</string>
+    <string name="local_playlist_sync_netease_playlist">同步到网易云歌单</string>
+    <string name="local_playlist_sync_netease_confirm_title">同步到网易云？</string>
+    <string name="local_playlist_sync_netease_confirm_message">将所选歌曲同步到网易云我喜欢的音乐，是否继续？</string>
+    <string name="local_playlist_sync_netease_preview_title">同步到网易云</string>
+    <string name="local_playlist_sync_netease_result">同步完成：总计 %1$d，新增 %2$d，已存在 %3$d，跳过不支持 %4$d，失败 %5$d</string>
+    <string name="local_playlist_sync_netease_target">目标歌单“%s”</string>
+    <string name="local_playlist_sync_netease_picker_title">选择网易云歌单</string>
+    <string name="local_playlist_sync_netease_loading_playlists">正在拉取网易云歌单</string>
+    <string name="local_playlist_sync_netease_load_failed">网易云歌单拉取失败</string>
+    <string name="local_playlist_sync_netease_no_playlists">没有可添加歌曲的网易云歌单</string>
+    <string name="local_playlist_sync_netease_partial_confirm_title">部分歌曲不能同步</string>
+    <string name="local_playlist_sync_netease_empty">收藏为空，无需同步</string>
+    <string name="local_playlist_sync_netease_no_supported">没有可同步的歌曲</string>
+    <string name="local_playlist_sync_netease_all_synced">已同步到网易云，无需重复同步</string>
+    <string name="local_playlist_sync_selected">同步选中 (%d)</string>
+    <string name="local_playlist_sync_search">搜索可同步歌曲</string>
+    <string name="local_playlist_sync_empty">没有可同步的歌曲</string>
+    <string name="local_playlist_export_to">导出到歌单</string>
+    <string name="local_playlist_import_audio">导入本地音频</string>
+    <string name="local_playlist_total_duration" formatted="false">%1$s · %2$d 首 · 播放 %3$s 次</string>
+    <string name="local_artist_total_duration" formatted="false">%1$s · %2$d 首</string>
+    <string name="local_playlist_play_next">接下来播放…</string>
+    <string name="local_artist_detail_empty">这个歌手暂无可播放的本地歌曲</string>
+
+    <!-- Local Song Details -->
     <string name="local_song_details_title">本地歌曲详情</string>
     <string name="local_song_details_loading">正在读取本地歌曲信息…</string>
     <string name="local_song_details_failed">读取本地歌曲信息失败：%1$s</string>

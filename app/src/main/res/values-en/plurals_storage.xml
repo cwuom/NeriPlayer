@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Storage -->
+    <plurals name="storage_details_download_index_record_count">
+        <item quantity="one">%1$d index record</item>
+        <item quantity="other">%1$d index records</item>
+    </plurals>
+    <plurals name="storage_details_download_index_record_and_file_count">
+        <item quantity="one">%1$d index record · index files: %2$d</item>
+        <item quantity="other">%1$d index records · index files: %2$d</item>
+    </plurals>
+    <plurals name="storage_details_file_count">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+</resources>
