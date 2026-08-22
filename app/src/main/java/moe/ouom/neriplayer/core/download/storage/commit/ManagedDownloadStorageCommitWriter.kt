@@ -507,11 +507,10 @@ internal class ManagedDownloadStorageCommitWriter(
                 treeChildRegistry.forgetTreeChildName(parent, pendingName)
             }
             treeChildRegistry.rememberTreeChild(parent, entry)
-            restoreLastModified(context, committedTarget.uri, sourceEntry.lastModifiedMs)
             return StoredWriteResult(
                 entry = entry.copy(
-                    lastModifiedMs = sourceEntry.lastModifiedMs.takeIf { it > 0L }
-                        ?: entry.lastModifiedMs
+                    // saf providers own the physical timestamp; source time stays in metadata
+                    lastModifiedMs = entry.lastModifiedMs
                 ),
                 createdNew = true
             )
@@ -526,26 +525,6 @@ internal class ManagedDownloadStorageCommitWriter(
             }
             treeChildRegistry.forgetTreeChildName(parent, requestedPendingName)
             throw error
-        }
-    }
-
-    private fun restoreLastModified(context: Context, uri: android.net.Uri, lastModifiedMs: Long) {
-        if (lastModifiedMs <= 0L) {
-            return
-        }
-        try {
-            context.contentResolver.update(
-                uri,
-                android.content.ContentValues().apply {
-                    put(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED, lastModifiedMs)
-                },
-                null,
-                null
-            )
-        } catch (error: SecurityException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(tag, "恢复迁移文件时间失败: ${uri}, ${error.message}", error)
         }
     }
 

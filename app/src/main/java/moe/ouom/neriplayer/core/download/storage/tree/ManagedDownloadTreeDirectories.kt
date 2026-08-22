@@ -7,6 +7,7 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
@@ -281,6 +282,7 @@ internal class ManagedDownloadTreeDirectories(
         val rootEntries: List<ManagedDownloadStorage.StoredEntry>,
         val coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         val lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
+        val remoteCoverEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
         val isComplete: Boolean
     )
 
@@ -322,6 +324,7 @@ internal class ManagedDownloadTreeDirectories(
                         rootEntries = emptyList(),
                         coverEntries = emptyList(),
                         lyricEntries = emptyList(),
+                        remoteCoverEntries = emptyList(),
                         isComplete = false
                     )
                 var isComplete = true
@@ -354,6 +357,7 @@ internal class ManagedDownloadTreeDirectories(
                     rootEntries = rootChildren.map(ManagedDownloadStoredEntryMapper::fromFile),
                     coverEntries = entriesFor(COVER_SUBDIRECTORY),
                     lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    remoteCoverEntries = entriesFor(REMOTE_COVER_SUBDIRECTORY),
                     isComplete = isComplete
                 )
             }
@@ -402,6 +406,7 @@ internal class ManagedDownloadTreeDirectories(
                     rootEntries = rootRefresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild),
                     coverEntries = entriesFor(COVER_SUBDIRECTORY),
                     lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
+                    remoteCoverEntries = entriesFor(REMOTE_COVER_SUBDIRECTORY),
                     isComplete = isComplete
                 )
             }

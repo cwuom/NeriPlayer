@@ -1937,9 +1937,20 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
             val existingOriginalCoverUrl = currentSong.originalCoverUrl
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
-            val requestedCoverReference = customCoverUrl
+            val requestedCoverInput = customCoverUrl
                 .normalizedManualMetadataValue()
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+            val requestedCoverReference = requestedCoverInput?.let { reference ->
+                if (isLocalSong && CustomSongCoverStorage.isRemoteReference(reference)) {
+                    CustomSongCoverStorage.persistOriginalCover(
+                        context = application,
+                        song = currentSong,
+                        reference = reference
+                    ) ?: return@runSongMetadataMutation false
+                } else {
+                    reference
+                }
+            }
             val hasCustomCoverOverride = currentSong.customCoverUrl
                 ?.normalizedManualMetadataValue()
                 ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) } != null

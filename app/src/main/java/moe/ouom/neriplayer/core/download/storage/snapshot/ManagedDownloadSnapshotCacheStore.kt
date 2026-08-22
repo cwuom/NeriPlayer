@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import android.content.Context
+import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -8,6 +9,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal interface ManagedDownloadSnapshotPersistenceStore {
     suspend fun restore(
@@ -97,6 +99,10 @@ internal class ManagedDownloadSnapshotCacheStore(
         context: Context,
         expectedKey: String? = null
     ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
+        val mainLooper = Looper.getMainLooper()
+        if (mainLooper != null && Looper.myLooper() == mainLooper) {
+            return null
+        }
         val appContext = context.applicationContext
         val generation = synchronized(snapshotPersistenceLock) {
             if (snapshotClearInFlight) {
@@ -104,9 +110,20 @@ internal class ManagedDownloadSnapshotCacheStore(
             }
             snapshotGeneration
         }
-        val restored = runBlocking {
-            persistenceStoreProvider(appContext).restore(expectedKey)
-        } ?: return null
+        val roomRestored = runCatching {
+            runBlocking {
+                persistenceStoreProvider(appContext).restore(expectedKey)
+            }
+        }.getOrElse { error ->
+            NPLogger.w(
+                "ManagedDownloadStorage",
+                "读取 Room 下载索引失败，回退磁盘快照: ${error.message}"
+            )
+            null
+        }
+        val restored = roomRestored
+            ?: ManagedDownloadSnapshotDiskCache.restore(appContext, expectedKey)
+            ?: return null
         synchronized(snapshotPersistenceLock) {
             if (generation != snapshotGeneration || snapshotClearInFlight) {
                 return null

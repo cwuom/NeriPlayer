@@ -25,6 +25,7 @@ internal class ManagedDownloadMigrationProgressTracker(
     private var cleanupFilesProcessed = 0
     private var cleanupFilesTotal = 0
     private var lastEmitAtMs = 0L
+    private var lastEmittedStage: ManagedDownloadStorage.MigrationStage? = null
 
     fun startPreparing(fileName: String? = null) {
         synchronized(lock) {
@@ -39,7 +40,7 @@ internal class ManagedDownloadMigrationProgressTracker(
             stage = ManagedDownloadStorage.MigrationStage.COPYING
             currentFileName = entry.name
             activeCopyBytes.putIfAbsent(entry.reference, 0L)
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -60,7 +61,7 @@ internal class ManagedDownloadMigrationProgressTracker(
                 ?: entry.sizeBytes.coerceAtLeast(0L)
             completedCopyBytes += finishedBytes.coerceAtLeast(0L)
             copiedFiles++
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -68,7 +69,7 @@ internal class ManagedDownloadMigrationProgressTracker(
         synchronized(lock) {
             activeCopyBytes.remove(entry.reference)
             currentFileName = entry.name
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -76,7 +77,7 @@ internal class ManagedDownloadMigrationProgressTracker(
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.REWRITING_METADATA
             currentFileName = fileName
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -85,7 +86,7 @@ internal class ManagedDownloadMigrationProgressTracker(
             stage = ManagedDownloadStorage.MigrationStage.REWRITING_METADATA
             currentFileName = fileName
             metadataFilesProcessed++
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -94,7 +95,7 @@ internal class ManagedDownloadMigrationProgressTracker(
             stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP
             cleanupFilesTotal = totalEntries
             currentFileName = fileName
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -103,7 +104,7 @@ internal class ManagedDownloadMigrationProgressTracker(
             stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP
             currentFileName = fileName
             cleanupFilesProcessed++
-            emitLocked(force = true)
+            emitLocked(force = false)
         }
     }
 
@@ -117,10 +118,12 @@ internal class ManagedDownloadMigrationProgressTracker(
 
     private fun emitLocked(force: Boolean) {
         val now = System.currentTimeMillis()
-        if (!force && now - lastEmitAtMs < MIGRATION_PROGRESS_EMIT_INTERVAL_MS) {
+        val stageChanged = stage != lastEmittedStage
+        if (!force && !stageChanged && now - lastEmitAtMs < MIGRATION_PROGRESS_EMIT_INTERVAL_MS) {
             return
         }
         lastEmitAtMs = now
+        lastEmittedStage = stage
         val inFlightBytes = activeCopyBytes.values.sum()
         onProgress(
             ManagedDownloadStorage.MigrationProgress(

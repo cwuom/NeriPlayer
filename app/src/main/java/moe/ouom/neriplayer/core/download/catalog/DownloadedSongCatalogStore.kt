@@ -1,11 +1,14 @@
 package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
+import android.os.Looper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import java.io.File
+import moe.ouom.neriplayer.util.io.writeTextAtomically
 
 internal class DownloadedSongCatalogStore(
     private val cacheFileName: String,
@@ -13,16 +16,25 @@ internal class DownloadedSongCatalogStore(
     private val loggerTag: String
 ) {
     fun restore(context: Context): List<DownloadedSong>? {
-        return runCatching {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            NPLogger.d(loggerTag, "主线程跳过下载歌曲目录阻塞恢复，等待后台预热")
+            return null
+        }
+        val roomRestored = runCatching {
             runBlocking(Dispatchers.IO) {
                 roomStore(context).restore()
             }
-        }.onFailure {
-            NPLogger.w(loggerTag, "读取下载歌曲目录失败: ${it.message}")
+        }.onFailure { error ->
+            NPLogger.w(loggerTag, "读取 Room 下载歌曲目录失败，尝试旧 JSON: ${error.message}")
         }.getOrNull()
+        return roomRestored ?: restoreLegacyCatalog(context)
     }
 
     fun persist(context: Context, songs: List<DownloadedSong>): Boolean {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            NPLogger.w(loggerTag, "主线程拒绝同步写入下载歌曲目录")
+            return false
+        }
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 persistDownloadedSongCatalogWithFallback(
@@ -37,9 +49,39 @@ internal class DownloadedSongCatalogStore(
                     }
                 )
             }
-        }.onFailure {
-            NPLogger.e(loggerTag, "写入下载歌曲目录失败", it)
-        }.isSuccess
+        }.map { true }.getOrElse { error ->
+            NPLogger.e(loggerTag, "写入 Room 下载歌曲目录失败，直接写旧 JSON", error)
+            runCatching { writeLegacyCatalog(context, songs) }
+                .onFailure { fallbackError ->
+                    NPLogger.e(loggerTag, "写入旧下载歌曲目录也失败", fallbackError)
+                }
+                .isSuccess
+        }
+    }
+
+    private fun restoreLegacyCatalog(context: Context): List<DownloadedSong>? {
+        val file = File(context.applicationContext.filesDir, cacheFileName)
+        val rawPayload = runCatching {
+            file.takeIf(File::exists)?.readText(Charsets.UTF_8)
+        }.onFailure { error ->
+            NPLogger.w(loggerTag, "读取旧下载歌曲目录失败: ${error.message}")
+        }.getOrNull() ?: return null
+        if (rawPayload.isBlank()) return null
+        return runCatching {
+            deserializeDownloadedSongsCatalog(
+                raw = rawPayload,
+                expectedCacheKey = snapshotCacheKeyProvider(context)
+            )
+        }.onFailure { error ->
+            NPLogger.w(loggerTag, "解析旧下载歌曲目录失败: ${error.message}")
+        }.getOrNull()
+    }
+
+    private fun writeLegacyCatalog(context: Context, songs: List<DownloadedSong>) {
+        val rootKey = snapshotCacheKeyProvider(context)
+        File(context.applicationContext.filesDir, cacheFileName).writeTextAtomically(
+            serializeDownloadedSongsCatalog(rootKey, songs)
+        )
     }
 
     private fun roomStore(context: Context): DownloadedSongCatalogRoomStore {

@@ -30,6 +30,7 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
@@ -252,22 +253,32 @@ internal object ManagedDownloadStorage {
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        if (settings.configuredDirectoryUri.isNullOrBlank()) {
-            createDefaultRoot(appContext)
+        snapshotScope.launch {
+            val result = runCatching {
+                if (settings.configuredDirectoryUri.isNullOrBlank()) {
+                    createDefaultRoot(appContext)
+                }
+                val stagingRecovery = cleanupStagingFiles(appContext)
+                val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
+                val metadataRecovery = resolveStartupMetadataRecovery(appContext)
+                StartupRecoveryResult(
+                    cleanedCount = stagingRecovery.cleanedCount +
+                        pendingAudioRecovery.cleanedCount +
+                        metadataRecovery.cleanedCount,
+                    failedCount = stagingRecovery.failedCount +
+                        pendingAudioRecovery.failedCount +
+                        metadataRecovery.failedCount
+                )
+            }.onFailure { error ->
+                NPLogger.w(TAG, "后台初始化下载存储失败: ${error.message}")
+            }.getOrDefault(StartupRecoveryResult())
+            startupRecoveryResult = result
+            if (result.hasRecoveredEntries) {
+                _startupRecoveryResults.tryEmit(result)
+            }
+            // 进程重启只清空内存索引, 保留持久化缓存供首屏预览和重建回退
+            scheduleSnapshotWarmup(appContext)
         }
-        val stagingRecovery = cleanupStagingFiles(appContext)
-        val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
-        val metadataRecovery = resolveStartupMetadataRecovery(appContext)
-        startupRecoveryResult = StartupRecoveryResult(
-            cleanedCount = stagingRecovery.cleanedCount +
-                pendingAudioRecovery.cleanedCount +
-                metadataRecovery.cleanedCount,
-            failedCount = stagingRecovery.failedCount +
-                pendingAudioRecovery.failedCount +
-                metadataRecovery.failedCount
-        )
-        invalidateSnapshotCache()
-        scheduleSnapshotWarmup(appContext)
     }
 
     internal fun scheduleLyricsRefresh(context: Context) {
@@ -1504,10 +1515,19 @@ internal object ManagedDownloadStorage {
             }
             val root = resolveRootBlocking(context)
             val coverRefresh = if (refreshCovers) {
-                treeDirectories.refreshSubdirectoryEntries(
+                val standardCovers = treeDirectories.refreshSubdirectoryEntries(
                     context = context,
                     root = root,
                     subdirectory = COVER_SUBDIRECTORY
+                )
+                val remoteCovers = treeDirectories.refreshSubdirectoryEntries(
+                    context = context,
+                    root = root,
+                    subdirectory = REMOTE_COVER_SUBDIRECTORY
+                )
+                ManagedDownloadTreeDirectories.SubdirectoryEntriesRefresh(
+                    entries = standardCovers.entries + remoteCovers.entries,
+                    isComplete = standardCovers.isComplete && remoteCovers.isComplete
                 )
             } else {
                 ManagedDownloadTreeDirectories.SubdirectoryEntriesRefresh(
@@ -1666,6 +1686,7 @@ internal object ManagedDownloadStorage {
             )
         }
         val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
+            .plus(listSubdirectoryEntries(context, root, REMOTE_COVER_SUBDIRECTORY))
         val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
@@ -2322,6 +2343,24 @@ internal object ManagedDownloadStorage {
             bytes = bytes,
             mimeType = mimeTypeFromName(fileName, mimeType)
         )
+    }
+
+    suspend fun persistRemoteCoverBytes(
+        context: Context,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String?
+    ): String? = withContext(Dispatchers.IO) {
+        if (bytes.isEmpty()) {
+            return@withContext null
+        }
+        writeSubdirectoryBytesBlocking(
+            context = context,
+            subdirectory = REMOTE_COVER_SUBDIRECTORY,
+            displayName = fileName,
+            bytes = bytes,
+            mimeType = mimeTypeFromName(fileName, mimeType)
+        )?.reference
     }
 
     suspend fun saveLyricText(
@@ -3678,6 +3717,7 @@ internal object ManagedDownloadStorage {
         val rootEntries = refresh.rootEntries.filterNot(StoredEntry::isDirectory)
         val metadataEntries = rootEntries.filter { ManagedDownloadTreeNaming.isMetadataName(it.name) }
         val coverEntries = refresh.coverEntries
+        val remoteCoverEntries = refresh.remoteCoverEntries
         val lyricEntries = refresh.lyricEntries
         val metadataEntriesByAudioName = metadataEntries
             .mapNotNull { entry ->
@@ -3704,7 +3744,8 @@ internal object ManagedDownloadStorage {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             parsedMetadataByAudioName = parsedMetadataByAudioName,
-            allowMetadataLessAudio = allowMetadataLessAudio
+            allowMetadataLessAudio = allowMetadataLessAudio,
+            remoteCoverEntries = remoteCoverEntries
         )
     }
 
@@ -3855,6 +3896,7 @@ internal object ManagedDownloadStorage {
                     ManagedDownloadParsedMetadataEntry(entry, metadata)
                 }
             val managedSidecarReferences = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
+                .plus(listSubdirectoryEntries(context, root, REMOTE_COVER_SUBDIRECTORY))
                 .plus(listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY))
                 .mapTo(linkedSetOf(), StoredEntry::reference)
             val referencesToDelete = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
@@ -4079,6 +4121,7 @@ internal object ManagedDownloadStorage {
             rootEntries = refresh.rootEntries,
             coverEntries = refresh.coverEntries,
             lyricEntries = refresh.lyricEntries,
+            remoteCoverEntries = refresh.remoteCoverEntries,
             readText = { entry -> readTextInternal(context, entry.reference) },
             parseMetadata = ::parseDownloadedAudioMetadataJson
         )
@@ -4139,7 +4182,7 @@ internal object ManagedDownloadStorage {
     ) {
         entry ?: return
         val bucket = when (subdirectory) {
-            COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
+            COVER_SUBDIRECTORY, REMOTE_COVER_SUBDIRECTORY -> SnapshotEntryBucket.COVER
             LYRIC_SUBDIRECTORY -> SnapshotEntryBucket.LYRIC
             else -> null
         }
@@ -4250,18 +4293,7 @@ internal object ManagedDownloadStorage {
             ?.takeIf(File::exists)
             ?.setLastModified(lastModifiedMs)
             ?.let { return }
-        entry.reference.toUri().let { uri ->
-            runCatching {
-                context.contentResolver.update(
-                    uri,
-                    android.content.ContentValues().apply {
-                        put(DocumentsContract.Document.COLUMN_LAST_MODIFIED, lastModifiedMs)
-                    },
-                    null,
-                    null
-                )
-            }
-        }
+        // saf providers own the physical timestamp; preserve source time in metadata
     }
 
     private fun migrationMimeTypeFor(entry: ManagedMigrationEntry): String {

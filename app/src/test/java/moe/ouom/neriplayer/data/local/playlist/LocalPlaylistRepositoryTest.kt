@@ -1316,6 +1316,40 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned local song gets current library membership time`() = runTest {
+        val sourceSong = localSong(index = 703, name = "old source").copy(
+            addedAt = 1L
+        )
+        val context = mockContext()
+        val repository = LocalPlaylistRepository.createForTest(
+            context = context,
+            file = File(tempFolder.root, "local_files_membership_time.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        assertEquals(
+            1,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(sourceSong))
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+            .songs
+            .single()
+        assertTrue(stored.addedAt > 1L)
+    }
+
+    @Test
     fun `restored playlist id is committed before external sync is scheduled`() = runTest {
         val syncStore = RecordingSyncMutationStore()
         var autoSyncTriggerCount = 0

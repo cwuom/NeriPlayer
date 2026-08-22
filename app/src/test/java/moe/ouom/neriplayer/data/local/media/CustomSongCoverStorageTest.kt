@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.ContentResolver
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.MediaType.Companion.toMediaType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -21,16 +26,55 @@ class CustomSongCoverStorageTest {
     val tempFolder = TemporaryFolder()
 
     @Test
-    fun `remote original cover references are retained without copying`() = runBlocking {
+    fun `remote original cover references are localized and mapped`() = runBlocking {
         val reference = "HTTPS://example.com/cover.jpg"
+        val context = mock(Context::class.java)
+        `when`(context.filesDir).thenReturn(tempFolder.root)
+        var mappedLocal: String? = null
+        var mappedRemote: String? = null
+        val previousClient = CustomSongCoverStorage.remoteCoverHttpClientProvider
+        val previousValidator = CustomSongCoverStorage.remoteCoverImageValidator
+        val previousSink = CustomSongCoverStorage.remoteCoverMappingSink
+        CustomSongCoverStorage.remoteCoverHttpClientProvider = {
+            OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    Response.Builder()
+                        .request(chain.request())
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .header("Content-Type", "image/png")
+                        .body(byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()))
+                        .build()
+                }
+                .build()
+        }
+        CustomSongCoverStorage.remoteCoverImageValidator = { true }
+        CustomSongCoverStorage.remoteCoverMappingSink = { local, remote ->
+            mappedLocal = local
+            mappedRemote = remote
+        }
+        try {
+            val persisted = CustomSongCoverStorage.persistOriginalCover(
+                context = context,
+                song = testSong(),
+                reference = reference
+            )
 
-        val persisted = CustomSongCoverStorage.persistOriginalCover(
-            context = mock(Context::class.java),
-            song = testSong(),
-            reference = reference
-        )
-
-        assertEquals(reference, persisted)
+            assertNotNull(persisted)
+            assertTrue(persisted?.startsWith("file:") == true)
+            assertTrue(persisted?.contains("RemoteCovers") == true)
+            assertEquals(persisted, mappedLocal)
+            assertEquals(reference, mappedRemote)
+            assertEquals(
+                byteArrayOf(1, 2, 3).toList(),
+                File(tempFolder.root, "RemoteCovers").listFiles()?.single()?.readBytes()?.toList()
+            )
+        } finally {
+            CustomSongCoverStorage.remoteCoverHttpClientProvider = previousClient
+            CustomSongCoverStorage.remoteCoverImageValidator = previousValidator
+            CustomSongCoverStorage.remoteCoverMappingSink = previousSink
+        }
     }
 
     @Test

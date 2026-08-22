@@ -37,18 +37,44 @@ class ManagedDownloadMigrationWorker(
         coroutineScope {
             setForeground(createForegroundInfo())
             val progressJob = launch {
+                var workProgressState = MigrationProgressThrottleState()
+                var notificationProgressState = MigrationProgressThrottleState()
                 ManagedDownloadStorage.migrationProgressFlow.collectLatest { progress ->
                     progress ?: return@collectLatest
-                    setProgress(
-                        workDataOf(
-                            KEY_PROGRESS_STAGE to progress.stage.name,
-                            KEY_PROGRESS_FRACTION to progress.fraction,
-                            KEY_PROGRESS_PROCESSED_FILES to progress.processedFiles,
-                            KEY_PROGRESS_TOTAL_FILES to progress.totalFiles,
-                            KEY_PROGRESS_CURRENT_FILE to (progress.currentFileName ?: "")
+                    val nowMs = System.currentTimeMillis()
+                    if (
+                        shouldPublishMigrationProgress(
+                            progress = progress,
+                            nowMs = nowMs,
+                            state = workProgressState,
+                            minIntervalMs = WORK_PROGRESS_MIN_INTERVAL_MS,
+                            percentDelta = WORK_PROGRESS_PERCENT_DELTA
                         )
-                    )
-                    setForeground(createForegroundInfo(progress))
+                    ) {
+                        setProgress(
+                            workDataOf(
+                                KEY_PROGRESS_STAGE to progress.stage.name,
+                                KEY_PROGRESS_FRACTION to progress.fraction,
+                                KEY_PROGRESS_PROCESSED_FILES to progress.processedFiles,
+                                KEY_PROGRESS_TOTAL_FILES to progress.totalFiles,
+                                KEY_PROGRESS_CURRENT_FILE to (progress.currentFileName ?: "")
+                            )
+                        )
+                        workProgressState = updateMigrationProgressThrottleState(progress, nowMs)
+                    }
+                    if (
+                        shouldPublishMigrationProgress(
+                            progress = progress,
+                            nowMs = nowMs,
+                            state = notificationProgressState,
+                            minIntervalMs = NOTIFICATION_MIN_INTERVAL_MS,
+                            percentDelta = NOTIFICATION_PERCENT_DELTA
+                        )
+                    ) {
+                        setForeground(createForegroundInfo(progress))
+                        notificationProgressState =
+                            updateMigrationProgressThrottleState(progress, nowMs)
+                    }
                 }
             }
             try {
@@ -186,6 +212,10 @@ class ManagedDownloadMigrationWorker(
         private const val NOTIFICATION_CHANNEL_ID = "managed_download_migration"
         private const val NOTIFICATION_ID = 1004
         private const val MAX_RETRY_ATTEMPTS = 2
+        private const val WORK_PROGRESS_MIN_INTERVAL_MS = 750L
+        private const val WORK_PROGRESS_PERCENT_DELTA = 1
+        private const val NOTIFICATION_MIN_INTERVAL_MS = 1_000L
+        private const val NOTIFICATION_PERCENT_DELTA = 1
 
         suspend fun enqueueOrGetActiveWorkId(
             context: Context,

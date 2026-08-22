@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage
 
 internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val COVER_SUBDIRECTORY = "Covers"
+internal const val REMOTE_COVER_SUBDIRECTORY = "RemoteCovers"
 internal const val LYRIC_SUBDIRECTORY = "Lyrics"
 internal const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
 internal const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"
@@ -21,7 +22,7 @@ internal const val TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS = 1_500L
 internal const val TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS = 2_000L
 internal const val TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
 internal const val FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS = 60_000L
-internal const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 80L
+internal const val MIGRATION_PROGRESS_EMIT_INTERVAL_MS = 150L
 @Suppress("SpellCheckingInspection")
 internal const val METADATA_SUFFIX = ".npmeta.json"
 internal const val MIGRATION_COPY_PARALLELISM = 8
@@ -34,7 +35,7 @@ internal const val MIGRATION_IO_MAX_ATTEMPTS = 3
 internal const val MIGRATION_IO_RETRY_DELAY_MS = 150L
 internal const val SAF_DELETE_MAX_ATTEMPTS = 3
 internal const val SAF_DELETE_RETRY_DELAY_MS = 80L
-internal const val SAF_REFERENCE_DELETE_PARALLELISM = 24
+internal const val SAF_REFERENCE_DELETE_PARALLELISM = 2
 internal const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
 internal const val SAF_COMMITTED_SIZE_TOLERANCE_BYTES = 1L
 

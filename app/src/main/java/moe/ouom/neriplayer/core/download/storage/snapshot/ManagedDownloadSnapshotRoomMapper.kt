@@ -9,6 +9,7 @@ internal object ManagedDownloadSnapshotRoomMapper {
     const val BUCKET_METADATA = "metadata"
     const val BUCKET_COVER = "cover"
     const val BUCKET_LYRIC = "lyric"
+    val BUCKETS = listOf(BUCKET_AUDIO, BUCKET_METADATA, BUCKET_COVER, BUCKET_LYRIC)
 
     fun toEntryEntities(
         rootKey: String,

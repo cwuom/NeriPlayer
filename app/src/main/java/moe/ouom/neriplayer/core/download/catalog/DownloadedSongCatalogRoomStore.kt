@@ -68,12 +68,17 @@ internal class DownloadedSongCatalogRoomStore(
         songs: List<DownloadedSong>
     ) {
         val dao = database.downloadedSongCatalogDao()
-        dao.clearSongs()
-        dao.upsertSongs(
-            songs
-                .distinctBy(::catalogRowKey)
-                .mapIndexed { index, song -> song.toEntity(rootKey, index) }
-        )
+        val entities = songs
+            .distinctBy(::catalogRowKey)
+            .mapIndexed { index, song -> song.toEntity(rootKey, index) }
+        val nextKeys = entities.mapTo(HashSet(entities.size), DownloadedSongCatalogEntity::catalogKey)
+        val staleKeys = dao.getCatalogKeys(rootKey).filterNot(nextKeys::contains)
+        if (staleKeys.isNotEmpty()) {
+            dao.deleteSongs(rootKey, staleKeys)
+        }
+        if (entities.isNotEmpty()) {
+            dao.upsertSongs(entities)
+        }
     }
 
     private suspend fun isRoomPrimary(): Boolean {

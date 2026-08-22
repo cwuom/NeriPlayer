@@ -21,25 +21,40 @@ package moe.ouom.neriplayer.data.local.media
  */
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.util.io.readBytesLimited
+import okhttp3.Request
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
 import java.net.URLConnection
 import java.util.Locale
 import java.util.UUID
+import okhttp3.OkHttpClient
 
 object CustomSongCoverStorage {
     private const val DIRECTORY_NAME = "custom_song_covers"
     private const val ORIGINAL_DIRECTORY_NAME = "original_song_covers"
-    private const val MAX_COVER_BYTES = 8L * 1024L * 1024L
+    private const val REMOTE_DIRECTORY_NAME = "RemoteCovers"
+    private const val MAX_COVER_BYTES = 20L * 1024L * 1024L
+
+    internal var remoteCoverHttpClientProvider: () -> OkHttpClient = {
+        AppContainer.sharedOkHttpClient
+    }
+    internal var remoteCoverImageValidator: (ByteArray) -> Boolean = { bytes ->
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size) != null
+    }
+    internal var remoteCoverMappingSink: ((String, String) -> Unit)? = null
 
     suspend fun importFromUri(
         context: Context,
@@ -86,7 +101,20 @@ object CustomSongCoverStorage {
             ?.takeIf { it.isNotBlank() }
             ?: return@withContext null
         if (isRemoteReference(normalizedReference)) {
-            return@withContext normalizedReference
+            return@withContext persistRemoteCover(
+                context = context,
+                sourceUrl = normalizedReference
+            )?.also { localReference ->
+                val mappingSink = remoteCoverMappingSink
+                if (mappingSink != null) {
+                    mappingSink(localReference, normalizedReference)
+                } else {
+                    CoverUrlMapper.getInstance(context).saveCoverMapping(
+                        localUrl = localReference,
+                        networkUrl = normalizedReference
+                    )
+                }
+            }
         }
 
         val sourceUri = runCatching { normalizedReference.toUri() }.getOrNull()
@@ -208,6 +236,16 @@ object CustomSongCoverStorage {
         return "${sha256(song.stableKey())}.$normalizedExtension"
     }
 
+    internal fun remoteCoverFileName(contentHash: String, extension: String): String {
+        val normalizedExtension = extension
+            .trim()
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .ifBlank { "jpg" }
+        return "$contentHash.$normalizedExtension"
+    }
+
     internal fun isRemoteReference(reference: String): Boolean {
         return reference.startsWith("http://", ignoreCase = true) ||
             reference.startsWith("https://", ignoreCase = true)
@@ -250,6 +288,102 @@ object CustomSongCoverStorage {
                 }
                 ?.maxByOrNull(File::lastModified)
         }.getOrNull()
+    }
+
+    private suspend fun persistRemoteCover(
+        context: Context,
+        sourceUrl: String
+    ): String? {
+        val request = runCatching {
+            Request.Builder()
+                .url(sourceUrl)
+                .header("Accept", "image/*")
+                .build()
+        }.getOrNull() ?: return null
+        val bytes = runCatching {
+            remoteCoverHttpClientProvider().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val contentType = response.header("Content-Type")
+                    ?.substringBefore(';')
+                    ?.trim()
+                    ?.lowercase(Locale.ROOT)
+                if (contentType != null && !contentType.startsWith("image/")) {
+                    return@use null
+                }
+                val body = response.body
+                val contentLength = body.contentLength()
+                if (contentLength > MAX_COVER_BYTES) return@use null
+                body.byteStream().use { input ->
+                    input.readBytesLimited(MAX_COVER_BYTES)
+                }
+            }
+        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return null
+        if (!remoteCoverImageValidator(bytes)) {
+            return null
+        }
+
+        val contentHash = sha256(bytes)
+        val extension = contentTypeExtension(sourceUrl, request.url.toString())
+        val managedFileName = remoteCoverFileName(contentHash, extension)
+        if (!ManagedDownloadStorage.configuredDirectoryUri().isNullOrBlank()) {
+            runCatching {
+                ManagedDownloadStorage.persistRemoteCoverBytes(
+                    context = context,
+                    bytes = bytes,
+                    fileName = managedFileName,
+                    mimeType = "image/$extension"
+                )
+            }.getOrNull()?.let { return it }
+        }
+
+        val directory = File(context.filesDir, REMOTE_DIRECTORY_NAME)
+        if (!directory.exists() && !directory.mkdirs()) return null
+        val target = File(directory, remoteCoverFileName(contentHash, extension))
+        if (target.isFile && target.length() == bytes.size.toLong()) {
+            return target.toURI().toString()
+        }
+        val existing = directory.listFiles()
+            ?.firstOrNull { file ->
+                file.isFile && file.name.substringBeforeLast('.') == contentHash
+            }
+        if (existing != null && existing.length() > 0L) {
+            return existing.toURI().toString()
+        }
+
+        val temporary = File(directory, ".${target.name}.${UUID.randomUUID()}.tmp")
+        return try {
+            temporary.outputStream().use { output ->
+                output.write(bytes)
+                output.fd.sync()
+            }
+            if (!temporary.renameTo(target) && !target.isFile) {
+                null
+            } else {
+                target.takeIf { file -> file.isFile && file.length() > 0L }
+                    ?.toURI()
+                    ?.toString()
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
+    }
+
+    private fun contentTypeExtension(sourceUrl: String, normalizedUrl: String): String {
+        return normalizedUrl.substringAfterLast('.', "")
+            .substringBefore('?')
+            .lowercase(Locale.ROOT)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+            .takeIf { it.isNotBlank() }
+            ?: sourceUrl.substringAfterLast('.', "")
+                .substringBefore('?')
+                .lowercase(Locale.ROOT)
+                .filter { it.isLetterOrDigit() }
+                .take(8)
+                .takeIf { it.isNotBlank() }
+                ?: "jpg"
     }
 
     private fun resolveExtension(
@@ -305,8 +439,12 @@ object CustomSongCoverStorage {
     }
 
     private fun sha256(value: String): String {
+        return sha256(value.toByteArray(Charsets.UTF_8))
+    }
+
+    private fun sha256(value: ByteArray): String {
         return MessageDigest.getInstance("SHA-256")
-            .digest(value.toByteArray(Charsets.UTF_8))
+            .digest(value)
             .joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 

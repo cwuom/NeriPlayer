@@ -8,6 +8,7 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
         rootEntries: List<ManagedDownloadStorage.StoredEntry>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
+        remoteCoverEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
         readText: ((ManagedDownloadStorage.StoredEntry) -> String?)? = null,
         parseMetadata: ((String) -> ManagedDownloadStorage.DownloadedAudioMetadata?)? = null
     ): ManagedMigrationTargetIndex {
@@ -16,6 +17,8 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
         val coverEntriesByName = coverEntries
             .associateBy(ManagedDownloadStorage.StoredEntry::name)
         val lyricEntriesByName = lyricEntries
+            .associateBy(ManagedDownloadStorage.StoredEntry::name)
+        val remoteCoverEntriesByName = remoteCoverEntries
             .associateBy(ManagedDownloadStorage.StoredEntry::name)
         val metadataByAudioName = if (readText != null && parseMetadata != null) {
             rootEntriesByName.values
@@ -36,6 +39,7 @@ internal object ManagedDownloadMigrationTargetIndexBuilder {
             rootEntriesByName = rootEntriesByName,
             coverEntriesByName = coverEntriesByName,
             lyricEntriesByName = lyricEntriesByName,
+            remoteCoverEntriesByName = remoteCoverEntriesByName,
             metadataByAudioName = metadataByAudioName
         )
     }

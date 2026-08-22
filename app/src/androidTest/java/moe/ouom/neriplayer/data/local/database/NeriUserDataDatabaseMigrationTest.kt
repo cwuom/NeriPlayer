@@ -501,6 +501,44 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromVersion25ToVersion26CreatesManagedDownloadArtifactTable() {
+        helper.createDatabase(TEST_DATABASE_VERSION_25_NAME, 25).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_25_NAME,
+            26,
+            true,
+            NeriUserDataDatabase.MIGRATION_25_26
+        )
+
+        try {
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'table' AND name = 'managed_download_artifact'"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('managed_download_artifact') " +
+                        "WHERE name = 'stable_key'"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_index_list('managed_download_artifact') " +
+                        "WHERE name = 'index_managed_download_artifact_artifact_id'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertVersion1LocalPlaylistFixture() {
         val songPayload = sqlText(
             """
@@ -607,5 +645,6 @@ class NeriUserDataDatabaseMigrationTest {
         const val TEST_DATABASE_VERSION_21_NAME = "neri-user-data-migration-v21-test"
         const val TEST_DATABASE_VERSION_22_NAME = "neri-user-data-migration-v22-test"
         const val TEST_DATABASE_VERSION_23_NAME = "neri-user-data-migration-v23-test"
+        const val TEST_DATABASE_VERSION_25_NAME = "neri-user-data-migration-v25-test"
     }
 }

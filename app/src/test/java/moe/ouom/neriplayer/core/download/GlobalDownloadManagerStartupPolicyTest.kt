@@ -132,8 +132,8 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `startup scan is skipped once lightweight catalog is ready`() {
-        assertEquals(false, shouldRunInitialDownloadScan(catalogReady = true))
+    fun `startup reconciliation still runs when lightweight catalog is ready`() {
+        assertEquals(true, shouldRunInitialDownloadScan(catalogReady = true))
         assertEquals(true, shouldRunInitialDownloadScan(catalogReady = false))
         assertEquals(
             true,

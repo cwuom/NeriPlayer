@@ -916,6 +916,40 @@ fun SettingsScreen(
             return
         }
 
+        val shouldReattachExistingDirectory = withContext(Dispatchers.IO) {
+            val sourceHasManagedEntries = runCatching {
+                ManagedDownloadStorage.hasMigratableDownloads(context, previousUri)
+            }.getOrNull()
+            val targetHasManagedEntries = runCatching {
+                ManagedDownloadStorage.hasMigratableDownloads(context, targetUri)
+            }.getOrNull()
+            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectory(
+                fromDirectoryUri = previousUri,
+                toDirectoryUri = targetUri,
+                sourceHasManagedEntries = sourceHasManagedEntries,
+                targetHasManagedEntries = targetHasManagedEntries
+            )
+        }
+        if (shouldReattachExistingDirectory) {
+            runCatching {
+                applyDownloadDirectoryChange(
+                    targetUri = targetUri,
+                    targetSummary = targetSummary,
+                    previousUri = previousUri,
+                    shouldReleasePreviousPermission = false
+                )
+            }.onFailure {
+                if (releaseTargetPermissionOnCancel) {
+                    ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+                }
+                inlineMsg = composeResources.getString(
+                    R.string.settings_download_directory_pick_failed,
+                    it.message ?: ""
+                )
+            }
+            return
+        }
+
         if (ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(previousUri, targetUri)) {
             pendingDownloadDirectoryChange = PendingDownloadDirectoryChange(
                 previousUri = previousUri,

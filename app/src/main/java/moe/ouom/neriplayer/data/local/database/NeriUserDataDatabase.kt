@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadSnapshotDao
+import moe.ouom.neriplayer.data.local.database.dao.ManagedDownloadArtifactDao
 import moe.ouom.neriplayer.data.local.database.dao.PlatformPlaylistCacheDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
@@ -53,6 +54,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
+import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
@@ -90,11 +92,12 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         CoverUrlMappingEntity::class,
         DownloadSnapshotEntryEntity::class,
         DownloadSnapshotMetadataEntity::class,
+        ManagedDownloadArtifactEntity::class,
         PlatformPlaylistCacheEntity::class,
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -125,6 +128,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
     abstract fun coverUrlMappingDao(): CoverUrlMappingDao
 
     abstract fun downloadSnapshotDao(): DownloadSnapshotDao
+
+    abstract fun managedDownloadArtifactDao(): ManagedDownloadArtifactDao
 
     abstract fun platformPlaylistCacheDao(): PlatformPlaylistCacheDao
 
@@ -172,7 +177,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_21_22,
                 MIGRATION_22_23,
                 MIGRATION_23_24,
-                MIGRATION_24_25
+                MIGRATION_24_25,
+                MIGRATION_25_26
             ).build()
         }
 
@@ -1229,6 +1235,50 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     db = db,
                     tableName = "download_snapshot_metadata",
                     columnName = "created_at_source"
+                )
+            }
+        }
+
+        val MIGRATION_25_26: Migration = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `managed_download_artifact` (
+                        `root_key` TEXT NOT NULL,
+                        `stable_key` TEXT NOT NULL,
+                        `artifact_id` TEXT NOT NULL,
+                        `state` TEXT NOT NULL,
+                        `lease_id` TEXT,
+                        `audio_reference` TEXT,
+                        `audio_name` TEXT,
+                        `file_size` INTEGER,
+                        `content_hash` TEXT,
+                        `library_added_at_ms` INTEGER,
+                        `source_created_at_ms` INTEGER,
+                        `source_modified_at_ms` INTEGER,
+                        `downloaded_at_ms` INTEGER,
+                        `migrated_at_ms` INTEGER,
+                        `finalized_at_ms` INTEGER,
+                        `updated_at_ms` INTEGER NOT NULL,
+                        `needs_reconcile` INTEGER NOT NULL,
+                        `last_error_code` TEXT,
+                        PRIMARY KEY(`root_key`, `stable_key`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS
+                    `index_managed_download_artifact_root_state`
+                    ON `managed_download_artifact` (`root_key`, `state`)
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS
+                    `index_managed_download_artifact_artifact_id`
+                    ON `managed_download_artifact` (`artifact_id`)
+                    """.trimIndent()
                 )
             }
         }

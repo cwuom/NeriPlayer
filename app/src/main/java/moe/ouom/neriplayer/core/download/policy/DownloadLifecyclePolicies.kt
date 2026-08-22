@@ -42,7 +42,9 @@ internal fun shouldRunInitialDownloadScan(
     catalogReady: Boolean,
     hasRecoveredEntries: Boolean = false
 ): Boolean {
-    return hasRecoveredEntries || !catalogReady
+    // catalog 和 Room snapshot 都只是可重建缓存, 启动后仍需让存储目录做一次异步对账
+    // 这样重装应用后重新授权原 SAF 目录时, 文件和 npmeta 可以重新建立内存索引
+    return true
 }
 
 /**

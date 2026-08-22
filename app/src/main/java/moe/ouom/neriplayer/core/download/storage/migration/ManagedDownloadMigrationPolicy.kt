@@ -21,6 +21,18 @@ internal object ManagedDownloadMigrationPolicy {
         )
     }
 
+    fun shouldReattachExistingManagedDirectory(
+        fromDirectoryUri: String?,
+        toDirectoryUri: String?,
+        sourceHasManagedEntries: Boolean?,
+        targetHasManagedEntries: Boolean?
+    ): Boolean {
+        return fromDirectoryUri.isNullOrBlank() &&
+            !toDirectoryUri.isNullOrBlank() &&
+            sourceHasManagedEntries != true &&
+            targetHasManagedEntries == true
+    }
+
     fun mimeTypeFor(entry: ManagedMigrationEntryRef): String {
         return if (entry.subdirectory == null && ManagedDownloadTreeNaming.isMetadataName(entry.entry.name)) {
             "application/json"

@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.REMOTE_COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
@@ -15,7 +16,8 @@ internal object ManagedDownloadMigrationEntryCollector {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
-        allowMetadataLessAudio: Boolean
+        allowMetadataLessAudio: Boolean,
+        remoteCoverEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList()
     ): List<ManagedMigrationEntry> {
         val audioEntries = rootEntries.filter { entry -> entry.extension in audioExtensions }
         val metadataEntries = rootEntries.filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
@@ -34,7 +36,8 @@ internal object ManagedDownloadMigrationEntryCollector {
                     )
                 )!!.second
             }
-        val coverEntryNames = coverEntries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        val allCoverEntries = coverEntries + remoteCoverEntries
+        val coverEntryNames = allCoverEntries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
         val lyricEntryNames = lyricEntries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
         val managedAudioEntries = audioEntries.filter { entry ->
             ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
@@ -52,7 +55,7 @@ internal object ManagedDownloadMigrationEntryCollector {
         val managedCoverNames = managedCoverNames(
             managedAudioEntries = managedAudioEntries,
             metadataAudioNames = metadataEntriesByAudioName.keys,
-            coverEntries = coverEntries,
+            coverEntries = allCoverEntries,
             parsedMetadataByAudioName = parsedMetadataByAudioName
         )
         val managedLyricNames = managedLyricNames(
@@ -78,6 +81,11 @@ internal object ManagedDownloadMigrationEntryCollector {
             coverEntries.forEach { entry ->
                 if (entry.name in managedCoverNames) {
                     add(ManagedMigrationEntry(subdirectory = COVER_SUBDIRECTORY, entry = entry))
+                }
+            }
+            remoteCoverEntries.forEach { entry ->
+                if (entry.name in managedCoverNames) {
+                    add(ManagedMigrationEntry(subdirectory = REMOTE_COVER_SUBDIRECTORY, entry = entry))
                 }
             }
             lyricEntries.forEach { entry ->

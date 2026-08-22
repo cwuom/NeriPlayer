@@ -1039,12 +1039,8 @@ class LocalPlaylistRepository private constructor(
         }
         return songs.mapIndexed { index, song ->
             song.copy(
-                addedAt = if (preserveScannedSourceAddedAt) {
-                    song.addedAt.takeIf { it > 0L }
-                        ?: (addedAt - index).coerceAtLeast(1L)
-                } else {
-                    (addedAt - index).coerceAtLeast(1L)
-                },
+                // membership time records when NeriPlayer imported the song
+                addedAt = (addedAt - index).coerceAtLeast(1L),
                 syncMembershipTokens = listOf(membershipTokens[index])
             )
         }

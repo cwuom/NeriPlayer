@@ -848,6 +848,34 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `fresh install reattaches a populated managed SAF directory instead of migrating empty private root`() {
+        assertTrue(
+            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectory(
+                fromDirectoryUri = null,
+                toDirectoryUri = "content://provider/tree/downloads",
+                sourceHasManagedEntries = false,
+                targetHasManagedEntries = true
+            )
+        )
+        assertTrue(
+            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectory(
+                fromDirectoryUri = null,
+                toDirectoryUri = "content://provider/tree/downloads",
+                sourceHasManagedEntries = null,
+                targetHasManagedEntries = true
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectory(
+                fromDirectoryUri = "content://provider/tree/private",
+                toDirectoryUri = "content://provider/tree/downloads",
+                sourceHasManagedEntries = false,
+                targetHasManagedEntries = true
+            )
+        )
+    }
+
+    @Test
     fun `migration scan retry classification keeps unavailable source permanent`() {
         assertFalse(
             ManagedDownloadMigrationException.permanent("source unavailable").retryable

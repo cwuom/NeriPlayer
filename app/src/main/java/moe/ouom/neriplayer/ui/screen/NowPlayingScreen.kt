@@ -4984,6 +4984,15 @@ internal fun shouldApplyResolvedEditSongCover(
         !resolvedDisplayCoverUrl.isNullOrBlank()
 }
 
+internal data class EditSongBaseline(
+    val title: String,
+    val artist: String,
+    val coverUrl: String,
+    val lyric: String?,
+    val translatedLyric: String?,
+    val romanizedLyric: String?
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -5025,6 +5034,21 @@ fun EditSongInfoSheet(
     }
     var songName by remember { mutableStateOf(actualSong.customName ?: actualSong.name) }
     var artistName by remember { mutableStateOf(actualSong.customArtist ?: actualSong.artist) }
+    var editBaseline by remember(actualSong.stableKey()) {
+        mutableStateOf(
+            EditSongBaseline(
+                title = actualSong.customName ?: actualSong.name,
+                artist = actualSong.customArtist ?: actualSong.artist,
+                coverUrl = resolveEditSongInitialCoverUrl(
+                    actualSong,
+                    resolvedDisplayCoverUrl
+                ),
+                lyric = displayedLyrics.toEditableLyricsText(),
+                translatedLyric = displayedTranslatedLyrics.toEditableLyricsText(),
+                romanizedLyric = displayedRomanizedLyrics.toEditableLyricsText()
+            )
+        )
+    }
     var showSearchResults by remember { mutableStateOf(false) }
     var selectedSongForFill by remember { mutableStateOf<SongSearchInfo?>(null) }
     var lyricsEditorSeed by remember { mutableStateOf<LyricsEditorSeed?>(null) }
@@ -5111,6 +5135,31 @@ fun EditSongInfoSheet(
     }
 
     LaunchedEffect(actualSong.stableKey(), resolvedDisplayCoverUrl) {
+        if (
+            !userHasEdited &&
+            (editBaseline.coverUrl.isBlank() ||
+                CustomSongCoverStorage.isRemoteReference(editBaseline.coverUrl))
+        ) {
+            val initialCover = resolveEditSongInitialCoverUrl(
+                actualSong,
+                resolvedDisplayCoverUrl
+            )
+            val localizedCover = if (
+                CustomSongCoverStorage.isRemoteReference(initialCover)
+            ) {
+                CustomSongCoverStorage.persistOriginalCover(
+                    context = context,
+                    song = actualSong,
+                    reference = initialCover
+                ) ?: initialCover
+            } else {
+                initialCover
+            }
+            if (!userHasEdited && localizedCover.isNotBlank()) {
+                editBaseline = editBaseline.copy(coverUrl = localizedCover)
+                coverUrl = localizedCover
+            }
+        }
         if (shouldApplyResolvedEditSongCover(
                 userHasEdited = userHasEdited,
                 currentCoverUrl = coverUrl,
@@ -5133,52 +5182,32 @@ fun EditSongInfoSheet(
     ) {
         val requestId = originalInfoRequestId + 1
         originalInfoRequestId = requestId
-        val requestSongKey = actualSong.stableKey()
-        viewModel.fetchOriginalInfo(context, actualSong) { success, info, _ ->
-            if (
-                originalInfoRequestId != requestId ||
-                    actualSong.stableKey() != requestSongKey
-            ) {
-                return@fetchOriginalInfo
-            }
-            if (success && info != null) {
-                if (restoreTitle) {
-                    songName = info.name
-                    shouldRestoreTitleBase = true
-                }
-                if (restoreArtist) {
-                    artistName = info.artist
-                    shouldRestoreArtistBase = true
-                }
-                if (restoreCover) {
-                    info.coverUrl?.let { restoredCover ->
-                        coverUrl = restoredCover
-                        shouldRestoreCoverBase = true
-                    }
-                }
-                if (restoreLyrics) {
-                    if (info.shouldClearLyrics) {
-                        shouldClearLyrics = true
-                        shouldRestoreLyrics = false
-                        originalLyric = null
-                        originalTranslatedLyric = null
-                        originalRomanizedLyric = null
-                    } else {
-                        shouldClearLyrics = false
-                        shouldRestoreLyrics = info.lyric != null ||
-                            info.translatedLyric != null ||
-                            info.romanizedLyric != null
-                        originalLyric = info.lyric
-                        originalTranslatedLyric = info.translatedLyric
-                        originalRomanizedLyric = info.romanizedLyric
-                    }
-                }
-                if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
-                    shouldClearMatchedMetadata = true
-                }
-                userHasEdited = true
-            }
+        if (originalInfoRequestId != requestId) return
+        if (restoreTitle) {
+            songName = editBaseline.title
+            shouldRestoreTitleBase = true
         }
+        if (restoreArtist) {
+            artistName = editBaseline.artist
+            shouldRestoreArtistBase = true
+        }
+        if (restoreCover) {
+            coverUrl = editBaseline.coverUrl
+            shouldRestoreCoverBase = true
+        }
+        if (restoreLyrics) {
+            shouldClearLyrics = false
+            shouldRestoreLyrics = editBaseline.lyric != null ||
+                editBaseline.translatedLyric != null ||
+                editBaseline.romanizedLyric != null
+            originalLyric = editBaseline.lyric
+            originalTranslatedLyric = editBaseline.translatedLyric
+            originalRomanizedLyric = editBaseline.romanizedLyric
+        }
+        if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
+            shouldClearMatchedMetadata = true
+        }
+        userHasEdited = true
     }
 
     fun saveEditedSongInfo(writeLocalMetadata: Boolean) {

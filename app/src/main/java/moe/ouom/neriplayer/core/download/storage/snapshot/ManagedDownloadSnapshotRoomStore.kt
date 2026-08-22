@@ -80,14 +80,34 @@ internal class ManagedDownloadSnapshotRoomStore(
         return runCatching {
             database.withTransaction {
                 val dao = database.downloadSnapshotDao()
-                dao.clearEntries()
-                dao.clearMetadata()
-                dao.upsertEntries(
-                    ManagedDownloadSnapshotRoomMapper.toEntryEntities(cacheKey, snapshot)
-                )
-                dao.upsertMetadata(
-                    ManagedDownloadSnapshotRoomMapper.toMetadataEntities(cacheKey, snapshot)
-                )
+                val entries = ManagedDownloadSnapshotRoomMapper.toEntryEntities(cacheKey, snapshot)
+                ManagedDownloadSnapshotRoomMapper.BUCKETS.forEach { bucket ->
+                    val bucketEntries = entries.filter { it.bucket == bucket }
+                    val nextKeys = bucketEntries.mapTo(HashSet(bucketEntries.size)) {
+                        it.entryKey
+                    }
+                    val staleKeys = dao.getEntryKeys(cacheKey, bucket)
+                        .filterNot(nextKeys::contains)
+                    if (staleKeys.isNotEmpty()) {
+                        dao.deleteEntries(cacheKey, bucket, staleKeys)
+                    }
+                    if (bucketEntries.isNotEmpty()) {
+                        dao.upsertEntries(bucketEntries)
+                    }
+                }
+
+                val metadata = ManagedDownloadSnapshotRoomMapper.toMetadataEntities(cacheKey, snapshot)
+                val nextAudioNames = metadata.mapTo(HashSet(metadata.size)) {
+                    it.audioName
+                }
+                val staleAudioNames = dao.getMetadataAudioNames(cacheKey)
+                    .filterNot(nextAudioNames::contains)
+                if (staleAudioNames.isNotEmpty()) {
+                    dao.deleteMetadata(cacheKey, staleAudioNames)
+                }
+                if (metadata.isNotEmpty()) {
+                    dao.upsertMetadata(metadata)
+                }
                 markRoomPrimary(cacheKey)
             }
             true
