@@ -79,6 +79,33 @@ class PreparedPipelineRemovalTest {
         )
     }
 
+    @Test
+    fun `download execution mutex does not use a 32 bit stable key hash`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        assertFalse(
+            "execution ownership must not use String.hashCode()",
+            source.contains("songKey.hashCode()")
+        )
+    }
+
+    @Test
+    fun `working file creation does not use the legacy 32 bit hash`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/working/" +
+                "ManagedDownloadWorkingStore.kt"
+        ).readText()
+
+        assertFalse(
+            "new staging ownership must not call the legacy hash helper",
+            source.substringAfter("fun buildWorkingFileName(")
+                .substringBefore("fun buildWorkingSongKeyHash(")
+                .contains("legacyWorkingSongKeyHash")
+        )
+    }
+
     private fun locateProjectDirectory(): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         var attempts = 0

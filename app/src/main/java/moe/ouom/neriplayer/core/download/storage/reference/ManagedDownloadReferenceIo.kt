@@ -10,6 +10,13 @@ import java.io.FileNotFoundException
 import java.net.URI
 
 internal object ManagedDownloadReferenceIo {
+    sealed interface DeleteResult {
+        data object Deleted : DeleteResult
+        data object Missing : DeleteResult
+        data object PermissionLost : DeleteResult
+        data class ProviderFailure(val error: Throwable) : DeleteResult
+    }
+
     sealed interface AccessResult {
         data object Accessible : AccessResult
         data object Missing : AccessResult
@@ -87,10 +94,15 @@ internal object ManagedDownloadReferenceIo {
         uri: Uri,
         maxAttempts: Int,
         retryDelayMs: Long
-    ): Boolean {
+    ): DeleteResult {
         repeat(maxAttempts) { attempt ->
-            if (deleteContentReferenceOnce(context, uri)) {
-                return true
+            when (val result = deleteContentReferenceOnce(context, uri)) {
+                DeleteResult.Deleted,
+                DeleteResult.Missing -> return result
+                DeleteResult.PermissionLost -> return result
+                is DeleteResult.ProviderFailure -> {
+                    if (attempt == maxAttempts - 1) return result
+                }
             }
             if (attempt < maxAttempts - 1) {
                 runCatching {
@@ -98,7 +110,33 @@ internal object ManagedDownloadReferenceIo {
                 }
             }
         }
-        return false
+        return DeleteResult.ProviderFailure(
+            IllegalStateException("content reference delete attempts exhausted")
+        )
+    }
+
+    fun deleteFileReference(file: File): DeleteResult {
+        return try {
+            when {
+                !file.exists() -> DeleteResult.Missing
+                file.deleteRecursively() -> DeleteResult.Deleted
+                else -> DeleteResult.ProviderFailure(
+                    IllegalStateException("file reference delete was not confirmed")
+                )
+            }
+        } catch (error: SecurityException) {
+            DeleteResult.PermissionLost
+        } catch (error: Throwable) {
+            DeleteResult.ProviderFailure(error)
+        }
+    }
+
+    fun deleteFileReference(path: String): DeleteResult {
+        return deleteFileReference(File(path))
+    }
+
+    fun isFileReferenceGone(path: String): Boolean {
+        return !File(path).exists()
     }
 
     fun isContentReferenceGone(context: Context, uri: Uri): Boolean {
@@ -256,42 +294,70 @@ internal object ManagedDownloadReferenceIo {
         }
     }
 
-    private fun deleteContentReferenceOnce(context: Context, uri: Uri): Boolean {
-        if (isContentReferenceGone(context, uri)) {
-            return true
+    private fun deleteContentReferenceOnce(context: Context, uri: Uri): DeleteResult {
+        when (val access = inspect(context, uri.toString())) {
+            AccessResult.Missing -> return DeleteResult.Missing
+            AccessResult.PermissionLost -> return DeleteResult.PermissionLost
+            is AccessResult.ProviderFailure -> return DeleteResult.ProviderFailure(access.error)
+            AccessResult.Accessible -> Unit
         }
         try {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
         } catch (error: SecurityException) {
-            throw error
+            return DeleteResult.PermissionLost
         } catch (error: Exception) {
             if (isMissingDocumentFailure(error)) {
-                return true
+                return DeleteResult.Missing
             }
+            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
         }
-        if (isContentReferenceGone(context, uri)) return true
+        when (val access = inspect(context, uri.toString())) {
+            AccessResult.Missing -> return DeleteResult.Deleted
+            AccessResult.PermissionLost -> return DeleteResult.PermissionLost
+            is AccessResult.ProviderFailure -> return DeleteResult.ProviderFailure(access.error)
+            AccessResult.Accessible -> Unit
+        }
 
         try {
             context.contentResolver.delete(uri, null, null)
         } catch (error: SecurityException) {
-            throw error
+            return DeleteResult.PermissionLost
         } catch (error: Exception) {
             if (isMissingDocumentFailure(error)) {
-                return true
+                return DeleteResult.Missing
             }
+            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
         }
-        if (isContentReferenceGone(context, uri)) return true
+        when (val access = inspect(context, uri.toString())) {
+            AccessResult.Missing -> return DeleteResult.Deleted
+            AccessResult.PermissionLost -> return DeleteResult.PermissionLost
+            is AccessResult.ProviderFailure -> return DeleteResult.ProviderFailure(access.error)
+            AccessResult.Accessible -> Unit
+        }
 
         try {
-            resolveDocumentFile(context, uri)?.delete() ?: false
+            if (resolveDocumentFile(context, uri)?.delete() != true) {
+                return DeleteResult.ProviderFailure(
+                    IllegalStateException("DocumentFile delete was not accepted")
+                )
+            }
         } catch (error: SecurityException) {
-            throw error
+            return DeleteResult.PermissionLost
         } catch (error: Exception) {
             if (isMissingDocumentFailure(error)) {
-                return true
+                return DeleteResult.Missing
             }
+            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
+            return DeleteResult.ProviderFailure(error)
         }
-        return isContentReferenceGone(context, uri)
+        return when (val access = inspect(context, uri.toString())) {
+            AccessResult.Missing -> DeleteResult.Deleted
+            AccessResult.PermissionLost -> DeleteResult.PermissionLost
+            is AccessResult.ProviderFailure -> DeleteResult.ProviderFailure(access.error)
+            AccessResult.Accessible -> DeleteResult.ProviderFailure(
+                IllegalStateException("content reference delete was not confirmed")
+            )
+        }
     }
 
     private fun String.toLocalFileReference(): File? {

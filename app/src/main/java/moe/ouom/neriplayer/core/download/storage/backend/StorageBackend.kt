@@ -10,6 +10,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
@@ -103,6 +104,21 @@ sealed interface StorageWriteResult {
     data class Unsupported(val operation: String) : StorageWriteResult
 }
 
+internal enum class SafWriteCommitMode {
+    AtomicRename,
+    DirectCreate,
+    Unsupported
+}
+
+internal fun chooseSafWriteCommitMode(
+    canRename: Boolean,
+    targetExists: Boolean
+): SafWriteCommitMode = when {
+    canRename -> SafWriteCommitMode.AtomicRename
+    targetExists -> SafWriteCommitMode.Unsupported
+    else -> SafWriteCommitMode.DirectCreate
+}
+
 sealed interface StorageMutationResult {
     data object Deleted : StorageMutationResult
     data object Missing : StorageMutationResult
@@ -110,6 +126,15 @@ sealed interface StorageMutationResult {
     data object PermissionLost : StorageMutationResult
     data class ProviderFailure(val error: Throwable) : StorageMutationResult
     data class Unsupported(val operation: String) : StorageMutationResult
+}
+
+sealed interface StorageRenameResult {
+    data class Renamed(val stat: StorageStat) : StorageRenameResult
+    data object Missing : StorageRenameResult
+    data object OutOfScope : StorageRenameResult
+    data object PermissionLost : StorageRenameResult
+    data class ProviderFailure(val error: Throwable) : StorageRenameResult
+    data class Unsupported(val operation: String) : StorageRenameResult
 }
 
 data class StorageCapabilities(
@@ -140,6 +165,11 @@ interface StorageBackend {
     ): StorageWriteResult
 
     suspend fun delete(reference: TrustedManagedRef): StorageMutationResult
+
+    suspend fun rename(
+        reference: TrustedManagedRef,
+        displayName: String
+    ): StorageRenameResult
 
     suspend fun capabilities(reference: StorageReference): StorageCapabilities
 }
@@ -254,6 +284,39 @@ internal class FileStorageBackend(
         else StorageMutationResult.ProviderFailure(IllegalStateException("delete failed"))
     }
 
+    override suspend fun rename(
+        reference: TrustedManagedRef,
+        displayName: String
+    ): StorageRenameResult = withContext(Dispatchers.IO) {
+        val fileReference = reference.reference as? StorageReference.FileRef
+            ?: return@withContext StorageRenameResult.Unsupported("file reference required")
+        if (displayName.isBlank() || displayName == "." || displayName == "..") {
+            return@withContext StorageRenameResult.Unsupported("valid file name required")
+        }
+        val source = resolve(fileReference)
+            ?: return@withContext StorageRenameResult.OutOfScope
+        if (!source.exists()) return@withContext StorageRenameResult.Missing
+        val target = File(source.parentFile, displayName)
+        return@withContext try {
+            if (target.exists() && target.canonicalFile != source.canonicalFile) {
+                return@withContext StorageRenameResult.ProviderFailure(
+                    IllegalStateException("rename target already exists")
+                )
+            }
+            if (!source.renameTo(target)) {
+                StorageRenameResult.ProviderFailure(
+                    IllegalStateException("file rename was not confirmed")
+                )
+            } else {
+                StorageRenameResult.Renamed(toStat(target))
+            }
+        } catch (_: SecurityException) {
+            StorageRenameResult.PermissionLost
+        } catch (error: Throwable) {
+            StorageRenameResult.ProviderFailure(error)
+        }
+    }
+
     override suspend fun capabilities(reference: StorageReference): StorageCapabilities =
         if (reference is StorageReference.FileRef && resolve(reference) != null) {
             StorageCapabilities(
@@ -291,9 +354,10 @@ internal class FileStorageBackend(
 }
 
 internal class SafStorageBackend(
-    private val context: Context
+    private val context: Context,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : StorageBackend {
-    override suspend fun list(directory: StorageReference): StorageDirectorySnapshot = withContext(Dispatchers.IO) {
+    override suspend fun list(directory: StorageReference): StorageDirectorySnapshot = withContext(ioDispatcher) {
         val safReference = directory as? StorageReference.SafRef
             ?: return@withContext StorageDirectorySnapshot(
                 emptyList(),
@@ -335,7 +399,7 @@ internal class SafStorageBackend(
         }
     }
 
-    override suspend fun stat(reference: StorageReference): StorageLookupResult<StorageStat> = withContext(Dispatchers.IO) {
+    override suspend fun stat(reference: StorageReference): StorageLookupResult<StorageStat> = withContext(ioDispatcher) {
         val safReference = reference as? StorageReference.SafRef
             ?: return@withContext StorageLookupResult.Unsupported("SAF reference required")
         when (val result = queryDocument(safReference.uri)) {
@@ -349,7 +413,7 @@ internal class SafStorageBackend(
     override suspend fun <T> read(
         reference: StorageReference,
         block: suspend (InputStream) -> T
-    ): StorageLookupResult<T> = withContext(Dispatchers.IO) {
+    ): StorageLookupResult<T> = withContext(ioDispatcher) {
         val safReference = reference as? StorageReference.SafRef
             ?: return@withContext StorageLookupResult.Unsupported("SAF reference required")
         when (val result = queryDocument(safReference.uri)) {
@@ -389,7 +453,7 @@ internal class SafStorageBackend(
     override suspend fun writeRecoverable(
         target: StorageTarget,
         writer: suspend (OutputStream) -> Unit
-    ): StorageWriteResult = withContext(Dispatchers.IO) {
+    ): StorageWriteResult = withContext(ioDispatcher) {
         val safTarget = target as? StorageTarget.SafTarget
             ?: return@withContext StorageWriteResult.Unsupported("SAF target required")
         if (safTarget.displayName.isBlank() || safTarget.displayName == "." || safTarget.displayName == "..") {
@@ -511,9 +575,61 @@ internal class SafStorageBackend(
             return@withContext StorageWriteResult.Unsupported("target directory exists")
         }
         val canRename = temporaryStat.flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong() != 0L
-        if (!canRename) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.Unsupported("provider rename")
+        when (chooseSafWriteCommitMode(canRename, existingTarget != null)) {
+            SafWriteCommitMode.Unsupported -> {
+                deleteQuietly(temporaryUri)
+                return@withContext StorageWriteResult.Unsupported("provider rename")
+            }
+            SafWriteCommitMode.DirectCreate -> {
+                var directTargetUri: Uri? = null
+                try {
+                    val finalUri = when (val createResult = createDirectSafTarget(
+                        parentUri = parentUri,
+                        mimeType = safTarget.mimeType,
+                        displayName = safTarget.displayName
+                    )) {
+                        is DirectSafCreateResult.Created -> createResult.uri
+                        DirectSafCreateResult.Unsupported -> {
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.Unsupported("provider direct create")
+                        }
+                        DirectSafCreateResult.PermissionLost -> {
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.PermissionLost
+                        }
+                        is DirectSafCreateResult.ProviderFailure -> {
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.ProviderFailure(createResult.error)
+                        }
+                    }
+                    directTargetUri = finalUri
+                    when (val copyResult = copySafDocument(
+                        sourceUri = temporaryUri,
+                        targetUri = finalUri,
+                        expectedDisplayName = safTarget.displayName
+                    )) {
+                        is DirectSafCopyResult.Copied -> {
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.Written(copyResult.stat)
+                        }
+                        DirectSafCopyResult.PermissionLost -> {
+                            deleteQuietly(finalUri)
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.PermissionLost
+                        }
+                        is DirectSafCopyResult.ProviderFailure -> {
+                            deleteQuietly(finalUri)
+                            deleteQuietly(temporaryUri)
+                            return@withContext StorageWriteResult.ProviderFailure(copyResult.error)
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    directTargetUri?.let(::deleteQuietly)
+                    deleteQuietly(temporaryUri)
+                    throw error
+                }
+            }
+            SafWriteCommitMode.AtomicRename -> Unit
         }
 
         val backupUri = existingTarget?.reference
@@ -591,7 +707,7 @@ internal class SafStorageBackend(
         }
     }
 
-    override suspend fun delete(reference: TrustedManagedRef): StorageMutationResult = withContext(Dispatchers.IO) {
+    override suspend fun delete(reference: TrustedManagedRef): StorageMutationResult = withContext(ioDispatcher) {
         val safReference = reference.reference as? StorageReference.SafRef
             ?: return@withContext StorageMutationResult.Unsupported("SAF reference required")
         when (val result = queryDocument(safReference.uri)) {
@@ -656,6 +772,67 @@ internal class SafStorageBackend(
         StorageMutationResult.ProviderFailure(IllegalStateException("provider delete was not confirmed"))
     }
 
+    override suspend fun rename(
+        reference: TrustedManagedRef,
+        displayName: String
+    ): StorageRenameResult = withContext(ioDispatcher) {
+        val safReference = reference.reference as? StorageReference.SafRef
+            ?: return@withContext StorageRenameResult.Unsupported("SAF reference required")
+        if (displayName.isBlank() || displayName == "." || displayName == "..") {
+            return@withContext StorageRenameResult.Unsupported("valid SAF display name required")
+        }
+        when (val current = queryDocument(safReference.uri)) {
+            SafQueryResult.Missing -> return@withContext StorageRenameResult.Missing
+            SafQueryResult.PermissionLost -> return@withContext StorageRenameResult.PermissionLost
+            is SafQueryResult.ProviderFailure -> {
+                return@withContext StorageRenameResult.ProviderFailure(current.error)
+            }
+            is SafQueryResult.Found -> {
+                if (current.document.flags and
+                    DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong() == 0L
+                ) {
+                    return@withContext StorageRenameResult.Unsupported("provider rename")
+                }
+            }
+        }
+        val renamedUri = try {
+            DocumentsContract.renameDocument(
+                context.contentResolver,
+                safReference.uri,
+                displayName
+            )
+        } catch (error: SecurityException) {
+            return@withContext StorageRenameResult.PermissionLost
+        } catch (error: UnsupportedOperationException) {
+            return@withContext StorageRenameResult.Unsupported("provider rename")
+        } catch (error: FileNotFoundException) {
+            return@withContext when (classifySafFileNotFound(error)) {
+                SafFileFailure.Missing -> StorageRenameResult.Missing
+                SafFileFailure.PermissionLost -> StorageRenameResult.PermissionLost
+                SafFileFailure.ProviderFailure -> StorageRenameResult.ProviderFailure(error)
+            }
+        } catch (error: Throwable) {
+            return@withContext StorageRenameResult.ProviderFailure(error)
+        } ?: return@withContext StorageRenameResult.Unsupported("provider rename")
+
+        when (val result = queryDocument(renamedUri)) {
+            SafQueryResult.Missing -> StorageRenameResult.ProviderFailure(
+                IllegalStateException("renamed document cannot be queried")
+            )
+            SafQueryResult.PermissionLost -> StorageRenameResult.PermissionLost
+            is SafQueryResult.ProviderFailure -> StorageRenameResult.ProviderFailure(result.error)
+            is SafQueryResult.Found -> {
+                if (result.document.displayName != displayName) {
+                    StorageRenameResult.ProviderFailure(
+                        IllegalStateException("provider changed renamed display name")
+                    )
+                } else {
+                    StorageRenameResult.Renamed(result.document.toStat(renamedUri))
+                }
+            }
+        }
+    }
+
     private fun confirmSafDelete(uri: Uri): StorageMutationResult? {
         return when (val result = ManagedDownloadReferenceIo.inspect(context, uri.toString())) {
             ManagedDownloadReferenceIo.AccessResult.Missing -> StorageMutationResult.Deleted
@@ -669,7 +846,7 @@ internal class SafStorageBackend(
         }
     }
 
-    override suspend fun capabilities(reference: StorageReference): StorageCapabilities = withContext(Dispatchers.IO) {
+    override suspend fun capabilities(reference: StorageReference): StorageCapabilities = withContext(ioDispatcher) {
         val safReference = reference as? StorageReference.SafRef
             ?: return@withContext emptyStorageCapabilities()
         val document = when (val result = queryDocument(safReference.uri)) {
@@ -717,7 +894,11 @@ internal class SafStorageBackend(
                 SafFileFailure.ProviderFailure -> SafQueryResult.ProviderFailure(error)
             }
         } catch (error: Throwable) {
-            SafQueryResult.ProviderFailure(error)
+            when (classifySafFailure(error)) {
+                SafFileFailure.Missing -> SafQueryResult.Missing
+                SafFileFailure.PermissionLost -> SafQueryResult.PermissionLost
+                SafFileFailure.ProviderFailure -> SafQueryResult.ProviderFailure(error)
+            }
         }
     }
 
@@ -785,12 +966,117 @@ internal class SafStorageBackend(
                 SafFileFailure.ProviderFailure -> SafChildrenResult.ProviderFailure(error)
             }
         } catch (error: Throwable) {
-            SafChildrenResult.ProviderFailure(error)
+            when (classifySafFailure(error)) {
+                SafFileFailure.Missing -> SafChildrenResult.Missing
+                SafFileFailure.PermissionLost -> SafChildrenResult.PermissionLost
+                SafFileFailure.ProviderFailure -> SafChildrenResult.ProviderFailure(error)
+            }
         }
     }
 
     private fun deleteQuietly(uri: Uri) {
         runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+    }
+
+    private sealed interface DirectSafCreateResult {
+        data class Created(val uri: Uri) : DirectSafCreateResult
+        data object Unsupported : DirectSafCreateResult
+        data object PermissionLost : DirectSafCreateResult
+        data class ProviderFailure(val error: Throwable) : DirectSafCreateResult
+    }
+
+    private fun createDirectSafTarget(
+        parentUri: Uri,
+        mimeType: String,
+        displayName: String
+    ): DirectSafCreateResult {
+        return try {
+            val uri = DocumentsContract.createDocument(
+                context.contentResolver,
+                parentUri,
+                mimeType,
+                displayName
+            )
+            if (uri == null) DirectSafCreateResult.Unsupported else DirectSafCreateResult.Created(uri)
+        } catch (_: SecurityException) {
+            DirectSafCreateResult.PermissionLost
+        } catch (_: UnsupportedOperationException) {
+            DirectSafCreateResult.Unsupported
+        } catch (error: FileNotFoundException) {
+            when (classifySafFileNotFound(error)) {
+                SafFileFailure.PermissionLost -> DirectSafCreateResult.PermissionLost
+                SafFileFailure.Missing -> DirectSafCreateResult.Unsupported
+                SafFileFailure.ProviderFailure -> DirectSafCreateResult.ProviderFailure(error)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            DirectSafCreateResult.ProviderFailure(error)
+        }
+    }
+
+    private sealed interface DirectSafCopyResult {
+        data class Copied(val stat: StorageStat) : DirectSafCopyResult
+        data object PermissionLost : DirectSafCopyResult
+        data class ProviderFailure(val error: Throwable) : DirectSafCopyResult
+    }
+
+    private fun copySafDocument(
+        sourceUri: Uri,
+        targetUri: Uri,
+        expectedDisplayName: String
+    ): DirectSafCopyResult {
+        return try {
+            val input = context.contentResolver.openInputStream(sourceUri)
+                ?: return DirectSafCopyResult.ProviderFailure(
+                    IllegalStateException("provider returned null input stream")
+                )
+            val output = context.contentResolver.openOutputStream(targetUri, "w") ?: run {
+                input.close()
+                return DirectSafCopyResult.ProviderFailure(
+                    IllegalStateException("provider returned null output stream")
+                )
+            }
+            input.use { source ->
+                output.use { target -> source.copyTo(target) }
+            }
+            when (val result = queryDocument(targetUri)) {
+                SafQueryResult.PermissionLost -> DirectSafCopyResult.PermissionLost
+                is SafQueryResult.ProviderFailure -> {
+                    DirectSafCopyResult.ProviderFailure(result.error)
+                }
+                SafQueryResult.Missing -> DirectSafCopyResult.ProviderFailure(
+                    IllegalStateException("directly created file cannot be queried")
+                )
+                is SafQueryResult.Found -> {
+                    if (result.document.isDirectory) {
+                        DirectSafCopyResult.ProviderFailure(
+                            IllegalStateException("provider created a directory for a file write")
+                        )
+                    } else if (result.document.displayName != expectedDisplayName) {
+                        DirectSafCopyResult.ProviderFailure(
+                            IllegalStateException(
+                                "provider changed direct target display name"
+                            )
+                        )
+                    } else {
+                        DirectSafCopyResult.Copied(result.document.toStat(targetUri))
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            DirectSafCopyResult.PermissionLost
+        } catch (error: FileNotFoundException) {
+            when (classifySafFileNotFound(error)) {
+                SafFileFailure.PermissionLost -> DirectSafCopyResult.PermissionLost
+                SafFileFailure.Missing -> DirectSafCopyResult.ProviderFailure(error)
+                SafFileFailure.ProviderFailure -> DirectSafCopyResult.ProviderFailure(error)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            DirectSafCopyResult.ProviderFailure(error)
+        }
     }
 
     private fun restoreBackup(uri: Uri, displayName: String) {
@@ -813,6 +1099,10 @@ internal class SafStorageBackend(
     }
 
     private fun classifySafFileNotFound(error: FileNotFoundException): SafFileFailure {
+        return classifySafFailure(error)
+    }
+
+    private fun classifySafFailure(error: Throwable): SafFileFailure {
         return when {
             ManagedDownloadReferenceIo.isPermissionDocumentFailure(error) -> {
                 SafFileFailure.PermissionLost

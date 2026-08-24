@@ -65,8 +65,53 @@ internal class LegacyDownloadUpgradeCoordinator(
             )
         }
 
-        val rows = readRows(sqliteDatabase)
-        if (rows.isEmpty()) {
+        var rowsSeen = 0
+        val rowResults = mutableListOf<LegacyDownloadUpgradeRowResult>()
+        var afterStableKey: String? = null
+        var managedSnapshot: ManagedDownloadStorage.DownloadLibrarySnapshot? = null
+        var snapshotFailure: Throwable? = null
+        while (true) {
+            val rows = readRowBatch(sqliteDatabase, afterStableKey)
+            if (rows.isEmpty()) break
+            rowsSeen += rows.size
+            rows.forEach { row ->
+                val needsSnapshot = legacyPayloadNeedsManagedRootSnapshot(row.payloadJson)
+                if (needsSnapshot && managedSnapshot == null && snapshotFailure == null) {
+                    runCatching {
+                        ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                            context = context,
+                            forceRefresh = true
+                        )
+                    }.onSuccess { snapshot ->
+                        managedSnapshot = snapshot
+                    }.onFailure { error ->
+                        snapshotFailure = error
+                    }
+                }
+                val result = if (needsSnapshot && snapshotFailure != null) {
+                    LegacyDownloadUpgradeRowResult(
+                        stableKey = row.stableKey,
+                        status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
+                        detail = snapshotFailure.message
+                    )
+                } else if (needsSnapshot && managedSnapshot?.rootEntriesComplete == false) {
+                    LegacyDownloadUpgradeRowResult(
+                        stableKey = row.stableKey,
+                        status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
+                        detail = "managed root enumeration was incomplete"
+                    )
+                } else {
+                    processRow(
+                        sqliteDatabase = sqliteDatabase,
+                        row = row,
+                        snapshot = if (needsSnapshot) managedSnapshot else null
+                    )
+                }
+                rowResults += result
+            }
+            afterStableKey = rows.last().stableKey
+        }
+        if (rowsSeen == 0) {
             val temporaryTableCleaned = cleanTemporaryTable(sqliteDatabase)
             return@withContext LegacyDownloadUpgradeResult(
                 tableFound = true,
@@ -79,57 +124,9 @@ internal class LegacyDownloadUpgradeCoordinator(
                     cleanLegacyProjectionTables(sqliteDatabase)
             )
         }
-
-        val operationRows = rows.filterNot { row ->
-            legacyPayloadNeedsManagedRootSnapshot(row.payloadJson)
-        }
-        val rowResults = operationRows.map { row ->
-            processRow(sqliteDatabase, row, snapshot = null)
-        }.toMutableList()
-        val metadataRows = rows.filter { row ->
-            operationRows.none { operationRow -> operationRow.stableKey == row.stableKey }
-        }
-        if (metadataRows.isNotEmpty()) {
-            val snapshot = runCatching {
-                ManagedDownloadStorage.buildDownloadLibrarySnapshot(
-                    context = context,
-                    forceRefresh = true
-                )
-            }.getOrElse { error ->
-                rowResults += metadataRows.map { row ->
-                    LegacyDownloadUpgradeRowResult(
-                        stableKey = row.stableKey,
-                        status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
-                        detail = error.message
-                    )
-                }
-                return@withContext finishResult(
-                    database = sqliteDatabase,
-                    rowsSeen = rows.size,
-                    rowResults = rowResults
-                )
-            }
-            if (!snapshot.rootEntriesComplete) {
-                rowResults += metadataRows.map { row ->
-                    LegacyDownloadUpgradeRowResult(
-                        stableKey = row.stableKey,
-                        status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
-                        detail = "managed root enumeration was incomplete"
-                    )
-                }
-                return@withContext finishResult(
-                    database = sqliteDatabase,
-                    rowsSeen = rows.size,
-                    rowResults = rowResults
-                )
-            }
-            rowResults += metadataRows.map { row ->
-                processRow(sqliteDatabase, row, snapshot)
-            }
-        }
         return@withContext finishResult(
             database = sqliteDatabase,
-            rowsSeen = rows.size,
+            rowsSeen = rowsSeen,
             rowResults = rowResults
         )
     }
@@ -193,7 +190,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 detail = "payload stableKey does not match the migration row"
             )
         }
-        if (effectiveStableKey.startsWith(UNRESOLVED_LEGACY_KEY_PREFIX)) {
+        if (isUnresolvedLegacyStableKey(effectiveStableKey)) {
             return LegacyDownloadUpgradeRowResult(
                 stableKey = effectiveStableKey,
                 status = LegacyDownloadUpgradeRowStatus.INVALID_PAYLOAD,
@@ -227,13 +224,18 @@ internal class LegacyDownloadUpgradeCoordinator(
             )
         }
         if (pendingRow != null) {
-            return persistLegacyOperation(
+            val hasMetadata = legacyPayloadNeedsManagedRootSnapshot(row.payloadJson)
+            val operationResult = persistLegacyOperation(
                 sqliteDatabase = sqliteDatabase,
                 row = row,
                 stableKey = effectiveStableKey,
                 pendingRow = pendingRow,
-                cancelled = cancelledRow != null
+                cancelled = cancelledRow != null,
+                deletePayload = !hasMetadata
             )
+            if (operationResult.status != LegacyDownloadUpgradeRowStatus.COMPLETED || !hasMetadata) {
+                return operationResult
+            }
         }
 
         val storageResolvable = runCatching {
@@ -339,7 +341,8 @@ internal class LegacyDownloadUpgradeCoordinator(
         row: PayloadRow,
         stableKey: String,
         pendingRow: JSONObject?,
-        cancelled: Boolean
+        cancelled: Boolean,
+        deletePayload: Boolean
     ): LegacyDownloadUpgradeRowResult {
         val song = pendingRow?.toLegacySong(stableKey)
             ?: SongItem(
@@ -377,7 +380,9 @@ internal class LegacyDownloadUpgradeCoordinator(
                     database = database
                 )
             }
-            deletePayloadRow(sqliteDatabase, row.stableKey)
+            if (deletePayload) {
+                deletePayloadRow(sqliteDatabase, row.stableKey)
+            }
             LegacyDownloadUpgradeRowResult(
                 stableKey = stableKey,
                 status = LegacyDownloadUpgradeRowStatus.COMPLETED
@@ -473,16 +478,10 @@ internal class LegacyDownloadUpgradeCoordinator(
             .mapNotNull { reference -> reference?.trim()?.takeIf(String::isNotBlank) }
             .distinct()
             .forEach { reference ->
-                val materialized = try {
-                    ManagedDownloadCoverAssetStore.materialize(
-                        context = context,
-                        reference = reference
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Throwable) {
-                    null
-                }
+                val materialized = ManagedDownloadCoverAssetStore.materialize(
+                    context = context,
+                    reference = reference
+                )
                 if (materialized != null) return materialized
             }
         return null
@@ -501,13 +500,8 @@ internal class LegacyDownloadUpgradeCoordinator(
         payload: JSONObject,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): ManagedDownloadStorage.StoredEntry? {
-        val references = listOfNotNull(
-            payload.optString("mediaUri").takeIf(String::isNotBlank),
-            payload.optString("filePath").takeIf(String::isNotBlank),
-            payload.optString("sourceMediaUri").takeIf(String::isNotBlank),
-            payload.optString("audioReference").takeIf(String::isNotBlank),
-            payload.optString("audio_reference").takeIf(String::isNotBlank)
-        ).distinct()
+        val lookupHints = legacyAudioLookupHints(payload)
+        val references = lookupHints.references
         references.forEach { reference ->
             snapshot.audioEntries.firstOrNull { entry ->
                 entry.reference == reference ||
@@ -516,24 +510,10 @@ internal class LegacyDownloadUpgradeCoordinator(
             }?.let { return it }
         }
 
-        val names = buildList {
-            payload.optString("audioFileName").takeIf(String::isNotBlank)?.let(::add)
-            payload.optString("audioName").takeIf(String::isNotBlank)?.let(::add)
-            payload.optString("audio_name").takeIf(String::isNotBlank)?.let(::add)
-            payload.optString("name").takeIf(String::isNotBlank)?.let { name ->
-                payload.optString("filePath")
-                    .takeIf(String::isNotBlank)
-                    ?.let { path -> File(path).name.takeIf(String::isNotBlank) }
-                    ?.let(::add)
-                add(name)
-            }
-            payload.optString("filePath")
-                .takeIf(String::isNotBlank)
-                ?.let { path -> File(path).name.takeIf(String::isNotBlank) }
-                ?.let(::add)
-        }.distinct()
+        val names = lookupHints.names
         names.forEach { name ->
-            snapshot.audioEntries.firstOrNull { entry -> entry.name == name }?.let { return it }
+            val matches = snapshot.audioEntries.filter { entry -> entry.name == name }
+            if (matches.size == 1) return matches.single()
         }
         return null
     }
@@ -604,13 +584,23 @@ internal class LegacyDownloadUpgradeCoordinator(
         )
     }
 
-    private fun readRows(
-        database: androidx.sqlite.db.SupportSQLiteDatabase
+    private fun readRowBatch(
+        database: androidx.sqlite.db.SupportSQLiteDatabase,
+        afterStableKey: String?
     ): List<PayloadRow> {
-        return database.query(
+        val query = if (afterStableKey == null) {
             "SELECT stable_key, payload_json FROM $PAYLOAD_TABLE " +
-                "ORDER BY stable_key ASC"
-        ).use { cursor ->
+                "ORDER BY stable_key ASC LIMIT $ROW_BATCH_SIZE"
+        } else {
+            "SELECT stable_key, payload_json FROM $PAYLOAD_TABLE " +
+                "WHERE stable_key > ? ORDER BY stable_key ASC LIMIT $ROW_BATCH_SIZE"
+        }
+        val cursor = if (afterStableKey == null) {
+            database.query(query)
+        } else {
+            database.query(query, arrayOf(afterStableKey))
+        }
+        return cursor.use {
             val stableKeyIndex = cursor.getColumnIndexOrThrow("stable_key")
             val payloadIndex = cursor.getColumnIndexOrThrow("payload_json")
             buildList {
@@ -663,7 +653,7 @@ internal class LegacyDownloadUpgradeCoordinator(
 
     companion object {
         internal const val PAYLOAD_TABLE = "legacy_download_upgrade_payload"
-        private const val UNRESOLVED_LEGACY_KEY_PREFIX = "legacy:"
+        private const val ROW_BATCH_SIZE = 64
         private val LEGACY_DOWNLOAD_PROJECTION_TABLES = listOf(
             "download_pending_queue",
             "download_cancelled_key",
@@ -675,11 +665,85 @@ internal class LegacyDownloadUpgradeCoordinator(
     }
 }
 
+internal data class LegacyAudioLookupHints(
+    val references: List<String>,
+    val names: List<String>
+)
+
+internal fun isUnresolvedLegacyStableKey(stableKey: String): Boolean {
+    val normalized = stableKey.trim()
+    return normalized.startsWith("legacy:") ||
+        normalized.startsWith("legacy-snapshot:")
+}
+
+internal fun legacyAudioLookupHints(payload: JSONObject): LegacyAudioLookupHints {
+    val references = linkedSetOf<String>()
+    val names = linkedSetOf<String>()
+
+    fun addReference(value: String?) {
+        value?.trim()?.takeIf(String::isNotBlank)?.let(references::add)
+    }
+
+    fun addName(value: String?) {
+        value?.trim()?.takeIf(String::isNotBlank)?.let(names::add)
+    }
+
+    addReference(payload.optString("mediaUri"))
+    addReference(payload.optString("media_uri"))
+    addReference(payload.optString("filePath"))
+    addReference(payload.optString("file_path"))
+    addReference(payload.optString("sourceMediaUri"))
+    addReference(payload.optString("audioReference"))
+    addReference(payload.optString("audio_reference"))
+
+    addName(payload.optString("audioFileName"))
+    addName(payload.optString("audio_file_name"))
+    addName(payload.optString("audioName"))
+    addName(payload.optString("audio_name"))
+    addName(payload.optString("name"))
+    payload.optString("filePath")
+        .takeIf(String::isNotBlank)
+        ?.let { path -> addName(File(path).name) }
+    payload.optString("file_path")
+        .takeIf(String::isNotBlank)
+        ?.let { path -> addName(File(path).name) }
+
+    payload.optJSONArray("download_snapshot_entries")?.let { entries ->
+        for (index in 0 until entries.length()) {
+            val entry = entries.optJSONObject(index) ?: continue
+            addReference(entry.optString("reference"))
+            addReference(entry.optString("media_uri"))
+            addReference(entry.optString("mediaUri"))
+            addReference(entry.optString("file_path"))
+            addReference(entry.optString("filePath"))
+            addName(entry.optString("name"))
+            addName(entry.optString("audio_name"))
+            addName(entry.optString("audioName"))
+        }
+    }
+    return LegacyAudioLookupHints(
+        references = references.toList(),
+        names = names.toList()
+    )
+}
+
 internal fun legacyPayloadNeedsManagedRootSnapshot(payloadJson: String): Boolean {
     val payload = runCatching { JSONObject(payloadJson) }.getOrNull() ?: return true
-    if (payload.optJSONObject("download_pending_queue") != null) return false
-    if (payload.optJSONObject("download_cancelled_key") == null) return true
-    return payload.keys().asSequence().any { key ->
-        key != "stableKey" && key != "download_cancelled_key"
+    val hasPending = payload.optJSONObject("download_pending_queue") != null
+    val hasCancelled = payload.optJSONObject("download_cancelled_key") != null
+    val hasManagedMetadata = MANAGED_ROOT_PAYLOAD_KEYS.any { key ->
+        payload.has(key) && !payload.isNull(key)
     }
+    if (hasPending) return hasManagedMetadata
+    if (hasCancelled) return hasManagedMetadata
+    return true
 }
+
+private val MANAGED_ROOT_PAYLOAD_KEYS = setOf(
+    "downloaded_song_catalog",
+    "download_snapshot_metadata",
+    "download_snapshot_entries",
+    "managed_download_artifact",
+    "restorableMetadata",
+    "legacyConflicts"
+)

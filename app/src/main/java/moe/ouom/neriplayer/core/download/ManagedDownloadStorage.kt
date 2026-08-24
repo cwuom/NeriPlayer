@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -80,6 +81,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
@@ -152,13 +154,14 @@ internal object ManagedDownloadStorage {
     private val rootResolver = ManagedDownloadRootResolver(treeDirectoryLocks)
     private val treeDirectories = ManagedDownloadTreeDirectories(
         treeChildRegistry = treeChildRegistry,
-        tag = TAG
+        tag = TAG,
+        deleteTrustedReference = ::deleteTrustedReference
     )
     private val treeFileCommitter = ManagedDownloadTreeFileCommitter(
         treeChildRegistry = treeChildRegistry,
         tag = TAG,
-        deleteContentReference = { context, reference, uri ->
-            deleteContentReference(context, reference, uri)
+        deleteTrustedReference = { context, reference ->
+            deleteTrustedReference(context, reference)
         },
         verifyDocumentCommittedLength = { context, uri, expectedSizeBytes, description ->
             verifyDocumentCommittedLength(
@@ -1490,14 +1493,14 @@ internal object ManagedDownloadStorage {
         val cachedEntry = buildDownloadLibrarySnapshotBlocking(context).audioEntriesByLookupKey[target]
             ?: return@withContext null
         if (
-            ManagedDownloadReferenceIo.inspect(context, cachedEntry.playbackUri) ==
+            inspectStorageReference(context, cachedEntry.playbackUri) ==
                 ManagedDownloadReferenceIo.AccessResult.Accessible
         ) {
             return@withContext cachedEntry
         }
         buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true).audioEntriesByLookupKey[target]
             ?.takeIf { refreshedEntry ->
-                ManagedDownloadReferenceIo.inspect(context, refreshedEntry.playbackUri) ==
+                inspectStorageReference(context, refreshedEntry.playbackUri) ==
                     ManagedDownloadReferenceIo.AccessResult.Accessible
             }
     }
@@ -1525,7 +1528,7 @@ internal object ManagedDownloadStorage {
         buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
             .audioEntriesByLookupKey[target]
             ?.takeIf { refreshedEntry ->
-                ManagedDownloadReferenceIo.inspect(context, refreshedEntry.playbackUri) ==
+                inspectStorageReference(context, refreshedEntry.playbackUri) ==
                     ManagedDownloadReferenceIo.AccessResult.Accessible
             }
     }
@@ -1852,7 +1855,7 @@ internal object ManagedDownloadStorage {
         val snapshot = buildDownloadLibrarySnapshotBlocking(context, forceRefresh = forceRefresh)
         val entry = findAudioEntry(snapshot, song) ?: return null
         if (
-            ManagedDownloadReferenceIo.inspect(context, entry.playbackUri) ==
+            inspectStorageReference(context, entry.playbackUri) ==
                 ManagedDownloadReferenceIo.AccessResult.Accessible
         ) {
             return entry
@@ -1881,7 +1884,7 @@ internal object ManagedDownloadStorage {
                 ?.toStoredEntry()
         }
         if (
-            ManagedDownloadReferenceIo.inspect(context, uri.toString()) !=
+            inspectStorageReference(context, uri.toString()) !=
                 ManagedDownloadReferenceIo.AccessResult.Accessible
         ) {
             return null
@@ -2481,7 +2484,7 @@ internal object ManagedDownloadStorage {
             return@withContext false
         }
         if (entry.sizeBytes > 0L) {
-            return@withContext ManagedDownloadReferenceIo.inspect(
+            return@withContext inspectStorageReference(
                 context,
                 entry.reference
             ) == ManagedDownloadReferenceIo.AccessResult.Accessible
@@ -2627,52 +2630,25 @@ internal object ManagedDownloadStorage {
 
             is RootHandle.TreeRoot -> {
                 val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
-                val finalName = existingAudio?.name
+                    val finalName = existingAudio?.name
                     ?: treeChildRegistry.reserveUniqueTreeChildName(context, root.tree, fileName)
-                var pendingTarget: DocumentFile? = null
-                var pendingName: String? = null
                 val audioEntry = try {
-                    val committedAtMs = System.currentTimeMillis()
                     val createdPendingName = buildPendingAudioWriteName(finalName)
-                    pendingName = createdPendingName
-                    val createdPendingTarget = createRootFile(
+                    val entry = writeSafFileThroughBackend(
                         context = context,
                         parent = root.tree,
-                        desiredName = createdPendingName,
+                        displayName = createdPendingName,
                         mimeType = mimeTypeFromName(finalName, mimeType),
-                        replace = false
-                    )
-                    pendingTarget = createdPendingTarget
-                    pendingName = treeFileCommitter.resolvedTreeStoredName(
-                        createdPendingTarget,
-                        createdPendingName
-                    )
-                    context.contentResolver.openOutputStream(createdPendingTarget.uri, "w")?.use { output ->
-                        tempFile.inputStream().use { input ->
-                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                        }
-                    } ?: throw IOException("无法打开下载目录输出流")
-                    verifyDocumentCommittedLength(
-                        context = context,
-                        uri = pendingTarget.uri,
                         expectedSizeBytes = actualSizeBytes,
-                        description = "staging→SAF: $createdPendingName"
-                    )
-                    val entry = verifiedTreeStoredEntry(
-                        context = context,
-                        target = pendingTarget,
-                        expectedName = pendingName,
-                        expectedSizeBytes = actualSizeBytes,
-                        fallbackLastModifiedMs = committedAtMs,
-                        description = createdPendingName
+                        sourceFile = tempFile
                     )
                     treeChildRegistry.rememberTreeChild(root.tree, entry)
                     entry
                 } catch (error: Throwable) {
-                    pendingTarget?.let { target ->
-                        deleteContentReference(context, target.uri.toString(), target.uri)
-                    }
-                    pendingName?.let { treeChildRegistry.forgetTreeChildName(root.tree, it) }
+                    treeChildRegistry.forgetTreeChildName(
+                        root.tree,
+                        buildPendingAudioWriteName(finalName)
+                    )
                     treeChildRegistry.forgetTreeChildName(root.tree, finalName)
                     throw error
                 }
@@ -2754,6 +2730,72 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    private fun writeSafFileThroughBackend(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String,
+        mimeType: String,
+        expectedSizeBytes: Long,
+        sourceFile: File
+    ): StoredEntry {
+        val backend = SafStorageBackend(context)
+        val result = runBlocking(Dispatchers.IO) {
+            backend.writeRecoverable(
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(parent.uri),
+                    displayName = displayName,
+                    mimeType = mimeType
+                )
+            ) { output ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
+            }
+        }
+        val stat = when (result) {
+            is StorageWriteResult.Written -> result.stat
+            StorageWriteResult.Missing -> throw IOException("SAF 目标不存在: $displayName")
+            StorageWriteResult.OutOfScope -> throw IOException("SAF 目标越界: $displayName")
+            StorageWriteResult.PermissionLost -> throw SecurityException("SAF 写入权限丢失: $displayName")
+            is StorageWriteResult.ProviderFailure -> throw IOException(
+                "SAF 写入失败: $displayName",
+                result.error
+            )
+            is StorageWriteResult.Unsupported -> throw IOException(
+                "SAF 不支持写入: $displayName (${result.operation})"
+            )
+        }
+        val verifiedSize = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
+            when (val measured = backend.read(stat.reference) { input ->
+                input.copyTo(java.io.OutputStream.nullOutputStream())
+            }) {
+                is StorageLookupResult.Found -> measured.value
+                StorageLookupResult.Missing -> throw IOException(
+                    "SAF 写入目标在读回时不存在: $displayName"
+                )
+                StorageLookupResult.PermissionLost -> throw SecurityException(
+                    "SAF 写入目标读回权限丢失: $displayName"
+                )
+                is StorageLookupResult.ProviderFailure -> throw IOException(
+                    "SAF 写入目标读回失败: $displayName",
+                    measured.error
+                )
+                StorageLookupResult.OutOfScope,
+                is StorageLookupResult.Unsupported -> throw IOException(
+                    "SAF 写入目标不可读: $displayName"
+                )
+            }
+        }
+        if (verifiedSize != expectedSizeBytes) {
+            throw IOException(
+                "SAF 写入大小不匹配: $displayName, expected=$expectedSizeBytes, " +
+                    "actual=$verifiedSize"
+            )
+        }
+        return stat.toStoredEntryForBackend(fileRoot = null)
+            .copy(sizeBytes = verifiedSize)
+    }
+
     private fun promotePendingAudioBlocking(
         context: Context,
         root: RootHandle,
@@ -2779,12 +2821,28 @@ internal object ManagedDownloadStorage {
 
             is RootHandle.TreeRoot -> {
                 val pendingUri = audio.reference.toUri()
-                val pending = DocumentFile.fromSingleUri(context, pendingUri)
-                    ?.takeIf {
-                        ManagedDownloadReferenceIo.inspect(context, pendingUri.toString()) ==
-                            ManagedDownloadReferenceIo.AccessResult.Accessible &&
-                            it.isFile
-                    }
+                val pendingBackend = SafStorageBackend(context)
+                val pendingStat = runBlocking(Dispatchers.IO) {
+                    pendingBackend.stat(StorageReference.SafRef(pendingUri))
+                }
+                val pending = when (pendingStat) {
+                    is StorageLookupResult.Found -> pendingStat.value
+                        .takeUnless(StorageStat::isDirectory)
+                        ?.let {
+                            resolvePendingTreeDocument(
+                                context = context,
+                                parent = root.tree,
+                                uri = pendingUri
+                            )
+                        }
+                    StorageLookupResult.Missing -> null
+                    StorageLookupResult.PermissionLost -> throw SecurityException(
+                        "SAF pending 音频权限丢失: ${audio.name}"
+                    )
+                    is StorageLookupResult.ProviderFailure -> throw pendingStat.error
+                    StorageLookupResult.OutOfScope,
+                    is StorageLookupResult.Unsupported -> null
+                }
                     ?: treeChildRegistry.cachedTreeChildren(
                         context = context,
                         parent = root.tree,
@@ -2848,37 +2906,67 @@ internal object ManagedDownloadStorage {
                     }
                 }
 
-                val finalTarget = createRootFile(
-                    context = context,
-                    parent = root.tree,
-                    desiredName = finalName,
-                    mimeType = mimeTypeFromName(finalName, null),
-                    replace = false
-                )
-                try {
-                    context.contentResolver.openInputStream(pending.uri)?.use { input ->
-                        context.contentResolver.openOutputStream(finalTarget.uri, "w")?.use { output ->
+                val backend = SafStorageBackend(context)
+                val writeResult = runBlocking(Dispatchers.IO) {
+                    backend.writeRecoverable(
+                        target = StorageTarget.SafTarget(
+                            parent = StorageReference.SafRef(root.tree.uri),
+                            displayName = finalName,
+                            mimeType = mimeTypeFromName(finalName, null)
+                        )
+                    ) { output ->
+                        when (val readResult = backend.read(
+                            StorageReference.SafRef(pending.uri)
+                        ) { input ->
                             input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                        }) {
+                            is StorageLookupResult.Found -> readResult.value
+                            StorageLookupResult.Missing -> throw IOException(
+                                "SAF pending 音频不存在: ${audio.name}"
+                            )
+                            StorageLookupResult.PermissionLost -> throw SecurityException(
+                                "SAF pending 音频权限丢失: ${audio.name}"
+                            )
+                            is StorageLookupResult.ProviderFailure -> throw readResult.error
+                            StorageLookupResult.OutOfScope,
+                            is StorageLookupResult.Unsupported -> throw IOException(
+                                "SAF pending 音频不可读: ${audio.name}"
+                            )
                         }
-                    } ?: return null
-                    val entry = verifiedTreeStoredEntry(
-                        context = context,
-                        target = finalTarget,
-                        expectedName = finalName,
-                        expectedSizeBytes = expectedSizeBytes,
-                        fallbackLastModifiedMs = committedAtMs,
-                        description = finalName
+                    }
+                }
+                val stat = when (writeResult) {
+                    is StorageWriteResult.Written -> writeResult.stat
+                    StorageWriteResult.Missing -> return null
+                    StorageWriteResult.OutOfScope -> return null
+                    StorageWriteResult.PermissionLost -> throw SecurityException(
+                        "SAF final 音频权限丢失: $finalName"
                     )
-                    if (!deleteContentReference(context, pending.uri.toString(), pending.uri)) {
+                    is StorageWriteResult.ProviderFailure -> throw writeResult.error
+                    is StorageWriteResult.Unsupported -> throw IOException(
+                        "SAF final 音频不支持写入: $finalName"
+                    )
+                }
+                if (stat.sizeBytes != null && stat.sizeBytes != expectedSizeBytes) {
+                    throw IOException("SAF final 音频大小不匹配: $finalName")
+                }
+                val entry = stat.toStoredEntryForBackend(fileRoot = null).copy(
+                    sizeBytes = stat.sizeBytes ?: expectedSizeBytes,
+                    lastModifiedMs = stat.lastModifiedMs ?: committedAtMs
+                )
+                    if (!deleteTrustedReference(
+                            context,
+                            TrustedManagedRef(
+                                reference = StorageReference.SafRef(pending.uri),
+                                externalReference = pending.uri.toString()
+                            )
+                        ).isConfirmedStorageMutation()
+                    ) {
                         NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: ${audio.name}")
                     }
                     treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
                     treeChildRegistry.rememberTreeChild(root.tree, entry)
                     entry
-                } catch (error: Throwable) {
-                    deleteContentReference(context, finalTarget.uri.toString(), finalTarget.uri)
-                    throw error
-                }
             }
         }
     }
@@ -3077,7 +3165,7 @@ internal object ManagedDownloadStorage {
                 snapshot = refreshedSnapshot,
                 readText = { reference -> readTextInternal(context, reference) },
                 exists = { lookupContext, reference ->
-                    ManagedDownloadReferenceIo.inspect(lookupContext, reference) ==
+                    inspectStorageReference(lookupContext, reference) ==
                         ManagedDownloadReferenceIo.AccessResult.Accessible
                 }
             )
@@ -3263,7 +3351,7 @@ internal object ManagedDownloadStorage {
             snapshot = snapshot,
             readText = { reference -> readTextInternal(context, reference) },
             exists = { lookupContext, reference ->
-                ManagedDownloadReferenceIo.inspect(lookupContext, reference) ==
+                    inspectStorageReference(lookupContext, reference) ==
                     ManagedDownloadReferenceIo.AccessResult.Accessible
             }
         )
@@ -4492,19 +4580,13 @@ internal object ManagedDownloadStorage {
                 treeChildRegistry = treeChildRegistry,
                 deleteTreeChild = { child ->
                     runCatching {
-                        if (
-                            deleteContentReference(
-                                context = context,
-                                reference = child.documentUri.toString(),
-                                uri = child.documentUri
+                        deleteTrustedReference(
+                            context,
+                            TrustedManagedRef(
+                                reference = StorageReference.SafRef(child.documentUri),
+                                externalReference = child.documentUri.toString()
                             )
-                        ) {
-                            StorageMutationResult.Deleted
-                        } else {
-                            StorageMutationResult.ProviderFailure(
-                                IllegalStateException("pending SAF audio delete was not confirmed")
-                            )
-                        }
+                        )
                     }.getOrElse { error ->
                         if (error is SecurityException) {
                             StorageMutationResult.PermissionLost
@@ -4612,18 +4694,45 @@ internal object ManagedDownloadStorage {
         finalName: String
     ): DocumentFile? {
         if (document == null) return null
-        return try {
-            val renamedUri = DocumentsContract.renameDocument(
-                context.contentResolver,
-                document.uri,
-                finalName
-            ) ?: return null
-            DocumentFile.fromSingleUri(context, renamedUri)
-        } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            null
+        val backend = SafStorageBackend(context)
+        val result = runBlocking(Dispatchers.IO) {
+            backend.rename(
+                reference = TrustedManagedRef(
+                    reference = StorageReference.SafRef(document.uri),
+                    externalReference = document.uri.toString()
+                ),
+                displayName = finalName
+            )
         }
+        return when (result) {
+            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Renamed -> {
+                val renamedUri = (result.stat.reference as? StorageReference.SafRef)?.uri
+                    ?: return null
+                DocumentFile.fromSingleUri(context, renamedUri)
+            }
+            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Missing -> null
+            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.PermissionLost -> {
+                throw SecurityException("SAF 重命名权限丢失: ${document.uri}")
+            }
+            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.ProviderFailure -> {
+                throw result.error
+            }
+            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.OutOfScope,
+            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Unsupported -> null
+        }
+    }
+
+    private fun resolvePendingTreeDocument(
+        context: Context,
+        parent: DocumentFile,
+        uri: Uri
+    ): DocumentFile? {
+        val direct = DocumentFile.fromSingleUri(context, uri) ?: return null
+        return treeChildRegistry.toTreeDocumentFile(
+            context = context,
+            parent = parent,
+            child = direct
+        ) ?: direct
     }
 
     private fun createRootFile(
@@ -4970,20 +5079,64 @@ internal object ManagedDownloadStorage {
     }
 
     private fun openStoredEntryInputStream(context: Context, entry: StoredEntry): InputStream? {
-        entry.localFilePath?.let { localPath ->
-            val file = File(localPath)
-            if (file.exists()) {
-                return file.inputStream()
+        val target = backendReference(context, entry.reference) ?: return null
+        val temporaryFile = try {
+            File.createTempFile(
+                ".np-storage-read-",
+                ".tmp",
+                context.cacheDir
+            )
+        } catch (error: Throwable) {
+            throw IOException("无法创建托管存储读取暂存文件: ${entry.name}", error)
+        }
+        val result = try {
+            runBlocking(Dispatchers.IO) {
+                target.backend.read(target.reference) { input ->
+                    temporaryFile.outputStream().use { output ->
+                        input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    }
+                    true
+                }
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            runCatching { temporaryFile.delete() }
+            throw error
+        } catch (error: Throwable) {
+            runCatching { temporaryFile.delete() }
+            throw error
+        }
+        return when (result) {
+            is StorageLookupResult.Found -> TemporaryStorageInputStream(temporaryFile)
+            StorageLookupResult.Missing -> {
+                runCatching { temporaryFile.delete() }
+                null
+            }
+            StorageLookupResult.PermissionLost -> {
+                runCatching { temporaryFile.delete() }
+                throw SecurityException("托管存储读取权限丢失: ${entry.reference}")
+            }
+            is StorageLookupResult.ProviderFailure -> {
+                runCatching { temporaryFile.delete() }
+                throw result.error
+            }
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> {
+                runCatching { temporaryFile.delete() }
+                null
             }
         }
-        if (entry.reference.startsWith("/")) {
-            val file = File(entry.reference)
-            if (file.exists()) {
-                return file.inputStream()
+    }
+
+    private class TemporaryStorageInputStream(
+        private val temporaryFile: File
+    ) : java.io.FilterInputStream(temporaryFile.inputStream()) {
+        override fun close() {
+            try {
+                super.close()
+            } finally {
+                runCatching { temporaryFile.delete() }
             }
         }
-        val uri = runCatching { entry.reference.toUri() }.getOrNull() ?: return null
-        return context.contentResolver.openInputStream(uri)
     }
 
     private fun restoreStoredEntryLastModified(
@@ -5062,8 +5215,98 @@ internal object ManagedDownloadStorage {
     }
 
     private fun readTextInternal(context: Context, reference: String): String? {
-        return ManagedDownloadReferenceIo.readText(context, reference)
+        val target = backendReference(context, reference) ?: return null
+        return runBlocking(Dispatchers.IO) {
+            when (val result = target.backend.read(target.reference) { input ->
+                input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            }) {
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                    result.value
+                }
+                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Missing -> null
+                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.PermissionLost -> {
+                    throw SecurityException("storage permission lost: $reference")
+                }
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.ProviderFailure -> {
+                    throw result.error
+                }
+                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.OutOfScope,
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Unsupported -> null
+            }
+        }
     }
+
+    private fun inspectStorageReference(
+        context: Context,
+        reference: String?
+    ): ManagedDownloadReferenceIo.AccessResult {
+        val target = backendReference(context, reference)
+            ?: return ManagedDownloadReferenceIo.AccessResult.Missing
+        return try {
+            runBlocking(Dispatchers.IO) {
+                when (val result = target.backend.stat(target.reference)) {
+                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                        ManagedDownloadReferenceIo.AccessResult.Accessible
+                    }
+                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Missing -> {
+                        ManagedDownloadReferenceIo.AccessResult.Missing
+                    }
+                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.PermissionLost -> {
+                        ManagedDownloadReferenceIo.AccessResult.PermissionLost
+                    }
+                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.ProviderFailure -> {
+                        ManagedDownloadReferenceIo.AccessResult.ProviderFailure(result.error)
+                    }
+                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.OutOfScope -> {
+                        ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
+                            IllegalArgumentException("storage reference out of scope")
+                        )
+                    }
+                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Unsupported -> {
+                        ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
+                            UnsupportedOperationException(result.operation)
+                        )
+                    }
+                }
+            }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: SecurityException) {
+            ManagedDownloadReferenceIo.AccessResult.PermissionLost
+        } catch (error: Throwable) {
+            ManagedDownloadReferenceIo.AccessResult.ProviderFailure(error)
+        }
+    }
+
+    private fun backendReference(
+        context: Context,
+        rawReference: String?
+    ): BackendReference? {
+        val normalized = rawReference?.trim()?.takeIf(String::isNotBlank) ?: return null
+        val uri = runCatching { normalized.toUri() }.getOrNull()
+        if (uri?.scheme.equals("content", ignoreCase = true) && uri != null) {
+            return BackendReference(
+                backend = SafStorageBackend(context),
+                reference = StorageReference.SafRef(uri)
+            )
+        }
+        val path = when {
+            normalized.startsWith("/", ignoreCase = false) -> normalized
+            uri?.scheme?.equals("file", ignoreCase = true) == true -> uri.path
+            else -> normalized
+        }?.takeIf(String::isNotBlank) ?: return null
+        val file = File(path)
+        val parent = file.parentFile ?: return null
+        return BackendReference(
+            backend = FileStorageBackend(parent),
+            reference = StorageReference.FileRef(file.name)
+        )
+    }
+
+    private data class BackendReference(
+        val backend: StorageBackend,
+        val reference: StorageReference
+    )
 
     private fun buildManagedDeletePolicy(
         context: Context,
@@ -5287,7 +5530,7 @@ internal object ManagedDownloadStorage {
         reference: TrustedManagedRef
     ): StorageMutationResult {
         return try {
-            when (val access = ManagedDownloadReferenceIo.inspect(
+            when (val access = inspectStorageReference(
                 context,
                 reference.externalReference
             )) {
@@ -5427,16 +5670,18 @@ internal object ManagedDownloadStorage {
         treeDirectories.forgetDeletedReferences(deletedReferences)
     }
 
-    private fun deleteContentReference(
+    private fun deleteTrustedReference(
         context: Context,
-        reference: String,
-        uri: Uri
-    ): Boolean {
-        return referenceDeleteExecutor.deleteContentReference(
+        reference: TrustedManagedRef
+    ): StorageMutationResult {
+        return referenceDeleteExecutor.deleteTrustedContentReference(
             context = context,
-            reference = reference,
-            uri = uri,
+            reference = reference
         )
+    }
+
+    private fun StorageMutationResult.isConfirmedStorageMutation(): Boolean {
+        return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
     }
 
     internal fun isMissingManagedDocumentFailure(error: Throwable): Boolean {

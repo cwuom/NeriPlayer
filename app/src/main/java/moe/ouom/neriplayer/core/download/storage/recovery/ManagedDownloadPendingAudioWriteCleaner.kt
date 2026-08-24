@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
@@ -61,13 +62,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
                 return@forEach
             }
             val mutation = when (entry) {
-                is File -> if (runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)) {
-                    StorageMutationResult.Deleted
-                } else {
-                    StorageMutationResult.ProviderFailure(
-                        IllegalStateException("pending file delete was not confirmed")
-                    )
-                }
+                is File -> ManagedDownloadReferenceIo.deleteFileReference(entry).toStorageMutationResult()
                 is QueriedTreeChild -> runCatching { deleteTreeChild(entry) }
                     .getOrElse { error ->
                         if (error is SecurityException) {
@@ -88,5 +83,16 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
             cleanedCount = cleanedCount,
             failedCount = failedCount
         )
+    }
+}
+
+private fun ManagedDownloadReferenceIo.DeleteResult.toStorageMutationResult(): StorageMutationResult {
+    return when (this) {
+        ManagedDownloadReferenceIo.DeleteResult.Deleted -> StorageMutationResult.Deleted
+        ManagedDownloadReferenceIo.DeleteResult.Missing -> StorageMutationResult.Missing
+        ManagedDownloadReferenceIo.DeleteResult.PermissionLost -> StorageMutationResult.PermissionLost
+        is ManagedDownloadReferenceIo.DeleteResult.ProviderFailure -> {
+            StorageMutationResult.ProviderFailure(error)
+        }
     }
 }

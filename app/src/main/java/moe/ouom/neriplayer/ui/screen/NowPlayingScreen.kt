@@ -4993,6 +4993,30 @@ internal data class EditSongBaseline(
     val romanizedLyric: String?
 )
 
+internal fun resolveEditSongBaselineFromSong(
+    song: SongItem,
+    resolvedDisplayCoverUrl: String?,
+    displayedLyric: String?,
+    displayedTranslatedLyric: String?,
+    displayedRomanizedLyric: String?
+): EditSongBaseline {
+    val baselineCover = song.originalCoverUrl
+        ?.takeIf { it.isNotBlank() }
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: song.coverUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        ?: resolvedDisplayCoverUrl.orEmpty()
+    return EditSongBaseline(
+        title = song.originalName ?: song.name,
+        artist = song.originalArtist ?: song.artist,
+        coverUrl = baselineCover,
+        lyric = song.originalLyric ?: displayedLyric,
+        translatedLyric = song.originalTranslatedLyric ?: displayedTranslatedLyric,
+        romanizedLyric = song.originalRomanizedLyric ?: displayedRomanizedLyric
+    )
+}
+
 internal fun resolveManagedEditSongBaseline(
     current: EditSongBaseline,
     metadata: moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata?,
@@ -5055,16 +5079,12 @@ fun EditSongInfoSheet(
     var artistName by remember { mutableStateOf(actualSong.customArtist ?: actualSong.artist) }
     var editBaseline by remember(actualSong.stableKey()) {
         mutableStateOf(
-            EditSongBaseline(
-                title = actualSong.customName ?: actualSong.name,
-                artist = actualSong.customArtist ?: actualSong.artist,
-                coverUrl = resolveEditSongInitialCoverUrl(
-                    actualSong,
-                    resolvedDisplayCoverUrl
-                ),
-                lyric = displayedLyrics.toEditableLyricsText(),
-                translatedLyric = displayedTranslatedLyrics.toEditableLyricsText(),
-                romanizedLyric = displayedRomanizedLyrics.toEditableLyricsText()
+            resolveEditSongBaselineFromSong(
+                song = actualSong,
+                resolvedDisplayCoverUrl = resolvedDisplayCoverUrl,
+                displayedLyric = displayedLyrics.toEditableLyricsText(),
+                displayedTranslatedLyric = displayedTranslatedLyrics.toEditableLyricsText(),
+                displayedRomanizedLyric = displayedRomanizedLyrics.toEditableLyricsText()
             )
         )
     }
@@ -5229,12 +5249,11 @@ fun EditSongInfoSheet(
         }
         if (restoreLyrics) {
             shouldClearLyrics = false
-            shouldRestoreLyrics = editBaseline.lyric != null ||
-                editBaseline.translatedLyric != null ||
-                editBaseline.romanizedLyric != null
-            originalLyric = editBaseline.lyric
-            originalTranslatedLyric = editBaseline.translatedLyric
-            originalRomanizedLyric = editBaseline.romanizedLyric
+            // an empty baseline is still a real baseline: restore must clear an edit
+            shouldRestoreLyrics = true
+            originalLyric = editBaseline.lyric.orEmpty()
+            originalTranslatedLyric = editBaseline.translatedLyric.orEmpty()
+            originalRomanizedLyric = editBaseline.romanizedLyric.orEmpty()
         }
         if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
             shouldClearMatchedMetadata = true
@@ -5324,7 +5343,8 @@ fun EditSongInfoSheet(
                     writeLocalMetadata = writeLocalMetadata,
                     writeLyrics = writeLyricsToLocalMetadata,
                     persistManualRemoteCover = coverWasManuallyChanged &&
-                        !shouldRestoreCoverBase
+                        !shouldRestoreCoverBase,
+                    restoreBaseLyrics = shouldRestoreLyrics
                 )
 
                 if (!metadataWriteSucceeded) {

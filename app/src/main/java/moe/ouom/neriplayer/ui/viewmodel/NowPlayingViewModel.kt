@@ -497,7 +497,8 @@ class NowPlayingViewModel : ViewModel() {
         clearMatchedMetadata: Boolean = false,
         writeLocalMetadata: Boolean = false,
         writeLyrics: Boolean = false,
-        persistManualRemoteCover: Boolean = false
+        persistManualRemoteCover: Boolean = false,
+        restoreBaseLyrics: Boolean = false
     ): Boolean {
         return PlayerManager.updateSongCustomInfo(
             originalSong = originalSong,
@@ -510,7 +511,8 @@ class NowPlayingViewModel : ViewModel() {
             clearMatchedMetadata = clearMatchedMetadata,
             writeLocalMetadata = writeLocalMetadata,
             writeLyrics = writeLyrics,
-            persistManualRemoteCover = persistManualRemoteCover
+            persistManualRemoteCover = persistManualRemoteCover,
+            restoreBaseLyrics = restoreBaseLyrics
         )
     }
 

@@ -1453,30 +1453,30 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             audioName: String?
         ): String? {
             val normalizedName = audioName?.trim()?.takeIf(String::isNotBlank) ?: return null
-            db.query(
-                "SELECT stable_key, catalog_key, file_path FROM `downloaded_song_catalog`"
-            ).use { cursor ->
+            val matches = linkedSetOf<String>()
+            db.query("SELECT * FROM `downloaded_song_catalog`").use { cursor ->
                 val catalogKeyIndex = cursor.getColumnIndex("catalog_key")
                 val filePathIndex = cursor.getColumnIndex("file_path")
                 while (cursor.moveToNext()) {
                     val catalogKey = catalogKeyIndex
-                        .takeIf { it >= 0 }
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString)
                         .orEmpty()
                     val filePath = filePathIndex
-                        .takeIf { it >= 0 }
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString)
                         .orEmpty()
                     if (
                         catalogKey.endsWith(normalizedName) ||
                         filePath.substringAfterLast('/').equals(normalizedName, ignoreCase = true)
                     ) {
-                        return cursorString(cursor, "stable_key")
-                            ?: deriveCatalogStableKey(cursor)
+                        cursorString(cursor, "stable_key")
+                            ?.let(matches::add)
+                            ?: deriveCatalogStableKey(cursor)?.let(matches::add)
                     }
                 }
             }
-            return null
+            return matches.singleOrNull()
         }
 
         private fun findCatalogStableKeyForSnapshotEntry(
@@ -1489,10 +1489,9 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             val candidates = listOfNotNull(reference, mediaUri)
                 .map(String::trim)
                 .filter(String::isNotBlank)
-            db.query(
-                "SELECT stable_key, file_path, media_uri, catalog_key, id " +
-                    "FROM `downloaded_song_catalog`"
-            ).use { cursor ->
+            val exactMatches = linkedSetOf<String>()
+            val nameMatches = linkedSetOf<String>()
+            db.query("SELECT * FROM `downloaded_song_catalog`").use { cursor ->
                 while (cursor.moveToNext()) {
                     val stableKey = cursorString(cursor, "stable_key")
                         ?: deriveCatalogStableKey(cursor)
@@ -1506,7 +1505,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                             catalogReferences.any { value -> value == candidate }
                         }
                     ) {
-                        return stableKey
+                        exactMatches += stableKey
+                        continue
                     }
                     val normalizedName = name?.trim()?.takeIf(String::isNotBlank)
                     if (normalizedName != null && catalogReferences.any { value ->
@@ -1516,11 +1516,15 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                             )
                         }
                     ) {
-                        return stableKey
+                        nameMatches += stableKey
                     }
                 }
             }
-            return null
+            return when {
+                exactMatches.size == 1 -> exactMatches.first()
+                exactMatches.isNotEmpty() -> null
+                else -> nameMatches.singleOrNull()
+            }
         }
 
         private val LEGACY_DOWNLOAD_PROJECTION_TABLES = listOf(

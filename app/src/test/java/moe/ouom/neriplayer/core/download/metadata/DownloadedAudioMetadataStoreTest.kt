@@ -167,6 +167,39 @@ class DownloadedAudioMetadataStoreTest {
         assertEquals("edited romanization", merged.romanizedLyric)
     }
 
+    @Test
+    fun `restoring the baseline clears title artist cover and lyric overrides`() {
+        val merged = mergeRestorableOverrides(
+            previous = ManagedDownloadRestorableMetadata.Overrides(
+                title = "Edited title",
+                artist = "Edited artist",
+                coverReference = "content://managed/Covers/edited.jpg",
+                originalLyric = "edited lyric",
+                translatedLyric = "edited translation",
+                romanizedLyric = "edited romanization"
+            ),
+            song = testSong().copy(
+                matchedLyric = "original lyric",
+                matchedTranslatedLyric = "original translation",
+                matchedRomanizedLyric = "original romanization"
+            ),
+            coverReference = "content://managed/Covers/base.jpg",
+            clearRestorableOverrides = RestorableMetadataClearPolicy(
+                title = true,
+                artist = true,
+                cover = true,
+                lyrics = true
+            )
+        )
+
+        assertNull(merged.title)
+        assertNull(merged.artist)
+        assertNull(merged.coverReference)
+        assertNull(merged.originalLyric)
+        assertNull(merged.translatedLyric)
+        assertNull(merged.romanizedLyric)
+    }
+
     private fun testSong(): SongItem {
         return SongItem(
             id = 1L,

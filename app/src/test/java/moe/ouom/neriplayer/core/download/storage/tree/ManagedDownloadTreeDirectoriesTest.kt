@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertEquals
@@ -68,7 +69,8 @@ class ManagedDownloadTreeDirectoriesTest {
         )
         val directories = ManagedDownloadTreeDirectories(
             treeChildRegistry = registry,
-            tag = "test"
+            tag = "test",
+            deleteTrustedReference = { _, _ -> StorageMutationResult.Deleted }
         )
 
         directories.ensureManagedMediaScanIsolation(

@@ -17,7 +17,7 @@ internal object ManagedDownloadContentReferenceDeleter {
             uri = uri,
             maxAttempts = maxAttempts,
             retryDelayMs = retryDelayMs
-        )
+        ).isConfirmedDelete()
     }
 
     fun isMissingManagedDocumentFailure(error: Throwable): Boolean {
@@ -27,4 +27,9 @@ internal object ManagedDownloadContentReferenceDeleter {
     fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
         return ManagedDownloadReferenceIo.resolveDocumentFile(context, uri)
     }
+}
+
+private fun ManagedDownloadReferenceIo.DeleteResult.isConfirmedDelete(): Boolean {
+    return this is ManagedDownloadReferenceIo.DeleteResult.Deleted ||
+        this is ManagedDownloadReferenceIo.DeleteResult.Missing
 }

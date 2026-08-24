@@ -5,6 +5,8 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
@@ -13,13 +15,19 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRe
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadTreeFileCommitter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
     private val tag: String,
-    private val deleteContentReference: (Context, String, android.net.Uri) -> Boolean,
+    private val deleteTrustedReference: (Context, TrustedManagedRef) -> StorageMutationResult,
     private val verifyDocumentCommittedLength: (Context, android.net.Uri, Long, String) -> Long
 ) {
     fun createRootFile(
@@ -119,7 +127,7 @@ internal class ManagedDownloadTreeFileCommitter(
                         child.documentUri != resolvedCreated.uri
                 }
                 if (canonicalChild != null) {
-                    if (!deleteContentReference(context, resolvedCreated.uri.toString(), resolvedCreated.uri)) {
+                    if (!deleteConfirmed(context, resolvedCreated.uri)) {
                         throw IOException("无法清理 SAF 重复文件: $storedName")
                     }
                     treeChildRegistry.forgetTreeChildName(parent, storedName)
@@ -130,7 +138,7 @@ internal class ManagedDownloadTreeFileCommitter(
                     ) ?: throw IOException("无法访问已存在的下载文件: ${canonicalChild.name}")
                 }
                 if (replace) {
-                    if (!deleteContentReference(context, resolvedCreated.uri.toString(), resolvedCreated.uri)) {
+                    if (!deleteConfirmed(context, resolvedCreated.uri)) {
                         throw IOException("无法清理 SAF 覆写副本: $storedName")
                     }
                     treeChildRegistry.forgetTreeChildName(parent, storedName)
@@ -203,7 +211,7 @@ internal class ManagedDownloadTreeFileCommitter(
         expectedName: String
     ) {
         try {
-            deleteContentReference(context, target.uri.toString(), target.uri)
+            deleteConfirmed(context, target.uri)
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -225,41 +233,54 @@ internal class ManagedDownloadTreeFileCommitter(
     ): ManagedDownloadStorage.StoredEntry {
         NPLogger.w(tag, "SAF 重命名失败，回退为直接写入最终文件: $finalName")
         return try {
-            val target = createRootFile(
-                context = context,
-                parent = parent,
-                desiredName = finalName,
-                mimeType = mimeType,
-                replace = true
-            )
-            val storedName = resolvedTreeStoredName(target, finalName)
-
-            try {
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+            val result = runBlocking(Dispatchers.IO) {
+                SafStorageBackend(context).writeRecoverable(
+                    target = StorageTarget.SafTarget(
+                        parent = StorageReference.SafRef(parent.uri),
+                        displayName = finalName,
+                        mimeType = mimeType
+                    )
+                ) { output ->
                     tempFile.inputStream().use { input ->
                         input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                     }
-                } ?: throw IOException("无法打开下载目录输出流")
-            } catch (error: Throwable) {
-                deleteContentReference(context, target.uri.toString(), target.uri)
-                throw error
+                }
             }
-
+            val stat = when (result) {
+                is StorageWriteResult.Written -> result.stat
+                StorageWriteResult.Missing -> throw IOException("SAF 目标不存在: $finalName")
+                StorageWriteResult.OutOfScope -> throw IOException("SAF 目标越界: $finalName")
+                StorageWriteResult.PermissionLost -> throw SecurityException("SAF 写入权限丢失: $finalName")
+                is StorageWriteResult.ProviderFailure -> throw IOException(
+                    "SAF 回退写入失败: $finalName",
+                    result.error
+                )
+                is StorageWriteResult.Unsupported -> throw IOException(
+                    "SAF 不支持回退写入: $finalName (${result.operation})"
+                )
+            }
+            val targetUri = (stat.reference as? StorageReference.SafRef)?.uri
+                ?: throw IOException("SAF 回退写入未返回文档 URI: $finalName")
+            val target = DocumentFile.fromSingleUri(context, targetUri)
+                ?: throw IOException("无法访问回退写入后的文件: $finalName")
+            val storedName = stat.displayName
+            if (stat.sizeBytes != null && stat.sizeBytes != actualSizeBytes) {
+                throw IOException("SAF 回退写入大小不匹配: $finalName")
+            }
             if (storedName != finalName) {
                 treeChildRegistry.forgetTreeChildName(parent, finalName)
             }
-            val entry = verifiedTreeStoredEntry(
-                context = context,
-                target = target,
-                expectedName = storedName,
-                expectedSizeBytes = actualSizeBytes,
-                fallbackLastModifiedMs = committedAtMs,
-                description = finalName
-            )
+            val entry = ManagedDownloadStoredEntryMapper.fromDocumentFile(
+                documentFile = target,
+                knownName = storedName,
+                knownSizeBytes = stat.sizeBytes ?: actualSizeBytes,
+                knownLastModifiedMs = stat.lastModifiedMs ?: committedAtMs,
+                knownIsDirectory = false
+            ) ?: throw IOException("无法读取回退写入后的文件: $finalName")
             treeChildRegistry.rememberTreeChild(parent, entry)
             entry
         } finally {
-            deleteContentReference(context, pendingTarget.uri.toString(), pendingTarget.uri)
+            deleteConfirmed(context, pendingTarget.uri)
             treeChildRegistry.forgetTreeChildName(parent, pendingName)
         }
     }
@@ -273,6 +294,21 @@ internal class ManagedDownloadTreeFileCommitter(
             )
         }
         return resolvedName
+    }
+
+    private fun deleteConfirmed(context: Context, uri: android.net.Uri): Boolean {
+        val reference = TrustedManagedRef(
+            reference = StorageReference.SafRef(uri),
+            externalReference = uri.toString()
+        )
+        return when (deleteTrustedReference(context, reference)) {
+            StorageMutationResult.Deleted,
+            StorageMutationResult.Missing -> true
+            StorageMutationResult.OutOfScope,
+            StorageMutationResult.PermissionLost,
+            is StorageMutationResult.ProviderFailure,
+            is StorageMutationResult.Unsupported -> false
+        }
     }
 }
 

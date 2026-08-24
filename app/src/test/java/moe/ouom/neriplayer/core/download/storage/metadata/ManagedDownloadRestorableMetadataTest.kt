@@ -36,9 +36,15 @@ class ManagedDownloadRestorableMetadataTest {
         val json = original.toJson()
         val restored = ManagedDownloadRestorableMetadata.fromJson(json)
 
-        assertFalse(json.getJSONObject("baseline").has("coverReference"))
-        assertFalse(json.getJSONObject("overrides").has("coverReference"))
-        assertNull(restored?.baseline?.coverReference)
+        assertEquals(
+            "content://root/Covers/base.jpg",
+            json.getJSONObject("baseline").getString("coverReference")
+        )
+        assertEquals(
+            "content://root/Covers/edited.jpg",
+            json.getJSONObject("overrides").getString("coverReference")
+        )
+        assertEquals("content://root/Covers/base.jpg", restored?.baseline?.coverReference)
         assertEquals("Original title", restored?.baseline?.title)
         assertEquals("Edited title", restored?.overrides?.title)
         assertEquals(-321L, restored?.overrides?.userLyricOffsetMs)

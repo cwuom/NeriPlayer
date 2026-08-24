@@ -25,6 +25,17 @@ internal interface DownloadOperationDao {
         states: List<String>
     ): DownloadOperationEntity?
 
+    @Query(
+        "SELECT operation_id FROM download_operation " +
+            "WHERE stable_key = :stableKey AND state IN (:states) " +
+            "AND stop_requested_by_user = 0 " +
+            "ORDER BY updated_at_ms DESC, operation_id ASC LIMIT 1"
+    )
+    suspend fun findLatestOperationIdByStableKey(
+        stableKey: String,
+        states: List<String>
+    ): String?
+
     @Query("SELECT * FROM download_operation WHERE state = :state")
     suspend fun findByState(state: String): List<DownloadOperationEntity>
 

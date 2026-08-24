@@ -31,6 +31,32 @@ class SafStorageBackendFailureClassificationTest {
     }
 
     @Test
+    fun `stat classifies wrapped missing file provider error as missing`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            FileNotFoundException(
+                "Missing file for primary:root/song.npmeta.json at /storage/emulated/0/root/song.npmeta.json"
+            )
+        )
+
+        val result = SafStorageBackend(contextThatThrows(error)).stat(reference)
+
+        assertEquals(StorageLookupResult.Missing, result)
+    }
+
+    @Test
+    fun `stat keeps wrapped permission failure typed`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            FileNotFoundException("Permission denied for primary:root/song.npmeta.json")
+        )
+
+        val result = SafStorageBackend(contextThatThrows(error)).stat(reference)
+
+        assertEquals(StorageLookupResult.PermissionLost, result)
+    }
+
+    @Test
     fun `list keeps arbitrary file not found provider failures typed`() = runBlocking {
         val error = FileNotFoundException("provider temporarily unavailable")
 

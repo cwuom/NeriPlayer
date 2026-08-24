@@ -23,6 +23,7 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
@@ -1952,7 +1953,8 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
     clearMatchedMetadata: Boolean = false,
     writeLocalMetadata: Boolean = false,
     writeLyrics: Boolean = false,
-    persistManualRemoteCover: Boolean = false
+    persistManualRemoteCover: Boolean = false,
+    restoreBaseLyrics: Boolean = false
 ) : Boolean = runSongMetadataMutation {
             NPLogger.d(
                 "PlayerManager",
@@ -2223,7 +2225,13 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                     isLocalSong = isLocalSong
                 ),
                 fastLocalUsageSync = true,
-                deferPersistence = !writeLocalMetadata
+                deferPersistence = !writeLocalMetadata,
+                clearRestorableOverrides = RestorableMetadataClearPolicy(
+                    title = restoreBaseName,
+                    artist = restoreBaseArtist,
+                    cover = restoreBaseCover,
+                    lyrics = restoreBaseLyrics || clearMatchedMetadata
+                )
             )
             true
         }
@@ -2648,7 +2656,9 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
     triggerSync: Boolean,
     syncDownloadedMetadata: Boolean = true,
     fastLocalUsageSync: Boolean = false,
-    deferPersistence: Boolean = false
+    deferPersistence: Boolean = false,
+    clearRestorableOverrides: RestorableMetadataClearPolicy =
+        RestorableMetadataClearPolicy()
 ) {
     NPLogger.d(
         "NERI-PlayerManager",
@@ -2684,7 +2694,10 @@ private suspend fun PlayerManager.updateSongInAllPlaces(
             }
         }
         if (syncDownloadedMetadata) {
-            GlobalDownloadManager.syncDownloadedSongMetadata(updatedSong)
+            GlobalDownloadManager.syncDownloadedSongMetadata(
+                song = updatedSong,
+                clearRestorableOverrides = clearRestorableOverrides
+            )
         }
         AppContainer.playHistoryRepo.updateSongMetadata(
             originalSong = originalSong,

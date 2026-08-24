@@ -140,12 +140,10 @@ internal object DownloadExecutionRoomStore {
     ): String? {
         val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return null
         return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-            .findLatestByStableKey(
+            .findLatestOperationIdByStableKey(
                 stableKey = normalizedSongKey,
                 states = ACTIVE_OPERATION_STATES
             )
-            ?.let(::requestFromEntity)
-            ?.operationId
     }
 
     suspend fun isStopped(

@@ -7,7 +7,9 @@ import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,8 +29,8 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         val executor = ManagedDownloadReferenceDeleteExecutor(
             tag = "ManagedDownloadReferenceDeleteExecutorTest",
             isReferenceAllowed = { _, _, _, _ -> true },
-            contentReferenceDeleteOperation = { _, _, _, _ -> true },
-            contentReferenceGoneOperation = { _, _ -> true }
+            contentReferenceDeleteOperation = { _, _, _, _ -> StorageMutationResult.Deleted },
+            contentReferenceGoneOperation = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Missing }
         )
 
         val result = executor.deleteReferencesConcurrently(
@@ -56,9 +58,9 @@ class ManagedDownloadReferenceDeleteExecutorTest {
             isReferenceAllowed = { _, _, _, _ -> true },
             contentReferenceDeleteOperation = { _, _, _, _ ->
                 deleteCalls.incrementAndGet()
-                true
+                StorageMutationResult.Deleted
             },
-            contentReferenceGoneOperation = { _, _ -> true }
+            contentReferenceGoneOperation = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Missing }
         )
 
         val result = executor.deleteReferencesConcurrently(
@@ -96,12 +98,18 @@ class ManagedDownloadReferenceDeleteExecutorTest {
                 }
                 try {
                     Thread.sleep(2L)
-                    deleteCalls.incrementAndGet() > references.size * 2
+                    if (deleteCalls.incrementAndGet() > references.size * 2) {
+                        StorageMutationResult.Deleted
+                    } else {
+                        StorageMutationResult.ProviderFailure(
+                            IllegalStateException("retry")
+                        )
+                    }
                 } finally {
                     activeWorkers.decrementAndGet()
                 }
             },
-            contentReferenceGoneOperation = { _, _ -> false }
+            contentReferenceGoneOperation = { _, _ -> ManagedDownloadReferenceIo.AccessResult.Accessible }
         )
         val result = executor.deleteReferencesConcurrently(
             context = mock(Context::class.java),
@@ -128,11 +136,11 @@ class ManagedDownloadReferenceDeleteExecutorTest {
             referenceDeleteParallelism = 2,
             contentReferenceDeleteOperation = { _, _, _, _ ->
                 deleteCalls.incrementAndGet()
-                false
+                StorageMutationResult.ProviderFailure(IllegalStateException("not yet"))
             },
             contentReferenceGoneOperation = { _, _ ->
                 inspectedReferenceCount.incrementAndGet()
-                true
+                ManagedDownloadReferenceIo.AccessResult.Missing
             }
         )
 

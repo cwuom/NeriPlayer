@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.core.download.storage.delete
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +14,7 @@ import moe.ouom.neriplayer.core.download.storage.SAF_DELETE_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.SAF_DELETE_RETRY_DELAY_MS
 import moe.ouom.neriplayer.core.download.storage.SAF_REFERENCE_DELETE_PARALLELISM
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -28,17 +28,25 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         Collection<String>
     ) -> Boolean,
     private val referenceDeleteParallelism: Int = SAF_REFERENCE_DELETE_PARALLELISM,
-    private val contentReferenceDeleteOperation: (Context, Uri, Int, Long) -> Boolean =
-        { context, uri, maxAttempts, retryDelayMs ->
+    private val contentReferenceDeleteOperation:
+        (Context, TrustedManagedRef, Int, Long) -> StorageMutationResult =
+        { context, reference, maxAttempts, retryDelayMs ->
+            val uri = (reference.reference as StorageReference.SafRef).uri
             ManagedDownloadReferenceIo.deleteContentReference(
                 context = context,
                 uri = uri,
                 maxAttempts = maxAttempts,
                 retryDelayMs = retryDelayMs
-            )
+            ).toStorageMutationResult()
         },
-    private val contentReferenceGoneOperation: (Context, Uri) -> Boolean =
-        ManagedDownloadReferenceIo::isContentReferenceGone
+    private val contentReferenceGoneOperation:
+        (Context, TrustedManagedRef) -> ManagedDownloadReferenceIo.AccessResult =
+        { context, reference ->
+            ManagedDownloadReferenceIo.inspect(
+                context,
+                (reference.reference as StorageReference.SafRef).uri.toString()
+            )
+        }
 ) {
     init {
         require(referenceDeleteParallelism > 0)
@@ -113,43 +121,59 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         )
     }
 
-    fun deleteContentReference(context: Context, reference: String, uri: Uri): Boolean {
+    fun deleteTrustedContentReference(
+        context: Context,
+        reference: TrustedManagedRef
+    ): StorageMutationResult {
+        val storageReference = reference.reference as? StorageReference.SafRef
+            ?: return StorageMutationResult.Unsupported("SAF reference required")
+        val uri = storageReference.uri
         val candidateUris = documentUriAliases(uri)
         var deletedByProvider = false
-        var deleted = false
-        var permissionFailure: SecurityException? = null
+        var confirmed: StorageMutationResult? = null
         for (candidateUri in candidateUris) {
-            if (deleted) break
+            if (confirmed != null) break
             try {
-                val providerDeleted = contentReferenceDeleteOperation(
-                    context,
-                    candidateUri,
-                    SAF_DELETE_MAX_ATTEMPTS,
-                    SAF_DELETE_RETRY_DELAY_MS
-                )
-                deletedByProvider = deletedByProvider || providerDeleted
-                deleted = isReferenceGone(
+                val providerResult = contentReferenceDeleteOperation(
                     context,
                     TrustedManagedRef(
                         reference = StorageReference.SafRef(candidateUri),
-                        externalReference = reference
-                    )
+                        externalReference = reference.externalReference
+                    ),
+                    SAF_DELETE_MAX_ATTEMPTS,
+                    SAF_DELETE_RETRY_DELAY_MS
                 )
+                val providerDeleted = providerResult.isConfirmedMutation()
+                deletedByProvider = deletedByProvider || providerDeleted
+                confirmed = when {
+                    isReferenceGone(
+                        context,
+                        TrustedManagedRef(
+                            reference = StorageReference.SafRef(candidateUri),
+                            externalReference = reference.externalReference
+                        )
+                    ) -> StorageMutationResult.Deleted
+                    providerResult is StorageMutationResult.PermissionLost -> {
+                        StorageMutationResult.PermissionLost
+                    }
+                    providerResult is StorageMutationResult.ProviderFailure -> {
+                        providerResult
+                    }
+                    providerDeleted -> StorageMutationResult.Deleted
+                    else -> null
+                }
             } catch (error: SecurityException) {
-                permissionFailure = error
+                confirmed = StorageMutationResult.PermissionLost
             }
-        }
-        if (!deleted) {
-            permissionFailure?.let { throw it }
         }
         NPLogger.d(
             tag,
-            "SAF 删除结果: reference=$reference, provider=$deletedByProvider, confirmed=$deleted"
+            "SAF 删除结果: reference=${reference.externalReference}, " +
+                "provider=$deletedByProvider, confirmed=${confirmed != null}"
         )
-        if (!deleted) {
-            NPLogger.w(tag, "删除下载 content 引用失败: $reference")
-        }
-        return deleted
+        return confirmed ?: StorageMutationResult.ProviderFailure(
+            IllegalStateException("SAF delete was not confirmed")
+        )
     }
 
     private fun documentUriAliases(uri: Uri): List<Uri> {
@@ -174,16 +198,13 @@ internal class ManagedDownloadReferenceDeleteExecutor(
     private fun deleteReference(context: Context, reference: TrustedManagedRef): Boolean {
         return when (val storageReference = reference.reference) {
             is StorageReference.FileRef -> {
-                val file = File(storageReference.logicalPath)
-                !file.exists() || file.delete()
+                ManagedDownloadReferenceIo.deleteFileReference(storageReference.logicalPath)
+                    .toStorageMutationResult()
+                    .isConfirmedMutation()
             }
 
             is StorageReference.SafRef -> {
-                deleteContentReference(
-                    context,
-                    reference.externalReference,
-                    storageReference.uri
-                )
+                deleteTrustedContentReference(context, reference).isConfirmedMutation()
             }
         }
     }
@@ -191,12 +212,13 @@ internal class ManagedDownloadReferenceDeleteExecutor(
     private fun deleteReferenceOnce(context: Context, reference: TrustedManagedRef): Boolean {
         return when (val storageReference = reference.reference) {
             is StorageReference.FileRef -> {
-                val file = File(storageReference.logicalPath)
-                !file.exists() || file.delete()
+                ManagedDownloadReferenceIo.deleteFileReference(storageReference.logicalPath)
+                    .isConfirmedDelete()
             }
 
             is StorageReference.SafRef -> {
-                contentReferenceDeleteOperation(context, storageReference.uri, 1, 0L)
+                contentReferenceDeleteOperation(context, reference, 1, 0L)
+                    .isConfirmedMutation()
             }
         }
     }
@@ -295,9 +317,14 @@ internal class ManagedDownloadReferenceDeleteExecutor(
 
     private fun isReferenceGone(context: Context, reference: TrustedManagedRef): Boolean {
         return when (val storageReference = reference.reference) {
-            is StorageReference.FileRef -> !File(storageReference.logicalPath).exists()
+            is StorageReference.FileRef -> ManagedDownloadReferenceIo.isFileReferenceGone(
+                storageReference.logicalPath
+            )
             is StorageReference.SafRef -> {
-                contentReferenceGoneOperation(context, storageReference.uri)
+                when (contentReferenceGoneOperation(context, reference)) {
+                    ManagedDownloadReferenceIo.AccessResult.Missing -> true
+                    else -> false
+                }
             }
         }
     }
@@ -307,6 +334,26 @@ internal class ManagedDownloadReferenceDeleteExecutor(
             .filter { it.externalReference.isNotBlank() }
             .distinctBy(TrustedManagedRef::externalReference)
     }
+}
+
+private fun ManagedDownloadReferenceIo.DeleteResult.isConfirmedDelete(): Boolean {
+    return this is ManagedDownloadReferenceIo.DeleteResult.Deleted ||
+        this is ManagedDownloadReferenceIo.DeleteResult.Missing
+}
+
+private fun ManagedDownloadReferenceIo.DeleteResult.toStorageMutationResult(): StorageMutationResult {
+    return when (this) {
+        ManagedDownloadReferenceIo.DeleteResult.Deleted -> StorageMutationResult.Deleted
+        ManagedDownloadReferenceIo.DeleteResult.Missing -> StorageMutationResult.Missing
+        ManagedDownloadReferenceIo.DeleteResult.PermissionLost -> StorageMutationResult.PermissionLost
+        is ManagedDownloadReferenceIo.DeleteResult.ProviderFailure -> {
+            StorageMutationResult.ProviderFailure(error)
+        }
+    }
+}
+
+private fun StorageMutationResult.isConfirmedMutation(): Boolean {
+    return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
 }
 
 internal data class ManagedDownloadReferenceDeleteResult(

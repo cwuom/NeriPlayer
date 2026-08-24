@@ -10,6 +10,9 @@ import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
@@ -18,7 +21,11 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadTreeDirectories(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
-    private val tag: String
+    private val tag: String,
+    private val deleteTrustedReference: (
+        Context,
+        TrustedManagedRef
+    ) -> StorageMutationResult
 ) {
     private val subdirectoryCache = ConcurrentHashMap<String, DocumentFile>()
     private val ensuredNoMediaMarkers = ConcurrentHashMap<String, Boolean>()
@@ -130,13 +137,13 @@ internal class ManagedDownloadTreeDirectories(
     }
 
     private fun deleteContentReference(context: Context, uri: android.net.Uri): Boolean {
-        return try {
-            context.contentResolver.delete(uri, null, null) > 0
-        } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            false
-        }
+        return deleteTrustedReference(
+            context,
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(uri),
+                externalReference = uri.toString()
+            )
+        ).isConfirmedDelete()
     }
 
     fun findSubdirectories(
@@ -588,7 +595,7 @@ internal class ManagedDownloadTreeDirectories(
                         return renamedMarker
                     }
                 }
-                deleteDocument(marker)
+                deleteDocument(context, marker)
             }
         }
         return null
@@ -618,12 +625,12 @@ internal class ManagedDownloadTreeDirectories(
             requestedName
         )
         if (storedName != requestedName) {
-            deleteDocument(marker)
+            deleteDocument(context, marker)
             return null
         }
         return marker.takeIf { isAccessibleMarker(context, it) }
             ?: run {
-                deleteDocument(marker)
+                deleteDocument(context, marker)
                 null
             }
     }
@@ -640,14 +647,8 @@ internal class ManagedDownloadTreeDirectories(
         }
     }
 
-    private fun deleteDocument(document: DocumentFile): Boolean {
-        return try {
-            document.delete()
-        } catch (error: SecurityException) {
-            throw error
-        } catch (_: Exception) {
-            false
-        }
+    private fun deleteDocument(context: Context, document: DocumentFile): Boolean {
+        return deleteContentReference(context, document.uri)
     }
 
     private fun listDirectoryChildren(
@@ -688,4 +689,8 @@ internal class ManagedDownloadTreeDirectories(
         val name: String,
         val root: ManagedDownloadRootHandle
     )
+}
+
+private fun StorageMutationResult.isConfirmedDelete(): Boolean {
+    return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
 }

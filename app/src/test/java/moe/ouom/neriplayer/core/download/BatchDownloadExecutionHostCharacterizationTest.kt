@@ -28,7 +28,8 @@ class BatchDownloadExecutionHostCharacterizationTest {
 
         assertTrue(
             "batch path must resolve its host request from the persisted queue operation",
-            batchPath.contains("findQueuedOperationIdForSong")
+            batchPath.contains("ensureQueuedOperationForSong") &&
+                batchPath.contains("DownloadExecutionRoomStore.read")
         )
         assertFalse(
             "batch path must not create a second operation after queue persistence",

@@ -1,19 +1,24 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
-import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
-import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(
@@ -26,8 +31,6 @@ internal class ManagedDownloadStorageCommitWriter(
         treeChildRegistry = treeChildRegistry,
         tag = tag
     )
-    private val migrationPendingWriteNames = ManagedDownloadPendingAudioWriteNames()
-
     fun writeMigrationRootStream(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -90,25 +93,14 @@ internal class ManagedDownloadStorageCommitWriter(
                 val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: return null
                 treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
-                val target = treeFileCommitter.createRootFile(
+                val entry = writeSafEntry(
                     context = context,
                     parent = directory,
-                    desiredName = displayName,
+                    displayName = displayName,
                     mimeType = mimeType,
-                    replace = true
-                )
-                val writtenAtMs = System.currentTimeMillis()
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    output.write(bytes)
-                } ?: throw IOException("无法写入目录文件: $displayName")
-                treeFileCommitter.verifiedTreeStoredEntry(
-                    context = context,
-                    target = target,
-                    expectedName = displayName,
-                    expectedSizeBytes = bytes.size.toLong(),
-                    fallbackLastModifiedMs = writtenAtMs,
-                    description = displayName
-                ).also { entry -> treeChildRegistry.rememberTreeChild(directory, entry) }
+                    expectedSizeBytes = bytes.size.toLong()
+                ) { output -> output.write(bytes) }
+                entry
             }
         }
     }
@@ -165,28 +157,18 @@ internal class ManagedDownloadStorageCommitWriter(
                 val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: throw IOException("无法创建目录: $subdirectory")
                 treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
-                val target = treeFileCommitter.createRootFile(
+                var copiedBytes = 0L
+                val entry = writeSafEntry(
                     context = context,
                     parent = directory,
-                    desiredName = displayName,
+                    displayName = displayName,
                     mimeType = mimeType,
-                    replace = true
-                )
-                val writtenAtMs = System.currentTimeMillis()
-                var copiedBytes = 0L
-                context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                    expectedSizeBytes = null
+                ) { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                } ?: throw IOException("无法写入目录文件: $displayName")
-                val entry = treeFileCommitter.verifiedTreeStoredEntry(
-                    context = context,
-                    target = target,
-                    expectedName = displayName,
-                    expectedSizeBytes = copiedBytes.coerceAtLeast(0L),
-                    fallbackLastModifiedMs = writtenAtMs,
-                    description = displayName
-                )
-                treeChildRegistry.rememberTreeChild(directory, entry)
-                entry
+                }
+                entry.takeIf { it.sizeBytes > 0L || copiedBytes <= 0L }
+                    ?: entry.copy(sizeBytes = copiedBytes)
             }
         }
     }
@@ -250,33 +232,14 @@ internal class ManagedDownloadStorageCommitWriter(
             }
 
             is ManagedDownloadRootHandle.TreeRoot -> {
-                val target = treeFileCommitter.createRootFile(
+                val encoded = content.toByteArray(Charsets.UTF_8)
+                writeSafEntry(
                     context = context,
                     parent = root.tree,
-                    desiredName = displayName,
+                    displayName = displayName,
                     mimeType = "application/json",
-                    replace = true
-                )
-                val writtenAtMs = System.currentTimeMillis()
-                val encoded = content.toByteArray(Charsets.UTF_8)
-                val output = try {
-                    context.contentResolver.openOutputStream(target.uri, "rwt")
-                } catch (error: SecurityException) {
-                    throw error
-                } catch (_: Exception) {
-                    context.contentResolver.openOutputStream(target.uri, "wt")
-                } ?: throw IOException("无法写入元数据文件: $displayName")
-                output.use { it.write(encoded) }
-                val entry = treeFileCommitter.verifiedTreeStoredEntry(
-                    context = context,
-                    target = target,
-                    expectedName = displayName,
-                    expectedSizeBytes = encoded.size.toLong(),
-                    fallbackLastModifiedMs = writtenAtMs,
-                    description = displayName
-                )
-                treeChildRegistry.rememberTreeChild(root.tree, entry)
-                entry
+                    expectedSizeBytes = encoded.size.toLong()
+                ) { output -> output.write(encoded) }
             }
         }
     }
@@ -319,6 +282,79 @@ internal class ManagedDownloadStorageCommitWriter(
         return StoredWriteResult(
             entry = ManagedDownloadStoredEntryMapper.fromFile(targetFile).copy(sizeBytes = verifiedSize),
             createdNew = true
+        )
+    }
+
+    private fun writeSafEntry(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String,
+        mimeType: String,
+        expectedSizeBytes: Long?,
+        writer: suspend (java.io.OutputStream) -> Unit
+    ): ManagedDownloadStorage.StoredEntry {
+        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
+        val result = runBlocking(Dispatchers.IO) {
+            backend.writeRecoverable(
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(parent.uri),
+                    displayName = displayName,
+                    mimeType = mimeType
+                ),
+                writer = writer
+            )
+        }
+        val stat = when (result) {
+            is StorageWriteResult.Written -> result.stat
+            StorageWriteResult.Missing -> throw IOException("SAF 目标不存在: $displayName")
+            StorageWriteResult.OutOfScope -> throw IOException("SAF 目标越界: $displayName")
+            StorageWriteResult.PermissionLost -> throw SecurityException("SAF 写入权限丢失: $displayName")
+            is StorageWriteResult.ProviderFailure -> throw IOException(
+                "SAF 写入失败: $displayName",
+                result.error
+            )
+            is StorageWriteResult.Unsupported -> throw IOException(
+                "SAF 不支持写入: $displayName (${result.operation})"
+            )
+        }
+        val verifiedSize = expectedSizeBytes?.let { expected ->
+            val measured = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
+                val measuredResult = backend.read(stat.reference) { input ->
+                    input.copyTo(java.io.OutputStream.nullOutputStream())
+                }
+                when (measuredResult) {
+                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                        measuredResult.value
+                    }
+                    else -> null
+                }
+            }
+            if (measured != null && measured != expected) {
+                throw IOException(
+                    "SAF 写入大小不匹配: $displayName, expected=$expected, actual=$measured"
+                )
+            }
+            measured ?: expected
+        }
+        val entry = stat.toStoredEntry().copy(sizeBytes = verifiedSize ?: stat.sizeBytes ?: 0L)
+        treeChildRegistry.rememberTreeChild(parent, entry)
+        return entry
+    }
+
+    private fun StorageStat.toStoredEntry(): ManagedDownloadStorage.StoredEntry {
+        val externalReference = when (val storageReference = reference) {
+            is StorageReference.FileRef -> storageReference.logicalPath
+            is StorageReference.SafRef -> storageReference.uri.toString()
+        }
+        val localPath = (reference as? StorageReference.FileRef)?.logicalPath
+        return ManagedDownloadStorage.StoredEntry(
+            name = displayName,
+            reference = externalReference,
+            mediaUri = externalReference,
+            localFilePath = localPath,
+            sizeBytes = sizeBytes ?: 0L,
+            lastModifiedMs = lastModifiedMs ?: 0L,
+            isDirectory = isDirectory
         )
     }
 
@@ -448,91 +484,50 @@ internal class ManagedDownloadStorageCommitWriter(
         onProgress: ((Long) -> Unit)?,
         description: String
     ): StoredWriteResult {
-        val requestedPendingName = migrationPendingWriteNames.buildPendingAudioWriteName(finalName)
-        var pendingTarget: DocumentFile? = null
-        var pendingName = requestedPendingName
-        try {
-            val writtenAtMs = System.currentTimeMillis()
-            val pending = treeFileCommitter.createRootFile(
-                context = context,
-                parent = parent,
-                desiredName = requestedPendingName,
-                mimeType = mimeType,
-                replace = false
-            )
-            pendingTarget = pending
-            pendingName = treeFileCommitter.resolvedTreeStoredName(
-                pending,
-                requestedPendingName
-            )
-            var copiedBytes = 0L
-            context.contentResolver.openOutputStream(pending.uri, "w")?.use { output ->
+        var copiedBytes = 0L
+        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
+        val result = runBlocking(Dispatchers.IO) {
+            backend.writeRecoverable(
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(parent.uri),
+                    displayName = finalName,
+                    mimeType = mimeType
+                )
+            ) { output ->
                 copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
                     input = input,
                     output = output,
                     bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
                     onProgress = onProgress
                 )
-            } ?: throw IOException("无法写入 SAF 迁移临时文件: $finalName")
-            val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L }
-                ?: copiedBytes.coerceAtLeast(0L)
-            treeFileCommitter.verifiedTreeStoredEntry(
-                context = context,
-                target = pending,
-                expectedName = pendingName,
-                expectedSizeBytes = expectedSize,
-                fallbackLastModifiedMs = writtenAtMs,
-                description = "迁移临时文件: $description"
-            )
-            val renamedUri = DocumentsContract.renameDocument(
-                context.contentResolver,
-                pending.uri,
-                finalName
-            ) ?: throw IOException("SAF 提供方未返回迁移提交后的文件 URI: $finalName")
-            val committedPending = DocumentFile.fromSingleUri(context, renamedUri)
-                ?: throw IOException("无法访问 SAF 迁移提交后的文件: $finalName")
-            pendingTarget = committedPending
-            pendingName = finalName
-            val committedTarget = treeChildRegistry.toTreeDocumentFileOrEnumerated(
-                context = context,
-                parent = parent,
-                child = committedPending
-            ) ?: committedPending
-            val entry = treeFileCommitter.verifiedTreeStoredEntry(
-                context = context,
-                target = committedTarget,
-                expectedName = finalName,
-                expectedSizeBytes = expectedSize,
-                fallbackLastModifiedMs = writtenAtMs,
-                description = description
-            )
-            if (entry.name != finalName) {
-                throw IOException("SAF 迁移提交后的文件名异常: expected=$finalName, actual=${entry.name}")
             }
-            treeChildRegistry.forgetTreeChildName(parent, requestedPendingName)
-            if (pendingName != requestedPendingName) {
-                treeChildRegistry.forgetTreeChildName(parent, pendingName)
-            }
-            treeChildRegistry.rememberTreeChild(parent, entry)
-            return StoredWriteResult(
-                entry = entry.copy(
-                    // saf providers own the physical timestamp; source time stays in metadata
-                    lastModifiedMs = entry.lastModifiedMs
-                ),
-                createdNew = true
-            )
-        } catch (error: Throwable) {
-            pendingTarget?.let { target ->
-                treeFileCommitter.discardTreeFile(
-                    context = context,
-                    parent = parent,
-                    target = target,
-                    expectedName = pendingName
-                )
-            }
-            treeChildRegistry.forgetTreeChildName(parent, requestedPendingName)
-            throw error
         }
+        val stat = when (result) {
+            is StorageWriteResult.Written -> result.stat
+            StorageWriteResult.Missing -> throw IOException("迁移目标不存在: $finalName")
+            StorageWriteResult.OutOfScope -> throw IOException("迁移目标越界: $finalName")
+            StorageWriteResult.PermissionLost -> throw SecurityException("迁移目标权限丢失: $finalName")
+            is StorageWriteResult.ProviderFailure -> throw IOException(
+                "SAF 迁移写入失败: $description",
+                result.error
+            )
+            is StorageWriteResult.Unsupported -> throw IOException(
+                "SAF 不支持迁移写入: $finalName (${result.operation})"
+            )
+        }
+        val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L } ?: copiedBytes
+        if (stat.sizeBytes != null && stat.sizeBytes != expectedSize) {
+            throw IOException(
+                "SAF 迁移大小不匹配: $description, expected=$expectedSize, actual=${stat.sizeBytes}"
+            )
+        }
+        val entry = stat.toStoredEntry().copy(
+            sizeBytes = stat.sizeBytes ?: copiedBytes,
+            // saf providers own the physical timestamp; source time stays in metadata
+            lastModifiedMs = stat.lastModifiedMs ?: sourceEntry.lastModifiedMs
+        )
+        treeChildRegistry.rememberTreeChild(parent, entry)
+        return StoredWriteResult(entry = entry, createdNew = true)
     }
 
 }

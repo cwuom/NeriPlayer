@@ -77,6 +77,7 @@ private fun ManagedDownloadRestorableMetadata.Baseline.toJson(): JSONObject {
         put("title", title)
         put("artist", artist)
         put("album", album)
+        put("coverReference", coverReference)
         put("originalLyric", originalLyric)
         put("translatedLyric", translatedLyric)
         put("romanizedLyric", romanizedLyric)
@@ -87,6 +88,7 @@ private fun ManagedDownloadRestorableMetadata.Overrides.toJson(): JSONObject {
     return JSONObject().apply {
         put("title", title)
         put("artist", artist)
+        put("coverReference", coverReference)
         put("userLyricOffsetMs", userLyricOffsetMs)
         put("originalLyric", originalLyric)
         put("translatedLyric", translatedLyric)

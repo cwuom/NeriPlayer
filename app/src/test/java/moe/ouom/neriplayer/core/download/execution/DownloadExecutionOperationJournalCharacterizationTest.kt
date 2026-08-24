@@ -164,6 +164,25 @@ class DownloadExecutionOperationJournalCharacterizationTest {
         assertEquals(null, store.read(context, request.operationId))
         assertTrue(directory.listFiles().orEmpty().isEmpty())
     }
+
+    @Test
+    fun `queue lookup can return an operation id without decoding its request payload`() {
+        var directory = java.io.File(System.getProperty("user.dir") ?: ".")
+        val sourceFile = generateSequence(directory) { it.parentFile }
+            .map {
+                java.io.File(
+                    it,
+                    "app/src/main/java/moe/ouom/neriplayer/core/download/execution/DownloadExecutionRoomStore.kt"
+                )
+            }
+            .firstOrNull(java.io.File::isFile)
+            ?: error("operation room store source not found")
+        val source = sourceFile.readText()
+        val lookup = source.substringAfter("suspend fun findOperationIdForSong")
+            .substringBefore("suspend fun isStopped")
+        assertTrue(lookup.contains("findLatestOperationIdByStableKey"))
+        assertTrue(!lookup.contains("requestFromEntity"))
+    }
 }
 
 internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOperationJournal {

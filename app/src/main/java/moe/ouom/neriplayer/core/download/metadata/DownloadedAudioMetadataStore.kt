@@ -14,6 +14,13 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 
+internal data class RestorableMetadataClearPolicy(
+    val title: Boolean = false,
+    val artist: Boolean = false,
+    val cover: Boolean = false,
+    val lyrics: Boolean = false
+)
+
 internal class DownloadedAudioMetadataStore(
     private val maxWriteAttempts: Int,
     private val writeRetryDelayMs: Long,
@@ -27,7 +34,9 @@ internal class DownloadedAudioMetadataStore(
         downloadFinalized: Boolean = true,
         resolveExistingSidecars: Boolean = true,
         artifactStateOverride: String? = null,
-        operationId: String? = null
+        operationId: String? = null,
+        clearRestorableOverrides: RestorableMetadataClearPolicy =
+            RestorableMetadataClearPolicy()
     ): Boolean {
         val identity = song.identity()
         val existingMetadata = read(context, audio)
@@ -39,12 +48,10 @@ internal class DownloadedAudioMetadataStore(
             existingMetadata = existingMetadata,
             resolveExistingSidecars = resolveExistingSidecars
         )
-        val materializedCover = runCatching {
-            ManagedDownloadCoverAssetStore.materialize(
-                context = context,
-                reference = sidecars.coverReference
-            )
-        }.getOrNull()
+        val materializedCover = ManagedDownloadCoverAssetStore.materialize(
+            context = context,
+            reference = sidecars.coverReference
+        )
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
@@ -60,7 +67,8 @@ internal class DownloadedAudioMetadataStore(
             existing = existingMetadata?.restorableMetadata,
             coverReference = persistedSidecars.coverReference,
             coverAssetHash = materializedCover?.assetHash,
-            createdAtMs = createdAtMs
+            createdAtMs = createdAtMs,
+            clearRestorableOverrides = clearRestorableOverrides
         )
         val payload = buildMetadataPayload(
             song = metadataSong,
@@ -143,12 +151,10 @@ internal class DownloadedAudioMetadataStore(
             ?: return false
         val raw = ManagedDownloadStorage.readText(context, metadataEntry.reference)
             ?: return false
-        val materialized = runCatching {
-            ManagedDownloadCoverAssetStore.materialize(
-                context = context,
-                reference = coverReference
-            )
-        }.getOrNull()
+        val materialized = ManagedDownloadCoverAssetStore.materialize(
+            context = context,
+            reference = coverReference
+        )
         val effectiveReference = materialized?.reference ?: coverReference
         val patchedPayload = patchDownloadedMetadataCoverReference(
             rawMetadata = raw,
@@ -303,14 +309,16 @@ internal class DownloadedAudioMetadataStore(
         existing: ManagedDownloadRestorableMetadata?,
         coverReference: String?,
         coverAssetHash: String?,
-        createdAtMs: Long
+        createdAtMs: Long,
+        clearRestorableOverrides: RestorableMetadataClearPolicy
     ): ManagedDownloadRestorableMetadata {
         val identity = song.identity()
         val baseline = existing?.baseline ?: ManagedDownloadRestorableMetadata.Baseline(
             title = song.originalName ?: song.name,
             artist = song.originalArtist ?: song.artist,
             album = song.album,
-            coverReference = coverReference ?: song.originalCoverUrl ?: song.coverUrl,
+            // the first write must capture the source cover, never the current override
+            coverReference = song.originalCoverUrl ?: song.coverUrl,
             originalLyric = song.originalLyric ?: song.matchedLyric,
             translatedLyric = song.originalTranslatedLyric ?: song.matchedTranslatedLyric,
             romanizedLyric = song.originalRomanizedLyric ?: song.matchedRomanizedLyric
@@ -327,10 +335,17 @@ internal class DownloadedAudioMetadataStore(
             overrides = mergeRestorableOverrides(
                 previous = previous.overrides,
                 song = song,
-                coverReference = coverReference
+                coverReference = coverReference,
+                clearRestorableOverrides = clearRestorableOverrides
             ),
-            baselineCoverAssetHash = previous.baselineCoverAssetHash ?: coverAssetHash,
-            currentCoverAssetHash = coverAssetHash ?: previous.currentCoverAssetHash,
+            baselineCoverAssetHash = previous.baselineCoverAssetHash ?:
+                coverAssetHash.takeIf { song.customCoverUrl.isNullOrBlank() },
+            currentCoverAssetHash = when {
+                clearRestorableOverrides.cover -> {
+                    coverAssetHash ?: previous.baselineCoverAssetHash
+                }
+                else -> coverAssetHash ?: previous.currentCoverAssetHash
+            },
             createdAtMs = previous.createdAtMs ?: createdAtMs,
             updatedAtMs = System.currentTimeMillis()
         )
@@ -347,20 +362,49 @@ internal class DownloadedAudioMetadataStore(
 internal fun mergeRestorableOverrides(
     previous: ManagedDownloadRestorableMetadata.Overrides,
     song: SongItem,
-    coverReference: String?
+    coverReference: String?,
+    clearRestorableOverrides: RestorableMetadataClearPolicy =
+        RestorableMetadataClearPolicy()
 ): ManagedDownloadRestorableMetadata.Overrides {
+    val customCover = song.customCoverUrl?.trim()?.takeIf(String::isNotBlank)
+    val effectiveCoverReference = if (customCover != null) {
+        customCover
+    } else {
+        null
+    }
     return previous.copy(
-        title = song.customName ?: previous.title,
-        artist = song.customArtist ?: previous.artist,
-        coverReference = song.customCoverUrl ?: previous.coverReference ?: coverReference,
+        // null means the user restored the baseline; do not resurrect the old override
+        title = if (clearRestorableOverrides.title) null else {
+            song.customName ?: previous.title
+        },
+        artist = if (clearRestorableOverrides.artist) null else {
+            song.customArtist ?: previous.artist
+        },
+        coverReference = if (clearRestorableOverrides.cover) {
+            null
+        } else {
+            effectiveCoverReference ?: previous.coverReference
+        },
         userLyricOffsetMs = if (song.userLyricOffsetMs != 0L) {
             song.userLyricOffsetMs
         } else {
             previous.userLyricOffsetMs
         },
-        originalLyric = song.matchedLyric ?: previous.originalLyric,
-        translatedLyric = song.matchedTranslatedLyric ?: previous.translatedLyric,
-        romanizedLyric = song.matchedRomanizedLyric ?: previous.romanizedLyric
+        originalLyric = if (clearRestorableOverrides.lyrics) {
+            null
+        } else {
+            song.matchedLyric ?: previous.originalLyric
+        },
+        translatedLyric = if (clearRestorableOverrides.lyrics) {
+            null
+        } else {
+            song.matchedTranslatedLyric ?: previous.translatedLyric
+        },
+        romanizedLyric = if (clearRestorableOverrides.lyrics) {
+            null
+        } else {
+            song.matchedRomanizedLyric ?: previous.romanizedLyric
+        }
     )
 }
 

@@ -158,7 +158,15 @@ class DefaultDownloadExecutionHost(
                     "download operation already scheduled"
                 )
             }
-            operationStore.save(appContext, request)
+            val currentState = operationStore.currentState(appContext, request.operationId)
+            if (currentState != null && currentState !in SCHEDULABLE_OPERATION_STATES) {
+                return@runCatching DownloadExecutionSchedule.Rejected(
+                    "operation is no longer schedulable: $currentState"
+                )
+            }
+            if (currentState == null) {
+                operationStore.save(appContext, request)
+            }
             val selectedBackend = selectDownloadExecutionBackend(
                 sdkInt = sdkInt,
                 userInitiated = request.userInitiated
@@ -194,6 +202,14 @@ class DefaultDownloadExecutionHost(
                 error.message ?: error.javaClass.simpleName
             )
         }
+    }
+
+    private companion object {
+        private val SCHEDULABLE_OPERATION_STATES = setOf(
+            "PENDING_QUEUE",
+            "QUEUED",
+            "RETRYABLE"
+        )
     }
 
     override fun cancel(
