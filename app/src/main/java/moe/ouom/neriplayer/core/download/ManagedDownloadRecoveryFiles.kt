@@ -164,9 +164,16 @@ internal object ManagedDownloadRecoveryFiles {
         return ManagedDownloadWorkingStore.cleanupStagingFilesInDirectory(stagingDir, nowMs)
     }
 
-    fun upsertPendingDownloadQueue(context: Context, songs: List<SongItem>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).upsertPendingDownloadQueue(songs)
+    fun upsertPendingDownloadQueue(
+        context: Context,
+        songs: List<SongItem>,
+        userInitiated: Boolean = false
+    ): List<String> {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).upsertPendingDownloadQueue(
+                songs = songs,
+                userInitiated = userInitiated
+            )
         }
     }
 

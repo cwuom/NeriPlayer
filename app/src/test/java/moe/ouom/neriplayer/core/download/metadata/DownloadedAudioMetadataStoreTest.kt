@@ -200,6 +200,39 @@ class DownloadedAudioMetadataStoreTest {
         assertNull(merged.romanizedLyric)
     }
 
+    @Test
+    fun `restorable baseline is backfilled from downloaded sidecar lyrics`() {
+        val baseline = mergeRestorableBaseline(
+            existing = ManagedDownloadRestorableMetadata.Baseline(
+                title = "Original title",
+                artist = "Original artist"
+            ),
+            song = testSong(),
+            coverReference = "content://managed/Covers/base.jpg",
+            sidecarOriginalLyric = "[00:00.00]sidecar lyric",
+            sidecarTranslatedLyric = "[00:00.00]sidecar translation",
+            sidecarRomanizedLyric = "[00:00.00]sidecar romanization"
+        )
+
+        assertEquals("[00:00.00]sidecar lyric", baseline.originalLyric)
+        assertEquals("[00:00.00]sidecar translation", baseline.translatedLyric)
+        assertEquals("[00:00.00]sidecar romanization", baseline.romanizedLyric)
+    }
+
+    @Test
+    fun `restorable baseline never replaces an existing lyric with sidecar content`() {
+        val baseline = mergeRestorableBaseline(
+            existing = ManagedDownloadRestorableMetadata.Baseline(
+                originalLyric = "[00:00.00]authoritative lyric"
+            ),
+            song = testSong(),
+            coverReference = null,
+            sidecarOriginalLyric = "[00:00.00]stale sidecar lyric"
+        )
+
+        assertEquals("[00:00.00]authoritative lyric", baseline.originalLyric)
+    }
+
     private fun testSong(): SongItem {
         return SongItem(
             id = 1L,

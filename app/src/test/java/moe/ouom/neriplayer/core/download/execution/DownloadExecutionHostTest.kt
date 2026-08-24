@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.execution
 import android.content.Context
 import android.os.Build
 import androidx.work.NetworkType
+import androidx.work.ListenableWorker
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -119,7 +120,7 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `automatic recovery never selects UIDT even on API 34`() {
+    fun `execution backend keeps recovery and API 36 downloads on foreground work`() {
         assertEquals(
             DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
             selectDownloadExecutionBackend(
@@ -134,12 +135,38 @@ class DownloadExecutionHostTest {
                 userInitiated = true
             )
         )
+        assertEquals(
+            DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
+            selectDownloadExecutionBackend(
+                sdkInt = Build.VERSION_CODES.BAKLAVA,
+                userInitiated = true
+            )
+        )
     }
 
     @Test
     fun `foreground download work waits for a connected network`() {
         val request = ForegroundDownloadWorker.buildRequest("operation-network")
 
+        assertEquals(
+            NetworkType.CONNECTED,
+            request.workSpec.constraints.requiredNetworkType
+        )
+    }
+
+    @Test
+    fun `missing operation asks WorkManager to retry`() {
+        assertEquals(
+            ListenableWorker.Result.retry()::class,
+            DownloadExecutionResult.MissingOperation.toWorkerResult()::class
+        )
+    }
+
+    @Test
+    fun `UIDT fallback work waits briefly before claiming the operation`() {
+        val request = ForegroundDownloadWorker.buildFallbackRequest("operation-fallback")
+
+        assertEquals(3_000L, request.workSpec.initialDelay)
         assertEquals(
             NetworkType.CONNECTED,
             request.workSpec.constraints.requiredNetworkType

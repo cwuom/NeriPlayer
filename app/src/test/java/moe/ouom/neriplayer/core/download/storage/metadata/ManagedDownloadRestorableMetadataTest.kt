@@ -81,4 +81,23 @@ class ManagedDownloadRestorableMetadataTest {
         assertNull(restored?.baseline?.title)
         assertNull(restored?.overrides?.coverReference)
     }
+
+    @Test
+    fun `baseline empty lyrics survive round trip as explicit absence`() {
+        val restored = ManagedDownloadRestorableMetadata.fromJson(
+            ManagedDownloadRestorableMetadata(
+                sourceStableKey = "stable",
+                baseline = ManagedDownloadRestorableMetadata.Baseline(
+                    originalLyric = "",
+                    translatedLyric = "",
+                    romanizedLyric = ""
+                ),
+                overrides = ManagedDownloadRestorableMetadata.Overrides()
+            ).toJson()
+        )
+
+        assertEquals("", restored?.baseline?.originalLyric)
+        assertEquals("", restored?.baseline?.translatedLyric)
+        assertEquals("", restored?.baseline?.romanizedLyric)
+    }
 }

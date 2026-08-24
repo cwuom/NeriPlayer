@@ -95,6 +95,7 @@ sealed interface DownloadExecutionSchedule {
 
 sealed interface DownloadExecutionResult {
     data object Accepted : DownloadExecutionResult
+    data object AlreadyHandled : DownloadExecutionResult
     data object MissingOperation : DownloadExecutionResult
     data object Retry : DownloadExecutionResult
     data object Cancelled : DownloadExecutionResult
@@ -140,6 +141,7 @@ class DefaultDownloadExecutionHost(
     private val sdkInt: Int = Build.VERSION.SDK_INT
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
+    private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
 
     override fun schedule(
         context: Context,
@@ -150,9 +152,16 @@ class DefaultDownloadExecutionHost(
             val songKey = request.song.stableKey()
             val existingOperationId = operationIdsBySongKey[songKey]
                 ?: operationStore.findOperationIdForSong(appContext, songKey)
+            val existingState = existingOperationId?.let { id ->
+                operationStore.currentState(appContext, id)
+            }
+            val existingReadable = existingOperationId?.let { id ->
+                operationStore.read(appContext, id) != null
+            } == true
             if (existingOperationId != null &&
                 existingOperationId != request.operationId &&
-                operationStore.read(appContext, existingOperationId) != null
+                existingState in ACTIVE_SCHEDULING_STATES &&
+                existingReadable
             ) {
                 return@runCatching DownloadExecutionSchedule.Rejected(
                     "download operation already scheduled"
@@ -210,6 +219,8 @@ class DefaultDownloadExecutionHost(
             "QUEUED",
             "RETRYABLE"
         )
+        private val ACTIVE_SCHEDULING_STATES = SCHEDULABLE_OPERATION_STATES +
+            setOf("RUNNING", "COMMITTING", "CORE_COMMITTED", "ASSETS_ENRICHING")
     }
 
     override fun cancel(
@@ -267,6 +278,14 @@ class DefaultDownloadExecutionHost(
         operationIdsBySongKey[request.song.stableKey()] = normalizedId
         if (preventReschedule) {
             operationStore.markStopped(appContext, normalizedId)
+        } else {
+            // make the paused operation the one queue refresh can resume
+            operationStore.updateState(
+                context = appContext,
+                operationId = normalizedId,
+                state = "RETRYABLE",
+                errorCode = "HOST_STOPPED"
+            )
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             cancelUidt(appContext, normalizedId)
@@ -356,20 +375,32 @@ class DefaultDownloadExecutionHost(
         val normalizedId = normalizeDownloadOperationId(operationId)
             ?: return@withContext DownloadExecutionResult.MissingOperation
         val request = operationStore.read(context.applicationContext, normalizedId)
-            ?: return@withContext DownloadExecutionResult.MissingOperation
+            ?: run {
+                moe.ouom.neriplayer.core.logging.NPLogger.w(
+                    "NERI-DownloadHost",
+                    "下载 operation 读取失败: operationId=$normalizedId, reason=missing_or_unreadable"
+                )
+                return@withContext DownloadExecutionResult.MissingOperation
+            }
         if (operationStore.isStopped(context.applicationContext, normalizedId)) {
             return@withContext DownloadExecutionResult.UserStopped
         }
         if (operationStore.currentState(context.applicationContext, normalizedId) == "CANCEL_REQUESTED") {
             return@withContext DownloadExecutionResult.Cancelled
         }
-        operationStore.updateState(
-            context = context.applicationContext,
-            operationId = normalizedId,
-            state = "RUNNING"
-        )
-        operationIdsBySongKey[request.song.stableKey()] = normalizedId
+        if (!executingOperationIds.add(normalizedId)) {
+            return@withContext DownloadExecutionResult.AlreadyHandled
+        }
         try {
+            if (!operationStore.tryStart(
+                    context = context.applicationContext,
+                    operationId = normalizedId,
+                    allowExistingRunning = true
+                )
+            ) {
+                return@withContext DownloadExecutionResult.AlreadyHandled
+            }
+            operationIdsBySongKey[request.song.stableKey()] = normalizedId
             entryPoint.start(
                 context = context.applicationContext,
                 operationId = request.operationId,
@@ -391,6 +422,7 @@ class DefaultDownloadExecutionHost(
                         limit = TERMINAL_OPERATION_PRUNE_LIMIT
                     )
                 }
+                DownloadExecutionResult.AlreadyHandled -> Unit
                 DownloadExecutionResult.Cancelled -> {
                     operationStore.updateState(
                         context = context.applicationContext,
@@ -440,6 +472,8 @@ class DefaultDownloadExecutionHost(
                 errorCode = error.javaClass.simpleName
             )
             DownloadExecutionResult.Failed(error)
+        } finally {
+            executingOperationIds.remove(normalizedId)
         }
     }
 }
@@ -487,7 +521,8 @@ internal fun selectDownloadExecutionBackend(
 ): DownloadExecutionSchedule.Backend {
     return if (
         userInitiated &&
-            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            sdkInt < Build.VERSION_CODES.BAKLAVA
     ) {
         DownloadExecutionSchedule.Backend.UIDT_JOB
     } else {

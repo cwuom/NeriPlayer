@@ -530,7 +530,10 @@ class NowPlayingViewModel : ViewModel() {
         val requestId = originalInfoRequestId.incrementAndGet()
         viewModelScope.launch {
             try {
-                val isBili = originalSong.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
+                val isBili = originalSong.album.startsWith(
+                    PlayerManager.BILI_SOURCE_TAG,
+                    ignoreCase = true
+                ) || originalSong.channelId.equals("bilibili", ignoreCase = true)
 
                 if (!originalSong.mediaUri.isNullOrBlank()) {
                     val coverFallbackUrl = withContext(Dispatchers.IO) {

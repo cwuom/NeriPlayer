@@ -75,6 +75,25 @@ class DownloadExecutionOperationJournalCharacterizationTest {
     }
 
     @Test
+    fun `operation claim is exclusive unless stale running recovery is requested`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-claim",
+            song = SongItemFixtures.sampleSong()
+        )
+
+        store.save(context, request)
+
+        assertTrue(store.tryStart(context, request.operationId))
+        assertEquals("RUNNING", store.currentState(context, request.operationId))
+        assertTrue(!store.tryStart(context, request.operationId))
+        assertTrue(store.tryStart(context, request.operationId, allowExistingRunning = true))
+    }
+
+    @Test
     fun `cancel request before the linearization point blocks core commit`() {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)

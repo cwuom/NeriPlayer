@@ -13,8 +13,10 @@ import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAM
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -200,6 +202,203 @@ class DownloadRecoveryRoomStoreTest {
         } finally {
             queueFile.delete()
             cancelledFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun queueRefresh_rewritesLegacyOperationPayload_inPlace() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(5L, "legacy-operation")
+            val operationId = "legacy-operation-5"
+            database.downloadOperationDao().upsert(
+                DownloadOperationEntity(
+                    operationId = operationId,
+                    stableKey = song.stableKey(),
+                    libraryId = "test-library",
+                    state = "QUEUED",
+                    queueOrder = 0,
+                    sourceHintJson = "{\"channelId\":\"netease\",\"audioId\":\"5\"}",
+                    stagingDirName = operationId,
+                    bytesWritten = 0L,
+                    totalBytes = null,
+                    resumeJson = null,
+                    retryCount = 0,
+                    nextRetryAtMs = null,
+                    lastErrorCode = null,
+                    createdAtMs = 10L,
+                    updatedAtMs = 10L
+                )
+            )
+
+            val store = DownloadRecoveryRoomStore(context, database)
+            store.upsertPendingDownloadQueue(listOf(song.copy(name = "rewritten")), nowMs = 20L)
+
+            val restored = DownloadExecutionRoomStore.read(
+                context = context,
+                operationId = operationId,
+                database = database
+            )
+            assertEquals("rewritten", restored?.song?.name)
+            assertEquals(
+                listOf(operationId),
+                store.listPendingQueuedDownloads().map { it.operationId }
+            )
+            assertEquals(1, database.downloadOperationDao().findAll().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun queueRoundTrip_persistsCanonicalRemoteStableKey() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = SongItem(
+                id = 2022649173L,
+                name = "愛が灯る",
+                artist = "ロクデナシ",
+                album = "Netease",
+                albumId = 0L,
+                durationMs = 180_000L,
+                coverUrl = null,
+                channelId = "netease",
+                audioId = "2022649173"
+            )
+            val store = DownloadRecoveryRoomStore(context, database)
+            val operationId = store.upsertPendingDownloadQueue(listOf(song)).single()
+            val entity = database.downloadOperationDao().find(operationId)
+                ?: error("operation was not persisted")
+
+            assertEquals(
+                song.stableKey(),
+                JSONObject(entity.sourceHintJson).optString("sourceStableKey")
+            )
+            assertEquals(
+                song.stableKey(),
+                DownloadExecutionRoomStore.read(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )?.song?.stableKey()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun queueRefresh_doesNotReuseStoppedDeterministicOperation() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(6L, "stopped-operation")
+            val deterministicId = java.util.UUID.nameUUIDFromBytes(
+                "pending-download:${song.stableKey()}".toByteArray(Charsets.UTF_8)
+            ).toString()
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = deterministicId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "QUEUED",
+                database = database
+            )
+            database.downloadOperationDao().requestUserStop(
+                operationId = deterministicId,
+                updatedAtMs = 20L
+            )
+
+            val operationId = DownloadRecoveryRoomStore(context, database)
+                .upsertPendingDownloadQueue(
+                    songs = listOf(song.copy(name = "restarted")),
+                    userInitiated = true
+                )
+                .single()
+
+            assertTrue(operationId != deterministicId)
+            assertEquals(
+                "restarted",
+                DownloadExecutionRoomStore.read(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )?.song?.name
+            )
+            assertEquals(
+                true,
+                database.downloadOperationDao().find(deterministicId)
+                    ?.stopRequestedByUser
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun queueRefresh_reusesRetryableOperationAfterHostPause() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(7L, "paused-operation")
+            val operationId = "paused-operation-7"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = operationId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                database = database
+            )
+            DownloadExecutionRoomStore.updateState(
+                context = context,
+                operationId = operationId,
+                state = "RETRYABLE",
+                errorCode = "HOST_STOPPED",
+                database = database
+            )
+
+            val refreshedOperationId = DownloadRecoveryRoomStore(context, database)
+                .upsertPendingDownloadQueue(
+                    songs = listOf(song.copy(name = "paused-updated")),
+                    userInitiated = true
+                )
+                .single()
+
+            assertEquals(operationId, refreshedOperationId)
+            assertEquals(
+                "paused-updated",
+                DownloadExecutionRoomStore.read(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )?.song?.name
+            )
+            assertEquals(1, database.downloadOperationDao().findAll().size)
+            assertEquals(
+                "QUEUED",
+                database.downloadOperationDao().find(operationId)?.state
+            )
+        } finally {
             database.close()
         }
     }

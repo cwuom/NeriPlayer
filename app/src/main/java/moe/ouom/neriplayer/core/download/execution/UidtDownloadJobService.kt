@@ -17,11 +17,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.logging.NPLogger
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -40,21 +42,35 @@ class UidtDownloadJobService : JobService() {
             jobFinished(params, false)
             return false
         }
+        NPLogger.d(TAG, "UIDT 下载任务开始: operationId=$operationId, jobId=${params.jobId}")
         setNotification(
             params,
             NOTIFICATION_ID,
             buildNotification(operationId),
-            JobService.JOB_END_NOTIFICATION_POLICY_REMOVE
+            JOB_END_NOTIFICATION_POLICY_REMOVE
         )
         val job = serviceScope.launch {
-            val result = DownloadExecutionHosts.default.execute(applicationContext, operationId)
-            withContext(Dispatchers.Main) {
-                runningJobs.remove(params.jobId)
-                jobFinished(
-                    params,
-                    result == DownloadExecutionResult.Retry ||
-                        result is DownloadExecutionResult.Failed
+            var wantsReschedule = false
+            try {
+                val result = DownloadExecutionHosts.default.execute(applicationContext, operationId)
+                wantsReschedule = result == DownloadExecutionResult.Retry ||
+                    result is DownloadExecutionResult.Failed
+                NPLogger.d(TAG, "UIDT 下载任务结束: operationId=$operationId, result=$result")
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                wantsReschedule = true
+                NPLogger.e(
+                    TAG,
+                    "UIDT 下载任务异常: operationId=$operationId, " +
+                        "error=${error.message}",
+                    error
                 )
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main) {
+                    runningJobs.remove(params.jobId)
+                    jobFinished(params, wantsReschedule)
+                }
             }
         }
         runningJobs[params.jobId] = job
@@ -114,6 +130,7 @@ class UidtDownloadJobService : JobService() {
     }
 
     companion object {
+        private const val TAG = "NERI-DownloadUidt"
         internal const val OPERATION_ID_KEY = "operation_id"
         private const val CHANNEL_ID = "download_execution"
         private const val NOTIFICATION_ID = 0x4e50_0002
@@ -141,19 +158,44 @@ class UidtDownloadJobService : JobService() {
                 val selectedJobId = existingJob?.id
                     ?: selectAvailableUidtJobId(normalizedId, occupiedJobIds)
                     ?: return@synchronized false
-                val extras = PersistableBundle().apply {
-                    putString(OPERATION_ID_KEY, normalizedId)
-                }
-                val jobInfo = JobInfo.Builder(selectedJobId, component)
-                    .setUserInitiated(true)
-                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                    .setEstimatedNetworkBytes(1L, JobInfo.NETWORK_BYTES_UNKNOWN.toLong())
-                    .setExtras(extras)
-                    .build()
-                runCatching {
+                val jobInfo = buildJobInfo(
+                    jobId = selectedJobId,
+                    component = component,
+                    operationId = normalizedId
+                )
+                val scheduled = runCatching {
                     scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
                 }.getOrDefault(false)
+                if (!scheduled) {
+                    scheduler.cancel(selectedJobId)
+                    ForegroundDownloadWorker.cancelFallback(context, normalizedId)
+                    return@synchronized false
+                }
+                if (!ForegroundDownloadWorker.scheduleFallback(context, normalizedId)) {
+                    scheduler.cancel(selectedJobId)
+                    return@synchronized false
+                }
+                true
             }
+        }
+
+        internal fun buildJobInfo(
+            jobId: Int,
+            component: ComponentName,
+            operationId: String
+        ): JobInfo {
+            val extras = PersistableBundle().apply {
+                putString(OPERATION_ID_KEY, operationId)
+            }
+            return JobInfo.Builder(jobId, component)
+                .setUserInitiated(true)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setEstimatedNetworkBytes(
+                    JobInfo.NETWORK_BYTES_UNKNOWN.toLong(),
+                    JobInfo.NETWORK_BYTES_UNKNOWN.toLong()
+                )
+                .setExtras(extras)
+                .build()
         }
 
         fun cancel(

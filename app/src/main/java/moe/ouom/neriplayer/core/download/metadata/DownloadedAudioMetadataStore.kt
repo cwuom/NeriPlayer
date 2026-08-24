@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.metadata
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
@@ -55,6 +56,21 @@ internal class DownloadedAudioMetadataStore(
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
+        val existingBaseline = existingMetadata?.restorableMetadata?.baseline
+        val shouldReadSidecarLyrics = downloadFinalized && (
+            existingBaseline == null ||
+                existingBaseline.originalLyric == null ||
+                existingBaseline.translatedLyric == null ||
+                existingBaseline.romanizedLyric == null
+        )
+        val sidecarLyrics = if (shouldReadSidecarLyrics) {
+            readRestorableSidecarLyrics(
+                context = context,
+                sidecars = persistedSidecars
+            )
+        } else {
+            RestorableSidecarLyrics()
+        }
         val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
         val createdAtMs = existingMetadata?.createdAtMs
             ?: existingMetadata?.downloadTimeMs
@@ -67,6 +83,9 @@ internal class DownloadedAudioMetadataStore(
             existing = existingMetadata?.restorableMetadata,
             coverReference = persistedSidecars.coverReference,
             coverAssetHash = materializedCover?.assetHash,
+            sidecarOriginalLyric = sidecarLyrics.original,
+            sidecarTranslatedLyric = sidecarLyrics.translated,
+            sidecarRomanizedLyric = sidecarLyrics.romanized,
             createdAtMs = createdAtMs,
             clearRestorableOverrides = clearRestorableOverrides
         )
@@ -233,6 +252,33 @@ internal class DownloadedAudioMetadataStore(
         )
     }
 
+    private suspend fun readRestorableSidecarLyrics(
+        context: Context,
+        sidecars: DownloadedMetadataSidecarReferences
+    ): RestorableSidecarLyrics {
+        suspend fun read(reference: String?): String? {
+            val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
+            return try {
+                ManagedDownloadStorage.readText(context, normalized)
+                    ?.takeIf(String::isNotBlank)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    loggerTag,
+                    "读取下载歌词侧载失败: reference=$normalized, error=${error.message}"
+                )
+                null
+            }
+        }
+
+        return RestorableSidecarLyrics(
+            original = read(sidecars.lyricReference),
+            translated = read(sidecars.translatedLyricReference),
+            romanized = read(sidecars.romanizedLyricReference)
+        )
+    }
+
     private fun buildMetadataPayload(
         song: SongItem,
         coverReference: String?,
@@ -309,19 +355,20 @@ internal class DownloadedAudioMetadataStore(
         existing: ManagedDownloadRestorableMetadata?,
         coverReference: String?,
         coverAssetHash: String?,
+        sidecarOriginalLyric: String?,
+        sidecarTranslatedLyric: String?,
+        sidecarRomanizedLyric: String?,
         createdAtMs: Long,
         clearRestorableOverrides: RestorableMetadataClearPolicy
     ): ManagedDownloadRestorableMetadata {
         val identity = song.identity()
-        val baseline = existing?.baseline ?: ManagedDownloadRestorableMetadata.Baseline(
-            title = song.originalName ?: song.name,
-            artist = song.originalArtist ?: song.artist,
-            album = song.album,
-            // the first write must capture the source cover, never the current override
-            coverReference = song.originalCoverUrl ?: song.coverUrl,
-            originalLyric = song.originalLyric ?: song.matchedLyric,
-            translatedLyric = song.originalTranslatedLyric ?: song.matchedTranslatedLyric,
-            romanizedLyric = song.originalRomanizedLyric ?: song.matchedRomanizedLyric
+        val baseline = mergeRestorableBaseline(
+            existing = existing?.baseline,
+            song = song,
+            coverReference = coverReference,
+            sidecarOriginalLyric = sidecarOriginalLyric,
+            sidecarTranslatedLyric = sidecarTranslatedLyric,
+            sidecarRomanizedLyric = sidecarRomanizedLyric
         )
         val previous = existing ?: ManagedDownloadRestorableMetadata(
             sourceStableKey = identity.stableKey(),
@@ -356,6 +403,12 @@ internal class DownloadedAudioMetadataStore(
         val lyricReference: String?,
         val translatedLyricReference: String?,
         val romanizedLyricReference: String?
+    )
+
+    private data class RestorableSidecarLyrics(
+        val original: String? = null,
+        val translated: String? = null,
+        val romanized: String? = null
     )
 }
 
@@ -504,7 +557,55 @@ internal fun resolveDownloadedMetadataCoverReference(
         ?.takeUnless { reference ->
             customCover == null &&
                 reference == previousCustomCoverReference.normalizedCoverReference()
-        }
+    }
+}
+
+internal fun mergeRestorableBaseline(
+    existing: ManagedDownloadRestorableMetadata.Baseline?,
+    song: SongItem,
+    coverReference: String?,
+    sidecarOriginalLyric: String? = null,
+    sidecarTranslatedLyric: String? = null,
+    sidecarRomanizedLyric: String? = null
+): ManagedDownloadRestorableMetadata.Baseline {
+    val current = existing ?: ManagedDownloadRestorableMetadata.Baseline()
+    fun resolveLyric(
+        currentValue: String?,
+        songValue: String?,
+        sidecarValue: String?,
+        matchedValue: String?
+    ): String? {
+        if (currentValue != null) return currentValue
+        return songValue ?: sidecarValue ?: matchedValue.takeIf { existing == null }
+    }
+    return current.copy(
+        title = current.title ?: song.originalName ?: song.name,
+        artist = current.artist ?: song.originalArtist ?: song.artist,
+        album = current.album ?: song.album,
+        // the first write must capture the source cover, never the current override
+        coverReference = current.coverReference
+            ?: song.originalCoverUrl
+            ?: coverReference
+            ?: song.coverUrl,
+        originalLyric = resolveLyric(
+            currentValue = current.originalLyric,
+            songValue = song.originalLyric,
+            sidecarValue = sidecarOriginalLyric,
+            matchedValue = song.matchedLyric
+        ),
+        translatedLyric = resolveLyric(
+            currentValue = current.translatedLyric,
+            songValue = song.originalTranslatedLyric,
+            sidecarValue = sidecarTranslatedLyric,
+            matchedValue = song.matchedTranslatedLyric
+        ),
+        romanizedLyric = resolveLyric(
+            currentValue = current.romanizedLyric,
+            songValue = song.originalRomanizedLyric,
+            sidecarValue = sidecarRomanizedLyric,
+            matchedValue = song.matchedRomanizedLyric
+        )
+    )
 }
 
 private fun String?.normalizedCoverReference(): String? {

@@ -110,6 +110,7 @@ class NowPlayingDialogsTest {
                         originalSong = demoSongItem(),
                         initialLyrics = "原文A",
                         initialTranslatedLyrics = "译文B",
+                        onSaveDraft = { },
                         onDismiss = { }
                     )
                 }
@@ -149,6 +150,7 @@ class NowPlayingDialogsTest {
                             originalSong = demoSongItem(),
                             initialLyrics = "原文A",
                             initialTranslatedLyrics = "译文B",
+                            onSaveDraft = { },
                             onDismiss = {
                                 lyricsEditorDismissed = true
                                 lyricsEditorShown.value = false

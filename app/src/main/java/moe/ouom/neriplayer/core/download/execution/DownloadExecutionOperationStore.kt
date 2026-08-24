@@ -28,6 +28,25 @@ internal interface DownloadExecutionOperationJournal {
 
     fun currentState(context: Context, operationId: String): String?
 
+    /** claims an operation before entering the transfer path */
+    fun tryStart(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean = false
+    ): Boolean {
+        val state = currentState(context, operationId) ?: return false
+        val claimableStates = if (allowExistingRunning) {
+            setOf("PENDING_QUEUE", "QUEUED", "RUNNING", "RETRYABLE")
+        } else {
+            setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE")
+        }
+        if (state !in claimableStates) {
+            return false
+        }
+        updateState(context, operationId, "RUNNING")
+        return currentState(context, operationId) == "RUNNING"
+    }
+
     fun requestCancel(context: Context, operationId: String): Boolean
 
     fun markCoreCommitted(context: Context, operationId: String): Boolean
@@ -107,6 +126,20 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
     override fun currentState(context: Context, operationId: String): String? {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.state(context, operationId)
+        }
+    }
+
+    override fun tryStart(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean
+    ): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.tryStart(
+                context = context,
+                operationId = operationId,
+                allowExistingRunning = allowExistingRunning
+            )
         }
     }
 
@@ -213,6 +246,20 @@ class DownloadExecutionOperationStore internal constructor(
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
         val appContext = context.applicationContext
         return journalProvider(appContext).currentState(appContext, normalizedId)
+    }
+
+    fun tryStart(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean = false
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).tryStart(
+            context = appContext,
+            operationId = normalizedId,
+            allowExistingRunning = allowExistingRunning
+        )
     }
 
     fun requestCancel(context: Context, operationId: String): Boolean {

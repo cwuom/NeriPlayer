@@ -102,9 +102,9 @@ private fun JSONObject.toBaseline(): ManagedDownloadRestorableMetadata.Baseline 
         artist = optionalString("artist"),
         album = optionalString("album"),
         coverReference = optionalString("coverReference"),
-        originalLyric = optionalString("originalLyric"),
-        translatedLyric = optionalString("translatedLyric"),
-        romanizedLyric = optionalString("romanizedLyric")
+        originalLyric = optionalLyric("originalLyric"),
+        translatedLyric = optionalLyric("translatedLyric"),
+        romanizedLyric = optionalLyric("romanizedLyric")
     )
 }
 
@@ -122,6 +122,10 @@ private fun JSONObject.toOverrides(): ManagedDownloadRestorableMetadata.Override
 
 private fun JSONObject.optionalString(name: String): String? {
     return optString(name).takeIf { has(name) && !isNull(name) && it.isNotBlank() }
+}
+
+private fun JSONObject.optionalLyric(name: String): String? {
+    return optString(name).takeIf { has(name) && !isNull(name) }
 }
 
 private fun JSONObject.optionalLong(name: String): Long? {

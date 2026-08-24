@@ -320,7 +320,10 @@ internal class ManagedDownloadStorageCommitWriter(
         val verifiedSize = expectedSizeBytes?.let { expected ->
             val measured = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
                 val measuredResult = backend.read(stat.reference) { input ->
-                    input.copyTo(java.io.OutputStream.nullOutputStream())
+                    ManagedDownloadCommitIo.countInputStreamBytes(
+                        input,
+                        STREAM_COPY_BUFFER_SIZE_BYTES
+                    )
                 }
                 when (measuredResult) {
                     is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {

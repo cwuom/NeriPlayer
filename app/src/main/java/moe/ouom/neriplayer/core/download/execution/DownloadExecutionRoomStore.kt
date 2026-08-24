@@ -61,9 +61,10 @@ internal object DownloadExecutionRoomStore {
 
     suspend fun read(
         context: Context,
-        operationId: String
+        operationId: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): DownloadExecutionRequest? {
-        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
+        return database.downloadOperationDao()
             .find(operationId)
             ?.let(::requestFromEntity)
     }
@@ -136,13 +137,15 @@ internal object DownloadExecutionRoomStore {
 
     suspend fun findOperationIdForSong(
         context: Context,
-        songKey: String
+        songKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        states: List<String> = ACTIVE_OPERATION_STATES
     ): String? {
         val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return null
-        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
+        return database.downloadOperationDao()
             .findLatestOperationIdByStableKey(
                 stableKey = normalizedSongKey,
-                states = ACTIVE_OPERATION_STATES
+                states = states
             )
     }
 
@@ -185,6 +188,26 @@ internal object DownloadExecutionRoomStore {
         return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
             .find(operationId)
             ?.state
+    }
+
+    suspend fun tryStart(
+        context: Context,
+        operationId: String,
+        allowExistingRunning: Boolean = false,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        return database.downloadOperationDao().transitionState(
+            operationId = operationId,
+            expectedStates = buildList {
+                add("PENDING_QUEUE")
+                add("QUEUED")
+                add("RETRYABLE")
+                if (allowExistingRunning) add("RUNNING")
+            },
+            state = "RUNNING",
+            updatedAtMs = System.currentTimeMillis(),
+            errorCode = null
+        ) > 0
     }
 
     suspend fun requestCancel(context: Context, operationId: String): Boolean {
@@ -323,7 +346,8 @@ internal object DownloadExecutionRoomStore {
                     operationId = request.operationId
                 )
             )
-            put("sourceStableKey", request.song.sourceStableKey)
+            // persist the identity used by the entity, not only optional source metadata
+            put("sourceStableKey", request.song.stableKey())
             put("preserveStaging", request.preserveStaging)
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
@@ -333,19 +357,41 @@ internal object DownloadExecutionRoomStore {
     private fun requestFromEntity(
         entity: DownloadOperationEntity
     ): DownloadExecutionRequest? {
-        val root = runCatching { JSONObject(entity.sourceHintJson) }.getOrNull() ?: return null
-        if (root.optInt("schemaVersion") != JOURNAL_PAYLOAD_VERSION) return null
-        val songJson = root.optJSONObject("song") ?: return null
+        val root = runCatching { JSONObject(entity.sourceHintJson) }
+            .onFailure { error ->
+                logDecodeFailure(entity, "invalid_json", error)
+            }
+            .getOrNull() ?: return null
+        if (root.optInt("schemaVersion") != JOURNAL_PAYLOAD_VERSION) {
+            logDecodeFailure(entity, "schema_version=${root.optInt("schemaVersion")}")
+            return null
+        }
+        val songJson = root.optJSONObject("song") ?: run {
+            logDecodeFailure(entity, "missing_song")
+            return null
+        }
         val parsedSong = runCatching {
             ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(
                 songJson.toString()
             )
-        }.getOrNull() ?: return null
+        }.onFailure { error ->
+            logDecodeFailure(entity, "song_decode", error)
+        }.getOrNull() ?: run {
+            logDecodeFailure(entity, "song_decode_null")
+            return null
+        }
         val song = parsedSong.copy(
             sourceStableKey = root.optString("sourceStableKey")
-                .takeIf(String::isNotBlank)
+                .takeIf { root.has("sourceStableKey") && !root.isNull("sourceStableKey") }
+                ?.takeIf(String::isNotBlank)
         )
-        if (song.stableKey() != entity.stableKey) return null
+        if (song.stableKey() != entity.stableKey) {
+            logDecodeFailure(
+                entity,
+                "stable_key_mismatch parsed=${song.stableKey()} entity=${entity.stableKey}"
+            )
+            return null
+        }
         return runCatching {
             DownloadExecutionRequest(
                 operationId = entity.operationId,
@@ -358,7 +404,23 @@ internal object DownloadExecutionRoomStore {
                     false
                 }
             )
+        }.onFailure { error ->
+            logDecodeFailure(entity, "request_decode", error)
         }.getOrNull()
+    }
+
+    private fun logDecodeFailure(
+        entity: DownloadOperationEntity,
+        reason: String,
+        error: Throwable? = null
+    ) {
+        moe.ouom.neriplayer.core.logging.NPLogger.w(
+            "DownloadExecutionRoomStore",
+            "operation payload decode failed: " +
+                "operationId=${entity.operationId}, state=${entity.state}, " +
+                "entityStableKey=${entity.stableKey}, reason=$reason",
+            error
+        )
     }
 
     private const val JOURNAL_PAYLOAD_VERSION = 1
@@ -371,6 +433,11 @@ internal object DownloadExecutionRoomStore {
         "CORE_COMMITTED",
         "CANCEL_REQUESTED",
         "STOPPED",
+        "RETRYABLE"
+    )
+    internal val REUSABLE_OPERATION_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
         "RETRYABLE"
     )
     private val CANCELABLE_OPERATION_STATES = listOf(

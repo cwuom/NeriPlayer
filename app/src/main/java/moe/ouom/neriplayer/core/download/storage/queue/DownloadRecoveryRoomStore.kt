@@ -22,13 +22,19 @@ internal class DownloadRecoveryRoomStore(
 
     suspend fun upsertPendingDownloadQueue(
         songs: List<SongItem>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
+        nowMs: Long = System.currentTimeMillis(),
+        userInitiated: Boolean = false
+    ): List<String> {
+        val distinctSongs = songs.distinctBy(SongItem::stableKey)
         val existing = DownloadExecutionRoomStore.listByStates(
             context = appContext,
-            states = ACTIVE_OPERATION_STATES,
+            states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
             database = database
         )
+            .filter { entry ->
+                database.downloadOperationDao()
+                    .isUserStopped(entry.request.operationId) != true
+            }
             .groupBy { it.request.song.stableKey() }
             .mapValues { (_, entries) ->
                 entries.maxWithOrNull(
@@ -38,11 +44,34 @@ internal class DownloadRecoveryRoomStore(
                 ) ?: error("missing operation entry")
             }
             .toMutableMap()
+        val existingOperationIds = distinctSongs.associate { song ->
+            song.stableKey() to DownloadExecutionRoomStore.findOperationIdForSong(
+                context = appContext,
+                songKey = song.stableKey(),
+                database = database,
+                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+            )
+        }
         var nextOrder = (existing.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
-        songs.distinctBy(SongItem::stableKey).forEach { song ->
+        return distinctSongs.map { song ->
             val key = song.stableKey()
             val old = existing[key]
-            val operationId = old?.request?.operationId ?: pendingOperationId(key)
+            val deterministicOperationId = pendingOperationId(key)
+            val deterministicEntity = database.downloadOperationDao()
+                .find(deterministicOperationId)
+            val operationId = existingOperationIds[key]
+                ?: old?.request?.operationId
+                ?: if (
+                    deterministicEntity == null ||
+                    (
+                        deterministicEntity.state in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES &&
+                            deterministicEntity.stopRequestedByUser != true
+                        )
+                ) {
+                    deterministicOperationId
+                } else {
+                    UUID.randomUUID().toString()
+                }
             DownloadExecutionRoomStore.upsert(
                 context = appContext,
                 request = DownloadExecutionRequest(
@@ -50,13 +79,14 @@ internal class DownloadRecoveryRoomStore(
                     song = song,
                     preserveStaging = old?.request?.preserveStaging ?: false,
                     attemptId = old?.request?.attemptId,
-                    userInitiated = old?.request?.userInitiated ?: false
+                    userInitiated = old?.request?.userInitiated == true || userInitiated
                 ),
                 state = PENDING_QUEUE_STATE,
                 queueOrder = old?.queueOrder ?: nextOrder++,
                 createdAtMs = old?.createdAtMs ?: nowMs,
                 database = database
             )
+            operationId
         }
     }
 
@@ -64,7 +94,9 @@ internal class DownloadRecoveryRoomStore(
         val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
         return DownloadExecutionRoomStore.findOperationIdForSong(
             context = appContext,
-            songKey = normalizedKey
+            songKey = normalizedKey,
+            database = database,
+            states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
         )
     }
 
@@ -277,17 +309,6 @@ internal class DownloadRecoveryRoomStore(
             "CANCEL_REQUESTED",
             "PENDING_QUEUE"
         )
-        private val ACTIVE_OPERATION_STATES = listOf(
-            "PENDING_QUEUE",
-            "QUEUED",
-            "RUNNING",
-            "COMMITTING",
-            "CORE_COMMITTED",
-            "CANCEL_REQUESTED",
-            "STOPPED",
-            "RETRYABLE"
-        )
-
         private fun pendingOperationId(stableKey: String): String {
             return UUID.nameUUIDFromBytes(
                 "pending-download:$stableKey".toByteArray(Charsets.UTF_8)

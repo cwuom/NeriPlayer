@@ -968,9 +968,14 @@ internal object ManagedDownloadStorage {
 
     internal fun upsertPendingDownloadQueue(
         context: Context,
-        songs: List<SongItem>
-    ) {
-        ManagedDownloadRecoveryFiles.upsertPendingDownloadQueue(context, songs)
+        songs: List<SongItem>,
+        userInitiated: Boolean = false
+    ): List<String> {
+        return ManagedDownloadRecoveryFiles.upsertPendingDownloadQueue(
+            context = context,
+            songs = songs,
+            userInitiated = userInitiated
+        )
     }
 
     internal fun listPendingQueuedDownloads(context: Context): List<PendingDownloadQueueEntry> {
@@ -2767,7 +2772,10 @@ internal object ManagedDownloadStorage {
         }
         val verifiedSize = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
             when (val measured = backend.read(stat.reference) { input ->
-                input.copyTo(java.io.OutputStream.nullOutputStream())
+                ManagedDownloadCommitIo.countInputStreamBytes(
+                    input,
+                    STREAM_COPY_BUFFER_SIZE_BYTES
+                )
             }) {
                 is StorageLookupResult.Found -> measured.value
                 StorageLookupResult.Missing -> throw IOException(

@@ -2960,7 +2960,6 @@ object GlobalDownloadManager {
         }
         clearSongCancellationForFreshStart(appContext, setOf(songKey))
         val requestGeneration = beginDownloadRequestGeneration(listOf(song))
-        rememberPendingDownloadQueue(appContext, listOf(song))
         startDownloadConfirmed(
             context = appContext,
             song = song,
@@ -2979,7 +2978,7 @@ object GlobalDownloadManager {
             DownloadStatus.WAITING_NETWORK -> DownloadExecutionResult.Retry
             DownloadStatus.COMPLETED -> DownloadExecutionResult.Accepted
             DownloadStatus.QUEUED,
-            DownloadStatus.DOWNLOADING,
+            DownloadStatus.DOWNLOADING -> DownloadExecutionResult.Retry
             null -> DownloadExecutionResult.Accepted
         }
     }
@@ -3046,7 +3045,11 @@ object GlobalDownloadManager {
                 return@launch
             }
             val requestGeneration = beginDownloadRequestGeneration(listOf(song))
-            rememberPendingDownloadQueue(appContext, listOf(song))
+            rememberPendingDownloadQueue(
+                context = appContext,
+                songs = listOf(song),
+                userInitiated = true
+            )
             startDownloadConfirmed(
                 context = appContext,
                 song = song,
@@ -3418,7 +3421,11 @@ object GlobalDownloadManager {
                 return@launch
             }
             val requestGeneration = beginDownloadRequestGeneration(requestedSongs)
-            rememberPendingDownloadQueue(appContext, requestedSongs)
+            rememberPendingDownloadQueue(
+                context = appContext,
+                songs = requestedSongs,
+                userInitiated = userInitiated
+            )
             startBatchDownloadConfirmed(
                 context = appContext,
                 songs = requestedSongs,
@@ -4333,12 +4340,17 @@ object GlobalDownloadManager {
 
     private fun rememberPendingDownloadQueue(
         context: Context,
-        songs: List<SongItem>
+        songs: List<SongItem>,
+        userInitiated: Boolean = false
     ) {
         if (songs.isEmpty()) {
             return
         }
-        ManagedDownloadStorage.upsertPendingDownloadQueue(context, songs)
+        ManagedDownloadStorage.upsertPendingDownloadQueue(
+            context = context,
+            songs = songs,
+            userInitiated = userInitiated
+        )
     }
 
     private suspend fun ensureQueuedOperationForSong(
@@ -4353,7 +4365,8 @@ object GlobalDownloadManager {
             val reusableStates = setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE")
             DownloadExecutionRoomStore.findOperationIdForSong(
                 context = appContext,
-                songKey = songKey
+                songKey = songKey,
+                states = reusableStates.toList()
             )?.let { operationId ->
                 val persisted = DownloadExecutionRoomStore.read(appContext, operationId)
                 val state = DownloadExecutionRoomStore.state(appContext, operationId)
@@ -4362,22 +4375,35 @@ object GlobalDownloadManager {
                 }
             }
 
-            runCatching {
+            val materializedOperationIds = try {
                 // queue materialization is the canonical idempotent operation writer
                 ManagedDownloadStorage.upsertPendingDownloadQueue(
                     context = appContext,
                     songs = listOf(song)
                 )
-                // re-read Room after the write so the host never receives an unowned id
-                DownloadExecutionRoomStore.findOperationIdForSong(
-                    context = appContext,
-                    songKey = songKey
-                )?.takeIf { operationId ->
-                    val persisted = DownloadExecutionRoomStore.read(appContext, operationId)
-                    val state = DownloadExecutionRoomStore.state(appContext, operationId)
-                    persisted?.song?.stableKey() == songKey && state in reusableStates
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    TAG,
+                    "批量下载 operation 写入失败: song=${song.name}, error=${error.message}",
+                    error
+                )
+                emptyList()
+            }
+            // re-read Room after the write so the host never receives an unowned id
+            for (operationId in materializedOperationIds) {
+                val persisted = DownloadExecutionRoomStore.read(appContext, operationId)
+                val state = DownloadExecutionRoomStore.state(appContext, operationId)
+                if (persisted?.song?.stableKey() == songKey && state in reusableStates) {
+                    return@withSongExecutionLock operationId
                 }
-            }.getOrNull()?.let { return@withSongExecutionLock it }
+            }
+            if (materializedOperationIds.isNotEmpty()) {
+                NPLogger.w(
+                    TAG,
+                    "批量下载 operation 写入后校验失败: " +
+                        "song=${song.name}, operationIds=$materializedOperationIds"
+                )
+            }
 
             val fallbackRequest = DownloadExecutionRequest(
                 operationId = queuedDownloadFallbackOperationId(
@@ -4388,27 +4414,35 @@ object GlobalDownloadManager {
                 attemptId = request.attemptId,
                 userInitiated = userInitiated
             )
-            runCatching {
+            val fallbackOperationId = fallbackRequest.operationId
+            try {
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = fallbackRequest,
                     state = "QUEUED",
                     queueOrder = request.attemptId.toInt()
                 )
-                DownloadExecutionRoomStore.findOperationIdForSong(
-                    context = appContext,
-                    songKey = songKey
-                )?.takeIf { operationId ->
-                    val persisted = DownloadExecutionRoomStore.read(appContext, operationId)
-                    val state = DownloadExecutionRoomStore.state(appContext, operationId)
+                val persisted = DownloadExecutionRoomStore.read(appContext, fallbackOperationId)
+                val state = DownloadExecutionRoomStore.state(appContext, fallbackOperationId)
+                fallbackOperationId.takeIf {
                     persisted?.song?.stableKey() == songKey && state in reusableStates
                 }
-            }.onFailure { error ->
+            } catch (error: Throwable) {
                 NPLogger.w(
                     TAG,
-                    "补写批量下载 operation 失败: song=${song.name}, error=${error.message}"
+                    "补写批量下载 operation 失败: song=${song.name}, error=${error.message}",
+                    error
                 )
-            }.getOrNull()
+                null
+            }.also { operationId ->
+                if (operationId == null) {
+                    NPLogger.w(
+                        TAG,
+                        "补写批量下载 operation 写入后校验失败: " +
+                            "song=${song.name}, operationId=$fallbackOperationId"
+                    )
+                }
+            }
         }
     }
 

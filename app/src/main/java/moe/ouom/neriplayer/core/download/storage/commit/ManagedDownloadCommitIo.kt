@@ -189,7 +189,7 @@ internal object ManagedDownloadCommitIo {
         }.onFailure(onFailure).getOrNull()
     }
 
-    private fun countInputStreamBytes(input: InputStream, bufferSizeBytes: Int): Long {
+    internal fun countInputStreamBytes(input: InputStream, bufferSizeBytes: Int): Long {
         val buffer = ByteArray(bufferSizeBytes)
         var countedBytes = 0L
         while (true) {

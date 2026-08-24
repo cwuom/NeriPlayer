@@ -21,8 +21,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.logging.NPLogger
+import java.util.concurrent.TimeUnit
 
-/** translates API 28 through 33 WorkManager events to the shared host */
+/** translates WorkManager events to the shared download host */
 class ForegroundDownloadWorker(
     context: Context,
     params: WorkerParameters
@@ -42,10 +44,12 @@ class ForegroundDownloadWorker(
             )
             throw cancellation
         } catch (error: Throwable) {
-            if (error is IllegalStateException) {
-                return@withContext Result.retry()
-            }
-            return@withContext Result.failure()
+            NPLogger.w(
+                "NERI-DownloadWorker",
+                "下载 Worker 执行异常: operationId=$operationId, error=${error.message}",
+                error
+            )
+            return@withContext Result.retry()
         }.toWorkerResult()
     }
 
@@ -72,14 +76,43 @@ class ForegroundDownloadWorker(
             }.getOrDefault(false)
         }
 
+        /** gives a UIDT job a short head start while keeping a durable fallback */
+        fun scheduleFallback(
+            context: Context,
+            operationId: String
+        ): Boolean {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            return runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .enqueueUniqueWork(
+                        fallbackWorkName(normalizedId),
+                        ExistingWorkPolicy.REPLACE,
+                        buildFallbackRequest(normalizedId)
+                    )
+                true
+            }.getOrDefault(false)
+        }
+
         fun cancel(
             context: Context,
             operationId: String
         ) {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return
             runCatching {
+                val workManager = WorkManager.getInstance(context.applicationContext)
+                workManager.cancelUniqueWork(uniqueWorkName(normalizedId))
+                workManager.cancelUniqueWork(fallbackWorkName(normalizedId))
+            }
+        }
+
+        internal fun cancelFallback(
+            context: Context,
+            operationId: String
+        ) {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+            runCatching {
                 WorkManager.getInstance(context.applicationContext)
-                    .cancelUniqueWork(uniqueWorkName(normalizedId))
+                    .cancelUniqueWork(fallbackWorkName(normalizedId))
             }
         }
 
@@ -95,9 +128,28 @@ class ForegroundDownloadWorker(
                 .build()
         }
 
+        internal fun buildFallbackRequest(operationId: String): OneTimeWorkRequest {
+            return OneTimeWorkRequestBuilder<ForegroundDownloadWorker>()
+                .setInitialDelay(UIDT_START_GRACE_MS, TimeUnit.MILLISECONDS)
+                .setInputData(workDataOf(OPERATION_ID_KEY to operationId))
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .addTag(WORK_TAG_PREFIX + "fallback_" + operationId)
+                .build()
+        }
+
         internal fun uniqueWorkName(operationId: String): String {
             return WORK_NAME_PREFIX + operationId
         }
+
+        private fun fallbackWorkName(operationId: String): String {
+            return WORK_NAME_PREFIX + "fallback_" + operationId
+        }
+
+        private const val UIDT_START_GRACE_MS = 3_000L
     }
 }
 
@@ -139,12 +191,13 @@ private fun createForegroundInfo(
 
 private const val FOREGROUND_NOTIFICATION_ID = 0x4e50_0001
 
-private fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
+internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
     return when (this) {
         DownloadExecutionResult.Accepted,
+        DownloadExecutionResult.AlreadyHandled,
         DownloadExecutionResult.Cancelled,
-        DownloadExecutionResult.UserStopped,
-        DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.success()
+        DownloadExecutionResult.UserStopped -> ListenableWorker.Result.success()
+        DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.retry()
         DownloadExecutionResult.Retry -> ListenableWorker.Result.retry()
         is DownloadExecutionResult.Failed -> ListenableWorker.Result.retry()
     }

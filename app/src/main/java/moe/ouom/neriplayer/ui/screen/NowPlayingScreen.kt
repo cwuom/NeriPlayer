@@ -1792,6 +1792,28 @@ internal fun hasCachedLocalDownload(context: Context, song: SongItem): Boolean {
         ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song)
 }
 
+internal fun shouldFetchOriginalSongInfo(song: SongItem): Boolean {
+    if (song.isLocalSong()) return false
+    if (
+        song.album.startsWith(PlayerManager.BILI_SOURCE_TAG, ignoreCase = true) ||
+        song.channelId.equals("bilibili", ignoreCase = true)
+    ) {
+        return true
+    }
+    return song.album.startsWith(PlayerManager.NETEASE_SOURCE_TAG, ignoreCase = true) ||
+        song.channelId.equals("netease", ignoreCase = true) ||
+        song.mediaUri?.contains("music.163.com", ignoreCase = true) == true
+}
+
+internal fun isOriginalInfoRequestCurrent(
+    requestId: Int,
+    currentRequestId: Int,
+    requestSongKey: String,
+    currentSongKey: String
+): Boolean {
+    return requestId == currentRequestId && requestSongKey == currentSongKey
+}
+
 
 private fun resolvePreferredNeteaseLyricSongId(song: SongItem?): Long? {
     if (song == null) {
@@ -5020,16 +5042,234 @@ internal fun resolveEditSongBaselineFromSong(
 internal fun resolveManagedEditSongBaseline(
     current: EditSongBaseline,
     metadata: moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata?,
-    coverReference: String?
+    coverReference: String?,
+    sidecarLyrics: ManagedDownloadStorage.DownloadedLyricsBundle? = null
 ): EditSongBaseline {
-    val baseline = metadata?.baseline ?: return current
+    val baseline = metadata?.baseline
+    fun sidecarValue(value: String?, present: Boolean): String? {
+        return value.takeIf { present }
+    }
     return current.copy(
-        title = baseline.title ?: current.title,
-        artist = baseline.artist ?: current.artist,
-        coverUrl = coverReference ?: baseline.coverReference ?: current.coverUrl,
-        lyric = baseline.originalLyric,
-        translatedLyric = baseline.translatedLyric,
-        romanizedLyric = baseline.romanizedLyric
+        title = baseline?.title ?: current.title,
+        artist = baseline?.artist ?: current.artist,
+        coverUrl = coverReference ?: baseline?.coverReference ?: current.coverUrl,
+        lyric = baseline?.originalLyric ?: sidecarValue(
+            sidecarLyrics?.lyric,
+            sidecarLyrics?.hasOriginalSidecar == true
+        ) ?: current.lyric,
+        translatedLyric = baseline?.translatedLyric ?: sidecarValue(
+            sidecarLyrics?.translatedLyric,
+            sidecarLyrics?.hasTranslatedSidecar == true
+        ) ?: current.translatedLyric,
+        romanizedLyric = baseline?.romanizedLyric ?: sidecarValue(
+            sidecarLyrics?.romanizedLyric,
+            sidecarLyrics?.hasRomanizedSidecar == true
+        ) ?: current.romanizedLyric
+    )
+}
+
+private suspend fun resolveManagedEditSongBaselineAtRestore(
+    context: Context,
+    song: SongItem,
+    current: EditSongBaseline
+): EditSongBaseline {
+    if (!song.isLocalSong()) {
+        return current
+    }
+    suspend fun <T> readValue(block: suspend () -> T): T? {
+        return try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
+    val metadata = readValue {
+        GlobalDownloadManager.readManagedRestorableMetadata(context, song)
+    }
+    val coverReference = metadata?.let { restorable ->
+        readValue {
+            GlobalDownloadManager.resolveManagedRestorableCoverReference(
+                context = context,
+                metadata = restorable,
+                baseline = true
+            )
+        }
+    }
+    val sidecarLyrics = readValue {
+        AudioDownloadManager.getLyricsBundle(context, song)
+    }
+    val localLyrics = if (sidecarLyrics == null) {
+        readValue {
+            LocalMediaSupport.inspectLyricsFast(
+                context = context,
+                song = song,
+                includeStoredFallback = false,
+                includeEmbeddedFallback = false,
+                forceRefresh = true
+            )
+        }
+    } else {
+        null
+    }
+    val resolvedSidecarLyrics = sidecarLyrics ?: localLyrics?.let { local ->
+        ManagedDownloadStorage.DownloadedLyricsBundle(
+            lyric = local.lyric,
+            translatedLyric = local.translatedLyric,
+            romanizedLyric = local.romanizedLyric,
+            hasOriginalSidecar = local.hasOriginalSidecar,
+            hasTranslatedSidecar = local.hasTranslatedSidecar,
+            hasRomanizedSidecar = local.hasRomanizedSidecar
+        )
+    }
+    return resolveManagedEditSongBaseline(
+        current = current,
+        metadata = metadata,
+        coverReference = coverReference,
+        sidecarLyrics = resolvedSidecarLyrics
+    )
+}
+
+internal data class EditSongLyricsRestorePlan(
+    val shouldClearLyrics: Boolean,
+    val shouldRestoreLyrics: Boolean,
+    val originalLyric: String,
+    val originalTranslatedLyric: String,
+    val originalRomanizedLyric: String
+)
+
+data class EditSongLyricsDraft(
+    val lyric: String,
+    val translatedLyric: String,
+    val romanizedLyric: String,
+    val writeLocalMetadata: Boolean
+)
+
+internal fun resolveEditSongLyricsForSave(
+    draft: EditSongLyricsDraft?,
+    shouldClearLyrics: Boolean,
+    shouldRestoreLyrics: Boolean,
+    originalLyric: String?,
+    originalTranslatedLyric: String?,
+    originalRomanizedLyric: String?
+): EditSongLyricsDraft? {
+    draft?.let { return it }
+    if (shouldClearLyrics) {
+        return EditSongLyricsDraft(
+            lyric = "",
+            translatedLyric = "",
+            romanizedLyric = "",
+            writeLocalMetadata = false
+        )
+    }
+    if (!shouldRestoreLyrics) return null
+    return EditSongLyricsDraft(
+        lyric = originalLyric.orEmpty(),
+        translatedLyric = originalTranslatedLyric.orEmpty(),
+        romanizedLyric = originalRomanizedLyric.orEmpty(),
+        writeLocalMetadata = false
+    )
+}
+
+internal fun applyLyricsEditorRestorePreview(
+    seed: LyricsEditorSeed,
+    shouldClearLyrics: Boolean,
+    shouldRestoreLyrics: Boolean,
+    originalLyric: String?,
+    originalTranslatedLyric: String?,
+    originalRomanizedLyric: String?
+): LyricsEditorSeed {
+    if (!shouldClearLyrics && !shouldRestoreLyrics) {
+        return seed
+    }
+    val lyric = if (shouldClearLyrics) "" else originalLyric.orEmpty()
+    val translatedLyric = if (shouldClearLyrics) {
+        ""
+    } else {
+        originalTranslatedLyric.orEmpty()
+    }
+    val romanizedLyric = if (shouldClearLyrics) {
+        ""
+    } else {
+        originalRomanizedLyric.orEmpty()
+    }
+    return seed.copy(
+        lyrics = lyric,
+        translatedLyrics = translatedLyric,
+        romanizedLyrics = romanizedLyric,
+        sidecarLyrics = lyric,
+        sidecarTranslatedLyrics = translatedLyric,
+        sidecarRomanizedLyrics = romanizedLyric,
+        embeddedLyrics = lyric,
+        embeddedTranslatedLyrics = translatedLyric,
+        embeddedRomanizedLyrics = romanizedLyric,
+        hasSidecar = false,
+        hasEmbeddedLyrics = false,
+        source = LyricsEditorSource.SIDECAR
+    )
+}
+
+internal fun applyEditSongLyricsDraftPreview(
+    seed: LyricsEditorSeed,
+    draft: EditSongLyricsDraft?
+): LyricsEditorSeed {
+    if (draft == null) return seed
+    return seed.copy(
+        lyrics = draft.lyric,
+        translatedLyrics = draft.translatedLyric,
+        romanizedLyrics = draft.romanizedLyric,
+        sidecarLyrics = draft.lyric,
+        sidecarTranslatedLyrics = draft.translatedLyric,
+        sidecarRomanizedLyrics = draft.romanizedLyric,
+        embeddedLyrics = draft.lyric,
+        embeddedTranslatedLyrics = draft.translatedLyric,
+        embeddedRomanizedLyrics = draft.romanizedLyric,
+        hasSidecar = false,
+        hasEmbeddedLyrics = false,
+        source = LyricsEditorSource.SIDECAR
+    )
+}
+
+internal fun resolveEditSongLyricsRestorePlan(
+    baseline: EditSongBaseline,
+    sourceInfo: NowPlayingViewModel.OriginalSongInfo?
+): EditSongLyricsRestorePlan {
+    if (sourceInfo?.shouldClearLyrics == true) {
+        return EditSongLyricsRestorePlan(
+            shouldClearLyrics = true,
+            shouldRestoreLyrics = false,
+            originalLyric = "",
+            originalTranslatedLyric = "",
+            originalRomanizedLyric = ""
+        )
+    }
+    val hasBaselineLyrics = baseline.lyric != null ||
+        baseline.translatedLyric != null ||
+        baseline.romanizedLyric != null
+    val hasSourceLyrics = sourceInfo?.let { info ->
+        !info.lyric.isNullOrBlank() ||
+            !info.translatedLyric.isNullOrBlank() ||
+            !info.romanizedLyric.isNullOrBlank()
+    } == true
+    if (sourceInfo != null && !hasSourceLyrics && !hasBaselineLyrics) {
+        return EditSongLyricsRestorePlan(
+            shouldClearLyrics = false,
+            shouldRestoreLyrics = false,
+            originalLyric = "",
+            originalTranslatedLyric = "",
+            originalRomanizedLyric = ""
+        )
+    }
+    return EditSongLyricsRestorePlan(
+        shouldClearLyrics = false,
+        shouldRestoreLyrics = hasSourceLyrics || hasBaselineLyrics,
+        originalLyric = sourceInfo?.lyric?.takeIf(String::isNotBlank)
+            ?: baseline.lyric.orEmpty(),
+        originalTranslatedLyric = sourceInfo?.translatedLyric?.takeIf(String::isNotBlank)
+            ?: baseline.translatedLyric.orEmpty(),
+        originalRomanizedLyric = sourceInfo?.romanizedLyric?.takeIf(String::isNotBlank)
+            ?: baseline.romanizedLyric.orEmpty()
     )
 }
 
@@ -5064,6 +5304,8 @@ fun EditSongInfoSheet(
     } else {
         originalSong
     }
+    val actualSongKey = actualSong.stableKey()
+    val latestActualSongKeyState = rememberUpdatedState(actualSongKey)
     val canReplaceCoverFromLocalFile = shouldAllowLocalCoverReplacement(actualSong, context)
     val resolvedDisplayCoverUrl = rememberSongDisplayCoverUrl(actualSong)
 
@@ -5099,6 +5341,7 @@ fun EditSongInfoSheet(
     var originalLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始歌词
     var originalTranslatedLyric by remember { mutableStateOf<String?>(null) }  // 保存要恢复的原始翻译歌词
     var originalRomanizedLyric by remember { mutableStateOf<String?>(null) }
+    var pendingLyricsDraft by remember { mutableStateOf<EditSongLyricsDraft?>(null) }
     var shouldRestoreCoverBase by remember { mutableStateOf(false) }
     var shouldRestoreTitleBase by remember { mutableStateOf(false) }
     var shouldRestoreArtistBase by remember { mutableStateOf(false) }
@@ -5107,6 +5350,7 @@ fun EditSongInfoSheet(
     var showFillLyricsMetadataWriteBackConfirm by remember { mutableStateOf(false) }
     var lyricsEditorRequestId by remember { mutableIntStateOf(0) }
     var originalInfoRequestId by remember { mutableIntStateOf(0) }
+    var isOriginalInfoRestoring by remember { mutableStateOf(false) }
     var showLocalCoverSyncConfirm by remember { mutableStateOf(false) }
     var pendingCoverReplacementSong by remember { mutableStateOf<SongItem?>(null) }
 
@@ -5128,6 +5372,7 @@ fun EditSongInfoSheet(
         ) ?: return@rememberLauncherForActivityResult
 
         originalInfoRequestId += 1
+        isOriginalInfoRestoring = false
         isCoverImporting = true
         coroutineScope.launch {
             try {
@@ -5163,6 +5408,7 @@ fun EditSongInfoSheet(
 
     // 当歌曲信息更新时, 同步更新UI (仅在用户未手动编辑时)
     LaunchedEffect(actualSong.stableKey()) {
+        isOriginalInfoRestoring = false
         if (!userHasEdited) {
             coverUrl = resolveEditSongInitialCoverUrl(actualSong, resolvedDisplayCoverUrl)
             coverWasManuallyChanged = false
@@ -5187,11 +5433,21 @@ fun EditSongInfoSheet(
                 baseline = true
             )
         }
+        val managedLyrics = withContext(Dispatchers.IO) {
+            runCatching {
+                if (actualSong.isLocalSong()) {
+                    AudioDownloadManager.getLyricsBundle(context, actualSong)
+                } else {
+                    null
+                }
+            }.getOrNull()
+        }
         if (!userHasEdited) {
             editBaseline = resolveManagedEditSongBaseline(
                 current = editBaseline,
                 metadata = managedMetadata,
-                coverReference = managedCover
+                coverReference = managedCover,
+                sidecarLyrics = managedLyrics
             )
         }
     }
@@ -5233,36 +5489,97 @@ fun EditSongInfoSheet(
     ) {
         val requestId = originalInfoRequestId + 1
         originalInfoRequestId = requestId
-        if (originalInfoRequestId != requestId) return
-        if (restoreTitle) {
-            songName = editBaseline.title
-            shouldRestoreTitleBase = true
+        val requestSongKey = actualSong.stableKey()
+        isOriginalInfoRestoring = true
+
+        coroutineScope.launch {
+            var restoreBaseline = editBaseline
+
+            fun applyInfo(sourceInfo: NowPlayingViewModel.OriginalSongInfo?) {
+                if (!isOriginalInfoRequestCurrent(
+                        requestId = requestId,
+                        currentRequestId = originalInfoRequestId,
+                        requestSongKey = requestSongKey,
+                        currentSongKey = latestActualSongKeyState.value
+                    )
+                ) {
+                    return
+                }
+                if (restoreTitle) {
+                    songName = sourceInfo?.name ?: restoreBaseline.title
+                    shouldRestoreTitleBase = true
+                }
+                if (restoreArtist) {
+                    artistName = sourceInfo?.artist ?: restoreBaseline.artist
+                    shouldRestoreArtistBase = true
+                }
+                if (restoreCover) {
+                    val restoredCover = sourceInfo?.coverUrl ?: restoreBaseline.coverUrl
+                    if (sourceInfo == null || !restoredCover.isNullOrBlank()) {
+                        coverUrl = restoredCover.orEmpty()
+                        coverWasManuallyChanged = false
+                        shouldRestoreCoverBase = true
+                    }
+                }
+                if (restoreLyrics) {
+                    pendingLyricsDraft = null
+                    val plan = resolveEditSongLyricsRestorePlan(restoreBaseline, sourceInfo)
+                    shouldClearLyrics = plan.shouldClearLyrics
+                    shouldRestoreLyrics = plan.shouldRestoreLyrics
+                    originalLyric = plan.originalLyric
+                    originalTranslatedLyric = plan.originalTranslatedLyric
+                    originalRomanizedLyric = plan.originalRomanizedLyric
+                }
+                if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
+                    shouldClearMatchedMetadata = true
+                }
+                userHasEdited = true
+                isOriginalInfoRestoring = false
+            }
+
+            try {
+                restoreBaseline = if (restoreLyrics) {
+                    withContext(Dispatchers.IO) {
+                        resolveManagedEditSongBaselineAtRestore(
+                            context = context,
+                            song = actualSong,
+                            current = editBaseline
+                        )
+                    }
+                } else {
+                    editBaseline
+                }
+                if (!shouldFetchOriginalSongInfo(actualSong)) {
+                    applyInfo(sourceInfo = null)
+                } else {
+                    viewModel.fetchOriginalInfo(context, actualSong) { success, info, _ ->
+                        if (success && info != null) {
+                            applyInfo(sourceInfo = info)
+                        } else {
+                            applyInfo(sourceInfo = null)
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                if (isOriginalInfoRequestCurrent(
+                        requestId = requestId,
+                        currentRequestId = originalInfoRequestId,
+                        requestSongKey = requestSongKey,
+                        currentSongKey = latestActualSongKeyState.value
+                    )
+                ) {
+                    isOriginalInfoRestoring = false
+                }
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingScreen", "恢复歌曲原始信息失败", error)
+                applyInfo(sourceInfo = null)
+            }
         }
-        if (restoreArtist) {
-            artistName = editBaseline.artist
-            shouldRestoreArtistBase = true
-        }
-        if (restoreCover) {
-            coverUrl = editBaseline.coverUrl
-            coverWasManuallyChanged = false
-            shouldRestoreCoverBase = true
-        }
-        if (restoreLyrics) {
-            shouldClearLyrics = false
-            // an empty baseline is still a real baseline: restore must clear an edit
-            shouldRestoreLyrics = true
-            originalLyric = editBaseline.lyric.orEmpty()
-            originalTranslatedLyric = editBaseline.translatedLyric.orEmpty()
-            originalRomanizedLyric = editBaseline.romanizedLyric.orEmpty()
-        }
-        if (restoreCover && restoreTitle && restoreArtist && restoreLyrics) {
-            shouldClearMatchedMetadata = true
-        }
-        userHasEdited = true
     }
 
     fun saveEditedSongInfo(writeLocalMetadata: Boolean) {
-        if (isSaving) return
+        if (isSaving || isOriginalInfoRestoring) return
         isSaving = true
         originalInfoRequestId += 1
         coroutineScope.launch {
@@ -5271,11 +5588,37 @@ fun EditSongInfoSheet(
                 val latestSong = PlayerManager.currentSongFlow.value
                     ?.takeIf { it.sameIdentityAs(actualSong) }
                     ?: actualSong
+                val lyricsDraft = resolveEditSongLyricsForSave(
+                    draft = pendingLyricsDraft,
+                    shouldClearLyrics = shouldClearLyrics,
+                    shouldRestoreLyrics = shouldRestoreLyrics,
+                    originalLyric = originalLyric,
+                    originalTranslatedLyric = originalTranslatedLyric,
+                    originalRomanizedLyric = originalRomanizedLyric
+                )
                 val writeLyricsToLocalMetadata = writeLocalMetadata &&
-                    (shouldClearLyrics || shouldRestoreLyrics)
+                    lyricsDraft != null &&
+                    pendingLyricsDraft == null
+                val lyricsWriteLocalMetadata = writeLocalMetadata ||
+                    pendingLyricsDraft?.writeLocalMetadata == true
                 var lyricsWriteSucceeded = true
-                // 处理歌词: 清除(B站)或恢复(网易云)
-                if (shouldClearLyrics) {
+                // 处理歌词: 清除, 恢复或保存编辑器草稿
+                if (lyricsDraft != null && pendingLyricsDraft != null) {
+                    NPLogger.d("NowPlayingScreen", "=== 开始保存歌词编辑草稿 ===")
+                    lyricsWriteSucceeded = PlayerManager.updateSongLyricsAndTranslation(
+                        songToUpdate = latestSong,
+                        newLyrics = lyricsDraft.lyric,
+                        newTranslatedLyrics = lyricsDraft.translatedLyric,
+                        newRomanizedLyrics = lyricsDraft.romanizedLyric,
+                        writeLocalMetadata = lyricsWriteLocalMetadata,
+                        persistLocalSidecars = shouldPersistEditedSongLyricsLocally(
+                            isLocalSong = actualSong.isLocalSong(),
+                            writeLocalMetadata = lyricsWriteLocalMetadata
+                        ),
+                        syncDownloadedMetadata = false
+                    )
+                    NPLogger.d("NowPlayingScreen", "=== 保存歌词编辑草稿完成 ===")
+                } else if (shouldClearLyrics) {
                     // B站音源: 清除歌词
                     NPLogger.d("NowPlayingScreen", "=== 开始清除歌词流程 ===")
                     NPLogger.d("NowPlayingScreen", "actualSong 详情: id=${actualSong.id}, album='${actualSong.album}', name='${actualSong.name}', artist='${actualSong.artist}'")
@@ -5365,6 +5708,7 @@ fun EditSongInfoSheet(
                 originalLyric = null
                 originalTranslatedLyric = null
                 originalRomanizedLyric = null
+                pendingLyricsDraft = null
                 clearEditSongInfoFocus()
                 dismissed = true
                 isSaving = false
@@ -5470,9 +5814,11 @@ fun EditSongInfoSheet(
                 label = { Text(stringResource(R.string.music_cover_url)) },
                 placeholder = { Text(stringResource(R.string.music_cover_url_hint)) },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isOriginalInfoRestoring && !isSaving,
                 singleLine = true,
                 trailingIcon = {
                     HapticIconButton(
+                        enabled = !isOriginalInfoRestoring && !isSaving,
                         onClick = {
                             applyOriginalInfo(
                                 restoreCover = true,
@@ -5500,7 +5846,11 @@ fun EditSongInfoSheet(
                         .size(120.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable(enabled = canReplaceCoverFromLocalFile) {
+                        .clickable(
+                            enabled = canReplaceCoverFromLocalFile &&
+                                !isOriginalInfoRestoring &&
+                                !isSaving
+                        ) {
                             clearEditSongInfoFocus()
                             showLocalCoverSyncConfirm = true
                         },
@@ -5546,9 +5896,11 @@ fun EditSongInfoSheet(
                 },
                 label = { Text(stringResource(R.string.music_edit_title)) },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isOriginalInfoRestoring && !isSaving,
                 singleLine = true,
                 trailingIcon = {
                     HapticIconButton(
+                        enabled = !isOriginalInfoRestoring && !isSaving,
                         onClick = {
                             applyOriginalInfo(
                                 restoreCover = false,
@@ -5576,9 +5928,11 @@ fun EditSongInfoSheet(
                 },
                 label = { Text(stringResource(R.string.music_edit_artist)) },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isOriginalInfoRestoring && !isSaving,
                 singleLine = true,
                 trailingIcon = {
                     HapticIconButton(
+                        enabled = !isOriginalInfoRestoring && !isSaving,
                         onClick = {
                             applyOriginalInfo(
                                 restoreCover = false,
@@ -5780,10 +6134,26 @@ fun EditSongInfoSheet(
                                         embeddedLyrics?.embeddedRomanizedLyric
                                     ).any { !it.isNullOrBlank() }
                                 )
+                                val previewEditorSeed = applyEditSongLyricsDraftPreview(
+                                    seed = applyLyricsEditorRestorePreview(
+                                        seed = loadedEditorSeed,
+                                        shouldClearLyrics = shouldClearLyrics,
+                                        shouldRestoreLyrics = shouldRestoreLyrics,
+                                        originalLyric = originalLyric,
+                                        originalTranslatedLyric = originalTranslatedLyric,
+                                        originalRomanizedLyric = originalRomanizedLyric
+                                    ),
+                                    draft = pendingLyricsDraft
+                                )
                                 if (lyricsEditorRequestId != requestId) {
                                     return@launch
                                 }
-                                if (loadedEditorSeed.hasSidecar) {
+                                if (previewEditorSeed !== loadedEditorSeed) {
+                                    lyricsEditorSeed = previewEditorSeed
+                                    pendingLyricsSourceSeed = null
+                                    isLyricsEditorOpening = false
+                                    isPendingEmbeddedLyricsLoading = false
+                                } else if (loadedEditorSeed.hasSidecar) {
                                     pendingLyricsSourceSeed = loadedEditorSeed
                                     isLyricsEditorOpening = false
                                     isPendingEmbeddedLyricsLoading = true
@@ -5859,10 +6229,20 @@ fun EditSongInfoSheet(
                                     isLyricsEditorOpening = false
                                 }
                             } else {
-                                lyricsEditorSeed = resolveLyricsEditorSeed(
-                                    song = actualSong,
-                                    preparedLyrics = displayedLyricsText,
-                                    preparedTranslatedLyrics = displayedTranslatedLyricsText
+                                lyricsEditorSeed = applyEditSongLyricsDraftPreview(
+                                    seed = applyLyricsEditorRestorePreview(
+                                        seed = resolveLyricsEditorSeed(
+                                            song = actualSong,
+                                            preparedLyrics = displayedLyricsText,
+                                            preparedTranslatedLyrics = displayedTranslatedLyricsText
+                                        ),
+                                        shouldClearLyrics = shouldClearLyrics,
+                                        shouldRestoreLyrics = shouldRestoreLyrics,
+                                        originalLyric = originalLyric,
+                                        originalTranslatedLyric = originalTranslatedLyric,
+                                        originalRomanizedLyric = originalRomanizedLyric
+                                    ),
+                                    draft = pendingLyricsDraft
                                 )
                                 isLyricsEditorOpening = false
                             }
@@ -5897,30 +6277,50 @@ fun EditSongInfoSheet(
                         } catch (e: Exception) {
                             NPLogger.e("NowPlayingScreen", "歌词编辑器初始化失败", e)
                             if (actualSong.isLocalSong() && lyricsEditorRequestId == requestId) {
-                                lyricsEditorSeed = resolveLocalLyricsEditorSeed(
-                                    song = actualSong,
-                                    sidecarLyrics = null,
-                                    sidecarTranslatedLyrics = null,
-                                    sidecarRomanizedLyrics = null,
-                                    embeddedLyrics = displayedLyricsText,
-                                    embeddedTranslatedLyrics = displayedTranslatedLyricsText,
-                                    embeddedRomanizedLyrics = null,
-                                    hasOriginalSidecar = false,
-                                    hasTranslatedSidecar = false,
-                                    hasRomanizedSidecar = false
+                                lyricsEditorSeed = applyEditSongLyricsDraftPreview(
+                                    seed = applyLyricsEditorRestorePreview(
+                                        seed = resolveLocalLyricsEditorSeed(
+                                            song = actualSong,
+                                            sidecarLyrics = null,
+                                            sidecarTranslatedLyrics = null,
+                                            sidecarRomanizedLyrics = null,
+                                            embeddedLyrics = displayedLyricsText,
+                                            embeddedTranslatedLyrics = displayedTranslatedLyricsText,
+                                            embeddedRomanizedLyrics = null,
+                                            hasOriginalSidecar = false,
+                                            hasTranslatedSidecar = false,
+                                            hasRomanizedSidecar = false
+                                        ),
+                                        shouldClearLyrics = shouldClearLyrics,
+                                        shouldRestoreLyrics = shouldRestoreLyrics,
+                                        originalLyric = originalLyric,
+                                        originalTranslatedLyric = originalTranslatedLyric,
+                                        originalRomanizedLyric = originalRomanizedLyric
+                                    ),
+                                    draft = pendingLyricsDraft
                                 )
                                 isLyricsEditorOpening = false
                             } else {
-                                lyricsEditorSeed = resolveLyricsEditorSeed(song = actualSong)
+                                lyricsEditorSeed = applyEditSongLyricsDraftPreview(
+                                    seed = applyLyricsEditorRestorePreview(
+                                        seed = resolveLyricsEditorSeed(song = actualSong),
+                                        shouldClearLyrics = shouldClearLyrics,
+                                        shouldRestoreLyrics = shouldRestoreLyrics,
+                                        originalLyric = originalLyric,
+                                        originalTranslatedLyric = originalTranslatedLyric,
+                                        originalRomanizedLyric = originalRomanizedLyric
+                                    ),
+                                    draft = pendingLyricsDraft
+                                )
                                 isLyricsEditorOpening = false
                             }
                         }
                     }
                 },
-                enabled = !isLyricsEditorOpening,
+                enabled = !isLyricsEditorOpening && !isOriginalInfoRestoring,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (isLyricsEditorOpening) {
+                if (isLyricsEditorOpening || isOriginalInfoRestoring) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp
@@ -5954,7 +6354,8 @@ fun EditSongInfoSheet(
                     showSearchResults = true
                     focusManager.clearFocus()
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                enabled = !isOriginalInfoRestoring && !isSaving
             ) {
                 Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -5976,7 +6377,8 @@ fun EditSongInfoSheet(
                         restoreLyrics = true
                     )
                 },
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                enabled = !isOriginalInfoRestoring && !isSaving
             ) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -6006,7 +6408,7 @@ fun EditSongInfoSheet(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                enabled = !isCoverImporting && !isSaving
+                enabled = !isCoverImporting && !isSaving && !isOriginalInfoRestoring
             ) {
                 if (isSaving) {
                     CircularProgressIndicator(
@@ -6152,6 +6554,12 @@ fun EditSongInfoSheet(
             initialRomanizedLyrics = lyricsEditorSeed!!.romanizedLyrics,
             editingSource = lyricsEditorSeed!!.source,
             hasExistingSidecar = lyricsEditorSeed!!.hasSidecar,
+            onSaveDraft = { draft ->
+                pendingLyricsDraft = draft
+                lyricsEditorSeed = lyricsEditorSeed?.let { seed ->
+                    applyEditSongLyricsDraftPreview(seed = seed, draft = draft)
+                }
+            },
             onDismiss = {
                 clearEditSongInfoFocus()
                 lyricsEditorSeed = null
@@ -6646,6 +7054,7 @@ fun LyricsEditorSheet(
     initialRomanizedLyrics: String = "",
     editingSource: LyricsEditorSource = LyricsEditorSource.SIDECAR,
     hasExistingSidecar: Boolean = false,
+    onSaveDraft: (EditSongLyricsDraft) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -6716,38 +7125,16 @@ fun LyricsEditorSheet(
     fun saveLyrics(writeLocalMetadata: Boolean) {
         if (isSaving) return
         isSaving = true
-        coroutineScope.launch {
-            var dismissed = false
-            try {
-                val writeSucceeded = PlayerManager.updateSongLyricsAndTranslation(
-                    songToUpdate = originalSong,
-                    newLyrics = lyricsText,
-                    newTranslatedLyrics = translatedLyricsText,
-                    newRomanizedLyrics = romanizedLyricsText,
-                    writeLocalMetadata = writeLocalMetadata
-                )
-                if (writeSucceeded) {
-                    dismissed = true
-                    isSaving = false
-                    dismissLyricsEditor()
-                } else {
-                    AppFeedback.show(
-                        context = context,
-                        message = resources.getString(R.string.local_song_lyrics_write_failed)
-                    )
-                }
-            } catch (error: Exception) {
-                NPLogger.e("NowPlayingScreen", "保存歌词失败", error)
-                AppFeedback.show(
-                    context = context,
-                    message = resources.getString(R.string.local_song_lyrics_write_failed)
-                )
-            } finally {
-                if (!dismissed) {
-                    isSaving = false
-                }
-            }
-        }
+        onSaveDraft(
+            EditSongLyricsDraft(
+                lyric = lyricsText,
+                translatedLyric = translatedLyricsText,
+                romanizedLyric = romanizedLyricsText,
+                writeLocalMetadata = writeLocalMetadata
+            )
+        )
+        isSaving = false
+        dismissLyricsEditor()
     }
 
     fun runLyricMatch(
