@@ -1,10 +1,13 @@
 package moe.ouom.neriplayer.core.player.usb.device
 
+import android.content.Context
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 /**
  * 覆盖 H1(多设备选错/无声)与 L1(子串误命中)修复的纯函数级判定:
@@ -47,6 +50,15 @@ class UsbExclusiveDeviceSelectionTest {
             allowSingleFallback = true
         ) { true }
         assertEquals(UsbExclusiveDeviceSelectionOutcome.NONE, result.outcome)
+    }
+
+    @Test
+    fun `missing usb manager reports no permitted audio device`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.USB_SERVICE)).thenReturn(null)
+
+        assertFalse(hasPermittedUsbAudioOutput(context))
     }
 
     @Test
