@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Test
@@ -43,7 +44,8 @@ class UsbExclusiveAudioSinkTest {
         val sink = UsbExclusiveAudioSink(
             context = context,
             fallbackSink = fallbackSink,
-            observeSystemVolume = false
+            observeSystemVolume = false,
+            nativeUsbAudioDeviceAvailable = { true }
         )
         val format = rawPcmFormat()
 
@@ -68,10 +70,32 @@ class UsbExclusiveAudioSinkTest {
         val sink = UsbExclusiveAudioSink(
             context = context,
             fallbackSink = fallbackSink,
-            observeSystemVolume = false
+            observeSystemVolume = false,
+            nativeUsbAudioDeviceAvailable = { true }
         )
 
         assertTrue(sink.supportsFormat(rawFloatPcmFormat()))
+    }
+
+    @Test
+    fun `usb native pcm is rejected before decoder selection when no device is available`() {
+        PlayerManager.usbExclusivePlaybackEnabled = true
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        `when`(context.getSystemService(Context.AUDIO_SERVICE)).thenReturn(null)
+        val fallbackSink = mock(AudioSink::class.java)
+        `when`(fallbackSink.supportsFormat(rawPcmFormat())).thenReturn(true)
+        `when`(fallbackSink.getFormatSupport(rawPcmFormat()))
+            .thenReturn(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
+        val sink = UsbExclusiveAudioSink(
+            context = context,
+            fallbackSink = fallbackSink,
+            observeSystemVolume = false,
+            nativeUsbAudioDeviceAvailable = { false }
+        )
+
+        assertFalse(sink.supportsFormat(rawPcmFormat()))
+        assertEquals(AudioSink.SINK_FORMAT_UNSUPPORTED, sink.getFormatSupport(rawPcmFormat()))
     }
 
     @Test

@@ -50,6 +50,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbAudioSinkReconfigura
 import moe.ouom.neriplayer.core.player.lifecycle.scheduleUsbExclusiveTransportRecovery
 import moe.ouom.neriplayer.core.player.lifecycle.stopPlaybackAfterUsbExclusiveNativeFailure
 import moe.ouom.neriplayer.core.player.lifecycle.tryRecoverUsbExclusivePlaybackAfterNativeTransferFailure
+import moe.ouom.neriplayer.core.player.usb.device.hasPermittedUsbAudioOutput
 import moe.ouom.neriplayer.core.player.usb.path.UsbExclusiveAudioPathTracker
 import moe.ouom.neriplayer.core.player.usb.session.UsbExclusiveSessionController
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveBackgroundAudioAnchorVolumeGuard
@@ -94,7 +95,13 @@ internal fun prepareUsbExclusiveNativeWrite(
 internal class UsbExclusiveAudioSink(
     private val context: Context,
     private val fallbackSink: AudioSink,
-    private val observeSystemVolume: Boolean = true
+    private val observeSystemVolume: Boolean = true,
+    private val nativeUsbAudioDeviceAvailable: () -> Boolean = {
+        hasPermittedUsbAudioOutput(
+            context = context,
+            selectedDeviceKey = PlayerManager.usbExclusivePreferences.selectedDeviceKey
+        )
+    }
 ) : ForwardingAudioSink(fallbackSink) {
     private companion object {
         const val PARAMETER_EPSILON = 0.0001f
@@ -240,11 +247,25 @@ internal class UsbExclusiveAudioSink(
     }
 
     override fun supportsFormat(format: Format): Boolean {
+        if (
+            PlayerManager.usbExclusivePlaybackEnabled &&
+            isUsbNativePcmFormat(format) &&
+            !nativeUsbAudioDeviceAvailable()
+        ) {
+            return false
+        }
         return fallbackSink.supportsFormat(format) ||
             (PlayerManager.usbExclusivePlaybackEnabled && isUsbNativePcmFormat(format))
     }
 
     override fun getFormatSupport(format: Format): Int {
+        if (
+            PlayerManager.usbExclusivePlaybackEnabled &&
+            isUsbNativePcmFormat(format) &&
+            !nativeUsbAudioDeviceAvailable()
+        ) {
+            return AudioSink.SINK_FORMAT_UNSUPPORTED
+        }
         val fallbackSupport = fallbackSink.getFormatSupport(format)
         return if (PlayerManager.usbExclusivePlaybackEnabled && isUsbNativePcmFormat(format)) {
             max(fallbackSupport, AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)

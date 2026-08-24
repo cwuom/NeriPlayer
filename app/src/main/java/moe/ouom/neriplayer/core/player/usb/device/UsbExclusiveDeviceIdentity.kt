@@ -17,7 +17,7 @@ internal fun UsbDevice.matchesUsbExclusiveDeviceKey(deviceKey: String): Boolean 
     val selection = parseUsbExclusiveDeviceKey(deviceKey) ?: return false
     return vendorId == selection.vendorId &&
         productId == selection.productId &&
-        normalizedDeviceLabel(stableUsbDeviceLabel()) == selection.label
+        normalizeUsbExclusiveDeviceLabel(stableUsbDeviceLabel()) == selection.label
 }
 
 internal fun AudioDeviceInfo.matchesUsbExclusiveDeviceKey(deviceKey: String): Boolean {
@@ -111,7 +111,7 @@ private fun buildUsbExclusiveDeviceKey(
     productId: Int,
     label: String
 ): String {
-    return "usb:$vendorId:$productId:${normalizedDeviceLabel(label)}"
+    return "usb:$vendorId:$productId:${normalizeUsbExclusiveDeviceLabel(label)}"
 }
 
 private fun parseUsbExclusiveDeviceKey(deviceKey: String): UsbExclusiveDeviceSelection? {
@@ -128,7 +128,7 @@ private fun usbExclusiveDeviceKeyMatchesLabel(
     label: String
 ): Boolean {
     // 精确相等,避免子串误命中(如键 "dac" 命中 "dac_pro"),与 host 侧 VID+PID+label 精确匹配对齐
-    val normalizedProduct = normalizedDeviceLabel(label)
+    val normalizedProduct = normalizeUsbExclusiveDeviceLabel(label)
     return normalizedProduct.isNotBlank() && normalizedProduct == selection.label
 }
 
@@ -139,7 +139,7 @@ private fun UsbDevice.stableUsbDeviceLabel(): String {
         ?: deviceName
 }
 
-private fun normalizedDeviceLabel(value: String): String {
+internal fun normalizeUsbExclusiveDeviceLabel(value: String): String {
     return value.trim()
         .lowercase()
         .replace(Regex("[^a-z0-9]+"), "_")
