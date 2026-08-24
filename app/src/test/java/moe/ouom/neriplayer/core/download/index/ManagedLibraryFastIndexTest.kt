@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.index
 
 import java.nio.file.Files
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -8,6 +9,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ManagedLibraryFastIndexTest {
+    @Test
+    fun `fast index write is blocked when metadata is incomplete`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntriesWithoutMetadata = listOf(
+                ManagedDownloadStorage.StoredEntry(
+                    name = "song.mp3",
+                    reference = "content://audio/song",
+                    mediaUri = "content://audio/song",
+                    localFilePath = null,
+                    sizeBytes = 1L,
+                    lastModifiedMs = 1L
+                )
+            ),
+            rootEntriesComplete = true
+        )
+
+        assertEquals(false, ManagedDownloadStorage.shouldPersistFastIndex(snapshot))
+    }
+
     @Test
     fun `index round trips and sorts entries`() {
         val entries = listOf(
@@ -73,6 +93,7 @@ class ManagedLibraryFastIndexTest {
             mapOf("a.mp3" to "content://a", "b.mp3" to "content://b"),
             joined
         )
+        assertTrue("missing root entries must not become preview references", "missing.mp3" !in joined)
     }
 
     private fun entry(stableKey: String): ManagedLibraryIndexEntry {

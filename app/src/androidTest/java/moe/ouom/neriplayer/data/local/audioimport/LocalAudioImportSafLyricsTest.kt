@@ -130,12 +130,76 @@ class LocalAudioImportSafLyricsTest {
                 metadataUri
             )
         )
+        assertEquals(
+            ManagedDownloadReferenceIo.AccessResult.Missing,
+            ManagedDownloadReferenceIo.inspect(targetContext, metadataUri.toString())
+        )
         assertTrue(
             ManagedDownloadReferenceIo.isContentReferenceGone(
                 context = targetContext,
                 uri = metadataUri
             )
         )
+    }
+
+    @Test
+    fun safPermissionFailureIsNotReportedAsMissing() {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val childUri = DocumentsContract.buildChildDocumentsUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.FAIL_WITH_SECURITY_EXCEPTION,
+            null,
+            null
+        )
+        try {
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.PermissionLost,
+                ManagedDownloadReferenceIo.inspect(targetContext, childUri.toString())
+            )
+        } finally {
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.RESET_SECURITY_EXCEPTION,
+                null,
+                null
+            )
+        }
+    }
+
+    @Test
+    fun safProviderFailureIsNotReportedAsMissing() {
+        val providerUri = DocumentsContract.buildDocumentUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        val childUri = DocumentsContract.buildChildDocumentsUri(
+            Issue339LyricsTestDocumentProvider.AUTHORITY,
+            Issue339LyricsTestDocumentProvider.ROOT_ID
+        )
+        targetContext.contentResolver.call(
+            providerUri,
+            Issue339LyricsTestDocumentProvider.FAIL_CHILD_DOCUMENT_QUERIES,
+            null,
+            null
+        )
+        try {
+            val result = ManagedDownloadReferenceIo.inspect(targetContext, childUri.toString())
+            assertTrue(result is ManagedDownloadReferenceIo.AccessResult.ProviderFailure)
+        } finally {
+            targetContext.contentResolver.call(
+                providerUri,
+                Issue339LyricsTestDocumentProvider.RESET_CHILD_DOCUMENT_QUERY_FAILURE,
+                null,
+                null
+            )
+        }
     }
 
     @Test

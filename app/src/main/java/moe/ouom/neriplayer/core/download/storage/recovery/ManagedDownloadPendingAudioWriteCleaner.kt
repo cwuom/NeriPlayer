@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.recovery
 import android.content.Context
 import java.io.File
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
@@ -14,7 +15,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
         root: ManagedDownloadRootHandle,
         names: ManagedDownloadPendingAudioWriteNames,
         treeChildRegistry: ManagedDownloadTreeChildRegistry,
-        deleteTreeChild: (QueriedTreeChild) -> Boolean,
+        deleteTreeChild: (QueriedTreeChild) -> StorageMutationResult,
         preserveEntry: (String) -> Boolean = { false },
         tag: String
     ): ManagedDownloadStorage.StartupRecoveryResult {
@@ -45,7 +46,7 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
 
     private fun deletePendingEntries(
         pendingEntries: List<Any>,
-        deleteTreeChild: (QueriedTreeChild) -> Boolean,
+        deleteTreeChild: (QueriedTreeChild) -> StorageMutationResult,
         preserveEntry: (String) -> Boolean
     ): ManagedDownloadStorage.StartupRecoveryResult {
         var cleanedCount = 0
@@ -59,12 +60,25 @@ internal object ManagedDownloadPendingAudioWriteCleaner {
             if (name.isNotBlank() && preserveEntry(name)) {
                 return@forEach
             }
-            val deleted = when (entry) {
-                is File -> runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)
-                is QueriedTreeChild -> deleteTreeChild(entry)
-                else -> false
+            val mutation = when (entry) {
+                is File -> if (runCatching { !entry.exists() || entry.delete() }.getOrDefault(false)) {
+                    StorageMutationResult.Deleted
+                } else {
+                    StorageMutationResult.ProviderFailure(
+                        IllegalStateException("pending file delete was not confirmed")
+                    )
+                }
+                is QueriedTreeChild -> runCatching { deleteTreeChild(entry) }
+                    .getOrElse { error ->
+                        if (error is SecurityException) {
+                            StorageMutationResult.PermissionLost
+                        } else {
+                            StorageMutationResult.ProviderFailure(error)
+                        }
+                    }
+                else -> StorageMutationResult.OutOfScope
             }
-            if (deleted) {
+            if (mutation is StorageMutationResult.Deleted || mutation is StorageMutationResult.Missing) {
                 cleanedCount++
             } else {
                 failedCount++

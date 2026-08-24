@@ -104,6 +104,9 @@ internal object ManagedDownloadMigrationEntryCollector {
                             ManagedDownloadStorageNaming
                                 .buildStableCoverCandidateNames(baseName, key)
                                 .forEach(::add)
+                            ManagedDownloadStorageNaming
+                                .buildLegacyStableCoverCandidateNames(baseName, key)
+                                .forEach(::add)
                         }
                     }
             }

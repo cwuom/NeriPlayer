@@ -16,6 +16,9 @@
     <plurals name="download_tasks_count">
         <item quantity="other">%d 个任务</item>
     </plurals>
+    <plurals name="download_explicit_resume_count">
+        <item quantity="other">%d 个下载需要手动继续</item>
+    </plurals>
     <plurals name="download_scan_failed">
         <item quantity="other">扫描失败 %d 项</item>
     </plurals>

@@ -160,8 +160,11 @@ public final class Issue339LyricsTestDocumentProvider extends ContentProvider {
     @Override
     public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
         if (METADATA_ID.equals(documentId(uri))) {
+            File file = metadataFile();
+            if (!mode.contains("w") && !file.isFile()) {
+                throw new FileNotFoundException("Missing file for " + uri);
+            }
             try {
-                File file = metadataFile();
                 int flags = mode.contains("w")
                     ? ParcelFileDescriptor.MODE_READ_WRITE
                         | ParcelFileDescriptor.MODE_CREATE

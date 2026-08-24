@@ -27,3 +27,46 @@ internal fun shouldPreserveAudioAfterCancellation(
         "DEGRADED_COMPLETE"
     )
 }
+
+/**
+ * protects a durable-looking audio entry when cancellation cannot prove ownership
+ */
+internal fun shouldPreserveAudioForCancellationRollback(
+    audioIsPending: Boolean,
+    metadataReadable: Boolean,
+    downloadFinalized: Boolean?,
+    artifactState: String?,
+    metadataOperationId: String?,
+    operationId: String?
+): Boolean {
+    if (!metadataReadable && !audioIsPending) {
+        return true
+    }
+    if (operationId != null && metadataOperationId != operationId) {
+        return true
+    }
+    if (!audioIsPending && artifactState == "COMMITTING") {
+        return true
+    }
+    return shouldPreserveAudioAfterCancellation(
+        downloadFinalized = downloadFinalized,
+        artifactState = artifactState
+    )
+}
+
+internal fun shouldPublishCoreCommit(
+    metadataAlreadyCoreCommitted: Boolean,
+    metadataWriteSucceeded: Boolean
+): Boolean {
+    return metadataAlreadyCoreCommitted || metadataWriteSucceeded
+}
+
+internal fun isDurableCoreArtifactState(state: String?): Boolean {
+    return state in setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "FINALIZED",
+        "DEGRADED_COMPLETE",
+        "COMPLETED"
+    )
+}

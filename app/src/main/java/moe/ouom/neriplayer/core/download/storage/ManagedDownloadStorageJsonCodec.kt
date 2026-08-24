@@ -385,7 +385,8 @@ internal object ManagedDownloadStorageJsonCodec {
             stableKey = stableKey,
             song = song,
             order = optInt("order", Int.MAX_VALUE),
-            queuedAtMs = optLong("queuedAtMs").coerceAtLeast(0L)
+            queuedAtMs = optLong("queuedAtMs").coerceAtLeast(0L),
+            operationId = optString("operationId").takeIf(String::isNotBlank)
         )
     }
 
@@ -394,6 +395,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("stableKey", stableKey)
             put("order", order)
             put("queuedAtMs", queuedAtMs)
+            operationId?.takeIf(String::isNotBlank)?.let { put("operationId", it) }
             put("song", song.toWorkingResumeMetadataJson())
         }
     }
@@ -420,7 +422,11 @@ internal object ManagedDownloadStorageJsonCodec {
                 ?: optPresentString("matchedRomanizedLyric"),
             matchedLyricSource = optString("matchedLyricSource").takeIf(String::isNotBlank),
             matchedSongId = optString("matchedSongId").takeIf(String::isNotBlank),
-            userLyricOffsetMs = optLong("userLyricOffsetMs"),
+            userLyricOffsetMs = optLong("userLyricOffsetMs")
+                .takeIf { has("userLyricOffsetMs") && !isNull("userLyricOffsetMs") }
+                ?.takeUnless { it == 0L }
+                ?: overrides?.userLyricOffsetMs
+                ?: 0L,
             customCoverUrl = optString("customCoverUrl").takeIf(String::isNotBlank),
             customName = optString("customName").takeIf(String::isNotBlank)
                 ?: overrides?.title,

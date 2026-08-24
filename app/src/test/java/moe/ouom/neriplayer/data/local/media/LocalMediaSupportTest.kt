@@ -19,6 +19,29 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
 class LocalMediaSupportTest {
+    @Test
+    fun `document sidecar mutation requires the exact source document id`() {
+        val children = listOf("primary:Music/other.mp3")
+        assertFalse(
+            LocalMediaSupport.containsExactDocumentSource(
+                documentIds = children,
+                sourceDocumentId = "primary:Music/song.mp3"
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.containsExactDocumentSource(
+                documentIds = children,
+                sourceDocumentId = null
+            )
+        )
+        assertTrue(
+            LocalMediaSupport.containsExactDocumentSource(
+                documentIds = children + "primary:Music/song.mp3",
+                sourceDocumentId = "primary:Music/song.mp3"
+            )
+        )
+    }
+
 
     @Test
     fun `sidecar cover wins over embedded and remote fallback references`() {

@@ -23,6 +23,15 @@ internal object ManagedDownloadMetadataCodec {
         rewriteMetadataReferenceField(root, "mediaUri", referenceMap)
         rewriteMetadataReferenceField(root, "localFilePath", referenceMap)
         rewriteMetadataEmbeddedReferenceField(root, "stableKey", referenceMap)
+        root.optJSONObject("restorableMetadata")?.let { restorable ->
+            rewriteMetadataReferenceField(restorable, "coverReference", referenceMap)
+            restorable.optJSONObject("baseline")?.let { baseline ->
+                rewriteMetadataReferenceField(baseline, "coverReference", referenceMap)
+            }
+            restorable.optJSONObject("overrides")?.let { overrides ->
+                rewriteMetadataReferenceField(overrides, "coverReference", referenceMap)
+            }
+        }
         return root.toString()
     }
 

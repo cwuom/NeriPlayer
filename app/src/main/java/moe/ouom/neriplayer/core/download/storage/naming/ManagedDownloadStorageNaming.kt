@@ -24,13 +24,17 @@ internal object ManagedDownloadStorageNaming {
 
     fun buildStableCoverCandidateNames(baseName: String, stableKey: String): List<String> {
         val suffix = stableKeySuffix(stableKey)
-        val legacySuffix = legacyStableKeySuffix(stableKey)
-        return imageExtensions.flatMap { extension ->
-            listOf(
-                "$baseName-$suffix.$extension",
-                "$baseName-$legacySuffix.$extension"
-            )
-        }.distinct()
+        return imageExtensions.map { extension ->
+            "$baseName-$suffix.$extension"
+        }
+    }
+
+    /** legacy names are read only while importing an older managed root */
+    fun buildLegacyStableCoverCandidateNames(baseName: String, stableKey: String): List<String> {
+        val suffix = legacyStableKeySuffix(stableKey)
+        return imageExtensions.map { extension ->
+            "$baseName-$suffix.$extension"
+        }
     }
 
     fun stableKeySuffix(stableKey: String): String {

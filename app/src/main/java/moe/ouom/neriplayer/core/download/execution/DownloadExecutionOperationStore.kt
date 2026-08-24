@@ -1,209 +1,322 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
-import java.io.File
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.data.model.stableKey
-import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
-class DownloadExecutionOperationStore(
-    private val directoryProvider: (Context) -> File = { context ->
-        File(context.filesDir, DIRECTORY_NAME)
+internal interface DownloadExecutionOperationJournal {
+    fun save(context: Context, request: DownloadExecutionRequest)
+
+    fun read(context: Context, operationId: String): DownloadExecutionRequest?
+
+    fun remove(context: Context, operationId: String)
+
+    fun markStopped(context: Context, operationId: String)
+
+    fun isStopped(context: Context, operationId: String): Boolean
+
+    fun stoppedSongKeys(context: Context): Set<String>
+
+    fun findOperationIdForSong(context: Context, songKey: String): String?
+
+    fun updateState(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String? = null
+    )
+
+    fun currentState(context: Context, operationId: String): String?
+
+    fun requestCancel(context: Context, operationId: String): Boolean
+
+    fun markCoreCommitted(context: Context, operationId: String): Boolean
+
+    fun markCommitting(context: Context, operationId: String): Boolean
+
+    fun pruneTerminalOperations(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int
+}
+
+private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperationJournal {
+    override fun save(context: Context, request: DownloadExecutionRequest) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = ACTIVE_STATE
+            )
+        }
+    }
+
+    override fun read(context: Context, operationId: String): DownloadExecutionRequest? {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.read(context, operationId)
+        }
+    }
+
+    override fun remove(context: Context, operationId: String) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.delete(context, operationId)
+        }
+    }
+
+    override fun markStopped(context: Context, operationId: String) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.markStopped(context, operationId)
+        }
+    }
+
+    override fun isStopped(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.isStopped(context, operationId)
+        }
+    }
+
+    override fun stoppedSongKeys(context: Context): Set<String> {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.stoppedSongKeys(context)
+        }
+    }
+
+    override fun findOperationIdForSong(context: Context, songKey: String): String? {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.findOperationIdForSong(context, songKey)
+        }
+    }
+
+    override fun updateState(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String?
+    ) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.updateState(
+                context = context,
+                operationId = operationId,
+                state = state,
+                errorCode = errorCode
+            )
+        }
+    }
+
+    override fun currentState(context: Context, operationId: String): String? {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.state(context, operationId)
+        }
+    }
+
+    override fun requestCancel(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.requestCancel(context, operationId)
+        }
+    }
+
+    override fun markCoreCommitted(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.markCoreCommitted(context, operationId)
+        }
+    }
+
+    override fun markCommitting(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.markCommitting(context, operationId)
+        }
+    }
+
+    override fun pruneTerminalOperations(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.pruneTerminalOperations(
+                context = context,
+                cutoffMs = cutoffMs,
+                limit = limit
+            )
+        }
+    }
+
+    private const val ACTIVE_STATE = "QUEUED"
+}
+
+class DownloadExecutionOperationStore internal constructor(
+    private val journalProvider: (Context) -> DownloadExecutionOperationJournal = {
+        RoomDownloadExecutionOperationJournal
     }
 ) {
-    fun save(
-        context: Context,
-        request: DownloadExecutionRequest
-    ) {
-        saveTo(directoryProvider(context), request)
+    fun save(context: Context, request: DownloadExecutionRequest) {
+        val appContext = context.applicationContext
+        journalProvider(appContext).save(appContext, request)
     }
 
-    fun read(
-        context: Context,
-        operationId: String
-    ): DownloadExecutionRequest? {
-        return readFrom(directoryProvider(context), operationId)
+    fun read(context: Context, operationId: String): DownloadExecutionRequest? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        val appContext = context.applicationContext
+        return journalProvider(appContext).read(appContext, normalizedId)
     }
 
-    fun remove(
-        context: Context,
-        operationId: String
-    ) {
+    fun remove(context: Context, operationId: String) {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
-        val file = File(directoryProvider(context), fileName(normalizedId))
-        runCatching { if (file.exists()) file.delete() }
+        val appContext = context.applicationContext
+        journalProvider(appContext).remove(appContext, normalizedId)
     }
 
-    fun markStopped(
-        context: Context,
-        operationId: String
-    ) {
-        updateState(directoryProvider(context), operationId, STOPPED_STATE)
+    fun markStopped(context: Context, operationId: String) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        val appContext = context.applicationContext
+        journalProvider(appContext).markStopped(appContext, normalizedId)
     }
 
-    fun isStopped(
-        context: Context,
-        operationId: String
-    ): Boolean {
-        return isStoppedIn(directoryProvider(context), operationId)
+    fun isStopped(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).isStopped(appContext, normalizedId)
     }
 
     fun stoppedSongKeys(context: Context): Set<String> {
-        return stoppedSongKeysIn(directoryProvider(context))
+        val appContext = context.applicationContext
+        return journalProvider(appContext).stoppedSongKeys(appContext)
     }
 
-    internal fun isStoppedIn(
-        directory: File,
-        operationId: String
-    ): Boolean {
-        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
-        val file = File(directory, fileName(normalizedId))
-        return runCatching {
-            if (!file.isFile) return false
-            JSONObject(file.readText(Charsets.UTF_8)).optString(STATE_KEY) == STOPPED_STATE
-        }.getOrDefault(false)
-    }
-
-    internal fun stoppedSongKeysIn(directory: File): Set<String> {
-        return directory.listFiles()
-            ?.asSequence()
-            ?.filter { file ->
-                file.isFile &&
-                    file.name.startsWith(OPERATION_FILE_PREFIX) &&
-                    file.name.endsWith(OPERATION_FILE_SUFFIX)
-            }
-            ?.mapNotNull { file ->
-                val operationId = file.name
-                    .removePrefix(OPERATION_FILE_PREFIX)
-                    .removeSuffix(OPERATION_FILE_SUFFIX)
-                    .let(::normalizeDownloadOperationId)
-                    ?: return@mapNotNull null
-                if (!isStoppedIn(directory, operationId)) return@mapNotNull null
-                readFrom(directory, operationId)?.song?.stableKey()
-            }
-            ?.toSet()
-            ?: emptySet()
-    }
-
-    fun findOperationIdForSong(
-        context: Context,
-        songKey: String
-    ): String? {
-        return findOperationIdForSongIn(directoryProvider(context), songKey)
-    }
-
-    internal fun findOperationIdForSongIn(
-        directory: File,
-        songKey: String
-    ): String? {
+    fun findOperationIdForSong(context: Context, songKey: String): String? {
         val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return null
-        return directory.listFiles()
-            ?.asSequence()
-            ?.filter { file ->
-                file.isFile &&
-                    file.name.startsWith(OPERATION_FILE_PREFIX) &&
-                    file.name.endsWith(OPERATION_FILE_SUFFIX)
-            }
-            ?.mapNotNull { file ->
-                val operationId = file.name
-                    .removePrefix(OPERATION_FILE_PREFIX)
-                    .removeSuffix(OPERATION_FILE_SUFFIX)
-                    .let(::normalizeDownloadOperationId)
-                    ?: return@mapNotNull null
-                readFrom(directory, operationId)
-                    ?.takeIf { request -> request.song.stableKey() == normalizedSongKey }
-                    ?.operationId
-            }
-            ?.firstOrNull()
-    }
-
-    internal fun saveTo(
-        directory: File,
-        request: DownloadExecutionRequest
-    ) {
-        val payload = JSONObject().apply {
-            put("version", PAYLOAD_VERSION)
-            put("operationId", request.operationId)
-            put("preserveStaging", request.preserveStaging)
-            request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
-            put(STATE_KEY, ACTIVE_STATE)
-            put(
-                "song",
-                ManagedDownloadStorageJsonCodec.workingResumeMetadataToJson(
-                    song = request.song,
-                    operationId = request.operationId
-                )
-            )
-            put("sourceStableKey", request.song.sourceStableKey)
-        }.toString()
-        ManagedDownloadAtomicFile.writeTextAtomically(
-            target = File(directory, fileName(request.operationId)),
-            content = payload
+        val appContext = context.applicationContext
+        return journalProvider(appContext).findOperationIdForSong(
+            appContext,
+            normalizedSongKey
         )
     }
 
-    internal fun readFrom(
-        directory: File,
-        operationId: String
-    ): DownloadExecutionRequest? {
-        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
-        val file = File(directory, fileName(normalizedId))
-        val root = runCatching {
-            if (!file.isFile) return null
-            JSONObject(file.readText(Charsets.UTF_8))
-        }.getOrNull() ?: return null
-        if (root.optInt("version") != PAYLOAD_VERSION) return null
-        if (root.optString("operationId") != normalizedId) return null
-        val songJson = root.optJSONObject("song") ?: return null
-        val parsedSong = runCatching {
-            ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(
-                songJson.toString()
-            )
-        }.getOrNull() ?: return null
-        val song = parsedSong.copy(
-            sourceStableKey = root.optString("sourceStableKey")
-                .takeIf(String::isNotBlank)
-        )
-        return runCatching {
-            DownloadExecutionRequest(
-                operationId = normalizedId,
-                song = song,
-                preserveStaging = root.optBoolean("preserveStaging", false),
-                attemptId = root.optLong("attemptId", 0L).takeIf { it > 0L }
-            )
-        }.getOrNull()
-    }
-
-    private fun updateState(
-        directory: File,
+    fun updateState(
+        context: Context,
         operationId: String,
-        state: String
+        state: String,
+        errorCode: String? = null
     ) {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
-        val file = File(directory, fileName(normalizedId))
-        runCatching {
-            if (!file.isFile) return
-            val payload = JSONObject(file.readText(Charsets.UTF_8))
-            payload.put(STATE_KEY, state)
-            ManagedDownloadAtomicFile.writeTextAtomically(
-                target = file,
-                content = payload.toString()
+        val appContext = context.applicationContext
+        journalProvider(appContext).updateState(
+            appContext,
+            normalizedId,
+            state,
+            errorCode
+        )
+    }
+
+    fun currentState(context: Context, operationId: String): String? {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return null
+        val appContext = context.applicationContext
+        return journalProvider(appContext).currentState(appContext, normalizedId)
+    }
+
+    fun requestCancel(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).requestCancel(appContext, normalizedId)
+    }
+
+    fun markCoreCommitted(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).markCoreCommitted(appContext, normalizedId)
+    }
+
+    fun markCommitting(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).markCommitting(appContext, normalizedId)
+    }
+
+    fun pruneTerminalOperations(
+        context: Context,
+        cutoffMs: Long,
+        limit: Int
+    ): Int {
+        if (limit <= 0) return 0
+        val appContext = context.applicationContext
+        return journalProvider(appContext).pruneTerminalOperations(
+            appContext,
+            cutoffMs,
+            limit
+        )
+    }
+
+    fun clearUserStopForStableKeys(
+        context: Context,
+        stableKeys: Collection<String>
+    ): Boolean {
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return false
+        val appContext = context.applicationContext
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.clearUserStopForStableKeys(appContext, keys)
+        }
+    }
+
+}
+
+internal fun resolveDownloadOperationState(
+    currentState: String?,
+    requestedState: String
+): String? {
+    val current = currentState?.trim()?.takeIf(String::isNotEmpty) ?: return requestedState
+    if (current == requestedState) return current
+    if (current == "CANCELLED" || current == "COMPLETED") return null
+    if (requestedState == "CANCEL_REQUESTED") {
+        return requestedState.takeIf {
+            it != current && current in setOf("QUEUED", "RUNNING", "STOPPED", "RETRYABLE")
+        }
+    }
+    if (requestedState == "CANCELLED") {
+        return requestedState.takeIf {
+            current == "CANCEL_REQUESTED" ||
+                current in setOf("QUEUED", "RUNNING", "STOPPED", "RETRYABLE")
+        }
+    }
+    if (requestedState == "COMMITTING") {
+        return requestedState.takeIf {
+            current == "PENDING_QUEUE" || current == "QUEUED" || current == "RUNNING"
+        }
+    }
+    if (requestedState == "CORE_COMMITTED") {
+        return requestedState.takeIf {
+            current == "COMMITTING"
+        }
+    }
+    if (current == "CANCEL_REQUESTED") {
+        return requestedState.takeIf { it in CORE_COMMITTED_STATES }
+    }
+    if (requestedState == "COMPLETED") {
+        return requestedState.takeIf {
+            current in setOf(
+                "RUNNING",
+                "COMMITTING",
+                "CORE_COMMITTED",
+                "ASSETS_ENRICHING",
+                "FINALIZED",
+                "DEGRADED_COMPLETE"
             )
         }
     }
-
-    companion object {
-        internal const val DIRECTORY_NAME = "download_execution_operations"
-        private const val PAYLOAD_VERSION = 1
-        private const val STATE_KEY = "executionState"
-        private const val ACTIVE_STATE = "ACTIVE"
-        private const val STOPPED_STATE = "STOPPED"
-        private const val OPERATION_FILE_PREFIX = "operation_"
-        private const val OPERATION_FILE_SUFFIX = ".json"
-
-        internal fun fileName(operationId: String): String {
-            return OPERATION_FILE_PREFIX + operationId + OPERATION_FILE_SUFFIX
-        }
+    val currentCoreIndex = CORE_COMMITTED_STATES.indexOf(current)
+    if (currentCoreIndex >= 0) {
+        val requestedCoreIndex = CORE_COMMITTED_STATES.indexOf(requestedState)
+        return requestedState.takeIf { requestedCoreIndex >= currentCoreIndex }
+    }
+    return requestedState.takeIf {
+        current == "PENDING_QUEUE" || current == "QUEUED" || current == "RUNNING"
     }
 }
+
+private val CORE_COMMITTED_STATES = listOf(
+    "CORE_COMMITTED",
+    "ASSETS_ENRICHING",
+    "FINALIZED",
+    "DEGRADED_COMPLETE"
+)

@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.tree
 import android.content.Context
 import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.NO_MEDIA_FILE_NAME
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentMap
@@ -42,7 +43,7 @@ internal object ManagedDownloadMediaScanIsolation {
         ensuredMarkers: ConcurrentMap<String, Boolean>,
         hasCachedChild: (Context, DocumentFile, String) -> Boolean,
         createMarker: (DocumentFile) -> DocumentFile?,
-        isMarkerAccessible: (Context, DocumentFile) -> Boolean,
+        isMarkerAccessible: (Context, DocumentFile) -> ManagedDownloadReferenceIo.AccessResult,
         rememberMarker: (DocumentFile, String) -> Unit
     ) {
         if (!ManagedDownloadTreeNaming.shouldCreateNoMediaMarker(subdirectory)) return
@@ -58,14 +59,14 @@ internal object ManagedDownloadMediaScanIsolation {
                 ensuredMarkers[cacheKey] = true
                 return
             }
-            val marker = runCatching { createMarker(directory) }.getOrNull()
-            if (
-                marker != null &&
-                    isUsableNoMediaMarker(
-                        documentExists = marker.exists(),
-                        descriptorAccessible = isMarkerAccessible(context, marker)
-                    )
-            ) {
+            val marker = try {
+                createMarker(directory)
+            } catch (error: SecurityException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (marker != null && isUsableNoMediaMarker(isMarkerAccessible(context, marker))) {
                 val storedName = ManagedDownloadTreeNaming.resolveTreeStoredName(
                     marker.name,
                     NO_MEDIA_FILE_NAME
@@ -82,7 +83,6 @@ internal object ManagedDownloadMediaScanIsolation {
     }
 
     internal fun isUsableNoMediaMarker(
-        documentExists: Boolean,
-        descriptorAccessible: Boolean
-    ): Boolean = documentExists || descriptorAccessible
+        accessResult: ManagedDownloadReferenceIo.AccessResult
+    ): Boolean = accessResult == ManagedDownloadReferenceIo.AccessResult.Accessible
 }

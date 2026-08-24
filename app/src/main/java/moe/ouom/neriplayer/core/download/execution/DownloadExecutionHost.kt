@@ -1,12 +1,16 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import java.util.concurrent.ConcurrentHashMap
@@ -44,6 +48,20 @@ interface DownloadExecutionHost {
         context: Context
     ): Set<String>
 
+    fun requiresExplicitResume(
+        context: Context,
+        operationId: String?
+    ): Boolean
+
+    fun operationIdForSong(
+        context: Context,
+        songKey: String
+    ): String?
+
+    fun markUserRequestedProcessExitOperations(
+        context: Context
+    ): Set<String>
+
     suspend fun execute(
         context: Context,
         operationId: String
@@ -54,7 +72,8 @@ data class DownloadExecutionRequest(
     val operationId: String,
     val song: SongItem,
     val preserveStaging: Boolean = false,
-    val attemptId: Long? = null
+    val attemptId: Long? = null,
+    val userInitiated: Boolean = true
 ) {
     init {
         require(normalizeDownloadOperationId(operationId) == operationId) {
@@ -79,6 +98,7 @@ sealed interface DownloadExecutionResult {
     data object MissingOperation : DownloadExecutionResult
     data object Retry : DownloadExecutionResult
     data object Cancelled : DownloadExecutionResult
+    data object UserStopped : DownloadExecutionResult
     data class Failed(val error: Throwable) : DownloadExecutionResult
 }
 
@@ -139,35 +159,37 @@ class DefaultDownloadExecutionHost(
                 )
             }
             operationStore.save(appContext, request)
-            val scheduled = if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    false
-                } else {
-                    scheduleUidt(appContext, request.operationId)
-                }
-            } else {
-                ForegroundDownloadWorker.schedule(appContext, request.operationId)
-            }
-            if (!scheduled) {
-                operationStore.remove(appContext, request.operationId)
-                return@runCatching DownloadExecutionSchedule.Rejected(
-                    if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        "UIDT JobScheduler rejected operation"
+            val selectedBackend = selectDownloadExecutionBackend(
+                sdkInt = sdkInt,
+                userInitiated = request.userInitiated
+            )
+            val scheduledBackend = when (selectedBackend) {
+                DownloadExecutionSchedule.Backend.UIDT_JOB -> {
+                    if (scheduleUidtIfSupported(appContext, request.operationId, sdkInt)) {
+                        DownloadExecutionSchedule.Backend.UIDT_JOB
+                    } else if (ForegroundDownloadWorker.schedule(appContext, request.operationId)) {
+                        DownloadExecutionSchedule.Backend.FOREGROUND_WORK
                     } else {
-                        "WorkManager rejected operation"
+                        null
                     }
+                }
+
+                DownloadExecutionSchedule.Backend.FOREGROUND_WORK -> {
+                    ForegroundDownloadWorker.schedule(appContext, request.operationId)
+                        .takeIf { it }
+                        ?.let { DownloadExecutionSchedule.Backend.FOREGROUND_WORK }
+                }
+            }
+            if (scheduledBackend == null) {
+                return@runCatching DownloadExecutionSchedule.Rejected(
+                    "${selectedBackend.name} host rejected operation"
                 )
             }
             operationIdsBySongKey[songKey] = request.operationId
             DownloadExecutionSchedule.Scheduled(
-                if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    DownloadExecutionSchedule.Backend.UIDT_JOB
-                } else {
-                    DownloadExecutionSchedule.Backend.FOREGROUND_WORK
-                }
+                scheduledBackend
             )
         }.getOrElse { error ->
-            operationStore.remove(appContext, request.operationId)
             DownloadExecutionSchedule.Rejected(
                 error.message ?: error.javaClass.simpleName
             )
@@ -181,13 +203,15 @@ class DefaultDownloadExecutionHost(
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
         val appContext = context.applicationContext
         val request = operationStore.read(appContext, normalizedId)
+        val cancelAccepted = request != null &&
+            operationStore.requestCancel(appContext, normalizedId)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             cancelUidt(appContext, normalizedId)
         }
         ForegroundDownloadWorker.cancel(appContext, normalizedId)
-        request?.song?.stableKey()?.let(GlobalDownloadManager::cancelDownloadOperationFromHost)
-        GlobalDownloadManager.removeDownloadOperationRecordFromHost(appContext, normalizedId)
-        operationStore.remove(appContext, normalizedId)
+        if (cancelAccepted) {
+            request.song.stableKey().let(GlobalDownloadManager::cancelDownloadOperationFromHost)
+        }
         request?.song?.stableKey()?.let { songKey ->
             operationIdsBySongKey.remove(songKey, normalizedId)
         }
@@ -236,10 +260,77 @@ class DefaultDownloadExecutionHost(
             context = appContext,
             songKey = request.song.stableKey()
         )
+        if (preventReschedule) {
+            operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+        }
     }
 
     override fun externallyStoppedSongKeys(context: Context): Set<String> {
         return operationStore.stoppedSongKeys(context.applicationContext)
+    }
+
+    override fun requiresExplicitResume(
+        context: Context,
+        operationId: String?
+    ): Boolean {
+        val normalizedId = operationId?.let(::normalizeDownloadOperationId) ?: return false
+        val appContext = context.applicationContext
+        val request = operationStore.read(appContext, normalizedId) ?: return false
+        if (!request.userInitiated || sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return false
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return false
+        }
+        val state = operationStore.currentState(appContext, normalizedId)
+        return shouldRequireExplicitResume(
+            userInitiated = request.userInitiated,
+            state = state,
+            hasPendingUidtJob = hasPendingUidtJob(appContext, normalizedId),
+            stopRequestedByUser = operationStore.isStopped(appContext, normalizedId)
+        )
+    }
+
+    override fun operationIdForSong(context: Context, songKey: String): String? {
+        return operationStore.findOperationIdForSong(
+            context.applicationContext,
+            songKey
+        )
+    }
+
+    override fun markUserRequestedProcessExitOperations(context: Context): Set<String> {
+        if (sdkInt < Build.VERSION_CODES.R) return emptySet()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return emptySet()
+        val activityManager = context.getSystemService(ActivityManager::class.java)
+            ?: return emptySet()
+        val latestExit = latestProcessExit(activityManager, context.packageName) ?: return emptySet()
+        if (!isUserRequestedProcessExitReason(latestExit.reason)) {
+            return emptySet()
+        }
+        val preferences = context.getSharedPreferences(
+            PROCESS_EXIT_PREFERENCES,
+            Context.MODE_PRIVATE
+        )
+        val lastHandledTimestamp = preferences.getLong(PROCESS_EXIT_TIMESTAMP_KEY, 0L)
+        if (latestExit.timestamp <= lastHandledTimestamp) {
+            return emptySet()
+        }
+        preferences.edit {
+            putLong(PROCESS_EXIT_TIMESTAMP_KEY, latestExit.timestamp)
+        }
+        if (sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return emptySet()
+        }
+        val activeStates = listOf("PENDING_QUEUE", "QUEUED", "RUNNING", "RETRYABLE")
+        val entries = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.listByStates(context, activeStates)
+        }
+        return entries
+            .filter { it.request.userInitiated }
+            .mapTo(linkedSetOf()) { entry ->
+                operationStore.markStopped(context.applicationContext, entry.request.operationId)
+                entry.request.song.stableKey()
+            }
     }
 
     override suspend fun execute(
@@ -251,8 +342,16 @@ class DefaultDownloadExecutionHost(
         val request = operationStore.read(context.applicationContext, normalizedId)
             ?: return@withContext DownloadExecutionResult.MissingOperation
         if (operationStore.isStopped(context.applicationContext, normalizedId)) {
-            return@withContext DownloadExecutionResult.Retry
+            return@withContext DownloadExecutionResult.UserStopped
         }
+        if (operationStore.currentState(context.applicationContext, normalizedId) == "CANCEL_REQUESTED") {
+            return@withContext DownloadExecutionResult.Cancelled
+        }
+        operationStore.updateState(
+            context = context.applicationContext,
+            operationId = normalizedId,
+            state = "RUNNING"
+        )
         operationIdsBySongKey[request.song.stableKey()] = normalizedId
         try {
             entryPoint.start(
@@ -262,26 +361,53 @@ class DefaultDownloadExecutionHost(
                 preserveStaging = request.preserveStaging
             )
             val result = GlobalDownloadManager.executionResultFor(request.song.stableKey())
-            if (result == DownloadExecutionResult.Accepted ||
-                result == DownloadExecutionResult.Cancelled
-            ) {
-                runCatching {
-                    DownloadExecutionRoomStore.delete(
+            when (result) {
+                DownloadExecutionResult.Accepted -> {
+                    operationStore.updateState(
                         context = context.applicationContext,
-                        operationId = normalizedId
+                        operationId = normalizedId,
+                        state = "COMPLETED"
+                    )
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    operationStore.pruneTerminalOperations(
+                        context = context.applicationContext,
+                        cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
+                        limit = TERMINAL_OPERATION_PRUNE_LIMIT
                     )
                 }
-                operationStore.remove(context.applicationContext, normalizedId)
-                operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-            } else if (result is DownloadExecutionResult.Failed) {
-                runCatching {
-                    DownloadExecutionRoomStore.updateState(
+                DownloadExecutionResult.Cancelled -> {
+                    operationStore.updateState(
+                        context = context.applicationContext,
+                        operationId = normalizedId,
+                        state = "CANCELLED",
+                        errorCode = "USER_CANCELLED"
+                    )
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    operationStore.pruneTerminalOperations(
+                        context = context.applicationContext,
+                        cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
+                        limit = TERMINAL_OPERATION_PRUNE_LIMIT
+                    )
+                }
+                DownloadExecutionResult.UserStopped -> {
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                }
+                is DownloadExecutionResult.Failed -> {
+                    operationStore.updateState(
                         context = context.applicationContext,
                         operationId = normalizedId,
                         state = "RETRYABLE",
                         errorCode = result.error.javaClass.simpleName
                     )
                 }
+                DownloadExecutionResult.Retry -> {
+                    operationStore.updateState(
+                        context = context.applicationContext,
+                        operationId = normalizedId,
+                        state = "RETRYABLE"
+                    )
+                }
+                DownloadExecutionResult.MissingOperation -> Unit
             }
             result
         } catch (cancellation: CancellationException) {
@@ -291,10 +417,41 @@ class DefaultDownloadExecutionHost(
             )
             throw cancellation
         } catch (error: Throwable) {
+            operationStore.updateState(
+                context = context.applicationContext,
+                operationId = normalizedId,
+                state = "RETRYABLE",
+                errorCode = error.javaClass.simpleName
+            )
             DownloadExecutionResult.Failed(error)
         }
     }
 }
+
+@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+private fun hasPendingUidtJob(context: Context, operationId: String): Boolean {
+    return UidtDownloadJobService.hasPendingJob(context, operationId)
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+private fun latestProcessExit(
+    activityManager: ActivityManager,
+    packageName: String
+): ApplicationExitInfo? {
+    return runCatching {
+        activityManager.getHistoricalProcessExitReasons(packageName, 0, 5)
+            .firstOrNull()
+    }.getOrNull()
+}
+
+@RequiresApi(Build.VERSION_CODES.R)
+internal fun isUserRequestedProcessExitReason(reason: Int): Boolean {
+    return reason == ApplicationExitInfo.REASON_USER_REQUESTED ||
+        reason == ApplicationExitInfo.REASON_USER_STOPPED
+}
+
+private const val PROCESS_EXIT_PREFERENCES = "download_execution_host"
+private const val PROCESS_EXIT_TIMESTAMP_KEY = "last_user_requested_exit_timestamp"
 
 object DownloadExecutionHosts {
     val default: DownloadExecutionHost = DefaultDownloadExecutionHost()
@@ -307,6 +464,37 @@ private fun scheduleUidt(
 ): Boolean {
     return UidtDownloadJobService.schedule(context, operationId)
 }
+
+internal fun selectDownloadExecutionBackend(
+    sdkInt: Int,
+    userInitiated: Boolean
+): DownloadExecutionSchedule.Backend {
+    return if (
+        userInitiated &&
+            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+    ) {
+        DownloadExecutionSchedule.Backend.UIDT_JOB
+    } else {
+        DownloadExecutionSchedule.Backend.FOREGROUND_WORK
+    }
+}
+
+private fun scheduleUidtIfSupported(
+    context: Context,
+    operationId: String,
+    sdkInt: Int
+): Boolean {
+    if (
+        sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+    ) {
+        return false
+    }
+    return scheduleUidt(context, operationId)
+}
+
+private const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L
+private const val TERMINAL_OPERATION_PRUNE_LIMIT = 64
 
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 private fun cancelUidt(

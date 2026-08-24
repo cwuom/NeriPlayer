@@ -64,15 +64,6 @@ internal object ManagedDownloadTreeNaming {
         return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true)
     }
 
-    fun externalStorageChildDocumentId(
-        parentDocumentId: String,
-        displayName: String
-    ): String? {
-        if (parentDocumentId.isBlank() || displayName.isBlank()) return null
-        if (displayName.contains('/') || displayName.contains('\\')) return null
-        return "${parentDocumentId.trimEnd('/')}/$displayName"
-    }
-
     fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
         return canonicalName(actualName) == canonicalName(desiredName) ||
             providerNumberedNameOrdinal(actualName, desiredName) != null

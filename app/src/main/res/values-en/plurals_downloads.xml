@@ -21,6 +21,10 @@
         <item quantity="one">%d task</item>
         <item quantity="other">%d tasks</item>
     </plurals>
+    <plurals name="download_explicit_resume_count">
+        <item quantity="one">%d download needs your action</item>
+        <item quantity="other">%d downloads need your action</item>
+    </plurals>
     <plurals name="download_scan_failed">
         <item quantity="one">Scan failed: %d item</item>
         <item quantity="other">Scan failed: %d items</item>

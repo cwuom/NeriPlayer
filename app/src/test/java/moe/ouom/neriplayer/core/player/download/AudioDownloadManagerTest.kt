@@ -455,6 +455,89 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `resume request removes an unsafe inherited if range header`() {
+        val request = Request.Builder()
+            .url("https://example.com/audio.m4a")
+            .header("If-Range", "W/\"weak\"")
+            .build()
+
+        val resumedRequest = AudioDownloadManager.buildResumeRequest(
+            request = request,
+            completedBytes = 1_024L,
+            fingerprint = null
+        )
+
+        assertNull(resumedRequest.header("If-Range"))
+    }
+
+    @Test
+    fun `chunk resume request removes unsafe inherited if range header`() {
+        val request = Request.Builder()
+            .url("https://rr1---sn-abcd.googlevideo.com/videoplayback?source=youtube")
+            .header("If-Range", "Wed, 15 Jul 2026 12:00:00 GMT")
+            .build()
+
+        val chunkRequest = AudioDownloadManager.buildChunkResumeRequest(
+            request = request,
+            start = 1_024L,
+            length = 4_096L,
+            fingerprint = null
+        )
+
+        assertEquals("bytes=1024-5119", chunkRequest.header("Range"))
+        assertEquals("identity", chunkRequest.header("Accept-Encoding"))
+        assertNull(chunkRequest.header("If-Range"))
+    }
+
+    @Test
+    fun `chunk resume prefers the latest persisted fingerprint`() {
+        val fallback = ManagedDownloadStorage.WorkingResumeFingerprint(
+            etag = "\"old\""
+        )
+        val latest = ManagedDownloadStorage.WorkingResumeFingerprint(
+            etag = "\"new\""
+        )
+
+        assertEquals(
+            latest,
+            AudioDownloadManager.resolveLatestResumeFingerprint(
+                fallback = fallback,
+                latest = latest
+            )
+        )
+        assertEquals(
+            fallback,
+            AudioDownloadManager.resolveLatestResumeFingerprint(
+                fallback = fallback,
+                latest = null
+            )
+        )
+    }
+
+    @Test
+    fun `resume fingerprint exposes only a strong etag as validator`() {
+        assertEquals(
+            "\"strong\"",
+            ManagedDownloadStorage.WorkingResumeFingerprint(
+                etag = "\"strong\"",
+                lastModified = "Wed, 15 Jul 2026 12:00:00 GMT"
+            ).validator
+        )
+        assertNull(
+            ManagedDownloadStorage.WorkingResumeFingerprint(
+                etag = "W/\"weak\"",
+                lastModified = "Wed, 15 Jul 2026 12:00:00 GMT"
+            ).validator
+        )
+        assertNull(
+            ManagedDownloadStorage.WorkingResumeFingerprint(
+                etag = null,
+                lastModified = "Wed, 15 Jul 2026 12:00:00 GMT"
+            ).validator
+        )
+    }
+
+    @Test
     fun `signed url rotation does not discard a resumable file`() {
         val fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
             sourceUrl = "https://example.com/audio.m4a?token=old",
@@ -485,6 +568,12 @@ class AudioDownloadManagerTest {
             AudioDownloadManager.shouldDiscardWorkingFileForResume(
                 requestUrl = "https://example.com/audio.m4a?token=old",
                 fingerprint = fingerprint
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldDiscardWorkingFileForResume(
+                requestUrl = "https://example.com/audio.m4a?quality=low",
+                fingerprint = fingerprint.copy(etag = null, lastModified = null)
             )
         )
         assertFalse(
@@ -543,6 +632,21 @@ class AudioDownloadManagerTest {
                 bodyLength = 3_071L
             )
         }
+        assertEquals(
+            4_096L,
+            AudioDownloadManager.validatePartialContentRange(
+                headers = mapOf("Content-Range" to listOf("bytes 0-4095/4096")),
+                expectedStart = 0L,
+                bodyLength = 4_096L
+            ).total
+        )
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.validatePartialContentRange(
+                headers = mapOf("Content-Range" to listOf("bytes 1-4095/4096")),
+                expectedStart = 0L,
+                bodyLength = 4_095L
+            )
+        }
     }
 
     @Test
@@ -588,6 +692,12 @@ class AudioDownloadManagerTest {
         val headers = mapOf("Content-Range" to listOf("bytes */4096"))
         assertTrue(AudioDownloadManager.isExactRangeEnd(headers, 4_096L))
         assertFalse(AudioDownloadManager.isExactRangeEnd(headers, 4_095L))
+        assertTrue(
+            AudioDownloadManager.isExactRangeEnd(
+                mapOf("Content-Range" to listOf("bytes */0")),
+                0L
+            )
+        )
         assertFalse(
             AudioDownloadManager.isExactRangeEnd(
                 mapOf("Content-Range" to listOf("bytes */4096")),
@@ -731,7 +841,10 @@ class AudioDownloadManagerTest {
         val state = AudioDownloadManager.HlsResumeState(
             playlistFingerprint = "a".repeat(64),
             nextSegmentIndex = 12,
-            downloadedBytes = 34_567L
+            downloadedBytes = 34_567L,
+            durablePrefixSha256 = "b".repeat(64),
+            operationId = "operation-1",
+            mediaSequence = 42L
         )
 
         val restored = AudioDownloadManager.deserializeHlsResumeState(
@@ -743,7 +856,88 @@ class AudioDownloadManagerTest {
             AudioDownloadManager.serializeHlsResumeState(state)
                 .contains("playlistDigestSha256")
         )
+        assertTrue(
+            AudioDownloadManager.serializeHlsResumeState(state)
+                .contains("operationId")
+        )
         assertEquals(null, AudioDownloadManager.deserializeHlsResumeState("{"))
+        assertEquals(
+            null,
+            AudioDownloadManager.deserializeHlsResumeState(
+                """{"playlistFingerprint":1,"nextSegmentIndex":2,"downloadedBytes":3}"""
+            )
+        )
+        assertEquals(
+            null,
+            AudioDownloadManager.deserializeHlsResumeState(
+                """{"playlistDigestSha256":"${"a".repeat(64)}","nextSegmentIndex":-1,"downloadedBytes":3}"""
+            )
+        )
+    }
+
+    @Test
+    fun `hls checkpoint requires a durable prefix digest`() {
+        val digest = "a".repeat(64)
+        val state = AudioDownloadManager.HlsResumeState(
+            playlistFingerprint = digest,
+            nextSegmentIndex = 1,
+            downloadedBytes = 3L
+        )
+
+        assertTrue(
+            "checkpoint must bind the durable output prefix",
+            AudioDownloadManager.serializeHlsResumeState(state)
+                .contains("durablePrefixSha256")
+        )
+        assertEquals(
+            null,
+            AudioDownloadManager.deserializeHlsResumeState(
+                """{"format":"hls-resume-v2","playlistDigestSha256":"$digest","nextSegmentIndex":1,"downloadedBytes":3}"""
+            )
+        )
+    }
+
+    @Test
+    fun `hls resume rejects a same length file with a different durable prefix`() {
+        val state = AudioDownloadManager.HlsResumeState(
+            playlistFingerprint = "a".repeat(64),
+            nextSegmentIndex = 2,
+            downloadedBytes = 8L,
+            durablePrefixSha256 = "b".repeat(64)
+        )
+
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state,
+                actualFileLength = 8L,
+                actualPrefixSha256 = "c".repeat(64),
+                segmentCount = 3
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state,
+                actualFileLength = 8L,
+                actualPrefixSha256 = "b".repeat(64),
+                segmentCount = 3
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state,
+                actualFileLength = 7L,
+                actualPrefixSha256 = "b".repeat(64),
+                segmentCount = 3
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state.copy(playlistFingerprint = "legacy-int"),
+                actualFileLength = 8L,
+                actualPrefixSha256 = "b".repeat(64),
+                segmentCount = 3
+            )
+        )
     }
 
     @Test
@@ -771,6 +965,81 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `hls playlist fingerprint keeps byte range identity`() {
+        val first = AudioDownloadManager.buildHlsPlaylistFingerprint(
+            listOf("https://example.com/seg.ts?range=0-99")
+        )
+        val second = AudioDownloadManager.buildHlsPlaylistFingerprint(
+            listOf("https://example.com/seg.ts?range=100-199")
+        )
+
+        assertNotEquals(first, second)
+    }
+
+    @Test
+    fun `hls resume accepts only durable prefix and can discard an extra tail`() {
+        val state = AudioDownloadManager.HlsResumeState(
+            playlistFingerprint = "a".repeat(64),
+            nextSegmentIndex = 2,
+            downloadedBytes = 8L,
+            durablePrefixSha256 = "b".repeat(64)
+        )
+
+        assertTrue(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state,
+                actualFileLength = 12L,
+                actualPrefixSha256 = "b".repeat(64),
+                segmentCount = 3
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateCompatible(
+                state = state.copy(nextSegmentIndex = 0),
+                actualFileLength = 12L,
+                actualPrefixSha256 = "b".repeat(64),
+                segmentCount = 3
+            )
+        )
+    }
+
+    @Test
+    fun `hls checkpoint cannot be reused by a different operation`() {
+        val state = AudioDownloadManager.HlsResumeState(
+            playlistFingerprint = "a".repeat(64),
+            nextSegmentIndex = 1,
+            downloadedBytes = 8L,
+            durablePrefixSha256 = "b".repeat(64),
+            operationId = "operation-a"
+        )
+
+        assertTrue(
+            AudioDownloadManager.isHlsResumeStateOwnedByOperation(
+                state = state,
+                operationId = "operation-a"
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateOwnedByOperation(
+                state = state,
+                operationId = "operation-b"
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateOwnedByOperation(
+                state = state.copy(operationId = ""),
+                operationId = "operation-a"
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.isHlsResumeStateOwnedByOperation(
+                state = state,
+                operationId = ""
+            )
+        )
+    }
+
+    @Test
     fun `hls segment copy streams and strips only leading id3`() {
         val id3TagPayload = byteArrayOf(1, 2, 3, 4)
         val id3Header = byteArrayOf(
@@ -789,6 +1058,22 @@ class AudioDownloadManagerTest {
 
         assertEquals(payload.size.toLong(), copied)
         assertTrue(sink.readByteArray().contentEquals(payload))
+    }
+
+    @Test
+    fun `hls segment copy rejects a truncated response when length is known`() {
+        val source = Buffer().write(byteArrayOf(1, 2, 3))
+        val sink = Buffer()
+        val traffic = TrafficByteAccumulator(Long.MAX_VALUE) {}
+
+        assertThrows(IllegalStateException::class.java) {
+            AudioDownloadManager.copyHlsSegment(
+                source = source,
+                sink = sink,
+                trafficAccumulator = traffic,
+                expectedRawBytes = 4L
+            )
+        }
     }
 
     @Test

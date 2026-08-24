@@ -45,16 +45,16 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
-    fun `external storage document ids recognize the legacy managed download root`() {
-        assertTrue(
+    fun `opaque document ids require exact identity evidence`() {
+        assertFalse(
             ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
                 documentId = "primary:neriplayer-download/Lyrics/song.lrc",
-                treeDocumentId = null
+                treeDocumentId = "primary:neriplayer-download"
             )
         )
         assertTrue(
             ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
-                documentId = "primary:custom-root/song.mp3",
+                documentId = "primary:custom-root",
                 treeDocumentId = "primary:custom-root"
             )
         )

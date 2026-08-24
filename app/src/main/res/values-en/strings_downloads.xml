@@ -31,6 +31,8 @@
     <string name="download_waiting_queue_summary">The remaining tasks are queued and waiting for a free download slot</string>
     <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
     <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
+    <string name="download_explicit_resume_summary">The system stopped these user-started downloads. They will not restart automatically.</string>
+    <string name="download_explicit_resume_status">Paused by the system. Tap to continue.</string>
     <string name="download_search_hint">Search downloaded songs…</string>
     <string name="download_delete_confirm">Are you sure you want to delete song "%s"? This action cannot be undone.</string>
     <string name="download_starting">Starting download: %s</string>

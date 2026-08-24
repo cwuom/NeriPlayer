@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.artifact
 
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 
 internal enum class ManagedDownloadArtifactState {
@@ -96,6 +97,27 @@ internal enum class ManagedDownloadArtifactDecision {
     AlreadyDownloaded,
     InFlight,
     RepairRequired
+}
+
+internal enum class ManagedDownloadArtifactReferenceState {
+    PRESENT,
+    MISSING,
+    REPAIR_REQUIRED
+}
+
+internal fun classifyManagedDownloadArtifactReference(
+    result: ManagedDownloadReferenceLookup.Result
+): ManagedDownloadArtifactReferenceState {
+    return when (result) {
+        ManagedDownloadReferenceLookup.Result.Present ->
+            ManagedDownloadArtifactReferenceState.PRESENT
+        ManagedDownloadReferenceLookup.Result.Missing ->
+            ManagedDownloadArtifactReferenceState.MISSING
+        ManagedDownloadReferenceLookup.Result.OutOfScope,
+        is ManagedDownloadReferenceLookup.Result.PermissionLost,
+        is ManagedDownloadReferenceLookup.Result.ProviderFailure ->
+            ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED
+    }
 }
 
 internal fun resolveArtifactStateUpdate(

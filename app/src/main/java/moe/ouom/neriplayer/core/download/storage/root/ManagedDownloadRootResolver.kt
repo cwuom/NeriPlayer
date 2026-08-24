@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 
 internal class ManagedDownloadRootResolver(
     private val locks: ConcurrentHashMap<String, Any>
@@ -53,14 +54,14 @@ internal class ManagedDownloadRootResolver(
             invalidateCachedTreeRoot(normalizedUri, identity)
             return null
         }
-        resolveCachedTreeRoot(normalizedUri, identity)?.let { return it }
+        resolveCachedTreeRoot(context, normalizedUri, identity)?.let { return it }
 
         val lock = locks.computeIfAbsent("tree_root:$identity") { Any() }
         return synchronized(lock) {
-            resolveCachedTreeRoot(normalizedUri, identity)?.let { return@synchronized it }
+            resolveCachedTreeRoot(context, normalizedUri, identity)?.let { return@synchronized it }
             val treeUri = runCatching { normalizedUri.toUri() }.getOrNull() ?: return@synchronized null
             val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return@synchronized null
-            tree.takeIf { isAccessibleDirectory(it) }
+            tree.takeIf { isAccessibleDirectory(context, it) }
                 ?.let { rememberCachedTreeRoot(normalizedUri, identity, ManagedDownloadRootHandle.TreeRoot(it)) }
         }
     }
@@ -82,6 +83,7 @@ internal class ManagedDownloadRootResolver(
     }
 
     private fun resolveCachedTreeRoot(
+        context: Context,
         normalizedUri: String,
         identity: String
     ): ManagedDownloadRootHandle.TreeRoot? {
@@ -93,7 +95,7 @@ internal class ManagedDownloadRootResolver(
             return cachedRoot.root
         }
         return cachedRoot.root
-            .takeIf { isAccessibleDirectory(it.tree) }
+            .takeIf { isAccessibleDirectory(context, it.tree) }
             ?.also {
                 cachedTreeRoot = cachedRoot.copy(validatedAtMs = now)
             }
@@ -113,9 +115,15 @@ internal class ManagedDownloadRootResolver(
         }
     }
 
-    private fun isAccessibleDirectory(directory: DocumentFile): Boolean {
-        return runCatching { directory.exists() && directory.isDirectory }
-            .getOrDefault(false)
+    private fun isAccessibleDirectory(context: Context, directory: DocumentFile): Boolean {
+        return when (
+            val result = ManagedDownloadReferenceIo.inspectDirectory(context, directory.uri)
+        ) {
+            ManagedDownloadReferenceIo.AccessResult.Accessible -> true
+            ManagedDownloadReferenceIo.AccessResult.Missing,
+            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> false
+            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> throw result.error
+        }
     }
 
     private fun invalidateCachedTreeRoot(normalizedUri: String, identity: String) {

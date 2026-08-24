@@ -14,11 +14,33 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_RETRY_DELAY_MS
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal data class ManagedMigrationCopyResult(
     val copiedEntry: CopiedMigrationEntry?
 )
+
+internal fun migrationContentMatches(
+    source: InputStream,
+    target: InputStream
+): Boolean {
+    return sha256MigrationContent(source) == sha256MigrationContent(target)
+}
+
+private fun sha256MigrationContent(input: InputStream): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(64 * 1024)
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        if (count == 0) continue
+        digest.update(buffer, 0, count)
+    }
+    return digest.digest().joinToString(separator = "") { byte ->
+        (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+}
 
 private data class WrittenMigrationEntry(
     val result: StoredWriteResult,
@@ -102,6 +124,31 @@ internal class ManagedDownloadMigrationCopyWorker(
                 )
             }
             namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
+                if (!ManagedDownloadTreeNaming.isMetadataName(migrationEntry.entry.name)) {
+                    val sourceDigest = openInputStream(context, migrationEntry.entry)
+                        ?.use(::sha256MigrationContent)
+                        ?: throw ManagedDownloadMigrationException.transient(
+                            "无法读取源文件以验证迁移复用: ${migrationEntry.entry.name}"
+                        )
+                    val targetDigest = openInputStream(context, existingEntry)
+                        ?.use(::sha256MigrationContent)
+                        ?: throw ManagedDownloadMigrationException.transient(
+                            "无法读取目标文件以验证迁移复用: ${existingEntry.name}"
+                        )
+                    if (sourceDigest != targetDigest) {
+                        throw ManagedDownloadMigrationException.permanent(
+                            "same stableKey has different audio bytes: " +
+                                "source=${migrationEntry.entry.name} target=${existingEntry.name}"
+                        )
+                    }
+                    return WrittenMigrationEntry(
+                        result = StoredWriteResult(
+                            entry = existingEntry,
+                            createdNew = false
+                        ),
+                        sourceDigest = sourceDigest
+                    )
+                }
                 return WrittenMigrationEntry(
                     result = StoredWriteResult(
                         entry = existingEntry,
@@ -209,9 +256,15 @@ internal class ManagedDownloadMigrationCopyWorker(
                 if (error is CancellationException) {
                     throw error
                 }
+                if (error is ManagedDownloadMigrationException && !error.retryable) {
+                    throw error
+                }
                 NPLogger.w(
                     tag,
-                    "迁移下载文件失败: $reference, attempt=${attempt + 1}/$MIGRATION_IO_MAX_ATTEMPTS, ${error.message}"
+                    "迁移下载文件失败: $reference, " +
+                        "attempt=${attempt + 1}/$MIGRATION_IO_MAX_ATTEMPTS, " +
+                        "${error::class.java.name}: ${error.message}",
+                    error
                 )
             }.getOrNull()
             if (result != null) {

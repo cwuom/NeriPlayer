@@ -50,6 +50,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.data.model.SongItem
@@ -1264,9 +1265,11 @@ object LocalMediaSupport {
         val parentId = navigation.parentDocumentId ?: return false
         val baseUri = navigation.treeUri ?: navigation.baseUri
         val audioBaseName = displayName.substringBeforeLast('.', displayName)
-        val knownNames = imageExtensions.flatMap { extension ->
-            localCoverSidecarNames(audioBaseName, extension, stableIdentityKey)
-        }
+        val managedNames = managedCoverSidecarNames(
+            baseName = audioBaseName,
+            extensions = imageExtensions,
+            stableIdentityKey = stableIdentityKey
+        )
         if (mutation == EditableCoverMutation.CLEAR) {
             return withDocumentMutationLock(baseUri, parentId) {
                 val parentChildren = queryDocumentChildrenForMutation(
@@ -1284,10 +1287,9 @@ object LocalMediaSupport {
                     return@withDocumentMutationLock false
                 }
                 val coversDirectory = findManagedSidecarDirectory(parentChildren, "Covers")
+                if (managedNames.isEmpty()) return@withDocumentMutationLock true
                 val parentSpecific = parentChildren.filter { child ->
-                    !child.isDirectory && knownNames.any { name ->
-                        sidecarNameMatches(child.displayName, name)
-                    }
+                    !child.isDirectory && child.displayName in managedNames
                 }
                 val coversChildren = coversDirectory?.let { directory ->
                     queryDocumentChildrenForMutation(
@@ -1297,12 +1299,10 @@ object LocalMediaSupport {
                     ) ?: return@withDocumentMutationLock false
                 }.orEmpty()
                 val specific = coversChildren.filter { child ->
-                    !child.isDirectory && knownNames.any { name ->
-                        sidecarNameMatches(child.displayName, name)
-                    }
+                    !child.isDirectory && child.displayName in managedNames
                 }
                 val deleted = (specific + parentSpecific).distinctBy(DocumentChild::uri).all { child ->
-                    deleteDocumentReference(context, child.uri)
+                    deleteDocumentReference(context, child)
                 }
                 if (deleted) {
                     invalidateDocumentChildrenCache(baseUri, parentId)
@@ -1335,9 +1335,7 @@ object LocalMediaSupport {
             }
             val coversDirectory = findManagedSidecarDirectory(parentChildren, "Covers")
             val parentSpecific = parentChildren.filter { child ->
-                !child.isDirectory && knownNames.any { name ->
-                    sidecarNameMatches(child.displayName, name)
-                }
+                !child.isDirectory && child.displayName in managedNames
             }
             val resolvedCoversDirectory = coversDirectory ?: ensureDocumentSidecarDirectoryForMutation(
                 context = context,
@@ -1353,11 +1351,9 @@ object LocalMediaSupport {
             ) ?: return@withDocumentMutationLock false
             val targetName = localCoverSidecarName(audioBaseName, extension, stableIdentityKey)
             val specific = coversChildren.filter { child ->
-                !child.isDirectory && knownNames.any { name ->
-                    sidecarNameMatches(child.displayName, name)
-                }
+                !child.isDirectory && child.displayName in managedNames
             }
-            val target = findDocumentSidecarChild(coversChildren, targetName)?.uri
+            val target = findExactDocumentSidecarChild(coversChildren, targetName)?.uri
                 ?: createDocumentSidecarForMutation(
                     context = context,
                     baseUri = baseUri,
@@ -1371,7 +1367,7 @@ object LocalMediaSupport {
             (specific + parentSpecific).distinctBy(DocumentChild::uri)
                 .filter { it.uri != target }
                 .forEach { old ->
-                    if (!deleteDocumentReference(context, old.uri)) {
+                    if (!deleteDocumentReference(context, old)) {
                         return@withDocumentMutationLock false
                     }
                 }
@@ -1489,7 +1485,7 @@ object LocalMediaSupport {
                     shouldUseDocumentSidecarMutation(sourceUri) && reference.startsWith("/")
                 }
             )
-            val references = ensureDocumentLyricReferences(
+            val lyricResolution = ensureDocumentLyricReferences(
                 context = context,
                 uri = sourceUri,
                 displayName = displayName,
@@ -1503,6 +1499,7 @@ object LocalMediaSupport {
                 },
                 existing = existingReferences
             )
+            val references = lyricResolution.references
             var invalidPlan = false
             val plans = contents.mapNotNull { (kind, content) ->
                 if (content == null) {
@@ -1520,11 +1517,7 @@ object LocalMediaSupport {
                     return@mapNotNull null
                 }
                 val previous = readTextContent(context, reference)
-                val existedBefore = when (kind) {
-                    LyricKind.ORIGINAL -> existingReferences.original == reference
-                    LyricKind.TRANSLATED -> existingReferences.translated == reference
-                    LyricKind.ROMANIZED -> existingReferences.romanized == reference
-                }
+                val existedBefore = reference !in lyricResolution.createdReferences
                 if (existedBefore && previous == null) {
                     invalidPlan = true
                     return@mapNotNull null
@@ -1546,7 +1539,11 @@ object LocalMediaSupport {
                         if (previous != null && !writeTextContent(context, reference, previous)) {
                             NPLogger.w(TAG, "rollback SAF lyric sidecar restore failed: $reference")
                         }
-                    } else if (!deleteDocumentReference(context, reference)) {
+                    } else if (
+                        lyricResolution.createdReferences[reference]
+                            ?.let { created -> !deleteDocumentReference(context, created) }
+                            == true
+                    ) {
                         NPLogger.w(TAG, "rollback SAF lyric sidecar delete failed: $reference")
                     }
                 }
@@ -1586,18 +1583,25 @@ object LocalMediaSupport {
             ?: parent
     }
 
+    private data class DocumentLyricReferenceResolution(
+        val references: NearbyLyricReferences,
+        val createdReferences: Map<String, DocumentChild>
+    )
+
     private fun ensureDocumentLyricReferences(
         context: Context,
         uri: Uri,
         displayName: String,
         requiredKinds: Set<LyricKind>,
         existing: NearbyLyricReferences
-    ): NearbyLyricReferences {
+    ): DocumentLyricReferenceResolution {
         if (!uri.scheme.equals("content", ignoreCase = true) || requiredKinds.isEmpty()) {
-            return existing
+            return DocumentLyricReferenceResolution(existing, emptyMap())
         }
-        val navigation = resolveLocalDocumentNavigation(context, uri) ?: return existing
-        val parentId = navigation.parentDocumentId ?: return existing
+        val navigation = resolveLocalDocumentNavigation(context, uri)
+            ?: return DocumentLyricReferenceResolution(existing, emptyMap())
+        val parentId = navigation.parentDocumentId
+            ?: return DocumentLyricReferenceResolution(existing, emptyMap())
         val baseUri = navigation.treeUri ?: navigation.baseUri
         val audioBaseName = displayName.substringBeforeLast('.', displayName)
         return withDocumentMutationLock(baseUri, parentId) {
@@ -1605,7 +1609,7 @@ object LocalMediaSupport {
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = parentId
-            ) ?: return@withDocumentMutationLock existing
+            ) ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
             if (!documentChildrenContainSource(
                     parentChildren = parentChildren,
                     sourceUri = uri,
@@ -1613,7 +1617,7 @@ object LocalMediaSupport {
                     parentDocumentId = parentId
                 )
             ) {
-                return@withDocumentMutationLock existing
+                return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
             }
             val lyricsDirectory = findManagedSidecarDirectory(parentChildren, "Lyrics")
                 ?: ensureDocumentSidecarDirectoryForMutation(
@@ -1623,12 +1627,13 @@ object LocalMediaSupport {
                     directoryName = "Lyrics",
                     parentChildren
                 )
-                ?: return@withDocumentMutationLock existing
+                ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
             val targetChildren = queryDocumentChildrenForMutation(
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = lyricsDirectory.documentId
-            ) ?: return@withDocumentMutationLock existing
+            ) ?: return@withDocumentMutationLock DocumentLyricReferenceResolution(existing, emptyMap())
+            val createdReferences = linkedMapOf<String, DocumentChild>()
             fun ensure(kind: LyricKind, existingReference: String?): String? {
                 val name = lyricSidecarNames(
                     baseName = audioBaseName,
@@ -1643,20 +1648,25 @@ object LocalMediaSupport {
                 if (exactExisting != null || kind !in requiredKinds) {
                     return exactExisting
                 }
-                return findDocumentSidecarChild(targetChildren, name)?.uri
-                    ?: createDocumentSidecarForMutation(
+                findExactDocumentSidecarChild(targetChildren, name)?.uri?.let { return it }
+                return createDocumentSidecarForMutation(
                         context = context,
                         baseUri = baseUri,
                         parentDocumentId = lyricsDirectory.documentId,
                         mimeType = "text/plain",
                         displayName = name,
                         targetChildren
-                    )?.uri
+                    )?.takeIf(DocumentChild::createdByCurrentMutation)
+                    ?.also { createdReferences[it.uri] = it }
+                    ?.uri
             }
-            NearbyLyricReferences(
-                original = ensure(LyricKind.ORIGINAL, existing.original),
-                translated = ensure(LyricKind.TRANSLATED, existing.translated),
-                romanized = ensure(LyricKind.ROMANIZED, existing.romanized)
+            DocumentLyricReferenceResolution(
+                references = NearbyLyricReferences(
+                    original = ensure(LyricKind.ORIGINAL, existing.original),
+                    translated = ensure(LyricKind.TRANSLATED, existing.translated),
+                    romanized = ensure(LyricKind.ROMANIZED, existing.romanized)
+                ),
+                createdReferences = createdReferences
             )
         }
     }
@@ -1826,13 +1836,21 @@ object LocalMediaSupport {
         }
     }
 
-    private fun deleteDocumentReference(context: Context, reference: String): Boolean {
+    private fun deleteDocumentReference(context: Context, child: DocumentChild): Boolean {
+        val uri = runCatching { child.uri.toUri() }.getOrNull() ?: return false
+        val actualDocumentId = runCatching {
+            DocumentsContract.getDocumentId(uri)
+        }.getOrNull() ?: return false
+        if (child.documentId.isBlank() || actualDocumentId != child.documentId) {
+            NPLogger.w(TAG, "拒绝删除来源不明的 SAF sidecar: ${child.uri}")
+            return false
+        }
         return try {
-            DocumentsContract.deleteDocument(context.contentResolver, reference.toUri())
+            DocumentsContract.deleteDocument(context.contentResolver, uri)
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
-            NPLogger.w(TAG, "delete cover sidecar failed for $reference: ${error.message}")
+            NPLogger.w(TAG, "delete sidecar failed for ${child.uri}: ${error.message}")
             false
         }
     }
@@ -4614,17 +4632,27 @@ object LocalMediaSupport {
     }
 
     private fun isReadableLocalReference(context: Context, reference: String): Boolean {
-        return try {
-            if (reference.startsWith("/")) {
-                File(reference).isFile
-            } else {
-                DocumentsContract.isDocumentUri(context, reference.toUri()) &&
-                    DocumentFile.fromSingleUri(context, reference.toUri())?.exists() == true
-            }
+        if (reference.startsWith("/")) {
+            return File(reference).isFile
+        }
+        val uri = runCatching { reference.toUri() }.getOrNull() ?: return false
+        val isDocumentUri = try {
+            DocumentsContract.isDocumentUri(context, uri)
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
             false
+        }
+        if (!isDocumentUri) return false
+        return when (
+            val result = ManagedDownloadReferenceIo.inspect(context, uri.toString())
+        ) {
+            ManagedDownloadReferenceIo.AccessResult.Accessible -> true
+            ManagedDownloadReferenceIo.AccessResult.Missing -> false
+            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> {
+                throw SecurityException("local metadata permission lost: $uri")
+            }
+            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> throw result.error
         }
     }
 
@@ -6690,13 +6718,12 @@ object LocalMediaSupport {
         } catch (_: Exception) {
             null
         }
-        val containsSource = parentChildren.any { child ->
-            !child.isDirectory &&
-                (
-                    child.documentId == sourceDocumentId ||
-                        child.displayName.equals(displayName, ignoreCase = true)
-                    )
-        }
+        val containsSource = containsExactDocumentSource(
+            documentIds = parentChildren
+                .filterNot(DocumentChild::isDirectory)
+                .map(DocumentChild::documentId),
+            sourceDocumentId = sourceDocumentId
+        )
         if (!containsSource) {
             NPLogger.w(
                 TAG,
@@ -6705,6 +6732,13 @@ object LocalMediaSupport {
             )
         }
         return containsSource
+    }
+
+    internal fun containsExactDocumentSource(
+        documentIds: Collection<String>,
+        sourceDocumentId: String?
+    ): Boolean {
+        return !sourceDocumentId.isNullOrBlank() && sourceDocumentId in documentIds
     }
 
     internal fun matchesDocumentPathParent(
@@ -6761,7 +6795,8 @@ object LocalMediaSupport {
         val documentId: String,
         val displayName: String,
         val isDirectory: Boolean,
-        val uri: String
+        val uri: String,
+        val createdByCurrentMutation: Boolean = false
     )
 
     private data class DocumentChildrenQueryResult(
@@ -6827,19 +6862,28 @@ object LocalMediaSupport {
         extension: String,
         stableIdentityKey: String?
     ): List<String> {
-        val legacyName = stableIdentityKey
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?.let { key ->
-                "$baseName-${ManagedDownloadStorageNaming.legacyStableKeySuffix(key)}.$extension"
-            }
         return listOfNotNull(
             localCoverSidecarName(baseName, extension, stableIdentityKey),
-            legacyName,
             "$baseName.$extension".takeUnless {
                 stableIdentityKey.isNullOrBlank()
             }
         ).distinct()
+    }
+
+    private fun managedCoverSidecarNames(
+        baseName: String,
+        extensions: Collection<String>,
+        stableIdentityKey: String?
+    ): Set<String> {
+        val normalizedKey = stableIdentityKey?.trim()?.takeIf(String::isNotBlank)
+            ?: return emptySet()
+        return extensions.mapTo(linkedSetOf()) { extension ->
+            localCoverSidecarName(
+                baseName = baseName,
+                extension = extension,
+                stableIdentityKey = normalizedKey
+            )
+        }
     }
 
     internal fun sidecarNameMatches(actualName: String, canonicalName: String): Boolean {
@@ -7131,7 +7175,7 @@ object LocalMediaSupport {
         ) ?: return null
         val knownChildren = (currentChildren + cachedDocumentChildren(baseUri, parentDocumentId))
             .distinctBy(DocumentChild::uri)
-        findDocumentSidecarChild(knownChildren, displayName)?.let { return it }
+        findExactDocumentSidecarChild(knownChildren, displayName)?.let { return it }
         val refreshedChildren = queryDocumentChildrenForMutation(
             context = context,
             baseUri = baseUri,
@@ -7140,7 +7184,7 @@ object LocalMediaSupport {
         val refreshedKnownChildren = (
             refreshedChildren + cachedDocumentChildren(baseUri, parentDocumentId)
             ).distinctBy(DocumentChild::uri)
-        findDocumentSidecarChild(refreshedKnownChildren, displayName)?.let { return it }
+        findExactDocumentSidecarChild(refreshedKnownChildren, displayName)?.let { return it }
         findCanonicalExternalStorageChildForMutation(
             context = context,
             baseUri = baseUri,
@@ -7179,12 +7223,13 @@ object LocalMediaSupport {
             uri = createdUri,
             isDirectory = false
         )
+            ?.copy(createdByCurrentMutation = true)
             ?: queryDocumentChildrenForMutation(
                 context = context,
                 baseUri = baseUri,
                 parentDocumentId = parentDocumentId
             ).orEmpty().let { children ->
-                findDocumentSidecarChild(children, displayName)
+                findExactDocumentSidecarChild(children, displayName)
             }
             ?: return null
         rememberDocumentChild(baseUri, parentDocumentId, resolved)
@@ -7256,6 +7301,17 @@ object LocalMediaSupport {
     ): DocumentChild? {
         // documentId 是 Provider 的 opaque 身份, 不能从父 ID 和文件名反推
         return null
+    }
+
+    private fun findExactDocumentSidecarChild(
+        children: Collection<DocumentChild>,
+        canonicalName: String
+    ): DocumentChild? {
+        return children.asSequence()
+            .filterNot(DocumentChild::isDirectory)
+            .firstOrNull { child ->
+                canonicalSafName(child.displayName) == canonicalSafName(canonicalName)
+            }
     }
 
     private fun findDocumentSidecarChild(

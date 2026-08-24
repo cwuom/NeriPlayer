@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.persistence
 
 import android.app.Application
+import android.content.Context
 import android.os.SystemClock
 import androidx.media3.common.Player
 import com.google.gson.reflect.TypeToken
@@ -23,6 +24,7 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -76,6 +78,19 @@ import java.lang.reflect.Type
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
+
+internal fun isAccessibleManagedReference(
+    result: ManagedDownloadReferenceIo.AccessResult
+): Boolean = result == ManagedDownloadReferenceIo.AccessResult.Accessible
+
+private fun isAccessibleManagedReference(
+    context: Context,
+    reference: String?
+): Boolean {
+    return isAccessibleManagedReference(
+        ManagedDownloadReferenceIo.inspect(context, reference)
+    )
+}
 
 internal data class RestoredPlayerStateSnapshot(
     val playlist: List<SongItem>,
@@ -1846,7 +1861,7 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
         val cachedReference = ManagedDownloadStorage.peekDownloadedAudio(song)
             ?.reference
             ?.takeIf { reference ->
-                ManagedDownloadStorage.isReferenceAccessible(application, reference)
+                isAccessibleManagedReference(application, reference)
             }
         cachedReference ?: try {
             ManagedDownloadStorage.findDownloadedAudio(
@@ -1854,7 +1869,7 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
                 song = song,
                 forceRefresh = true
             )?.reference?.takeIf { reference ->
-                ManagedDownloadStorage.isReferenceAccessible(application, reference)
+                isAccessibleManagedReference(application, reference)
             }
         } catch (error: CancellationException) {
             throw error
@@ -1868,7 +1883,9 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
     } else {
         null
     }
-    return managedReference ?: downloadedPlaybackUri
+    return managedReference ?: downloadedPlaybackUri?.takeIf { reference ->
+        isAccessibleManagedReference(application, reference)
+    }
 }
 
 private suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem {
@@ -2265,6 +2282,7 @@ internal suspend fun PlayerManager.updateUserLyricOffsetImpl(
                 )
             }
         }
+        GlobalDownloadManager.syncDownloadedSongMetadataNow(latestSong)
     }
 
     persistState()

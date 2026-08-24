@@ -49,12 +49,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.execution.loadExplicitDownloadResumeCandidates
+import moe.ouom.neriplayer.core.download.execution.resumeExplicitDownload
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -64,6 +69,9 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
+private const val EXPLICIT_RESUME_REFRESH_ATTEMPTS = 3
+private const val EXPLICIT_RESUME_REFRESH_DELAY_MS = 250L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -72,12 +80,42 @@ fun DownloadProgressScreen(
     listState: LazyListState
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycle()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
     val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
+    var explicitResumeCandidates by remember {
+        mutableStateOf<List<ExplicitDownloadResumeCandidate>>(emptyList())
+    }
+    val taskPresenceKey = remember(downloadTasks) {
+        downloadTasks
+            .filter { task ->
+                task.status == DownloadStatus.QUEUED ||
+                    task.status == DownloadStatus.DOWNLOADING ||
+                    task.status == DownloadStatus.WAITING_NETWORK
+            }
+            .map { task -> task.song.stableKey() }
+            .toSet()
+    }
+    LaunchedEffect(context, taskPresenceKey) {
+        repeat(EXPLICIT_RESUME_REFRESH_ATTEMPTS) { attempt ->
+            val candidates = runCatching {
+                loadExplicitDownloadResumeCandidates(context)
+            }.getOrDefault(emptyList())
+            explicitResumeCandidates = visibleExplicitResumeCandidates(
+                candidates = candidates,
+                activeSongKeys = taskPresenceKey
+            )
+            if (explicitResumeCandidates.isNotEmpty() || attempt == EXPLICIT_RESUME_REFRESH_ATTEMPTS - 1) {
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(EXPLICIT_RESUME_REFRESH_DELAY_MS)
+        }
+    }
     val pendingTaskCount = taskSummary.pendingTaskCount
     val queuedTaskCount = taskSummary.queuedTaskCount
+    val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
     val visibleBatchProgress = batchDownloadProgress?.takeIf { progress ->
         pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
     }
@@ -134,8 +172,8 @@ fun DownloadProgressScreen(
                         } else {
                             pluralStringResource(
                                 R.plurals.download_tasks_count,
-                                pendingTaskCount,
-                                pendingTaskCount
+                                displayedPendingTaskCount,
+                                displayedPendingTaskCount
                             )
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -164,7 +202,12 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (visibleTasks.isEmpty() && queuedTaskCount == 0 && !activeDownloadOperations) {
+        if (
+            visibleTasks.isEmpty() &&
+            queuedTaskCount == 0 &&
+            !activeDownloadOperations &&
+            explicitResumeCandidates.isEmpty()
+        ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -199,6 +242,34 @@ fun DownloadProgressScreen(
                     bottom = 16.dp + miniPlayerHeight
                 )
             ) {
+                if (explicitResumeCandidates.isNotEmpty()) {
+                    item(key = "explicit-resume-summary") {
+                        ExplicitResumeSummaryCard(
+                            count = explicitResumeCandidates.size
+                        )
+                    }
+                    items(
+                        items = explicitResumeCandidates,
+                        key = { candidate -> candidate.operationId },
+                        contentType = { "explicit-resume" }
+                    ) { candidate ->
+                        ExplicitResumeTaskItem(
+                            candidate = candidate,
+                            onResume = {
+                                context.performHapticFeedback()
+                                coroutineScope.launch {
+                                    val schedule = runCatching {
+                                        resumeExplicitDownload(context, candidate)
+                                    }.getOrNull()
+                                    if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
+                                        explicitResumeCandidates = explicitResumeCandidates
+                                            .filterNot { item -> item.operationId == candidate.operationId }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
                 if (queuedTaskCount > 0) {
                     item(key = "queued-summary") {
                         val shape = RoundedCornerShape(12.dp)
@@ -356,6 +427,103 @@ private fun DownloadTaskItem(
             Spacer(modifier = Modifier.height(12.dp))
 
             DownloadTaskProgressSection(task = task)
+        }
+    }
+}
+
+@Composable
+private fun ExplicitResumeSummaryCard(count: Int) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = pluralStringResource(
+                    R.plurals.download_explicit_resume_count,
+                    count,
+                    count
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = stringResource(R.string.download_explicit_resume_summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExplicitResumeTaskItem(
+    candidate: ExplicitDownloadResumeCandidate,
+    onResume: () -> Unit
+) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.PauseCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = candidate.song.displayName(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.download_explicit_resume_status),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = candidate.song.displayArtist(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = onResume) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = stringResource(R.string.download_resume),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

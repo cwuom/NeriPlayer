@@ -9,8 +9,22 @@ internal data class PendingDownloadRecoveryCandidate(
     val song: SongItem,
     val workingFile: File?,
     val order: Int,
-    val cancelled: Boolean
+    val cancelled: Boolean,
+    val operationId: String? = null,
+    val requiresExplicitResume: Boolean = false
 )
+
+internal fun shouldRequireExplicitResume(
+    userInitiated: Boolean,
+    state: String?,
+    hasPendingUidtJob: Boolean,
+    stopRequestedByUser: Boolean = false
+): Boolean {
+    if (!userInitiated) return false
+    if (stopRequestedByUser) return true
+    return state in setOf("RUNNING", "QUEUED", "RETRYABLE") &&
+        !hasPendingUidtJob
+}
 
 internal fun mergePendingDownloadRecoveryCandidates(
     queuedDownloads: List<ManagedDownloadStorage.PendingDownloadQueueEntry>,
@@ -26,7 +40,8 @@ internal fun mergePendingDownloadRecoveryCandidates(
                 song = entry.song,
                 workingFile = null,
                 order = entry.order,
-                cancelled = entry.stableKey in cancelledKeys
+                cancelled = entry.stableKey in cancelledKeys,
+                operationId = entry.operationId
             )
         }
 
@@ -37,7 +52,8 @@ internal fun mergePendingDownloadRecoveryCandidates(
             song = pendingDownload.song,
             workingFile = pendingDownload.workingFile,
             order = existing?.order ?: queuedDownloads.size + index,
-            cancelled = existing?.cancelled == true || songKey in cancelledKeys
+            cancelled = existing?.cancelled == true || songKey in cancelledKeys,
+            operationId = pendingDownload.operationId ?: existing?.operationId
         )
     }
 

@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
-import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationEntryCollector
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationFinalizer
@@ -13,6 +12,9 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -26,16 +28,29 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
-import org.mockito.Mockito.doThrow
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import kotlin.system.measureTimeMillis
 
 class ManagedDownloadStorageMigrationCompatTest {
+
+    private fun deleteFile(reference: TrustedManagedRef): StorageMutationResult {
+        val fileReference = reference.reference as? StorageReference.FileRef
+            ?: return StorageMutationResult.Unsupported("file reference required")
+        val file = File(fileReference.logicalPath)
+        return if (!file.exists()) {
+            StorageMutationResult.Missing
+        } else if (file.delete()) {
+            StorageMutationResult.Deleted
+        } else {
+            StorageMutationResult.ProviderFailure(IOException("delete failed"))
+        }
+    }
 
     @Test
     fun `metadata naming recognizes provider numbering before the json extension`() {
@@ -73,15 +88,6 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("Song", entry.nameWithoutExtension.substringAfter(" - "))
         assertEquals("", entry.extension)
         assertEquals("", entry.playbackUri)
-    }
-
-    @Test
-    fun `unsupported SAF rename falls back instead of aborting download`() {
-        val document = mock(DocumentFile::class.java)
-        doThrow(UnsupportedOperationException()).`when`(document).renameTo("final.mp3")
-
-        assertFalse(ManagedDownloadStorage.tryRenameTreeDocument(document, "final.mp3"))
-        assertFalse(ManagedDownloadStorage.tryRenameTreeDocument(null, "final.mp3"))
     }
 
     @Test
@@ -490,6 +496,14 @@ class ManagedDownloadStorageMigrationCompatTest {
             put("translatedLyricPath", "old://translated")
             put("mediaUri", "old://audio")
             put("stableKey", "42|__local_files__|old://audio")
+            put("restorableMetadata", JSONObject().apply {
+                put("baseline", JSONObject().apply {
+                    put("coverReference", "old://cover")
+                })
+                put("overrides", JSONObject().apply {
+                    put("coverReference", "old://cover")
+                })
+            })
         }.toString()
 
         val rewritten = ManagedDownloadStorage.rewriteManagedMetadataReferences(
@@ -510,6 +524,18 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("new://translated", payload.getString("translatedLyricPath"))
         assertEquals("new://audio", payload.getString("mediaUri"))
         assertEquals("42|__local_files__|new://audio", payload.getString("stableKey"))
+        assertEquals(
+            "new://cover",
+            payload.getJSONObject("restorableMetadata")
+                .getJSONObject("baseline")
+                .getString("coverReference")
+        )
+        assertEquals(
+            "new://cover",
+            payload.getJSONObject("restorableMetadata")
+                .getJSONObject("overrides")
+                .getString("coverReference")
+        )
     }
 
     @Test
@@ -1165,7 +1191,7 @@ class ManagedDownloadStorageMigrationCompatTest {
                 readText = { _, _ -> null },
                 openInputStream = { _, entry -> File(entry.reference).inputStream() },
                 writeRootText = { _, _, _, _ -> null },
-                deleteReference = { _, reference, _ -> File(reference).delete() },
+                deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = { raw, _ -> raw }
             )
 
@@ -1183,6 +1209,148 @@ class ManagedDownloadStorageMigrationCompatTest {
 
             assertEquals(1, cleanupFailures)
             assertTrue(sourceFile.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration does not invoke destructive cleanup before target verification`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-migration-unverified").toFile()
+        try {
+            val sourceFile = File(directory, "source.mp3").apply { writeText("source") }
+            val targetFile = File(directory, "target.mp3").apply { writeText("different") }
+            fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                name = file.name,
+                reference = file.absolutePath,
+                mediaUri = file.toURI().toString(),
+                localFilePath = file.absolutePath,
+                sizeBytes = file.length(),
+                lastModifiedMs = file.lastModified()
+            )
+            val deleteCalls = AtomicInteger(0)
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, _, _ ->
+                    deleteCalls.incrementAndGet()
+                    StorageMutationResult.Deleted
+                },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+
+            val cleanupFailures = finalizer.cleanupMigratedEntries(
+                context = mock(Context::class.java),
+                copiedEntries = listOf(
+                    CopiedMigrationEntry(
+                        original = ManagedMigrationEntry(null, entry(sourceFile)),
+                        copiedEntry = entry(targetFile),
+                        createdNew = true
+                    )
+                ),
+                sourceRoot = ManagedDownloadRootHandle.FileRoot(directory)
+            )
+
+            assertEquals(1, cleanupFailures)
+            assertEquals(0, deleteCalls.get())
+            assertTrue(sourceFile.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration keeps source when permission or provider cleanup fails`() = runBlocking {
+        listOf(
+            StorageMutationResult.PermissionLost,
+            StorageMutationResult.ProviderFailure(IOException("provider unavailable"))
+        ).forEach { deleteResult ->
+            val directory = Files.createTempDirectory("neriplayer-migration-delete-failure").toFile()
+            try {
+                val sourceFile = File(directory, "source.mp3").apply { writeText("same") }
+                val targetFile = File(directory, "target.mp3").apply { writeText("same") }
+                fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                    name = file.name,
+                    reference = file.absolutePath,
+                    mediaUri = file.toURI().toString(),
+                    localFilePath = file.absolutePath,
+                    sizeBytes = file.length(),
+                    lastModifiedMs = file.lastModified()
+                )
+                val finalizer = ManagedDownloadMigrationFinalizer(
+                    tag = "ManagedDownloadStorageMigrationCompatTest",
+                    rewriteParallelism = { 1 },
+                    deleteParallelism = { 1 },
+                    readText = { _, _ -> null },
+                    openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                    writeRootText = { _, _, _, _ -> null },
+                    deleteReference = { _, _, _ -> deleteResult },
+                    rewriteMetadataReferences = { raw, _ -> raw }
+                )
+
+                val cleanupFailures = finalizer.cleanupMigratedEntries(
+                    context = mock(Context::class.java),
+                    copiedEntries = listOf(
+                        CopiedMigrationEntry(
+                            original = ManagedMigrationEntry(null, entry(sourceFile)),
+                            copiedEntry = entry(targetFile),
+                            createdNew = true
+                        )
+                    ),
+                    sourceRoot = ManagedDownloadRootHandle.FileRoot(directory)
+                )
+
+                assertEquals(1, cleanupFailures)
+                assertTrue(sourceFile.exists())
+            } finally {
+                directory.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `migration removes verified source when typed cleanup is confirmed`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-migration-delete-success").toFile()
+        try {
+            val sourceFile = File(directory, "source.mp3").apply { writeText("same") }
+            val targetFile = File(directory, "target.mp3").apply { writeText("same") }
+            fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                name = file.name,
+                reference = file.absolutePath,
+                mediaUri = file.toURI().toString(),
+                localFilePath = file.absolutePath,
+                sizeBytes = file.length(),
+                lastModifiedMs = file.lastModified()
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, reference, _ -> deleteFile(reference) },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+
+            val cleanupFailures = finalizer.cleanupMigratedEntries(
+                context = mock(Context::class.java),
+                copiedEntries = listOf(
+                    CopiedMigrationEntry(
+                        original = ManagedMigrationEntry(null, entry(sourceFile)),
+                        copiedEntry = entry(targetFile),
+                        createdNew = true
+                    )
+                ),
+                sourceRoot = ManagedDownloadRootHandle.FileRoot(directory)
+            )
+
+            assertEquals(0, cleanupFailures)
+            assertFalse(sourceFile.exists())
         } finally {
             directory.deleteRecursively()
         }
@@ -1241,7 +1409,7 @@ class ManagedDownloadStorageMigrationCompatTest {
                 readText = { _, reference -> File(reference).readText() },
                 openInputStream = { _, entry -> File(entry.reference).inputStream() },
                 writeRootText = { _, _, _, _ -> null },
-                deleteReference = { _, reference, _ -> File(reference).delete() },
+                deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
             )
 
@@ -1316,7 +1484,7 @@ class ManagedDownloadStorageMigrationCompatTest {
                 writeRootText = { _, _, name, content ->
                     File(targetDirectory, name).apply { writeText(content) }.let(::entry)
                 },
-                deleteReference = { _, reference, _ -> File(reference).delete() },
+                deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
             )
 

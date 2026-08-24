@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
-import java.nio.file.Files
+import android.os.Build
+import androidx.work.NetworkType
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -26,9 +27,11 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `operation store round trips request and rejects mismatched identity`() {
-        val directory = Files.createTempDirectory("download-execution").toFile()
-        val store = DownloadExecutionOperationStore()
+    fun `operation store round trips request from the injected journal`() {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore {
+            testJournal
+        }
         val request = DownloadExecutionRequest(
             operationId = "operation-01",
             song = SongItem(
@@ -41,55 +44,43 @@ class DownloadExecutionHostTest {
                 coverUrl = "https://example.invalid/cover.jpg",
                 sourceStableKey = "netease:42"
             ),
+            preserveStaging = true,
             attemptId = 7L
         )
 
-        store.saveTo(directory, request)
-
-        val restored = store.readFrom(directory, request.operationId)
+        store.save(context, request)
+        val restored = store.read(context, request.operationId)
         assertNotNull(restored)
         val restoredRequest = restored!!
         assertEquals(request.operationId, restoredRequest.operationId)
         assertEquals(request.song.id, restoredRequest.song.id)
         assertEquals(request.song.name, restoredRequest.song.name)
         assertEquals(request.song.sourceStableKey, restoredRequest.song.sourceStableKey)
+        assertEquals(request.preserveStaging, restoredRequest.preserveStaging)
         assertEquals(request.attemptId, restoredRequest.attemptId)
-        assertTrue(DownloadExecutionOperationStore.fileName(request.operationId).endsWith(".json"))
-
-        val tampered = directory.resolve(
-            DownloadExecutionOperationStore.fileName(request.operationId)
-        )
-        tampered.writeText(
-            directory.resolve(
-                DownloadExecutionOperationStore.fileName(request.operationId)
-            ).readText().replace("operation-01", "operation-02")
-        )
-        assertNull(store.readFrom(directory, "operation-01"))
     }
 
     @Test
     fun `operation store finds the durable operation for a song`() {
-        val directory = Files.createTempDirectory("download-execution-song").toFile()
-        val store = DownloadExecutionOperationStore()
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
         val request = DownloadExecutionRequest(
             operationId = "operation-song",
             song = sampleSong()
         )
 
-        store.saveTo(directory, request)
+        store.save(context, request)
 
         assertEquals(
             request.operationId,
-            store.findOperationIdForSongIn(directory, request.song.stableKey())
+            store.findOperationIdForSong(context, request.song.stableKey())
         )
     }
 
     @Test
     fun `stopped operation is durable and included in the stopped song index`() {
-        val directory = Files.createTempDirectory("download-execution-stopped").toFile()
-        val context = mock(Context::class.java)
-        `when`(context.applicationContext).thenReturn(context)
-        val store = DownloadExecutionOperationStore { directory }
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
         val request = DownloadExecutionRequest(
             operationId = "operation-stopped",
             song = sampleSong()
@@ -110,19 +101,82 @@ class DownloadExecutionHostTest {
         val second = UidtDownloadJobService.jobIdFor("operation-01")
         assertEquals(first, second)
         assertTrue(first >= 100_000)
+        assertTrue(first <= UidtDownloadJobService.UIDT_JOB_ID_MAX)
+        assertTrue(UidtDownloadJobService.UIDT_JOB_ID_MIN > 99_999)
+    }
+
+    @Test
+    fun `UIDT collision probes the next free scheduler slot`() {
+        val first = UidtDownloadJobService.jobIdFor("op-21583")
+        val second = UidtDownloadJobService.jobIdFor("op-33989")
+        assertEquals(first, second)
+        val selected = UidtDownloadJobService.selectAvailableUidtJobId(
+            operationId = "op-33989",
+            occupiedJobIds = setOf(first)
+        )
+        assertNotNull(selected)
+        assertTrue(selected != first)
+    }
+
+    @Test
+    fun `automatic recovery never selects UIDT even on API 34`() {
+        assertEquals(
+            DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
+            selectDownloadExecutionBackend(
+                sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                userInitiated = false
+            )
+        )
+        assertEquals(
+            DownloadExecutionSchedule.Backend.UIDT_JOB,
+            selectDownloadExecutionBackend(
+                sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+                userInitiated = true
+            )
+        )
+    }
+
+    @Test
+    fun `foreground download work waits for a connected network`() {
+        val request = ForegroundDownloadWorker.buildRequest("operation-network")
+
+        assertEquals(
+            NetworkType.CONNECTED,
+            request.workSpec.constraints.requiredNetworkType
+        )
+    }
+
+    @Test
+    fun `terminal operation pruning is bounded and honors cutoff`() {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
+        val old = DownloadExecutionRequest(
+            operationId = "operation-old-terminal",
+            song = sampleSong().copy(id = 1L)
+        )
+        val recent = DownloadExecutionRequest(
+            operationId = "operation-recent-terminal",
+            song = sampleSong().copy(id = 2L)
+        )
+        store.save(context, old)
+        store.save(context, recent)
+        testJournal.forceState(old.operationId, "COMPLETED", updatedAtMs = 10L)
+        testJournal.forceState(recent.operationId, "CANCELLED", updatedAtMs = 100L)
+
+        assertEquals(1, store.pruneTerminalOperations(context, cutoffMs = 50L, limit = 1))
+        assertNull(store.read(context, old.operationId))
+        assertNotNull(store.read(context, recent.operationId))
     }
 
     @Test
     fun `execution forwards the durable operation id to the entry point`() = runTest {
-        val directory = Files.createTempDirectory("download-execution-host").toFile()
-        val context = mock(Context::class.java)
-        `when`(context.applicationContext).thenReturn(context)
+        val context = mockContext()
         val request = DownloadExecutionRequest(
             operationId = "operation-forwarded",
             song = sampleSong()
         )
-        val store = DownloadExecutionOperationStore { directory }
-        store.saveTo(directory, request)
+        val store = DownloadExecutionOperationStore { testJournal }
+        store.save(context, request)
         var forwardedOperationId: String? = null
         val entryPoint = DownloadOperationEntryPoint { _, operationId, _, _ ->
             forwardedOperationId = operationId
@@ -142,15 +196,13 @@ class DownloadExecutionHostTest {
 
     @Test
     fun `execution waits for the shared entry point to finish`() = runTest {
-        val directory = Files.createTempDirectory("download-execution-wait").toFile()
-        val store = DownloadExecutionOperationStore { directory }
-        val context = mock(Context::class.java)
-        `when`(context.applicationContext).thenReturn(context)
+        val store = DownloadExecutionOperationStore { testJournal }
+        val context = mockContext()
         val request = DownloadExecutionRequest(
             operationId = "operation-wait",
             song = sampleSong()
         )
-        store.saveTo(directory, request)
+        store.save(context, request)
         val started = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val host = DefaultDownloadExecutionHost(
@@ -171,11 +223,9 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `rejected scheduling removes the durable operation`() {
-        val directory = Files.createTempDirectory("download-execution-reject").toFile()
-        val store = DownloadExecutionOperationStore { directory }
-        val context = mock(Context::class.java)
-        `when`(context.applicationContext).thenReturn(context)
+    fun `rejected scheduling keeps the durable operation for retry`() {
+        val store = DownloadExecutionOperationStore { testJournal }
+        val context = mockContext()
         val request = DownloadExecutionRequest(
             operationId = "operation-reject",
             song = sampleSong()
@@ -188,7 +238,15 @@ class DownloadExecutionHostTest {
         val result = host.schedule(context, request)
 
         assertTrue(result is DownloadExecutionSchedule.Rejected)
-        assertNull(store.readFrom(directory, request.operationId))
+        assertNotNull(store.read(context, request.operationId))
+    }
+
+    private val testJournal = InMemoryDownloadExecutionOperationJournal()
+
+    private fun mockContext(): Context {
+        return mock(Context::class.java).also { context ->
+            `when`(context.applicationContext).thenReturn(context)
+        }
     }
 
     private fun sampleSong(): SongItem {

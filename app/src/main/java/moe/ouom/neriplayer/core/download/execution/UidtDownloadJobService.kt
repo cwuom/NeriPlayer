@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,7 +28,6 @@ import java.util.concurrent.ConcurrentHashMap
 /** bridges API 34 user initiated jobs to the shared download host */
 // job ids stay in a host-owned range because WorkManager uses its own range
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-@SuppressLint("SpecifyJobSchedulerIdRange")
 class UidtDownloadJobService : JobService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runningJobs = ConcurrentHashMap<Int, Job>()
@@ -68,6 +66,10 @@ class UidtDownloadJobService : JobService() {
             stopReason = params.stopReason,
             sdkInt = Build.VERSION.SDK_INT
         )
+        val userStopped = shouldMarkUidtJobStopped(
+            stopReason = params.stopReason,
+            sdkInt = Build.VERSION.SDK_INT
+        )
         params.extras
             .getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
@@ -75,7 +77,7 @@ class UidtDownloadJobService : JobService() {
                 DownloadExecutionHosts.default.stop(
                     context = applicationContext,
                     operationId = operationId,
-                    preventReschedule = !shouldReschedule
+                    preventReschedule = userStopped
                 )
             }
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
@@ -115,8 +117,9 @@ class UidtDownloadJobService : JobService() {
         internal const val OPERATION_ID_KEY = "operation_id"
         private const val CHANNEL_ID = "download_execution"
         private const val NOTIFICATION_ID = 0x4e50_0002
-        private const val JOB_ID_MIN = 100_000
-        private const val JOB_ID_RANGE = 900_000_000
+        internal const val UIDT_JOB_ID_MIN = 100_000
+        internal const val UIDT_JOB_ID_MAX = 900_099_999
+        private val scheduleLock = Any()
 
         fun schedule(
             context: Context,
@@ -125,18 +128,32 @@ class UidtDownloadJobService : JobService() {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            val extras = PersistableBundle().apply {
-                putString(OPERATION_ID_KEY, normalizedId)
+            return synchronized(scheduleLock) {
+                val pendingJobs = scheduler.allPendingJobs
+                val existingJob = pendingJobs.firstOrNull { job ->
+                    job.service == component &&
+                        job.extras.getString(OPERATION_ID_KEY) == normalizedId
+                }
+                val occupiedJobIds = pendingJobs
+                    .asSequence()
+                    .filter { job -> job.service == component && job != existingJob }
+                    .mapTo(linkedSetOf()) { job -> job.id }
+                val selectedJobId = existingJob?.id
+                    ?: selectAvailableUidtJobId(normalizedId, occupiedJobIds)
+                    ?: return@synchronized false
+                val extras = PersistableBundle().apply {
+                    putString(OPERATION_ID_KEY, normalizedId)
+                }
+                val jobInfo = JobInfo.Builder(selectedJobId, component)
+                    .setUserInitiated(true)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setEstimatedNetworkBytes(1L, JobInfo.NETWORK_BYTES_UNKNOWN.toLong())
+                    .setExtras(extras)
+                    .build()
+                runCatching {
+                    scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
+                }.getOrDefault(false)
             }
-            val jobInfo = JobInfo.Builder(jobIdFor(normalizedId), component)
-                .setUserInitiated(true)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                .setEstimatedNetworkBytes(1L, JobInfo.NETWORK_BYTES_UNKNOWN.toLong())
-                .setExtras(extras)
-                .build()
-            return runCatching {
-                scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
-            }.getOrDefault(false)
         }
 
         fun cancel(
@@ -144,8 +161,34 @@ class UidtDownloadJobService : JobService() {
             operationId: String
         ) {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return
-            context.getSystemService(JobScheduler::class.java)
-                ?.cancel(jobIdFor(normalizedId))
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
+            val component = ComponentName(context, UidtDownloadJobService::class.java)
+            scheduler.allPendingJobs
+                .filter { job ->
+                    job.service == component &&
+                        job.extras.getString(OPERATION_ID_KEY) == normalizedId
+                }
+                .forEach { job -> scheduler.cancel(job.id) }
+            val legacyJob = scheduler.getPendingJob(jobIdFor(normalizedId))
+            if (
+                legacyJob?.service == component &&
+                    legacyJob.extras.getString(OPERATION_ID_KEY) == normalizedId
+            ) {
+                scheduler.cancel(legacyJob.id)
+            }
+        }
+
+        fun hasPendingJob(
+            context: Context,
+            operationId: String
+        ): Boolean {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
+            val component = ComponentName(context, UidtDownloadJobService::class.java)
+            return scheduler.allPendingJobs.any { job ->
+                job.service == component &&
+                    job.extras.getString(OPERATION_ID_KEY) == normalizedId
+            }
         }
 
         internal fun jobIdFor(operationId: String): Int {
@@ -155,7 +198,23 @@ class UidtDownloadJobService : JobService() {
             repeat(4) { index ->
                 value = (value shl 8) or (digest[index].toInt() and 0xff)
             }
-            return JOB_ID_MIN + (value and Int.MAX_VALUE) % JOB_ID_RANGE
+            return UIDT_JOB_ID_MIN +
+                (value and Int.MAX_VALUE) % (UIDT_JOB_ID_MAX - UIDT_JOB_ID_MIN + 1)
+        }
+
+        internal fun selectAvailableUidtJobId(
+            operationId: String,
+            occupiedJobIds: Set<Int>
+        ): Int? {
+            val rangeSize = UIDT_JOB_ID_MAX - UIDT_JOB_ID_MIN + 1
+            val baseOffset = jobIdFor(operationId) - UIDT_JOB_ID_MIN
+            repeat(rangeSize) { probe ->
+                val candidate = UIDT_JOB_ID_MIN + (baseOffset + probe) % rangeSize
+                if (candidate !in occupiedJobIds) {
+                    return candidate
+                }
+            }
+            return null
         }
     }
 }

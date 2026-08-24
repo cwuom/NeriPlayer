@@ -16,6 +16,11 @@ import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.json.JSONObject
@@ -258,6 +263,24 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         assertNull(sourceTree.findFile("RoundTrip.mp3"))
         assertNull(sourceTree.findFile("RoundTrip.mp3.npmeta.json"))
         assertEquals(targetUri.toString(), ManagedDownloadStorage.configuredDirectoryUri())
+    }
+
+    @Test
+    fun safBackendDeleteRequiresProviderMissingConfirmation() = runBlocking {
+        val sourceTree = treeRoot(ManagedDownloadMigrationTestDocumentProvider.SOURCE_ROOT_ID)
+        writeTreeFixture(sourceTree)
+        val audio = requireTreeFile(sourceTree, "RoundTrip.mp3")
+        val backend = SafStorageBackend(appContext)
+
+        val result = backend.delete(
+            TrustedManagedRef(StorageReference.SafRef(audio.uri))
+        )
+
+        assertEquals(StorageMutationResult.Deleted, result)
+        assertEquals(
+            StorageLookupResult.Missing,
+            backend.stat(StorageReference.SafRef(audio.uri))
+        )
     }
 
     private suspend fun awaitWork(workId: String): WorkInfo {

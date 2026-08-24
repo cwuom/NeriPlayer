@@ -417,10 +417,17 @@ internal class ManagedDownloadArtifactCoordinator {
         context: Context,
         song: SongItem
     ) {
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
+        deleteByStableKey(context, song.stableKey())
+    }
+
+    suspend fun deleteByStableKey(
+        context: Context,
+        stableKey: String?
+    ) {
+        val normalizedStableKey = stableKey?.trim()?.takeIf(String::isNotBlank) ?: return
         val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
         database(context.applicationContext).managedDownloadArtifactDao()
-            .delete(rootKey, stableKey)
+            .delete(rootKey, normalizedStableKey)
     }
 
     private suspend fun resolveExistingClaim(
@@ -441,83 +448,89 @@ internal class ManagedDownloadArtifactCoordinator {
         ) {
             ManagedDownloadArtifactDecision.AlreadyDownloaded -> {
                 val reference = current.audioReference
-                if (!reference.isNullOrBlank() &&
-                    withContext(Dispatchers.IO) {
-                        runCatching {
-                            ManagedDownloadStorage.isReferenceAccessible(context, reference)
-                        }
-                    }
-                        .getOrDefault(false)
-                ) {
-                    ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
-                } else {
-                    val replacement = findAccessibleReplacement(
-                        context = context,
-                        current = current,
-                        stableKey = stableKey
+                val referenceState = withContext(Dispatchers.IO) {
+                    classifyManagedDownloadArtifactReference(
+                        ManagedDownloadReferenceLookup.inspect(context, reference)
                     )
-                    if (replacement != null) {
-                        val refreshed = current.copy(
-                            audioReference = replacement.reference,
-                            audioName = replacement.name,
-                            fileSize = replacement.sizeBytes,
+                }
+                if (referenceState == ManagedDownloadArtifactReferenceState.PRESENT) {
+                    return ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
+                }
+                if (referenceState == ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED) {
+                    return ManagedDownloadArtifactClaim.RepairRequired(
+                        current.copy(
                             updatedAtMs = System.currentTimeMillis(),
-                            needsReconcile = false,
-                            lastErrorCode = null
-                        )
-                        dao.upsert(refreshed)
-                        return ManagedDownloadArtifactClaim.AlreadyDownloaded(refreshed)
-                    }
-                    if (!isMissingConfirmed(context, current, stableKey)) {
-                        return ManagedDownloadArtifactClaim.RepairRequired(
-                            current.copy(
-                                updatedAtMs = System.currentTimeMillis(),
-                                needsReconcile = true,
-                                lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
-                            )
-                        )
-                    }
-                    val repairUpdatedAtMs = System.currentTimeMillis()
-                    val updated = dao.markMissingIfUnchanged(
-                        rootKey = rootKey,
-                        stableKey = stableKey,
-                        expectedState = current.state,
-                        expectedUpdatedAtMs = current.updatedAtMs,
-                        missingState = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
-                        updatedAtMs = repairUpdatedAtMs,
-                        errorCode = "AUDIO_REFERENCE_UNAVAILABLE"
-                    )
-                    if (updated == 1) {
-                        val missing = current.copy(
-                            state = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
-                            leaseId = null,
-                            updatedAtMs = repairUpdatedAtMs,
                             needsReconcile = true,
                             lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
                         )
+                    )
+                }
+                val replacement = findAccessibleReplacement(
+                    context = context,
+                    current = current,
+                    stableKey = stableKey
+                )
+                if (replacement != null) {
+                    val refreshed = current.copy(
+                        audioReference = replacement.reference,
+                        audioName = replacement.name,
+                        fileSize = replacement.sizeBytes,
+                        updatedAtMs = System.currentTimeMillis(),
+                        needsReconcile = false,
+                        lastErrorCode = null
+                    )
+                    dao.upsert(refreshed)
+                    return ManagedDownloadArtifactClaim.AlreadyDownloaded(refreshed)
+                }
+                if (!isMissingConfirmed(context, current, stableKey)) {
+                    return ManagedDownloadArtifactClaim.RepairRequired(
+                        current.copy(
+                            updatedAtMs = System.currentTimeMillis(),
+                            needsReconcile = true,
+                            lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                        )
+                    )
+                }
+                val repairUpdatedAtMs = System.currentTimeMillis()
+                val updated = dao.markMissingIfUnchanged(
+                    rootKey = rootKey,
+                    stableKey = stableKey,
+                    expectedState = current.state,
+                    expectedUpdatedAtMs = current.updatedAtMs,
+                    missingState = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
+                    updatedAtMs = repairUpdatedAtMs,
+                    errorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                )
+                if (updated == 1) {
+                    val missing = current.copy(
+                        state = ManagedDownloadArtifactState.MISSING_CONFIRMED.name,
+                        leaseId = null,
+                        updatedAtMs = repairUpdatedAtMs,
+                        needsReconcile = true,
+                        lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                    )
+                    resolveExistingClaim(
+                        context = context,
+                        database = database,
+                        current = missing,
+                        nowMs = repairUpdatedAtMs,
+                        rootKey = rootKey,
+                        stableKey = stableKey
+                    )
+                } else if (retryCount < 2) {
+                    dao.find(rootKey, stableKey)?.let { winner ->
                         resolveExistingClaim(
                             context = context,
                             database = database,
-                            current = missing,
+                            current = winner,
                             nowMs = repairUpdatedAtMs,
                             rootKey = rootKey,
-                            stableKey = stableKey
+                            stableKey = stableKey,
+                            retryCount = retryCount + 1
                         )
-                    } else if (retryCount < 2) {
-                        dao.find(rootKey, stableKey)?.let { winner ->
-                            resolveExistingClaim(
-                                context = context,
-                                database = database,
-                                current = winner,
-                                nowMs = repairUpdatedAtMs,
-                                rootKey = rootKey,
-                                stableKey = stableKey,
-                                retryCount = retryCount + 1
-                            )
-                        } ?: ManagedDownloadArtifactClaim.RepairRequired(current)
-                    } else {
-                        ManagedDownloadArtifactClaim.RepairRequired(current)
-                    }
+                    } ?: ManagedDownloadArtifactClaim.RepairRequired(current)
+                } else {
+                    ManagedDownloadArtifactClaim.RepairRequired(current)
                 }
             }
 

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 16,
-    "identityHash": "c206f757a690805b258df5951a012525",
+    "identityHash": "844ccd63e0b2081f83ffd8cf795e1614",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -2329,481 +2329,6 @@
         }
       },
       {
-        "tableName": "download_pending_queue",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stable_key` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `queued_at_ms` INTEGER NOT NULL, `id` INTEGER NOT NULL, `name` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT NOT NULL, `album_id` INTEGER NOT NULL, `duration_ms` INTEGER NOT NULL, `cover_url` TEXT, `media_uri` TEXT, `matched_lyric` TEXT, `matched_translated_lyric` TEXT, `matched_romanized_lyric` TEXT, `matched_lyric_source` TEXT, `matched_song_id` TEXT, `user_lyric_offset_ms` INTEGER NOT NULL, `custom_cover_url` TEXT, `custom_name` TEXT, `custom_artist` TEXT, `original_name` TEXT, `original_artist` TEXT, `original_cover_url` TEXT, `original_lyric` TEXT, `original_translated_lyric` TEXT, `original_romanized_lyric` TEXT, `local_file_name` TEXT, `local_file_path` TEXT, `channel_id` TEXT, `audio_id` TEXT, `sub_audio_id` TEXT, `playlist_context_id` TEXT, `source_stable_key` TEXT, `stream_url` TEXT, PRIMARY KEY(`stable_key`))",
-        "fields": [
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "queueOrder",
-            "columnName": "queue_order",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "queuedAtMs",
-            "columnName": "queued_at_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "artist",
-            "columnName": "artist",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "album",
-            "columnName": "album",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "albumId",
-            "columnName": "album_id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "durationMs",
-            "columnName": "duration_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "coverUrl",
-            "columnName": "cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "mediaUri",
-            "columnName": "media_uri",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyric",
-            "columnName": "matched_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedTranslatedLyric",
-            "columnName": "matched_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedRomanizedLyric",
-            "columnName": "matched_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyricSource",
-            "columnName": "matched_lyric_source",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedSongId",
-            "columnName": "matched_song_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "userLyricOffsetMs",
-            "columnName": "user_lyric_offset_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "customCoverUrl",
-            "columnName": "custom_cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "customName",
-            "columnName": "custom_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "customArtist",
-            "columnName": "custom_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalName",
-            "columnName": "original_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalArtist",
-            "columnName": "original_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalCoverUrl",
-            "columnName": "original_cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalLyric",
-            "columnName": "original_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalTranslatedLyric",
-            "columnName": "original_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalRomanizedLyric",
-            "columnName": "original_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "localFileName",
-            "columnName": "local_file_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "localFilePath",
-            "columnName": "local_file_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "channelId",
-            "columnName": "channel_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "audioId",
-            "columnName": "audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "subAudioId",
-            "columnName": "sub_audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "playlistContextId",
-            "columnName": "playlist_context_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceStableKey",
-            "columnName": "source_stable_key",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "streamUrl",
-            "columnName": "stream_url",
-            "affinity": "TEXT"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "stable_key"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_download_pending_queue_order",
-            "unique": false,
-            "columnNames": [
-              "queue_order"
-            ],
-            "orders": [
-              "ASC"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_pending_queue_order` ON `${TABLE_NAME}` (`queue_order` ASC)"
-          }
-        ]
-      },
-      {
-        "tableName": "download_cancelled_key",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stable_key` TEXT NOT NULL, `cancelled_at_ms` INTEGER NOT NULL, PRIMARY KEY(`stable_key`))",
-        "fields": [
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "cancelledAtMs",
-            "columnName": "cancelled_at_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "stable_key"
-          ]
-        }
-      },
-      {
-        "tableName": "downloaded_song_catalog",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`catalog_key` TEXT NOT NULL, `root_key` TEXT NOT NULL, `display_position` INTEGER NOT NULL, `id` INTEGER NOT NULL, `name` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT NOT NULL, `file_path` TEXT NOT NULL, `file_size` INTEGER NOT NULL, `download_time` INTEGER NOT NULL, `cover_path` TEXT, `cover_url` TEXT, `matched_lyric` TEXT, `matched_translated_lyric` TEXT, `matched_romanized_lyric` TEXT, `matched_lyric_source` TEXT, `matched_song_id` TEXT, `user_lyric_offset_ms` INTEGER NOT NULL, `custom_cover_url` TEXT, `custom_name` TEXT, `custom_artist` TEXT, `original_name` TEXT, `original_artist` TEXT, `original_cover_url` TEXT, `original_lyric` TEXT, `original_translated_lyric` TEXT, `original_romanized_lyric` TEXT, `media_uri` TEXT, `duration_ms` INTEGER NOT NULL, `stable_key` TEXT, `source_identity_album` TEXT, `source_media_uri` TEXT, `source_channel_id` TEXT, `source_audio_id` TEXT, `source_sub_audio_id` TEXT, `source_playlist_context_id` TEXT, PRIMARY KEY(`catalog_key`))",
-        "fields": [
-          {
-            "fieldPath": "catalogKey",
-            "columnName": "catalog_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "rootKey",
-            "columnName": "root_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "displayPosition",
-            "columnName": "display_position",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "artist",
-            "columnName": "artist",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "album",
-            "columnName": "album",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "filePath",
-            "columnName": "file_path",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "fileSize",
-            "columnName": "file_size",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "downloadTime",
-            "columnName": "download_time",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "coverPath",
-            "columnName": "cover_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "coverUrl",
-            "columnName": "cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyric",
-            "columnName": "matched_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedTranslatedLyric",
-            "columnName": "matched_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedRomanizedLyric",
-            "columnName": "matched_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyricSource",
-            "columnName": "matched_lyric_source",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedSongId",
-            "columnName": "matched_song_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "userLyricOffsetMs",
-            "columnName": "user_lyric_offset_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "customCoverUrl",
-            "columnName": "custom_cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "customName",
-            "columnName": "custom_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "customArtist",
-            "columnName": "custom_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalName",
-            "columnName": "original_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalArtist",
-            "columnName": "original_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalCoverUrl",
-            "columnName": "original_cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalLyric",
-            "columnName": "original_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalTranslatedLyric",
-            "columnName": "original_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalRomanizedLyric",
-            "columnName": "original_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "mediaUri",
-            "columnName": "media_uri",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "durationMs",
-            "columnName": "duration_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceIdentityAlbum",
-            "columnName": "source_identity_album",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceMediaUri",
-            "columnName": "source_media_uri",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceChannelId",
-            "columnName": "source_channel_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceAudioId",
-            "columnName": "source_audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourceSubAudioId",
-            "columnName": "source_sub_audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sourcePlaylistContextId",
-            "columnName": "source_playlist_context_id",
-            "affinity": "TEXT"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "catalog_key"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_downloaded_song_catalog_root_position",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "display_position"
-            ],
-            "orders": [
-              "ASC",
-              "ASC"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_downloaded_song_catalog_root_position` ON `${TABLE_NAME}` (`root_key` ASC, `display_position` ASC)"
-          },
-          {
-            "name": "index_downloaded_song_catalog_file_path",
-            "unique": false,
-            "columnNames": [
-              "file_path"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_downloaded_song_catalog_file_path` ON `${TABLE_NAME}` (`file_path`)"
-          },
-          {
-            "name": "index_downloaded_song_catalog_media_uri",
-            "unique": false,
-            "columnNames": [
-              "media_uri"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_downloaded_song_catalog_media_uri` ON `${TABLE_NAME}` (`media_uri`)"
-          },
-          {
-            "name": "index_downloaded_song_catalog_stable_key",
-            "unique": false,
-            "columnNames": [
-              "stable_key"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_downloaded_song_catalog_stable_key` ON `${TABLE_NAME}` (`stable_key`)"
-          }
-        ]
-      },
-      {
         "tableName": "cover_url_mapping",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`local_url` TEXT NOT NULL, `network_url` TEXT NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`local_url`))",
         "fields": [
@@ -2847,375 +2372,129 @@
         ]
       },
       {
-        "tableName": "download_snapshot_entry",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `bucket` TEXT NOT NULL, `entry_key` TEXT NOT NULL, `display_position` INTEGER NOT NULL, `name` TEXT NOT NULL, `reference` TEXT NOT NULL, `media_uri` TEXT NOT NULL, `local_file_path` TEXT, `size_bytes` INTEGER NOT NULL, `last_modified_ms` INTEGER NOT NULL, `is_directory` INTEGER NOT NULL, PRIMARY KEY(`root_key`, `bucket`, `entry_key`))",
+        "tableName": "download_operation",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
         "fields": [
           {
-            "fieldPath": "rootKey",
-            "columnName": "root_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "bucket",
-            "columnName": "bucket",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "entryKey",
-            "columnName": "entry_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "displayPosition",
-            "columnName": "display_position",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "reference",
-            "columnName": "reference",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "mediaUri",
-            "columnName": "media_uri",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "localFilePath",
-            "columnName": "local_file_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "sizeBytes",
-            "columnName": "size_bytes",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "lastModifiedMs",
-            "columnName": "last_modified_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "isDirectory",
-            "columnName": "is_directory",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "root_key",
-            "bucket",
-            "entry_key"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_download_snapshot_entry_root_bucket_position",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "bucket",
-              "display_position"
-            ],
-            "orders": [
-              "ASC",
-              "ASC",
-              "ASC"
-            ],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_entry_root_bucket_position` ON `${TABLE_NAME}` (`root_key` ASC, `bucket` ASC, `display_position` ASC)"
-          },
-          {
-            "name": "index_download_snapshot_entry_root_bucket_name",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "bucket",
-              "name"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_entry_root_bucket_name` ON `${TABLE_NAME}` (`root_key`, `bucket`, `name`)"
-          },
-          {
-            "name": "index_download_snapshot_entry_root_reference",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "reference"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_entry_root_reference` ON `${TABLE_NAME}` (`root_key`, `reference`)"
-          }
-        ]
-      },
-      {
-        "tableName": "download_snapshot_metadata",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `audio_name` TEXT NOT NULL, `stable_key` TEXT, `song_id` INTEGER, `identity_album` TEXT, `album` TEXT, `name` TEXT, `artist` TEXT, `cover_url` TEXT, `matched_lyric` TEXT, `matched_translated_lyric` TEXT, `matched_romanized_lyric` TEXT, `matched_lyric_source` TEXT, `matched_song_id` TEXT, `user_lyric_offset_ms` INTEGER NOT NULL, `custom_cover_url` TEXT, `custom_name` TEXT, `custom_artist` TEXT, `original_name` TEXT, `original_artist` TEXT, `original_cover_url` TEXT, `original_lyric` TEXT, `original_translated_lyric` TEXT, `original_romanized_lyric` TEXT, `media_uri` TEXT, `channel_id` TEXT, `audio_id` TEXT, `sub_audio_id` TEXT, `playlist_context_id` TEXT, `cover_path` TEXT, `lyric_path` TEXT, `translated_lyric_path` TEXT, `romanized_lyric_path` TEXT, `duration_ms` INTEGER NOT NULL, `download_finalized` INTEGER, `created_at_ms` INTEGER, `created_at_source` TEXT, PRIMARY KEY(`root_key`, `audio_name`))",
-        "fields": [
-          {
-            "fieldPath": "rootKey",
-            "columnName": "root_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "audioName",
-            "columnName": "audio_name",
+            "fieldPath": "operationId",
+            "columnName": "operation_id",
             "affinity": "TEXT",
             "notNull": true
           },
           {
             "fieldPath": "stableKey",
             "columnName": "stable_key",
-            "affinity": "TEXT"
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "songId",
-            "columnName": "song_id",
-            "affinity": "INTEGER"
+            "fieldPath": "libraryId",
+            "columnName": "library_id",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "identityAlbum",
-            "columnName": "identity_album",
-            "affinity": "TEXT"
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "album",
-            "columnName": "album",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "artist",
-            "columnName": "artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "coverUrl",
-            "columnName": "cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyric",
-            "columnName": "matched_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedTranslatedLyric",
-            "columnName": "matched_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedRomanizedLyric",
-            "columnName": "matched_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedLyricSource",
-            "columnName": "matched_lyric_source",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "matchedSongId",
-            "columnName": "matched_song_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "userLyricOffsetMs",
-            "columnName": "user_lyric_offset_ms",
+            "fieldPath": "queueOrder",
+            "columnName": "queue_order",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "customCoverUrl",
-            "columnName": "custom_cover_url",
-            "affinity": "TEXT"
+            "fieldPath": "sourceHintJson",
+            "columnName": "source_hint_json",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "customName",
-            "columnName": "custom_name",
-            "affinity": "TEXT"
+            "fieldPath": "stagingDirName",
+            "columnName": "staging_dir_name",
+            "affinity": "TEXT",
+            "notNull": true
           },
           {
-            "fieldPath": "customArtist",
-            "columnName": "custom_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalName",
-            "columnName": "original_name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalArtist",
-            "columnName": "original_artist",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalCoverUrl",
-            "columnName": "original_cover_url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalLyric",
-            "columnName": "original_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalTranslatedLyric",
-            "columnName": "original_translated_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "originalRomanizedLyric",
-            "columnName": "original_romanized_lyric",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "mediaUri",
-            "columnName": "media_uri",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "channelId",
-            "columnName": "channel_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "audioId",
-            "columnName": "audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "subAudioId",
-            "columnName": "sub_audio_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "playlistContextId",
-            "columnName": "playlist_context_id",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "coverPath",
-            "columnName": "cover_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "lyricPath",
-            "columnName": "lyric_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "translatedLyricPath",
-            "columnName": "translated_lyric_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "romanizedLyricPath",
-            "columnName": "romanized_lyric_path",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "durationMs",
-            "columnName": "duration_ms",
+            "fieldPath": "bytesWritten",
+            "columnName": "bytes_written",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "downloadFinalized",
-            "columnName": "download_finalized",
+            "fieldPath": "totalBytes",
+            "columnName": "total_bytes",
             "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "resumeJson",
+            "columnName": "resume_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "retryCount",
+            "columnName": "retry_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextRetryAtMs",
+            "columnName": "next_retry_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastErrorCode",
+            "columnName": "last_error_code",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "stopRequestedByUser",
+            "columnName": "stop_requested_by_user",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "createdAtMs",
             "columnName": "created_at_ms",
-            "affinity": "INTEGER"
+            "affinity": "INTEGER",
+            "notNull": true
           },
           {
-            "fieldPath": "createdAtSource",
-            "columnName": "created_at_source",
-            "affinity": "TEXT"
+            "fieldPath": "updatedAtMs",
+            "columnName": "updated_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "root_key",
-            "audio_name"
+            "operation_id"
           ]
         },
         "indices": [
           {
-            "name": "index_download_snapshot_metadata_root_stable_key",
+            "name": "index_download_operation_state_queue",
             "unique": false,
             "columnNames": [
-              "root_key",
-              "stable_key"
+              "state",
+              "queue_order"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_metadata_root_stable_key` ON `${TABLE_NAME}` (`root_key`, `stable_key`)"
-          },
-          {
-            "name": "index_download_snapshot_metadata_root_song_id",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "song_id"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_metadata_root_song_id` ON `${TABLE_NAME}` (`root_key`, `song_id`)"
-          },
-          {
-            "name": "index_download_snapshot_metadata_root_media_uri",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "media_uri"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_metadata_root_media_uri` ON `${TABLE_NAME}` (`root_key`, `media_uri`)"
-          },
-          {
-            "name": "index_download_snapshot_metadata_root_remote_track",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "channel_id",
-              "audio_id",
-              "sub_audio_id"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_snapshot_metadata_root_remote_track` ON `${TABLE_NAME}` (`root_key`, `channel_id`, `audio_id`, `sub_audio_id`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue` ON `${TABLE_NAME}` (`state`, `queue_order`)"
           }
         ]
       },
       {
-        "tableName": "managed_download_artifact",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`root_key` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `artifact_id` TEXT NOT NULL, `state` TEXT NOT NULL, `lease_id` TEXT, `audio_reference` TEXT, `audio_name` TEXT, `file_size` INTEGER, `content_hash` TEXT, `library_added_at_ms` INTEGER, `source_created_at_ms` INTEGER, `source_modified_at_ms` INTEGER, `downloaded_at_ms` INTEGER, `migrated_at_ms` INTEGER, `finalized_at_ms` INTEGER, `updated_at_ms` INTEGER NOT NULL, `needs_reconcile` INTEGER NOT NULL, `last_error_code` TEXT, PRIMARY KEY(`root_key`, `stable_key`))",
+        "tableName": "managed_library_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`library_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `artifact_id` TEXT NOT NULL, `state` TEXT NOT NULL, `lease_id` TEXT, `audio_reference` TEXT, `audio_name` TEXT, `file_size` INTEGER, `content_hash` TEXT, `library_added_at_ms` INTEGER, `source_created_at_ms` INTEGER, `source_modified_at_ms` INTEGER, `downloaded_at_ms` INTEGER, `migrated_at_ms` INTEGER, `finalized_at_ms` INTEGER, `updated_at_ms` INTEGER NOT NULL, `needs_reconcile` INTEGER NOT NULL, `last_error_code` TEXT, `metadata_name` TEXT, `locator_hint` TEXT, `title_preview` TEXT, `artist_preview` TEXT, `cover_key_preview` TEXT, `metadata_revision` INTEGER NOT NULL, PRIMARY KEY(`library_id`, `stable_key`))",
         "fields": [
           {
             "fieldPath": "rootKey",
-            "columnName": "root_key",
+            "columnName": "library_id",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -3308,186 +2587,11 @@
             "fieldPath": "lastErrorCode",
             "columnName": "last_error_code",
             "affinity": "TEXT"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "root_key",
-            "stable_key"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_managed_download_artifact_root_state",
-            "unique": false,
-            "columnNames": [
-              "root_key",
-              "state"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_managed_download_artifact_root_state` ON `${TABLE_NAME}` (`root_key`, `state`)"
-          },
-          {
-            "name": "index_managed_download_artifact_artifact_id",
-            "unique": true,
-            "columnNames": [
-              "artifact_id"
-            ],
-            "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_download_artifact_artifact_id` ON `${TABLE_NAME}` (`artifact_id`)"
-          }
-        ]
-      },
-      {
-        "tableName": "download_operation",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
-        "fields": [
-          {
-            "fieldPath": "operationId",
-            "columnName": "operation_id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "libraryId",
-            "columnName": "library_id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "state",
-            "columnName": "state",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "queueOrder",
-            "columnName": "queue_order",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "sourceHintJson",
-            "columnName": "source_hint_json",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "stagingDirName",
-            "columnName": "staging_dir_name",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "bytesWritten",
-            "columnName": "bytes_written",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "totalBytes",
-            "columnName": "total_bytes",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "resumeJson",
-            "columnName": "resume_json",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "retryCount",
-            "columnName": "retry_count",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "nextRetryAtMs",
-            "columnName": "next_retry_at_ms",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "lastErrorCode",
-            "columnName": "last_error_code",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "createdAtMs",
-            "columnName": "created_at_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "updatedAtMs",
-            "columnName": "updated_at_ms",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "operation_id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_download_operation_state_queue",
-            "unique": false,
-            "columnNames": [
-              "state",
-              "queue_order"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue` ON `${TABLE_NAME}` (`state`, `queue_order`)"
-          }
-        ]
-      },
-      {
-        "tableName": "managed_library_item",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`library_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `artifact_id` TEXT NOT NULL, `state` TEXT NOT NULL, `audio_name` TEXT NOT NULL, `metadata_name` TEXT NOT NULL, `locator_hint` TEXT, `title_preview` TEXT, `artist_preview` TEXT, `cover_key_preview` TEXT, `downloaded_at_ms` INTEGER, `metadata_revision` INTEGER NOT NULL, PRIMARY KEY(`library_id`, `stable_key`))",
-        "fields": [
-          {
-            "fieldPath": "libraryId",
-            "columnName": "library_id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "stableKey",
-            "columnName": "stable_key",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "artifactId",
-            "columnName": "artifact_id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "state",
-            "columnName": "state",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "audioName",
-            "columnName": "audio_name",
-            "affinity": "TEXT",
-            "notNull": true
           },
           {
             "fieldPath": "metadataName",
             "columnName": "metadata_name",
-            "affinity": "TEXT",
-            "notNull": true
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "locatorHint",
@@ -3508,11 +2612,6 @@
             "fieldPath": "coverKeyPreview",
             "columnName": "cover_key_preview",
             "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "downloadedAtMs",
-            "columnName": "downloaded_at_ms",
-            "affinity": "INTEGER"
           },
           {
             "fieldPath": "metadataRevision",
@@ -3875,7 +2974,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c206f757a690805b258df5951a012525')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '844ccd63e0b2081f83ffd8cf795e1614')"
     ]
   }
 }

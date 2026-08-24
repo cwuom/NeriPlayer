@@ -1,15 +1,13 @@
 package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
-import androidx.room.withTransaction
 import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.DownloadedSong
-import moe.ouom.neriplayer.core.download.withRecoveredRemoteSourceStableKey
+import moe.ouom.neriplayer.core.download.ManagedLibraryItemRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.util.io.writeTextAtomically
 
@@ -23,20 +21,23 @@ internal class DownloadedSongCatalogRoomStore(
     suspend fun restore(): List<DownloadedSong>? {
         globalMutex.withLock {
             val rootKey = snapshotCacheKeyProvider(context)
-            if (isRoomPrimary()) {
-                if (readRootKey() != rootKey) {
-                    return null
-                }
-                return database.downloadedSongCatalogDao()
-                    .getSongs(rootKey)
-                    .map(DownloadedSongCatalogEntity::toDownloadedSong)
+            val storedRootKey = database.syncMetadataDao()
+                .getMigrationMetadata(ROOT_KEY_METADATA_KEY)
+                ?.value
+            if (storedRootKey != null && storedRootKey != rootKey) {
+                return null
             }
+            if (readCutoverState() == LEGACY_JSON_STATE) {
+                val legacySongs = readLegacyCatalog(rootKey) ?: return null
+                ManagedLibraryItemRoomStore.replacePreviews(context, legacySongs, database)
+                markRoomPrimary(rootKey)
+                return legacySongs
+            }
+            ManagedLibraryItemRoomStore.restore(context, database)?.let { return it }
 
             val legacySongs = readLegacyCatalog(rootKey) ?: return null
-            database.withTransaction {
-                replaceCatalog(rootKey, legacySongs)
-                markRoomPrimary(rootKey)
-            }
+            ManagedLibraryItemRoomStore.replacePreviews(context, legacySongs, database)
+            markRoomPrimary(rootKey)
             return legacySongs
         }
     }
@@ -48,10 +49,8 @@ internal class DownloadedSongCatalogRoomStore(
     override suspend fun persistCatalog(songs: List<DownloadedSong>) {
         globalMutex.withLock {
             val rootKey = snapshotCacheKeyProvider(context)
-            database.withTransaction {
-                replaceCatalog(rootKey, songs)
-                markRoomPrimary(rootKey)
-            }
+            ManagedLibraryItemRoomStore.replacePreviews(context, songs, database)
+            markRoomPrimary(rootKey)
         }
     }
 
@@ -63,33 +62,9 @@ internal class DownloadedSongCatalogRoomStore(
         }
     }
 
-    private suspend fun replaceCatalog(
-        rootKey: String,
-        songs: List<DownloadedSong>
-    ) {
-        val dao = database.downloadedSongCatalogDao()
-        val entities = songs
-            .distinctBy(::catalogRowKey)
-            .mapIndexed { index, song -> song.toEntity(rootKey, index) }
-        val nextKeys = entities.mapTo(HashSet(entities.size), DownloadedSongCatalogEntity::catalogKey)
-        val staleKeys = dao.getCatalogKeys(rootKey).filterNot(nextKeys::contains)
-        if (staleKeys.isNotEmpty()) {
-            dao.deleteSongs(rootKey, staleKeys)
-        }
-        if (entities.isNotEmpty()) {
-            dao.upsertSongs(entities)
-        }
-    }
-
-    private suspend fun isRoomPrimary(): Boolean {
+    private suspend fun readCutoverState(): String? {
         return database.syncMetadataDao()
             .getMigrationMetadata(CUTOVER_STATE_METADATA_KEY)
-            ?.value == ROOM_PRIMARY_STATE
-    }
-
-    private suspend fun readRootKey(): String? {
-        return database.syncMetadataDao()
-            .getMigrationMetadata(ROOT_KEY_METADATA_KEY)
             ?.value
     }
 
@@ -163,105 +138,10 @@ internal class DownloadedSongCatalogRoomStore(
     }
 
     companion object {
-        const val CUTOVER_STATE_METADATA_KEY = "downloaded_song_catalog_cutover_state"
-        const val ROOT_KEY_METADATA_KEY = "downloaded_song_catalog_root_key"
+        const val CUTOVER_STATE_METADATA_KEY = "managed_library_item_cutover_state"
+        const val ROOT_KEY_METADATA_KEY = "managed_library_item_root_key"
         const val ROOM_PRIMARY_STATE = "room_primary"
         const val LEGACY_JSON_STATE = "legacy_json"
         private val globalMutex = Mutex()
     }
-}
-
-private fun DownloadedSong.toEntity(
-    rootKey: String,
-    displayPosition: Int
-): DownloadedSongCatalogEntity {
-    return DownloadedSongCatalogEntity(
-        catalogKey = catalogRowKey(this),
-        rootKey = rootKey,
-        displayPosition = displayPosition,
-        id = id,
-        name = name,
-        artist = artist,
-        album = album,
-        filePath = filePath,
-        fileSize = fileSize,
-        downloadTime = downloadTime,
-        coverPath = coverPath,
-        coverUrl = coverUrl,
-        matchedLyric = matchedLyric,
-        matchedTranslatedLyric = matchedTranslatedLyric,
-        matchedRomanizedLyric = matchedRomanizedLyric,
-        matchedLyricSource = matchedLyricSource,
-        matchedSongId = matchedSongId,
-        userLyricOffsetMs = userLyricOffsetMs,
-        customCoverUrl = customCoverUrl,
-        customName = customName,
-        customArtist = customArtist,
-        originalName = originalName,
-        originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl,
-        originalLyric = originalLyric,
-        originalTranslatedLyric = originalTranslatedLyric,
-        originalRomanizedLyric = originalRomanizedLyric,
-        mediaUri = mediaUri,
-        durationMs = durationMs,
-        stableKey = stableKey,
-        sourceIdentityAlbum = sourceIdentityAlbum,
-        sourceMediaUri = sourceMediaUri,
-        sourceChannelId = sourceChannelId,
-        sourceAudioId = sourceAudioId,
-        sourceSubAudioId = sourceSubAudioId,
-        sourcePlaylistContextId = sourcePlaylistContextId
-    )
-}
-
-private fun DownloadedSongCatalogEntity.toDownloadedSong(): DownloadedSong {
-    return DownloadedSong(
-        id = id,
-        name = name,
-        artist = artist,
-        album = album,
-        filePath = filePath,
-        fileSize = fileSize,
-        downloadTime = downloadTime,
-        coverPath = coverPath,
-        coverUrl = coverUrl,
-        matchedLyric = matchedLyric,
-        matchedTranslatedLyric = matchedTranslatedLyric,
-        matchedRomanizedLyric = matchedRomanizedLyric,
-        matchedLyricSource = matchedLyricSource,
-        matchedSongId = matchedSongId,
-        userLyricOffsetMs = userLyricOffsetMs,
-        customCoverUrl = customCoverUrl,
-        customName = customName,
-        customArtist = customArtist,
-        originalName = originalName,
-        originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl,
-        originalLyric = originalLyric,
-        originalTranslatedLyric = originalTranslatedLyric,
-        originalRomanizedLyric = originalRomanizedLyric,
-        mediaUri = mediaUri,
-        durationMs = durationMs,
-        stableKey = stableKey,
-        sourceIdentityAlbum = sourceIdentityAlbum,
-        sourceMediaUri = sourceMediaUri,
-        sourceChannelId = sourceChannelId,
-        sourceAudioId = sourceAudioId,
-        sourceSubAudioId = sourceSubAudioId,
-        sourcePlaylistContextId = sourcePlaylistContextId
-    ).withRecoveredRemoteSourceStableKey()
-}
-
-private fun catalogRowKey(song: DownloadedSong): String {
-    song.filePath
-        .takeIf(String::isNotBlank)
-        ?.let { return "file:$it" }
-    song.mediaUri
-        ?.takeIf(String::isNotBlank)
-        ?.let { return "uri:$it" }
-    song.stableKey
-        ?.takeIf(String::isNotBlank)
-        ?.let { return "stable:$it" }
-    return "legacy:${song.id}|${song.name}|${song.artist}"
 }

@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.metadata
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -22,6 +24,7 @@ class ManagedDownloadRestorableMetadataTest {
                 title = "Edited title",
                 artist = "Edited artist",
                 coverReference = "content://root/Covers/edited.jpg",
+                userLyricOffsetMs = -321L,
                 originalLyric = "edited lyric"
             ),
             baselineCoverAssetHash = "base-hash",
@@ -30,13 +33,32 @@ class ManagedDownloadRestorableMetadataTest {
             updatedAtMs = 20L
         )
 
-        val restored = ManagedDownloadRestorableMetadata.fromJson(original.toJson())
+        val json = original.toJson()
+        val restored = ManagedDownloadRestorableMetadata.fromJson(json)
 
-        assertEquals(original, restored)
+        assertFalse(json.getJSONObject("baseline").has("coverReference"))
+        assertFalse(json.getJSONObject("overrides").has("coverReference"))
+        assertNull(restored?.baseline?.coverReference)
         assertEquals("Original title", restored?.baseline?.title)
         assertEquals("Edited title", restored?.overrides?.title)
+        assertEquals(-321L, restored?.overrides?.userLyricOffsetMs)
         assertEquals("base-hash", restored?.baselineCoverAssetHash)
         assertEquals(20L, restored?.updatedAtMs)
+    }
+
+    @Test
+    fun `legacy baseline cover reference remains readable during upgrade`() {
+        val restored = ManagedDownloadRestorableMetadata.fromJson(
+            JSONObject(
+                """
+                {
+                  "baseline": {"coverReference": "content://legacy/cover.jpg"}
+                }
+                """.trimIndent()
+            )
+        )
+
+        assertEquals("content://legacy/cover.jpg", restored?.baseline?.coverReference)
     }
 
     @Test

@@ -26,7 +26,8 @@ internal class DownloadedAudioMetadataStore(
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null,
         downloadFinalized: Boolean = true,
         resolveExistingSidecars: Boolean = true,
-        artifactStateOverride: String? = null
+        artifactStateOverride: String? = null,
+        operationId: String? = null
     ): Boolean {
         val identity = song.identity()
         val existingMetadata = read(context, audio)
@@ -47,6 +48,7 @@ internal class DownloadedAudioMetadataStore(
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
+        val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
         val createdAtMs = existingMetadata?.createdAtMs
             ?: existingMetadata?.downloadTimeMs
             ?: audio.lastModifiedMs.takeIf { it > 0L }
@@ -54,14 +56,14 @@ internal class DownloadedAudioMetadataStore(
         val createdAtSource = existingMetadata?.createdAtSource
             ?: "MANAGED_COMMIT"
         val restorableMetadata = resolveRestorableMetadata(
-            song = song,
+            song = metadataSong,
             existing = existingMetadata?.restorableMetadata,
             coverReference = persistedSidecars.coverReference,
             coverAssetHash = materializedCover?.assetHash,
             createdAtMs = createdAtMs
         )
         val payload = buildMetadataPayload(
-            song = preserveMissingDownloadedMetadataLyrics(song, existingMetadata),
+            song = metadataSong,
             coverReference = persistedSidecars.coverReference,
             lyricReference = persistedSidecars.lyricReference,
             translatedLyricReference = persistedSidecars.translatedLyricReference,
@@ -75,7 +77,7 @@ internal class DownloadedAudioMetadataStore(
             createdAtMs = createdAtMs,
             createdAtSource = createdAtSource,
             artifactId = existingMetadata?.artifactId,
-            operationId = existingMetadata?.operationId,
+            operationId = operationId ?: existingMetadata?.operationId,
             artifactState = artifactStateOverride
                 ?: if (downloadFinalized) {
                     "COMPLETE"
@@ -322,13 +324,10 @@ internal class DownloadedAudioMetadataStore(
         return previous.copy(
             sourceStableKey = previous.sourceStableKey ?: identity.stableKey(),
             baseline = baseline,
-            overrides = previous.overrides.copy(
-                title = song.customName,
-                artist = song.customArtist,
-                coverReference = coverReference ?: song.customCoverUrl,
-                originalLyric = song.matchedLyric,
-                translatedLyric = song.matchedTranslatedLyric,
-                romanizedLyric = song.matchedRomanizedLyric
+            overrides = mergeRestorableOverrides(
+                previous = previous.overrides,
+                song = song,
+                coverReference = coverReference
             ),
             baselineCoverAssetHash = previous.baselineCoverAssetHash ?: coverAssetHash,
             currentCoverAssetHash = coverAssetHash ?: previous.currentCoverAssetHash,
@@ -342,6 +341,26 @@ internal class DownloadedAudioMetadataStore(
         val lyricReference: String?,
         val translatedLyricReference: String?,
         val romanizedLyricReference: String?
+    )
+}
+
+internal fun mergeRestorableOverrides(
+    previous: ManagedDownloadRestorableMetadata.Overrides,
+    song: SongItem,
+    coverReference: String?
+): ManagedDownloadRestorableMetadata.Overrides {
+    return previous.copy(
+        title = song.customName ?: previous.title,
+        artist = song.customArtist ?: previous.artist,
+        coverReference = song.customCoverUrl ?: previous.coverReference ?: coverReference,
+        userLyricOffsetMs = if (song.userLyricOffsetMs != 0L) {
+            song.userLyricOffsetMs
+        } else {
+            previous.userLyricOffsetMs
+        },
+        originalLyric = song.matchedLyric ?: previous.originalLyric,
+        translatedLyric = song.matchedTranslatedLyric ?: previous.translatedLyric,
+        romanizedLyric = song.matchedRomanizedLyric ?: previous.romanizedLyric
     )
 }
 
@@ -369,14 +388,25 @@ internal fun preserveMissingDownloadedMetadataLyrics(
                 runCatching { MusicPlatform.valueOf(value) }.getOrNull()
             },
         matchedSongId = song.matchedSongId ?: metadata.matchedSongId,
-        userLyricOffsetMs = song.userLyricOffsetMs.takeIf { it != 0L }
-            ?: metadata.userLyricOffsetMs,
+        userLyricOffsetMs = resolveDownloadedUserLyricOffset(
+            existingOffsetMs = metadata.userLyricOffsetMs,
+            incomingOffsetMs = song.userLyricOffsetMs
+        ),
         originalLyric = song.originalLyric ?: metadata.originalLyric,
         originalTranslatedLyric = song.originalTranslatedLyric
             ?: metadata.originalTranslatedLyric,
         originalRomanizedLyric = song.originalRomanizedLyric
             ?: metadata.originalRomanizedLyric
     )
+}
+
+internal fun resolveDownloadedUserLyricOffset(
+    existingOffsetMs: Long?,
+    incomingOffsetMs: Long?
+): Long {
+    return incomingOffsetMs?.takeIf { it != 0L }
+        ?: existingOffsetMs
+        ?: 0L
 }
 
 internal fun patchDownloadedMetadataCoverReference(

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.metadata
 
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -21,6 +22,22 @@ class DownloadedAudioMetadataStoreTest {
             resolveDownloadedAudioTime(existingTimeMs = null, fallbackTimeMs = 999L)
         )
         assertNull(resolveDownloadedAudioTime(existingTimeMs = 0L, fallbackTimeMs = 0L))
+    }
+
+    @Test
+    fun `restorable offset keeps an existing value when incoming metadata omits it`() {
+        assertEquals(
+            -321L,
+            resolveDownloadedUserLyricOffset(existingOffsetMs = -321L, incomingOffsetMs = 0L)
+        )
+        assertEquals(
+            120L,
+            resolveDownloadedUserLyricOffset(existingOffsetMs = -321L, incomingOffsetMs = 120L)
+        )
+        assertEquals(
+            -120L,
+            resolveDownloadedUserLyricOffset(existingOffsetMs = null, incomingOffsetMs = -120L)
+        )
     }
 
     @Test
@@ -102,6 +119,52 @@ class DownloadedAudioMetadataStoreTest {
         assertEquals("stored translation", restored.matchedTranslatedLyric)
         assertEquals("stored romanization", restored.matchedRomanizedLyric)
         assertEquals("stored original", restored.originalLyric)
+    }
+
+    @Test
+    fun `metadata persistence keeps existing edits when incoming song omits them`() {
+        val previous = ManagedDownloadRestorableMetadata.Overrides(
+            title = "Edited title",
+            artist = "Edited artist",
+            coverReference = "content://managed/Covers/edited.jpg",
+            userLyricOffsetMs = -321L,
+            originalLyric = "edited lyric",
+            translatedLyric = "edited translation",
+            romanizedLyric = "edited romanization"
+        )
+
+        val merged = mergeRestorableOverrides(
+            previous = previous,
+            song = testSong(),
+            coverReference = null
+        )
+
+        assertEquals(previous, merged)
+    }
+
+    @Test
+    fun `metadata persistence applies explicit non-null edits over the baseline`() {
+        val merged = mergeRestorableOverrides(
+            previous = ManagedDownloadRestorableMetadata.Overrides(),
+            song = testSong().copy(
+                customName = "Edited title",
+                customArtist = "Edited artist",
+                customCoverUrl = "content://managed/Covers/edited.jpg",
+                matchedLyric = "edited lyric",
+                matchedTranslatedLyric = "edited translation",
+                matchedRomanizedLyric = "edited romanization",
+                userLyricOffsetMs = -321L
+            ),
+            coverReference = "content://managed/Covers/sidecar.jpg"
+        )
+
+        assertEquals("Edited title", merged.title)
+        assertEquals("Edited artist", merged.artist)
+        assertEquals("content://managed/Covers/edited.jpg", merged.coverReference)
+        assertEquals(-321L, merged.userLyricOffsetMs)
+        assertEquals("edited lyric", merged.originalLyric)
+        assertEquals("edited translation", merged.translatedLyric)
+        assertEquals("edited romanization", merged.romanizedLyric)
     }
 
     private fun testSong(): SongItem {

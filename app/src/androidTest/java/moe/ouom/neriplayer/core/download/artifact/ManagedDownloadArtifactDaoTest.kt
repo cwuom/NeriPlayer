@@ -104,6 +104,42 @@ class ManagedDownloadArtifactDaoTest {
         }
     }
 
+    @Test
+    fun deleting_edited_song_row_allows_same_stable_key_to_acquire_again() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val dao = database.managedDownloadArtifactDao()
+            val edited = artifact("lease").copy(
+                state = ManagedDownloadArtifactState.FINALIZED.name,
+                audioReference = "file:///managed/song.mp3",
+                metadataName = "edited-title",
+                titlePreview = "edited-title",
+                artistPreview = "edited-artist",
+                coverKeyPreview = "edited-cover",
+                metadataRevision = 3L
+            )
+            dao.insertIfAbsent(edited)
+
+            // delete is separate from cancel and clears the durable row only after verification
+            dao.delete("root", edited.stableKey)
+
+            assertEquals(null, dao.find("root", edited.stableKey))
+            assertEquals(
+                ManagedDownloadArtifactDecision.Acquire,
+                ManagedDownloadArtifactPolicy.decide(
+                    existing = null,
+                    nowMs = 10_000L
+                )
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     private fun artifact(leaseId: String): ManagedDownloadArtifactEntity {
         return ManagedDownloadArtifactEntity(
             rootKey = "root",

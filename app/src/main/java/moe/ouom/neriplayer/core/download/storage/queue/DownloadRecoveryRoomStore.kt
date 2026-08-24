@@ -1,90 +1,110 @@
 package moe.ouom.neriplayer.core.download.storage.queue
 
 import android.content.Context
-import androidx.room.withTransaction
 import java.io.File
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
-import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.entity.DownloadCancelledKeyEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
-import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import java.util.UUID
 
+/** compatibility facade for v15 queue files; operation journal owns new work */
 internal class DownloadRecoveryRoomStore(
     private val context: Context,
-    private val database: NeriUserDataDatabase
+    private val database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
 ) {
+    private val appContext = context.applicationContext
+
     suspend fun upsertPendingDownloadQueue(
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val distinctSongs = songs.distinctBy(SongItem::stableKey)
-        if (distinctSongs.isEmpty()) {
-            return
-        }
-        globalMigrationMutex.withLock {
-            ensurePendingQueueImported(nowMs)
-            database.withTransaction {
-                val dao = database.downloadRecoveryDao()
-                val existingEntries = dao.getPendingQueue()
-                    .associateBy(DownloadPendingQueueEntity::stableKey)
-                var nextOrder = (existingEntries.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
-                dao.upsertPendingQueue(
-                    distinctSongs.map { song ->
-                        val stableKey = song.stableKey()
-                        val existing = existingEntries[stableKey]
-                        song.toEntity(
-                            stableKey = stableKey,
-                            queueOrder = existing?.queueOrder ?: nextOrder++,
-                            queuedAtMs = existing?.queuedAtMs ?: nowMs
-                        )
-                    }
-                )
+        val existing = DownloadExecutionRoomStore.listByStates(
+            context = appContext,
+            states = ACTIVE_OPERATION_STATES,
+            database = database
+        )
+            .groupBy { it.request.song.stableKey() }
+            .mapValues { (_, entries) ->
+                entries.maxWithOrNull(
+                    compareBy<DownloadExecutionRoomStore.StateEntry> {
+                        it.createdAtMs
+                    }.thenBy { it.request.operationId }
+                ) ?: error("missing operation entry")
             }
+            .toMutableMap()
+        var nextOrder = (existing.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
+        songs.distinctBy(SongItem::stableKey).forEach { song ->
+            val key = song.stableKey()
+            val old = existing[key]
+            val operationId = old?.request?.operationId ?: pendingOperationId(key)
+            DownloadExecutionRoomStore.upsert(
+                context = appContext,
+                request = DownloadExecutionRequest(
+                    operationId = operationId,
+                    song = song,
+                    preserveStaging = old?.request?.preserveStaging ?: false,
+                    attemptId = old?.request?.attemptId,
+                    userInitiated = old?.request?.userInitiated ?: false
+                ),
+                state = PENDING_QUEUE_STATE,
+                queueOrder = old?.queueOrder ?: nextOrder++,
+                createdAtMs = old?.createdAtMs ?: nowMs,
+                database = database
+            )
         }
+    }
+
+    suspend fun findQueuedOperationIdForSong(songKey: String): String? {
+        val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
+        return DownloadExecutionRoomStore.findOperationIdForSong(
+            context = appContext,
+            songKey = normalizedKey
+        )
     }
 
     suspend fun listPendingQueuedDownloads(): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
-        globalMigrationMutex.withLock {
-            ensurePendingQueueImported()
-            return database.downloadRecoveryDao()
-                .getPendingQueue()
-                .map { entity ->
-                    ManagedDownloadStorage.PendingDownloadQueueEntry(
-                        stableKey = entity.stableKey,
-                        song = entity.toSong(),
-                        order = entity.queueOrder,
-                        queuedAtMs = entity.queuedAtMs
-                    )
-                }
-        }
+        return DownloadExecutionRoomStore.listByStates(
+            context = appContext,
+            states = PENDING_QUEUE_VISIBLE_STATES,
+            database = database
+        )
+            .sortedWith(compareBy({ it.queueOrder }, { it.request.operationId }))
+            .map { entry ->
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = entry.request.song.stableKey(),
+                    song = entry.request.song,
+                    order = entry.queueOrder,
+                    queuedAtMs = entry.createdAtMs,
+                    operationId = entry.request.operationId
+                )
+            }
     }
 
-    suspend fun removePendingDownloadQueueEntries(
-        songKeys: Collection<String>
-    ) {
-        val keys = songKeys.filter(String::isNotBlank).distinct()
-        if (keys.isEmpty()) {
-            return
-        }
-        globalMigrationMutex.withLock {
-            ensurePendingQueueImported()
-            database.downloadRecoveryDao().deletePendingQueue(keys)
+    suspend fun removePendingDownloadQueueEntries(songKeys: Collection<String>) {
+        val keys = songKeys.filter(String::isNotBlank).toSet().toList()
+        PENDING_QUEUE_STATES.forEach { state ->
+            DownloadExecutionRoomStore.deleteByStateAndStableKeys(
+                context = appContext,
+                state = state,
+                stableKeys = keys,
+                database = database
+            )
         }
     }
 
     suspend fun clearPendingDownloadQueue() {
-        globalMigrationMutex.withLock {
-            ensurePendingQueueImported()
-            database.downloadRecoveryDao().clearPendingQueue()
+        PENDING_QUEUE_STATES.forEach { state ->
+            DownloadExecutionRoomStore.deleteByState(
+                context = appContext,
+                state = state,
+                database = database
+            )
         }
     }
 
@@ -92,244 +112,187 @@ internal class DownloadRecoveryRoomStore(
         songKeys: Collection<String>,
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val keys = songKeys.filter(String::isNotBlank).distinct()
-        if (keys.isEmpty()) {
-            return
-        }
-        globalMigrationMutex.withLock {
-            ensureCancelledKeysImported(nowMs)
-            database.downloadRecoveryDao().insertCancelledKeys(
-                keys.map { stableKey ->
-                    DownloadCancelledKeyEntity(
-                        stableKey = stableKey,
-                        cancelledAtMs = nowMs
-                    )
-                }
-            )
+        markCancelledDownloadKeysInternal(songKeys, nowMs)
+    }
+
+    private suspend fun markCancelledDownloadKeysInternal(
+        songKeys: Collection<String>,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        songKeys.filter(String::isNotBlank).distinct().forEach { key ->
+            val operation = DownloadExecutionRoomStore.listByStates(
+                context = appContext,
+                states = listOf(PENDING_QUEUE_STATE, "QUEUED", "RUNNING", "STOPPED", "RETRYABLE"),
+                database = database
+            ).firstOrNull { it.request.song.stableKey() == key }
+            if (operation != null) {
+                DownloadExecutionRoomStore.requestCancel(
+                    context = appContext,
+                    operationId = operation.request.operationId,
+                    database = database,
+                    updatedAtMs = nowMs
+                )
+            }
         }
     }
 
     suspend fun listCancelledDownloadKeys(): Set<String> {
-        globalMigrationMutex.withLock {
-            ensureCancelledKeysImported()
-            return database.downloadRecoveryDao()
-                .getCancelledKeys()
-                .toSet()
-        }
+        return DownloadExecutionRoomStore.listByStates(
+            context = appContext,
+            states = listOf("CANCEL_REQUESTED", "CANCELLED"),
+            database = database
+        )
+            .map { it.request.song.stableKey() }
+            .toSet()
     }
 
     suspend fun removeCancelledDownloadKeys(songKeys: Collection<String>) {
-        val keys = songKeys.filter(String::isNotBlank).distinct()
-        if (keys.isEmpty()) {
-            return
-        }
-        globalMigrationMutex.withLock {
-            ensureCancelledKeysImported()
-            database.downloadRecoveryDao().deleteCancelledKeys(keys)
+        val keys = songKeys.filter(String::isNotBlank).toSet().toList()
+        DownloadExecutionRoomStore.listByStates(
+            context = appContext,
+            states = listOf("CANCEL_REQUESTED", "CANCELLED"),
+            database = database
+        ).filter { it.request.song.stableKey() in keys }
+            .forEach { entry ->
+                DownloadExecutionRoomStore.clearCancellation(
+                    context = appContext,
+                    operationId = entry.request.operationId,
+                    database = database
+                )
+            }
+    }
+
+    suspend fun discardCancelledDownloadKeys(songKeys: Collection<String>) {
+        val keys = songKeys.filter(String::isNotBlank).toSet().toList()
+        listOf("CANCEL_REQUESTED", "CANCELLED").forEach { state ->
+            DownloadExecutionRoomStore.deleteByStateAndStableKeys(
+                context = appContext,
+                state = state,
+                stableKeys = keys,
+                database = database
+            )
         }
     }
 
     suspend fun clearCancelledDownloadKeys() {
-        globalMigrationMutex.withLock {
-            ensureCancelledKeysImported()
-            database.downloadRecoveryDao().clearCancelledKeys()
+        listOf("CANCEL_REQUESTED", "CANCELLED").forEach { state ->
+            DownloadExecutionRoomStore.deleteByState(
+                context = appContext,
+                state = state,
+                database = database
+            )
         }
     }
 
-    private suspend fun ensurePendingQueueImported(
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        if (isRoomPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)) {
-            return
-        }
-        val legacyEntries = readLegacyPendingQueue() ?: return
-        database.withTransaction {
-            if (isRoomPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)) {
-                return@withTransaction
-            }
-            val dao = database.downloadRecoveryDao()
-            dao.clearPendingQueue()
-            dao.upsertPendingQueue(
-                legacyEntries.map { entry ->
-                    entry.song.toEntity(
-                        stableKey = entry.stableKey,
-                        queueOrder = entry.order,
-                        queuedAtMs = entry.queuedAtMs
-                    )
-                }
-            )
-            markRoomPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY, nowMs)
-        }
+    /**
+     * imports the v15 files once after the Room database is available
+     * runtime queue operations must never call this method implicitly
+     */
+    suspend fun bootstrapLegacyFilesOnce() {
+        bootstrapLegacyQueueFile()
+        bootstrapLegacyCancelledFile()
     }
 
-    private suspend fun ensureCancelledKeysImported(
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        if (isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)) {
+    private suspend fun bootstrapLegacyQueueFile() {
+        val queueFile = File(appContext.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
+        if (isRoomPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)) return
+        if (!queueFile.isFile) {
+            markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
             return
         }
-        val legacyKeys = readLegacyCancelledKeys() ?: return
-        database.withTransaction {
-            if (isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)) {
-                return@withTransaction
-            }
-            val dao = database.downloadRecoveryDao()
-            dao.clearCancelledKeys()
-            dao.insertCancelledKeys(
-                legacyKeys.map { stableKey ->
-                    DownloadCancelledKeyEntity(
-                        stableKey = stableKey,
-                        cancelledAtMs = nowMs
-                    )
-                }
+        val parsed = ManagedDownloadQueueStore.readPendingDownloadQueueFile(queueFile) ?: return
+        parsed.sortedBy { it.order }.forEach { entry ->
+            DownloadExecutionRoomStore.upsert(
+                context = appContext,
+                request = DownloadExecutionRequest(
+                    operationId = entry.operationId ?: pendingOperationId(entry.stableKey),
+                    song = entry.song,
+                    userInitiated = false
+                ),
+                state = PENDING_QUEUE_STATE,
+                queueOrder = entry.order,
+                createdAtMs = entry.queuedAtMs,
+                database = database
             )
-            markRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY, nowMs)
         }
+        markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
+    }
+
+    private suspend fun bootstrapLegacyCancelledFile() {
+        val cancelledFile = File(appContext.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+        if (isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)) return
+        if (!cancelledFile.isFile) {
+            markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
+            return
+        }
+        val parsed = ManagedDownloadQueueStore.readCancelledDownloadKeysFile(cancelledFile) ?: return
+        bootstrapLegacyQueueFile()
+        parsed.filter(String::isNotBlank).distinct().forEach { stableKey ->
+            val existing = DownloadExecutionRoomStore.listByStates(
+                context = appContext,
+                states = PENDING_QUEUE_VISIBLE_STATES + listOf(
+                    "QUEUED", "RUNNING", "STOPPED", "RETRYABLE", "CANCEL_REQUESTED", "CANCELLED"
+                ),
+                database = database
+            ).firstOrNull { it.request.song.stableKey() == stableKey }
+            if (existing == null) {
+                // legacy cancellation markers without a durable operation have no owner
+                // and must not become synthetic runtime operations
+            } else if (existing.request.operationId.isNotBlank()) {
+                DownloadExecutionRoomStore.requestCancel(
+                    context = appContext,
+                    operationId = existing.request.operationId,
+                    database = database
+                )
+            }
+        }
+        markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
     }
 
     private suspend fun isRoomPrimary(key: String): Boolean {
-        return database.syncMetadataDao()
-            .getMigrationMetadata(key)
-            ?.value == ROOM_PRIMARY_STATE
+        return database.syncMetadataDao().getMigrationMetadata(key)?.value == ROOM_PRIMARY_STATE
     }
 
-    private suspend fun markRoomPrimary(key: String, nowMs: Long) {
+    private suspend fun markPrimary(key: String) {
         database.syncMetadataDao().upsertMigrationMetadata(
             MigrationMetadataEntity(
                 key = key,
                 value = ROOM_PRIMARY_STATE,
-                updatedAt = nowMs
+                updatedAt = System.currentTimeMillis()
             )
         )
-    }
-
-    private fun readLegacyPendingQueue(): List<ManagedDownloadStorage.PendingDownloadQueueEntry>? {
-        val file = File(context.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
-        if (!file.exists()) {
-            return emptyList()
-        }
-        val rawPayload = runCatching { file.readText(Charsets.UTF_8) }
-            .onFailure { error ->
-                NPLogger.w(TAG, "读取旧下载队列失败: ${error.message}")
-            }
-            .getOrNull()
-            ?: return null
-        if (rawPayload.isBlank()) {
-            return emptyList()
-        }
-        return runCatching {
-            ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload(rawPayload)
-        }.onFailure { error ->
-            NPLogger.w(TAG, "解析旧下载队列失败，保留文件等待下次迁移: ${error.message}")
-        }.getOrNull()
-    }
-
-    private fun readLegacyCancelledKeys(): Set<String>? {
-        val file = File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
-        if (!file.exists()) {
-            return emptySet()
-        }
-        val rawPayload = runCatching { file.readText(Charsets.UTF_8) }
-            .onFailure { error ->
-                NPLogger.w(TAG, "读取旧下载取消标记失败: ${error.message}")
-            }
-            .getOrNull()
-            ?: return null
-        if (rawPayload.isBlank()) {
-            return emptySet()
-        }
-        return runCatching {
-            ManagedDownloadStorageJsonCodec.parseCancelledDownloadKeysPayload(rawPayload)
-        }.onFailure { error ->
-            NPLogger.w(TAG, "解析旧下载取消标记失败，保留文件等待下次迁移: ${error.message}")
-        }.getOrNull()
     }
 
     companion object {
         const val PENDING_QUEUE_CUTOVER_STATE_KEY = "download_pending_queue_cutover_state"
         const val CANCELLED_KEYS_CUTOVER_STATE_KEY = "download_cancelled_keys_cutover_state"
         const val ROOM_PRIMARY_STATE = "room_primary"
-        private const val TAG = "DownloadRecoveryRoomStore"
-        private val globalMigrationMutex = Mutex()
+        private const val PENDING_QUEUE_STATE = "QUEUED"
+        private val PENDING_QUEUE_STATES = listOf(
+            PENDING_QUEUE_STATE,
+            "PENDING_QUEUE"
+        )
+        private val PENDING_QUEUE_VISIBLE_STATES = listOf(
+            PENDING_QUEUE_STATE,
+            "CANCEL_REQUESTED",
+            "PENDING_QUEUE"
+        )
+        private val ACTIVE_OPERATION_STATES = listOf(
+            "PENDING_QUEUE",
+            "QUEUED",
+            "RUNNING",
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "CANCEL_REQUESTED",
+            "STOPPED",
+            "RETRYABLE"
+        )
+
+        private fun pendingOperationId(stableKey: String): String {
+            return UUID.nameUUIDFromBytes(
+                "pending-download:$stableKey".toByteArray(Charsets.UTF_8)
+            ).toString()
+        }
+
     }
-}
-
-private fun SongItem.toEntity(
-    stableKey: String,
-    queueOrder: Int,
-    queuedAtMs: Long
-): DownloadPendingQueueEntity {
-    return DownloadPendingQueueEntity(
-        stableKey = stableKey,
-        queueOrder = queueOrder,
-        queuedAtMs = queuedAtMs,
-        id = id,
-        name = name,
-        artist = artist,
-        album = album,
-        albumId = albumId,
-        durationMs = durationMs,
-        coverUrl = coverUrl,
-        mediaUri = mediaUri,
-        matchedLyric = matchedLyric,
-        matchedTranslatedLyric = matchedTranslatedLyric,
-        matchedRomanizedLyric = matchedRomanizedLyric,
-        matchedLyricSource = matchedLyricSource?.name,
-        matchedSongId = matchedSongId,
-        userLyricOffsetMs = userLyricOffsetMs,
-        customCoverUrl = customCoverUrl,
-        customName = customName,
-        customArtist = customArtist,
-        originalName = originalName,
-        originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl,
-        originalLyric = originalLyric,
-        originalTranslatedLyric = originalTranslatedLyric,
-        originalRomanizedLyric = originalRomanizedLyric,
-        localFileName = localFileName,
-        localFilePath = localFilePath,
-        channelId = channelId,
-        audioId = audioId,
-        subAudioId = subAudioId,
-        playlistContextId = playlistContextId,
-        sourceStableKey = sourceStableKey,
-        streamUrl = streamUrl
-    )
-}
-
-private fun DownloadPendingQueueEntity.toSong(): SongItem {
-    return SongItem(
-        id = id,
-        name = name,
-        artist = artist,
-        album = album,
-        albumId = albumId,
-        durationMs = durationMs,
-        coverUrl = coverUrl,
-        mediaUri = mediaUri,
-        matchedLyric = matchedLyric,
-        matchedTranslatedLyric = matchedTranslatedLyric,
-        matchedRomanizedLyric = matchedRomanizedLyric,
-        matchedLyricSource = matchedLyricSource
-            ?.let { value -> runCatching { MusicPlatform.valueOf(value) }.getOrNull() },
-        matchedSongId = matchedSongId,
-        userLyricOffsetMs = userLyricOffsetMs,
-        customCoverUrl = customCoverUrl,
-        customName = customName,
-        customArtist = customArtist,
-        originalName = originalName,
-        originalArtist = originalArtist,
-        originalCoverUrl = originalCoverUrl,
-        originalLyric = originalLyric,
-        originalTranslatedLyric = originalTranslatedLyric,
-        originalRomanizedLyric = originalRomanizedLyric,
-        localFileName = localFileName,
-        localFilePath = localFilePath,
-        channelId = channelId,
-        audioId = audioId,
-        subAudioId = subAudioId,
-        playlistContextId = playlistContextId,
-        sourceStableKey = sourceStableKey,
-        streamUrl = streamUrl
-    )
 }

@@ -7,9 +7,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.ListenableWorker
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -84,6 +86,11 @@ class ForegroundDownloadWorker(
         internal fun buildRequest(operationId: String): OneTimeWorkRequest {
             return OneTimeWorkRequestBuilder<ForegroundDownloadWorker>()
                 .setInputData(workDataOf(OPERATION_ID_KEY to operationId))
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
                 .addTag(WORK_TAG_PREFIX + operationId)
                 .build()
         }
@@ -136,6 +143,7 @@ private fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
     return when (this) {
         DownloadExecutionResult.Accepted,
         DownloadExecutionResult.Cancelled,
+        DownloadExecutionResult.UserStopped,
         DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.success()
         DownloadExecutionResult.Retry -> ListenableWorker.Result.retry()
         is DownloadExecutionResult.Failed -> ListenableWorker.Result.retry()

@@ -118,8 +118,8 @@ internal object ManagedDownloadMigrationNamePlanner {
                         .firstOrNull()
                 }
                 if (duplicateTarget != null) {
-                    val sourceSize = audioEntry.entry.sizeBytes.takeIf { it >= 0L }
-                    val targetSize = duplicateTarget.sizeBytes.takeIf { it >= 0L }
+                    val sourceSize = audioEntry.entry.sizeBytes.takeIf { it > 0L }
+                    val targetSize = duplicateTarget.sizeBytes.takeIf { it > 0L }
                     if (sourceSize != null && targetSize != null && sourceSize != targetSize) {
                         conflicts[audioEntry.entry.reference] =
                             "same stableKey has different audio sizes: " +

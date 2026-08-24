@@ -1,8 +1,11 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import android.content.ContentResolver
+import android.net.Uri
 import java.io.FileNotFoundException
 import java.nio.file.Files
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -10,6 +13,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class ManagedDownloadStorageDeleteSemanticsTest {
 
@@ -20,7 +24,7 @@ class ManagedDownloadStorageDeleteSemanticsTest {
                 FileNotFoundException("Missing file for primary:neriplayer-download/test.flac")
             )
         )
-        assertTrue(
+        assertFalse(
             ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 IllegalArgumentException("Failed to determine if uri is child of primary:neriplayer-download")
             )
@@ -78,28 +82,6 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
-    fun `reference io accepts a descriptor when document file reports missing`() {
-        assertTrue(
-            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
-                documentExists = false,
-                descriptorAccessible = true
-            )
-        )
-        assertTrue(
-            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
-                documentExists = true,
-                descriptorAccessible = false
-            )
-        )
-        assertFalse(
-            ManagedDownloadReferenceIo.isAccessibleDocumentReference(
-                documentExists = false,
-                descriptorAccessible = false
-            )
-        )
-    }
-
-    @Test
     fun `reference io resolves file uri as a local file`() {
         val file = Files.createTempFile("neriplayer-reference", ".txt").toFile()
         try {
@@ -107,7 +89,10 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             val context = mock(Context::class.java)
             val reference = file.toURI().toString()
 
-            assertTrue(ManagedDownloadReferenceIo.exists(context, reference))
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.Accessible,
+                ManagedDownloadReferenceIo.inspect(context, reference)
+            )
             assertEquals("local-reference", ManagedDownloadReferenceIo.readText(context, reference))
         } finally {
             file.delete()
@@ -135,12 +120,62 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
+    fun `directory inspection keeps local directory identity typed`() {
+        val directory = Files.createTempDirectory("neriplayer-reference-dir").toFile()
+        val missing = directory.resolve("missing")
+        try {
+            val context = mock(Context::class.java)
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.Accessible,
+                ManagedDownloadReferenceIo.inspectDirectory(
+                    context,
+                    directory.absolutePath
+                )
+            )
+            assertEquals(
+                ManagedDownloadReferenceIo.AccessResult.Missing,
+                ManagedDownloadReferenceIo.inspectDirectory(
+                    context,
+                    missing.absolutePath
+                )
+            )
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `unrelated delete failures are not swallowed as missing document`() {
         assertFalse(
             ManagedDownloadStorage.isMissingManagedDocumentFailure(
                 IllegalStateException("provider offline")
             )
         )
+    }
+
+    @Test
+    fun `permission-like file not found failures are never missing evidence`() {
+        listOf(
+            FileNotFoundException("Permission denied"),
+            FileNotFoundException("EACCES: access denied"),
+            FileNotFoundException("Operation not permitted")
+        ).forEach { error ->
+            assertFalse(ManagedDownloadReferenceIo.isMissingDocumentFailure(error))
+        }
+    }
+
+    @Test
+    fun `null provider cursor is not treated as missing`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+
+        val result = ManagedDownloadReferenceLookup.inspect(
+            context,
+            "content://provider/audio"
+        )
+
+        assertTrue(result is ManagedDownloadReferenceLookup.Result.ProviderFailure)
     }
 
     @Test
@@ -252,7 +287,7 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
-    fun `saf delete guard rejects cross authority and outside tree documents`() {
+    fun `saf delete guard requires trusted enumeration instead of document id containment`() {
         val managedTree =
             "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FNeriPlayer"
         val managedChild =
@@ -262,7 +297,7 @@ class ManagedDownloadStorageDeleteSemanticsTest {
         val crossAuthorityChild =
             "content://com.example.documents/tree/primary%3AMusic%2FNeriPlayer/document/primary%3AMusic%2FNeriPlayer%2FCovers%2Fsong.jpg"
 
-        assertTrue(
+        assertFalse(
             ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
                 reference = managedChild,
                 trustedReferences = emptySet(),
@@ -289,14 +324,14 @@ class ManagedDownloadStorageDeleteSemanticsTest {
     }
 
     @Test
-    fun `saf delete guard accepts opaque child ids when the tree token matches`() {
+    fun `saf delete guard rejects opaque child ids without trusted enumeration`() {
         val managedTree = "content://documents.test/tree/root-opaque-id"
         val managedChild =
             "content://documents.test/tree/root-opaque-id/document/child-opaque-id"
         val foreignTreeChild =
             "content://documents.test/tree/other-opaque-id/document/child-opaque-id"
 
-        assertTrue(
+        assertFalse(
             ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
                 reference = managedChild,
                 trustedReferences = emptySet(),
@@ -325,6 +360,22 @@ class ManagedDownloadStorageDeleteSemanticsTest {
             ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
                 reference = outsideDocument,
                 trustedReferences = emptySet(),
+                managedFileRoots = emptyList(),
+                managedTreeRoots = listOf(managedTree)
+            )
+        )
+    }
+
+    @Test
+    fun `saf delete guard accepts an exact provider ref from a trusted enumeration`() {
+        val managedTree = "content://documents.test/tree/root-opaque-id"
+        val opaqueRef =
+            "content://documents.test/document/provider-owned-token"
+
+        assertTrue(
+            ManagedDownloadStorage.isReferenceAllowedForManagedDelete(
+                reference = opaqueRef,
+                trustedReferences = setOf(opaqueRef),
                 managedFileRoots = emptyList(),
                 managedTreeRoots = listOf(managedTree)
             )

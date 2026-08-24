@@ -77,8 +77,7 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         val stableKey = firstNonBlank(
             existing?.optString("stableKey"),
             payloadMetadata.optString("stableKey"),
-            payload.optString("stableKey"),
-            payload.optString("catalogKey")
+            payload.optString("stableKey")
         )
         stableKey?.let { result.put("stableKey", it) }
 
@@ -157,11 +156,6 @@ internal object LegacyDownloadUpgradeMetadataMerger {
             result.optString("artist")
         ))
         putIfMissing(baseline, "album", result.optString("album"))
-        putIfMissing(baseline, "coverReference", firstNonBlank(
-            result.optString("originalCoverUrl"),
-            result.optString("coverPath"),
-            result.optString("coverUrl")
-        ))
         putIfMissing(baseline, "originalLyric", firstPresent(
             result,
             "originalLyric",
@@ -182,10 +176,6 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         val overrides = restorable.optJSONObject("overrides") ?: JSONObject()
         putIfMissing(overrides, "title", result.optString("customName"))
         putIfMissing(overrides, "artist", result.optString("customArtist"))
-        putIfMissing(overrides, "coverReference", firstNonBlank(
-            result.optString("coverPath"),
-            result.optString("customCoverUrl")
-        ))
         putIfMissing(overrides, "originalLyric", firstPresent(result, "matchedLyric"))
         putIfMissing(
             overrides,

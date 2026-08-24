@@ -3,10 +3,12 @@ package moe.ouom.neriplayer.core.download.storage.tree
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
@@ -14,20 +16,13 @@ import org.mockito.Mockito.mock
 class ManagedDownloadTreeDirectoriesTest {
 
     @Test
-    fun `external storage child document id keeps canonical sidecar directory name`() {
-        assertEquals(
-            "primary:neriplayer-download/Covers",
-            ManagedDownloadTreeNaming.externalStorageChildDocumentId(
-                parentDocumentId = "primary:neriplayer-download",
-                displayName = "Covers"
-            )
-        )
-        assertNull(
-            ManagedDownloadTreeNaming.externalStorageChildDocumentId(
-                parentDocumentId = "primary:neriplayer-download",
-                displayName = "Lyrics/unsafe"
-            )
-        )
+    fun `managed tree does not synthesize opaque child document ids`() {
+        val source = File(
+            "src/main/java/moe/ouom/neriplayer/core/download/storage/tree/" +
+                "ManagedDownloadTreeNaming.kt"
+        ).readText()
+
+        assertFalse(source.contains("externalStorageChildDocumentId"))
     }
 
     @Test

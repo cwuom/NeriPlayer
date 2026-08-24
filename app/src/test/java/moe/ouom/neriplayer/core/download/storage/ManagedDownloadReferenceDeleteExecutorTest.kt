@@ -6,6 +6,8 @@ import kotlinx.coroutines.runBlocking
 import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,6 +15,65 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 
 class ManagedDownloadReferenceDeleteExecutorTest {
+
+    @Test
+    fun `delete boundary accepts trusted managed references`() = runBlocking {
+        val references = listOf(
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(mock(Uri::class.java)),
+                externalReference = "content://documents.test/document/song"
+            )
+        )
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, _, _ -> true },
+            contentReferenceGoneOperation = { _, _ -> true }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = references,
+            deletePolicy = ManagedDownloadDeletePolicy(
+                managedFileRoots = emptyList(),
+                managedTreeRoots = emptyList(),
+                trustedReferences = references.toSet()
+            )
+        )
+
+        assertEquals(setOf("content://documents.test/document/song"), result.deletedReferences)
+    }
+
+    @Test
+    fun `delete boundary rejects unenumerated saf references`() = runBlocking {
+        val reference = TrustedManagedRef(
+            reference = StorageReference.SafRef(mock(Uri::class.java)),
+            externalReference = "content://documents.test/document/untrusted"
+        )
+        val deleteCalls = AtomicInteger(0)
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                deleteCalls.incrementAndGet()
+                true
+            },
+            contentReferenceGoneOperation = { _, _ -> true }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = listOf(reference),
+            deletePolicy = ManagedDownloadDeletePolicy(
+                managedFileRoots = emptyList(),
+                managedTreeRoots = emptyList(),
+                trustedReferences = emptySet()
+            )
+        )
+
+        assertTrue(result.deletedReferences.isEmpty())
+        assertEquals(0, deleteCalls.get())
+    }
 
     @Test
     fun `batch retries use bounded workers and finish every reference`() = runBlocking {
@@ -26,7 +87,6 @@ class ManagedDownloadReferenceDeleteExecutorTest {
             tag = "ManagedDownloadReferenceDeleteExecutorTest",
             isReferenceAllowed = { _, _, _, _ -> true },
             referenceDeleteParallelism = 4,
-            referenceUriParser = { mock(Uri::class.java) },
             contentReferenceDeleteOperation = { _, _, maxAttempts, retryDelayMs ->
                 assertEquals(1, maxAttempts)
                 assertEquals(0L, retryDelayMs)
@@ -45,8 +105,8 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         )
         val result = executor.deleteReferencesConcurrently(
             context = mock(Context::class.java),
-            references = references,
-            deletePolicy = emptyDeletePolicy()
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references)
         )
         assertEquals(references.toSet(), result.deletedReferences)
         assertFalse(result.hasUnconfirmedDeletes)
@@ -66,7 +126,6 @@ class ManagedDownloadReferenceDeleteExecutorTest {
             tag = "ManagedDownloadReferenceDeleteExecutorTest",
             isReferenceAllowed = { _, _, _, _ -> true },
             referenceDeleteParallelism = 2,
-            referenceUriParser = { mock(Uri::class.java) },
             contentReferenceDeleteOperation = { _, _, _, _ ->
                 deleteCalls.incrementAndGet()
                 false
@@ -79,8 +138,8 @@ class ManagedDownloadReferenceDeleteExecutorTest {
 
         val result = executor.deleteReferencesConcurrently(
             context = mock(Context::class.java),
-            references = references,
-            deletePolicy = emptyDeletePolicy()
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references)
         )
 
         assertEquals(references.toSet(), result.deletedReferences)
@@ -89,11 +148,25 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertEquals(references.size, inspectedReferenceCount.get())
     }
 
-    private fun emptyDeletePolicy(): ManagedDownloadDeletePolicy {
+    private fun deletePolicyFor(references: List<String>): ManagedDownloadDeletePolicy {
         return ManagedDownloadDeletePolicy(
             managedFileRoots = emptyList(),
             managedTreeRoots = emptyList(),
-            trustedReferences = emptySet()
+            trustedReferences = references.mapTo(linkedSetOf()) { reference ->
+                TrustedManagedRef(
+                    reference = StorageReference.SafRef(mock(Uri::class.java)),
+                    externalReference = reference
+                )
+            }
         )
+    }
+
+    private fun trustedReferences(references: List<String>): List<TrustedManagedRef> {
+        return references.map { reference ->
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(mock(Uri::class.java)),
+                externalReference = reference
+            )
+        }
     }
 }

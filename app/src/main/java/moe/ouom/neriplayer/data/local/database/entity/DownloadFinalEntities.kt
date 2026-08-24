@@ -28,6 +28,8 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "retry_count") val retryCount: Int,
     @ColumnInfo(name = "next_retry_at_ms") val nextRetryAtMs: Long?,
     @ColumnInfo(name = "last_error_code") val lastErrorCode: String?,
+    @ColumnInfo(name = "stop_requested_by_user", defaultValue = "0")
+    val stopRequestedByUser: Boolean = false,
     @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long
 )
@@ -44,16 +46,31 @@ internal data class DownloadOperationEntity(
     ]
 )
 internal data class ManagedLibraryItemEntity(
-    @ColumnInfo(name = "library_id") val libraryId: String,
+    @ColumnInfo(name = "library_id") val rootKey: String,
     @ColumnInfo(name = "stable_key") val stableKey: String,
     @ColumnInfo(name = "artifact_id") val artifactId: String,
     val state: String,
-    @ColumnInfo(name = "audio_name") val audioName: String,
-    @ColumnInfo(name = "metadata_name") val metadataName: String,
-    @ColumnInfo(name = "locator_hint") val locatorHint: String?,
-    @ColumnInfo(name = "title_preview") val titlePreview: String?,
-    @ColumnInfo(name = "artist_preview") val artistPreview: String?,
-    @ColumnInfo(name = "cover_key_preview") val coverKeyPreview: String?,
-    @ColumnInfo(name = "downloaded_at_ms") val downloadedAtMs: Long?,
-    @ColumnInfo(name = "metadata_revision") val metadataRevision: Long
-)
+    @ColumnInfo(name = "lease_id") val leaseId: String? = null,
+    @ColumnInfo(name = "audio_reference") val audioReference: String? = null,
+    @ColumnInfo(name = "audio_name") val audioName: String? = null,
+    @ColumnInfo(name = "file_size") val fileSize: Long? = null,
+    @ColumnInfo(name = "content_hash") val contentHash: String? = null,
+    @ColumnInfo(name = "library_added_at_ms") val libraryAddedAtMs: Long? = null,
+    @ColumnInfo(name = "source_created_at_ms") val sourceCreatedAtMs: Long? = null,
+    @ColumnInfo(name = "source_modified_at_ms") val sourceModifiedAtMs: Long? = null,
+    @ColumnInfo(name = "downloaded_at_ms") val downloadedAtMs: Long? = null,
+    @ColumnInfo(name = "migrated_at_ms") val migratedAtMs: Long? = null,
+    @ColumnInfo(name = "finalized_at_ms") val finalizedAtMs: Long? = null,
+    @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long = 0L,
+    @ColumnInfo(name = "needs_reconcile") val needsReconcile: Boolean = false,
+    @ColumnInfo(name = "last_error_code") val lastErrorCode: String? = null,
+    @ColumnInfo(name = "metadata_name") val metadataName: String? = null,
+    @ColumnInfo(name = "locator_hint") val locatorHint: String? = null,
+    @ColumnInfo(name = "title_preview") val titlePreview: String? = null,
+    @ColumnInfo(name = "artist_preview") val artistPreview: String? = null,
+    @ColumnInfo(name = "cover_key_preview") val coverKeyPreview: String? = null,
+    @ColumnInfo(name = "metadata_revision") val metadataRevision: Long = 0L
+) {
+    val libraryId: String
+        get() = rootKey
+}

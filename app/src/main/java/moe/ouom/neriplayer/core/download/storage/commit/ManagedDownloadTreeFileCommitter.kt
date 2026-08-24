@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRe
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadTreeFileCommitter(
@@ -38,20 +39,6 @@ internal class ManagedDownloadTreeFileCommitter(
                 return@withLock treeChildRegistry.toDocumentFile(context, parent, existingChild)
                     ?: throw IOException("无法访问已存在的下载文件: ${existingChild.name}")
             }
-            if (replace) {
-                treeChildRegistry.findCanonicalExternalStorageChild(
-                    context = context,
-                    parent = parent,
-                    displayName = desiredName,
-                    isDirectory = false
-                )?.let { canonical ->
-                    return@withLock treeChildRegistry.toTreeDocumentFile(
-                        context = context,
-                        parent = parent,
-                        child = canonical
-                    ) ?: canonical
-                }
-            }
             if (
                 !refresh.isComplete &&
                     !ManagedDownloadTreeNaming.canCreateWhenChildrenQueryIsIncomplete(parent.uri)
@@ -59,30 +46,7 @@ internal class ManagedDownloadTreeFileCommitter(
                 if (!replace) {
                     throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
                 }
-                when (
-                    val probe = treeChildRegistry.probeCanonicalExternalStorageChild(
-                        context = context,
-                        parent = parent,
-                        displayName = desiredName,
-                        isDirectory = false
-                    )
-                ) {
-                    is ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Found -> {
-                        return@withLock treeChildRegistry.toTreeDocumentFile(
-                            context = context,
-                            parent = parent,
-                            child = probe.document
-                        ) ?: probe.document
-                    }
-
-                    ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Missing -> {
-                        // a direct URI probe confirmed that the canonical target is absent
-                    }
-
-                    ManagedDownloadTreeChildRegistry.CanonicalExternalStorageChildProbe.Unknown -> {
-                        throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
-                    }
-                }
+                throw IOException("SAF 子项枚举不完整，拒绝创建文件: $desiredName")
             }
 
             val childNames = refresh.children.mapTo(mutableSetOf(), QueriedTreeChild::name)
@@ -101,6 +65,9 @@ internal class ManagedDownloadTreeFileCommitter(
             } catch (error: SecurityException) {
                 throw error
             } catch (error: Exception) {
+                if (!shouldRetryCreateAfterFailure(error)) {
+                    throw IOException("SAF 创建文件失败，Provider 状态未知: $finalName", error)
+                }
                 NPLogger.w(
                     tag,
                     "SAF 创建文件失败: name=$finalName, parent=${parent.uri}, " +
@@ -123,15 +90,20 @@ internal class ManagedDownloadTreeFileCommitter(
                     if (!replace) {
                         throw IOException("无法在下载目录创建文件: $finalName")
                     }
-                    val existing = try {
-                        parent.findFile(finalName)
-                    } catch (security: SecurityException) {
-                        throw security
-                    } catch (_: Exception) {
-                        null
-                    }
-                    existing?.takeIf { it.isFile }
-                        ?: throw IOException("无法在下载目录创建文件: $finalName")
+                    val existing = treeChildRegistry
+                        .refreshTreeChildrenWithStatus(context, parent)
+                        .children
+                        .firstOrNull { child ->
+                            !child.isDirectory &&
+                                ManagedDownloadTreeNaming.isExactTreeStoredName(
+                                    child.name,
+                                    finalName
+                                )
+                        }
+                        ?.let { child ->
+                            treeChildRegistry.toDocumentFile(context, parent, child)
+                        }
+                    existing ?: throw IOException("无法在下载目录创建文件: $finalName")
                 }
             val storedName = resolvedTreeStoredName(resolvedCreated, finalName)
             if (!ManagedDownloadTreeNaming.isExactTreeStoredName(resolvedCreated.name, finalName)) {
@@ -158,19 +130,10 @@ internal class ManagedDownloadTreeFileCommitter(
                     ) ?: throw IOException("无法访问已存在的下载文件: ${canonicalChild.name}")
                 }
                 if (replace) {
-                    val canonicalTarget = treeChildRegistry.findCanonicalExternalStorageChild(
-                        context = context,
-                        parent = parent,
-                        displayName = finalName,
-                        isDirectory = false
-                    )
                     if (!deleteContentReference(context, resolvedCreated.uri.toString(), resolvedCreated.uri)) {
                         throw IOException("无法清理 SAF 覆写副本: $storedName")
                     }
                     treeChildRegistry.forgetTreeChildName(parent, storedName)
-                    canonicalTarget?.let { target ->
-                        return@withLock target
-                    }
                     throw IOException(
                         "SAF 提供方拒绝使用目标文件名，无法安全覆写: " +
                             "expected=$finalName, actual=$storedName"
@@ -311,4 +274,8 @@ internal class ManagedDownloadTreeFileCommitter(
         }
         return resolvedName
     }
+}
+
+internal fun shouldRetryCreateAfterFailure(error: Throwable): Boolean {
+    return ManagedDownloadReferenceIo.isMissingDocumentFailure(error)
 }

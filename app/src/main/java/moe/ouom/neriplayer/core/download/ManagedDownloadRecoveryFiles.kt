@@ -5,12 +5,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.download.storage.queue.ManagedDownloadQueueStore
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import java.io.File
 import java.util.UUID
 
@@ -178,6 +176,12 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
+    fun findQueuedOperationIdForSong(context: Context, songKey: String): String? {
+        return runBlocking(Dispatchers.IO) {
+            roomStore(context).findQueuedOperationIdForSong(songKey)
+        }
+    }
+
     fun removePendingDownloadQueueEntries(context: Context, songKeys: Collection<String>) {
         runBlocking(Dispatchers.IO) {
             roomStore(context).removePendingDownloadQueueEntries(songKeys)
@@ -208,66 +212,16 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
+    fun discardCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
+        runBlocking(Dispatchers.IO) {
+            roomStore(context).discardCancelledDownloadKeys(songKeys)
+        }
+    }
+
     fun clearCancelledDownloadKeys(context: Context) {
         runBlocking(Dispatchers.IO) {
             roomStore(context).clearCancelledDownloadKeys()
         }
-    }
-
-    fun upsertPendingDownloadQueueInFile(
-        queueFile: File,
-        songs: List<SongItem>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.upsertPendingDownloadQueueInFile(queueFile, songs, nowMs)
-    }
-
-    fun listPendingQueuedDownloadsFromFile(
-        queueFile: File
-    ): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
-        return ManagedDownloadQueueStore.listPendingQueuedDownloadsFromFile(queueFile)
-    }
-
-    fun removePendingDownloadQueueEntriesFromFile(
-        queueFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.removePendingDownloadQueueEntriesFromFile(queueFile, songKeys, nowMs)
-    }
-
-    fun clearPendingDownloadQueueFile(
-        queueFile: File,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.clearPendingDownloadQueueFile(queueFile, nowMs)
-    }
-
-    fun markCancelledDownloadKeysInFile(
-        keysFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.markCancelledDownloadKeysInFile(keysFile, songKeys, nowMs)
-    }
-
-    fun listCancelledDownloadKeysFromFile(keysFile: File): Set<String> {
-        return ManagedDownloadQueueStore.listCancelledDownloadKeysFromFile(keysFile)
-    }
-
-    fun removeCancelledDownloadKeysFromFile(
-        keysFile: File,
-        songKeys: Collection<String>,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.removeCancelledDownloadKeysFromFile(keysFile, songKeys, nowMs)
-    }
-
-    fun clearCancelledDownloadKeysFile(
-        keysFile: File,
-        nowMs: Long = System.currentTimeMillis()
-    ) {
-        ManagedDownloadQueueStore.clearCancelledDownloadKeysFile(keysFile, nowMs)
     }
 
     fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
@@ -323,8 +277,7 @@ internal object ManagedDownloadRecoveryFiles {
 
     private fun roomStore(context: Context): DownloadRecoveryRoomStore {
         return DownloadRecoveryRoomStore(
-            context = context.applicationContext,
-            database = NeriUserDataDatabase.getInstance(context.applicationContext)
+            context = context.applicationContext
         )
     }
 }

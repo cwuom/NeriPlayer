@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,6 +57,32 @@ class DownloadedSongBuilderCoverPolicyTest {
                 ),
                 coverReference = null,
                 needsLocalLyricFallback = false
+            )
+        )
+    }
+
+    @Test
+    fun `only accessible typed evidence is accepted as a managed reference candidate`() {
+        assertTrue(
+            isAccessibleManagedReference(
+                ManagedDownloadReferenceIo.AccessResult.Accessible
+            )
+        )
+        assertFalse(
+            isAccessibleManagedReference(
+                ManagedDownloadReferenceIo.AccessResult.Missing
+            )
+        )
+        assertFalse(
+            isAccessibleManagedReference(
+                ManagedDownloadReferenceIo.AccessResult.PermissionLost
+            )
+        )
+        assertFalse(
+            isAccessibleManagedReference(
+                ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
+                    IllegalStateException("provider unavailable")
+                )
             )
         )
     }

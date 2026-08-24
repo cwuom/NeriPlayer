@@ -20,11 +20,8 @@ import moe.ouom.neriplayer.data.local.database.dao.SyncMetadataDao
 import moe.ouom.neriplayer.data.local.database.dao.PlaybackQueueDao
 import moe.ouom.neriplayer.data.local.database.dao.BiliVideoSkipDao
 import moe.ouom.neriplayer.data.local.database.dao.CoverUrlMappingDao
-import moe.ouom.neriplayer.data.local.database.dao.DownloadRecoveryDao
 import moe.ouom.neriplayer.data.local.database.dao.DownloadOperationDao
 import moe.ouom.neriplayer.data.local.database.dao.ManagedLibraryItemDao
-import moe.ouom.neriplayer.data.local.database.dao.DownloadedSongCatalogDao
-import moe.ouom.neriplayer.data.local.database.dao.DownloadSnapshotDao
 import moe.ouom.neriplayer.data.local.database.dao.ManagedDownloadArtifactDao
 import moe.ouom.neriplayer.data.local.database.dao.PlatformPlaylistCacheDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
@@ -53,12 +50,6 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.CoverUrlMappingEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadCancelledKeyEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadPendingQueueEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadedSongCatalogEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
-import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
@@ -92,13 +83,7 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         BiliVideoSkipRuleEntity::class,
         BiliVideoSkipIntervalEntity::class,
         BiliVideoSkipDraftEntity::class,
-        DownloadPendingQueueEntity::class,
-        DownloadCancelledKeyEntity::class,
-        DownloadedSongCatalogEntity::class,
         CoverUrlMappingEntity::class,
-        DownloadSnapshotEntryEntity::class,
-        DownloadSnapshotMetadataEntity::class,
-        ManagedDownloadArtifactEntity::class,
         DownloadOperationEntity::class,
         ManagedLibraryItemEntity::class,
         PlatformPlaylistCacheEntity::class,
@@ -129,17 +114,11 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
 
     abstract fun biliVideoSkipDao(): BiliVideoSkipDao
 
-    abstract fun downloadRecoveryDao(): DownloadRecoveryDao
-
     abstract fun downloadOperationDao(): DownloadOperationDao
 
     abstract fun managedLibraryItemDao(): ManagedLibraryItemDao
 
-    abstract fun downloadedSongCatalogDao(): DownloadedSongCatalogDao
-
     abstract fun coverUrlMappingDao(): CoverUrlMappingDao
-
-    abstract fun downloadSnapshotDao(): DownloadSnapshotDao
 
     abstract fun managedDownloadArtifactDao(): ManagedDownloadArtifactDao
 
@@ -1031,10 +1010,9 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 addFinalDownloadColumns(db)
                 createFinalDownloadTables(db)
                 copyV15DownloadPayload(db)
+                dropLegacyDownloadProjectionTables(db)
             }
         }
-
-        val MIGRATION_15_16: Migration = MIGRATION_15_FINAL
 
         private fun addFinalDownloadColumns(db: SupportSQLiteDatabase) {
             addTextColumnIfMissing(db, "downloaded_song_catalog", "matched_romanized_lyric")
@@ -1065,6 +1043,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `retry_count` INTEGER NOT NULL,
                     `next_retry_at_ms` INTEGER,
                     `last_error_code` TEXT,
+                    `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0,
                     `created_at_ms` INTEGER NOT NULL,
                     `updated_at_ms` INTEGER NOT NULL
                 )
@@ -1083,14 +1062,26 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `stable_key` TEXT NOT NULL,
                     `artifact_id` TEXT NOT NULL,
                     `state` TEXT NOT NULL,
-                    `audio_name` TEXT NOT NULL,
-                    `metadata_name` TEXT NOT NULL,
+                    `lease_id` TEXT,
+                    `audio_reference` TEXT,
+                    `audio_name` TEXT,
+                    `file_size` INTEGER,
+                    `content_hash` TEXT,
+                    `library_added_at_ms` INTEGER,
+                    `source_created_at_ms` INTEGER,
+                    `source_modified_at_ms` INTEGER,
+                    `migrated_at_ms` INTEGER,
+                    `finalized_at_ms` INTEGER,
+                    `updated_at_ms` INTEGER NOT NULL DEFAULT 0,
+                    `needs_reconcile` INTEGER NOT NULL DEFAULT 0,
+                    `last_error_code` TEXT,
+                    `metadata_name` TEXT,
                     `locator_hint` TEXT,
                     `title_preview` TEXT,
                     `artist_preview` TEXT,
                     `cover_key_preview` TEXT,
                     `downloaded_at_ms` INTEGER,
-                    `metadata_revision` INTEGER NOT NULL,
+                    `metadata_revision` INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY(`library_id`, `stable_key`)
                 )
                 """.trimIndent()
@@ -1109,90 +1100,55 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 )
                 """.trimIndent()
             )
-            createManagedDownloadArtifactTable(db)
-        }
-
-        private fun createManagedDownloadArtifactTable(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS `managed_download_artifact` (
-                    `root_key` TEXT NOT NULL,
-                    `stable_key` TEXT NOT NULL,
-                    `artifact_id` TEXT NOT NULL,
-                    `state` TEXT NOT NULL,
-                    `lease_id` TEXT,
-                    `audio_reference` TEXT,
-                    `audio_name` TEXT,
-                    `file_size` INTEGER,
-                    `content_hash` TEXT,
-                    `library_added_at_ms` INTEGER,
-                    `source_created_at_ms` INTEGER,
-                    `source_modified_at_ms` INTEGER,
-                    `downloaded_at_ms` INTEGER,
-                    `migrated_at_ms` INTEGER,
-                    `finalized_at_ms` INTEGER,
-                    `updated_at_ms` INTEGER NOT NULL,
-                    `needs_reconcile` INTEGER NOT NULL,
-                    `last_error_code` TEXT,
-                    PRIMARY KEY(`root_key`, `stable_key`)
-                )
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                CREATE INDEX IF NOT EXISTS `index_managed_download_artifact_root_state`
-                ON `managed_download_artifact` (`root_key`, `state`)
-                """.trimIndent()
-            )
-            db.execSQL(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS `index_managed_download_artifact_artifact_id`
-                ON `managed_download_artifact` (`artifact_id`)
-                """.trimIndent()
-            )
         }
 
         private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
             copyLegacyTableRows(
                 db = db,
-                tableName = "downloaded_song_catalog",
-                stableKeyColumns = arrayOf("stable_key", "catalog_key")
+                tableName = "download_pending_queue"
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "download_snapshot_metadata",
-                stableKeyColumns = arrayOf("stable_key", "audio_name")
+                tableName = "download_cancelled_key"
             )
+            copyLegacyTableRows(
+                db = db,
+                tableName = "downloaded_song_catalog"
+            )
+            copyLegacyTableRows(
+                db = db,
+                tableName = "download_snapshot_entry"
+            )
+            copyLegacyTableRows(
+                db = db,
+                tableName = "download_snapshot_metadata"
+            )
+            copyLegacyTableRows(
+                db = db,
+                tableName = "managed_download_artifact"
+            )
+        }
+
+        private fun dropLegacyDownloadProjectionTables(db: SupportSQLiteDatabase) {
+            LEGACY_DOWNLOAD_PROJECTION_TABLES.forEach { tableName ->
+                db.execSQL("DROP TABLE IF EXISTS `$tableName`")
+            }
         }
 
         private fun copyLegacyTableRows(
             db: SupportSQLiteDatabase,
-            tableName: String,
-            stableKeyColumns: Array<String>
+            tableName: String
         ) {
             if (!hasTable(db, tableName)) return
             db.query("SELECT * FROM `$tableName`").use { cursor ->
                 val columnNames = cursor.columnNames
-                val keyIndices = stableKeyColumns.map { cursor.getColumnIndex(it) }
                 while (cursor.moveToNext()) {
-                    val directStableKey = keyIndices.asSequence()
-                        .filter { it >= 0 && !cursor.isNull(it) }
-                        .map { cursor.getString(it).trim() }
-                        .firstOrNull(String::isNotBlank)
-                    val stableKey = directStableKey
-                        ?: if (tableName == "download_snapshot_metadata") {
-                            val audioNameIndex = cursor.getColumnIndex("audio_name")
-                            findCatalogStableKeyForAudioName(
-                                db = db,
-                                audioName = audioNameIndex
-                                    .takeIf { it >= 0 }
-                                    ?.let(cursor::getString)
-                            )
-                        } else {
-                            null
-                        }
-                        ?: continue
                     val row = rowToJson(cursor, columnNames)
+                    val stableKey = resolveLegacyStableKey(
+                        db = db,
+                        tableName = tableName,
+                        cursor = cursor
+                    ) ?: fallbackLegacyStableKey(tableName, cursor)
                     val existing = db.query(
                         "SELECT payload_json FROM `legacy_download_upgrade_payload` " +
                             "WHERE stable_key = ? LIMIT 1",
@@ -1205,16 +1161,234 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                             null
                         }
                     } ?: JSONObject()
-                    existing.put(tableName, row)
-                    addCamelCaseAliases(existing, row)
-                    existing.put("stableKey", stableKey)
-                    db.execSQL(
-                        "INSERT OR REPLACE INTO `legacy_download_upgrade_payload` " +
-                            "(`stable_key`, `payload_json`) VALUES (?, ?)",
-                        arrayOf(stableKey, existing.toString())
+                    mergeLegacyRow(
+                        payload = existing,
+                        tableName = tableName,
+                        stableKey = stableKey,
+                        row = row
                     )
+                    existing.put("stableKey", stableKey)
+                    val payloadJson = existing.toString()
+                    val updateCount = db.compileStatement(
+                        "UPDATE `legacy_download_upgrade_payload` SET `payload_json` = ? " +
+                            "WHERE `stable_key` = ?"
+                    ).apply {
+                        bindString(1, payloadJson)
+                        bindString(2, stableKey)
+                    }.executeUpdateDelete()
+                    if (updateCount == 0) {
+                        db.execSQL(
+                            "INSERT INTO `legacy_download_upgrade_payload` " +
+                                "(`stable_key`, `payload_json`) VALUES (?, ?)",
+                            arrayOf(stableKey, payloadJson)
+                        )
+                    }
                 }
             }
+        }
+
+        private fun resolveLegacyStableKey(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            cursor: Cursor
+        ): String? {
+            val directStableKey = cursorString(cursor, "stable_key")
+            if (directStableKey != null) return directStableKey
+
+            return when (tableName) {
+                "downloaded_song_catalog" -> deriveCatalogStableKey(cursor)
+                "download_snapshot_metadata" -> findCatalogStableKeyForAudioName(
+                    db = db,
+                    audioName = cursorString(cursor, "audio_name")
+                )
+                "download_snapshot_entry" -> findCatalogStableKeyForSnapshotEntry(
+                    db = db,
+                    reference = cursorString(cursor, "reference"),
+                    mediaUri = cursorString(cursor, "media_uri"),
+                    name = cursorString(cursor, "name")
+                ) ?: deriveSnapshotEntryStableKey(cursor)
+                else -> null
+            }
+        }
+
+        private fun deriveCatalogStableKey(cursor: Cursor): String? {
+            val id = cursorLong(cursor, "id")?.takeIf { it != 0L } ?: return null
+            val filePath = cursorString(cursor, "file_path")
+            val mediaUri = cursorString(cursor, "media_uri")
+            val localReference = listOfNotNull(filePath, mediaUri)
+                .firstOrNull(::isLegacyLocalReference)
+                ?.let(::normalizeLegacyLocalReference)
+                ?: return null
+            return "$id|__local_files__|$localReference"
+        }
+
+        private fun deriveSnapshotEntryStableKey(cursor: Cursor): String? {
+            val rootKey = cursorString(cursor, "root_key") ?: return null
+            val entryKey = cursorString(cursor, "entry_key")
+                ?: cursorString(cursor, "reference")
+                ?: cursorString(cursor, "name")
+                ?: return null
+            return "legacy-snapshot:$rootKey:$entryKey"
+        }
+
+        private fun fallbackLegacyStableKey(
+            tableName: String,
+            cursor: Cursor
+        ): String {
+            val identityColumns = when (tableName) {
+                "download_pending_queue", "download_cancelled_key" ->
+                    listOf("stable_key", "queued_at_ms", "cancelled_at_ms")
+                "downloaded_song_catalog" ->
+                    listOf("catalog_key", "root_key", "display_position", "id")
+                "download_snapshot_entry" ->
+                    listOf("root_key", "bucket", "entry_key", "display_position")
+                "download_snapshot_metadata" ->
+                    listOf("root_key", "audio_name")
+                "managed_download_artifact" ->
+                    listOf("root_key", "stable_key", "artifact_id")
+                else -> cursor.columnNames.toList()
+            }
+            val identity = identityColumns.mapNotNull { columnName ->
+                cursorString(cursor, columnName)?.let { value ->
+                    "$columnName=$value"
+                }
+            }.joinToString("|").ifBlank { "row-${cursor.position}" }
+            return "legacy:$tableName:$identity"
+        }
+
+        private fun mergeLegacyRow(
+            payload: JSONObject,
+            tableName: String,
+            stableKey: String,
+            row: JSONObject
+        ) {
+            if (tableName == "download_snapshot_entry") {
+                val entries = payload.optJSONArray("download_snapshot_entries")
+                    ?: org.json.JSONArray().also {
+                        payload.put("download_snapshot_entries", it)
+                    }
+                if (!containsJsonObject(entries, row)) {
+                    entries.put(row)
+                }
+                return
+            }
+            val previous = payload.optJSONObject(tableName)
+            if (previous == null) {
+                payload.put(tableName, row)
+                addCamelCaseAliases(payload, row)
+                return
+            }
+
+            when (compareLegacyBytes(previous, row)) {
+                true -> return
+                false -> appendLegacyConflict(
+                    payload = payload,
+                    tableName = tableName,
+                    stableKey = stableKey,
+                    reason = "SAME_STABLE_KEY_DIFFERENT_BYTES",
+                    previous = previous,
+                    duplicate = row
+                )
+                null -> appendLegacyConflict(
+                    payload = payload,
+                    tableName = tableName,
+                    stableKey = stableKey,
+                    reason = "SAME_STABLE_KEY_BYTES_UNVERIFIED",
+                    previous = previous,
+                    duplicate = row
+                )
+            }
+        }
+
+        private fun compareLegacyBytes(first: JSONObject, second: JSONObject): Boolean? {
+            val firstFingerprint = legacyByteFingerprint(first) ?: return null
+            val secondFingerprint = legacyByteFingerprint(second) ?: return null
+            return firstFingerprint == secondFingerprint
+        }
+
+        private fun legacyByteFingerprint(row: JSONObject): String? {
+            val contentHash = listOf("content_hash", "contentHash")
+                .asSequence()
+                .map { key -> row.optString(key) }
+                .firstOrNull(String::isNotBlank)
+            if (contentHash != null) return "hash:${contentHash.trim()}"
+
+            return null
+        }
+
+        private fun containsJsonObject(
+            array: org.json.JSONArray,
+            candidate: JSONObject
+        ): Boolean {
+            for (index in 0 until array.length()) {
+                if (array.optJSONObject(index)?.toString() == candidate.toString()) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        private fun appendLegacyConflict(
+            payload: JSONObject,
+            tableName: String,
+            stableKey: String,
+            reason: String,
+            previous: JSONObject,
+            duplicate: JSONObject
+        ) {
+            val conflicts = payload.optJSONArray("legacyConflicts") ?: org.json.JSONArray()
+            conflicts.put(
+                JSONObject().apply {
+                    put("table", tableName)
+                    put("stableKey", stableKey)
+                    put("reason", reason)
+                    put("firstFingerprint", legacyByteFingerprint(previous))
+                    put("duplicateFingerprint", legacyByteFingerprint(duplicate))
+                    put("firstReference", legacyReference(previous))
+                    put("duplicateReference", legacyReference(duplicate))
+                }
+            )
+            payload.put("legacyConflicts", conflicts)
+        }
+
+        private fun legacyReference(row: JSONObject): String? {
+            return listOf(
+                "media_uri",
+                "mediaUri",
+                "file_path",
+                "filePath",
+                "audio_reference",
+                "audioReference"
+            )
+                .asSequence()
+                .map { key -> row.optString(key) }
+                .firstOrNull(String::isNotBlank)
+        }
+
+        private fun cursorString(cursor: Cursor, columnName: String): String? {
+            val index = cursor.getColumnIndex(columnName)
+            if (index < 0 || cursor.isNull(index)) return null
+            return cursor.getString(index)?.trim()?.takeIf(String::isNotBlank)
+        }
+
+        private fun cursorLong(cursor: Cursor, columnName: String): Long? {
+            val index = cursor.getColumnIndex(columnName)
+            if (index < 0 || cursor.isNull(index)) return null
+            return cursor.getLong(index)
+        }
+
+        private fun isLegacyLocalReference(reference: String): Boolean {
+            return reference.startsWith("/") ||
+                reference.startsWith("file:", ignoreCase = true) ||
+                reference.startsWith("content:", ignoreCase = true)
+        }
+
+        private fun normalizeLegacyLocalReference(reference: String): String {
+            if (!reference.startsWith("file://", ignoreCase = true)) return reference
+            return runCatching { java.net.URI(reference).path }
+                .getOrNull()
+                ?.takeIf(String::isNotBlank)
+                ?: reference
         }
 
         private fun rowToJson(cursor: Cursor, columnNames: Array<String>): JSONObject {
@@ -1282,25 +1456,81 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             db.query(
                 "SELECT stable_key, catalog_key, file_path FROM `downloaded_song_catalog`"
             ).use { cursor ->
-                val stableKeyIndex = cursor.getColumnIndex("stable_key")
                 val catalogKeyIndex = cursor.getColumnIndex("catalog_key")
                 val filePathIndex = cursor.getColumnIndex("file_path")
                 while (cursor.moveToNext()) {
-                    val catalogKey = cursor.getString(catalogKeyIndex).orEmpty()
-                    val filePath = cursor.getString(filePathIndex).orEmpty()
+                    val catalogKey = catalogKeyIndex
+                        .takeIf { it >= 0 }
+                        ?.let(cursor::getString)
+                        .orEmpty()
+                    val filePath = filePathIndex
+                        .takeIf { it >= 0 }
+                        ?.let(cursor::getString)
+                        .orEmpty()
                     if (
                         catalogKey.endsWith(normalizedName) ||
                         filePath.substringAfterLast('/').equals(normalizedName, ignoreCase = true)
                     ) {
-                        val stableKey = cursor.getString(stableKeyIndex)
-                            ?.trim()
-                            ?.takeIf(String::isNotBlank)
-                        return stableKey ?: catalogKey.trim().takeIf(String::isNotBlank)
+                        return cursorString(cursor, "stable_key")
+                            ?: deriveCatalogStableKey(cursor)
                     }
                 }
             }
             return null
         }
+
+        private fun findCatalogStableKeyForSnapshotEntry(
+            db: SupportSQLiteDatabase,
+            reference: String?,
+            mediaUri: String?,
+            name: String?
+        ): String? {
+            if (!hasTable(db, "downloaded_song_catalog")) return null
+            val candidates = listOfNotNull(reference, mediaUri)
+                .map(String::trim)
+                .filter(String::isNotBlank)
+            db.query(
+                "SELECT stable_key, file_path, media_uri, catalog_key, id " +
+                    "FROM `downloaded_song_catalog`"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val stableKey = cursorString(cursor, "stable_key")
+                        ?: deriveCatalogStableKey(cursor)
+                        ?: continue
+                    val catalogReferences = listOfNotNull(
+                        cursorString(cursor, "file_path"),
+                        cursorString(cursor, "media_uri"),
+                        cursorString(cursor, "catalog_key")
+                    )
+                    if (candidates.any { candidate ->
+                            catalogReferences.any { value -> value == candidate }
+                        }
+                    ) {
+                        return stableKey
+                    }
+                    val normalizedName = name?.trim()?.takeIf(String::isNotBlank)
+                    if (normalizedName != null && catalogReferences.any { value ->
+                            value.substringAfterLast('/').equals(
+                                normalizedName,
+                                ignoreCase = true
+                            )
+                        }
+                    ) {
+                        return stableKey
+                    }
+                }
+            }
+            return null
+        }
+
+        private val LEGACY_DOWNLOAD_PROJECTION_TABLES = listOf(
+            "download_pending_queue",
+            "download_cancelled_key",
+            "downloaded_song_catalog",
+            "download_snapshot_entry",
+            "download_snapshot_metadata",
+            "managed_download_artifact"
+        )
 
         private fun addIntegerColumnIfMissing(
             db: SupportSQLiteDatabase,

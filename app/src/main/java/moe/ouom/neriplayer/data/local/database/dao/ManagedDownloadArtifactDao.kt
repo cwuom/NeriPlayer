@@ -4,43 +4,43 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
+import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
 
 @Dao
 internal interface ManagedDownloadArtifactDao {
     @Query(
-        "SELECT * FROM managed_download_artifact " +
-            "WHERE root_key = :rootKey AND stable_key = :stableKey LIMIT 1"
+        "SELECT * FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey LIMIT 1"
     )
-    suspend fun find(rootKey: String, stableKey: String): ManagedDownloadArtifactEntity?
+    suspend fun find(rootKey: String, stableKey: String): ManagedLibraryItemEntity?
 
     @Query(
-        "SELECT * FROM managed_download_artifact " +
-            "WHERE root_key = :rootKey"
+        "SELECT * FROM managed_library_item " +
+            "WHERE library_id = :rootKey"
     )
-    suspend fun findAllByRootKey(rootKey: String): List<ManagedDownloadArtifactEntity>
+    suspend fun findAllByRootKey(rootKey: String): List<ManagedLibraryItemEntity>
 
     @Query(
-        "SELECT * FROM managed_download_artifact " +
-            "WHERE root_key = :rootKey AND state = :state " +
+        "SELECT * FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND state = :state " +
             "ORDER BY updated_at_ms ASC"
     )
     suspend fun findByState(
         rootKey: String,
         state: String
-    ): List<ManagedDownloadArtifactEntity>
+    ): List<ManagedLibraryItemEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfAbsent(entity: ManagedDownloadArtifactEntity): Long
+    suspend fun insertIfAbsent(entity: ManagedLibraryItemEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfAbsentAll(entities: List<ManagedDownloadArtifactEntity>): List<Long>
+    suspend fun insertIfAbsentAll(entities: List<ManagedLibraryItemEntity>): List<Long>
 
     @Query(
-        "UPDATE managed_download_artifact SET " +
+        "UPDATE managed_library_item SET " +
             "state = :state, lease_id = :leaseId, updated_at_ms = :updatedAtMs, " +
             "needs_reconcile = 1, last_error_code = NULL " +
-            "WHERE root_key = :rootKey AND stable_key = :stableKey " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey " +
             "AND state = :expectedState " +
             "AND updated_at_ms = :expectedUpdatedAtMs"
     )
@@ -55,10 +55,10 @@ internal interface ManagedDownloadArtifactDao {
     ): Int
 
     @Query(
-        "UPDATE managed_download_artifact SET " +
+        "UPDATE managed_library_item SET " +
             "state = :repairState, lease_id = NULL, updated_at_ms = :updatedAtMs, " +
             "needs_reconcile = 1, last_error_code = :errorCode " +
-            "WHERE root_key = :rootKey AND stable_key = :stableKey " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey " +
             "AND state = :expectedState " +
             "AND updated_at_ms = :expectedUpdatedAtMs"
     )
@@ -73,10 +73,10 @@ internal interface ManagedDownloadArtifactDao {
     ): Int
 
     @Query(
-        "UPDATE managed_download_artifact SET " +
+        "UPDATE managed_library_item SET " +
             "state = :missingState, lease_id = NULL, updated_at_ms = :updatedAtMs, " +
             "needs_reconcile = 1, last_error_code = :errorCode " +
-            "WHERE root_key = :rootKey AND stable_key = :stableKey " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey " +
             "AND state = :expectedState " +
             "AND updated_at_ms = :expectedUpdatedAtMs"
     )
@@ -91,14 +91,14 @@ internal interface ManagedDownloadArtifactDao {
     ): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(entity: ManagedDownloadArtifactEntity)
+    suspend fun upsert(entity: ManagedLibraryItemEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(entities: List<ManagedDownloadArtifactEntity>)
+    suspend fun upsertAll(entities: List<ManagedLibraryItemEntity>)
 
     @Query(
-        "DELETE FROM managed_download_artifact " +
-            "WHERE root_key = :rootKey AND stable_key = :stableKey"
+        "DELETE FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey"
     )
     suspend fun delete(rootKey: String, stableKey: String)
 }

@@ -38,6 +38,47 @@ class PreparedPipelineRemovalTest {
         )
     }
 
+    @Test
+    fun `production download sources do not retain prepared runtime naming`() {
+        val sourceRoot = locateProjectDirectory()
+            .resolve("app/src/main/java/moe/ouom/neriplayer/core/download")
+        val references = sourceRoot.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .filter { file -> file.readText().contains("PreparedDownload") }
+            .toList()
+
+        assertTrue(
+            "prepared runtime naming is still referenced: $references",
+            references.isEmpty()
+        )
+    }
+
+    @Test
+    fun `sidecar references do not retain the removed prepared marker`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+
+        assertFalse(
+            "DownloadedSidecarReferences still exposes the removed prepared marker",
+            source.contains("val prepared: Boolean") ||
+                source.contains("prepared =")
+        )
+    }
+
+    @Test
+    fun `production download manager does not persist stable key cancellation markers`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        assertFalse(
+            "new cancellation ownership must stay on download_operation",
+            source.contains("markCancelledDownloadKeys") ||
+                source.contains("listCancelledDownloadKeys")
+        )
+    }
+
     private fun locateProjectDirectory(): File {
         var directory = File(System.getProperty("user.dir") ?: ".")
         var attempts = 0

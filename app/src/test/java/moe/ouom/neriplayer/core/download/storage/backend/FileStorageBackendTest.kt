@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.download.storage.backend
 
+import android.net.Uri
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
 
 class FileStorageBackendTest {
     @Test
@@ -52,11 +54,11 @@ class FileStorageBackendTest {
                 val backend = FileStorageBackend(root)
 
                 assertEquals(
-                    StorageLookupResult.PermissionLost,
+                    StorageLookupResult.OutOfScope,
                     backend.stat(StorageReference.FileRef("../outside"))
                 )
                 assertEquals(
-                    StorageConfidence.PermissionLost,
+                    StorageConfidence.OutOfScope,
                     backend.list(StorageReference.FileRef("../outside")).confidence
                 )
             } finally {
@@ -111,6 +113,25 @@ class FileStorageBackendTest {
                     StorageLookupResult.Missing,
                     backend.stat(StorageReference.FileRef("song.mp3"))
                 )
+                assertFalse(root.resolve(".song.mp3.pending").exists())
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `file backend does not advertise capabilities for SAF references`() {
+        runBlocking {
+            val root = Files.createTempDirectory("neriplayer-storage-backend").toFile()
+            try {
+                val capabilities = FileStorageBackend(root).capabilities(
+                    StorageReference.SafRef(mock(Uri::class.java))
+                )
+
+                assertFalse(capabilities.canRead)
+                assertFalse(capabilities.canWrite)
+                assertFalse(capabilities.canDelete)
             } finally {
                 root.deleteRecursively()
             }

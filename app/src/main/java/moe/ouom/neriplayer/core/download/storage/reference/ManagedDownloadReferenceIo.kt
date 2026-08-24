@@ -50,10 +50,6 @@ internal object ManagedDownloadReferenceIo {
         }
     }
 
-    fun exists(context: Context, reference: String?): Boolean {
-        return inspect(context, reference) == AccessResult.Accessible
-    }
-
     fun inspect(context: Context, reference: String?): AccessResult {
         val normalized = reference?.trim()?.takeIf(String::isNotBlank)
             ?: return AccessResult.Missing
@@ -68,10 +64,23 @@ internal object ManagedDownloadReferenceIo {
         return inspectDocument(context, uri)
     }
 
-    internal fun isAccessibleDocumentReference(
-        documentExists: Boolean,
-        descriptorAccessible: Boolean
-    ): Boolean = documentExists || descriptorAccessible
+    fun inspectDirectory(context: Context, uri: Uri): AccessResult {
+        return inspectDirectory(context, uri.toString())
+    }
+
+    fun inspectDirectory(context: Context, reference: String?): AccessResult {
+        val normalized = reference?.trim()?.takeIf(String::isNotBlank)
+            ?: return AccessResult.Missing
+        if (normalized.startsWith("/")) {
+            return inspectDirectoryFile(File(normalized))
+        }
+        normalized.toLocalFileReference()?.let { return inspectDirectoryFile(it) }
+        val uri = runCatching { normalized.toUri() }.getOrElse { error ->
+            return AccessResult.ProviderFailure(error)
+        }
+        uri.toLocalFile()?.let { return inspectDirectoryFile(it) }
+        return inspectDocumentDirectory(context, uri)
+    }
 
     fun deleteContentReference(
         context: Context,
@@ -93,24 +102,41 @@ internal object ManagedDownloadReferenceIo {
     }
 
     fun isContentReferenceGone(context: Context, uri: Uri): Boolean {
-        return try {
-            context.contentResolver.openFileDescriptor(uri, "r")?.use { false } ?: false
-        } catch (error: SecurityException) {
-            throw error
-        } catch (error: Exception) {
-            isMissingDocumentFailure(error)
+        return when (val result = inspect(context, uri.toString())) {
+            AccessResult.Missing -> true
+            AccessResult.PermissionLost -> throw SecurityException(
+                "SAF permission lost while confirming deletion: $uri"
+            )
+            AccessResult.Accessible,
+            is AccessResult.ProviderFailure -> false
         }
     }
 
     fun resolveDocumentFile(context: Context, uri: Uri): DocumentFile? {
-        return DocumentFile.fromSingleUri(context, uri)
-            ?: DocumentFile.fromTreeUri(context, uri)
+        return if (DocumentsContract.isTreeUri(uri)) {
+            DocumentFile.fromTreeUri(context, uri)
+        } else {
+            DocumentFile.fromSingleUri(context, uri)
+        }
     }
 
     private fun inspectFile(file: File): AccessResult {
         return try {
             if (!file.isFile) AccessResult.Missing
             else file.inputStream().use { AccessResult.Accessible }
+        } catch (error: SecurityException) {
+            AccessResult.PermissionLost
+        } catch (error: FileNotFoundException) {
+            AccessResult.Missing
+        } catch (error: Throwable) {
+            AccessResult.ProviderFailure(error)
+        }
+    }
+
+    private fun inspectDirectoryFile(file: File): AccessResult {
+        return try {
+            if (!file.isDirectory) AccessResult.Missing
+            else AccessResult.Accessible
         } catch (error: SecurityException) {
             AccessResult.PermissionLost
         } catch (error: FileNotFoundException) {
@@ -134,32 +160,89 @@ internal object ManagedDownloadReferenceIo {
             cursor.use {
                 if (!it.moveToFirst()) return AccessResult.Missing
             }
-            context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                return AccessResult.Accessible
-            } ?: return AccessResult.ProviderFailure(
-                IllegalStateException("provider returned null file descriptor")
-            )
+            try {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                    return AccessResult.Accessible
+                } ?: return AccessResult.ProviderFailure(
+                    IllegalStateException("provider returned null file descriptor")
+                )
+            } catch (error: SecurityException) {
+                return AccessResult.PermissionLost
+            } catch (error: FileNotFoundException) {
+                return classifyDocumentOpenFailure(error)
+            } catch (error: Throwable) {
+                return classifyDocumentOpenFailure(error)
+            }
         } catch (error: SecurityException) {
             return AccessResult.PermissionLost
         } catch (error: FileNotFoundException) {
-            return AccessResult.Missing
+            return classifyDocumentFailure(error)
         } catch (error: Throwable) {
-            return if (isMissingDocumentFailure(error)) {
-                AccessResult.Missing
-            } else {
-                AccessResult.ProviderFailure(error)
+            return classifyDocumentFailure(error)
+        }
+    }
+
+    private fun inspectDocumentDirectory(context: Context, uri: Uri): AccessResult {
+        try {
+            val cursor = context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null,
+                null,
+                null
+            ) ?: return AccessResult.ProviderFailure(
+                IllegalStateException("provider returned null document cursor")
+            )
+            cursor.use {
+                if (!it.moveToFirst()) return AccessResult.Missing
+                val mimeIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                if (mimeIndex < 0 || it.isNull(mimeIndex)) {
+                    return AccessResult.ProviderFailure(
+                        IllegalStateException("provider omitted document mime type")
+                    )
+                }
+                if (it.getString(mimeIndex) != DocumentsContract.Document.MIME_TYPE_DIR) {
+                    return AccessResult.Missing
+                }
             }
+            return AccessResult.Accessible
+        } catch (error: SecurityException) {
+            return AccessResult.PermissionLost
+        } catch (error: FileNotFoundException) {
+            return classifyDocumentFailure(error)
+        } catch (error: Throwable) {
+            return classifyDocumentFailure(error)
+        }
+    }
+
+    private fun classifyDocumentFailure(error: Throwable): AccessResult {
+        return when {
+            isPermissionDocumentFailure(error) -> AccessResult.PermissionLost
+            isMissingDocumentFailure(error) -> AccessResult.Missing
+            else -> AccessResult.ProviderFailure(error)
+        }
+    }
+
+    private fun classifyDocumentOpenFailure(error: Throwable): AccessResult {
+        return when {
+            isPermissionDocumentFailure(error) -> AccessResult.PermissionLost
+            isMissingDocumentFailure(error) -> {
+                AccessResult.Missing
+            }
+            else -> AccessResult.ProviderFailure(error)
         }
     }
 
     fun isMissingDocumentFailure(error: Throwable): Boolean {
-        return generateSequence(error) { it.cause }.any { cause ->
+        val causes = generateSequence(error) { it.cause }.toList()
+        if (causes.any(::isPermissionDocumentFailure)) {
+            return false
+        }
+        return causes.any { cause ->
             when (cause) {
-                is FileNotFoundException -> true
+                is FileNotFoundException -> cause.message.isExplicitMissingDocumentMessage()
                 is IllegalArgumentException -> {
-                    val message = cause.message.orEmpty()
-                    message.contains("Missing file", ignoreCase = true) ||
-                        message.contains("Failed to determine if", ignoreCase = true)
+                    cause.message.isExplicitMissingDocumentMessage()
                 }
 
                 else -> false
@@ -167,11 +250,17 @@ internal object ManagedDownloadReferenceIo {
         }
     }
 
+    fun isPermissionDocumentFailure(error: Throwable): Boolean {
+        return generateSequence(error) { it.cause }.any { cause ->
+            cause is SecurityException || cause.message.isPermissionDocumentMessage()
+        }
+    }
+
     private fun deleteContentReferenceOnce(context: Context, uri: Uri): Boolean {
         if (isContentReferenceGone(context, uri)) {
             return true
         }
-        val deletedByContract = try {
+        try {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
         } catch (error: SecurityException) {
             throw error
@@ -179,13 +268,21 @@ internal object ManagedDownloadReferenceIo {
             if (isMissingDocumentFailure(error)) {
                 return true
             }
-            false
         }
-        if (deletedByContract) {
-            return true
-        }
+        if (isContentReferenceGone(context, uri)) return true
 
-        return try {
+        try {
+            context.contentResolver.delete(uri, null, null)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (error: Exception) {
+            if (isMissingDocumentFailure(error)) {
+                return true
+            }
+        }
+        if (isContentReferenceGone(context, uri)) return true
+
+        try {
             resolveDocumentFile(context, uri)?.delete() ?: false
         } catch (error: SecurityException) {
             throw error
@@ -193,8 +290,8 @@ internal object ManagedDownloadReferenceIo {
             if (isMissingDocumentFailure(error)) {
                 return true
             }
-            false
         }
+        return isContentReferenceGone(context, uri)
     }
 
     private fun String.toLocalFileReference(): File? {
@@ -214,4 +311,25 @@ internal object ManagedDownloadReferenceIo {
         return filePath?.let(::File)
     }
 
+}
+
+private fun String?.isExplicitMissingDocumentMessage(): Boolean {
+    val normalized = this?.lowercase().orEmpty()
+    return normalized.contains("missing file") ||
+        normalized.contains("missing document") ||
+        normalized.contains("document not found") ||
+        normalized.contains("no such file") ||
+        normalized.contains("not found") ||
+        normalized.contains("does not exist") ||
+        normalized.contains("enoent")
+}
+
+private fun String?.isPermissionDocumentMessage(): Boolean {
+    val normalized = this?.lowercase().orEmpty()
+    return normalized.contains("permission denied") ||
+        normalized.contains("access denied") ||
+        normalized.contains("operation not permitted") ||
+        normalized.contains("not permitted") ||
+        normalized.contains("eacces") ||
+        normalized.contains("security exception")
 }

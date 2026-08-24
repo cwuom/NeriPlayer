@@ -49,7 +49,14 @@ internal object ManagedDownloadTreeChildQuery {
             state = State.FAILED
         )
 
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
+        val childrenUri = try {
+            DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
+        } catch (error: IllegalArgumentException) {
+            return QueryResult(
+                children = listChildrenWithDocumentFile(parent),
+                state = State.FAILED
+            )
+        }
         return try {
             val cursor = context.contentResolver.query(
                 childrenUri,
@@ -80,7 +87,7 @@ internal object ManagedDownloadTreeChildQuery {
                                 sizeBytes = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
                                     cursor.getLong(sizeIndex)
                                 } else {
-                                    0L
+                                    null
                                 },
                                 lastModifiedMs = if (modifiedIndex >= 0 && !cursor.isNull(modifiedIndex)) {
                                     cursor.getLong(modifiedIndex)

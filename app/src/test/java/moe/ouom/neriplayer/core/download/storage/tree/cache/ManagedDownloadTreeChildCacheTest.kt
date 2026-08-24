@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.tree.cache
 
 import android.net.Uri
+import moe.ouom.neriplayer.core.download.storage.entry.ManagedDownloadStoredEntryMapper
 import moe.ouom.neriplayer.core.download.storage.tree.query.ManagedDownloadTreeChildQuery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +10,22 @@ import org.junit.Test
 import org.mockito.Mockito.mock
 
 class ManagedDownloadTreeChildCacheTest {
+    @Test
+    fun `missing provider size stays nullable until legacy entry mapping`() {
+        val child = QueriedTreeChild(
+            name = "unknown-size.bin",
+            documentUri = mock(Uri::class.java),
+            sizeBytes = null,
+            lastModifiedMs = 0L,
+            isDirectory = false
+        )
+
+        assertEquals(
+            0L,
+            ManagedDownloadStoredEntryMapper.fromTreeChild(child).sizeBytes
+        )
+    }
+
     @Test
     fun `incomplete refresh keeps cached children and reserved names`() {
         val cache = ManagedDownloadTreeChildCache()

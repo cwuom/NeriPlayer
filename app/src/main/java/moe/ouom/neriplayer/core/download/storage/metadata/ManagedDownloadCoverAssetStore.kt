@@ -1,10 +1,11 @@
 package moe.ouom.neriplayer.core.download.storage.metadata
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -28,14 +29,18 @@ internal object ManagedDownloadCoverAssetStore {
         if (bytes.isEmpty()) return@withContext null
         val hash = sha256(bytes)
         val fileName = "$hash.${extension.trim().removePrefix(".").ifBlank { "bin" }}"
-        val stored = runCatching {
+        val stored = try {
             ManagedDownloadStorage.persistRemoteCoverBytes(
                 context = context,
                 bytes = bytes,
                 fileName = fileName,
                 mimeType = mimeType
             )
-        }.getOrNull() ?: return@withContext null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        } ?: return@withContext null
         MaterializedCover(reference = stored, assetHash = hash)
     }
 
@@ -50,7 +55,7 @@ internal object ManagedDownloadCoverAssetStore {
             val stream = if (reference.startsWith("/")) {
                 File(reference).inputStream()
             } else {
-                val uri = Uri.parse(reference)
+                val uri = reference.toUri()
                 if (uri.scheme.equals("file", ignoreCase = true)) {
                     uri.path?.let(::File)?.inputStream()
                 } else {

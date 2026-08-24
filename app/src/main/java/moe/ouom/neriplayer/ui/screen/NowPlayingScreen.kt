@@ -4993,6 +4993,22 @@ internal data class EditSongBaseline(
     val romanizedLyric: String?
 )
 
+internal fun resolveManagedEditSongBaseline(
+    current: EditSongBaseline,
+    metadata: moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata?,
+    coverReference: String?
+): EditSongBaseline {
+    val baseline = metadata?.baseline ?: return current
+    return current.copy(
+        title = baseline.title ?: current.title,
+        artist = baseline.artist ?: current.artist,
+        coverUrl = coverReference ?: baseline.coverReference ?: current.coverUrl,
+        lyric = baseline.originalLyric,
+        translatedLyric = baseline.translatedLyric,
+        romanizedLyric = baseline.romanizedLyric
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("AssignedValueIsNeverRead")
@@ -5136,6 +5152,27 @@ fun EditSongInfoSheet(
             shouldRestoreTitleBase = false
             shouldRestoreArtistBase = false
             shouldClearMatchedMetadata = false
+        }
+    }
+
+    LaunchedEffect(actualSong.stableKey()) {
+        if (userHasEdited) return@LaunchedEffect
+        val managedMetadata = withContext(Dispatchers.IO) {
+            GlobalDownloadManager.readManagedRestorableMetadata(context, actualSong)
+        } ?: return@LaunchedEffect
+        val managedCover = withContext(Dispatchers.IO) {
+            GlobalDownloadManager.resolveManagedRestorableCoverReference(
+                context = context,
+                metadata = managedMetadata,
+                baseline = true
+            )
+        }
+        if (!userHasEdited) {
+            editBaseline = resolveManagedEditSongBaseline(
+                current = editBaseline,
+                metadata = managedMetadata,
+                coverReference = managedCover
+            )
         }
     }
 

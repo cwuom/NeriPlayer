@@ -8,7 +8,6 @@ import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_HLS_CHECKPOINT
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_MAX_AGE_MS
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
-import moe.ouom.neriplayer.core.download.storage.OPERATION_MANIFEST_NAME
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -18,6 +17,16 @@ import java.security.MessageDigest
 
 internal object ManagedDownloadWorkingStore {
     private const val TAG = "ManagedDownloadStorage"
+    private const val LEGACY_OPERATION_MANIFEST_NAME = "operation.json"
+    private val legacyPreparedManifestName = Regex(
+        "npdl_sidecar_manifest_[0-9a-f]{1,64}\\.json"
+    )
+    private val legacyPreparedSidecarName = Regex(
+        "npdl_sidecar_[0-9a-f]{1,64}_[0-9a-fA-F-]{36}\\.[A-Za-z0-9._-]{1,24}"
+    )
+    private val legacyOperationDirectoryName = Regex(
+        "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    )
 
     fun buildWorkingFileName(
         songKey: String,
@@ -280,7 +289,6 @@ internal object ManagedDownloadWorkingStore {
                 )
             }
             .sortedBy { it.workingFile.lastModified() }
-            .distinctBy { it.song.stableKey() }
             .toList()
     }
 
@@ -288,6 +296,9 @@ internal object ManagedDownloadWorkingStore {
         stagingDir: File,
         nowMs: Long = System.currentTimeMillis()
     ): ManagedDownloadStorage.StartupRecoveryResult {
+        if (stagingDir.name != DOWNLOAD_STAGING_DIR_NAME) {
+            return ManagedDownloadStorage.StartupRecoveryResult()
+        }
         val stagingEntries = stagingDir.listFiles().orEmpty()
         if (stagingEntries.isEmpty()) {
             return ManagedDownloadStorage.StartupRecoveryResult()
@@ -296,46 +307,30 @@ internal object ManagedDownloadWorkingStore {
         var cleanedCount = 0
         var failedCount = 0
         var preservedCount = 0
-        val preparedArtifactPaths = hashSetOf<String>()
-        stagingEntries
-            .asSequence()
-            .filter { entry ->
-                entry.isFile && entry.name.startsWith("npdl_sidecar_manifest_") &&
-                    entry.name.endsWith(".json")
+
+        fun cleanupKnownFile(entry: File, allowOperationManifest: Boolean) {
+            if (!entry.isFile) {
+                return
             }
-            .filter { entry ->
-                runCatching {
-                    val root = org.json.JSONObject(entry.readText(Charsets.UTF_8))
-                    root.optInt("version") == 1 &&
-                        root.optString("songKey").isNotBlank()
-                }.getOrDefault(false)
-            }
-            .forEach { entry ->
-                preparedArtifactPaths += entry.absolutePath
-                collectPreparedArtifactPaths(entry, preparedArtifactPaths)
-            }
-        stagingEntries.forEach { entry ->
-            if (entry.isDirectory && isPreparedOperationDirectory(entry, nowMs)) {
-                preservedCount++
-                return@forEach
-            }
-            if (entry.isDirectory) {
-                val nested = cleanupStagingFilesInDirectory(entry, nowMs)
-                cleanedCount += nested.cleanedCount
-                failedCount += nested.failedCount
-                if (entry.listFiles().orEmpty().isEmpty()) {
-                    runCatching { entry.delete() }
+            if (isLegacyPreparedResidue(entry, allowOperationManifest)) {
+                if (deleteWorkingArtifactEntry(entry)) {
+                    cleanedCount++
+                } else {
+                    failedCount++
                 }
-                return@forEach
+                return
             }
             if (
-                entry.absolutePath in preparedArtifactPaths ||
                 shouldPreserveWorkingFileForResume(entry, nowMs) ||
                 shouldPreserveWorkingCheckpointForResume(entry, nowMs) ||
                 shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
             ) {
                 preservedCount++
-                return@forEach
+                return
+            }
+            if (!isKnownManagedStagingFile(entry)) {
+                preservedCount++
+                return
             }
             val deleted = deleteWorkingArtifactEntry(entry)
             if (deleted) {
@@ -344,6 +339,29 @@ internal object ManagedDownloadWorkingStore {
                 failedCount++
             }
         }
+
+        stagingEntries.forEach { entry ->
+            if (entry.isFile) {
+                cleanupKnownFile(entry, allowOperationManifest = false)
+            }
+        }
+        stagingEntries
+            .asSequence()
+            .filter(File::isDirectory)
+            .forEach { operationDirectory ->
+                operationDirectory.listFiles()
+                    .orEmpty()
+                    .asSequence()
+                    .filter(File::isFile)
+                    .forEach { entry ->
+                        cleanupKnownFile(
+                            entry,
+                            allowOperationManifest = legacyOperationDirectoryName.matches(
+                                operationDirectory.name
+                            )
+                        )
+                    }
+            }
         if (cleanedCount > 0 || failedCount > 0 || preservedCount > 0) {
             NPLogger.d(
                 TAG,
@@ -356,40 +374,24 @@ internal object ManagedDownloadWorkingStore {
         )
     }
 
-    private fun isPreparedOperationDirectory(
+    private fun isLegacyPreparedResidue(
         entry: File,
-        nowMs: Long
+        allowOperationManifest: Boolean
     ): Boolean {
-        val manifest = File(entry, OPERATION_MANIFEST_NAME)
-        if (!manifest.isFile) return false
-        val ageMs = (nowMs - manifest.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
-        if (ageMs > DOWNLOAD_STAGING_MAX_AGE_MS) return false
-        return runCatching {
-            val root = org.json.JSONObject(manifest.readText(Charsets.UTF_8))
-            root.optInt("version") >= 2 && root.optString("songKey").isNotBlank()
-        }.getOrDefault(false)
+        return (allowOperationManifest && entry.name == LEGACY_OPERATION_MANIFEST_NAME) ||
+            legacyPreparedManifestName.matches(entry.name) ||
+            legacyPreparedSidecarName.matches(entry.name)
     }
 
-    private fun collectPreparedArtifactPaths(
-        manifest: File,
-        paths: MutableSet<String>
-    ) {
-        runCatching {
-            val root = org.json.JSONObject(manifest.readText(Charsets.UTF_8))
-            listOf("lyric", "translatedLyric", "romanizedLyric", "cover")
-                .asSequence()
-                .mapNotNull { key ->
-                    val artifact = root.optJSONObject(key) ?: return@mapNotNull null
-                    artifact.optString("file").takeIf(String::isNotBlank)
-                        ?: artifact.optString("path").takeIf(String::isNotBlank)
-                }
-                .forEach { path ->
-                    val file = File(path).let { candidate ->
-                        if (candidate.isAbsolute) candidate else File(manifest.parentFile, path)
-                    }
-                    paths += file.absolutePath
-                }
+    private fun isKnownManagedStagingFile(entry: File): Boolean {
+        if (!entry.isFile) {
+            return false
         }
+        return entry.name.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) && (
+            entry.name.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX) ||
+                entry.name.endsWith(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX) ||
+                entry.name.endsWith(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+            )
     }
 
     private fun isFreshNamedNonEmptyWorkingFile(

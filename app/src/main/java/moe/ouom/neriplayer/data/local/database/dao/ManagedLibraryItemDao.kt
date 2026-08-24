@@ -19,4 +19,13 @@ internal interface ManagedLibraryItemDao {
             "WHERE library_id = :libraryId AND stable_key = :stableKey"
     )
     suspend fun delete(libraryId: String, stableKey: String)
+
+    @Query("DELETE FROM managed_library_item WHERE library_id = :libraryId")
+    suspend fun clear(libraryId: String)
+
+    @Query(
+        "DELETE FROM managed_library_item " +
+            "WHERE library_id = :libraryId AND stable_key NOT IN (:stableKeys)"
+    )
+    suspend fun deleteExcept(libraryId: String, stableKeys: List<String>)
 }

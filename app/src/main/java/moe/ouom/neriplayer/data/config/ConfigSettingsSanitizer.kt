@@ -2,10 +2,10 @@ package moe.ouom.neriplayer.data.config
 
 import android.content.Context
 import androidx.core.net.toUri
-import androidx.documentfile.provider.DocumentFile
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.normalizeDownloadFileNameTemplate
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.core.player.model.DEFAULT_EQUALIZER_BAND_LEVEL_RANGE_MB
 import moe.ouom.neriplayer.core.player.model.PlaybackEqualizerPresetId
@@ -311,6 +311,8 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         val normalizedDownloadDirectoryUri = ManagedDownloadStorage.canonicalizeDirectoryUri(
             downloadDirectoryUri
         )
+        val persistedTreeAccess = normalizedDownloadDirectoryUri
+            ?.let(::inspectPersistedTreeAccess)
         when {
             downloadDirectoryUri == null -> Unit
             normalizedDownloadDirectoryUri.isNullOrBlank() -> {
@@ -318,9 +320,16 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
                 strings.remove(downloadDirectoryLabelKey)
                 onAdjusted()
             }
-            !hasPersistedTreeAccess(normalizedDownloadDirectoryUri) -> {
+            shouldClearImportedDownloadDirectory(
+                persistedTreeAccess ?: PersistedTreeAccess.NoPersistedPermission
+            ) -> {
                 strings.remove(downloadDirectoryKey)
                 strings.remove(downloadDirectoryLabelKey)
+                warnings += context.getString(R.string.config_import_warning_download_directory)
+            }
+            shouldWarnImportedDownloadDirectory(
+                persistedTreeAccess ?: PersistedTreeAccess.NoPersistedPermission
+            ) -> {
                 warnings += context.getString(R.string.config_import_warning_download_directory)
             }
             normalizedDownloadDirectoryUri != downloadDirectoryUri -> {
@@ -349,18 +358,42 @@ internal class ConfigSettingsSanitizer(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    private fun hasPersistedTreeAccess(uriString: String): Boolean {
-        val uri = runCatching { uriString.toUri() }.getOrNull() ?: return false
+    private fun inspectPersistedTreeAccess(uriString: String): PersistedTreeAccess {
+        val uri = runCatching { uriString.toUri() }.getOrNull()
+            ?: return PersistedTreeAccess.NoPersistedPermission
         val hasPersistedPermission = context.contentResolver.persistedUriPermissions.any { permission ->
             permission.uri == uri && (permission.isReadPermission || permission.isWritePermission)
         }
         if (!hasPersistedPermission) {
-            return false
+            return PersistedTreeAccess.NoPersistedPermission
         }
-        return runCatching {
-            DocumentFile.fromTreeUri(context, uri)?.exists() == true
-        }.getOrDefault(false)
+        return when (ManagedDownloadReferenceIo.inspectDirectory(context, uri)) {
+            ManagedDownloadReferenceIo.AccessResult.Accessible -> PersistedTreeAccess.Accessible
+            ManagedDownloadReferenceIo.AccessResult.Missing -> PersistedTreeAccess.Missing
+            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> PersistedTreeAccess.PermissionLost
+            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> {
+                PersistedTreeAccess.ProviderFailure
+            }
+        }
     }
+}
+
+internal enum class PersistedTreeAccess {
+    Accessible,
+    Missing,
+    NoPersistedPermission,
+    PermissionLost,
+    ProviderFailure
+}
+
+internal fun shouldClearImportedDownloadDirectory(access: PersistedTreeAccess): Boolean {
+    return access == PersistedTreeAccess.NoPersistedPermission ||
+        access == PersistedTreeAccess.Missing
+}
+
+internal fun shouldWarnImportedDownloadDirectory(access: PersistedTreeAccess): Boolean {
+    return access == PersistedTreeAccess.PermissionLost ||
+        access == PersistedTreeAccess.ProviderFailure
 }
 
 internal val SETTINGS_BOOLEAN_KEYS = listOf(

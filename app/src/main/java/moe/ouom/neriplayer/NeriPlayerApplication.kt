@@ -26,6 +26,7 @@ package moe.ouom.neriplayer
 import android.app.Application
 import android.content.res.Configuration
 import android.webkit.WebView
+import androidx.work.Configuration as WorkConfiguration
 import kotlinx.coroutines.flow.collect
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -50,9 +51,17 @@ import moe.ouom.neriplayer.util.crash.NativeCrashHandler
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 
-class NeriPlayerApplication : Application() {
+class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
     @Volatile
     private var normalComponentsInitialized = false
+
+    override val workManagerConfiguration: WorkConfiguration
+        get() = WorkConfiguration.Builder()
+            .setJobSchedulerJobIdRange(
+                WORK_MANAGER_JOB_ID_MIN,
+                WORK_MANAGER_JOB_ID_MAX
+            )
+            .build()
 
     override fun onCreate() {
         super.onCreate()
@@ -162,3 +171,6 @@ class NeriPlayerApplication : Application() {
         }
     }
 }
+
+private const val WORK_MANAGER_JOB_ID_MIN = 1_000
+private const val WORK_MANAGER_JOB_ID_MAX = 99_999

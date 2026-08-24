@@ -12,6 +12,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
+import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
@@ -266,28 +267,28 @@ class GlobalDownloadManagerStartupPolicyTest {
     @Test
     fun `prepared recovery download start is blocked on mobile data until user confirms`() {
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = false
             )
         )
         assertTrue(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = true
             )
         )
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.MOBILE,
                 mobileDataOverrideAllowed = true,
                 deferForNetworkPolicy = true
             )
         )
         assertFalse(
-            shouldDeferPreparedDownloadStartForNetwork(
+            shouldDeferQueuedDownloadStartForNetwork(
                 networkType = TrafficNetworkType.WIFI,
                 mobileDataOverrideAllowed = false,
                 deferForNetworkPolicy = true
@@ -1843,6 +1844,75 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(partialFile, merged.first().workingFile)
         assertEquals(2_000L, merged.first().song.durationMs)
         assertNull(merged[1].workingFile)
+    }
+
+    @Test
+    fun `download recovery preserves resumable operation identity`() {
+        val song = recoverySong(id = 905L, name = "Operation")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = emptyList(),
+            resumableDownloads = listOf(
+                ManagedDownloadStorage.PendingResumableDownload(
+                    song = song,
+                    workingFile = File("operation.partial"),
+                    operationId = "operation-905"
+                )
+            )
+        )
+
+        assertEquals("operation-905", merged.single().operationId)
+    }
+
+    @Test
+    fun `download recovery preserves queued operation identity when no partial exists`() {
+        val song = recoverySong(id = 906L, name = "Queued operation")
+        val merged = mergePendingDownloadRecoveryCandidates(
+            queuedDownloads = listOf(
+                ManagedDownloadStorage.PendingDownloadQueueEntry(
+                    stableKey = song.stableKey(),
+                    song = song,
+                    order = 0,
+                    queuedAtMs = 10L,
+                    operationId = "operation-906"
+                )
+            ),
+            resumableDownloads = emptyList()
+        )
+
+        assertEquals("operation-906", merged.single().operationId)
+    }
+
+    @Test
+    fun `user initiated active operation without pending UIDT requires explicit resume`() {
+        assertTrue(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = false
+            )
+        )
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = true
+            )
+        )
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = false,
+                state = "RUNNING",
+                hasPendingUidtJob = false
+            )
+        )
+        assertTrue(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = true,
+                stopRequestedByUser = true
+            )
+        )
     }
 
     @Test

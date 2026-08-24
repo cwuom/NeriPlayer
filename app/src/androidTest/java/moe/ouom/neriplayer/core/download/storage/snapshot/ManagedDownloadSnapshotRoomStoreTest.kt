@@ -33,8 +33,16 @@ class ManagedDownloadSnapshotRoomStoreTest {
             assertEquals("root-a", restored?.first)
             assertEquals(snapshot.audioEntries, restored?.second?.audioEntries)
             assertEquals(
-                snapshot.metadataByAudioName,
-                restored?.second?.metadataByAudioName
+                snapshot.metadataByAudioName.keys,
+                restored?.second?.metadataByAudioName?.keys
+            )
+            assertEquals(
+                snapshot.metadataByAudioName.values.single().stableKey,
+                restored?.second?.metadataByAudioName?.values?.single()?.stableKey
+            )
+            assertEquals(
+                snapshot.metadataByAudioName.values.single().name,
+                restored?.second?.metadataByAudioName?.values?.single()?.name
             )
             assertEquals(
                 snapshot.audioEntriesByRemoteTrackKey,

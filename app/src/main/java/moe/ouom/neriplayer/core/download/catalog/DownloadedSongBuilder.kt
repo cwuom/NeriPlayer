@@ -2,6 +2,8 @@ package moe.ouom.neriplayer.core.download.catalog
 
 import android.content.Context
 import androidx.core.net.toUri
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import kotlin.LazyThreadSafetyMode
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadedSong
@@ -14,9 +16,21 @@ import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricOverride
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+
+internal fun fallbackDownloadedSongId(reference: String): Long {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(reference.toByteArray(Charsets.UTF_8))
+    return (ByteBuffer.wrap(digest, 0, Long.SIZE_BYTES).long and Long.MAX_VALUE)
+        .coerceAtLeast(1L)
+}
+
+internal fun isAccessibleManagedReference(
+    result: ManagedDownloadReferenceIo.AccessResult
+): Boolean = result == ManagedDownloadReferenceIo.AccessResult.Accessible
 
 internal class DownloadedSongBuilder(
     private val metadataStore: DownloadedAudioMetadataStore,
@@ -50,7 +64,9 @@ internal class DownloadedSongBuilder(
             ManagedDownloadArtifactPlanner
                 .indexedCoverReference(storedAudio, effectiveSnapshot)
                 ?.takeIf { reference ->
-                    ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                    isAccessibleManagedReference(
+                        ManagedDownloadReferenceIo.inspect(context, reference)
+                    )
                 }
         } else {
             null
@@ -153,7 +169,7 @@ internal class DownloadedSongBuilder(
         }
 
         return DownloadedSong(
-            id = metadata?.songId ?: storedAudio.reference.hashCode().toLong(),
+            id = metadata?.songId ?: fallbackDownloadedSongId(storedAudio.reference),
             name = metadata?.name?.takeIf(String::isNotBlank)
                 ?: localDetails?.title?.takeIf(String::isNotBlank)
                 ?: parsedTitle,
@@ -230,7 +246,9 @@ internal class DownloadedSongBuilder(
         return candidate
             ?.takeIf(::isResolvableLocalReference)
             ?.takeIf { reference ->
-                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                isAccessibleManagedReference(
+                    ManagedDownloadReferenceIo.inspect(context, reference)
+                )
             }
     }
 
@@ -245,7 +263,9 @@ internal class DownloadedSongBuilder(
         return candidate
             ?.takeIf(::isResolvableLocalReference)
             ?.takeIf { reference ->
-                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                isAccessibleManagedReference(
+                    ManagedDownloadReferenceIo.inspect(context, reference)
+                )
             }
     }
 
@@ -492,7 +512,9 @@ internal class DownloadedSongBuilder(
             val candidate = reference?.takeIf(::isResolvableLocalReference)
                 ?: return@firstNotNullOfOrNull null
             candidate.takeIf { reference ->
-                ManagedDownloadStorage.isReferenceAccessible(context, reference)
+                isAccessibleManagedReference(
+                    ManagedDownloadReferenceIo.inspect(context, reference)
+                )
             }
         }
     }

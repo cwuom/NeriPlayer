@@ -11,6 +11,28 @@ data class DownloadTask(
     val attemptId: Long = 0L
 )
 
+/** durable candidates that must wait for a user action after an OS stop */
+internal data class ExplicitDownloadResumeCandidate(
+    val operationId: String,
+    val song: SongItem,
+    val queueOrder: Int
+)
+
+internal fun visibleExplicitResumeCandidates(
+    candidates: Collection<ExplicitDownloadResumeCandidate>,
+    activeSongKeys: Set<String>
+): List<ExplicitDownloadResumeCandidate> {
+    return candidates
+        .asSequence()
+        .filter { candidate -> candidate.song.stableKey() !in activeSongKeys }
+        .distinctBy { candidate -> candidate.song.stableKey() }
+        .sortedWith(
+            compareBy<ExplicitDownloadResumeCandidate> { it.queueOrder }
+                .thenBy { it.operationId }
+        )
+        .toList()
+}
+
 data class DownloadTaskSummary(
     val pendingTaskCount: Int = 0,
     val queuedTaskCount: Int = 0,
@@ -30,7 +52,7 @@ enum class DownloadStatus {
     CANCELLED
 }
 
-internal data class PreparedDownloadTaskRequest(
+internal data class QueuedDownloadRequest(
     val song: SongItem,
     val attemptId: Long
 )

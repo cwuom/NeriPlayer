@@ -79,19 +79,17 @@ class AudioDownloadManagerSidecarReferenceTest {
     }
 
     @Test
-    fun `prepared sidecar state and expected cover survive merge`() {
-        val prepared = AudioDownloadManager.DownloadedSidecarReferences(
+    fun `expected sidecar state survives merge`() {
+        val expected = AudioDownloadManager.DownloadedSidecarReferences(
             expectedCover = true,
-            expectedLyric = true,
-            prepared = true
+            expectedLyric = true
         )
 
         val merged = AudioDownloadManager.mergeDownloadedSidecarReferences(
             existing = null,
-            incoming = prepared
+            incoming = expected
         )
 
-        assertTrue(merged.prepared)
         assertTrue(merged.expectedCover)
         assertTrue(merged.expectedLyric)
         assertTrue(!merged.isEmpty)

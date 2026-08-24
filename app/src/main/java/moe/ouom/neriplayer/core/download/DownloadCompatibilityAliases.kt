@@ -36,7 +36,7 @@ import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudi
 import moe.ouom.neriplayer.core.download.policy.runNonCancellableDownloadRollback as runNonCancellableDownloadRollbackDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRepairMetadataLessManagedDownload as shouldRepairMetadataLessManagedDownloadDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferPendingDownloadRecoveryForNetwork as shouldDeferPendingDownloadRecoveryForNetworkDelegate
-import moe.ouom.neriplayer.core.download.policy.shouldDeferPreparedDownloadStartForNetwork as shouldDeferPreparedDownloadStartForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldDeferQueuedDownloadStartForNetwork as shouldDeferQueuedDownloadStartForNetworkDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferStartupManagedCleanup as shouldDeferStartupManagedCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails as shouldInspectDownloadedAudioDetailsDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup as shouldKeepCancellationCleanupDelegate
@@ -154,11 +154,11 @@ internal fun shouldDeferPendingDownloadRecoveryForNetwork(
     mobileDataOverrideAllowed: Boolean
 ): Boolean = shouldDeferPendingDownloadRecoveryForNetworkDelegate(networkType, mobileDataOverrideAllowed)
 
-internal fun shouldDeferPreparedDownloadStartForNetwork(
+internal fun shouldDeferQueuedDownloadStartForNetwork(
     networkType: TrafficNetworkType,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean
-): Boolean = shouldDeferPreparedDownloadStartForNetworkDelegate(
+): Boolean = shouldDeferQueuedDownloadStartForNetworkDelegate(
     networkType,
     mobileDataOverrideAllowed,
     deferForNetworkPolicy

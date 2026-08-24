@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.tree
 
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -7,23 +8,27 @@ import org.junit.Test
 class ManagedDownloadMediaScanIsolationTest {
 
     @Test
-    fun `descriptor-accessible marker is accepted when document file reports missing`() {
+    fun `only typed accessible marker state is accepted`() {
         assertTrue(
             ManagedDownloadMediaScanIsolation.isUsableNoMediaMarker(
-                documentExists = false,
-                descriptorAccessible = true
-            )
-        )
-        assertTrue(
-            ManagedDownloadMediaScanIsolation.isUsableNoMediaMarker(
-                documentExists = true,
-                descriptorAccessible = false
+                ManagedDownloadReferenceIo.AccessResult.Accessible
             )
         )
         assertFalse(
             ManagedDownloadMediaScanIsolation.isUsableNoMediaMarker(
-                documentExists = false,
-                descriptorAccessible = false
+                ManagedDownloadReferenceIo.AccessResult.Missing
+            )
+        )
+        assertFalse(
+            ManagedDownloadMediaScanIsolation.isUsableNoMediaMarker(
+                ManagedDownloadReferenceIo.AccessResult.PermissionLost
+            )
+        )
+        assertFalse(
+            ManagedDownloadMediaScanIsolation.isUsableNoMediaMarker(
+                ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
+                    IllegalStateException("provider offline")
+                )
             )
         )
     }

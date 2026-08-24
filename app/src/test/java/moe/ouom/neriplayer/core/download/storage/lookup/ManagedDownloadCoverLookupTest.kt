@@ -4,9 +4,38 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ManagedDownloadCoverLookupTest {
+
+    @Test
+    fun `stable cover lookup does not use colliding legacy hash names`() {
+        val baseName = "Artist - Song"
+        val firstKey = "FB"
+        val collidingKey = "Ea"
+        val legacyName = "$baseName-${ManagedDownloadStorageNaming.legacyStableKeySuffix(firstKey)}.jpg"
+        val legacyCover = coverEntry(legacyName)
+        val snapshot = snapshot(
+            audioEntries = listOf(audioEntry("$baseName.mp3")),
+            metadataByAudioName = mapOf(
+                "$baseName.mp3" to metadata(stableKey = collidingKey)
+            ),
+            coverEntries = listOf(legacyCover)
+        )
+
+        assertFalse(
+            ManagedDownloadStorageNaming
+                .buildStableCoverCandidateNames(baseName, collidingKey)
+                .contains(legacyName)
+        )
+        assertNull(
+            ManagedDownloadCoverLookup.findCoverReference(
+                snapshot,
+                snapshot.audioEntries.single()
+            )
+        )
+    }
 
     @Test
     fun `stable duplicate does not inherit the first legacy cover`() {

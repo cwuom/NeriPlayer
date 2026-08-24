@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeResult
@@ -50,6 +51,14 @@ internal object LegacyJsonCleanupScheduler {
                             "Legacy download upgrade pending: ${error.message}"
                         )
                     }.getOrNull()
+                    runCatching {
+                        DownloadRecoveryRoomStore(appContext).bootstrapLegacyFilesOnce()
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "Legacy download queue bootstrap pending: ${error.message}"
+                        )
+                    }
                     val plan = coordinator.buildPlan()
                     if (plan.targets.none { it.exists }) {
                         if (lastUpgradeResult?.isComplete == true) {
@@ -77,7 +86,8 @@ internal object LegacyJsonCleanupScheduler {
                         TAG,
                         "Legacy download upgrade pending: rows=${result.rowsPending}, " +
                             "completed=${result.rowsCompleted}, " +
-                            "tableCleaned=${result.temporaryTableCleaned}"
+                            "payloadTableCleaned=${result.temporaryTableCleaned}, " +
+                            "legacyTablesCleaned=${result.legacyProjectionTablesCleaned}"
                     )
                 }
                 lastResult?.let { result ->

@@ -88,7 +88,7 @@ internal fun shouldDeferPendingDownloadRecoveryForNetwork(
     return networkType != TrafficNetworkType.WIFI && !mobileDataOverrideAllowed
 }
 
-internal fun shouldDeferPreparedDownloadStartForNetwork(
+internal fun shouldDeferQueuedDownloadStartForNetwork(
     networkType: TrafficNetworkType,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean

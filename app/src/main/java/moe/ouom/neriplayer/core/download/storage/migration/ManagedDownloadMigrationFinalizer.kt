@@ -11,6 +11,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -36,8 +39,19 @@ internal class ManagedDownloadMigrationFinalizer(
         ManagedDownloadStorage.StoredEntry,
         Long
     ) -> Unit = { _, _, _ -> },
-    private val deleteReference: (Context, String, ManagedDownloadRootHandle) -> Boolean,
-    private val rewriteMetadataReferences: (String, Map<String, String>) -> String
+    private val deleteReference: (
+        Context,
+        TrustedManagedRef,
+        ManagedDownloadRootHandle
+    ) -> StorageMutationResult,
+    private val rewriteMetadataReferences: (String, Map<String, String>) -> String,
+    private val deleteReferences: (
+        Context,
+        Collection<TrustedManagedRef>,
+        ManagedDownloadRootHandle
+    ) -> Map<TrustedManagedRef, StorageMutationResult> = { context, references, root ->
+        references.associateWith { reference -> deleteReference(context, reference, root) }
+    }
 ) {
     suspend fun rewriteMigratedMetadataReferences(
         context: Context,
@@ -101,22 +115,56 @@ internal class ManagedDownloadMigrationFinalizer(
         } else {
             copiedEntries.migrationReferenceMap()
         }
-        val cleanupLimiter = Semaphore(deleteParallelism(sourceRoot))
+        val verifiedEntries = copiedEntries.filter { migrationEntry ->
+            val verified = targetsAlreadyVerified || isMigrationTargetVerified(
+                context = context,
+                migrationEntry = migrationEntry,
+                referenceMap = referenceMap
+            )
+            if (!verified) {
+                NPLogger.w(
+                    tag,
+                    "迁移后目标校验失败，跳过删除源文件: ${migrationEntry.original.entry.name}"
+                )
+            }
+            verified
+        }
+        val deletionReferences = verifiedEntries.mapNotNull { migrationEntry ->
+            migrationEntry.original.entry.toTrustedManagedRef()
+        }
+        val deletionResults = if (deletionReferences.isEmpty()) {
+            emptyMap()
+        } else {
+            runCatching {
+                deleteReferences(context, deletionReferences, sourceRoot)
+            }.getOrElse { error ->
+                val result = error.toStorageMutationResult()
+                deletionReferences.associateWith { result }
+            }
+        }
         copiedEntries.map { migrationEntry ->
-            async(Dispatchers.IO) {
-                cleanupLimiter.withPermit {
-                    cleanupMigratedEntry(
-                        context = context,
-                        totalEntries = copiedEntries.size,
-                        migrationEntry = migrationEntry,
-                        sourceRoot = sourceRoot,
-                        targetsAlreadyVerified = targetsAlreadyVerified,
-                        referenceMap = referenceMap,
-                        progressTracker = progressTracker
+            progressTracker?.startCleanup(copiedEntries.size, migrationEntry.original.entry.name)
+            val verified = migrationEntry in verifiedEntries
+            if (!verified) {
+                progressTracker?.finishCleanup(migrationEntry.original.entry.name)
+                1
+            } else {
+                val reference = migrationEntry.original.entry.toTrustedManagedRef()
+                val result = reference?.let(deletionResults::get)
+                    ?: StorageMutationResult.OutOfScope
+                if (!result.isCleanupConfirmed()) {
+                    NPLogger.w(
+                        tag,
+                        "迁移后删除旧下载文件未确认: " +
+                            "name=${migrationEntry.original.entry.name}, " +
+                            "reference=${migrationEntry.original.entry.reference}, " +
+                            "result=$result"
                     )
                 }
+                progressTracker?.finishCleanup(migrationEntry.original.entry.name)
+                if (result.isCleanupConfirmed()) 0 else 1
             }
-        }.awaitAll().sum()
+        }.sum()
     }
 
     suspend fun rollbackMigratedEntries(
@@ -199,38 +247,6 @@ internal class ManagedDownloadMigrationFinalizer(
         val targetMetadata: String,
         val rewrittenMetadata: String
     )
-
-    private fun cleanupMigratedEntry(
-        context: Context,
-        totalEntries: Int,
-        migrationEntry: CopiedMigrationEntry,
-        sourceRoot: ManagedDownloadRootHandle,
-        targetsAlreadyVerified: Boolean,
-        referenceMap: Map<String, String>,
-        progressTracker: ManagedMigrationProgressReporter?
-    ): Int {
-        progressTracker?.startCleanup(totalEntries, migrationEntry.original.entry.name)
-        val targetVerified = targetsAlreadyVerified || isMigrationTargetVerified(
-            context = context,
-            migrationEntry = migrationEntry,
-            referenceMap = referenceMap
-        )
-        if (!targetVerified) {
-            NPLogger.w(
-                tag,
-                "迁移后目标校验失败，跳过删除源文件: ${migrationEntry.original.entry.name}"
-            )
-            progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-            return 1
-        }
-        val deleted = runCatching {
-            deleteReference(context, migrationEntry.original.entry.reference, sourceRoot)
-        }.onFailure {
-            NPLogger.w(tag, "迁移后删除旧下载文件失败: ${migrationEntry.original.entry.reference}, ${it.message}")
-        }.getOrDefault(false)
-        progressTracker?.finishCleanup(migrationEntry.original.entry.name)
-        return if (deleted) 0 else 1
-    }
 
     private fun isMigrationTargetVerified(
         context: Context,
@@ -413,12 +429,63 @@ internal class ManagedDownloadMigrationFinalizer(
         if (!migrationEntry.createdNew) {
             return 0
         }
-        val deleted = runCatching {
-            deleteReference(context, migrationEntry.copiedEntry.reference, targetRoot)
-        }.onFailure {
-            NPLogger.w(tag, "回滚迁移目标文件失败: ${migrationEntry.copiedEntry.reference}, ${it.message}")
-        }.getOrDefault(false)
-        return if (deleted) 0 else 1
+        val targetReference = migrationEntry.copiedEntry.toTrustedManagedRef()
+        val result = targetReference?.let { reference ->
+            runCatching {
+                deleteReference(context, reference, targetRoot)
+            }.onFailure {
+                NPLogger.w(
+                    tag,
+                    "回滚迁移目标文件失败: " +
+                        "${migrationEntry.copiedEntry.reference}, ${it.message}"
+                )
+            }.getOrElse { error -> error.toStorageMutationResult() }
+        } ?: StorageMutationResult.OutOfScope
+        return if (result.isCleanupConfirmed()) 0 else 1
+    }
+
+    private fun ManagedDownloadStorage.StoredEntry.toTrustedManagedRef(): TrustedManagedRef? {
+        val normalizedReference = reference.trim().takeIf(String::isNotBlank) ?: return null
+        val uri = runCatching { normalizedReference.toUri() }.getOrNull()
+        return when {
+            normalizedReference.startsWith("/") -> {
+                TrustedManagedRef(
+                    reference = StorageReference.FileRef(normalizedReference),
+                    externalReference = normalizedReference
+                )
+            }
+
+            uri != null &&
+                uri.scheme.equals("content", ignoreCase = true) &&
+                !uri.authority.isNullOrBlank() -> {
+                TrustedManagedRef(
+                    reference = StorageReference.SafRef(uri),
+                    externalReference = normalizedReference
+                )
+            }
+
+            uri != null && uri.scheme.equals("file", ignoreCase = true) -> {
+                val path = uri.path?.takeIf(String::isNotBlank) ?: return null
+                TrustedManagedRef(
+                    reference = StorageReference.FileRef(path),
+                    externalReference = normalizedReference
+                )
+            }
+
+            else -> null
+        }
+    }
+
+    private fun Throwable.toStorageMutationResult(): StorageMutationResult {
+        return if (this is SecurityException) {
+            StorageMutationResult.PermissionLost
+        } else {
+            StorageMutationResult.ProviderFailure(this)
+        }
+    }
+
+    private fun StorageMutationResult.isCleanupConfirmed(): Boolean {
+        return this is StorageMutationResult.Deleted || this is StorageMutationResult.Missing
     }
 
     companion object {

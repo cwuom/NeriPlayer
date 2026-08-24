@@ -23,7 +23,7 @@ internal object ManagedDownloadStoredEntryMapper {
         return fromTreeChild(
             name = child.name,
             documentReference = child.documentUri.toString(),
-            sizeBytes = child.sizeBytes,
+            sizeBytes = child.sizeBytes ?: 0L,
             lastModifiedMs = child.lastModifiedMs,
             isDirectory = child.isDirectory
         )

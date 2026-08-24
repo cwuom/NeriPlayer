@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
@@ -483,14 +484,20 @@ internal class ManagedDownloadStorageCommitWriter(
                 fallbackLastModifiedMs = writtenAtMs,
                 description = "迁移临时文件: $description"
             )
-            if (!pending.renameTo(finalName)) {
-                throw IOException("SAF 提供方不支持安全提交迁移文件: $finalName")
-            }
-            val committedTarget = treeChildRegistry.toTreeDocumentFile(
+            val renamedUri = DocumentsContract.renameDocument(
+                context.contentResolver,
+                pending.uri,
+                finalName
+            ) ?: throw IOException("SAF 提供方未返回迁移提交后的文件 URI: $finalName")
+            val committedPending = DocumentFile.fromSingleUri(context, renamedUri)
+                ?: throw IOException("无法访问 SAF 迁移提交后的文件: $finalName")
+            pendingTarget = committedPending
+            pendingName = finalName
+            val committedTarget = treeChildRegistry.toTreeDocumentFileOrEnumerated(
                 context = context,
                 parent = parent,
-                child = pending
-            ) ?: DocumentFile.fromSingleUri(context, pending.uri) ?: pending
+                child = committedPending
+            ) ?: committedPending
             val entry = treeFileCommitter.verifiedTreeStoredEntry(
                 context = context,
                 target = committedTarget,
