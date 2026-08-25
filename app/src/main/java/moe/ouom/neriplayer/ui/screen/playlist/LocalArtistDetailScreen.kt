@@ -75,7 +75,6 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -106,8 +105,7 @@ import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
-    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null
+    return GlobalDownloadManager.hasDownloadedSongCached(song)
 }
 
 private fun SongItem.localArtistSongSearchTokens(

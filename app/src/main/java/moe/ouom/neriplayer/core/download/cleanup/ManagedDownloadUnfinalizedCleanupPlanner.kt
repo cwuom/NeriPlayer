@@ -22,9 +22,11 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
             return emptySet()
         }
 
-        val audioEntriesByName = rootEntries
-            .filter { entry -> entry.extension in audioExtensions }
-            .associateBy(ManagedDownloadStorage.StoredEntry::name)
+        val audioEntriesByLogicalName = rootEntries
+            .filter { entry ->
+                entry.extension in audioExtensions || entry.isPendingAudioWrite
+            }
+            .groupBy(ManagedDownloadStorage.StoredEntry::logicalName)
         val protectedReferences = protectedSidecarReferences(
             parsedMetadataEntries = parsedMetadataEntries,
             managedSidecarReferences = managedSidecarReferences
@@ -32,14 +34,15 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
 
         return linkedSetOf<String>().apply {
             unfinalizedMetadataEntries.forEach { parsed ->
-                val audio = ManagedDownloadTreeNaming.metadataAudioName(parsed.entry.name)
-                    ?.let(audioEntriesByName::get)
-                if (audio?.sizeBytes?.let { it > 0L } == true) {
+                val audioEntries = ManagedDownloadTreeNaming.metadataAudioName(parsed.entry.name)
+                    ?.let(audioEntriesByLogicalName::get)
+                    .orEmpty()
+                if (audioEntries.any { audio -> audio.sizeBytes > 0L }) {
                     return@forEach
                 }
 
                 add(parsed.entry.reference)
-                audio?.reference?.let(::add)
+                audioEntries.mapTo(this, ManagedDownloadStorage.StoredEntry::reference)
                 sidecarReferences(parsed.metadata, managedSidecarReferences)
                     .filterNot(protectedReferences::contains)
                     .forEach(::add)

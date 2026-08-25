@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.bootstrap
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 
 internal data class ManagedLibraryRebuildItem(
     val audio: ManagedDownloadStorage.StoredEntry,
@@ -14,8 +15,17 @@ internal object ManagedLibraryRebuilder {
     fun plan(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): List<ManagedLibraryRebuildItem> {
-        return snapshot.audioEntries.map { audio ->
+        return snapshot.audioEntries.mapNotNull { audio ->
             val metadata = snapshot.metadataByAudioName[audio.name]
+            if (
+                !isFinalizedDownloadedAudioEntry(
+                    rootEntriesComplete = snapshot.rootEntriesComplete,
+                    isPendingAudioWrite = audio.isPendingAudioWrite,
+                    metadata = metadata
+                )
+            ) {
+                return@mapNotNull null
+            }
             ManagedLibraryRebuildItem(
                 audio = audio,
                 metadata = metadata,

@@ -76,8 +76,7 @@ class UidtDownloadJobService : JobService() {
             var wantsReschedule = false
             try {
                 val result = DownloadExecutionHosts.default.execute(applicationContext, operationId)
-                wantsReschedule = result == DownloadExecutionResult.Retry ||
-                    result is DownloadExecutionResult.Failed
+                wantsReschedule = shouldRescheduleUidtExecution(result)
                 NPLogger.d(TAG, "UIDT 下载任务结束: operationId=$operationId, result=$result")
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -186,10 +185,8 @@ class UidtDownloadJobService : JobService() {
                         job.extras.getString(OPERATION_ID_KEY) == normalizedId
                 }
                 if (existingJob != null) {
-                    return@synchronized ForegroundDownloadWorker.scheduleFallback(
-                        context,
-                        normalizedId
-                    )
+                    ForegroundDownloadWorker.cancelFallback(context, normalizedId)
+                    return@synchronized true
                 }
                 val occupiedJobIds = pendingJobs
                     .asSequence()
@@ -210,10 +207,7 @@ class UidtDownloadJobService : JobService() {
                     ForegroundDownloadWorker.cancelFallback(context, normalizedId)
                     return@synchronized false
                 }
-                if (!ForegroundDownloadWorker.scheduleFallback(context, normalizedId)) {
-                    scheduler.cancel(selectedJobId)
-                    return@synchronized false
-                }
+                ForegroundDownloadWorker.cancelFallback(context, normalizedId)
                 true
             }
         }
@@ -323,5 +317,19 @@ class UidtDownloadJobService : JobService() {
             }
             return null
         }
+    }
+}
+
+internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boolean {
+    return when (result) {
+        DownloadExecutionResult.Retry,
+        is DownloadExecutionResult.Failed -> true
+
+        DownloadExecutionResult.Accepted,
+        DownloadExecutionResult.AlreadyHandled,
+        DownloadExecutionResult.MissingOperation,
+        DownloadExecutionResult.Cancelled,
+        DownloadExecutionResult.UserStopped,
+        DownloadExecutionResult.UserActionRequired -> false
     }
 }

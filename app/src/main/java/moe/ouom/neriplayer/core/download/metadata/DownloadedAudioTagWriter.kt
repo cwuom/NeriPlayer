@@ -72,7 +72,7 @@ internal object DownloadedAudioTagWriter {
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
         standardizedLyricEmbeddingEnabled: Boolean
     ): DownloadedAudioTagWriteOutcome = withContext(Dispatchers.IO) {
-        if (!supportsEmbeddedTags(audio.name)) {
+        if (!supportsEmbeddedTags(audio.logicalName)) {
             NPLogger.d(TAG, "容器不支持内嵌标签，跳过写入: file=${audio.name}")
             return@withContext DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
         }
@@ -92,11 +92,11 @@ internal object DownloadedAudioTagWriter {
                 context = context,
                 descriptor = target,
                 sidecarReferences = sidecarReferences,
-                audioExtension = audio.name.substringAfterLast('.', "")
+                audioExtension = audio.logicalName.substringAfterLast('.', "")
             )
 
             val propertyChanged = !propertyMapsEquivalent(existingPropertyMap, propertyMap)
-            val audioExtension = audio.name.substringAfterLast('.', "")
+            val audioExtension = audio.logicalName.substringAfterLast('.', "")
             val coverSaved = coverPictures?.let { pictures ->
                 runCatching {
                     TagLib.savePictures(target.dup().detachFd(), pictures)
@@ -160,7 +160,7 @@ internal object DownloadedAudioTagWriter {
         standardizedLyricEmbeddingEnabled: Boolean
     ): PropertyMap {
         val propertyMap = copyPropertyMap(existingPropertyMap)
-        val audioExtension = audio.name.substringAfterLast('.', "").lowercase()
+        val audioExtension = audio.logicalName.substringAfterLast('.', "").lowercase()
         val embeddedLyric = normalizeLyricForEmbedding(
             lyric = resolveEmbeddedLyric(
                 context = context,
@@ -482,13 +482,21 @@ internal object DownloadedAudioTagWriter {
                 }
             }
 
-        val audioUri = runCatching { audio.playbackUri.toUri() }.getOrNull() ?: return null
+        val writableReference = writableDescriptorReference(audio) ?: return null
+        val audioUri = runCatching { writableReference.toUri() }.getOrNull() ?: return null
         return runCatching {
             context.contentResolver.openFileDescriptor(audioUri, "rw")
         }.getOrElse {
             NPLogger.w(TAG, "打开音频 Uri 失败: $audioUri, ${it.message}")
             null
         }
+    }
+
+    internal fun writableDescriptorReference(
+        audio: ManagedDownloadStorage.StoredEntry
+    ): String? {
+        return audio.mediaUri.trim().takeIf(String::isNotBlank)
+            ?: audio.reference.trim().takeIf(String::isNotBlank)
     }
 
     private fun readReferenceBytes(context: Context, reference: String): ByteArray? {

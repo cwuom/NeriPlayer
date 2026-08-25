@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage
 
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.model.stableKey
@@ -178,7 +179,7 @@ internal object ManagedDownloadStorageJsonCodec {
     private fun ManagedDownloadStorage.DownloadedAudioMetadata.toJson(): JSONObject {
         val restorable = restorableMetadata ?: toLegacyRestorableMetadata()
         return JSONObject().apply {
-            put("schemaVersion", 5)
+            put("schemaVersion", 6)
             put("stableKey", stableKey)
             put("songId", songId)
             put("identityAlbum", identityAlbum)
@@ -213,6 +214,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("durationMs", durationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
+            put("metadataEmbeddingState", metadataEmbeddingState?.name)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
             put("artifactId", artifactId)
@@ -339,8 +341,10 @@ internal object ManagedDownloadStorageJsonCodec {
     private fun JSONObject.toWorkingResumeMetadataSong(): SongItem? {
         val id = optLong("id").takeIf { has("id") } ?: return null
         val name = optString("name").takeIf(String::isNotBlank) ?: return null
-        val artist = optString("artist").takeIf(String::isNotBlank) ?: return null
-        val album = optString("album").takeIf(String::isNotBlank) ?: return null
+        // older operation payloads may not contain remote artist or album details yet
+        // their channel-based stable key is still sufficient to resume the transfer
+        val artist = optString("artist")
+        val album = optString("album")
         return SongItem(
             id = id,
             name = name,
@@ -456,6 +460,11 @@ internal object ManagedDownloadStorageJsonCodec {
             downloadTimeMs = optLong("downloadTimeMs")
                 .takeIf { has("downloadTimeMs") && it > 0L },
             downloadFinalized = optOptionalBoolean("downloadFinalized"),
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.fromPersisted(
+                optString("metadataEmbeddingState").takeIf {
+                    has("metadataEmbeddingState") && !isNull("metadataEmbeddingState")
+                }
+            ),
             createdAtMs = optLong("createdAtMs")
                 .takeIf { has("createdAtMs") && it > 0L }
                 ?: restorable?.createdAtMs,

@@ -1,7 +1,10 @@
 package moe.ouom.neriplayer.core.download.artifact
 
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -24,6 +27,123 @@ class ManagedDownloadArtifactPolicyTest {
             ManagedDownloadArtifactPolicy.decide(
                 existing = artifact(ManagedDownloadArtifactState.FINALIZED, 100L),
                 nowMs = 1_000L
+            )
+        )
+    }
+
+    @Test
+    fun `finalized artifact settles only with matching strict metadata`() {
+        listOf(
+            DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            DownloadedAudioEmbeddingState.USER_DISABLED
+        ).forEach { embeddingState ->
+            assertEquals(
+                ManagedDownloadArtifactFinalizationDisposition.SETTLED,
+                resolveFinalizedArtifactCompletionDisposition(
+                    artifactState = ManagedDownloadArtifactState.FINALIZED,
+                    snapshotIsComplete = true,
+                    matchingAudioFound = true,
+                    metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MATCHING,
+                    metadataHasStrictCompletion =
+                        isAcceptedDownloadedAudioEmbeddingState(embeddingState)
+                )
+            )
+        }
+        listOf(
+            DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED,
+            DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+        ).forEach { embeddingState ->
+            val hasStrictCompletion = isAcceptedDownloadedAudioEmbeddingState(embeddingState)
+            assertFalse(hasStrictCompletion)
+            assertEquals(
+                ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED,
+                resolveFinalizedArtifactCompletionDisposition(
+                    artifactState = ManagedDownloadArtifactState.FINALIZED,
+                    snapshotIsComplete = true,
+                    matchingAudioFound = true,
+                    metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MATCHING,
+                    metadataHasStrictCompletion = hasStrictCompletion
+                )
+            )
+        }
+        assertEquals(
+            ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED,
+            resolveFinalizedArtifactCompletionDisposition(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                snapshotIsComplete = true,
+                matchingAudioFound = true,
+                metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MISSING,
+                metadataHasStrictCompletion = false
+            )
+        )
+    }
+
+    @Test
+    fun `finalized artifact keeps recovery pending when live evidence is incomplete`() {
+        listOf(
+            resolveFinalizedArtifactCompletionDisposition(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                snapshotIsComplete = false,
+                matchingAudioFound = true,
+                metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MATCHING,
+                metadataHasStrictCompletion = true
+            ),
+            resolveFinalizedArtifactCompletionDisposition(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                snapshotIsComplete = true,
+                matchingAudioFound = false,
+                metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MISSING,
+                metadataHasStrictCompletion = false
+            ),
+            resolveFinalizedArtifactCompletionDisposition(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                snapshotIsComplete = true,
+                matchingAudioFound = true,
+                metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MISMATCHED,
+                metadataHasStrictCompletion = true
+            )
+        ).forEach { disposition ->
+            assertEquals(
+                ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE,
+                disposition
+            )
+        }
+    }
+
+    @Test
+    fun `legacy finalized recovery yields one lease owner at a time`() {
+        val recoveryArtifact = artifact(
+            state = ManagedDownloadArtifactState.DOWNLOADING,
+            updatedAtMs = 900L,
+            leaseId = "operation-a"
+        )
+
+        assertEquals(
+            ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED,
+            resolveFinalizedArtifactCompletionDisposition(
+                artifactState = ManagedDownloadArtifactState.FINALIZED,
+                snapshotIsComplete = true,
+                matchingAudioFound = true,
+                metadataIdentity = ManagedDownloadArtifactMetadataIdentity.MATCHING,
+                metadataHasStrictCompletion = false
+            )
+        )
+        assertEquals(
+            ManagedDownloadArtifactDecision.InFlight,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = recoveryArtifact,
+                nowMs = 1_000L,
+                staleLeaseMs = 500L,
+                leaseOwnerId = "operation-b"
+            )
+        )
+        assertEquals(
+            ManagedDownloadArtifactDecision.Acquire,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = recoveryArtifact,
+                nowMs = 1_000L,
+                staleLeaseMs = 500L,
+                leaseOwnerId = "operation-a"
             )
         )
     }

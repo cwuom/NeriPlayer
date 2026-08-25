@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +32,11 @@ class LegacyDownloadUpgradeMetadataMergerTest {
         assertEquals("file:song.flac", merged.getString("stableKey"))
         assertEquals("song.flac", merged.getString("audioFileName"))
         assertEquals(1234L, merged.getLong("downloadTimeMs"))
+        assertFalse(merged.getBoolean("downloadFinalized"))
+        assertEquals(
+            DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name,
+            merged.getString("metadataEmbeddingState")
+        )
         val restorable = merged.getJSONObject("restorableMetadata")
         assertEquals("file:song.flac", restorable.getJSONObject("sourceIdentity").getString("stableKey"))
         assertEquals("base lyric", restorable.getJSONObject("baseline").getString("originalLyric"))
@@ -143,6 +149,50 @@ class LegacyDownloadUpgradeMetadataMergerTest {
         assertEquals(
             "content://legacy/Covers/custom.jpg",
             restorable.getJSONObject("overrides").getString("coverReference")
+        )
+    }
+
+    @Test
+    fun explicitEmbeddingCompletionStateRemainsTrusted() {
+        val merged = LegacyDownloadUpgradeMetadataMerger.merge(
+            payload = JSONObject(
+                """
+                {
+                  "stableKey": "file:song.flac",
+                  "metadataEmbeddingState": "USER_DISABLED"
+                }
+                """.trimIndent()
+            ),
+            existing = null,
+            audioFileName = "song.flac"
+        )
+
+        assertTrue(merged.getBoolean("downloadFinalized"))
+        assertEquals(
+            DownloadedAudioEmbeddingState.USER_DISABLED.name,
+            merged.getString("metadataEmbeddingState")
+        )
+    }
+
+    @Test
+    fun legacyFinalizedFlagWithoutEmbeddingProofIsDowngradedForRecovery() {
+        val merged = LegacyDownloadUpgradeMetadataMerger.merge(
+            payload = JSONObject(
+                """
+                {
+                  "stableKey": "file:song.flac",
+                  "downloadFinalized": true
+                }
+                """.trimIndent()
+            ),
+            existing = null,
+            audioFileName = "song.flac"
+        )
+
+        assertFalse(merged.getBoolean("downloadFinalized"))
+        assertEquals(
+            DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name,
+            merged.getString("metadataEmbeddingState")
         )
     }
 }

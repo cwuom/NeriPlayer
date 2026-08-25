@@ -109,6 +109,43 @@ internal enum class ManagedDownloadArtifactDecision {
     RepairRequired
 }
 
+internal enum class ManagedDownloadArtifactFinalizationDisposition {
+    SETTLED,
+    FINALIZATION_REQUIRED,
+    UNAVAILABLE
+}
+
+internal enum class ManagedDownloadArtifactMetadataIdentity {
+    MATCHING,
+    MISSING,
+    MISMATCHED
+}
+
+internal fun resolveFinalizedArtifactCompletionDisposition(
+    artifactState: ManagedDownloadArtifactState,
+    snapshotIsComplete: Boolean,
+    matchingAudioFound: Boolean,
+    metadataIdentity: ManagedDownloadArtifactMetadataIdentity,
+    metadataHasStrictCompletion: Boolean
+): ManagedDownloadArtifactFinalizationDisposition {
+    if (
+        artifactState != ManagedDownloadArtifactState.FINALIZED ||
+        !snapshotIsComplete ||
+        !matchingAudioFound ||
+        metadataIdentity == ManagedDownloadArtifactMetadataIdentity.MISMATCHED
+    ) {
+        return ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE
+    }
+    if (metadataIdentity == ManagedDownloadArtifactMetadataIdentity.MISSING) {
+        return ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED
+    }
+    return if (metadataHasStrictCompletion) {
+        ManagedDownloadArtifactFinalizationDisposition.SETTLED
+    } else {
+        ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED
+    }
+}
+
 internal fun matchesManagedDownloadArtifactLease(
     currentLeaseId: String?,
     expectedLeaseId: String?

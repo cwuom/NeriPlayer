@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.bootstrap
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ManagedLibraryRebuilderTest {
@@ -14,7 +14,9 @@ class ManagedLibraryRebuilderTest {
             artifactId = "artifact-song",
             downloadTimeMs = 11L,
             createdAtMs = 22L,
-            libraryAddedAtMs = 33L
+            libraryAddedAtMs = 33L,
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
         )
         val snapshot = snapshot(audio, metadata)
 
@@ -26,12 +28,42 @@ class ManagedLibraryRebuilderTest {
     }
 
     @Test
-    fun `metadata-less audio remains in plan and falls back to file time`() {
+    fun `metadata-less audio never enters the completed library plan`() {
         val audio = audio(lastModifiedMs = 77L)
-        val item = ManagedLibraryRebuilder.plan(snapshot(audio, null)).single()
 
-        assertNull(item.stableKey)
-        assertEquals(77L, item.logicalTimeMs)
+        assertEquals(emptyList<ManagedLibraryRebuildItem>(), ManagedLibraryRebuilder.plan(snapshot(audio, null)))
+    }
+
+    @Test
+    fun `unfinalized metadata does not enter library rebuild plan`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
+        )
+
+        assertEquals(
+            emptyList<ManagedLibraryRebuildItem>(),
+            ManagedLibraryRebuilder.plan(snapshot(audio, metadata))
+        )
+    }
+
+    @Test
+    fun `pending audio never enters library rebuild plan even with finalized metadata`() {
+        val audio = audio(lastModifiedMs = 77L).copy(
+            name = "song.mp3.npdl_pending.recovery.pending"
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+
+        assertEquals(
+            emptyList<ManagedLibraryRebuildItem>(),
+            ManagedLibraryRebuilder.plan(snapshot(audio, metadata))
+        )
     }
 
     private fun snapshot(

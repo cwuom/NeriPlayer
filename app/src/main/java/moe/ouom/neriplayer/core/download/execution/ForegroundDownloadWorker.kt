@@ -230,6 +230,7 @@ internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
         DownloadExecutionResult.AlreadyHandled,
         DownloadExecutionResult.Cancelled,
         DownloadExecutionResult.UserStopped,
+        DownloadExecutionResult.UserActionRequired,
         DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.success()
         DownloadExecutionResult.Retry -> ListenableWorker.Result.retry()
         is DownloadExecutionResult.Failed -> ListenableWorker.Result.retry()

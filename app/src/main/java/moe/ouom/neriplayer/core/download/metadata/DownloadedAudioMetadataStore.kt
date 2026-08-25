@@ -4,6 +4,8 @@ import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
@@ -92,6 +94,7 @@ internal class DownloadedAudioMetadataStore(
         song: SongItem,
         sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences? = null,
         downloadFinalized: Boolean = true,
+        metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,
         resolveExistingSidecars: Boolean = true,
         artifactStateOverride: String? = null,
         operationId: String? = null,
@@ -100,6 +103,11 @@ internal class DownloadedAudioMetadataStore(
     ): Boolean {
         val identity = song.identity()
         val existingMetadata = read(context, audio)
+        val resolvedEmbeddingState = resolvePersistedDownloadedAudioEmbeddingState(
+            downloadFinalized = downloadFinalized,
+            requestedState = metadataEmbeddingState,
+            existingState = existingMetadata?.metadataEmbeddingState
+        )
         val sidecars = resolveSidecarReferences(
             context = context,
             audio = audio,
@@ -174,6 +182,7 @@ internal class DownloadedAudioMetadataStore(
                 fallbackTimeMs = createdAtMs
             ),
             downloadFinalized = downloadFinalized,
+            metadataEmbeddingState = resolvedEmbeddingState,
             createdAtMs = createdAtMs,
             createdAtSource = createdAtSource,
             artifactId = existingMetadata?.artifactId,
@@ -362,6 +371,7 @@ internal class DownloadedAudioMetadataStore(
         romanizedLyricReference: String?,
         downloadTimeMs: Long?,
         downloadFinalized: Boolean,
+        metadataEmbeddingState: DownloadedAudioEmbeddingState?,
         createdAtMs: Long,
         createdAtSource: String,
         artifactId: String?,
@@ -376,7 +386,7 @@ internal class DownloadedAudioMetadataStore(
     ): JSONObject {
         val identity = song.identity()
         return JSONObject().apply {
-            put("schemaVersion", 5)
+            put("schemaVersion", 6)
             put("stableKey", identity.stableKey())
             put("songId", song.id)
             put("identityAlbum", identity.album)
@@ -411,6 +421,7 @@ internal class DownloadedAudioMetadataStore(
             put("durationMs", song.durationMs)
             put("downloadTimeMs", downloadTimeMs)
             put("downloadFinalized", downloadFinalized)
+            put("metadataEmbeddingState", metadataEmbeddingState?.name)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
             put("artifactId", artifactId)

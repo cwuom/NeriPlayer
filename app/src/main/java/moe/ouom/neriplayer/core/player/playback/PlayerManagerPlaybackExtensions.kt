@@ -1193,11 +1193,13 @@ private fun PlayerManager.maybeHydrateSongForPlayback(
     }
 
     ioScope.launch {
-        val isManagedDownload = GlobalDownloadManager.hasDownloadedSongCached(song) ||
+        val isPublishedManagedDownload = GlobalDownloadManager.hasDownloadedSongCached(song)
+        // 目录和 URI 线索只决定是否做轻量文本补全，不代表下载已经完成
+        val isManagedDownloadSource = isPublishedManagedDownload ||
             ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
-        // 下载歌曲的标题和封面已经来自下载目录索引, 播放首屏只补侧载文本, 避免 TagLib
-        // 读取整段音频和内嵌歌词抢占歌词快路径
-        val hydratedSong = if (isManagedDownload) {
+        // 已发布下载的标题和封面来自目录索引，来源线索命中时也只补侧载文本
+        // 避免 TagLib 读取整段音频和内嵌歌词抢占歌词快路径
+        val hydratedSong = if (isManagedDownloadSource) {
             LocalAudioImportManager.hydrateLocalSongTextMetadata(
                 context = application,
                 song = song,

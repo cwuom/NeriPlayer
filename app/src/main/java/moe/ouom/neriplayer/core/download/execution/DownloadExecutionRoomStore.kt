@@ -178,17 +178,24 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<StateEntry> {
         val libraryId = currentLibraryId(context)
-        return database.downloadOperationDao()
+        val entities = database.downloadOperationDao()
             .findByStatesInLibrary(libraryId, listOf(state))
-            .mapNotNull { entity ->
-                requestFromEntity(entity)?.let { request ->
-                    StateEntry(
-                        request = request,
-                        queueOrder = entity.queueOrder,
-                        createdAtMs = entity.createdAtMs
+        return buildList {
+            for (entity in entities) {
+                val request = requestFromEntity(entity)
+                if (request == null) {
+                    invalidateMalformedPayload(database, entity)
+                } else {
+                    add(
+                        StateEntry(
+                            request = request,
+                            queueOrder = entity.queueOrder,
+                            createdAtMs = entity.createdAtMs
+                        )
                     )
                 }
             }
+        }
     }
 
     suspend fun listByStates(
@@ -198,13 +205,18 @@ internal object DownloadExecutionRoomStore {
     ): List<StateEntry> {
         if (states.isEmpty()) return emptyList()
         val libraryId = currentLibraryId(context)
-        return database.downloadOperationDao()
+        val entities = database.downloadOperationDao()
             .findByStatesInLibrary(libraryId, states)
-            .mapNotNull { entity ->
-                requestFromEntity(entity)?.let { request ->
-                    StateEntry(request, entity.queueOrder, entity.createdAtMs)
+        return buildList {
+            for (entity in entities) {
+                val request = requestFromEntity(entity)
+                if (request == null) {
+                    invalidateMalformedPayload(database, entity)
+                } else {
+                    add(StateEntry(request, entity.queueOrder, entity.createdAtMs))
                 }
             }
+        }
     }
 
     suspend fun listCancellationCandidates(
@@ -401,13 +413,7 @@ internal object DownloadExecutionRoomStore {
             if (requestFromEntity(entity) != null) {
                 return entity.operationId
             }
-            dao.transitionState(
-                operationId = entity.operationId,
-                expectedStates = listOf(entity.state),
-                state = "INVALID",
-                updatedAtMs = System.currentTimeMillis(),
-                errorCode = "INVALID_OPERATION_PAYLOAD"
-            )
+            invalidateMalformedPayload(database, entity)
         }
         return null
     }
@@ -555,19 +561,14 @@ internal object DownloadExecutionRoomStore {
                 stableKey = target.stableKey,
                 states = EXECUTION_CONVERGENCE_STATES
             ).filterNot(DownloadOperationEntity::stopRequestedByUser)
-            val validContenders = contenders.mapNotNull { entity ->
+            val validContenders = buildList {
+                for (entity in contenders) {
                 val request = requestFromEntity(entity)
                 if (request == null) {
-                    dao.transitionState(
-                        operationId = entity.operationId,
-                        expectedStates = listOf(entity.state),
-                        state = "INVALID",
-                        updatedAtMs = System.currentTimeMillis(),
-                        errorCode = "INVALID_OPERATION_PAYLOAD"
-                    )
-                    null
+                    invalidateMalformedPayloadInTransaction(database, entity)
                 } else {
-                    entity to request
+                    add(entity to request)
+                }
                 }
             }
             val leasedIds = validContenders
@@ -1052,6 +1053,30 @@ internal object DownloadExecutionRoomStore {
         )
     }
 
+    private suspend fun invalidateMalformedPayload(
+        database: NeriUserDataDatabase,
+        entity: DownloadOperationEntity
+    ) {
+        database.withTransaction {
+            invalidateMalformedPayloadInTransaction(database, entity)
+        }
+    }
+
+    private suspend fun invalidateMalformedPayloadInTransaction(
+        database: NeriUserDataDatabase,
+        entity: DownloadOperationEntity
+    ) {
+        val dao = database.downloadOperationDao()
+        val updated = dao.invalidateMalformedPayload(
+            operationId = entity.operationId,
+            expectedStates = listOf(entity.state),
+            updatedAtMs = System.currentTimeMillis()
+        )
+        if (updated > 0) {
+            dao.deleteHostAdmission(entity.operationId)
+        }
+    }
+
     private fun requiresDirectCancellation(entity: DownloadOperationEntity): Boolean {
         return when (entity.state) {
             "PENDING_QUEUE",
@@ -1118,7 +1143,8 @@ internal object DownloadExecutionRoomStore {
         "RUNNING",
         "COMMITTING",
         "CORE_COMMITTED",
-        "ASSETS_ENRICHING"
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
     )
     private val CANCELABLE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",

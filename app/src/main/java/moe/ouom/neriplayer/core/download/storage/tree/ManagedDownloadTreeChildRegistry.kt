@@ -226,7 +226,10 @@ internal class ManagedDownloadTreeChildRegistry(
         val cacheKey = parent.uri.toString()
         val lock = childNameReservationLocks.computeIfAbsent("tree:$cacheKey") { Any() }
         return synchronized(lock) {
-            ManagedDownloadStorageNaming.createUniqueName(cachedTreeChildrenNamesForWrite(context, parent), desiredName)
+            ManagedDownloadStorageNaming.createUniqueAudioName(
+                existingNames = cachedTreeChildrenNamesForWrite(context, parent),
+                desiredName = desiredName
+            )
                 .also { reservedName -> rememberTreeChildName(parent, reservedName) }
         }
     }

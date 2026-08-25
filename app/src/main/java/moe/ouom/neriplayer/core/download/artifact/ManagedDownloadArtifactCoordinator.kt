@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 import moe.ouom.neriplayer.core.download.DownloadedSong
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
@@ -238,16 +239,16 @@ internal class ManagedDownloadArtifactCoordinator {
         val artifactsByStableKey = dao.findAllByRootKey(rootKey).associateBy(
             ManagedDownloadArtifactEntity::stableKey
         )
+        val snapshot = loadLiveFinalizationSnapshot(appContext)
         return songs.filter { song ->
             val stableKey = song.stableKey().trim()
             val artifact = artifactsByStableKey[stableKey]
             artifact == null ||
-                ManagedDownloadArtifactState.fromPersisted(artifact.state) !in setOf(
-                    ManagedDownloadArtifactState.CORE_COMMITTED,
-                    ManagedDownloadArtifactState.ASSETS_ENRICHING,
-                    ManagedDownloadArtifactState.FINALIZED,
-                    ManagedDownloadArtifactState.DEGRADED_COMPLETE
-                )
+                finalizedArtifactCompletionDisposition(
+                    snapshot = snapshot,
+                    artifact = artifact,
+                    stableKey = stableKey
+                ) != ManagedDownloadArtifactFinalizationDisposition.SETTLED
         }
     }
 
@@ -260,6 +261,18 @@ internal class ManagedDownloadArtifactCoordinator {
         return database(context.applicationContext).managedDownloadArtifactDao()
             .find(rootKey, stableKey)
             ?.leaseId
+    }
+
+    suspend fun currentState(
+        context: Context,
+        song: SongItem
+    ): ManagedDownloadArtifactState? {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
+        return database(context.applicationContext).managedDownloadArtifactDao()
+            .find(rootKey, stableKey)
+            ?.state
+            ?.let(ManagedDownloadArtifactState::fromPersisted)
     }
 
     suspend fun markCoreCommitted(
@@ -495,11 +508,62 @@ internal class ManagedDownloadArtifactCoordinator {
             )
         ) {
             ManagedDownloadArtifactDecision.AlreadyDownloaded -> {
+                val artifactState = ManagedDownloadArtifactState.fromPersisted(current.state)
                 val reference = current.audioReference
                 val referenceState = withContext(Dispatchers.IO) {
                     classifyManagedDownloadArtifactReference(
                         ManagedDownloadReferenceLookup.inspect(context, reference)
                     )
+                }
+                if (artifactState == ManagedDownloadArtifactState.FINALIZED) {
+                    if (
+                        !reference.isNullOrBlank() &&
+                            referenceState == ManagedDownloadArtifactReferenceState.REPAIR_REQUIRED
+                    ) {
+                        return ManagedDownloadArtifactClaim.RepairRequired(
+                            current.copy(
+                                updatedAtMs = System.currentTimeMillis(),
+                                needsReconcile = true,
+                                lastErrorCode = "AUDIO_REFERENCE_UNAVAILABLE"
+                            )
+                        )
+                    }
+                    when (
+                        inspectFinalizedArtifactCompletion(
+                            context = context,
+                            current = current,
+                            stableKey = stableKey
+                        )
+                    ) {
+                        ManagedDownloadArtifactFinalizationDisposition.SETTLED -> {
+                            return ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
+                        }
+
+                        ManagedDownloadArtifactFinalizationDisposition.FINALIZATION_REQUIRED -> {
+                            return acquireExistingClaim(
+                                context = context,
+                                database = database,
+                                current = current,
+                                nowMs = nowMs,
+                                rootKey = rootKey,
+                                stableKey = stableKey,
+                                leaseOwnerId = leaseOwnerId,
+                                retryCount = retryCount
+                            )
+                        }
+
+                        ManagedDownloadArtifactFinalizationDisposition.UNAVAILABLE -> {
+                            if (referenceState == ManagedDownloadArtifactReferenceState.PRESENT) {
+                                return ManagedDownloadArtifactClaim.RepairRequired(
+                                    current.copy(
+                                        updatedAtMs = System.currentTimeMillis(),
+                                        needsReconcile = true,
+                                        lastErrorCode = "FINALIZATION_EVIDENCE_UNAVAILABLE"
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
                 if (referenceState == ManagedDownloadArtifactReferenceState.PRESENT) {
                     return ManagedDownloadArtifactClaim.AlreadyDownloaded(current)
@@ -518,7 +582,10 @@ internal class ManagedDownloadArtifactCoordinator {
                     current = current,
                     stableKey = stableKey
                 )
-                if (replacement != null) {
+                if (
+                    replacement != null &&
+                        artifactState != ManagedDownloadArtifactState.FINALIZED
+                ) {
                     val refreshed = current.copy(
                         audioReference = replacement.reference,
                         audioName = replacement.name,
@@ -590,48 +657,69 @@ internal class ManagedDownloadArtifactCoordinator {
             ManagedDownloadArtifactDecision.RepairRequired ->
                 ManagedDownloadArtifactClaim.RepairRequired(current)
 
-            ManagedDownloadArtifactDecision.Acquire -> {
-                val acquired = newLeaseArtifact(
-                    rootKey = rootKey,
-                    stableKey = stableKey,
-                    artifactId = current.artifactId,
-                    previous = current,
-                    nowMs = nowMs,
-                    leaseOwnerId = leaseOwnerId
-                )
-                val updated = dao.tryAcquire(
-                    rootKey = rootKey,
-                    stableKey = stableKey,
-                    expectedState = current.state,
-                    expectedUpdatedAtMs = current.updatedAtMs,
-                    state = acquired.state,
-                    leaseId = acquired.leaseId.orEmpty(),
-                    updatedAtMs = nowMs
-                )
-                if (updated == 1) {
-                    ManagedDownloadArtifactClaim.Acquired(acquired)
-                } else if (retryCount >= 2) {
-                    dao.find(rootKey, stableKey)
-                        ?.let { winner -> ManagedDownloadArtifactClaim.InFlight(winner) }
-                        ?: unavailableClaim(acquired)
-                } else {
-                    dao.find(rootKey, stableKey)
-                        ?.let { winner ->
-                            resolveExistingClaim(
-                                context = context,
-                                database = database,
-                                current = winner,
-                                nowMs = nowMs,
-                                rootKey = rootKey,
-                                stableKey = stableKey,
-                                leaseOwnerId = leaseOwnerId,
-                                retryCount = retryCount + 1
-                            )
-                        }
-                        ?: unavailableClaim(acquired)
-                }
-            }
+            ManagedDownloadArtifactDecision.Acquire -> acquireExistingClaim(
+                context = context,
+                database = database,
+                current = current,
+                nowMs = nowMs,
+                rootKey = rootKey,
+                stableKey = stableKey,
+                leaseOwnerId = leaseOwnerId,
+                retryCount = retryCount
+            )
         }
+    }
+
+    private suspend fun acquireExistingClaim(
+        context: Context,
+        database: NeriUserDataDatabase,
+        current: ManagedDownloadArtifactEntity,
+        nowMs: Long,
+        rootKey: String,
+        stableKey: String,
+        leaseOwnerId: String?,
+        retryCount: Int
+    ): ManagedDownloadArtifactClaim {
+        val dao = database.managedDownloadArtifactDao()
+        val acquired = newLeaseArtifact(
+            rootKey = rootKey,
+            stableKey = stableKey,
+            artifactId = current.artifactId,
+            previous = current,
+            nowMs = nowMs,
+            leaseOwnerId = leaseOwnerId
+        )
+        val updated = dao.tryAcquire(
+            rootKey = rootKey,
+            stableKey = stableKey,
+            expectedState = current.state,
+            expectedUpdatedAtMs = current.updatedAtMs,
+            state = acquired.state,
+            leaseId = acquired.leaseId.orEmpty(),
+            updatedAtMs = nowMs
+        )
+        if (updated == 1) {
+            return ManagedDownloadArtifactClaim.Acquired(acquired)
+        }
+        if (retryCount >= 2) {
+            return dao.find(rootKey, stableKey)
+                ?.let { winner -> ManagedDownloadArtifactClaim.InFlight(winner) }
+                ?: unavailableClaim(acquired)
+        }
+        return dao.find(rootKey, stableKey)
+            ?.let { winner ->
+                resolveExistingClaim(
+                    context = context,
+                    database = database,
+                    current = winner,
+                    nowMs = nowMs,
+                    rootKey = rootKey,
+                    stableKey = stableKey,
+                    leaseOwnerId = leaseOwnerId,
+                    retryCount = retryCount + 1
+                )
+            }
+            ?: unavailableClaim(acquired)
     }
 
     private suspend fun discoverExistingAudio(
@@ -702,6 +790,109 @@ internal class ManagedDownloadArtifactCoordinator {
         }.getOrNull()
     }
 
+    private suspend fun loadLiveFinalizationSnapshot(
+        context: Context
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
+        val cachedSnapshot = ManagedDownloadStorage.cachedDownloadLibrarySnapshot(
+            context = context,
+            restorePersisted = false
+        )?.takeIf { snapshot -> snapshot.rootEntriesComplete }
+        return cachedSnapshot ?: runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.getOrNull()?.takeIf { snapshot -> snapshot.rootEntriesComplete }
+    }
+
+    private suspend fun inspectFinalizedArtifactCompletion(
+        context: Context,
+        current: ManagedDownloadArtifactEntity,
+        stableKey: String
+    ): ManagedDownloadArtifactFinalizationDisposition {
+        return finalizedArtifactCompletionDisposition(
+            snapshot = loadLiveFinalizationSnapshot(context),
+            artifact = current,
+            stableKey = stableKey
+        )
+    }
+
+    private fun finalizedArtifactCompletionDisposition(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
+        artifact: ManagedDownloadArtifactEntity,
+        stableKey: String
+    ): ManagedDownloadArtifactFinalizationDisposition {
+        val candidates = snapshot
+            ?.takeIf { currentSnapshot -> currentSnapshot.rootEntriesComplete }
+            ?.let { currentSnapshot ->
+                liveArtifactAudioCandidates(
+                    snapshot = currentSnapshot,
+                    artifact = artifact,
+                    stableKey = stableKey
+                )
+            }
+            .orEmpty()
+        val metadata = candidates.map { audio ->
+            snapshot?.metadataByAudioName?.get(audio.name)
+                ?: snapshot?.metadataByAudioName?.get(audio.logicalName)
+        }
+        val matchingMetadata = metadata.filter { entry ->
+            entry?.stableKey?.trim() == stableKey
+        }
+        val metadataIdentity = when {
+            matchingMetadata.isNotEmpty() ->
+                ManagedDownloadArtifactMetadataIdentity.MATCHING
+
+            metadata.any { entry -> entry == null } ->
+                ManagedDownloadArtifactMetadataIdentity.MISSING
+
+            metadata.isNotEmpty() ->
+                ManagedDownloadArtifactMetadataIdentity.MISMATCHED
+
+            else ->
+                ManagedDownloadArtifactMetadataIdentity.MISSING
+        }
+        val hasStrictCompletion = candidates.any { audio ->
+            val entry = snapshot?.metadataByAudioName?.get(audio.name)
+                ?: snapshot?.metadataByAudioName?.get(audio.logicalName)
+            entry?.takeIf { it.stableKey?.trim() == stableKey }?.let {
+                isFinalizedDownloadedAudioEntry(
+                    rootEntriesComplete = snapshot?.rootEntriesComplete == true,
+                    isPendingAudioWrite = audio.isPendingAudioWrite,
+                    metadata = it
+                )
+            } == true
+        }
+        return resolveFinalizedArtifactCompletionDisposition(
+            artifactState = ManagedDownloadArtifactState.fromPersisted(artifact.state),
+            snapshotIsComplete = snapshot?.rootEntriesComplete == true,
+            matchingAudioFound = candidates.isNotEmpty(),
+            metadataIdentity = metadataIdentity,
+            metadataHasStrictCompletion = hasStrictCompletion
+        )
+    }
+
+    private fun liveArtifactAudioCandidates(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        artifact: ManagedDownloadArtifactEntity,
+        stableKey: String
+    ): List<ManagedDownloadStorage.StoredEntry> {
+        val references = listOfNotNull(
+            artifact.audioReference?.trim()?.takeIf(String::isNotBlank),
+            artifact.audioName?.trim()?.takeIf(String::isNotBlank)
+        ).toSet()
+        return (
+            snapshot.audioEntriesByStableKey[stableKey].orEmpty() +
+                snapshot.audioEntries.filter { entry ->
+                    entry.reference in references ||
+                        entry.mediaUri in references ||
+                        entry.localFilePath in references ||
+                        entry.name in references ||
+                        entry.logicalName in references
+                }
+            ).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+    }
+
     private fun discoverExistingAudio(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         song: SongItem
@@ -712,7 +903,11 @@ internal class ManagedDownloadArtifactCoordinator {
             reference = audio.reference,
             name = audio.name,
             sizeBytes = audio.sizeBytes,
-            finalized = metadata?.downloadFinalized == true,
+            finalized = isFinalizedDownloadedAudioEntry(
+                rootEntriesComplete = snapshot.rootEntriesComplete,
+                isPendingAudioWrite = audio.isPendingAudioWrite,
+                metadata = metadata
+            ),
             downloadedAtMs = metadata?.downloadTimeMs
                 ?: metadata?.createdAtMs
                 ?: audio.lastModifiedMs.takeIf { it > 0L },

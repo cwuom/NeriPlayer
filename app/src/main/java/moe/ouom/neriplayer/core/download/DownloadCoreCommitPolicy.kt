@@ -80,3 +80,22 @@ internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
         "DEGRADED_COMPLETE"
     )
 }
+
+internal fun requiresFinalizedPublicationRecovery(
+    metadataFinalized: Boolean?,
+    operationState: String?,
+    artifactState: String?
+): Boolean {
+    if (metadataFinalized != true) return false
+    return operationState in setOf(
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    ) || artifactState in setOf(
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+}

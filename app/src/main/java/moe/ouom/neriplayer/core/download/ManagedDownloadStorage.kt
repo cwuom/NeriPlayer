@@ -580,6 +580,7 @@ internal object ManagedDownloadStorage {
         val durationMs: Long = 0L,
         val downloadTimeMs: Long? = null,
         val downloadFinalized: Boolean? = null,
+        val metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,
         val createdAtMs: Long? = null,
         val createdAtSource: String? = null,
         val artifactId: String? = null,
@@ -1614,6 +1615,15 @@ internal object ManagedDownloadStorage {
         val libraryId = ensureManagedLibraryManifestBlocking(context)
         val entries = snapshot.audioEntries.mapNotNull { audio ->
             val metadata = snapshot.metadataByAudioName[audio.name]
+            if (
+                !isFinalizedDownloadedAudioEntry(
+                    rootEntriesComplete = snapshot.rootEntriesComplete,
+                    isPendingAudioWrite = audio.isPendingAudioWrite,
+                    metadata = metadata
+                )
+            ) {
+                return@mapNotNull null
+            }
             val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank) ?: return@mapNotNull null
             ManagedLibraryIndexEntry(
                 stableKey = stableKey,
@@ -1621,8 +1631,8 @@ internal object ManagedDownloadStorage {
                 audioName = audio.name,
                 audioReference = audio.reference,
                 metadataName = snapshot.metadataEntriesByAudioName[audio.name]?.name,
-                state = metadata.artifactState
-                    ?: if (metadata.downloadFinalized == true) "FINALIZED" else "CORE_COMMITTED",
+                state = metadata.artifactState ?: "FINALIZED",
+                metadataEmbeddingState = metadata.metadataEmbeddingState,
                 downloadTimeMs = metadata.downloadTimeMs,
                 updatedAtMs = metadata.sourceModifiedAtMs
                     ?: metadata.createdAtMs
@@ -1784,6 +1794,7 @@ internal object ManagedDownloadStorage {
                 coverPath = entry.coverPath,
                 downloadTimeMs = entry.downloadTimeMs,
                 downloadFinalized = entry.state in setOf("FINALIZED", "COMPLETE"),
+                metadataEmbeddingState = entry.metadataEmbeddingState,
                 createdAtMs = entry.updatedAtMs,
                 createdAtSource = "INDEX_PREVIEW",
                 artifactId = entry.artifactId,
@@ -2299,36 +2310,26 @@ internal object ManagedDownloadStorage {
         written != null
     }
 
-    internal suspend fun promoteCoreAudioMetadata(
+    internal suspend fun promoteFinalizedPendingAudio(
         context: Context,
-        audio: StoredEntry,
-        json: String
+        audio: StoredEntry
     ): StoredEntry? = withContext(Dispatchers.IO) {
-        val root = resolveRootBlocking(context)
-        val backendResult = writeTextThroughBackend(
-            context = context,
-            root = root,
-            displayName = "${audio.logicalName}$METADATA_SUFFIX",
-            content = json
-        )
-        when (backendResult) {
-            is StorageWriteResult.Written -> backendResult.stat.toStoredEntryForBackend(
-                fileRoot = (root as? RootHandle.FileRoot)?.dir
+        val metadataEntry = findMetadataForAudioBlocking(context, audio) ?: return@withContext null
+        val metadata = readTextInternal(context, metadataEntry.reference)
+            ?.let(::parseDownloadedAudioMetadataJson)
+            ?: return@withContext null
+        if (!isFinalizedDownloadedMetadata(metadata)) {
+            NPLogger.w(
+                TAG,
+                "拒绝提升未完成元信息收尾的 pending 音频: ${audio.logicalName}"
             )
-            StorageWriteResult.Missing -> {
-                NPLogger.w(TAG, "core metadata target is missing; refusing raw writer fallback")
-                null
-            }
-            else -> {
-                NPLogger.w(TAG, "core metadata typed write failed: $backendResult")
-                null
-            }
-        } ?: return@withContext null
-        if (!deletePendingAudioMetadataBlocking(context, root, audio.logicalName)) {
-            NPLogger.w(TAG, "core metadata 已写入但 pending metadata 清理未确认: ${audio.logicalName}")
+            return@withContext null
         }
-        invalidateSnapshotCache(context)
-        val promoted = promotePendingAudio(context, root, audio)
+        val promoted = promotePendingAudio(
+            context = context,
+            root = resolveRootBlocking(context),
+            audio = audio
+        )
         if (promoted != null && !updateSnapshotCacheAfterStoredEntryWrite(
                 context,
                 promoted,
@@ -2338,6 +2339,56 @@ internal object ManagedDownloadStorage {
             invalidateSnapshotCache(context)
         }
         promoted
+    }
+
+    /**
+     * 将旧流程过早公开的普通音频退回 pending 名称，避免未完成标签写入的文件进入目录索引
+     */
+    internal suspend fun demotePublishedAudioForFinalization(
+        context: Context,
+        audio: StoredEntry,
+        expectedMetadataFinalized: Boolean?
+    ): StoredEntry? = withContext(Dispatchers.IO) {
+        if (audio.isPendingAudioWrite) {
+            return@withContext audio
+        }
+        val metadataEntry = findMetadataForAudioBlocking(context, audio) ?: return@withContext null
+        val metadata = readTextInternal(context, metadataEntry.reference)
+            ?.let(::parseDownloadedAudioMetadataJson)
+            ?: return@withContext null
+        if (metadata.downloadFinalized != expectedMetadataFinalized) {
+            NPLogger.d(
+                TAG,
+                "跳过已变更状态的已发布音频回退: " +
+                    "file=${audio.name}, expected=$expectedMetadataFinalized, " +
+                    "actual=${metadata.downloadFinalized}"
+            )
+            return@withContext null
+        }
+        val pendingName = buildPendingAudioWriteName(audio.logicalName)
+        val demoted = when (val root = resolveRootBlocking(context)) {
+            is RootHandle.FileRoot -> {
+                demotePublishedFileAudio(
+                    root = root.dir,
+                    publishedName = audio.name,
+                    pendingName = pendingName
+                )?.toStoredEntry()
+            }
+
+            is RootHandle.TreeRoot -> {
+                demotePublishedTreeAudio(
+                    context = context,
+                    root = root,
+                    audio = audio,
+                    pendingName = pendingName
+                )
+            }
+        }
+        if (demoted != null) {
+            // pending 项不能增量写入可见目录快照，强制下次读取重新枚举
+            invalidateSnapshotCache(context)
+        }
+        demoted
     }
 
     internal suspend fun deletePendingAudioMetadata(
@@ -2880,6 +2931,29 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    internal suspend fun demotePublishedFileAudio(
+        root: File,
+        publishedName: String,
+        pendingName: String
+    ): File? {
+        val published = File(root, publishedName)
+        return FileStorageMutationLocks.withTargetLock(published) {
+            val source = published.takeIf { it.isFile && it.length() > 0L }
+                ?: return@withTargetLock null
+            val sourceLength = source.length()
+            val pending = File(root, pendingName)
+            if (pending.exists() || pending == source) {
+                return@withTargetLock null
+            }
+            promoteFileTargetWithoutReplacement(
+                pending = source,
+                target = pending,
+                displayName = pendingName
+            )
+            pending.takeIf { it.isFile && it.length() == sourceLength }
+        }
+    }
+
     private fun writeSafFileThroughBackend(
         context: Context,
         parent: DocumentFile,
@@ -3028,7 +3102,7 @@ internal object ManagedDownloadStorage {
                             DocumentsContract.getDocumentId(pending.uri)
                     }.getOrDefault(false)
                 }
-                val renamedDocument = renameTreeDocument(
+                val renamedDocument = renameTreeDocumentWithoutReplacing(
                     context = context,
                     parent = root.tree,
                     document = treePending,
@@ -3052,69 +3126,261 @@ internal object ManagedDownloadStorage {
                         treeChildRegistry.rememberTreeChild(root.tree, it)
                     }
                 }
-
-                val backend = SafStorageBackend(context)
-                val writeResult = runBlocking(Dispatchers.IO) {
-                    backend.writeRecoverable(
-                        target = StorageTarget.SafTarget(
-                            parent = StorageReference.SafRef(root.tree.uri),
-                            displayName = finalName,
-                            mimeType = mimeTypeFromName(finalName, null)
-                        )
-                    ) { output ->
-                        when (val readResult = backend.read(
-                            StorageReference.SafRef(pending.uri)
-                        ) { input ->
-                            input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                        }) {
-                            is StorageLookupResult.Found -> readResult.value
-                            StorageLookupResult.Missing -> throw IOException(
-                                "SAF pending 音频不存在: ${audio.name}"
-                            )
-                            StorageLookupResult.PermissionLost -> throw SecurityException(
-                                "SAF pending 音频权限丢失: ${audio.name}"
-                            )
-                            is StorageLookupResult.ProviderFailure -> throw readResult.error
-                            StorageLookupResult.OutOfScope,
-                            is StorageLookupResult.Unsupported -> throw IOException(
-                                "SAF pending 音频不可读: ${audio.name}"
-                            )
-                        }
-                    }
-                }
-                val stat = when (writeResult) {
-                    is StorageWriteResult.Written -> writeResult.stat
-                    StorageWriteResult.Missing -> return null
-                    StorageWriteResult.OutOfScope -> return null
-                    StorageWriteResult.PermissionLost -> throw SecurityException(
-                        "SAF final 音频权限丢失: $finalName"
-                    )
-                    is StorageWriteResult.ProviderFailure -> throw writeResult.error
-                    is StorageWriteResult.Unsupported -> throw IOException(
-                        "SAF final 音频不支持写入: $finalName"
-                    )
-                }
-                if (stat.sizeBytes != null && stat.sizeBytes != expectedSizeBytes) {
-                    throw IOException("SAF final 音频大小不匹配: $finalName")
-                }
-                val entry = stat.toStoredEntryForBackend(fileRoot = null).copy(
-                    sizeBytes = stat.sizeBytes ?: expectedSizeBytes,
-                    lastModifiedMs = stat.lastModifiedMs ?: committedAtMs
+                copyPendingTreeAudioWithoutReplacing(
+                    context = context,
+                    root = root,
+                    pending = treePending ?: pending,
+                    pendingName = audio.name,
+                    finalName = finalName,
+                    expectedSizeBytes = expectedSizeBytes,
+                    fallbackLastModifiedMs = committedAtMs
                 )
-                    if (!deleteTrustedReference(
-                            context,
-                            TrustedManagedRef(
-                                reference = StorageReference.SafRef(pending.uri),
-                                externalReference = pending.uri.toString()
-                            )
-                        ).isConfirmedStorageMutation()
-                    ) {
-                        NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: ${audio.name}")
-                    }
-                    treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
-                    treeChildRegistry.rememberTreeChild(root.tree, entry)
-                    entry
             }
+        }
+    }
+
+    private suspend fun demotePublishedTreeAudio(
+        context: Context,
+        root: RootHandle.TreeRoot,
+        audio: StoredEntry,
+        pendingName: String
+    ): StoredEntry? {
+        val sourceUri = runCatching { audio.reference.toUri() }.getOrNull() ?: return null
+        val backend = SafStorageBackend(context)
+        val sourceStat = runBlocking(Dispatchers.IO) {
+            backend.stat(StorageReference.SafRef(sourceUri))
+        }
+        val source = when (sourceStat) {
+            is StorageLookupResult.Found -> sourceStat.value
+                .takeUnless(StorageStat::isDirectory)
+                ?.let {
+                    resolvePendingTreeDocument(
+                        context = context,
+                        parent = root.tree,
+                        uri = sourceUri
+                    )
+                }
+            StorageLookupResult.Missing -> null
+            StorageLookupResult.PermissionLost -> throw SecurityException(
+                "SAF 已发布音频权限丢失: ${audio.name}"
+            )
+            is StorageLookupResult.ProviderFailure -> throw sourceStat.error
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> null
+        } ?: return null
+        val expectedSizeBytes = (sourceStat as? StorageLookupResult.Found)
+            ?.value
+            ?.sizeBytes
+            ?.takeIf { it > 0L }
+            ?: audio.sizeBytes.takeIf { it > 0L }
+            ?: return null
+        val renamedDocument = renameTreeDocumentWithoutReplacing(
+            context = context,
+            parent = root.tree,
+            document = source,
+            finalName = pendingName
+        ) ?: return null
+        val renamedTarget = treeChildRegistry.toTreeDocumentFileOrEnumerated(
+            context = context,
+            parent = root.tree,
+            child = renamedDocument
+        ) ?: renamedDocument
+        return verifiedTreeStoredEntry(
+            context = context,
+            target = renamedTarget,
+            expectedName = pendingName,
+            expectedSizeBytes = expectedSizeBytes,
+            fallbackLastModifiedMs = audio.lastModifiedMs,
+            description = pendingName
+        ).also { demoted ->
+            treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
+            treeChildRegistry.rememberTreeChild(root.tree, demoted)
+        }
+    }
+
+    private fun copyPendingTreeAudioWithoutReplacing(
+        context: Context,
+        root: RootHandle.TreeRoot,
+        pending: DocumentFile,
+        pendingName: String,
+        finalName: String,
+        expectedSizeBytes: Long,
+        fallbackLastModifiedMs: Long
+    ): StoredEntry? {
+        return ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
+            val beforeCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+            if (!canCreateTreePromotionTargetWithoutReplacing(
+                    enumerationComplete = beforeCreate.isComplete,
+                    existingNames = beforeCreate.children.map(QueriedTreeChild::name),
+                    targetName = finalName
+                )
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "SAF 提升目标不可安全创建，保留 pending 音频: $finalName"
+                )
+                return@withLock null
+            }
+            val existingDocumentUris = beforeCreate.children.map(QueriedTreeChild::documentUri)
+            val createdUri = try {
+                DocumentsContract.createDocument(
+                    context.contentResolver,
+                    root.tree.uri,
+                    ManagedDownloadTreeNaming.documentCreateMimeType(
+                        finalName,
+                        mimeTypeFromName(finalName, null)
+                    ),
+                    finalName
+                )
+            } catch (error: SecurityException) {
+                throw error
+            } catch (error: UnsupportedOperationException) {
+                NPLogger.w(TAG, "SAF 不支持无覆写提升创建: $finalName", error)
+                return@withLock null
+            } catch (error: Throwable) {
+                throw IOException("SAF 无覆写提升创建失败: $finalName", error)
+            } ?: return@withLock null
+            val created = DocumentFile.fromSingleUri(context, createdUri)
+                ?.let { document ->
+                    treeChildRegistry.toTreeDocumentFile(
+                        context = context,
+                        parent = root.tree,
+                        child = document
+                    ) ?: document
+                }
+            if (created == null) {
+                if (existingDocumentUris.none { uri -> sameTreeDocument(uri, createdUri) }) {
+                    discardNewTreePromotionTarget(context, root.tree, finalName, createdUri)
+                }
+                return@withLock null
+            }
+            if (existingDocumentUris.any { uri -> sameTreeDocument(uri, created.uri) }) {
+                NPLogger.w(TAG, "SAF 提升创建返回已有文件，保留 pending 音频: $finalName")
+                return@withLock null
+            }
+            if (created.isDirectory) {
+                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                NPLogger.w(TAG, "SAF 提升创建了目录而非音频文件: $finalName")
+                return@withLock null
+            }
+            if (!ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
+                discardNewTreePromotionTarget(context, root.tree, created.name ?: finalName, created.uri)
+                NPLogger.w(
+                    TAG,
+                    "SAF 提升创建返回非目标名称，保留 pending 音频: " +
+                        "expected=$finalName, actual=${created.name}"
+                )
+                return@withLock null
+            }
+            val afterCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+            val exactTargets = afterCreate.children.filter { child ->
+                ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
+            }
+            if (
+                !afterCreate.isComplete ||
+                    exactTargets.size != 1 ||
+                    exactTargets.none { child -> sameTreeDocument(child.documentUri, created.uri) }
+            ) {
+                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                NPLogger.w(TAG, "SAF 提升创建后目标不唯一，保留 pending 音频: $finalName")
+                return@withLock null
+            }
+            try {
+                val input = context.contentResolver.openInputStream(pending.uri)
+                    ?: throw IOException("SAF pending 音频不可读: $pendingName")
+                input.use { source ->
+                    val output = context.contentResolver.openOutputStream(created.uri, "w")
+                        ?: throw IOException("SAF final 音频不可写: $finalName")
+                    output.use { target ->
+                        source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
+                    }
+                }
+                val entry = verifiedTreeStoredEntry(
+                    context = context,
+                    target = created,
+                    expectedName = finalName,
+                    expectedSizeBytes = expectedSizeBytes,
+                    fallbackLastModifiedMs = fallbackLastModifiedMs,
+                    description = finalName
+                )
+                val pendingDeleted = deleteTrustedReference(
+                    context,
+                    TrustedManagedRef(
+                        reference = StorageReference.SafRef(pending.uri),
+                        externalReference = pending.uri.toString()
+                    )
+                ).isConfirmedStorageMutation()
+                if (pendingDeleted) {
+                    treeChildRegistry.forgetTreeChildName(root.tree, pendingName)
+                } else {
+                    NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
+                }
+                treeChildRegistry.rememberTreeChild(root.tree, entry)
+                entry
+            } catch (error: Throwable) {
+                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                throw error
+            }
+        }
+    }
+
+    private fun discardNewTreePromotionTarget(
+        context: Context,
+        parent: DocumentFile,
+        childName: String,
+        uri: Uri
+    ) {
+        val deleted = deleteTrustedReference(
+            context,
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(uri),
+                externalReference = uri.toString()
+            )
+        ).isConfirmedStorageMutation()
+        if (!deleted) {
+            NPLogger.w(TAG, "SAF 提升临时目标清理失败: $childName")
+        }
+        treeChildRegistry.forgetTreeChildName(parent, childName)
+        invalidateSnapshotCache(context)
+    }
+
+    internal fun canCreateTreePromotionTargetWithoutReplacing(
+        enumerationComplete: Boolean,
+        existingNames: Collection<String>,
+        targetName: String
+    ): Boolean {
+        if (!enumerationComplete) return false
+        return existingNames.none { actualName ->
+            ManagedDownloadTreeNaming.isExactTreeStoredName(actualName, targetName) ||
+                isTreePromotionBackupName(actualName, targetName)
+        }
+    }
+
+    private fun isTreePromotionBackupName(actualName: String, targetName: String): Boolean {
+        val directBackupName = ".${targetName}.backup"
+        if (actualName == directBackupName) return true
+        val prefix = ".${targetName}."
+        if (!actualName.startsWith(prefix) || !actualName.endsWith(".backup")) {
+            return false
+        }
+        val identifier = actualName.removePrefix(prefix).removeSuffix(".backup")
+        return runCatching { UUID.fromString(identifier) }.isSuccess
+    }
+
+    private fun sameTreeDocument(first: Uri, second: Uri): Boolean {
+        if (first == second) return true
+        val firstId = treeDocumentIdOrNull(first)
+        val secondId = treeDocumentIdOrNull(second)
+        return firstId != null && firstId == secondId
+    }
+
+    private fun treeDocumentIdOrNull(uri: Uri): String? {
+        return try {
+            DocumentsContract.getDocumentId(uri)
+        } catch (error: SecurityException) {
+            throw error
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -4835,7 +5101,7 @@ internal object ManagedDownloadStorage {
         return ManagedDownloadTreeNaming.resolveTreeStoredName(actualName, expectedName)
     }
 
-    private fun renameTreeDocument(
+    private fun renameTreeDocumentWithoutReplacing(
         context: Context,
         parent: DocumentFile,
         document: DocumentFile?,
@@ -4843,8 +5109,21 @@ internal object ManagedDownloadStorage {
     ): DocumentFile? {
         if (document == null) return null
         val backend = SafStorageBackend(context)
-        val result = ManagedDownloadTreeMutationLocks.withLock(parent.uri) {
-            runBlocking(Dispatchers.IO) {
+        return ManagedDownloadTreeMutationLocks.withLock(parent.uri) {
+            val refresh = treeChildRegistry.treeChildrenForWrite(context, parent)
+            if (!canCreateTreePromotionTargetWithoutReplacing(
+                    enumerationComplete = refresh.isComplete,
+                    existingNames = refresh.children.map(QueriedTreeChild::name),
+                    targetName = finalName
+                )
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "SAF 重命名目标不可安全创建，保留源文件: $finalName"
+                )
+                return@withLock null
+            }
+            when (val result = runBlocking(Dispatchers.IO) {
                 backend.rename(
                     reference = TrustedManagedRef(
                         reference = StorageReference.SafRef(document.uri),
@@ -4852,23 +5131,22 @@ internal object ManagedDownloadStorage {
                     ),
                     displayName = finalName
                 )
+            }) {
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Renamed -> {
+                    val renamedUri = (result.stat.reference as? StorageReference.SafRef)?.uri
+                        ?: return@withLock null
+                    DocumentFile.fromSingleUri(context, renamedUri)
+                }
+                moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Missing -> null
+                moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.PermissionLost -> {
+                    throw SecurityException("SAF 重命名权限丢失: ${document.uri}")
+                }
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.ProviderFailure -> {
+                    throw result.error
+                }
+                moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.OutOfScope,
+                is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Unsupported -> null
             }
-        }
-        return when (result) {
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Renamed -> {
-                val renamedUri = (result.stat.reference as? StorageReference.SafRef)?.uri
-                    ?: return null
-                DocumentFile.fromSingleUri(context, renamedUri)
-            }
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Missing -> null
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.PermissionLost -> {
-                throw SecurityException("SAF 重命名权限丢失: ${document.uri}")
-            }
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.ProviderFailure -> {
-                throw result.error
-            }
-            moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.OutOfScope,
-            is moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult.Unsupported -> null
         }
     }
 

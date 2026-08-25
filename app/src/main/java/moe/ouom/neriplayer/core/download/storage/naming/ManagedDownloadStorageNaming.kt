@@ -1,9 +1,10 @@
 package moe.ouom.neriplayer.core.download.storage.naming
 
-import moe.ouom.neriplayer.core.download.storage.imageExtensions
-import java.text.Normalizer
 import java.security.MessageDigest
+import java.text.Normalizer
 import java.util.Locale
+import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
+import moe.ouom.neriplayer.core.download.storage.imageExtensions
 
 internal object ManagedDownloadStorageNaming {
     internal enum class LyricKind {
@@ -114,6 +115,21 @@ internal object ManagedDownloadStorageNaming {
             index++
         }
         return desiredName
+    }
+
+    fun createUniqueAudioName(existingNames: Collection<String>, desiredName: String): String {
+        val reservedNames = linkedSetOf<String>()
+        existingNames.forEach { name ->
+            reservedNames += name
+            pendingAudioLogicalName(name)?.let(reservedNames::add)
+        }
+        return createUniqueName(reservedNames, desiredName)
+    }
+
+    private fun pendingAudioLogicalName(name: String): String? {
+        val markerIndex = name.indexOf(PENDING_AUDIO_WRITE_MARKER)
+        if (markerIndex <= 0) return null
+        return name.substring(0, markerIndex).takeIf(String::isNotBlank)
     }
 
     private fun canonicalName(value: String): String {

@@ -118,4 +118,15 @@ class UidtDownloadJobPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `metadata action required does not reschedule UIDT`() {
+        assertFalse(shouldRescheduleUidtExecution(DownloadExecutionResult.UserActionRequired))
+        assertTrue(shouldRescheduleUidtExecution(DownloadExecutionResult.Retry))
+        assertTrue(
+            shouldRescheduleUidtExecution(
+                DownloadExecutionResult.Failed(IllegalStateException("retry"))
+            )
+        )
+    }
 }

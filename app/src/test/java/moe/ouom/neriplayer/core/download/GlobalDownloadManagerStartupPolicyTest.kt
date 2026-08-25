@@ -208,6 +208,28 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `managed metadata editing and downloaded playback require strict snapshot evidence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val restorableLookup = source.substringAfter("internal suspend fun readManagedRestorableMetadata")
+            .substringBefore("internal suspend fun resolveManagedRestorableCoverReference")
+        val metadataSync = source.substringAfter("internal suspend fun syncDownloadedSongMetadataNow")
+            .substringBefore("private suspend fun publishDownloadedSongMetadataFallback")
+        val downloadedPlayback = source.substringAfter("fun playDownloadedSong")
+            .substringBefore("private fun hydrateDownloadedSidecarLyricsFast")
+
+        assertTrue(restorableLookup.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertTrue(metadataSync.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertTrue(
+            metadataSync.indexOf("resolveFinalizedManagedAudioSnapshot") <
+                metadataSync.indexOf("persistDownloadedMetadata(")
+        )
+        assertTrue(downloadedPlayback.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertFalse(downloadedPlayback.contains("ManagedDownloadStorage.toPlayableUri(playbackReference)"))
+    }
+
+    @Test
     fun `existing unfinalized audio selects finalization only`() {
         assertEquals(
             PreExistingDownloadedAudioAction.FINALIZE_EXISTING,
@@ -2278,14 +2300,47 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `user initiated active operation without pending UIDT requires explicit resume`() {
+    fun `taskless finalization recovery keeps its publication permission through enrichment`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val finalizationBody = source.substringAfter(
+            "private suspend fun finalizeCompletedDownload"
+        ).substringBefore("private suspend fun completeCoreDownloadAndEnqueueEnrichment")
+        val coreCommitBody = source.substringAfter(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment"
+        ).substringBefore("private suspend fun enrichCoreCommittedDownload")
+        val enrichmentBody = source.substringAfter(
+            "private suspend fun enrichCoreCommittedDownload"
+        ).substringBefore("private suspend fun publishFinalizedDownload")
+        val networkRecoveryBody = source.substringAfter(
+            "fun recoverPendingDownloadsForNetworkRestored"
+        ).substringBefore("private fun tryBeginPendingDownloadRecovery")
+
+        assertTrue(finalizationBody.contains("allowMissingTask = allowMissingTask"))
+        assertTrue(coreCommitBody.contains("allowMissingTask = allowMissingTask"))
+        assertTrue(enrichmentBody.contains("allowMissingTask = allowMissingTask"))
         assertTrue(
-            shouldRequireExplicitResume(
-                userInitiated = true,
-                state = "RUNNING",
-                hasPendingUidtJob = false
-            )
+            networkRecoveryBody.indexOf("recoverPendingAudioWritesFromRoot(appContext)") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
         )
+        assertTrue(
+            networkRecoveryBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(appContext)") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+    }
+
+    @Test
+    fun `interrupted operations remain recoverable unless user explicitly stopped them`() {
+        listOf("RUNNING", "QUEUED", "RETRYABLE").forEach { state ->
+            assertFalse(
+                shouldRequireExplicitResume(
+                    userInitiated = true,
+                    state = state,
+                    hasPendingUidtJob = false
+                )
+            )
+        }
         assertFalse(
             shouldRequireExplicitResume(
                 userInitiated = true,

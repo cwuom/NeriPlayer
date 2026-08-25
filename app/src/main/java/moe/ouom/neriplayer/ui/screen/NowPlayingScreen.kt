@@ -1782,14 +1782,15 @@ internal fun resolveNowPlayingPlaybackSourceType(
     }
 }
 
-internal fun hasCachedLocalDownload(song: SongItem): Boolean {
-    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null
-}
+internal fun hasPublishedManagedDownload(
+    song: SongItem,
+    catalogLookup: (SongItem) -> Boolean = { candidate ->
+        GlobalDownloadManager.hasDownloadedSongCached(candidate)
+    }
+): Boolean = catalogLookup(song)
 
-internal fun hasCachedLocalDownload(context: Context, song: SongItem): Boolean {
-    return hasCachedLocalDownload(song) ||
-        ManagedDownloadStorage.isLikelyManagedDownloadSongFast(context, song)
+internal fun hasCachedLocalDownload(song: SongItem): Boolean {
+    return hasPublishedManagedDownload(song)
 }
 
 internal fun shouldFetchOriginalSongInfo(song: SongItem): Boolean {
@@ -2523,7 +2524,7 @@ fun NowPlayingScreen(
         var managedDownloadLyricsReadable = false
         val fastLoadedLyricsState = withContext(Dispatchers.IO) {
             val isManagedLocalDownload = song?.let { candidate ->
-                candidate.isLocalSong() && hasCachedLocalDownload(context, candidate)
+                candidate.isLocalSong() && hasCachedLocalDownload(candidate)
             } == true
             managedLocalDownloadDetected = isManagedLocalDownload
             if (isManagedLocalDownload) {
@@ -5974,10 +5975,7 @@ fun EditSongInfoSheet(
                         try {
                             if (actualSong.isLocalSong()) {
                                 val lyricsSources = withContext(Dispatchers.IO) {
-                                    val isManagedLocalDownload = hasCachedLocalDownload(
-                                        context,
-                                        actualSong
-                                    )
+                                    val isManagedLocalDownload = hasCachedLocalDownload(actualSong)
                                     val downloadedLyrics = if (isManagedLocalDownload) {
                                         try {
                                             AudioDownloadManager.getLyricsBundleFast(context, actualSong)

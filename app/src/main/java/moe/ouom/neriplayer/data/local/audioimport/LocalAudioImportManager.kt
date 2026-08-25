@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ParsedManagedDownloadFileName
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadFileNameTemplates
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -677,16 +678,35 @@ internal class ManagedMediaStoreSidecarIndex(
     private val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
     private val treeDocumentId: String?
 ) {
+    private val publicationGate = ManagedDownloadCandidatePublicationGate(
+        snapshot = snapshot,
+        treeDocumentId = treeDocumentId
+    )
     private val audioByName = snapshot
         ?.audioEntries
         ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
         .orEmpty()
+
+    fun shouldPublish(
+        relativePath: String?,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): Boolean {
+        return publicationGate.evaluateRelativePath(
+            relativePath = relativePath,
+            displayName = displayName,
+            candidateReferences = candidateReferences
+        ).shouldPublish
+    }
 
     fun resolve(
         relativePath: String?,
         displayName: String
     ): LocalKnownSidecarReferences? {
         val currentSnapshot = snapshot ?: return null
+        if (!shouldPublish(relativePath = relativePath, displayName = displayName)) {
+            return null
+        }
         if (!ManagedDownloadStorage.isManagedDownloadRelativePath(relativePath, treeDocumentId)) {
             return null
         }
@@ -708,6 +728,84 @@ internal class ManagedMediaStoreSidecarIndex(
             metadata = metadataReference,
             cover = coverReference
         )
+    }
+}
+
+internal enum class ManagedDownloadCandidatePublication {
+    NON_MANAGED,
+    FINALIZED,
+    WITHHELD;
+
+    val shouldPublish: Boolean
+        get() = this != WITHHELD
+}
+
+internal class ManagedDownloadCandidatePublicationGate(
+    private val snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot?,
+    private val treeDocumentId: String?
+) {
+    private val audioByName = snapshot
+        ?.audioEntries
+        ?.associateBy { entry -> entry.name.lowercase(Locale.ROOT) }
+        .orEmpty()
+    private val audioByReference = snapshot
+        ?.audioEntries
+        ?.flatMap { entry ->
+            listOf(entry.reference, entry.mediaUri, entry.localFilePath)
+                .mapNotNull { reference -> reference?.takeIf(String::isNotBlank) }
+                .map { reference -> reference to entry }
+        }
+        ?.toMap()
+        .orEmpty()
+
+    fun evaluateRelativePath(
+        relativePath: String?,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): ManagedDownloadCandidatePublication {
+        return evaluate(
+            isInsideManagedRoot = ManagedDownloadStorage.isManagedDownloadRelativePath(
+                relativePath,
+                treeDocumentId
+            ),
+            displayName = displayName,
+            candidateReferences = candidateReferences
+        )
+    }
+
+    fun evaluate(
+        isInsideManagedRoot: Boolean,
+        displayName: String,
+        candidateReferences: Collection<String> = emptyList()
+    ): ManagedDownloadCandidatePublication {
+        val entryByReference = candidateReferences.asSequence()
+            .mapNotNull { reference -> audioByReference[reference] }
+            .firstOrNull()
+        val entry = entryByReference ?: if (isInsideManagedRoot) {
+            audioByName[displayName.lowercase(Locale.ROOT)]
+        } else {
+            null
+        }
+        if (!isInsideManagedRoot && entry == null) {
+            return ManagedDownloadCandidatePublication.NON_MANAGED
+        }
+        val currentSnapshot = snapshot ?: return ManagedDownloadCandidatePublication.WITHHELD
+        if (!currentSnapshot.rootEntriesComplete) {
+            return ManagedDownloadCandidatePublication.WITHHELD
+        }
+        if (entry == null) {
+            return ManagedDownloadCandidatePublication.WITHHELD
+        }
+        return if (isFinalizedDownloadedAudioEntry(
+                rootEntriesComplete = currentSnapshot.rootEntriesComplete,
+                isPendingAudioWrite = entry.isPendingAudioWrite,
+                metadata = currentSnapshot.metadataByAudioName[entry.name]
+            )
+        ) {
+            ManagedDownloadCandidatePublication.FINALIZED
+        } else {
+            ManagedDownloadCandidatePublication.WITHHELD
+        }
     }
 }
 
@@ -833,6 +931,11 @@ object LocalAudioImportManager {
     suspend fun importExternalSongs(context: Context, uris: List<Uri>): LocalAudioImportResult = withContext(Dispatchers.IO) {
         val songs = mutableListOf<SongItem>()
         var failedCount = 0
+        var withheldManagedCount = 0
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
 
         val distinctUris = uris.distinctBy { it.toString() }
         if (distinctUris.size > MAX_EXTERNAL_IMPORT_COUNT) {
@@ -843,6 +946,30 @@ object LocalAudioImportManager {
         }
 
         distinctUris.take(MAX_EXTERNAL_IMPORT_COUNT).forEach { uri ->
+            val sourceFile = resolveSourceFile(context, uri)
+            val displayName = sourceFile?.name
+                ?: queryExternalAudioCopyInfo(context, uri).displayName
+                ?: uri.lastPathSegment
+                ?: uri.toString()
+            val candidateReferences = buildList {
+                add(uri.toString())
+                sourceFile?.absolutePath?.let(::add)
+                sourceFile?.toURI()?.toString()?.let(::add)
+            }
+            if (!managedDownloadGate.evaluate(
+                    isInsideManagedRoot = isManagedExternalAudioCandidate(
+                        context = context,
+                        uri = uri,
+                        sourceFile = sourceFile
+                    ),
+                    displayName = displayName,
+                    candidateReferences = candidateReferences
+                ).shouldPublish
+            ) {
+                withheldManagedCount++
+                NPLogger.d(TAG, "skip unfinalized managed external audio: $uri")
+                return@forEach
+            }
             val stableUri = runCatching {
                 stabilizeExternalUri(context, uri)
             }.getOrRethrowCancellation {
@@ -865,6 +992,13 @@ object LocalAudioImportManager {
             } else {
                 failedCount++
             }
+        }
+
+        if (withheldManagedCount > 0) {
+            NPLogger.d(
+                TAG,
+                "external import withheld unfinalized managed audio: $withheldManagedCount"
+            )
         }
 
         LocalAudioImportResult(
@@ -930,10 +1064,20 @@ object LocalAudioImportManager {
                 completed = false
             )
         }
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
 
         val traversalStartedAt = SystemClock.elapsedRealtime()
         val traversalResult = try {
-            collectFolderCandidatesWithDocumentsContract(context, folderUri, progress)
+            collectFolderCandidatesWithDocumentsContract(
+                context = context,
+                folderUri = folderUri,
+                rootDisplayName = root.name,
+                progress = progress,
+                managedDownloadGate = managedDownloadGate
+            )
         } catch (error: Exception) {
             if (!shouldFallbackToDocumentFileAfterTraversalFailure(error)) {
                 throw error
@@ -942,7 +1086,12 @@ object LocalAudioImportManager {
                 TAG,
                 "scanFolderSongs fast traversal unavailable, fallback DocumentFile: ${error.message}"
             )
-            collectFolderCandidatesWithDocumentFile(root, progress)
+            collectFolderCandidatesWithDocumentFile(
+                context = context,
+                root = root,
+                progress = progress,
+                managedDownloadGate = managedDownloadGate
+            )
         }
         val traversalElapsedMs = SystemClock.elapsedRealtime() - traversalStartedAt
         NPLogger.d(
@@ -1078,6 +1227,47 @@ object LocalAudioImportManager {
         return runCatching {
             DocumentsContract.getTreeDocumentId(configuredUri)
         }.getOrNull()
+    }
+
+    private suspend fun loadManagedDownloadSnapshotForScan(
+        context: Context
+    ): ManagedDownloadStorage.DownloadLibrarySnapshot? {
+        return runCatching {
+            ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                context = context,
+                forceRefresh = true
+            )
+        }.getOrRethrowCancellation { error ->
+            NPLogger.w(TAG, "managed download snapshot unavailable for local scan: ${error.message}")
+        }
+    }
+
+    private fun isManagedExternalAudioCandidate(
+        context: Context,
+        uri: Uri,
+        sourceFile: File?
+    ): Boolean {
+        val displayName = sourceFile?.name
+            ?: uri.lastPathSegment
+            ?: uri.toString()
+        val probe = SongItem(
+            id = 0L,
+            name = displayName,
+            artist = "",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            mediaUri = uri.toString(),
+            localFileName = sourceFile?.name,
+            localFilePath = sourceFile?.absolutePath,
+            channelId = "local"
+        )
+        return runCatching {
+            ManagedDownloadStorage.isLikelyManagedDownloadSong(context, probe)
+        }.getOrRethrowCancellation { error ->
+            NPLogger.d(TAG, "managed external audio check unavailable for $uri: ${error.message}")
+        } ?: false
     }
 
     private suspend fun completeScannedSongs(
@@ -1369,6 +1559,10 @@ object LocalAudioImportManager {
         val selectionArgs = scope.relativePath
             .takeIf(String::isNotBlank)
             ?.let { relativePath -> arrayOf("${escapeMediaStoreLikeValue(relativePath)}%") }
+        val managedDownloadGate = ManagedDownloadCandidatePublicationGate(
+            snapshot = loadManagedDownloadSnapshotForScan(context),
+            treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        )
         val knownSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
         val sidecarResolver = MediaStoreSidecarResolver(
             context = context,
@@ -1378,6 +1572,7 @@ object LocalAudioImportManager {
         var processedRows = 0
         var acceptedRows = 0
         var skippedStaleRows = 0
+        var withheldManagedRows = 0
 
         val rawResult = try {
             context.contentResolver.query(
@@ -1449,16 +1644,31 @@ object LocalAudioImportManager {
                     if (resolvedFile != null) {
                         resolvedPathCount++
                     }
+                    val safAudioReference = sidecarResolver.resolveAudioReference(
+                        relativePath = rowRelativePath,
+                        displayName = displayName
+                    )
+                    val candidateReferences = buildList {
+                        add(contentUri.toString())
+                        resolvedFile?.absolutePath?.let(::add)
+                        resolvedFile?.toURI()?.toString()?.let(::add)
+                        safAudioReference?.takeIf(String::isNotBlank)?.let(::add)
+                    }
+                    if (!managedDownloadGate.evaluateRelativePath(
+                            relativePath = rowRelativePath,
+                            displayName = displayName,
+                            candidateReferences = candidateReferences
+                        ).shouldPublish
+                    ) {
+                        withheldManagedRows++
+                        continue
+                    }
                     val mediaStoreCoverUri = albumIdIndex
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
                         ?.takeIf { it > 0L }
                         ?.let(LocalMediaSupport::mediaStoreAlbumArtUri)
                     val sidecarReferences = sidecarResolver.resolve(
-                        relativePath = rowRelativePath,
-                        displayName = displayName
-                    )
-                    val safAudioReference = sidecarResolver.resolveAudioReference(
                         relativePath = rowRelativePath,
                         displayName = displayName
                     )
@@ -1546,6 +1756,7 @@ object LocalAudioImportManager {
                         "queryRows=$totalCount, acceptedRows=$acceptedRows, " +
                         "resolvedPaths=$resolvedPathCount, " +
                         "skippedStaleRows=$skippedStaleRows, " +
+                        "withheldManagedRows=$withheldManagedRows, " +
                         "mediaStoreCoverHits=$mediaStoreCoverHitCount, " +
                         "slowRows=$slowRowCount, elapsed=" +
                         "${SystemClock.elapsedRealtime() - startedAt}ms"
@@ -1687,10 +1898,9 @@ object LocalAudioImportManager {
         var acceptedRowCount = 0
         var slowItemCount = 0
         var mediaStoreCoverHitCount = 0
+        var withheldManagedRowCount = 0
         val managedSidecarIndex = ManagedMediaStoreSidecarIndex(
-            snapshot = runCatching {
-                ManagedDownloadStorage.cachedDownloadLibrarySnapshot(context)
-            }.getOrNull(),
+            snapshot = loadManagedDownloadSnapshotForScan(context),
             treeDocumentId = configuredManagedDownloadTreeDocumentId()
         )
         val indexedManagedSidecarReferences = HashMap<String, LocalKnownSidecarReferences>()
@@ -1751,6 +1961,20 @@ object LocalAudioImportManager {
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
                         ?: contentUri.toString()
+                    val candidateReferences = buildList {
+                        add(contentUri.toString())
+                        resolvedFile?.absolutePath?.let(::add)
+                        resolvedFile?.toURI()?.toString()?.let(::add)
+                    }
+                    if (!managedSidecarIndex.shouldPublish(
+                            relativePath = relativePath,
+                            displayName = displayName,
+                            candidateReferences = candidateReferences
+                        )
+                    ) {
+                        withheldManagedRowCount++
+                        continue
+                    }
                     val hasReadableMediaStoreReference = resolvedFile != null ||
                         probeReadableContentReference(context, contentUri)
                     if (!shouldKeepMediaStoreAudioRow(
@@ -1865,6 +2089,7 @@ object LocalAudioImportManager {
             TAG,
             "scanDeviceSongs finished: rows=$rawRowCount, songs=${completedSongs.size}, " +
                 "acceptedRows=$acceptedRowCount, " +
+                "withheldManagedRows=$withheldManagedRowCount, " +
                 "failed=$failed, slowItems=$slowItemCount, " +
                 "mediaStoreCoverHits=$mediaStoreCoverHitCount, completed=$completed, " +
                 "totalElapsed=${totalElapsedMs}ms"
@@ -2563,18 +2788,39 @@ object LocalAudioImportManager {
     private suspend fun collectFolderCandidatesWithDocumentsContract(
         context: Context,
         folderUri: Uri,
-        progress: LocalAudioScanProgressEmitter
+        rootDisplayName: String?,
+        progress: LocalAudioScanProgressEmitter,
+        managedDownloadGate: ManagedDownloadCandidatePublicationGate
     ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
         var visitedDirectoryCount = 0
-        val pendingDirectories = ArrayDeque<Uri>().apply { add(folderUri) }
+        var withheldManagedCandidates = 0
+        val treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        data class PendingDirectory(
+            val uri: Uri,
+            val isInsideManagedRoot: Boolean
+        )
+        val pendingDirectories = ArrayDeque<PendingDirectory>().apply {
+            add(
+                PendingDirectory(
+                    uri = folderUri,
+                    isInsideManagedRoot = isManagedDownloadDocumentDirectory(
+                        context = context,
+                        documentUri = folderUri,
+                        treeDocumentId = treeDocumentId,
+                        displayName = rootDisplayName
+                    )
+                )
+            )
+        }
         var rootCoverIndex: Map<String, String> = emptyMap()
         var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
             coroutineContext.ensureActive()
-            val directoryUri = pendingDirectories.removeFirst()
+            val directory = pendingDirectories.removeFirst()
+            val directoryUri = directory.uri
             visitedDirectoryCount++
             progress.emit(
                 phase = LocalAudioScanPhase.TRAVERSING,
@@ -2608,8 +2854,28 @@ object LocalAudioImportManager {
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
-                    child.isDirectory -> pendingDirectories.add(child.documentUri)
+                    child.isDirectory -> pendingDirectories.add(
+                        PendingDirectory(
+                            uri = child.documentUri,
+                            isInsideManagedRoot = directory.isInsideManagedRoot ||
+                                isManagedDownloadDocumentDirectory(
+                                    context = context,
+                                    documentUri = child.documentUri,
+                                    treeDocumentId = treeDocumentId,
+                                    displayName = child.displayName
+                                )
+                        )
+                    )
                     child.isSupportedAudioDocument() -> {
+                        if (!managedDownloadGate.evaluate(
+                                isInsideManagedRoot = directory.isInsideManagedRoot,
+                                displayName = child.displayName,
+                                candidateReferences = listOf(child.documentUri.toString())
+                            ).shouldPublish
+                        ) {
+                            withheldManagedCandidates++
+                            continue
+                        }
                         val baseName = child.displayName.substringBeforeLast('.', child.displayName)
                         candidates += FolderScanCandidate(
                             uri = child.documentUri,
@@ -2641,23 +2907,52 @@ object LocalAudioImportManager {
             visitedDirectoryCount = visitedDirectoryCount,
             failedCount = failed,
             mode = "documents_contract"
-        )
+        ).also {
+            if (withheldManagedCandidates > 0) {
+                NPLogger.d(
+                    TAG,
+                    "scanFolderSongs withheld unfinalized managed candidates: " +
+                        "$withheldManagedCandidates"
+                )
+            }
+        }
     }
 
     private suspend fun collectFolderCandidatesWithDocumentFile(
+        context: Context,
         root: DocumentFile,
-        progress: LocalAudioScanProgressEmitter
+        progress: LocalAudioScanProgressEmitter,
+        managedDownloadGate: ManagedDownloadCandidatePublicationGate
     ): FolderTraversalResult {
         val candidates = mutableListOf<FolderScanCandidate>()
         var failed = 0
         var visitedDirectoryCount = 0
-        val pendingDirectories = ArrayDeque<DocumentFile>().apply { add(root) }
+        var withheldManagedCandidates = 0
+        val treeDocumentId = configuredManagedDownloadTreeDocumentId()
+        data class PendingDirectory(
+            val document: DocumentFile,
+            val isInsideManagedRoot: Boolean
+        )
+        val pendingDirectories = ArrayDeque<PendingDirectory>().apply {
+            add(
+                PendingDirectory(
+                    document = root,
+                    isInsideManagedRoot = isManagedDownloadDocumentDirectory(
+                        context = context,
+                        documentUri = root.uri,
+                        treeDocumentId = treeDocumentId,
+                        displayName = root.name
+                    )
+                )
+            )
+        }
         var rootCoverIndex: Map<String, String> = emptyMap()
         var rootLyricsIndex: Map<String, String> = emptyMap()
 
         while (pendingDirectories.isNotEmpty()) {
             coroutineContext.ensureActive()
-            val directory = pendingDirectories.removeFirst()
+            val pendingDirectory = pendingDirectories.removeFirst()
+            val directory = pendingDirectory.document
             visitedDirectoryCount++
             progress.emit(
                 phase = LocalAudioScanPhase.TRAVERSING,
@@ -2699,9 +2994,29 @@ object LocalAudioImportManager {
             for (child in children) {
                 coroutineContext.ensureActive()
                 when {
-                    child.isDirectory -> pendingDirectories.add(child)
+                    child.isDirectory -> pendingDirectories.add(
+                        PendingDirectory(
+                            document = child,
+                            isInsideManagedRoot = pendingDirectory.isInsideManagedRoot ||
+                                isManagedDownloadDocumentDirectory(
+                                    context = context,
+                                    documentUri = child.uri,
+                                    treeDocumentId = treeDocumentId,
+                                    displayName = child.name
+                                )
+                        )
+                    )
                     child.isFile && child.isSupportedAudioDocument() -> {
                         val displayName = child.name
+                        if (!managedDownloadGate.evaluate(
+                                isInsideManagedRoot = pendingDirectory.isInsideManagedRoot,
+                                displayName = displayName.orEmpty(),
+                                candidateReferences = listOf(child.uri.toString())
+                            ).shouldPublish
+                        ) {
+                            withheldManagedCandidates++
+                            continue
+                        }
                         val baseName = displayName
                             ?.substringBeforeLast('.', displayName)
                             .orEmpty()
@@ -2735,7 +3050,15 @@ object LocalAudioImportManager {
             visitedDirectoryCount = visitedDirectoryCount,
             failedCount = failed,
             mode = "document_file"
-        )
+        ).also {
+            if (withheldManagedCandidates > 0) {
+                NPLogger.d(
+                    TAG,
+                    "scanFolderSongs withheld unfinalized managed candidates: " +
+                        "$withheldManagedCandidates"
+                )
+            }
+        }
     }
 
     private suspend fun queryFolderChildren(
@@ -2826,6 +3149,36 @@ object LocalAudioImportManager {
     private fun resolveDocumentId(uri: Uri): String? {
         return runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
             ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+    }
+
+    private fun isManagedDownloadDocumentDirectory(
+        context: Context,
+        documentUri: Uri,
+        treeDocumentId: String?,
+        displayName: String?
+    ): Boolean {
+        if (ManagedDownloadStorage.isManagedDownloadRelativePath(displayName, treeDocumentId)) {
+            return true
+        }
+        val configuredTreeDocumentId = treeDocumentId
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val documentId = resolveDocumentId(documentUri)
+        if (documentId != null && ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
+                documentId = documentId,
+                treeDocumentId = configuredTreeDocumentId
+            )
+        ) {
+            return true
+        }
+        return runCatching {
+            DocumentsContract.findDocumentPath(context.contentResolver, documentUri)
+                ?.path
+                ?.any { pathDocumentId -> pathDocumentId == configuredTreeDocumentId } == true
+        }.getOrRethrowCancellation { error ->
+            NPLogger.d(TAG, "managed document directory check unavailable: ${error.message}")
+        } ?: false
     }
 
     private fun buildQuickFolderScannedSong(

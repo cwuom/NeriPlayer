@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.core.download.naming.sanitizeManagedDownloadFileName 
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadArtists as buildExpectedDownloadArtistsDelegate
 import moe.ouom.neriplayer.core.download.policy.buildExpectedDownloadTitles as buildExpectedDownloadTitlesDelegate
 import moe.ouom.neriplayer.core.download.policy.isSuspiciousEmptyDownloadScan as isSuspiciousEmptyDownloadScanDelegate
+import moe.ouom.neriplayer.core.download.policy.isFinalizedDownloadedMetadata as isFinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.isUnfinalizedDownloadedMetadata as isUnfinalizedDownloadedMetadataDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveCompletedDownloadFinalizationAction as resolveCompletedDownloadFinalizationActionDelegate
 import moe.ouom.neriplayer.core.download.policy.resolveDownloadedLyricContent as resolveDownloadedLyricContentDelegate
@@ -225,6 +226,9 @@ internal fun shouldInspectDownloadedAudioDetails(
 
 internal fun isUnfinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
     isUnfinalizedDownloadedMetadataDelegate(metadata)
+
+internal fun isFinalizedDownloadedMetadata(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Boolean =
+    isFinalizedDownloadedMetadataDelegate(metadata)
 
 internal fun resolveDownloadedLyricOverride(
     fileLyric: String?,

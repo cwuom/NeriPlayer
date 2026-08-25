@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.lookup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
@@ -32,7 +33,7 @@ internal object ManagedDownloadStorageLookup {
             .mapTo(hashSetOf()) { entries ->
                 entries.sortedWith(
                     compareByDescending<ManagedDownloadStorage.StoredEntry> { entry ->
-                        metadataByAudioName[entry.name]?.downloadFinalized == true
+                        isFinalizedDownloadedMetadata(metadataByAudioName[entry.name])
                     }
                         .thenBy { entry ->
                             if (entries.any { candidate ->
@@ -232,7 +233,7 @@ internal object ManagedDownloadStorageLookup {
             ?: audioEntries
                 .sortedWith(
                     compareByDescending<ManagedDownloadStorage.StoredEntry> { entry ->
-                        metadataByAudioName[entry.name]?.downloadFinalized == true
+                        isFinalizedDownloadedMetadata(metadataByAudioName[entry.name])
                     }
                         .thenByDescending { entry -> entry.sizeBytes }
                         .thenByDescending { entry -> entry.lastModifiedMs }

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import org.json.JSONObject
 
 /**
@@ -41,6 +42,7 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         "durationMs",
         "downloadTimeMs",
         "downloadFinalized",
+        "metadataEmbeddingState",
         "createdAtMs",
         "createdAtSource",
         "artifactId",
@@ -98,7 +100,18 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         if (!result.has("createdAtSource") || result.isNull("createdAtSource")) {
             result.put("createdAtSource", "LEGACY_V15")
         }
-        if (!result.has("downloadFinalized") || result.isNull("downloadFinalized")) {
+        val embeddingState = DownloadedAudioEmbeddingState.fromPersisted(
+            result.optString("metadataEmbeddingState").takeIf {
+                result.has("metadataEmbeddingState") && !result.isNull("metadataEmbeddingState")
+            }
+        )
+        if (embeddingState == null) {
+            result.put(
+                "metadataEmbeddingState",
+                DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name
+            )
+            result.put("downloadFinalized", false)
+        } else if (!result.has("downloadFinalized") || result.isNull("downloadFinalized")) {
             result.put("downloadFinalized", true)
         }
 

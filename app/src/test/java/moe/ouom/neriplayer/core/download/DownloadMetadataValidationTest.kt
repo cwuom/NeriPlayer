@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.policy.shouldPreserveCompletedAudioAfterFinalizationFailure
@@ -15,23 +16,105 @@ class DownloadMetadataValidationTest {
     // --- shouldRepairMetadataLessManagedDownload 测试 ---
 
     @Test
-    fun `unfinalized metadata only treats explicit false as incomplete`() {
+    fun `metadata without accepted embedding proof remains unfinalized`() {
         assertTrue(
             isUnfinalizedDownloadedMetadata(
                 ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = false)
             )
         )
-        assertFalse(
+        assertTrue(
             isUnfinalizedDownloadedMetadata(
                 ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = true)
             )
         )
-        assertFalse(
+        assertTrue(
             isUnfinalizedDownloadedMetadata(
                 ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = null)
             )
         )
-        assertFalse(isUnfinalizedDownloadedMetadata(null))
+        assertTrue(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
+                )
+            )
+        )
+        assertTrue(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
+        assertFalse(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        assertFalse(
+            isUnfinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                )
+            )
+        )
+        assertTrue(isUnfinalizedDownloadedMetadata(null))
+    }
+
+    @Test
+    fun `only explicit completion with accepted embedding evidence is finalized`() {
+        assertTrue(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        assertTrue(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                )
+            )
+        )
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
+                )
+            )
+        )
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = true)
+            )
+        )
+        assertFalse(isFinalizedDownloadedMetadata(null))
     }
 
     @Test
@@ -57,7 +140,7 @@ class DownloadMetadataValidationTest {
     }
 
     @Test
-    fun `finalized metadata json flips explicit false without losing identity`() {
+    fun `finalized metadata json requires accepted embedding proof without losing identity`() {
         val raw = """
             {
               "stableKey": "1|netease|",
@@ -66,7 +149,8 @@ class DownloadMetadataValidationTest {
               "album": "远端专辑",
               "name": "Song",
               "artist": "Artist",
-              "downloadFinalized": false
+              "downloadFinalized": false,
+              "metadataEmbeddingState": "EMBEDDED_VERIFIED"
             }
         """.trimIndent()
 
@@ -80,6 +164,18 @@ class DownloadMetadataValidationTest {
         assertEquals("Song", metadata?.name)
         assertEquals("Artist", metadata?.artist)
         assertEquals(true, metadata?.downloadFinalized)
+    }
+
+    @Test
+    fun `finalized metadata json refuses legacy metadata without embedding proof`() {
+        val raw = """
+            {
+              "stableKey": "1|netease|",
+              "downloadFinalized": false
+            }
+        """.trimIndent()
+
+        assertNull(ManagedDownloadStorage.finalizedDownloadedMetadataJson(raw))
     }
 
     @Test

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.player.download
 
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem
@@ -26,6 +27,78 @@ import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioDownloadManagerTest {
+
+    @Test
+    fun `managed local references require a strictly verified replacement`() {
+        assertEquals(
+            "/Music/local.mp3",
+            selectPermittedLocalPlaybackReference(
+                rawLocalReference = "/Music/local.mp3",
+                isManagedDownload = false,
+                verifiedManagedReference = null
+            )
+        )
+        assertEquals(
+            "content://downloads/finalized.mp3",
+            selectPermittedLocalPlaybackReference(
+                rawLocalReference = "content://downloads/unfinalized.mp3",
+                isManagedDownload = true,
+                verifiedManagedReference = "content://downloads/finalized.mp3"
+            )
+        )
+        assertNull(
+            selectPermittedLocalPlaybackReference(
+                rawLocalReference = "content://downloads/unfinalized.mp3",
+                isManagedDownload = true,
+                verifiedManagedReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `only strictly finalized managed audio is exposed for local playback`() {
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3",
+            reference = "content://downloads/Artist%20-%20Song.mp3",
+            mediaUri = "content://downloads/Artist%20-%20Song.mp3",
+            localFilePath = null,
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+        fun snapshot(
+            finalized: Boolean,
+            embeddingState: DownloadedAudioEmbeddingState?
+        ) = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(audio),
+            metadataByAudioName = mapOf(
+                audio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = finalized,
+                    metadataEmbeddingState = embeddingState
+                )
+            )
+        )
+
+        assertTrue(
+            canExposeManagedDownloadForPlayback(
+                snapshot(true, DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED),
+                audio
+            )
+        )
+        assertTrue(
+            canExposeManagedDownloadForPlayback(
+                snapshot(true, DownloadedAudioEmbeddingState.USER_DISABLED),
+                audio
+            )
+        )
+        assertFalse(canExposeManagedDownloadForPlayback(snapshot(true, null), audio))
+        assertFalse(
+            canExposeManagedDownloadForPlayback(
+                snapshot(true, DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER),
+                audio
+            )
+        )
+        assertFalse(canExposeManagedDownloadForPlayback(snapshot(false, null), audio))
+    }
 
     @Test
     fun `cover response reader rejects an oversized declared length`() {

@@ -384,6 +384,7 @@ private fun String?.isExplicitMissingDocumentMessage(): Boolean {
     return normalized.contains("missing file") ||
         normalized.contains("missing document") ||
         normalized.contains("document not found") ||
+        normalized.contains("no item at content://media/") ||
         normalized.contains("no such file") ||
         normalized.contains("not found") ||
         normalized.contains("does not exist") ||

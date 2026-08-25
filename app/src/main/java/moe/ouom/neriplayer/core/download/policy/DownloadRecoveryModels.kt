@@ -22,9 +22,7 @@ internal fun shouldRequireExplicitResume(
     cancellationRequestedByUser: Boolean = false
 ): Boolean {
     if (!userInitiated || cancellationRequestedByUser) return false
-    if (stopRequestedByUser) return true
-    return state in setOf("RUNNING", "QUEUED", "RETRYABLE") &&
-        !hasPendingUidtJob
+    return stopRequestedByUser
 }
 
 internal fun mergePendingDownloadRecoveryCandidates(

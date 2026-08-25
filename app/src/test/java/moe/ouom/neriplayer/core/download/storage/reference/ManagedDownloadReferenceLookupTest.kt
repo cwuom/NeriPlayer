@@ -66,6 +66,19 @@ class ManagedDownloadReferenceLookupTest {
     }
 
     @Test
+    fun `media store no item file not found is missing evidence`() {
+        val error = FileNotFoundException(
+            "No item at content://media/external_primary/file/77447"
+        )
+
+        assertTrue(ManagedDownloadReferenceLookup.isMissingFailure(error))
+        assertEquals(
+            ManagedDownloadReferenceLookup.Result.Missing,
+            ManagedDownloadReferenceLookup.classifyFailure(error)
+        )
+    }
+
+    @Test
     fun `reference lookup delegates provider inspection to the canonical io boundary`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/reference/ManagedDownloadReferenceLookup.kt"

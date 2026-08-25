@@ -24,8 +24,6 @@ import moe.ouom.neriplayer.core.api.search.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.metadata.RestorableMetadataClearPolicy
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -79,19 +77,6 @@ import java.lang.reflect.Type
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal fun PlayerManager.hasItemsImpl(): Boolean = currentPlaylist.isNotEmpty()
-
-internal fun isAccessibleManagedReference(
-    result: ManagedDownloadReferenceIo.AccessResult
-): Boolean = result == ManagedDownloadReferenceIo.AccessResult.Accessible
-
-private fun isAccessibleManagedReference(
-    context: Context,
-    reference: String?
-): Boolean {
-    return isAccessibleManagedReference(
-        ManagedDownloadReferenceIo.inspect(context, reference)
-    )
-}
 
 internal data class RestoredPlayerStateSnapshot(
     val playlist: List<SongItem>,
@@ -1816,14 +1801,13 @@ private suspend fun PlayerManager.writeLocalEditableMetadata(
     writeLyrics: Boolean = false
 ): LocalMediaMetadataWriteOutcome {
     val writableReference = resolveLocalMetadataWriteReference(song)
-    val writableSong = writableReference?.let { playbackUri ->
-        song.copy(
-            mediaUri = playbackUri,
-            localFilePath = if (playbackUri.startsWith('/')) playbackUri else null,
-            localFileName = song.localFileName
-                ?: playbackUri.substringAfterLast('/').takeIf(String::isNotBlank)
-        )
-    } ?: song
+        ?: return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
+    val writableSong = song.copy(
+        mediaUri = writableReference,
+        localFilePath = if (writableReference.startsWith('/')) writableReference else null,
+        localFileName = song.localFileName
+            ?: writableReference.substringAfterLast('/').takeIf(String::isNotBlank)
+    )
     if (!LocalSongSupport.isLocalSong(writableSong, application)) {
         return LocalMediaMetadataWriteOutcome.NOT_WRITABLE
     }
@@ -1855,60 +1839,17 @@ private suspend fun PlayerManager.resolveLocalMetadataWriteReference(
         else -> null
     }
     if (directReference != null) {
-        return directReference
-    }
-    val downloadedPlaybackUri = AudioDownloadManager.getLocalPlaybackUri(application, song)
-    val managedReference = if (downloadedPlaybackUri != null) {
-        val cachedReference = ManagedDownloadStorage.peekDownloadedAudio(song)
-            ?.reference
-            ?.takeIf { reference ->
-                isAccessibleManagedReference(application, reference)
-            }
-        cachedReference ?: try {
-            ManagedDownloadStorage.findDownloadedAudio(
-                context = application,
-                song = song,
-                forceRefresh = true
-            )?.reference?.takeIf { reference ->
-                isAccessibleManagedReference(application, reference)
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(
-                "PlayerManager",
-                "resolve managed metadata write reference failed: ${error.message}"
-            )
-            null
-        }
-    } else {
-        null
-    }
-    return managedReference ?: downloadedPlaybackUri?.takeIf { reference ->
-        isAccessibleManagedReference(application, reference)
-    }
-}
-
-private suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem {
-    val mediaUri = song.mediaUri
-    val directReference = when {
-        mediaUri?.startsWith("content://", ignoreCase = true) == true -> mediaUri
-        song.localFilePath?.let(::File)?.let(::isReadableLocalFile) == true -> {
-            song.localFilePath
-        }
-        mediaUri?.startsWith("/", ignoreCase = false) == true &&
-            isReadableLocalFile(File(mediaUri)) -> mediaUri
-        else -> null
-    }
-    if (directReference != null) {
-        return song.copy(
-            mediaUri = directReference,
-            localFilePath = if (directReference.startsWith("/")) directReference else null,
-            localFileName = song.localFileName
-                ?: directReference.substringAfterLast('/').takeIf(String::isNotBlank)
+        return AudioDownloadManager.resolvePermittedLocalPlaybackUri(
+            context = application,
+            song = song,
+            rawLocalReference = directReference
         )
     }
-    val playbackReference = resolveLocalMetadataWriteReference(song) ?: return song
+    return AudioDownloadManager.getLocalPlaybackUri(application, song)
+}
+
+private suspend fun PlayerManager.resolveLocalSidecarWriteSong(song: SongItem): SongItem? {
+    val playbackReference = resolveLocalMetadataWriteReference(song) ?: return null
     return song.copy(
         mediaUri = playbackReference,
         localFilePath = if (playbackReference.startsWith('/')) playbackReference else null,
@@ -2182,6 +2123,14 @@ internal suspend fun PlayerManager.updateSongCustomInfoImpl(
                 }
             } else if (LocalSongSupport.isLocalSong(currentSong, application)) {
                 val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
+                if (sidecarSong == null) {
+                    showLocalEditableMetadataWriteFeedback(
+                        outcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE,
+                        downloadSyncOutcome =
+                            GlobalDownloadManager.DownloadedSongMetadataSyncOutcome.NOT_DOWNLOADED
+                    )
+                    return@runSongMetadataMutation false
+                }
                 val coverSidecarWritten = if (shouldWriteCoverToAudio) {
                     LocalMediaSupport.writeLocalCoverSidecar(
                         context = application,
@@ -2531,20 +2480,24 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
     val isLocalSong = LocalSongSupport.isLocalSong(updatedSong, application)
     val sidecarsWritten = if (isLocalSong && writeLocalMetadata) {
         val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
-        runCatching {
-            LocalMediaSupport.writeEditableMetadata(
-                context = application,
-                song = sidecarSong,
-                coverReference = sidecarSong.customCoverUrl,
-                writeCover = false,
-                writeLyrics = true
-            ) == LocalMediaMetadataWriteOutcome.SUCCESS
-        }.getOrElse { error ->
-            NPLogger.w(
-                "PlayerManager",
-                "本地歌词与嵌入元数据同步写入失败: ${error.message}"
-            )
+        if (sidecarSong == null) {
             false
+        } else {
+            runCatching {
+                LocalMediaSupport.writeEditableMetadata(
+                    context = application,
+                    song = sidecarSong,
+                    coverReference = sidecarSong.customCoverUrl,
+                    writeCover = false,
+                    writeLyrics = true
+                ) == LocalMediaMetadataWriteOutcome.SUCCESS
+            }.getOrElse { error ->
+                NPLogger.w(
+                    "PlayerManager",
+                    "本地歌词与嵌入元数据同步写入失败: ${error.message}"
+                )
+                false
+            }
         }
     } else if (
         isLocalSong && shouldPersistLyricsSidecarsSynchronously(
@@ -2553,24 +2506,28 @@ internal suspend fun PlayerManager.updateSongLyricsAndTranslationImpl(
         )
     ) {
         val sidecarSong = resolveLocalSidecarWriteSong(updatedSong)
-        try {
-            val lyricsWritten = LocalMediaSupport.writeLocalLyricsSidecars(
-                context = application,
-                song = sidecarSong
-            )
-            lyricsWritten && LocalMediaSupport.writeLocalMetadataSidecar(
-                context = application,
-                song = sidecarSong,
-                writeLyrics = true
-            )
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            NPLogger.w(
-                "PlayerManager",
-                "本地歌词侧载写入失败: ${error.message}"
-            )
+        if (sidecarSong == null) {
             false
+        } else {
+            try {
+                val lyricsWritten = LocalMediaSupport.writeLocalLyricsSidecars(
+                    context = application,
+                    song = sidecarSong
+                )
+                lyricsWritten && LocalMediaSupport.writeLocalMetadataSidecar(
+                    context = application,
+                    song = sidecarSong,
+                    writeLyrics = true
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    "PlayerManager",
+                    "本地歌词侧载写入失败: ${error.message}"
+                )
+                false
+            }
         }
     } else {
         true

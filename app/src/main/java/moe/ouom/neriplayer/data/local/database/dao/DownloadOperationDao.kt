@@ -127,6 +127,17 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET state = 'INVALID', updated_at_ms = :updatedAtMs, " +
+            "last_error_code = 'INVALID_OPERATION_PAYLOAD' WHERE operation_id = :operationId " +
+            "AND state IN (:expectedStates)"
+    )
+    suspend fun invalidateMalformedPayload(
+        operationId: String,
+        expectedStates: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = :updatedAtMs, last_error_code = :errorCode " +
             "WHERE operation_id = :operationId AND stable_key = :stableKey " +

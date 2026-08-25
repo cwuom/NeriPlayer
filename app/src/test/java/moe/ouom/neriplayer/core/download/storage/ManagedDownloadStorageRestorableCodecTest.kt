@@ -1,9 +1,11 @@
 package moe.ouom.neriplayer.core.download.storage
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,6 +16,7 @@ class ManagedDownloadStorageRestorableCodecTest {
             stableKey = "youtube:video-1",
             name = "Edited title",
             artist = "Edited artist",
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
             restorableMetadata = ManagedDownloadRestorableMetadata(
                 sourceStableKey = "youtube:video-1",
                 baseline = ManagedDownloadRestorableMetadata.Baseline(
@@ -37,6 +40,7 @@ class ManagedDownloadStorageRestorableCodecTest {
 
         assertTrue(json.optInt("schemaVersion") >= 5)
         assertEquals(metadata.restorableMetadata, parsed.restorableMetadata)
+        assertEquals(DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED, parsed.metadataEmbeddingState)
         assertEquals("Original title", parsed.originalName)
         assertEquals("Edited title", parsed.customName)
     }
@@ -68,5 +72,15 @@ class ManagedDownloadStorageRestorableCodecTest {
                 JSONObject(nested.toString()).put("userLyricOffsetMs", -120L)
             )
         assertEquals(-120L, parsedFromExplicit.userLyricOffsetMs)
+    }
+
+    @Test
+    fun `downloaded metadata codec preserves missing embedding state for legacy recovery`() {
+        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
+            JSONObject().put("downloadFinalized", true)
+        )
+
+        assertEquals(true, parsed.downloadFinalized)
+        assertNull(parsed.metadataEmbeddingState)
     }
 }

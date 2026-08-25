@@ -7,6 +7,7 @@ import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -117,6 +118,124 @@ class LocalAudioImportManagerTest {
                 hasResolvedFile = false,
                 hasProviderAudioReference = false,
                 hasReadableMediaStoreReference = false
+            )
+        )
+    }
+
+    @Test
+    fun `managed candidates require strict finalization evidence before publication`() {
+        val completedAudio = managedAudioEntry(name = "managed.mp3")
+
+        fun gate(
+            metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+            rootEntriesComplete: Boolean = true,
+            audio: ManagedDownloadStorage.StoredEntry = completedAudio
+        ): ManagedDownloadCandidatePublicationGate {
+            val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+                audioEntries = listOf(audio),
+                metadataByAudioName = metadata?.let { value -> mapOf(audio.name to value) }.orEmpty(),
+                rootEntriesComplete = rootEntriesComplete
+            )
+            return ManagedDownloadCandidatePublicationGate(
+                snapshot = snapshot,
+                treeDocumentId = "primary:neriplayer-download"
+            )
+        }
+
+        fun publication(
+            metadata: ManagedDownloadStorage.DownloadedAudioMetadata?,
+            rootEntriesComplete: Boolean = true,
+            audio: ManagedDownloadStorage.StoredEntry = completedAudio
+        ): ManagedDownloadCandidatePublication {
+            return gate(metadata, rootEntriesComplete, audio).evaluateRelativePath(
+                relativePath = "neriplayer-download/",
+                displayName = audio.name,
+                candidateReferences = listOf(audio.reference)
+            )
+        }
+
+        assertEquals(
+            ManagedDownloadCandidatePublication.FINALIZED,
+            publication(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.FINALIZED,
+            publication(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                )
+            )
+        )
+        assertEquals(ManagedDownloadCandidatePublication.WITHHELD, publication(null))
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED
+                )
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.UNSUPPORTED_CONTAINER
+                )
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                ),
+                rootEntriesComplete = false
+            )
+        )
+
+        val pendingAudio = managedAudioEntry(
+            name = "managed.mp3.npdl_pending.001.pending"
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            publication(
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                ),
+                audio = pendingAudio
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.WITHHELD,
+            gate(metadata = null).evaluateRelativePath(
+                relativePath = "neriplayer-download/",
+                displayName = "ordinary-local-song.mp3"
+            )
+        )
+        assertEquals(
+            ManagedDownloadCandidatePublication.NON_MANAGED,
+            gate(metadata = null).evaluateRelativePath(
+                relativePath = "Music/Albums/",
+                displayName = completedAudio.name
             )
         )
     }
@@ -1075,5 +1194,18 @@ class LocalAudioImportManagerTest {
         assertEquals("file:///private/original-cover.jpg", merged.originalCoverUrl)
         assertEquals("[00:01.00]original", merged.originalLyric)
         assertEquals("[00:01.00]原文", merged.originalTranslatedLyric)
+    }
+
+    private fun managedAudioEntry(
+        name: String
+    ): ManagedDownloadStorage.StoredEntry {
+        return ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/storage/emulated/0/neriplayer-download/$name",
+            mediaUri = "file:///storage/emulated/0/neriplayer-download/$name",
+            localFilePath = "/storage/emulated/0/neriplayer-download/$name",
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
     }
 }

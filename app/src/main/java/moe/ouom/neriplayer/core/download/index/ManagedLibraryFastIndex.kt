@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.index
 
 import java.io.File
 import java.security.MessageDigest
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import org.json.JSONArray
 import org.json.JSONObject
@@ -13,6 +14,7 @@ internal data class ManagedLibraryIndexEntry(
     val audioReference: String,
     val metadataName: String?,
     val state: String,
+    val metadataEmbeddingState: DownloadedAudioEmbeddingState? = null,
     val downloadTimeMs: Long?,
     val updatedAtMs: Long,
     val songId: Long? = null,
@@ -136,6 +138,9 @@ internal object ManagedLibraryFastIndex {
             put("audioReference", audioReference)
             put("metadataName", metadataName)
             put("state", state)
+            metadataEmbeddingState?.let { embeddingState ->
+                put("metadataEmbeddingState", embeddingState.name)
+            }
             put("downloadTimeMs", downloadTimeMs)
             put("updatedAtMs", updatedAtMs)
             put("songId", songId)
@@ -164,6 +169,11 @@ internal object ManagedLibraryFastIndex {
             audioReference = audioReference,
             metadataName = optString("metadataName").takeIf(String::isNotBlank),
             state = optString("state").takeIf(String::isNotBlank) ?: "CORE_COMMITTED",
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.fromPersisted(
+                optString("metadataEmbeddingState").takeIf {
+                    has("metadataEmbeddingState") && !isNull("metadataEmbeddingState")
+                }
+            ),
             downloadTimeMs = optLong("downloadTimeMs")
                 .takeIf { has("downloadTimeMs") && it > 0L },
             updatedAtMs = optLong("updatedAtMs"),

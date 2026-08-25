@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
@@ -13,7 +14,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 /** 标签后处理一次尝试后的收尾动作 */
 internal enum class TagPostProcessingAction {
     FINALIZE_TAGGED,
-    FINALIZE_UNTAGGED,
     RETRY,
     PRESERVE_UNFINALIZED
 }
@@ -23,7 +23,7 @@ internal enum class TagPostProcessingAction {
  *
  * 标签写入失败时必须保留音频, 但不能把可写标签的容器伪装成已完成
  * - SUCCESS: 标签已写入, 按带标签完成
- * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留音频按无标签完成, 重试无意义
+ * - UNSUPPORTED_CONTAINER: 容器天生写不了 (如 WebM) , 保留未最终化音频供诊断
  * - FAILED / 未知: 可能瞬时失败, 仍有重试次数则重试; 重试耗尽后保留未最终确认文件
  *   等待后续元数据收尾重试, 不删除音频也不发布完成状态
  */
@@ -32,7 +32,7 @@ internal fun tagPostProcessingAction(
     hasRemainingAttempts: Boolean
 ): TagPostProcessingAction = when (outcome) {
     DownloadedAudioTagWriteOutcome.SUCCESS -> TagPostProcessingAction.FINALIZE_TAGGED
-    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.FINALIZE_UNTAGGED
+    DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER -> TagPostProcessingAction.PRESERVE_UNFINALIZED
     DownloadedAudioTagWriteOutcome.FAILED, null ->
         if (hasRemainingAttempts) TagPostProcessingAction.RETRY
         else TagPostProcessingAction.PRESERVE_UNFINALIZED
@@ -225,7 +225,14 @@ internal fun shouldInspectDownloadedAudioDetails(
 internal fun isUnfinalizedDownloadedMetadata(
     metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
 ): Boolean {
-    return metadata?.downloadFinalized == false
+    return !isFinalizedDownloadedMetadata(metadata)
+}
+
+internal fun isFinalizedDownloadedMetadata(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): Boolean {
+    return metadata?.downloadFinalized == true &&
+        isAcceptedDownloadedAudioEmbeddingState(metadata.metadataEmbeddingState)
 }
 
 internal fun resolveDownloadedLyricContent(

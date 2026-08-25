@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.metadata
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.core.download.isAcceptedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
@@ -47,7 +49,17 @@ internal object ManagedDownloadMetadataCodec {
 
     fun finalizedDownloadedMetadataJson(rawJson: String): String? {
         return runCatching {
-            JSONObject(rawJson).apply {
+            val metadata = JSONObject(rawJson)
+            val embeddingState = DownloadedAudioEmbeddingState.fromPersisted(
+                metadata.optString("metadataEmbeddingState").takeIf {
+                    metadata.has("metadataEmbeddingState") &&
+                        !metadata.isNull("metadataEmbeddingState")
+                }
+            )
+            if (!isAcceptedDownloadedAudioEmbeddingState(embeddingState)) {
+                return@runCatching null
+            }
+            metadata.apply {
                 put("downloadFinalized", true)
             }.toString()
         }.onFailure {

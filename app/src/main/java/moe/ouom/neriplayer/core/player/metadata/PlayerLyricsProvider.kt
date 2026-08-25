@@ -166,13 +166,15 @@ internal fun shouldReadManagedDownloadLyrics(
     return !song.isLocalSong() || isManagedLocalDownload
 }
 
-private fun isManagedLocalDownloadForSong(application: Application, song: SongItem): Boolean {
+private fun isManagedLocalLyricsSourceForSong(application: Application, song: SongItem): Boolean {
     if (!song.isLocalSong()) {
         return false
     }
-    return GlobalDownloadManager.hasDownloadedSongCached(song) ||
-        ManagedDownloadStorage.peekDownloadedAudio(song) != null ||
-        ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
+    if (GlobalDownloadManager.hasDownloadedSongCached(song)) {
+        return true
+    }
+    // 目录和 URI 线索只用于选择歌词侧载读取策略，不代表下载已经完成
+    return ManagedDownloadStorage.isLikelyManagedDownloadSongFast(application, song)
 }
 
 internal fun hasCollapsedLyricEntryTimeline(entries: List<LyricEntry>): Boolean {
@@ -792,7 +794,7 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload
@@ -935,7 +937,7 @@ internal object PlayerLyricsProvider {
         biliSourceTag: String
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
-            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload
@@ -1031,7 +1033,7 @@ internal object PlayerLyricsProvider {
     ): List<LyricEntry> {
         return withContext(Dispatchers.IO) {
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
-            val isManagedLocalDownload = isManagedLocalDownloadForSong(application, song)
+            val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
                 song = song,
                 isManagedLocalDownload = isManagedLocalDownload

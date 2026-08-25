@@ -190,6 +190,24 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `pending SAF audio keeps an internal writable reference`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npdl_pending.test.pending",
+            reference = "content://provider/tree/audio/pending",
+            mediaUri = "content://provider/tree/audio/pending",
+            localFilePath = null,
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+
+        assertEquals("", entry.playbackUri)
+        assertEquals(
+            "content://provider/tree/audio/pending",
+            MetadataDownloadedAudioTagWriter.writableDescriptorReference(entry)
+        )
+    }
+
+    @Test
     fun `downloaded m4a cover replacement keeps exactly one covr picture`() {
         val replacement = Picture(
             data = byteArrayOf(9),

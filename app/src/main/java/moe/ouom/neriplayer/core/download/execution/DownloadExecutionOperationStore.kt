@@ -4,6 +4,10 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
+internal const val METADATA_ACTION_REQUIRED_OPERATION_STATE = "METADATA_ACTION_REQUIRED"
+internal const val METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR =
+    "METADATA_EMBEDDING_UNSUPPORTED_CONTAINER"
+
 internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES = setOf(
     "RUNNING",
     "COMMITTING",
@@ -462,6 +466,14 @@ internal fun resolveDownloadOperationState(
                 current in setOf("RUNNING", "COMMITTING")
         }
     }
+    if (requestedState == METADATA_ACTION_REQUIRED_OPERATION_STATE) {
+        return requestedState.takeIf { current == "DEGRADED_COMPLETE" }
+    }
+    if (current == METADATA_ACTION_REQUIRED_OPERATION_STATE) {
+        return requestedState.takeIf {
+            it in setOf("ASSETS_ENRICHING", "FINALIZED")
+        }
+    }
     if (current == "CANCEL_REQUESTED") {
         return requestedState.takeIf { it in CORE_COMMITTED_STATES }
     }
@@ -489,6 +501,12 @@ internal fun resolveDownloadOperationState(
                 "DEGRADED_COMPLETE"
             )
         }
+    }
+    if (
+        current == "DEGRADED_COMPLETE" &&
+            requestedState in setOf("ASSETS_ENRICHING", "FINALIZED")
+    ) {
+        return requestedState
     }
     val currentCoreIndex = CORE_COMMITTED_STATES.indexOf(current)
     if (currentCoreIndex >= 0) {

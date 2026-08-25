@@ -59,6 +59,7 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
                     entry("completed.mp3.npmeta.json", completedMetadataReference),
                     ManagedDownloadStorage.DownloadedAudioMetadata(
                         downloadFinalized = true,
+                        metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
                         romanizedLyricPath = sharedRomanizedReference
                     )
                 )
@@ -67,6 +68,65 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
         )
 
         assertFalse(references.contains(sharedRomanizedReference))
+    }
+
+    @Test
+    fun `unfinalized canonical metadata preserves nonempty pending audio and sidecars`() {
+        val metadataReference = "content://downloads/audio/song.mp3.npmeta.json"
+        val pendingAudioReference = "content://downloads/audio/song.mp3.npdl_pending.1.pending"
+        val coverReference = "content://downloads/covers/song.jpg"
+        val lyricReference = "content://downloads/lyrics/song.lrc"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("song.mp3.npmeta.json", metadataReference),
+                entry("song.mp3.npdl_pending.1.pending", pendingAudioReference)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song.mp3.npmeta.json", metadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        downloadFinalized = false,
+                        coverPath = coverReference,
+                        lyricPath = lyricReference
+                    )
+                )
+            ),
+            managedSidecarReferences = setOf(coverReference, lyricReference)
+        )
+
+        assertFalse(references.contains(metadataReference))
+        assertFalse(references.contains(pendingAudioReference))
+        assertFalse(references.contains(coverReference))
+        assertFalse(references.contains(lyricReference))
+    }
+
+    @Test
+    fun `unfinalized pending metadata preserves nonempty pending audio and sidecars`() {
+        val metadataReference = "content://downloads/audio/song.mp3.npmeta.pending.json"
+        val pendingAudioReference = "content://downloads/audio/song.mp3.npdl_pending.2.pending"
+        val translatedLyricReference = "content://downloads/lyrics/song_trans.lrc"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("song.mp3.npmeta.pending.json", metadataReference),
+                entry("song.mp3.npdl_pending.2.pending", pendingAudioReference)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song.mp3.npmeta.pending.json", metadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        downloadFinalized = false,
+                        translatedLyricPath = translatedLyricReference
+                    )
+                )
+            ),
+            managedSidecarReferences = setOf(translatedLyricReference)
+        )
+
+        assertFalse(references.contains(metadataReference))
+        assertFalse(references.contains(pendingAudioReference))
+        assertFalse(references.contains(translatedLyricReference))
     }
 
     private fun entry(

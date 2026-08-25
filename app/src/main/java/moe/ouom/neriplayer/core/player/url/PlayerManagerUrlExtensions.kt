@@ -174,7 +174,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     if (isLocalSong(song)) {
-        val localMediaUri = localMediaSource(song)
+        val localMediaUri = AudioDownloadManager.resolvePermittedLocalPlaybackUri(
+            context = application,
+            song = song,
+            rawLocalReference = localMediaSource(song)
+        )
         if (localMediaUri != null && isReadableLocalMediaUri(localMediaUri)) {
             val playbackAudioInfo = localMediaUri.toLocalPlaybackUri()
                 ?.let { buildLocalPlaybackAudioInfo(it, application) }
@@ -302,7 +306,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
     if (!forceRefresh && allowGenericPrefetchCache && !isYouTubeTrack) {
-        consumeGenericUrlPrefetch(cacheKey)?.let { prefetchedResult ->
+        consumeGenericUrlPrefetch(cacheKey, song)?.let { prefetchedResult ->
             prepareBiliPlaybackSkipsForResolvedPlayback(song)
             return mergeListenTogetherFallbackResult(
                 localResult = prefetchedResult,

@@ -1,8 +1,13 @@
 package moe.ouom.neriplayer.core.download.index
 
 import java.nio.file.Files
+import java.security.MessageDigest
+import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -41,6 +46,82 @@ class ManagedLibraryFastIndexTest {
         assertNotNull(restored)
         assertEquals(listOf("a-song", "z-song"), restored?.entries?.map { it.stableKey })
         assertEquals("library", restored?.libraryId)
+    }
+
+    @Test
+    fun `index preserves accepted metadata embedding completion states`() {
+        val raw = ManagedLibraryFastIndex.encode(
+            libraryId = "library",
+            shard = "03",
+            entries = listOf(
+                entry("embedded").copy(
+                    state = "FINALIZED",
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                ),
+                entry("disabled").copy(
+                    state = "FINALIZED",
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                )
+            ),
+            generatedAtMs = 42L
+        )
+
+        val restored = ManagedLibraryFastIndex.decode(raw)?.entries
+            ?.associateBy(ManagedLibraryIndexEntry::stableKey)
+
+        assertEquals(
+            DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED,
+            restored?.get("embedded")?.metadataEmbeddingState
+        )
+        assertEquals(
+            DownloadedAudioEmbeddingState.USER_DISABLED,
+            restored?.get("disabled")?.metadataEmbeddingState
+        )
+        assertTrue(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = restored?.get("embedded")?.metadataEmbeddingState
+                )
+            )
+        )
+        assertTrue(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = restored?.get("disabled")?.metadataEmbeddingState
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `legacy finalized index entry without embedding state stays unverified`() {
+        val encoded = ManagedLibraryFastIndex.encode(
+            libraryId = "library",
+            shard = "03",
+            entries = listOf(entry("legacy").copy(state = "FINALIZED")),
+            generatedAtMs = 42L
+        )
+        val legacyPayload = JSONObject(encoded).apply {
+            getJSONArray("entries").getJSONObject(0).remove("metadataEmbeddingState")
+            remove("checksum")
+        }.let { body ->
+            body.put("checksum", sha256(body.toString())).toString()
+        }
+
+        val restored = ManagedLibraryFastIndex.decode(legacyPayload)?.entries?.single()
+
+        assertEquals("FINALIZED", restored?.state)
+        assertNull(restored?.metadataEmbeddingState)
+        assertFalse(
+            isFinalizedDownloadedMetadata(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = restored?.metadataEmbeddingState
+                )
+            )
+        )
     }
 
     @Test
@@ -107,5 +188,11 @@ class ManagedLibraryFastIndexTest {
             downloadTimeMs = 1L,
             updatedAtMs = 2L
         )
+    }
+
+    private fun sha256(value: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 }

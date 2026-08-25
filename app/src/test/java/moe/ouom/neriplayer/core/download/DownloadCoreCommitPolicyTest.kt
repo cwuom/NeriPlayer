@@ -142,4 +142,54 @@ class DownloadCoreCommitPolicyTest {
         assertFalse(requiresDownloadFinalizationRecovery("COMMITTING"))
         assertFalse(requiresDownloadFinalizationRecovery(null))
     }
+
+    @Test
+    fun `final metadata republishes when operation or artifact publication was interrupted`() {
+        assertTrue(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = "CORE_COMMITTED",
+                artifactState = "FINALIZED"
+            )
+        )
+        assertTrue(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = "FINALIZED",
+                artifactState = "ASSETS_ENRICHING"
+            )
+        )
+        assertTrue(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = "DEGRADED_COMPLETE",
+                artifactState = null
+            )
+        )
+    }
+
+    @Test
+    fun `final metadata does not republish once both durable records are finalized`() {
+        assertFalse(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = true,
+                operationState = "FINALIZED",
+                artifactState = "FINALIZED"
+            )
+        )
+        assertFalse(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = false,
+                operationState = "CORE_COMMITTED",
+                artifactState = "ASSETS_ENRICHING"
+            )
+        )
+        assertFalse(
+            requiresFinalizedPublicationRecovery(
+                metadataFinalized = null,
+                operationState = "CORE_COMMITTED",
+                artifactState = "ASSETS_ENRICHING"
+            )
+        )
+    }
 }

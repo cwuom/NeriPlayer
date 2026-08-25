@@ -38,4 +38,22 @@ class DownloadRecoveryOperationIdentityTest {
 
         assertEquals("operation-701", restored.operationId)
     }
+
+    @Test
+    fun `legacy operation song payload without artist or album remains resumable`() {
+        val song = ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(
+            """
+            {
+              "id": 39175763,
+              "name": "Queued legacy song",
+              "channelId": "netease",
+              "audioId": "39175763"
+            }
+            """.trimIndent()
+        ) ?: error("legacy operation song payload must remain decodable")
+
+        assertEquals("", song.artist)
+        assertEquals("", song.album)
+        assertEquals("39175763|netease|", song.stableKey())
+    }
 }

@@ -110,20 +110,22 @@ internal object ManagedLibraryItemRoomStore {
         val rows = database.managedLibraryItemDao()
             .findAll(libraryId)
         if (rows.isEmpty()) return null
-        return rows.mapNotNull { row ->
-            val reference = row.audioReference ?: row.locatorHint ?: return@mapNotNull null
-            DownloadedSong(
-                id = 0L,
-                name = row.titlePreview ?: row.audioName ?: reference,
-                artist = row.artistPreview.orEmpty(),
-                album = "",
-                filePath = reference,
-                fileSize = row.fileSize ?: 0L,
-                downloadTime = row.downloadedAtMs ?: row.updatedAtMs,
-                mediaUri = reference.takeIf { it.startsWith("content://") },
-                stableKey = row.stableKey
-            )
-        }.takeIf { it.isNotEmpty() }
+        return rows.asSequence()
+            .filter { row -> shouldRestoreManagedLibraryItem(row.state) }
+            .mapNotNull { row ->
+                val reference = row.audioReference ?: row.locatorHint ?: return@mapNotNull null
+                DownloadedSong(
+                    id = 0L,
+                    name = row.titlePreview ?: row.audioName ?: reference,
+                    artist = row.artistPreview.orEmpty(),
+                    album = "",
+                    filePath = reference,
+                    fileSize = row.fileSize ?: 0L,
+                    downloadTime = row.downloadedAtMs ?: row.updatedAtMs,
+                    mediaUri = reference.takeIf { it.startsWith("content://") },
+                    stableKey = row.stableKey
+                )
+            }.toList()
     }
 
     suspend fun replacePreviews(
@@ -144,4 +146,9 @@ internal object ManagedLibraryItemRoomStore {
         database.managedLibraryItemDao()
             .delete(libraryId, stableKey)
     }
+
+}
+
+internal fun shouldRestoreManagedLibraryItem(state: String): Boolean {
+    return state in setOf("FINALIZED", "COMPLETE", "COMPLETED")
 }

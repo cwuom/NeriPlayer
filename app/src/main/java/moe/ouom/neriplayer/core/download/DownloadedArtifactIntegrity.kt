@@ -69,7 +69,7 @@ internal fun verifyDownloadedArtifactIntegrity(
         issues += DownloadedArtifactIntegrityIssue.METADATA_MISSING
         return DownloadedArtifactIntegrityResult(issues)
     }
-    if (requireFinalizedMetadata && metadata.downloadFinalized != true) {
+    if (requireFinalizedMetadata && !isFinalizedDownloadedMetadata(metadata)) {
         issues += DownloadedArtifactIntegrityIssue.METADATA_NOT_FINALIZED
     }
 

@@ -23,6 +23,27 @@ import kotlin.math.pow
 class NowPlayingScreenTest {
 
     @Test
+    fun `download presence only accepts a published catalog entry`() {
+        val song = SongItem(
+            id = 40L,
+            name = "Pending",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = null,
+            mediaUri = "content://downloads/audio/pending.mp3"
+        )
+
+        assertFalse(
+            hasPublishedManagedDownload(song) { false }
+        )
+        assertTrue(
+            hasPublishedManagedDownload(song) { true }
+        )
+    }
+
+    @Test
     fun `edit song cover uses resolved local fallback when metadata has no cover`() {
         val song = SongItem(
             id = 41L,

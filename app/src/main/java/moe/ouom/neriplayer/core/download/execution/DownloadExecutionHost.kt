@@ -124,6 +124,7 @@ sealed interface DownloadExecutionResult {
     data object Retry : DownloadExecutionResult
     data object Cancelled : DownloadExecutionResult
     data object UserStopped : DownloadExecutionResult
+    data object UserActionRequired : DownloadExecutionResult
     data class Failed(val error: Throwable) : DownloadExecutionResult
 }
 
@@ -630,6 +631,18 @@ class DefaultDownloadExecutionHost(
                     )
                 }
                 DownloadExecutionResult.UserStopped -> {
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                }
+                DownloadExecutionResult.UserActionRequired -> {
+                    val persisted = operationStore.updateState(
+                        context = context.applicationContext,
+                        operationId = normalizedId,
+                        state = METADATA_ACTION_REQUIRED_OPERATION_STATE,
+                        errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+                    )
+                    if (!persisted) {
+                        return@withContext DownloadExecutionResult.Retry
+                    }
                     operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
                 }
                 is DownloadExecutionResult.Failed -> {

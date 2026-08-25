@@ -169,6 +169,14 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `metadata action required terminates WorkManager without an infinite retry`() {
+        assertEquals(
+            ListenableWorker.Result.success()::class,
+            DownloadExecutionResult.UserActionRequired.toWorkerResult()::class
+        )
+    }
+
+    @Test
     fun `UIDT fallback work waits briefly before claiming the operation`() {
         val request = ForegroundDownloadWorker.buildFallbackRequest("operation-fallback")
 
@@ -654,6 +662,37 @@ class DownloadExecutionHostTest {
         }
 
         assertEquals(interruptedStates.size, executions)
+    }
+
+    @Test
+    fun `unsupported metadata result persists a non schedulable action state`() = runTest {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-metadata-action-required",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        testJournal.forceState(request.operationId, "DEGRADED_COMPLETE", updatedAtMs = 1L)
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                DownloadExecutionResult.UserActionRequired
+            },
+            sdkInt = 28
+        )
+
+        assertEquals(
+            DownloadExecutionResult.UserActionRequired,
+            host.execute(context, request.operationId)
+        )
+        assertEquals(
+            METADATA_ACTION_REQUIRED_OPERATION_STATE,
+            store.currentState(context, request.operationId)
+        )
+        assertFalse(
+            canScheduleDownloadOperation(store.currentState(context, request.operationId))
+        )
     }
 
     private val testJournal = InMemoryDownloadExecutionOperationJournal()
