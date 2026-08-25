@@ -43,13 +43,18 @@ internal sealed interface ManagedDownloadArtifactClaim {
     ) : ManagedDownloadArtifactClaim
 }
 
+internal fun ManagedDownloadArtifactClaim?.ownedLeaseIdOrNull(): String? {
+    return (this as? ManagedDownloadArtifactClaim.Acquired)?.artifact?.leaseId
+}
+
 internal object ManagedDownloadArtifactPolicy {
     const val DEFAULT_STALE_LEASE_MS = 15 * 60 * 1_000L
 
     fun decide(
         existing: ManagedDownloadArtifactEntity?,
         nowMs: Long,
-        staleLeaseMs: Long = DEFAULT_STALE_LEASE_MS
+        staleLeaseMs: Long = DEFAULT_STALE_LEASE_MS,
+        leaseOwnerId: String? = null
     ): ManagedDownloadArtifactDecision {
         if (existing == null) {
             return ManagedDownloadArtifactDecision.Acquire
@@ -78,7 +83,12 @@ internal object ManagedDownloadArtifactPolicy {
             ManagedDownloadArtifactState.DOWNLOADING,
             ManagedDownloadArtifactState.VERIFYING,
             ManagedDownloadArtifactState.COMMITTING -> {
-                if (nowMs - existing.updatedAtMs >= staleLeaseMs) {
+                if (
+                    leaseOwnerId != null &&
+                    existing.leaseId == leaseOwnerId
+                ) {
+                    ManagedDownloadArtifactDecision.Acquire
+                } else if (nowMs - existing.updatedAtMs >= staleLeaseMs) {
                     ManagedDownloadArtifactDecision.Acquire
                 } else {
                     ManagedDownloadArtifactDecision.InFlight
@@ -97,6 +107,44 @@ internal enum class ManagedDownloadArtifactDecision {
     AlreadyDownloaded,
     InFlight,
     RepairRequired
+}
+
+internal fun matchesManagedDownloadArtifactLease(
+    currentLeaseId: String?,
+    expectedLeaseId: String?
+): Boolean {
+    return currentLeaseId == expectedLeaseId
+}
+
+internal fun canApplyLeaseFreeArtifactTransition(
+    currentState: ManagedDownloadArtifactState,
+    currentLeaseId: String?,
+    requestedState: ManagedDownloadArtifactState
+): Boolean {
+    if (currentLeaseId != null) {
+        return false
+    }
+    return when (requestedState) {
+        ManagedDownloadArtifactState.ASSETS_ENRICHING ->
+            currentState in setOf(
+                ManagedDownloadArtifactState.CORE_COMMITTED,
+                ManagedDownloadArtifactState.ASSETS_ENRICHING
+            )
+        ManagedDownloadArtifactState.DEGRADED_COMPLETE ->
+            currentState in setOf(
+                ManagedDownloadArtifactState.CORE_COMMITTED,
+                ManagedDownloadArtifactState.ASSETS_ENRICHING,
+                ManagedDownloadArtifactState.DEGRADED_COMPLETE
+            )
+        ManagedDownloadArtifactState.MISSING_CONFIRMED ->
+            currentState !in setOf(
+                ManagedDownloadArtifactState.QUEUED,
+                ManagedDownloadArtifactState.DOWNLOADING,
+                ManagedDownloadArtifactState.VERIFYING,
+                ManagedDownloadArtifactState.COMMITTING
+            )
+        else -> false
+    }
 }
 
 internal enum class ManagedDownloadArtifactReferenceState {
@@ -124,12 +172,45 @@ internal fun resolveArtifactStateUpdate(
     current: ManagedDownloadArtifactState,
     requested: ManagedDownloadArtifactState
 ): ManagedDownloadArtifactState {
-    return if (
-        current == ManagedDownloadArtifactState.REPAIR_REQUIRED &&
-            requested == ManagedDownloadArtifactState.FAILED_RETRYABLE
-    ) {
-        ManagedDownloadArtifactState.REPAIR_REQUIRED
-    } else {
-        requested
+    return when (current) {
+        ManagedDownloadArtifactState.FINALIZED -> ManagedDownloadArtifactState.FINALIZED
+        ManagedDownloadArtifactState.DEGRADED_COMPLETE -> {
+            if (requested == ManagedDownloadArtifactState.FINALIZED) {
+                ManagedDownloadArtifactState.FINALIZED
+            } else {
+                ManagedDownloadArtifactState.DEGRADED_COMPLETE
+            }
+        }
+        ManagedDownloadArtifactState.ASSETS_ENRICHING -> {
+            if (requested in setOf(
+                    ManagedDownloadArtifactState.FINALIZED,
+                    ManagedDownloadArtifactState.DEGRADED_COMPLETE
+                )
+            ) {
+                requested
+            } else {
+                ManagedDownloadArtifactState.ASSETS_ENRICHING
+            }
+        }
+        ManagedDownloadArtifactState.CORE_COMMITTED -> {
+            if (requested in setOf(
+                    ManagedDownloadArtifactState.ASSETS_ENRICHING,
+                    ManagedDownloadArtifactState.FINALIZED,
+                    ManagedDownloadArtifactState.DEGRADED_COMPLETE
+                )
+            ) {
+                requested
+            } else {
+                ManagedDownloadArtifactState.CORE_COMMITTED
+            }
+        }
+        ManagedDownloadArtifactState.REPAIR_REQUIRED -> {
+            if (requested == ManagedDownloadArtifactState.FAILED_RETRYABLE) {
+                ManagedDownloadArtifactState.REPAIR_REQUIRED
+            } else {
+                requested
+            }
+        }
+        else -> requested
     }
 }

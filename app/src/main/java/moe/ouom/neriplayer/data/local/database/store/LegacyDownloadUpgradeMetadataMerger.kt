@@ -156,6 +156,15 @@ internal object LegacyDownloadUpgradeMetadataMerger {
             result.optString("artist")
         ))
         putIfMissing(baseline, "album", result.optString("album"))
+        val customCoverReference = result.optString("customCoverUrl")
+            .trim()
+            .takeIf(String::isNotBlank)
+        putIfMissing(baseline, "coverReference", firstNonBlank(
+            result.optString("originalCoverUrl"),
+            result.optString("coverUrl").takeUnless { cover ->
+                cover.isBlank() || cover == customCoverReference
+            }
+        ))
         putIfMissing(baseline, "originalLyric", firstPresent(
             result,
             "originalLyric",
@@ -176,6 +185,7 @@ internal object LegacyDownloadUpgradeMetadataMerger {
         val overrides = restorable.optJSONObject("overrides") ?: JSONObject()
         putIfMissing(overrides, "title", result.optString("customName"))
         putIfMissing(overrides, "artist", result.optString("customArtist"))
+        putIfMissing(overrides, "coverReference", customCoverReference)
         putIfMissing(overrides, "originalLyric", firstPresent(result, "matchedLyric"))
         putIfMissing(
             overrides,

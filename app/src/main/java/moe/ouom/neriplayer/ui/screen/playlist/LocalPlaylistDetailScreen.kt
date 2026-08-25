@@ -319,6 +319,22 @@ internal fun toggleDisplayedSongSelection(
     }
 }
 
+internal fun selectedSongsInSourceOrder(
+    songs: List<SongItem>,
+    selectedKeys: Set<String>
+): List<SongItem> {
+    return songs.filter { it.stableKey() in selectedKeys }
+}
+
+internal fun retainExistingSongSelectionKeys(
+    songs: List<SongItem>,
+    selectedKeys: Set<String>
+): Set<String> {
+    if (selectedKeys.isEmpty()) return emptySet()
+    val existingKeys = songs.mapTo(HashSet(songs.size)) { it.stableKey() }
+    return selectedKeys.intersect(existingKeys)
+}
+
 internal fun <T> snapshotDisplayOrderList(items: List<T>): List<T> {
     return items.toList()
 }
@@ -1327,7 +1343,7 @@ fun LocalPlaylistDetailScreen(
             }
             val selectedSongsForAction by remember(tabSongs, selectedKeysState.value) {
                 derivedStateOf {
-                    tabSongs.filter { it.stableKey() in selectedKeysState.value }
+                    selectedSongsInSourceOrder(tabSongs, selectedKeysState.value)
                 }
             }
             val selectedDownloadedSongsForAction by remember(
@@ -1340,10 +1356,6 @@ fun LocalPlaylistDetailScreen(
                         .distinct()
                 }
             }
-            val hasSelectedOnlineSongs by remember(selectedSongsForAction) {
-                derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
-            }
-
             fun dismissNeteaseRemotePlaylistPicker() {
                 neteaseRemotePlaylistsRequestGeneration += 1
                 neteaseRemotePlaylistsLoadJob?.cancel()
@@ -1890,14 +1902,17 @@ fun LocalPlaylistDetailScreen(
                                 }
                                 HapticIconButton(
                                     onClick = {
-                                        if (selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs) {
-                                            val onlineSongs = selectedSongsForAction.filterNot { it.isLocalSong() }
+                                        val selectedSongs = selectedSongsForAction
+                                        if (selectedSongs.isNotEmpty()) {
                                             showDownloadManager = true
                                             exitSelectionMode()
-                                            GlobalDownloadManager.startBatchDownload(context, onlineSongs)
+                                            GlobalDownloadManager.startBatchDownload(
+                                                context,
+                                                selectedSongs
+                                            )
                                         }
                                     },
-                                    enabled = selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs
+                                    enabled = selectedSongsForAction.isNotEmpty()
                                 ) {
                                     Icon(
                                         Icons.Outlined.Download,

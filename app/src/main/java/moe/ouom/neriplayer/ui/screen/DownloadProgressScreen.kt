@@ -85,6 +85,8 @@ fun DownloadProgressScreen(
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
     val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
+    val isClearingDownloadTasks by GlobalDownloadManager.isClearingDownloadTasks
+        .collectAsStateWithLifecycle()
     var explicitResumeCandidates by remember {
         mutableStateOf<List<ExplicitDownloadResumeCandidate>>(emptyList())
     }
@@ -98,7 +100,11 @@ fun DownloadProgressScreen(
             .map { task -> task.song.stableKey() }
             .toSet()
     }
-    LaunchedEffect(context, taskPresenceKey) {
+    LaunchedEffect(context, taskPresenceKey, isClearingDownloadTasks) {
+        if (isClearingDownloadTasks) {
+            explicitResumeCandidates = emptyList()
+            return@LaunchedEffect
+        }
         repeat(EXPLICIT_RESUME_REFRESH_ATTEMPTS) { attempt ->
             val candidates = runCatching {
                 loadExplicitDownloadResumeCandidates(context)
@@ -113,15 +119,18 @@ fun DownloadProgressScreen(
             kotlinx.coroutines.delay(EXPLICIT_RESUME_REFRESH_DELAY_MS)
         }
     }
-    val pendingTaskCount = taskSummary.pendingTaskCount
-    val queuedTaskCount = taskSummary.queuedTaskCount
+    val pendingTaskCount = if (isClearingDownloadTasks) 0 else taskSummary.pendingTaskCount
+    val queuedTaskCount = if (isClearingDownloadTasks) 0 else taskSummary.queuedTaskCount
     val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
     val visibleBatchProgress = batchDownloadProgress?.takeIf { progress ->
-        pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
+        !isClearingDownloadTasks && (
+            pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
+        )
     }
-    val visibleTasks = remember(downloadTasks) {
-        downloadTasks.filter { it.status != DownloadStatus.QUEUED }
-    }
+    // 排队任务也保留在列表中，批量下载可看到每首歌的状态
+    val visibleTasks = if (isClearingDownloadTasks) emptyList() else downloadTasks
+    val visibleActiveDownloadOperations = activeDownloadOperations &&
+        !isClearingDownloadTasks && visibleTasks.isNotEmpty()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -134,6 +143,7 @@ fun DownloadProgressScreen(
                 TextButton(
                     onClick = {
                         context.performHapticFeedback()
+                        explicitResumeCandidates = emptyList()
                         GlobalDownloadManager.clearAllDownloadTasks()
                         showClearDialog = false
                     }
@@ -202,10 +212,28 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (
+        if (isClearingDownloadTasks) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        stringResource(R.string.download_clearing_tasks),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else if (
             visibleTasks.isEmpty() &&
             queuedTaskCount == 0 &&
-            !activeDownloadOperations &&
+            !visibleActiveDownloadOperations &&
             explicitResumeCandidates.isEmpty()
         ) {
             Box(

@@ -62,7 +62,8 @@ class SafStorageBackendWriteCapabilityTest {
         val finalUri = mock(Uri::class.java)
         val childrenUri = mock(Uri::class.java)
         val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000001")
-        val temporaryName = ".song.mp3.$operationUuid.pending"
+        val temporaryName = ".npdl_tmp_$operationUuid.pending"
+        val targetName = "x".repeat(226) + ".mp3"
         val resolver = mock(ContentResolver::class.java)
         val context = mock(Context::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
@@ -83,21 +84,24 @@ class SafStorageBackendWriteCapabilityTest {
         )
         val finalCursor = documentCursor(
             documentId = "final",
-            displayName = "song.mp3",
+            displayName = targetName,
             mimeType = "audio/mpeg",
             sizeBytes = 5L,
             flags = 0L
         )
+        val missingDocumentCursor = mock(Cursor::class.java)
+        `when`(missingDocumentCursor.moveToFirst()).thenReturn(false)
         val emptyChildrenCursor = mock(Cursor::class.java)
         `when`(emptyChildrenCursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
             .thenReturn(0)
         `when`(emptyChildrenCursor.moveToNext()).thenReturn(false)
         val temporaryBytes = ByteArrayOutputStream()
         val finalBytes = ByteArrayOutputStream()
+        var temporaryDeleted = false
         doAnswer { invocation ->
             when (invocation.getArgument<Uri>(0)) {
                 parentUri -> parentCursor
-                temporaryUri -> temporaryCursor
+                temporaryUri -> if (temporaryDeleted) missingDocumentCursor else temporaryCursor
                 finalUri -> finalCursor
                 else -> emptyChildrenCursor
             }
@@ -122,7 +126,10 @@ class SafStorageBackendWriteCapabilityTest {
             }.thenReturn(childrenUri)
             documentsContract.`when`<Boolean> {
                 DocumentsContract.deleteDocument(resolver, temporaryUri)
-            }.thenReturn(true)
+            }.thenAnswer {
+                temporaryDeleted = true
+                true
+            }
             documentsContract.`when`<Boolean> {
                 DocumentsContract.deleteDocument(resolver, finalUri)
             }.thenReturn(true)
@@ -139,14 +146,14 @@ class SafStorageBackendWriteCapabilityTest {
                     resolver,
                     parentUri,
                     "audio/mpeg",
-                    "song.mp3"
+                    targetName
                 )
             }.thenReturn(finalUri)
 
             val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
                 target = StorageTarget.SafTarget(
                     parent = StorageReference.SafRef(parentUri),
-                    displayName = "song.mp3",
+                    displayName = targetName,
                     mimeType = "audio/mpeg"
                 )
             ) { output ->
@@ -154,7 +161,245 @@ class SafStorageBackendWriteCapabilityTest {
             }
 
             assertTrue("result=$result", result is StorageWriteResult.Written)
-                assertEquals("audio", finalBytes.toString())
+            assertEquals("audio", finalBytes.toString())
+            assertTrue(temporaryName.toByteArray(Charsets.UTF_8).size < 64)
+            }
+        }
+    }
+
+    @Test
+    fun `provider auto numbered rename cleans up the renamed orphan`() = runBlocking {
+        val sourceUri = mock(Uri::class.java)
+        val numberedUri = mock(Uri::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val context = mock(Context::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+
+        val sourceCursor = documentCursor(
+            documentId = "pending",
+            displayName = "song.mp3.npdl_pending.pending",
+            mimeType = "audio/mpeg",
+            sizeBytes = 5L,
+            flags = DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong()
+        )
+        val numberedCursor = documentCursor(
+            documentId = "numbered",
+            displayName = "song (1).mp3",
+            mimeType = "audio/mpeg",
+            sizeBytes = 5L,
+            flags = 0L
+        )
+        val missingCursor = mock(Cursor::class.java)
+        `when`(missingCursor.moveToFirst()).thenReturn(false)
+        var numberedDeleted = false
+        doAnswer { invocation ->
+            when (invocation.getArgument<Uri>(0)) {
+                sourceUri -> sourceCursor
+                numberedUri -> if (numberedDeleted) missingCursor else numberedCursor
+                else -> missingCursor
+            }
+        }.`when`(resolver).query(any(), any(), any(), any(), any())
+
+        mockStatic(DocumentsContract::class.java).use { documentsContract ->
+            documentsContract.`when`<Uri?> {
+                DocumentsContract.renameDocument(resolver, sourceUri, "song.mp3")
+            }.thenReturn(numberedUri)
+            documentsContract.`when`<Boolean> {
+                DocumentsContract.deleteDocument(resolver, numberedUri)
+            }.thenAnswer {
+                numberedDeleted = true
+                true
+            }
+
+            val result = SafStorageBackend(context, Dispatchers.Unconfined).rename(
+                reference = TrustedManagedRef(StorageReference.SafRef(sourceUri)),
+                displayName = "song.mp3"
+            )
+
+            assertTrue(result is StorageRenameResult.ProviderFailure)
+            assertTrue(numberedDeleted)
+        }
+    }
+
+    @Test
+    fun `unconfirmed direct target cleanup is surfaced after copy failure`() = runBlocking {
+        val parentUri = mock(Uri::class.java)
+        val temporaryUri = mock(Uri::class.java)
+        val finalUri = mock(Uri::class.java)
+        val childrenUri = mock(Uri::class.java)
+        val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000002")
+        val temporaryName = ".npdl_tmp_$operationUuid.pending"
+        val resolver = mock(ContentResolver::class.java)
+        val context = mock(Context::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+
+        val parentCursor = documentCursor(
+            documentId = "root",
+            displayName = "root",
+            mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
+            sizeBytes = null,
+            flags = DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE.toLong()
+        )
+        val temporaryCursor = documentCursor(
+            documentId = "temporary",
+            displayName = ".song.mp3.pending",
+            mimeType = "audio/mpeg",
+            sizeBytes = 5L,
+            flags = 0L
+        )
+        val finalCursor = documentCursor(
+            documentId = "final",
+            displayName = "song.mp3",
+            mimeType = "audio/mpeg",
+            sizeBytes = 1L,
+            flags = 0L
+        )
+        val emptyChildrenCursor = mock(Cursor::class.java)
+        `when`(emptyChildrenCursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
+            .thenReturn(0)
+        `when`(emptyChildrenCursor.moveToNext()).thenReturn(false)
+        val missingDocumentCursor = mock(Cursor::class.java)
+        `when`(missingDocumentCursor.moveToFirst()).thenReturn(false)
+        var temporaryDeleted = false
+        doAnswer { invocation ->
+            when (invocation.getArgument<Uri>(0)) {
+                parentUri -> parentCursor
+                temporaryUri -> if (temporaryDeleted) missingDocumentCursor else temporaryCursor
+                finalUri -> finalCursor
+                else -> emptyChildrenCursor
+            }
+        }.`when`(resolver).query(any(), any(), any(), any(), any())
+        `when`(resolver.openOutputStream(temporaryUri, "w")).thenReturn(ByteArrayOutputStream())
+        `when`(resolver.openInputStream(temporaryUri))
+            .thenThrow(IllegalStateException("copy failed"))
+
+        mockStatic(UUID::class.java).use { uuidMock ->
+            uuidMock.`when`<UUID> { UUID.randomUUID() }.thenReturn(operationUuid)
+            mockStatic(DocumentsContract::class.java).use { documentsContract ->
+                documentsContract.`when`<String> {
+                    DocumentsContract.getDocumentId(parentUri)
+                }.thenReturn("root")
+                documentsContract.`when`<Boolean> {
+                    DocumentsContract.isTreeUri(parentUri)
+                }.thenReturn(true)
+                documentsContract.`when`<Uri> {
+                    DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, "root")
+                }.thenReturn(childrenUri)
+                documentsContract.`when`<Boolean> {
+                    DocumentsContract.deleteDocument(resolver, temporaryUri)
+                }.thenAnswer {
+                    temporaryDeleted = true
+                    true
+                }
+                documentsContract.`when`<Boolean> {
+                    DocumentsContract.deleteDocument(resolver, finalUri)
+                }.thenReturn(true)
+                documentsContract.`when`<Uri?> {
+                    DocumentsContract.createDocument(
+                        resolver,
+                        parentUri,
+                        "audio/mpeg",
+                        temporaryName
+                    )
+                }.thenReturn(temporaryUri)
+                documentsContract.`when`<Uri?> {
+                    DocumentsContract.createDocument(
+                        resolver,
+                        parentUri,
+                        "audio/mpeg",
+                        "song.mp3"
+                    )
+                }.thenReturn(finalUri)
+
+                val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
+                    target = StorageTarget.SafTarget(
+                        parent = StorageReference.SafRef(parentUri),
+                        displayName = "song.mp3",
+                        mimeType = "audio/mpeg"
+                    )
+                ) { output ->
+                    output.write("audio".toByteArray())
+                }
+
+                assertTrue(result is StorageWriteResult.ProviderFailure)
+                assertTrue(
+                    (result as StorageWriteResult.ProviderFailure).error.message
+                        ?.contains("SAF 删除未确认") == true
+                )
+                assertTrue(temporaryDeleted)
+            }
+        }
+    }
+
+    @Test
+    fun `temporary SAF file cleanup failure is surfaced when opening output fails`() = runBlocking {
+        val parentUri = mock(Uri::class.java)
+        val temporaryUri = mock(Uri::class.java)
+        val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000003")
+        val temporaryName = ".npdl_tmp_$operationUuid.pending"
+        val resolver = mock(ContentResolver::class.java)
+        val context = mock(Context::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+
+        val parentCursor = documentCursor(
+            documentId = "root",
+            displayName = "root",
+            mimeType = DocumentsContract.Document.MIME_TYPE_DIR,
+            sizeBytes = null,
+            flags = DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE.toLong()
+        )
+        val temporaryCursor = documentCursor(
+            documentId = "temporary",
+            displayName = ".song.mp3.pending",
+            mimeType = "audio/mpeg",
+            sizeBytes = 0L,
+            flags = 0L
+        )
+        doAnswer { invocation ->
+            when (invocation.getArgument<Uri>(0)) {
+                parentUri -> parentCursor
+                temporaryUri -> temporaryCursor
+                else -> temporaryCursor
+            }
+        }.`when`(resolver).query(any(), any(), any(), any(), any())
+        `when`(resolver.openOutputStream(temporaryUri, "w"))
+            .thenThrow(IllegalStateException("open output failed"))
+        var deletionAttempted = false
+
+        mockStatic(UUID::class.java).use { uuidMock ->
+            uuidMock.`when`<UUID> { UUID.randomUUID() }.thenReturn(operationUuid)
+            mockStatic(DocumentsContract::class.java).use { documentsContract ->
+                documentsContract.`when`<Uri?> {
+                    DocumentsContract.createDocument(
+                        resolver,
+                        parentUri,
+                        "audio/mpeg",
+                        temporaryName
+                    )
+                }.thenReturn(temporaryUri)
+                documentsContract.`when`<Boolean> {
+                    DocumentsContract.deleteDocument(resolver, temporaryUri)
+                }.thenAnswer {
+                    deletionAttempted = true
+                    true
+                }
+
+                val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
+                    target = StorageTarget.SafTarget(
+                        parent = StorageReference.SafRef(parentUri),
+                        displayName = "song.mp3",
+                        mimeType = "audio/mpeg"
+                    )
+                ) { output ->
+                    output.write("audio".toByteArray())
+                }
+
+                assertTrue(deletionAttempted)
+                assertTrue(result is StorageWriteResult.ProviderFailure)
+                assertTrue(
+                    (result as StorageWriteResult.ProviderFailure).error.message
+                        ?.contains("SAF 临时写入文件未能确认删除") == true
+                )
             }
         }
     }

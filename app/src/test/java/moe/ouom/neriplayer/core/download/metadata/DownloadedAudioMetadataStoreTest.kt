@@ -1,15 +1,83 @@
 package moe.ouom.neriplayer.core.download.metadata
 
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.json.JSONObject
 import org.junit.Test
 
 class DownloadedAudioMetadataStoreTest {
+
+    @Test
+    fun `newly written managed cover is inspected without a second materialization`() = runBlocking {
+        val reference = "content://managed/Covers/Artist-Song-12345678.jpg"
+        val expected = ManagedDownloadCoverAssetStore.MaterializedCover(
+            reference = reference,
+            assetHash = "a".repeat(64),
+            fileName = "Artist-Song-12345678.jpg"
+        )
+        var inspectCalls = 0
+        var materializeCalls = 0
+
+        val resolved = resolveDownloadedMetadataCoverAsset(
+            sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                coverReference = reference,
+                createdCover = true
+            ),
+            coverReference = reference,
+            inspect = {
+                inspectCalls++
+                expected
+            },
+            materialize = {
+                materializeCalls++
+                error("new managed cover must not be materialized again")
+            }
+        )
+
+        assertEquals(expected, resolved)
+        assertEquals(1, inspectCalls)
+        assertEquals(0, materializeCalls)
+    }
+
+    @Test
+    fun `unowned cover still uses materialization before metadata persistence`() = runBlocking {
+        val reference = "file:///external/custom-cover.jpg"
+        val expected = ManagedDownloadCoverAssetStore.MaterializedCover(
+            reference = "content://managed/Covers/custom-cover-12345678.jpg",
+            assetHash = "b".repeat(64),
+            fileName = "custom-cover-12345678.jpg"
+        )
+        var inspectCalls = 0
+        var materializeCalls = 0
+
+        val resolved = resolveDownloadedMetadataCoverAsset(
+            sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                coverReference = reference,
+                createdCover = false
+            ),
+            coverReference = reference,
+            inspect = {
+                inspectCalls++
+                error("external cover should be materialized")
+            },
+            materialize = {
+                materializeCalls++
+                expected
+            }
+        )
+
+        assertEquals(expected, resolved)
+        assertEquals(0, inspectCalls)
+        assertEquals(1, materializeCalls)
+    }
 
     @Test
     fun `metadata writes preserve the original download time`() {
@@ -79,7 +147,17 @@ class DownloadedAudioMetadataStoreTest {
     @Test
     fun `patching cover reference preserves the other metadata fields`() {
         val patched = patchDownloadedMetadataCoverReference(
-            rawMetadata = "{\"stableKey\":\"song-key\",\"lyricPath\":\"lyrics.lrc\"}",
+            rawMetadata = """
+                {
+                  "stableKey": "song-key",
+                  "lyricPath": "lyrics.lrc",
+                  "restorableMetadata": {
+                    "baseline": {},
+                    "overrides": {},
+                    "assetRefs": {}
+                  }
+                }
+            """.trimIndent(),
             coverReference = "content://downloads/Covers/song.jpg"
         )
 
@@ -94,6 +172,16 @@ class DownloadedAudioMetadataStoreTest {
     }
 
     @Test
+    fun `patch without restorable metadata requests full persistence`() {
+        assertNull(
+            patchDownloadedMetadataCoverReference(
+                rawMetadata = "{\"stableKey\":\"song-key\"}",
+                coverReference = "content://downloads/Covers/song.jpg"
+            )
+        )
+    }
+
+    @Test
     fun `patching invalid metadata returns no payload`() {
         assertNull(
             patchDownloadedMetadataCoverReference(
@@ -101,6 +189,85 @@ class DownloadedAudioMetadataStoreTest {
                 coverReference = "content://downloads/Covers/song.jpg"
             )
         )
+    }
+
+    @Test
+    fun `patching cover reference records the managed short file identity`() {
+        val hash = "a".repeat(64)
+        val fileName = "Artist-Song-12345678.jpg"
+        val patched = patchDownloadedMetadataCoverReference(
+            rawMetadata = """
+                {
+                  "restorableMetadata": {
+                    "baseline": {},
+                    "overrides": {},
+                    "assetRefs": {}
+                  }
+                }
+            """.trimIndent(),
+            coverReference = "content://downloads/Covers/$fileName",
+            coverAssetHash = hash,
+            coverAssetFileName = fileName
+        )
+
+        val assets = JSONObject(patched.orEmpty())
+            .getJSONObject("restorableMetadata")
+            .getJSONObject("assetRefs")
+        assertEquals(hash, assets.getString("currentCoverHash"))
+        assertEquals(fileName, assets.getString("currentCoverFileName"))
+        assertEquals(hash, assets.getString("baselineCoverHash"))
+        assertEquals(fileName, assets.getString("baselineCoverFileName"))
+    }
+
+    @Test
+    fun `patching matching baseline hash backfills only its short file name`() {
+        val hash = "a".repeat(64)
+        val fileName = "Artist-Song-12345678.jpg"
+        val patched = patchDownloadedMetadataCoverReference(
+            rawMetadata = """
+                {
+                  "restorableMetadata": {
+                    "baseline": {},
+                    "overrides": {},
+                    "assetRefs": {"baselineCoverHash": "$hash"}
+                  }
+                }
+            """.trimIndent(),
+            coverReference = "content://downloads/Covers/$fileName",
+            coverAssetHash = hash,
+            coverAssetFileName = fileName
+        )
+
+        val assets = JSONObject(patched.orEmpty())
+            .getJSONObject("restorableMetadata")
+            .getJSONObject("assetRefs")
+        assertEquals(fileName, assets.getString("baselineCoverFileName"))
+    }
+
+    @Test
+    fun `patching different baseline hash does not bind current file name to it`() {
+        val originalHash = "a".repeat(64)
+        val currentHash = "b".repeat(64)
+        val patched = patchDownloadedMetadataCoverReference(
+            rawMetadata = """
+                {
+                  "restorableMetadata": {
+                    "baseline": {},
+                    "overrides": {},
+                    "assetRefs": {"baselineCoverHash": "$originalHash"}
+                  }
+                }
+            """.trimIndent(),
+            coverReference = "content://downloads/Covers/Artist-Song-12345678.jpg",
+            coverAssetHash = currentHash,
+            coverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val assets = JSONObject(patched.orEmpty())
+            .getJSONObject("restorableMetadata")
+            .getJSONObject("assetRefs")
+        assertEquals(originalHash, assets.getString("baselineCoverHash"))
+        assertTrue(!assets.has("baselineCoverFileName"))
     }
 
     @Test
@@ -135,8 +302,7 @@ class DownloadedAudioMetadataStoreTest {
 
         val merged = mergeRestorableOverrides(
             previous = previous,
-            song = testSong(),
-            coverReference = null
+            song = testSong()
         )
 
         assertEquals(previous, merged)
@@ -154,8 +320,7 @@ class DownloadedAudioMetadataStoreTest {
                 matchedTranslatedLyric = "edited translation",
                 matchedRomanizedLyric = "edited romanization",
                 userLyricOffsetMs = -321L
-            ),
-            coverReference = "content://managed/Covers/sidecar.jpg"
+            )
         )
 
         assertEquals("Edited title", merged.title)
@@ -183,7 +348,6 @@ class DownloadedAudioMetadataStoreTest {
                 matchedTranslatedLyric = "original translation",
                 matchedRomanizedLyric = "original romanization"
             ),
-            coverReference = "content://managed/Covers/base.jpg",
             clearRestorableOverrides = RestorableMetadataClearPolicy(
                 title = true,
                 artist = true,
@@ -217,6 +381,110 @@ class DownloadedAudioMetadataStoreTest {
         assertEquals("[00:00.00]sidecar lyric", baseline.originalLyric)
         assertEquals("[00:00.00]sidecar translation", baseline.translatedLyric)
         assertEquals("[00:00.00]sidecar romanization", baseline.romanizedLyric)
+    }
+
+    @Test
+    fun `restorable baseline preserves remote source separately from managed cover`() {
+        val baseline = mergeRestorableBaseline(
+            existing = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = "https://example.com/original.jpg"
+            ),
+            song = testSong().copy(
+                coverUrl = "https://example.com/original.jpg",
+                originalCoverUrl = "https://example.com/original.jpg"
+            ),
+            coverReference = "content://managed/Covers/Artist-Song-12345678.jpg"
+        )
+
+        assertEquals(
+            "https://example.com/original.jpg",
+            baseline.coverReference
+        )
+    }
+
+    @Test
+    fun `restorable baseline uses current source URL when original URL is absent`() {
+        val baseline = mergeRestorableBaseline(
+            existing = null,
+            song = testSong().copy(
+                coverUrl = "https://example.com/source.jpg",
+                originalCoverUrl = null,
+                customCoverUrl = null
+            ),
+            coverReference = "content://managed/Covers/Artist-Song-12345678.jpg"
+        )
+
+        assertEquals("https://example.com/source.jpg", baseline.coverReference)
+    }
+
+    @Test
+    fun `restorable baseline keeps source cover when a custom cover is active`() {
+        val baseline = mergeRestorableBaseline(
+            existing = null,
+            song = testSong().copy(
+                coverUrl = "https://example.com/source.jpg",
+                originalCoverUrl = null,
+                customCoverUrl = "content://managed/Covers/custom.jpg"
+            ),
+            coverReference = "content://managed/Covers/custom.jpg"
+        )
+
+        assertEquals("https://example.com/source.jpg", baseline.coverReference)
+    }
+
+    @Test
+    fun `custom cover replaces only current asset identity`() {
+        val shortName = "Artist-Song-12345678.jpg"
+        val originalHash = "a".repeat(64)
+        val customHash = "b".repeat(64)
+        val existing = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = originalHash,
+            currentCoverAssetHash = originalHash,
+            baselineCoverAssetFileName = shortName,
+            currentCoverAssetFileName = shortName
+        )
+
+        val merged = mergeRestorableCoverAssetRefs(
+            existing = existing,
+            hasCustomCover = true,
+            coverAssetHash = customHash,
+            coverAssetFileName = shortName,
+            clearCoverOverride = false
+        )
+
+        assertEquals(originalHash, merged.baselineHash)
+        assertEquals(shortName, merged.baselineFileName)
+        assertEquals(customHash, merged.currentHash)
+        assertEquals(shortName, merged.currentFileName)
+    }
+
+    @Test
+    fun `restoring cover reuses baseline asset identity when no new file is available`() {
+        val shortName = "Artist-Song-12345678.jpg"
+        val originalHash = "a".repeat(64)
+        val existing = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = originalHash,
+            currentCoverAssetHash = "b".repeat(64),
+            baselineCoverAssetFileName = shortName,
+            currentCoverAssetFileName = shortName
+        )
+
+        val merged = mergeRestorableCoverAssetRefs(
+            existing = existing,
+            hasCustomCover = false,
+            coverAssetHash = null,
+            coverAssetFileName = null,
+            clearCoverOverride = true
+        )
+
+        assertEquals(originalHash, merged.currentHash)
+        assertEquals(shortName, merged.currentFileName)
     }
 
     @Test

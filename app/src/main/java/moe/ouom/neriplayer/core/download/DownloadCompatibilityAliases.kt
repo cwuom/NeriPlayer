@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriteOutcome
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as DownloadedAudioTagWriterDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames as candidateManagedDownloadBaseNamesDelegate
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadFileNameTemplates as candidateManagedDownloadFileNameTemplatesDelegate
+import moe.ouom.neriplayer.core.download.naming.boundManagedDownloadFileName as boundManagedDownloadFileNameDelegate
 import moe.ouom.neriplayer.core.download.naming.managedDownloadIdentityHash as managedDownloadIdentityHashDelegate
 import moe.ouom.neriplayer.core.download.naming.normalizeDownloadFileNameTemplate as normalizeDownloadFileNameTemplateDelegate
 import moe.ouom.neriplayer.core.download.naming.parseManagedDownloadBaseName as parseManagedDownloadBaseNameDelegate
@@ -80,9 +81,14 @@ internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE =
     moe.ouom.neriplayer.core.download.naming.LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE
 internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES =
     moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES
+internal const val MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES =
+    moe.ouom.neriplayer.core.download.naming.MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES
 
 internal fun sanitizeManagedDownloadFileName(name: String): String =
     sanitizeManagedDownloadFileNameDelegate(name)
+
+internal fun boundManagedDownloadFileName(fileName: String): String =
+    boundManagedDownloadFileNameDelegate(fileName)
 
 internal fun normalizeDownloadFileNameTemplate(template: String?): String? =
     normalizeDownloadFileNameTemplateDelegate(template)

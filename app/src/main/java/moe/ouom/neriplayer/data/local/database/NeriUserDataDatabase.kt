@@ -50,6 +50,7 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.CoverUrlMappingEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
@@ -85,12 +86,13 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         BiliVideoSkipDraftEntity::class,
         CoverUrlMappingEntity::class,
         DownloadOperationEntity::class,
+        DownloadHostAdmissionEntity::class,
         ManagedLibraryItemEntity::class,
         PlatformPlaylistCacheEntity::class,
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -159,7 +161,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_12_13,
                 MIGRATION_13_14,
                 MIGRATION_14_15,
-                MIGRATION_15_FINAL
+                MIGRATION_15_FINAL,
+                MIGRATION_16_17
             ).build()
         }
 
@@ -1011,6 +1014,28 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 createFinalDownloadTables(db)
                 copyV15DownloadPayload(db)
                 dropLegacyDownloadProjectionTables(db)
+            }
+        }
+
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `download_host_admission` (
+                        `operation_id` TEXT NOT NULL,
+                        `library_id` TEXT NOT NULL,
+                        `process_token` TEXT NOT NULL,
+                        `admitted_at_ms` INTEGER NOT NULL,
+                        PRIMARY KEY(`operation_id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE INDEX IF NOT EXISTS `index_download_host_admission_process_library`
+                    ON `download_host_admission` (`process_token`, `library_id`)
+                    """.trimIndent()
+                )
             }
         }
 

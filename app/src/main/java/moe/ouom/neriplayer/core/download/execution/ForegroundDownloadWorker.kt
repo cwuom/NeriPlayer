@@ -33,8 +33,10 @@ class ForegroundDownloadWorker(
         val operationId = inputData.getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
             ?: return@withContext Result.failure()
+        var enteredHostExecution = false
         try {
             setForeground(createForegroundInfo(applicationContext, operationId))
+            enteredHostExecution = true
             DownloadExecutionHosts.default.execute(applicationContext, operationId)
         } catch (cancellation: CancellationException) {
             DownloadExecutionHosts.default.stop(
@@ -44,6 +46,12 @@ class ForegroundDownloadWorker(
             )
             throw cancellation
         } catch (error: Throwable) {
+            if (!enteredHostExecution) {
+                DownloadExecutionHosts.releaseHandoffAdmissionIfIdle(
+                    context = applicationContext,
+                    operationId = operationId
+                )
+            }
             NPLogger.w(
                 "NERI-DownloadWorker",
                 "下载 Worker 执行异常: operationId=$operationId, error=${error.message}",
@@ -57,6 +65,7 @@ class ForegroundDownloadWorker(
         internal const val OPERATION_ID_KEY = "operation_id"
         private const val WORK_NAME_PREFIX = "download_execution_"
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
+        private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
         private const val CHANNEL_ID = "download_execution"
         private const val NOTIFICATION_ID = 0x4e50_0001
 
@@ -69,7 +78,7 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
                         uniqueWorkName(normalizedId),
-                        ExistingWorkPolicy.REPLACE,
+                        ExistingWorkPolicy.KEEP,
                         buildRequest(normalizedId)
                     )
                 true
@@ -86,7 +95,7 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
                         fallbackWorkName(normalizedId),
-                        ExistingWorkPolicy.REPLACE,
+                        ExistingWorkPolicy.KEEP,
                         buildFallbackRequest(normalizedId)
                     )
                 true
@@ -102,6 +111,28 @@ class ForegroundDownloadWorker(
                 val workManager = WorkManager.getInstance(context.applicationContext)
                 workManager.cancelUniqueWork(uniqueWorkName(normalizedId))
                 workManager.cancelUniqueWork(fallbackWorkName(normalizedId))
+            }
+        }
+
+        fun cancelAll(
+            context: Context,
+            operationIds: Collection<String>
+        ) {
+            val normalizedIds = operationIds.mapNotNull(::normalizeDownloadOperationId).toSet()
+            if (normalizedIds.isEmpty()) return
+            runCatching {
+                val workManager = WorkManager.getInstance(context.applicationContext)
+                normalizedIds.forEach { operationId ->
+                    workManager.cancelUniqueWork(uniqueWorkName(operationId))
+                    workManager.cancelUniqueWork(fallbackWorkName(operationId))
+                }
+            }
+        }
+
+        fun cancelAllOwned(context: Context) {
+            runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
             }
         }
 
@@ -125,6 +156,7 @@ class ForegroundDownloadWorker(
                         .build()
                 )
                 .addTag(WORK_TAG_PREFIX + operationId)
+                .addTag(ALL_DOWNLOAD_WORK_TAG)
                 .build()
         }
 
@@ -138,6 +170,7 @@ class ForegroundDownloadWorker(
                         .build()
                 )
                 .addTag(WORK_TAG_PREFIX + "fallback_" + operationId)
+                .addTag(ALL_DOWNLOAD_WORK_TAG)
                 .build()
         }
 
@@ -196,8 +229,8 @@ internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
         DownloadExecutionResult.Accepted,
         DownloadExecutionResult.AlreadyHandled,
         DownloadExecutionResult.Cancelled,
-        DownloadExecutionResult.UserStopped -> ListenableWorker.Result.success()
-        DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.retry()
+        DownloadExecutionResult.UserStopped,
+        DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.success()
         DownloadExecutionResult.Retry -> ListenableWorker.Result.retry()
         is DownloadExecutionResult.Failed -> ListenableWorker.Result.retry()
     }

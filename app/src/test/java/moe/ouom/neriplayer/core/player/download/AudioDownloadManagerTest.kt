@@ -18,12 +18,52 @@ import okhttp3.Response
 import okio.Timeout
 import okio.Buffer
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioDownloadManagerTest {
+
+    @Test
+    fun `cover response reader rejects an oversized declared length`() {
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.readCoverResponseBytes(
+                input = ByteArrayInputStream(byteArrayOf(1)),
+                declaredLength = AudioDownloadManager.MAX_COVER_RESPONSE_BYTES + 1L
+            )
+        }
+    }
+
+    @Test
+    fun `cover response reader rejects an oversized chunked body`() {
+        assertThrows(IOException::class.java) {
+            AudioDownloadManager.readCoverResponseBytes(
+                input = ByteArrayInputStream(
+                    ByteArray(AudioDownloadManager.MAX_COVER_RESPONSE_BYTES.toInt() + 1)
+                ),
+                declaredLength = -1L
+            )
+        }
+    }
+
+    @Test
+    fun `download song keeps transfer and core commit in named suspend stages`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val downloadSongBody = methodBody(source, "downloadSong")
+        val executionBody = methodBody(source, "executeDownloadSong")
+
+        assertTrue(downloadSongBody.contains("downloadSongOnIo("))
+        assertTrue(executionBody.contains("downloadPayloadForTransport("))
+        assertTrue(executionBody.contains("finalizeDownloadedAudio("))
+        assertFalse(executionBody.contains("ManagedDownloadStorage.saveAudioFromTemp("))
+        assertTrue(source.contains("private suspend fun downloadPayloadForTransport("))
+        assertTrue(source.contains("private suspend fun finalizeDownloadedAudio("))
+    }
 
     @Test
     fun `cancelYouTubeCalls cancels only trusted YouTube hosts`() {
@@ -328,7 +368,7 @@ class AudioDownloadManagerTest {
         )
 
         assertNotEquals(first, second)
-        assertTrue(Regex("-[0-9a-f]{32}\\.jpg$").containsMatchIn(first))
+        assertTrue(Regex("-[0-9a-f]{8}\\.jpg$").containsMatchIn(first))
     }
 
     @Test
@@ -1080,6 +1120,36 @@ class AudioDownloadManagerTest {
     fun `retry wake signal version advances and wraps safely`() {
         assertEquals(2L, AudioDownloadManager.advanceRetryWakeSignalVersion(1L))
         assertEquals(0L, AudioDownloadManager.advanceRetryWakeSignalVersion(Long.MAX_VALUE))
+    }
+
+    private fun methodBody(source: String, methodName: String): String {
+        val signatureStart = Regex(
+            "(?:private|internal|public)?\\s*(?:suspend\\s+)?fun\\s+$methodName\\b"
+        ).find(source)?.range?.first
+            ?: error("method not found: $methodName")
+        val bodyStart = source.indexOf('{', signatureStart)
+        require(bodyStart >= 0) { "method body not found: $methodName" }
+        var depth = 0
+        for (index in bodyStart until source.length) {
+            when (source[index]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return source.substring(bodyStart, index + 1)
+                }
+            }
+        }
+        error("unterminated method body: $methodName")
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 
     private class FakeCall(url: String) : Call {

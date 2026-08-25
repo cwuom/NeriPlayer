@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -13,12 +14,198 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `restorable cover reuses verified short name before legacy hash lookup`() = runBlocking {
+        val shortReference = "content://downloads/Covers/Artist-Song-12345678.jpg"
+        val assetHash = "a".repeat(64)
+        var legacyLookupCalled = false
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = "https://example.com/original.jpg"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash,
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == shortReference) {
+                    ManagedDownloadCoverAssetStore.MaterializedCover(
+                        reference = reference,
+                        assetHash = assetHash,
+                        fileName = "Artist-Song-12345678.jpg"
+                    )
+                } else {
+                    null
+                }
+            },
+            findManagedReferenceByName = { shortReference },
+            findContentAddressedReference = {
+                legacyLookupCalled = true
+                null
+            }
+        )
+
+        assertEquals(shortReference, resolved)
+        assertFalse(legacyLookupCalled)
+    }
+
+    @Test
+    fun `restorable cover retains legacy pure sha lookup fallback`() = runBlocking {
+        val assetHash = "b".repeat(64)
+        val pureHashReference = "/downloads/Covers/$assetHash.jpg"
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = "https://example.com/original.jpg"
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = assetHash
+                ).takeIf { reference == pureHashReference }
+            },
+            findManagedReferenceByName = { null },
+            findContentAddressedReference = { hash ->
+                pureHashReference.takeIf { hash == assetHash }
+            }
+        )
+
+        assertEquals(pureHashReference, resolved)
+    }
+
+    @Test
+    fun `corrupted legacy pure sha cover falls back to source`() = runBlocking {
+        val assetHash = "b".repeat(64)
+        val sourceReference = "https://example.com/original.jpg"
+        val pureHashReference = "/downloads/Covers/$assetHash.jpg"
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = sourceReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = "c".repeat(64)
+                ).takeIf { reference == pureHashReference }
+            },
+            findManagedReferenceByName = { null },
+            findContentAddressedReference = { pureHashReference }
+        )
+
+        assertEquals(sourceReference, resolved)
+    }
+
+    @Test
+    fun `baseline falls back to source after its short file is overwritten`() = runBlocking {
+        val sourceReference = "https://example.com/original.jpg"
+        val shortReference = "content://downloads/Covers/Artist-Song-12345678.jpg"
+        val baselineHash = "b".repeat(64)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = sourceReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = baselineHash,
+            currentCoverAssetHash = "c".repeat(64),
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg",
+            currentCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == shortReference) {
+                    ManagedDownloadCoverAssetStore.MaterializedCover(
+                        reference = reference,
+                        assetHash = "c".repeat(64)
+                    )
+                } else {
+                    null
+                }
+            },
+            findManagedReferenceByName = { shortReference },
+            findContentAddressedReference = { null }
+        )
+
+        assertEquals(sourceReference, resolved)
+    }
+
+    @Test
+    fun `SAF permission loss on stale reference still resolves the refreshed short file`() = runBlocking {
+        val staleReference = "content://old-root/Covers/Artist-Song-12345678.jpg"
+        val refreshedReference = "content://new-root/Covers/Artist-Song-12345678.jpg"
+        val assetHash = "d".repeat(64)
+        val metadata = ManagedDownloadRestorableMetadata(
+            sourceStableKey = "1|netease|",
+            baseline = ManagedDownloadRestorableMetadata.Baseline(
+                coverReference = staleReference
+            ),
+            overrides = ManagedDownloadRestorableMetadata.Overrides(),
+            baselineCoverAssetHash = assetHash,
+            baselineCoverAssetFileName = "Artist-Song-12345678.jpg"
+        )
+
+        val resolved = resolveRestorableCoverReference(
+            metadata = metadata,
+            baseline = true,
+            fingerprintReference = { reference ->
+                if (reference == staleReference) {
+                    throw SecurityException("permission lost")
+                }
+                ManagedDownloadCoverAssetStore.MaterializedCover(
+                    reference = reference,
+                    assetHash = assetHash
+                )
+            },
+            findManagedReferenceByName = { refreshedReference },
+            findContentAddressedReference = { null }
+        )
+
+        assertEquals(refreshedReference, resolved)
+    }
+
+    @Test
+    fun `restorable cover lookup only fingerprints and never materializes a second copy`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val lookup = source.substringAfter("internal suspend fun resolveManagedRestorableCoverReference")
+            .substringBefore("internal suspend fun syncDownloadedSongMetadataNow")
+
+        assertTrue(lookup.contains("ManagedDownloadCoverAssetStore.inspect("))
+        assertFalse(lookup.contains("ManagedDownloadCoverAssetStore.materialize("))
+    }
 
     @Test
     fun `existing unfinalized audio selects finalization only`() {
@@ -130,6 +317,216 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(executed)
         assertEquals("rolled-back", rollbackResult)
+    }
+
+    @Test
+    fun `batch cancellation wait stops waiting at its fixed budget without cancelling cleanup`() = runBlocking {
+        val completed = launch { }
+        completed.join()
+        assertTrue(awaitBatchDownloadJobsSettled(listOf(completed), timeoutMs = 50L))
+
+        val blocker = CompletableDeferred<Unit>()
+        val waiting = launch { blocker.await() }
+        try {
+            assertFalse(awaitBatchDownloadJobsSettled(listOf(waiting), timeoutMs = 50L))
+            assertTrue(waiting.isActive)
+        } finally {
+            blocker.complete(Unit)
+            waiting.join()
+        }
+    }
+
+    @Test
+    fun `clear all routes the batch wait through the bounded cancellation helper`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+
+        assertFalse(source.contains("batchJobs.joinAll()"))
+        val backgroundCleanupBody = source.substringAfter(
+            "private suspend fun cancelDownloadTasksInBackground"
+        ).substringBefore("private suspend fun awaitDownloadCancellationsSettled")
+        assertTrue(backgroundCleanupBody.contains("awaitBatchDownloadJobsAfterCancellation("))
+        assertFalse(backgroundCleanupBody.contains("batchJobs.joinAll()"))
+        assertTrue(source.contains("DOWNLOAD_CANCEL_SETTLE_TIMEOUT_MS"))
+    }
+
+    @Test
+    fun `clear all persists cancellation before waiting for batch jobs`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val journalIndex = clearAllBody.indexOf(
+            "requestAllDownloadOperationCancellation(appContext)"
+        )
+        val immediateHostCancellationIndex = clearAllBody.indexOf(
+            "stopDownloadExecutionImmediately("
+        )
+        val finalizationIndex = clearAllBody.indexOf(
+            "DownloadExecutionRoomStore.finalizeRequestedCancellations("
+        )
+        val backgroundCleanupIndex = clearAllBody.indexOf(
+            "cancelDownloadTasksInBackground("
+        )
+
+        assertTrue(journalIndex >= 0)
+        assertTrue(immediateHostCancellationIndex in 0 until journalIndex)
+        assertTrue(finalizationIndex > journalIndex)
+        assertTrue(backgroundCleanupIndex > finalizationIndex)
+        assertTrue(
+            source.contains("DownloadExecutionHosts.cancelAllOwned(appContext)")
+        )
+        assertTrue(
+            source.substringAfter("private suspend fun cancelDownloadTasksInBackground")
+                .contains("awaitBatchDownloadJobsAfterCancellation(")
+        )
+        assertTrue(source.contains("repeat(DOWNLOAD_CANCEL_JOURNAL_MAX_ATTEMPTS)"))
+        assertTrue(source.contains("DOWNLOAD_CANCEL_DURABLE_RETRY_DELAY_MS"))
+    }
+
+    @Test
+    fun `clear all suppresses explicit resume candidates before asynchronous journal cancellation`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val screenSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt"
+        ).readText()
+        val clearAllBody = managerSource.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+
+        assertTrue(managerSource.contains("val isClearingDownloadTasks: StateFlow<Boolean>"))
+        assertTrue(
+            clearAllBody.indexOf("downloadClearVisibility.begin(clearToken)") <
+                clearAllBody.indexOf("taskStore.clearAllTasks()")
+        )
+        assertTrue(managerSource.contains("downloadClearVisibility.finish(clearToken)"))
+        assertTrue(
+            screenSource.contains(
+                "LaunchedEffect(context, taskPresenceKey, isClearingDownloadTasks)"
+            )
+        )
+        assertTrue(screenSource.contains("if (isClearingDownloadTasks)"))
+        assertTrue(screenSource.contains("R.string.download_clearing_tasks"))
+        assertTrue(
+            screenSource.contains(
+                "val visibleTasks = if (isClearingDownloadTasks) emptyList() else downloadTasks"
+            )
+        )
+    }
+
+    @Test
+    fun `clear fence is durable before task removal and blocks startup recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+
+        val activateIndex = clearAllBody.indexOf("activateDownloadClearFence(appContext)")
+        val immediateStopIndex = clearAllBody.indexOf("stopDownloadExecutionImmediately(")
+        val firstTaskClearIndex = clearAllBody.indexOf("taskStore.clearAllTasks()")
+        val journalIndex = clearAllBody.indexOf(
+            "requestAllDownloadOperationCancellation(appContext)"
+        )
+        val clearFenceIndex = clearAllBody.indexOf("clearDownloadClearFence(")
+        val clearRequestIndex = clearAllBody.indexOf(
+            "PersistentDownloadClearFenceStore.beginClear()"
+        )
+
+        assertTrue(clearRequestIndex >= 0)
+        assertTrue(clearRequestIndex > clearAllBody.indexOf("downloadAdmissionGate.beginClear()"))
+        assertTrue(activateIndex >= 0)
+        assertTrue(immediateStopIndex > activateIndex)
+        assertTrue(firstTaskClearIndex > activateIndex)
+        assertTrue(immediateStopIndex < journalIndex)
+        assertTrue(journalIndex > firstTaskClearIndex)
+        assertTrue(clearFenceIndex > journalIndex)
+        assertTrue(
+            clearAllBody.indexOf("return@runClear") < clearFenceIndex
+        )
+        assertTrue(
+            initializeBody.indexOf("PersistentDownloadClearFenceStore.isActive(appContext)") <
+                initializeBody.indexOf("recoverPendingAudioWritesFromRoot(appContext)")
+        )
+        assertTrue(source.contains("private suspend fun activateDownloadClearFence"))
+        assertTrue(source.contains("private fun stopDownloadExecutionImmediately"))
+        assertTrue(source.contains("private suspend fun clearDownloadClearFence"))
+        assertTrue(source.contains("if (isDownloadClearFenceActive(appContext))"))
+        assertTrue(clearAllBody.contains("while (true)"))
+        assertTrue(clearAllBody.contains("下载清空流程失败，保持栅栏并重试"))
+        assertTrue(
+            clearAllBody.lastIndexOf("retrying failed download clear") <
+                clearAllBody.indexOf("clearDownloadClearFence(")
+        )
+    }
+
+    @Test
+    fun `operation execution admits task creation before a clear can proceed`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val executionBody = source.substringAfter(
+            "internal suspend fun executeDownloadOperation"
+        ).substringBefore("private suspend fun executionResultForOperation")
+        val admissionIndex = executionBody.indexOf(
+            "downloadAdmissionGate.admit(admissionTicket)"
+        )
+        val ensureIndex = executionBody.indexOf("taskStore.ensureDownloadTasks(")
+        val upsertIndex = executionBody.indexOf("DownloadExecutionRoomStore.upsert(")
+        val generationIndex = executionBody.indexOf(
+            "admittedRequestGeneration = beginDownloadRequestGeneration"
+        )
+
+        assertTrue(executionBody.indexOf("val admissionTicket = downloadAdmissionGate.ticket()") >= 0)
+        assertTrue(admissionIndex >= 0)
+        assertTrue(ensureIndex > admissionIndex)
+        assertTrue(upsertIndex > ensureIndex)
+        assertTrue(generationIndex > upsertIndex)
+        assertTrue(
+            executionBody.contains(
+                "taskStore.removeDownloadTask(\n                    songKey = songKey,\n                    expectedAttemptId = effectiveAttemptId"
+            )
+        )
+    }
+
+    @Test
+    fun `clear all keeps durable cancellation tombstones until a fresh request replaces them`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearAllBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val cleanupBody = source.substringAfter(
+            "private suspend fun cancelDownloadTasksInBackground"
+        ).substringBefore("private suspend fun awaitDownloadCancellationsSettled")
+
+        assertFalse(cleanupBody.contains("DownloadExecutionRoomStore.purgeCancelled("))
+        assertFalse(cleanupBody.contains("DownloadExecutionRoomStore.purgeClearedOperations("))
+        assertTrue(clearAllBody.contains("listAllOperationIdentities(appContext)"))
+        assertTrue(clearAllBody.contains("workingFilesBySongKey = clearWorkingFilesBySongKey"))
+        assertTrue(clearAllBody.contains("executionOperationIds = clearOperationIds"))
+        assertTrue(
+            cleanupBody.contains(
+                "workingFiles.forEach(ManagedDownloadStorage::deleteWorkingDownloadArtifacts)"
+            )
+        )
+        assertTrue(cleanupBody.contains("hasWorkingDownloadArtifact"))
+        assertTrue(cleanupBody.contains("residualWorkingSongKeys"))
+        assertTrue(cleanupBody.contains("executionOperationIds"))
+        assertTrue(
+            clearAllBody.indexOf("if (!settlement.isSettled)") <
+                clearAllBody.indexOf("purgeFullyClearedOperations(")
+        )
+        assertTrue(source.contains("clearSongCancellationForFreshStart"))
     }
 
     @Test
@@ -1961,5 +2358,15 @@ class GlobalDownloadManagerStartupPolicyTest {
             coverUrl = null,
             mediaUri = "https://example.com/$id"
         )
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 }

@@ -132,4 +132,14 @@ class DownloadCoreCommitPolicyTest {
         assertFalse(isDurableCoreArtifactState("COMMITTING"))
         assertFalse(isDurableCoreArtifactState(null))
     }
+
+    @Test
+    fun `only incomplete durable artifacts resume final enrichment`() {
+        assertTrue(requiresDownloadFinalizationRecovery("CORE_COMMITTED"))
+        assertTrue(requiresDownloadFinalizationRecovery("ASSETS_ENRICHING"))
+        assertTrue(requiresDownloadFinalizationRecovery("DEGRADED_COMPLETE"))
+        assertFalse(requiresDownloadFinalizationRecovery("FINALIZED"))
+        assertFalse(requiresDownloadFinalizationRecovery("COMMITTING"))
+        assertFalse(requiresDownloadFinalizationRecovery(null))
+    }
 }

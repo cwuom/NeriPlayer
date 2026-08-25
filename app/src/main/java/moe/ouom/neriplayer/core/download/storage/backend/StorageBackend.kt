@@ -8,12 +8,21 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
+
+private const val TEMPORARY_WRITE_NAME_PREFIX = ".npdl_tmp_"
+private const val TEMPORARY_WRITE_NAME_SUFFIX = ".pending"
 
 sealed interface StorageReference {
     data class FileRef(val logicalPath: String) : StorageReference
@@ -254,23 +263,38 @@ internal class FileStorageBackend(
             ?: return@withContext StorageWriteResult.Unsupported("file backend target")
         val targetFile = resolve(StorageReference.FileRef(fileTarget.logicalPath))
             ?: return@withContext StorageWriteResult.OutOfScope
-        val temporary = File(targetFile.parentFile, ".${targetFile.name}.pending")
-        return@withContext try {
-            targetFile.parentFile?.mkdirs()
-            val output = temporary.outputStream()
+        if (targetFile.isDirectory) {
+            return@withContext StorageWriteResult.Unsupported("file target required")
+        }
+        val parent = targetFile.parentFile
+            ?: return@withContext StorageWriteResult.ProviderFailure(
+                IllegalStateException("file target parent required")
+            )
+        return@withContext FileStorageMutationLocks.withTargetLock(targetFile) {
+            var temporary: File? = null
             try {
-                writer(output)
-            } finally {
-                output.close()
+                parent.mkdirs()
+                val temporaryFile = Files.createTempFile(
+                    parent.toPath(),
+                    TEMPORARY_WRITE_NAME_PREFIX,
+                    TEMPORARY_WRITE_NAME_SUFFIX
+                ).toFile()
+                temporary = temporaryFile
+                val output = temporaryFile.outputStream()
+                try {
+                    writer(output)
+                } finally {
+                    output.close()
+                }
+                replaceFileAtomically(temporaryFile, targetFile)
+                StorageWriteResult.Written(toStat(targetFile))
+            } catch (error: CancellationException) {
+                temporary?.let { file -> cleanupTemporaryFileWriteCancellation(file, error) }
+                throw error
+            } catch (error: Throwable) {
+                temporary?.let { file -> cleanupTemporaryFileWriteFailure(file, error) }
+                    ?: StorageWriteResult.ProviderFailure(error)
             }
-            check(temporary.renameTo(targetFile)) { "atomic file rename failed" }
-            StorageWriteResult.Written(toStat(targetFile))
-        } catch (error: CancellationException) {
-            runCatching { temporary.delete() }
-            throw error
-        } catch (error: Throwable) {
-            runCatching { temporary.delete() }
-            StorageWriteResult.ProviderFailure(error)
         }
     }
 
@@ -351,6 +375,83 @@ internal class FileStorageBackend(
         lastModifiedMs = file.lastModified().takeIf { it > 0L },
         isDirectory = file.isDirectory
     )
+
+    private fun cleanupTemporaryFileWriteFailure(
+        temporary: File,
+        initialError: Throwable
+    ): StorageWriteResult {
+        val cleanupError = deleteTemporaryFileAndConfirm(temporary)
+            ?: return StorageWriteResult.ProviderFailure(initialError)
+        val combinedError = IllegalStateException(
+            "文件临时写入文件未能确认删除: ${temporary.name}",
+            cleanupError
+        )
+        combinedError.addSuppressed(initialError)
+        return StorageWriteResult.ProviderFailure(combinedError)
+    }
+
+    private fun cleanupTemporaryFileWriteCancellation(
+        temporary: File,
+        cancellation: CancellationException
+    ) {
+        deleteTemporaryFileAndConfirm(temporary)?.let(cancellation::addSuppressed)
+    }
+
+    private fun deleteTemporaryFileAndConfirm(temporary: File): Throwable? {
+        return try {
+            when {
+                !temporary.exists() -> null
+                !temporary.isFile -> IllegalStateException(
+                    "临时写入目标不是普通文件: ${temporary.name}"
+                )
+                !temporary.delete() && temporary.exists() -> IllegalStateException(
+                    "临时写入文件删除未确认: ${temporary.name}"
+                )
+                temporary.exists() -> IllegalStateException(
+                    "临时写入文件删除后仍存在: ${temporary.name}"
+                )
+                else -> null
+            }
+        } catch (error: Throwable) {
+            error
+        }
+    }
+}
+
+internal object FileStorageMutationLocks {
+    private const val STRIPE_COUNT = 64
+    private val locks = Array(STRIPE_COUNT) { Mutex() }
+
+    fun forTarget(target: File): Mutex {
+        val key = runCatching { target.canonicalPath }
+            .getOrElse { target.absolutePath }
+        return locks[Math.floorMod(key.hashCode(), STRIPE_COUNT)]
+    }
+
+    suspend fun <T> withTargetLock(
+        target: File,
+        block: suspend () -> T
+    ): T {
+        return forTarget(target).withLock { block() }
+    }
+
+}
+
+private fun replaceFileAtomically(source: File, target: File) {
+    try {
+        Files.move(
+            source.toPath(),
+            target.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE
+        )
+    } catch (_: AtomicMoveNotSupportedException) {
+        Files.move(
+            source.toPath(),
+            target.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+        )
+    }
 }
 
 internal class SafStorageBackend(
@@ -474,7 +575,7 @@ internal class SafStorageBackend(
         if (parent.flags and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE.toLong() == 0L) {
             return@withContext StorageWriteResult.Unsupported("provider create unsupported")
         }
-        val temporaryName = ".${safTarget.displayName}.${UUID.randomUUID()}.pending"
+        val temporaryName = "$TEMPORARY_WRITE_NAME_PREFIX${UUID.randomUUID()}$TEMPORARY_WRITE_NAME_SUFFIX"
         val temporaryUri = try {
             DocumentsContract.createDocument(
                 context.contentResolver,
@@ -495,22 +596,30 @@ internal class SafStorageBackend(
         val output = try {
             context.contentResolver.openOutputStream(temporaryUri, "w")
         } catch (error: SecurityException) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.PermissionLost
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.PermissionLost
+            )
         } catch (error: FileNotFoundException) {
-            deleteQuietly(temporaryUri)
-            return@withContext when (classifySafFileNotFound(error)) {
-                SafFileFailure.Missing -> StorageWriteResult.Missing
-                SafFileFailure.PermissionLost -> StorageWriteResult.PermissionLost
-                SafFileFailure.ProviderFailure -> StorageWriteResult.ProviderFailure(error)
-            }
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                when (classifySafFileNotFound(error)) {
+                    SafFileFailure.Missing -> StorageWriteResult.Missing
+                    SafFileFailure.PermissionLost -> StorageWriteResult.PermissionLost
+                    SafFileFailure.ProviderFailure -> StorageWriteResult.ProviderFailure(error)
+                }
+            )
         } catch (error: Throwable) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.ProviderFailure(error)
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(error)
+            )
         } ?: run {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.ProviderFailure(
-                IllegalStateException("provider returned null output stream")
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(
+                    IllegalStateException("provider returned null output stream")
+                )
             )
         }
         try {
@@ -520,35 +629,50 @@ internal class SafStorageBackend(
                 output.close()
             }
         } catch (error: CancellationException) {
-            deleteQuietly(temporaryUri)
+            cleanupTemporarySafWriteCancellation(temporaryUri, error)
             throw error
         } catch (error: Throwable) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.ProviderFailure(error)
+            return@withContext cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(error)
+            )
         }
 
+        return@withContext ManagedDownloadTreeMutationLocks.withLock(parentUri) commit@{
         val temporaryStat = when (val result = queryDocument(temporaryUri)) {
             SafQueryResult.Missing -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.ProviderFailure(
-                    IllegalStateException("temporary file disappeared after write")
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.ProviderFailure(
+                        IllegalStateException("temporary file disappeared after write")
+                    )
                 )
             }
             SafQueryResult.PermissionLost -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.PermissionLost
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.PermissionLost
+                )
             }
             is SafQueryResult.ProviderFailure -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.ProviderFailure(result.error)
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.ProviderFailure(result.error)
+                )
             }
             is SafQueryResult.Found -> result.document
         }
         if (temporaryStat.isDirectory) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.ProviderFailure(
-                IllegalStateException("provider created a directory for a file write")
+            return@commit cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(
+                    IllegalStateException("provider created a directory for a file write")
+                )
             )
+        }
+
+        reconcileSafBackupBeforeWrite(parentUri, safTarget.displayName)?.let { result ->
+            return@commit cleanupTemporarySafWriteFailure(temporaryUri, result)
         }
 
         val existingTarget = when (val children = queryChildren(parentUri)) {
@@ -556,29 +680,39 @@ internal class SafStorageBackend(
                 it.displayName == safTarget.displayName
             }
             SafChildrenResult.Missing -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.ProviderFailure(
-                    IllegalStateException("provider lost parent children during write")
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.ProviderFailure(
+                        IllegalStateException("provider lost parent children during write")
+                    )
                 )
             }
             SafChildrenResult.PermissionLost -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.PermissionLost
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.PermissionLost
+                )
             }
             is SafChildrenResult.ProviderFailure -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.ProviderFailure(children.error)
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.ProviderFailure(children.error)
+                )
             }
         }
         if (existingTarget?.isDirectory == true) {
-            deleteQuietly(temporaryUri)
-            return@withContext StorageWriteResult.Unsupported("target directory exists")
+            return@commit cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.Unsupported("target directory exists")
+            )
         }
         val canRename = temporaryStat.flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong() != 0L
         when (chooseSafWriteCommitMode(canRename, existingTarget != null)) {
             SafWriteCommitMode.Unsupported -> {
-                deleteQuietly(temporaryUri)
-                return@withContext StorageWriteResult.Unsupported("provider rename")
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.Unsupported("provider rename")
+                )
             }
             SafWriteCommitMode.DirectCreate -> {
                 var directTargetUri: Uri? = null
@@ -590,16 +724,22 @@ internal class SafStorageBackend(
                     )) {
                         is DirectSafCreateResult.Created -> createResult.uri
                         DirectSafCreateResult.Unsupported -> {
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.Unsupported("provider direct create")
+                            return@commit cleanupTemporarySafWriteFailure(
+                                temporaryUri,
+                                StorageWriteResult.Unsupported("provider direct create")
+                            )
                         }
                         DirectSafCreateResult.PermissionLost -> {
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.PermissionLost
+                            return@commit cleanupTemporarySafWriteFailure(
+                                temporaryUri,
+                                StorageWriteResult.PermissionLost
+                            )
                         }
                         is DirectSafCreateResult.ProviderFailure -> {
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.ProviderFailure(createResult.error)
+                            return@commit cleanupTemporarySafWriteFailure(
+                                temporaryUri,
+                                StorageWriteResult.ProviderFailure(createResult.error)
+                            )
                         }
                     }
                     directTargetUri = finalUri
@@ -609,23 +749,36 @@ internal class SafStorageBackend(
                         expectedDisplayName = safTarget.displayName
                     )) {
                         is DirectSafCopyResult.Copied -> {
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.Written(copyResult.stat)
+                            val temporaryCleanupError =
+                                deleteSafDocumentAndConfirm(temporaryUri)
+                            return@commit if (temporaryCleanupError == null) {
+                                StorageWriteResult.Written(copyResult.stat)
+                            } else {
+                                storageWriteFailure(temporaryCleanupError)
+                            }
                         }
                         DirectSafCopyResult.PermissionLost -> {
-                            deleteQuietly(finalUri)
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.PermissionLost
+                            val cleanupError = cleanupDirectSafCreateFailure(
+                                directTargetUri = finalUri,
+                                temporaryUri = temporaryUri
+                            )
+                            return@commit cleanupError?.let(::storageWriteFailure)
+                                ?: StorageWriteResult.PermissionLost
                         }
                         is DirectSafCopyResult.ProviderFailure -> {
-                            deleteQuietly(finalUri)
-                            deleteQuietly(temporaryUri)
-                            return@withContext StorageWriteResult.ProviderFailure(copyResult.error)
+                            val cleanupError = cleanupDirectSafCreateFailure(
+                                directTargetUri = finalUri,
+                                temporaryUri = temporaryUri
+                            )
+                            return@commit cleanupError?.let(::storageWriteFailure)
+                                ?: StorageWriteResult.ProviderFailure(copyResult.error)
                         }
                     }
                 } catch (error: CancellationException) {
-                    directTargetUri?.let(::deleteQuietly)
-                    deleteQuietly(temporaryUri)
+                    cleanupDirectSafCreateFailure(
+                        directTargetUri = directTargetUri,
+                        temporaryUri = temporaryUri
+                    )?.let(error::addSuppressed)
                     throw error
                 }
             }
@@ -636,74 +789,134 @@ internal class SafStorageBackend(
             ?.let { it as? StorageReference.SafRef }
             ?.uri
             ?.let { existingUri ->
-                val backupName = ".${safTarget.displayName}.${UUID.randomUUID()}.backup"
-                try {
+                val backupName = safBackupName(safTarget.displayName)
+                val renamedUri = try {
                     DocumentsContract.renameDocument(context.contentResolver, existingUri, backupName)
                 } catch (error: SecurityException) {
-                    deleteQuietly(temporaryUri)
-                    return@withContext StorageWriteResult.PermissionLost
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.PermissionLost
+                    )
                 } catch (error: UnsupportedOperationException) {
-                    deleteQuietly(temporaryUri)
-                    return@withContext StorageWriteResult.Unsupported("provider rename")
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.Unsupported("provider rename")
+                    )
                 } catch (error: Throwable) {
-                    deleteQuietly(temporaryUri)
-                    return@withContext StorageWriteResult.ProviderFailure(error)
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.ProviderFailure(error)
+                    )
                 } ?: run {
-                    deleteQuietly(temporaryUri)
-                    return@withContext StorageWriteResult.Unsupported("provider rename")
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.Unsupported("provider rename")
+                    )
                 }
+                confirmSafDocumentName(renamedUri, backupName)?.let { error ->
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        storageWriteFailure(error)
+                    )
+                }
+                renamedUri
             }
 
         val finalUri = try {
             DocumentsContract.renameDocument(context.contentResolver, temporaryUri, safTarget.displayName)
         } catch (error: SecurityException) {
-            deleteQuietly(temporaryUri)
-            backupUri?.let { restoreBackup(it, safTarget.displayName) }
-            return@withContext StorageWriteResult.PermissionLost
+            return@commit rollbackSafReplacement(
+                parentUri = parentUri,
+                temporaryUri = temporaryUri,
+                finalUri = null,
+                backupUri = backupUri,
+                displayName = safTarget.displayName,
+                initialResult = StorageWriteResult.PermissionLost
+            )
         } catch (error: UnsupportedOperationException) {
-            deleteQuietly(temporaryUri)
-            backupUri?.let { restoreBackup(it, safTarget.displayName) }
-            return@withContext StorageWriteResult.Unsupported("provider rename")
+            return@commit rollbackSafReplacement(
+                parentUri = parentUri,
+                temporaryUri = temporaryUri,
+                finalUri = null,
+                backupUri = backupUri,
+                displayName = safTarget.displayName,
+                initialResult = StorageWriteResult.Unsupported("provider rename")
+            )
         } catch (error: Throwable) {
-            deleteQuietly(temporaryUri)
-            backupUri?.let { restoreBackup(it, safTarget.displayName) }
-            return@withContext StorageWriteResult.ProviderFailure(error)
+            return@commit rollbackSafReplacement(
+                parentUri = parentUri,
+                temporaryUri = temporaryUri,
+                finalUri = null,
+                backupUri = backupUri,
+                displayName = safTarget.displayName,
+                initialResult = StorageWriteResult.ProviderFailure(error)
+            )
         } ?: run {
-            deleteQuietly(temporaryUri)
-            backupUri?.let { restoreBackup(it, safTarget.displayName) }
-            return@withContext StorageWriteResult.Unsupported("provider rename")
+            return@commit rollbackSafReplacement(
+                parentUri = parentUri,
+                temporaryUri = temporaryUri,
+                finalUri = null,
+                backupUri = backupUri,
+                displayName = safTarget.displayName,
+                initialResult = StorageWriteResult.Unsupported("provider rename")
+            )
         }
 
         when (val result = queryDocument(finalUri)) {
             SafQueryResult.Missing -> {
-                deleteQuietly(finalUri)
-                backupUri?.let { restoreBackup(it, safTarget.displayName) }
-                StorageWriteResult.ProviderFailure(
-                    IllegalStateException("renamed file cannot be queried")
+                rollbackSafReplacement(
+                    parentUri = parentUri,
+                    temporaryUri = temporaryUri,
+                    finalUri = finalUri,
+                    backupUri = backupUri,
+                    displayName = safTarget.displayName,
+                    initialResult = StorageWriteResult.ProviderFailure(
+                        IllegalStateException("renamed file cannot be queried")
+                    )
                 )
             }
             SafQueryResult.PermissionLost -> {
-                deleteQuietly(finalUri)
-                backupUri?.let { restoreBackup(it, safTarget.displayName) }
-                StorageWriteResult.PermissionLost
+                rollbackSafReplacement(
+                    parentUri = parentUri,
+                    temporaryUri = temporaryUri,
+                    finalUri = finalUri,
+                    backupUri = backupUri,
+                    displayName = safTarget.displayName,
+                    initialResult = StorageWriteResult.PermissionLost
+                )
             }
             is SafQueryResult.ProviderFailure -> {
-                deleteQuietly(finalUri)
-                backupUri?.let { restoreBackup(it, safTarget.displayName) }
-                StorageWriteResult.ProviderFailure(result.error)
+                rollbackSafReplacement(
+                    parentUri = parentUri,
+                    temporaryUri = temporaryUri,
+                    finalUri = finalUri,
+                    backupUri = backupUri,
+                    displayName = safTarget.displayName,
+                    initialResult = StorageWriteResult.ProviderFailure(result.error)
+                )
             }
             is SafQueryResult.Found -> {
                 if (result.document.displayName != safTarget.displayName) {
-                    deleteQuietly(finalUri)
-                    backupUri?.let { restoreBackup(it, safTarget.displayName) }
-                    StorageWriteResult.ProviderFailure(
-                        IllegalStateException("provider changed target display name")
+                    rollbackSafReplacement(
+                        parentUri = parentUri,
+                        temporaryUri = temporaryUri,
+                        finalUri = finalUri,
+                        backupUri = backupUri,
+                        displayName = safTarget.displayName,
+                        initialResult = StorageWriteResult.ProviderFailure(
+                            IllegalStateException("provider changed target display name")
+                        )
                     )
                 } else {
-                    backupUri?.let(::deleteQuietly)
-                    StorageWriteResult.Written(result.document.toStat(finalUri))
+                    val backupCleanupError = backupUri?.let(::deleteSafDocumentAndConfirm)
+                    if (backupCleanupError != null) {
+                        storageWriteFailure(backupCleanupError)
+                    } else {
+                        StorageWriteResult.Written(result.document.toStat(finalUri))
+                    }
                 }
             }
+        }
         }
     }
 
@@ -823,9 +1036,16 @@ internal class SafStorageBackend(
             is SafQueryResult.ProviderFailure -> StorageRenameResult.ProviderFailure(result.error)
             is SafQueryResult.Found -> {
                 if (result.document.displayName != displayName) {
-                    StorageRenameResult.ProviderFailure(
-                        IllegalStateException("provider changed renamed display name")
-                    )
+                    val cleanupError = deleteSafDocumentAndConfirm(renamedUri)
+                    if (cleanupError is SecurityException) {
+                        StorageRenameResult.PermissionLost
+                    } else if (cleanupError != null) {
+                        StorageRenameResult.ProviderFailure(cleanupError)
+                    } else {
+                        StorageRenameResult.ProviderFailure(
+                            IllegalStateException("provider changed renamed display name")
+                        )
+                    }
                 } else {
                     StorageRenameResult.Renamed(result.document.toStat(renamedUri))
                 }
@@ -974,8 +1194,209 @@ internal class SafStorageBackend(
         }
     }
 
-    private fun deleteQuietly(uri: Uri) {
-        runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+    private fun cleanupTemporarySafWriteFailure(
+        temporaryUri: Uri,
+        initialResult: StorageWriteResult
+    ): StorageWriteResult {
+        val cleanupError = deleteSafDocumentAndConfirm(temporaryUri) ?: return initialResult
+        val combinedError = IllegalStateException(
+            "SAF 临时写入文件未能确认删除",
+            cleanupError
+        )
+        (initialResult as? StorageWriteResult.ProviderFailure)
+            ?.error
+            ?.let(combinedError::addSuppressed)
+        return if (cleanupError is SecurityException) {
+            StorageWriteResult.PermissionLost
+        } else {
+            StorageWriteResult.ProviderFailure(combinedError)
+        }
+    }
+
+    private fun cleanupTemporarySafWriteCancellation(
+        temporaryUri: Uri,
+        cancellation: CancellationException
+    ) {
+        deleteSafDocumentAndConfirm(temporaryUri)?.let(cancellation::addSuppressed)
+    }
+
+    private fun cleanupDirectSafCreateFailure(
+        directTargetUri: Uri?,
+        temporaryUri: Uri
+    ): Throwable? {
+        val targetCleanupError = directTargetUri?.let(::deleteSafDocumentAndConfirm)
+        val temporaryCleanupError = deleteSafDocumentAndConfirm(temporaryUri)
+        return targetCleanupError ?: temporaryCleanupError
+    }
+
+    private fun reconcileSafBackupBeforeWrite(
+        parentUri: Uri,
+        displayName: String
+    ): StorageWriteResult? {
+        val children = when (val result = queryChildren(parentUri)) {
+            is SafChildrenResult.Found -> result.entries
+            SafChildrenResult.Missing -> {
+                return StorageWriteResult.ProviderFailure(
+                    IllegalStateException("SAF 写入前父目录不可见")
+                )
+            }
+            SafChildrenResult.PermissionLost -> return StorageWriteResult.PermissionLost
+            is SafChildrenResult.ProviderFailure -> {
+                return StorageWriteResult.ProviderFailure(result.error)
+            }
+        }
+        val backups = children.filter { entry ->
+            isSafBackupName(entry.displayName, displayName)
+        }
+        if (backups.isEmpty()) {
+            return null
+        }
+        val finalExists = children.any { entry -> entry.displayName == displayName }
+        if (finalExists) {
+            backups.forEach { backup ->
+                val backupUri = (backup.reference as? StorageReference.SafRef)?.uri
+                    ?: return StorageWriteResult.ProviderFailure(
+                        IllegalStateException("SAF 备份缺少文档引用")
+                    )
+                deleteSafDocumentAndConfirm(backupUri)?.let { error ->
+                    return storageWriteFailure(error)
+                }
+            }
+            return null
+        }
+        if (backups.size != 1) {
+            return StorageWriteResult.ProviderFailure(
+                IllegalStateException("SAF 缺少最终文件且存在多个备份")
+            )
+        }
+        val backupUri = (backups.single().reference as? StorageReference.SafRef)?.uri
+            ?: return StorageWriteResult.ProviderFailure(
+                IllegalStateException("SAF 备份缺少文档引用")
+            )
+        return restoreBackupAndConfirm(backupUri, displayName)
+            ?.let(::storageWriteFailure)
+    }
+
+    private fun safBackupName(displayName: String): String = ".${displayName}.backup"
+
+    private fun isSafBackupName(name: String, displayName: String): Boolean {
+        if (name == safBackupName(displayName)) {
+            return true
+        }
+        val prefix = ".${displayName}."
+        if (!name.startsWith(prefix) || !name.endsWith(".backup")) {
+            return false
+        }
+        val legacyId = name.removePrefix(prefix).removeSuffix(".backup")
+        return runCatching { UUID.fromString(legacyId) }.isSuccess
+    }
+
+    private fun rollbackSafReplacement(
+        parentUri: Uri,
+        temporaryUri: Uri,
+        finalUri: Uri?,
+        backupUri: Uri?,
+        displayName: String,
+        initialResult: StorageWriteResult
+    ): StorageWriteResult {
+        val observedFinalUri = finalUri ?: when (val lookup = findNamedSafChild(parentUri, displayName)) {
+            is NamedSafChild.Found -> lookup.uri
+            NamedSafChild.Missing -> null
+            NamedSafChild.PermissionLost -> return StorageWriteResult.PermissionLost
+            is NamedSafChild.ProviderFailure -> {
+                return StorageWriteResult.ProviderFailure(lookup.error)
+            }
+        }
+        observedFinalUri?.let { uri ->
+            deleteSafDocumentAndConfirm(uri)?.let { error ->
+                return storageWriteFailure(error)
+            }
+        }
+        val temporaryCleanupError = deleteSafDocumentAndConfirm(temporaryUri)
+        val backupRestoreError = backupUri?.let { uri ->
+            restoreBackupAndConfirm(uri, displayName)
+        }
+        return temporaryCleanupError?.let(::storageWriteFailure)
+            ?: backupRestoreError?.let(::storageWriteFailure)
+            ?: initialResult
+    }
+
+    private fun findNamedSafChild(parentUri: Uri, displayName: String): NamedSafChild {
+        return when (val children = queryChildren(parentUri)) {
+            is SafChildrenResult.Found -> {
+                val reference = children.entries.firstOrNull { entry ->
+                    entry.displayName == displayName
+                }?.reference as? StorageReference.SafRef
+                reference?.let { NamedSafChild.Found(it.uri) } ?: NamedSafChild.Missing
+            }
+            SafChildrenResult.Missing -> NamedSafChild.Missing
+            SafChildrenResult.PermissionLost -> NamedSafChild.PermissionLost
+            is SafChildrenResult.ProviderFailure -> NamedSafChild.ProviderFailure(children.error)
+        }
+    }
+
+    private fun deleteSafDocumentAndConfirm(uri: Uri): Throwable? {
+        when (val initial = queryDocument(uri)) {
+            SafQueryResult.Missing -> return null
+            SafQueryResult.PermissionLost -> {
+                return SecurityException("SAF 删除前权限丢失: $uri")
+            }
+            is SafQueryResult.ProviderFailure -> return initial.error
+            is SafQueryResult.Found -> Unit
+        }
+        try {
+            DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (error: Throwable) {
+            return error
+        }
+        return when (val result = queryDocument(uri)) {
+            SafQueryResult.Missing -> null
+            SafQueryResult.PermissionLost -> SecurityException(
+                "SAF 删除后无法确认权限: $uri"
+            )
+            is SafQueryResult.ProviderFailure -> result.error
+            is SafQueryResult.Found -> IllegalStateException(
+                "SAF 删除未确认: $uri"
+            )
+        }
+    }
+
+    private fun confirmSafDocumentName(uri: Uri, displayName: String): Throwable? {
+        return when (val result = queryDocument(uri)) {
+            SafQueryResult.Missing -> IllegalStateException("SAF 重命名后的文档丢失")
+            SafQueryResult.PermissionLost -> SecurityException(
+                "SAF 重命名后权限丢失: $displayName"
+            )
+            is SafQueryResult.ProviderFailure -> result.error
+            is SafQueryResult.Found -> {
+                if (result.document.displayName == displayName) null
+                else IllegalStateException("SAF 重命名名称不匹配: ${result.document.displayName}")
+            }
+        }
+    }
+
+    private fun restoreBackupAndConfirm(uri: Uri, displayName: String): Throwable? {
+        val restoredUri = try {
+            DocumentsContract.renameDocument(context.contentResolver, uri, displayName)
+        } catch (error: Throwable) {
+            return error
+        } ?: return IllegalStateException("SAF 备份恢复未返回目标 URI")
+        return confirmSafDocumentName(restoredUri, displayName)
+    }
+
+    private fun storageWriteFailure(error: Throwable): StorageWriteResult {
+        return if (error is SecurityException) {
+            StorageWriteResult.PermissionLost
+        } else {
+            StorageWriteResult.ProviderFailure(error)
+        }
+    }
+
+    private sealed interface NamedSafChild {
+        data class Found(val uri: Uri) : NamedSafChild
+        data object Missing : NamedSafChild
+        data object PermissionLost : NamedSafChild
+        data class ProviderFailure(val error: Throwable) : NamedSafChild
     }
 
     private sealed interface DirectSafCreateResult {
@@ -1076,12 +1497,6 @@ internal class SafStorageBackend(
             throw error
         } catch (error: Throwable) {
             DirectSafCopyResult.ProviderFailure(error)
-        }
-    }
-
-    private fun restoreBackup(uri: Uri, displayName: String) {
-        runCatching {
-            DocumentsContract.renameDocument(context.contentResolver, uri, displayName)
         }
     }
 

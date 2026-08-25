@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.net.toUri
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.URI
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -19,24 +20,54 @@ internal object ManagedDownloadCoverAssetStore {
 
     data class MaterializedCover(
         val reference: String,
-        val assetHash: String
+        val assetHash: String,
+        val fileName: String? = null
     )
+
+    suspend fun inspect(
+        context: Context,
+        reference: String?
+    ): MaterializedCover? = withContext(Dispatchers.IO) {
+        val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return@withContext null
+        val source = readCover(context, normalized) ?: return@withContext null
+        if (source.bytes.isEmpty()) return@withContext null
+        MaterializedCover(
+            reference = normalized,
+            assetHash = sha256(source.bytes),
+            fileName = source.displayName
+        )
+    }
 
     suspend fun materialize(
         context: Context,
         reference: String?,
+        preferredFileName: String? = null,
         extension: String = "jpg",
         mimeType: String? = "image/jpeg"
     ): MaterializedCover? = withContext(Dispatchers.IO) {
         val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return@withContext null
-        val bytes = readBytes(context, normalized) ?: return@withContext null
-        if (bytes.isEmpty()) return@withContext null
-        val hash = sha256(bytes)
-        val fileName = "$hash.${extension.trim().removePrefix(".").ifBlank { "bin" }}"
+        val source = readCover(context, normalized) ?: return@withContext null
+        if (source.bytes.isEmpty()) return@withContext null
+        val hash = sha256(source.bytes)
+        if (ManagedDownloadStorage.isManagedCoverReference(context, normalized)) {
+            return@withContext MaterializedCover(
+                reference = normalized,
+                assetHash = hash,
+                fileName = source.displayName
+            )
+        }
+        val fileName = selectTargetFileName(
+            sourceDisplayName = source.displayName,
+            preferredFileName = preferredFileName
+        ) ?: buildLegacyReadableFileName(
+            sourceDisplayName = source.displayName,
+            assetHash = hash,
+            extension = extension
+        )
         val stored = try {
             ManagedDownloadStorage.persistRemoteCoverBytes(
                 context = context,
-                bytes = bytes,
+                bytes = source.bytes,
                 fileName = fileName,
                 mimeType = mimeType
             )
@@ -45,7 +76,54 @@ internal object ManagedDownloadCoverAssetStore {
         } catch (error: Throwable) {
             throw error
         } ?: return@withContext null
-        MaterializedCover(reference = stored, assetHash = hash)
+        MaterializedCover(
+            reference = stored,
+            assetHash = hash,
+            fileName = fileName
+        )
+    }
+
+    /** legacy imports keep a readable source name and use only a short hash for collisions */
+    suspend fun materializeLegacyReadable(
+        context: Context,
+        reference: String?,
+        extension: String = "jpg",
+        mimeType: String? = "image/jpeg"
+    ): MaterializedCover? = withContext(Dispatchers.IO) {
+        val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return@withContext null
+        val source = readCover(context, normalized) ?: return@withContext null
+        if (source.bytes.isEmpty()) return@withContext null
+        val hash = sha256(source.bytes)
+        if (ManagedDownloadStorage.isManagedCoverReference(context, normalized)) {
+            return@withContext MaterializedCover(
+                reference = normalized,
+                assetHash = hash,
+                fileName = source.displayName
+            )
+        }
+        val fileName = selectTargetFileName(
+            sourceDisplayName = source.displayName,
+            preferredFileName = buildLegacyReadableFileName(
+                sourceDisplayName = source.displayName,
+                assetHash = hash,
+                extension = extension
+            )
+        ) ?: buildLegacyReadableFileName(
+            sourceDisplayName = source.displayName,
+            assetHash = hash,
+            extension = extension
+        )
+        val stored = ManagedDownloadStorage.persistRemoteCoverBytes(
+            context = context,
+            bytes = source.bytes,
+            fileName = fileName,
+            mimeType = mimeType
+        ) ?: return@withContext null
+        MaterializedCover(
+            reference = stored,
+            assetHash = hash,
+            fileName = fileName
+        )
     }
 
     internal fun sha256(bytes: ByteArray): String {
@@ -54,8 +132,65 @@ internal object ManagedDownloadCoverAssetStore {
             .joinToString("") { byte -> "%02x".format(byte) }
     }
 
-    private suspend fun readBytes(context: Context, reference: String): ByteArray? {
+    internal fun selectTargetFileName(
+        sourceDisplayName: String?,
+        preferredFileName: String?
+    ): String? {
+        val requestedName = preferredFileName?.let(::normalizePreferredFileName)
+        return requestedName?.takeUnless { requested ->
+            requested.equals(sourceDisplayName, ignoreCase = true)
+        }
+    }
+
+    internal fun buildLegacyReadableFileName(
+        sourceDisplayName: String,
+        assetHash: String,
+        extension: String
+    ): String {
+        val normalizedExtension = extension.trim().removePrefix(".").ifBlank { "bin" }
+        val sourceBaseName = sourceDisplayName.substringBeforeLast('.', sourceDisplayName)
+        val readableBaseName = sourceBaseName
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim()
+            .trimEnd('.')
+            .takeUnless { it.matches(Regex("[0-9a-fA-F]{32,64}")) }
+            .orEmpty()
+            .ifBlank { "cover" }
+        val shortHash = assetHash.take(8)
+        val targetBaseName = if (readableBaseName.endsWith("-$shortHash", ignoreCase = true)) {
+            readableBaseName
+        } else {
+            "$readableBaseName-$shortHash"
+        }
+        return "$targetBaseName.$normalizedExtension"
+    }
+
+    private fun normalizePreferredFileName(fileName: String): String {
+        val normalized = fileName.trim()
+        require(
+            normalized.isNotBlank() &&
+                normalized != "." &&
+                normalized != ".." &&
+                '/' !in normalized &&
+                '\\' !in normalized
+        ) {
+            "preferred cover file name must be a single valid path segment"
+        }
+        return normalized
+    }
+
+    private suspend fun readCover(context: Context, reference: String): ReadCover? {
         val target = resolveReference(context, reference) ?: return null
+        val displayName = when (val result = target.backend.stat(target.reference)) {
+            is StorageLookupResult.Found -> result.value.displayName
+            StorageLookupResult.Missing -> return null
+            StorageLookupResult.PermissionLost -> {
+                throw SecurityException("cover storage permission lost: $reference")
+            }
+            is StorageLookupResult.ProviderFailure -> throw result.error
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> return null
+        }
         val result = target.backend.read(target.reference) { input ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -72,7 +207,10 @@ internal object ManagedDownloadCoverAssetStore {
             output.toByteArray()
         }
         return when (result) {
-            is StorageLookupResult.Found -> result.value
+            is StorageLookupResult.Found -> ReadCover(
+                bytes = result.value,
+                displayName = displayName
+            )
             StorageLookupResult.Missing -> null
             StorageLookupResult.PermissionLost -> {
                 throw SecurityException("cover storage permission lost: $reference")
@@ -83,6 +221,11 @@ internal object ManagedDownloadCoverAssetStore {
         }
     }
 
+    private data class ReadCover(
+        val bytes: ByteArray,
+        val displayName: String
+    )
+
     private fun resolveReference(context: Context, rawReference: String): ResolvedReference? {
         val uri = runCatching { rawReference.toUri() }.getOrNull()
         if (uri?.scheme?.equals("content", ignoreCase = true) == true) {
@@ -91,12 +234,15 @@ internal object ManagedDownloadCoverAssetStore {
                 reference = StorageReference.SafRef(uri)
             )
         }
-        val path = when {
-            rawReference.startsWith("/") -> rawReference
-            uri?.scheme?.equals("file", ignoreCase = true) == true -> uri.path
-            else -> rawReference
-        }?.takeIf(String::isNotBlank) ?: return null
-        val file = File(path)
+        val file = when {
+            rawReference.startsWith("/") -> File(rawReference)
+            rawReference.startsWith("file:", ignoreCase = true) -> {
+                // java.net.URI preserves the decoded local path for file:/ and file:/// forms
+                runCatching { File(URI(rawReference)) }.getOrNull()
+            }
+            uri?.scheme.isNullOrBlank() -> File(rawReference)
+            else -> null
+        } ?: return null
         return file.parentFile?.let { parent ->
             ResolvedReference(
                 backend = FileStorageBackend(parent),

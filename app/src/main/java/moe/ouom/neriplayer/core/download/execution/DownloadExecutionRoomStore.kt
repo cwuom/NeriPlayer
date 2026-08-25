@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import android.content.Context
+import androidx.room.withTransaction
+import java.util.UUID
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -15,6 +17,18 @@ internal object DownloadExecutionRoomStore {
         val createdAtMs: Long
     )
 
+    internal data class CancellationSnapshot(
+        val entries: List<StateEntry>,
+        val operationIds: List<String>,
+        val stableKeys: Set<String>,
+        val requestedAtMs: Long
+    )
+
+    internal data class OperationIdentity(
+        val operationId: String,
+        val stableKey: String
+    )
+
     suspend fun upsert(
         context: Context,
         request: DownloadExecutionRequest,
@@ -23,40 +37,52 @@ internal object DownloadExecutionRoomStore {
         createdAtMs: Long? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
-        val now = createdAtMs ?: System.currentTimeMillis()
-        val song = request.song
-        val dao = database.downloadOperationDao()
-        val existing = dao.find(request.operationId)
-        val restartForNewAttempt = shouldRestartOperation(
-            existingState = existing?.state,
-            requestedState = state,
-            userInitiated = request.userInitiated
-        )
-        dao.upsert(
-            DownloadOperationEntity(
-                operationId = request.operationId,
-                stableKey = song.stableKey(),
-                libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context),
-                // Re-scheduling an existing operation must never roll its durable state back.
-                state = if (restartForNewAttempt) state else existing?.state ?: state,
-                queueOrder = if (queueOrder == 0) existing?.queueOrder ?: 0 else queueOrder,
-                sourceHintJson = requestToJson(request).toString(),
-                stagingDirName = request.operationId,
-                bytesWritten = existing?.bytesWritten ?: 0L,
-                totalBytes = existing?.totalBytes,
-                resumeJson = existing?.resumeJson,
-                retryCount = existing?.retryCount ?: 0,
-                nextRetryAtMs = existing?.nextRetryAtMs,
-                lastErrorCode = existing?.lastErrorCode,
-                stopRequestedByUser = if (restartForNewAttempt) {
-                    false
-                } else {
-                    existing?.stopRequestedByUser ?: false
-                },
-                createdAtMs = existing?.createdAtMs ?: now,
-                updatedAtMs = now
+        database.withTransaction {
+            val now = createdAtMs ?: System.currentTimeMillis()
+            val song = request.song
+            val dao = database.downloadOperationDao()
+            val existing = dao.find(request.operationId)
+            val restartForNewAttempt = shouldRestartOperation(
+                existingState = existing?.state,
+                requestedState = state,
+                userInitiated = request.userInitiated
             )
-        )
+            val existingRequest = existing?.let(::requestFromEntity)
+            val persistedRequest = when {
+                restartForNewAttempt -> request.copy(
+                    artifactLeaseId = UUID.randomUUID().toString()
+                )
+                existingRequest != null -> request.copy(
+                    artifactLeaseId = existingRequest.artifactLeaseId
+                )
+                else -> request
+            }
+            dao.upsert(
+                DownloadOperationEntity(
+                    operationId = request.operationId,
+                    stableKey = song.stableKey(),
+                    libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context),
+                    // rescheduling an existing operation must never roll its durable state back
+                    state = if (restartForNewAttempt) state else existing?.state ?: state,
+                    queueOrder = if (queueOrder == 0) existing?.queueOrder ?: 0 else queueOrder,
+                    sourceHintJson = requestToJson(persistedRequest).toString(),
+                    stagingDirName = request.operationId,
+                    bytesWritten = existing?.bytesWritten ?: 0L,
+                    totalBytes = existing?.totalBytes,
+                    resumeJson = existing?.resumeJson,
+                    retryCount = existing?.retryCount ?: 0,
+                    nextRetryAtMs = existing?.nextRetryAtMs,
+                    lastErrorCode = existing?.lastErrorCode,
+                    stopRequestedByUser = if (restartForNewAttempt) {
+                        false
+                    } else {
+                        existing?.stopRequestedByUser ?: false
+                    },
+                    createdAtMs = existing?.createdAtMs ?: now,
+                    updatedAtMs = now
+                )
+            )
+        }
     }
 
     suspend fun read(
@@ -74,8 +100,9 @@ internal object DownloadExecutionRoomStore {
         state: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<StateEntry> {
+        val libraryId = currentLibraryId(context)
         return database.downloadOperationDao()
-            .findByState(state)
+            .findByStatesInLibrary(libraryId, listOf(state))
             .mapNotNull { entity ->
                 requestFromEntity(entity)?.let { request ->
                     StateEntry(
@@ -93,13 +120,109 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<StateEntry> {
         if (states.isEmpty()) return emptyList()
+        val libraryId = currentLibraryId(context)
         return database.downloadOperationDao()
-            .findByStates(states)
+            .findByStatesInLibrary(libraryId, states)
             .mapNotNull { entity ->
                 requestFromEntity(entity)?.let { request ->
                     StateEntry(request, entity.queueOrder, entity.createdAtMs)
                 }
             }
+    }
+
+    suspend fun listCancellationCandidates(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<StateEntry> {
+        return listByStates(
+            context = context,
+            states = CANCELLATION_CANDIDATE_OPERATION_STATES,
+            database = database
+        )
+    }
+
+    suspend fun listAllOperationIds(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<String> {
+        return listAllOperationIdentities(context, database)
+            .map(OperationIdentity::operationId)
+            .distinct()
+    }
+
+    suspend fun listAllOperationIdentities(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<OperationIdentity> {
+        return database.downloadOperationDao().findAll()
+            .map { entity ->
+                OperationIdentity(
+                    operationId = entity.operationId,
+                    stableKey = entity.stableKey
+                )
+            }
+    }
+
+    suspend fun requestCancelAll(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): CancellationSnapshot {
+        val requestedAtMs = System.currentTimeMillis()
+        val entities = database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val entities = dao.findByStates(CANCELLATION_CANDIDATE_OPERATION_STATES)
+            val directCancellationIds = entities.asSequence()
+                .filter(::requiresDirectCancellation)
+                .map(DownloadOperationEntity::operationId)
+                .toList()
+            val commitBoundaryCancellationIds = entities.asSequence()
+                .filter(::requiresCommitBoundaryCancellation)
+                .map(DownloadOperationEntity::operationId)
+                .toList()
+            directCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
+                dao.requestCancellations(ids, requestedAtMs)
+            }
+            commitBoundaryCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
+                dao.requestCommitBoundaryCancellations(ids, requestedAtMs)
+            }
+            entities
+        }
+        val entries = entities.asSequence()
+            .filter { entity ->
+                requiresDirectCancellation(entity) || requiresCommitBoundaryCancellation(entity)
+            }
+            .mapNotNull { entity ->
+                requestFromEntity(entity)?.let { request ->
+                    StateEntry(
+                        request = request,
+                        queueOrder = entity.queueOrder,
+                        createdAtMs = entity.createdAtMs
+                    )
+                }
+            }
+            .toList()
+        return CancellationSnapshot(
+            entries = entries,
+            operationIds = entities.map(DownloadOperationEntity::operationId).distinct(),
+            stableKeys = entities.mapTo(linkedSetOf(), DownloadOperationEntity::stableKey),
+            requestedAtMs = requestedAtMs
+        )
+    }
+
+    suspend fun finalizeRequestedCancellations(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        val updatedAtMs = System.currentTimeMillis()
+        return ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            database.downloadOperationDao().finalizeRequestedCancellations(
+                operationIds = chunk,
+                updatedAtMs = updatedAtMs
+            )
+        }
     }
 
     suspend fun deleteByStateAndStableKeys(
@@ -108,9 +231,18 @@ internal object DownloadExecutionRoomStore {
         stableKeys: List<String>,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
-        if (stableKeys.isEmpty()) return
-        database.downloadOperationDao()
-            .deleteByStateAndStableKeys(state, stableKeys)
+        val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
+        if (keys.isEmpty()) return
+        keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
+            database.withTransaction {
+                val dao = database.downloadOperationDao()
+                val operationIds = dao.findOperationIdsByStateAndStableKeys(state, chunk)
+                if (operationIds.isNotEmpty()) {
+                    dao.deleteHostAdmissions(operationIds)
+                    dao.deleteOperations(operationIds)
+                }
+            }
+        }
     }
 
     suspend fun deleteByState(
@@ -118,7 +250,8 @@ internal object DownloadExecutionRoomStore {
         state: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
-        database.downloadOperationDao().deleteByState(state)
+        val ids = database.downloadOperationDao().findOperationIdsByState(state)
+        deleteOperationsWithAdmissions(database, ids)
     }
 
     suspend fun pruneTerminalOperations(
@@ -128,11 +261,12 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Int {
         if (limit <= 0) return 0
-        return database.downloadOperationDao().deleteTerminalBefore(
+        val ids = database.downloadOperationDao().findTerminalOperationIdsBefore(
             states = TERMINAL_STATES,
             cutoffMs = cutoffMs,
             limit = limit
         )
+        return deleteOperationsWithAdmissions(database, ids)
     }
 
     suspend fun findOperationIdForSong(
@@ -142,11 +276,63 @@ internal object DownloadExecutionRoomStore {
         states: List<String> = ACTIVE_OPERATION_STATES
     ): String? {
         val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return null
+        val libraryId = currentLibraryId(context)
         return database.downloadOperationDao()
             .findLatestOperationIdByStableKey(
+                libraryId = libraryId,
                 stableKey = normalizedSongKey,
                 states = states
             )
+    }
+
+    suspend fun findOperationIdsForSong(
+        context: Context,
+        songKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context),
+        states: List<String> = CANCELLATION_CANDIDATE_OPERATION_STATES
+    ): List<String> {
+        val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return emptyList()
+        return database.downloadOperationDao()
+            .findAllByStableKeyAnyLibrary(normalizedSongKey, states)
+            .map(DownloadOperationEntity::operationId)
+            .distinct()
+    }
+
+    suspend fun findReadableOperationIdForSong(
+        context: Context,
+        songKey: String,
+        states: List<String>,
+        excludeUserCancelledStops: Boolean = false,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): String? {
+        val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
+        val libraryId = currentLibraryId(context)
+        val dao = database.downloadOperationDao()
+        val entities = dao.findAllByStableKey(
+            libraryId = libraryId,
+            stableKey = normalizedKey,
+            states = states
+        )
+        entities.forEach { entity ->
+            if (
+                excludeUserCancelledStops &&
+                    entity.stopRequestedByUser &&
+                    entity.lastErrorCode == "USER_CANCELLED"
+            ) {
+                return@forEach
+            }
+            if (requestFromEntity(entity) != null) {
+                return entity.operationId
+            }
+            dao.transitionState(
+                operationId = entity.operationId,
+                expectedStates = listOf(entity.state),
+                state = "INVALID",
+                updatedAtMs = System.currentTimeMillis(),
+                errorCode = "INVALID_OPERATION_PAYLOAD"
+            )
+        }
+        return null
     }
 
     suspend fun isStopped(
@@ -157,9 +343,32 @@ internal object DownloadExecutionRoomStore {
             .isUserStopped(operationId) == true
     }
 
+    suspend fun isUserCancellationRequested(
+        context: Context,
+        operationId: String
+    ): Boolean {
+        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
+            .isUserCancellationRequested(operationId)
+    }
+
+    suspend fun isExecutionOwned(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        val libraryId = currentLibraryId(context)
+        return database.downloadOperationDao().isExecutionOwned(
+            operationId = operationId,
+            libraryId = libraryId,
+            stableKey = normalizedKey
+        )
+    }
+
     suspend fun stoppedSongKeys(context: Context): Set<String> {
         return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-            .findUserStopped()
+            .findUserStoppedInLibrary(currentLibraryId(context))
             .mapNotNull(::requestFromEntity)
             .map { request -> request.song.stableKey() }
             .toSet()
@@ -171,17 +380,61 @@ internal object DownloadExecutionRoomStore {
         state: String,
         errorCode: String? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ) {
+    ): Boolean {
         val dao = database.downloadOperationDao()
-        val current = dao.find(operationId) ?: return
-        val nextState = resolveDownloadOperationState(current.state, state) ?: return
-        if (nextState == current.state) return
-        dao.updateState(
+        val current = dao.find(operationId) ?: return false
+        val nextState = resolveDownloadOperationState(current.state, state) ?: return false
+        if (nextState == current.state) return !current.stopRequestedByUser
+        return dao.transitionState(
             operationId = operationId,
+            expectedStates = listOf(current.state),
             state = nextState,
             updatedAtMs = System.currentTimeMillis(),
             errorCode = errorCode
-        )
+        ) > 0
+    }
+
+    suspend fun markScheduleRejectedRetryable(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        return database.downloadOperationDao().transitionStateForStableKey(
+            operationId = operationId,
+            stableKey = normalizedKey,
+            expectedStates = REUSABLE_OPERATION_STATES,
+            state = "RETRYABLE",
+            updatedAtMs = System.currentTimeMillis(),
+            errorCode = errorCode
+        ) > 0
+    }
+
+    suspend fun markStagingPrepared(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val entity = dao.find(operationId) ?: return@withTransaction false
+            if (entity.stableKey != normalizedKey) return@withTransaction false
+            val request = requestFromEntity(entity) ?: return@withTransaction false
+            if (request.song.stableKey() != normalizedKey) return@withTransaction false
+            if (request.preserveStaging) return@withTransaction true
+            dao.updateRequestPayload(
+                operationId = operationId,
+                stableKey = normalizedKey,
+                sourceHintJson = requestToJson(
+                    request.copy(preserveStaging = true)
+                ).toString(),
+                updatedAtMs = System.currentTimeMillis()
+            ) > 0
+        }
     }
 
     suspend fun state(context: Context, operationId: String): String? {
@@ -196,28 +449,121 @@ internal object DownloadExecutionRoomStore {
         allowExistingRunning: Boolean = false,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Boolean {
-        return database.downloadOperationDao().transitionState(
-            operationId = operationId,
-            expectedStates = buildList {
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val target = dao.find(operationId) ?: return@withTransaction false
+            if (target.libraryId != currentLibraryId(context)) {
+                dao.transitionState(
+                    operationId = operationId,
+                    expectedStates = listOf(target.state),
+                    state = "INVALID",
+                    updatedAtMs = System.currentTimeMillis(),
+                    errorCode = "ROOT_CHANGED"
+                )
+                return@withTransaction false
+            }
+            if (target.stopRequestedByUser) return@withTransaction false
+            val expectedStates = buildList {
                 add("PENDING_QUEUE")
                 add("QUEUED")
                 add("RETRYABLE")
-                if (allowExistingRunning) add("RUNNING")
-            },
-            state = "RUNNING",
-            updatedAtMs = System.currentTimeMillis(),
-            errorCode = null
-        ) > 0
+                if (allowExistingRunning) {
+                    addAll(INTERRUPTED_DOWNLOAD_OPERATION_STATES)
+                }
+            }
+            if (target.state !in expectedStates) return@withTransaction false
+
+            val contenders = dao.findAllByStableKey(
+                libraryId = target.libraryId,
+                stableKey = target.stableKey,
+                states = EXECUTION_CONVERGENCE_STATES
+            ).filterNot(DownloadOperationEntity::stopRequestedByUser)
+            val validContenders = contenders.mapNotNull { entity ->
+                val request = requestFromEntity(entity)
+                if (request == null) {
+                    dao.transitionState(
+                        operationId = entity.operationId,
+                        expectedStates = listOf(entity.state),
+                        state = "INVALID",
+                        updatedAtMs = System.currentTimeMillis(),
+                        errorCode = "INVALID_OPERATION_PAYLOAD"
+                    )
+                    null
+                } else {
+                    entity to request
+                }
+            }
+            val leasedIds = validContenders
+                .map { (entity, _) -> entity.libraryId }
+                .distinct()
+                .mapNotNull { libraryId ->
+                    database.managedDownloadArtifactDao()
+                        .find(libraryId, target.stableKey)
+                        ?.leaseId
+                }
+                .toSet()
+            val winner = validContenders.maxWithOrNull(
+                compareBy<Pair<DownloadOperationEntity, DownloadExecutionRequest>> { (_, request) ->
+                    request.artifactLeaseId in leasedIds
+                }.thenBy { (entity, _) -> executionConvergencePriority(entity.state) }
+                    .thenBy { (entity, _) -> entity.updatedAtMs }
+                    .thenBy { (entity, _) -> entity.createdAtMs }
+                    .thenBy { (entity, _) -> entity.operationId }
+            ) ?: return@withTransaction false
+
+            validContenders.forEach { (entity, _) ->
+                if (entity.operationId == winner.first.operationId) return@forEach
+                dao.transitionState(
+                    operationId = entity.operationId,
+                    expectedStates = listOf(entity.state),
+                    state = "INVALID",
+                    updatedAtMs = System.currentTimeMillis(),
+                    errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
+                )
+            }
+            if (winner.first.operationId != operationId) {
+                return@withTransaction false
+            }
+            if (target.state in DURABLE_CORE_EXECUTION_STATES) {
+                return@withTransaction true
+            }
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = expectedStates,
+                state = "RUNNING",
+                updatedAtMs = System.currentTimeMillis(),
+                errorCode = null
+            ) > 0
+        }
     }
 
     suspend fun requestCancel(context: Context, operationId: String): Boolean {
-        return transitionStateAtomically(
-            context = context,
+        val database = NeriUserDataDatabase.getInstance(context)
+        val dao = database.downloadOperationDao()
+        if (
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = CANCELABLE_OPERATION_STATES,
+                state = "CANCEL_REQUESTED",
+                updatedAtMs = System.currentTimeMillis(),
+                errorCode = "USER_CANCELLED"
+            ) > 0
+        ) {
+            return true
+        }
+        if (
+            dao.requestStoppedCancellation(
+                operationId = operationId,
+                updatedAtMs = System.currentTimeMillis()
+            ) > 0
+        ) {
+            return true
+        }
+        return dao.requestCommitBoundaryStop(
             operationId = operationId,
-            expectedStates = CANCELABLE_OPERATION_STATES,
-            requestedState = "CANCEL_REQUESTED",
-            errorCode = "USER_CANCELLED"
-        )
+            expectedStates = COMMIT_BOUNDARY_CANCEL_STATES,
+            updatedAtMs = System.currentTimeMillis()
+        ) > 0
     }
 
     suspend fun requestCancel(
@@ -226,12 +572,30 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase,
         updatedAtMs: Long = System.currentTimeMillis()
     ): Boolean {
-        return database.downloadOperationDao().transitionState(
+        val dao = database.downloadOperationDao()
+        if (
+            dao.transitionState(
+                operationId = operationId,
+                expectedStates = CANCELABLE_OPERATION_STATES,
+                state = "CANCEL_REQUESTED",
+                updatedAtMs = updatedAtMs,
+                errorCode = "USER_CANCELLED"
+            ) > 0
+        ) {
+            return true
+        }
+        if (
+            dao.requestStoppedCancellation(
+                operationId = operationId,
+                updatedAtMs = updatedAtMs
+            ) > 0
+        ) {
+            return true
+        }
+        return dao.requestCommitBoundaryStop(
             operationId = operationId,
-            expectedStates = CANCELABLE_OPERATION_STATES,
-            state = "CANCEL_REQUESTED",
-            updatedAtMs = updatedAtMs,
-            errorCode = "USER_CANCELLED"
+            expectedStates = COMMIT_BOUNDARY_CANCEL_STATES,
+            updatedAtMs = updatedAtMs
         ) > 0
     }
 
@@ -254,9 +618,11 @@ internal object DownloadExecutionRoomStore {
         val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
         if (keys.isEmpty()) return
         listOf("CANCEL_REQUESTED", "CANCELLED").forEach { state ->
-            database.downloadOperationDao().deleteByStateAndStableKeys(
+            deleteByStateAndStableKeys(
+                context = context,
                 state = state,
-                stableKeys = keys
+                stableKeys = keys,
+                database = database
             )
         }
     }
@@ -266,7 +632,126 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
         listOf("CANCEL_REQUESTED", "CANCELLED").forEach { state ->
-            database.downloadOperationDao().deleteByState(state)
+            deleteByState(context, state, database)
+        }
+    }
+
+    suspend fun purgeClearedOperations(
+        context: Context,
+        operationIds: Collection<String>,
+        cancelledAtMs: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        return ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            database.withTransaction {
+                val dao = database.downloadOperationDao()
+                val eligibleIds = dao.findClearedOperationIds(
+                    operationIds = chunk,
+                    cancelledAtMs = cancelledAtMs
+                )
+                if (eligibleIds.isEmpty()) {
+                    0
+                } else {
+                    dao.deleteHostAdmissions(eligibleIds)
+                    dao.deleteOperations(eligibleIds)
+                }
+            }
+        }
+    }
+
+    /**
+     * removes a clear snapshot only after its host and commit work have fully stopped
+     */
+    suspend fun purgeFullyClearedOperations(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        return deleteOperationsWithAdmissions(database, ids)
+    }
+
+    /**
+     * reserves one OS-host handoff slot for this process without treating every
+     * durable queued operation as active work
+     */
+    suspend fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int,
+        nowMs: Long = System.currentTimeMillis(),
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        if (capacity <= 0 || operationId.isBlank()) return false
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            // Room is restricted to the main app process, so entries from another
+            // token are leftovers from a process that can no longer own an OS host
+            dao.deleteHostAdmissionsFromOtherProcesses(HOST_ADMISSION_PROCESS_TOKEN)
+            dao.deleteOrphanHostAdmissions()
+            dao.deleteExpiredHostAdmissions(
+                processToken = HOST_ADMISSION_PROCESS_TOKEN,
+                cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),
+                states = HOST_ADMISSION_HANDOFF_STATES
+            )
+            val existing = dao.findHostAdmission(operationId)
+            if (existing?.processToken == HOST_ADMISSION_PROCESS_TOKEN) {
+                return@withTransaction true
+            }
+            val operation = dao.find(operationId) ?: return@withTransaction false
+            if (dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN) >= capacity) {
+                return@withTransaction false
+            }
+            dao.upsertHostAdmission(
+                moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity(
+                    operationId = operationId,
+                    libraryId = operation.libraryId,
+                    processToken = HOST_ADMISSION_PROCESS_TOKEN,
+                    admittedAtMs = nowMs
+                )
+            )
+            true
+        }
+    }
+
+    suspend fun releaseHostAdmission(
+        context: Context,
+        operationId: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ) {
+        if (operationId.isBlank()) return
+        database.downloadOperationDao().deleteHostAdmission(operationId)
+    }
+
+    suspend fun releaseHostAdmissions(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ) {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return
+        ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { chunk ->
+            database.downloadOperationDao().deleteHostAdmissions(chunk)
+        }
+    }
+
+    suspend fun currentHostAdmissionCount(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            dao.deleteHostAdmissionsFromOtherProcesses(HOST_ADMISSION_PROCESS_TOKEN)
+            dao.deleteOrphanHostAdmissions()
+            dao.deleteExpiredHostAdmissions(
+                processToken = HOST_ADMISSION_PROCESS_TOKEN,
+                cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),
+                states = HOST_ADMISSION_HANDOFF_STATES
+            )
+            dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN)
         }
     }
 
@@ -307,11 +792,70 @@ internal object DownloadExecutionRoomStore {
     ): Boolean {
         val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
         if (keys.isEmpty()) return false
-        return NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-            .clearUserStopForStableKeys(
-                stableKeys = keys,
-                updatedAtMs = System.currentTimeMillis()
-            ) > 0
+        val dao = NeriUserDataDatabase.getInstance(context).downloadOperationDao()
+        val libraryId = currentLibraryId(context)
+        val updatedAtMs = System.currentTimeMillis()
+        return keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            dao.clearUserStopForStableKeys(
+                libraryId = libraryId,
+                stableKeys = chunk,
+                updatedAtMs = updatedAtMs
+            )
+        } > 0
+    }
+
+    suspend fun prepareExplicitResume(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        return database.downloadOperationDao().prepareExplicitResume(
+            operationId = operationId,
+            stableKey = normalizedKey,
+            expectedStates = EXPLICIT_RESUME_SOURCE_STATES,
+            updatedAtMs = System.currentTimeMillis()
+        ) > 0
+    }
+
+    suspend fun prepareExplicitResumesForStableKeys(
+        context: Context,
+        stableKeys: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val normalizedKeys = stableKeys.map(String::trim).filter(String::isNotBlank).toSet()
+        if (normalizedKeys.isEmpty()) return 0
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            dao.findUserStoppedInLibrary(currentLibraryId(context))
+                .filter { entity -> entity.stableKey in normalizedKeys }
+                .sumOf { entity ->
+                    dao.prepareExplicitResume(
+                        operationId = entity.operationId,
+                        stableKey = entity.stableKey,
+                        expectedStates = EXPLICIT_RESUME_SOURCE_STATES,
+                        updatedAtMs = System.currentTimeMillis()
+                    )
+                }
+        }
+    }
+
+    suspend fun restoreExplicitStop(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        return database.downloadOperationDao().restoreExplicitStop(
+            operationId = operationId,
+            stableKey = normalizedKey,
+            expectedStates = EXPLICIT_STOP_RESTORE_SOURCE_STATES,
+            updatedAtMs = System.currentTimeMillis(),
+            errorCode = errorCode
+        ) > 0
     }
 
     private suspend fun transitionStateAtomically(
@@ -333,7 +877,11 @@ internal object DownloadExecutionRoomStore {
     }
 
     suspend fun delete(context: Context, operationId: String) {
-        NeriUserDataDatabase.getInstance(context).downloadOperationDao().delete(operationId)
+        val database = NeriUserDataDatabase.getInstance(context)
+        database.withTransaction {
+            database.downloadOperationDao().deleteHostAdmission(operationId)
+            database.downloadOperationDao().delete(operationId)
+        }
     }
 
     private fun requestToJson(request: DownloadExecutionRequest): JSONObject {
@@ -351,6 +899,7 @@ internal object DownloadExecutionRoomStore {
             put("preserveStaging", request.preserveStaging)
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
+            put("artifactLeaseId", request.artifactLeaseId)
         }
     }
 
@@ -398,6 +947,9 @@ internal object DownloadExecutionRoomStore {
                 song = song,
                 preserveStaging = root.optBoolean("preserveStaging", false),
                 attemptId = root.optLong("attemptId", 0L).takeIf { it > 0L },
+                artifactLeaseId = root.optString("artifactLeaseId")
+                    .takeIf(String::isNotBlank)
+                    ?: entity.operationId,
                 userInitiated = if (root.has("userInitiated")) {
                     root.optBoolean("userInitiated", false)
                 } else {
@@ -423,28 +975,113 @@ internal object DownloadExecutionRoomStore {
         )
     }
 
+    private fun requiresDirectCancellation(entity: DownloadOperationEntity): Boolean {
+        return when (entity.state) {
+            "PENDING_QUEUE",
+            "QUEUED",
+            "RUNNING",
+            "RETRYABLE" -> !entity.stopRequestedByUser
+
+            "STOPPED" -> true
+            else -> false
+        }
+    }
+
+    private fun requiresCommitBoundaryCancellation(entity: DownloadOperationEntity): Boolean {
+        return entity.state in COMMIT_BOUNDARY_CANCEL_STATES && !entity.stopRequestedByUser
+    }
+
+    private suspend fun deleteOperationsWithAdmissions(
+        database: NeriUserDataDatabase,
+        operationIds: Collection<String>
+    ): Int {
+        val ids = operationIds.map(String::trim).filter(String::isNotBlank).distinct()
+        if (ids.isEmpty()) return 0
+        return ids.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
+            database.withTransaction {
+                val dao = database.downloadOperationDao()
+                dao.deleteHostAdmissions(chunk)
+                dao.deleteOperations(chunk)
+            }
+        }
+    }
+
+    private fun currentLibraryId(context: Context): String {
+        return ManagedDownloadStorage.currentSnapshotCacheKey(context.applicationContext)
+    }
+
     private const val JOURNAL_PAYLOAD_VERSION = 1
-    private val TERMINAL_STATES = listOf("COMPLETED", "CANCELLED")
+    private const val SQLITE_IN_QUERY_CHUNK_SIZE = 900
+    internal const val HOST_ADMISSION_HANDOFF_LEASE_MS = 30_000L
+    private val HOST_ADMISSION_PROCESS_TOKEN = UUID.randomUUID().toString()
+    private val HOST_ADMISSION_HANDOFF_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RETRYABLE"
+    )
+    private val TERMINAL_STATES = listOf("COMPLETED", "CANCELLED", "INVALID")
     private val ACTIVE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
         "RUNNING",
         "COMMITTING",
         "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
         "CANCEL_REQUESTED",
         "STOPPED",
-        "RETRYABLE"
+        "RETRYABLE",
+        "DEGRADED_COMPLETE"
     )
     internal val REUSABLE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
         "RETRYABLE"
     )
+    internal val IN_FLIGHT_OPERATION_STATES = listOf(
+        "RUNNING",
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING"
+    )
     private val CANCELABLE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
         "RUNNING",
         "STOPPED",
+        "RETRYABLE"
+    )
+    private val CANCELLATION_CANDIDATE_OPERATION_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RUNNING",
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "CANCEL_REQUESTED",
+        "STOPPED",
+        "RETRYABLE",
+        "DEGRADED_COMPLETE"
+    )
+    private val COMMIT_BOUNDARY_CANCEL_STATES = listOf(
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+    private val EXPLICIT_RESUME_SOURCE_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RUNNING",
+        "COMMITTING",
+        "RETRYABLE",
+        "STOPPED",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+    private val EXPLICIT_STOP_RESTORE_SOURCE_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
         "RETRYABLE"
     )
     private val CORE_COMMIT_SOURCE_STATES = listOf(
@@ -462,6 +1099,37 @@ internal object DownloadExecutionRoomStore {
         "QUEUED",
         "RUNNING"
     )
+
+    private val EXECUTION_CONVERGENCE_STATES = listOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "RETRYABLE",
+        "RUNNING",
+        "COMMITTING",
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+
+    private val DURABLE_CORE_EXECUTION_STATES = setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
+    )
+}
+
+private fun executionConvergencePriority(state: String): Int {
+    return when (state) {
+        "DEGRADED_COMPLETE" -> 8
+        "ASSETS_ENRICHING" -> 7
+        "CORE_COMMITTED" -> 6
+        "COMMITTING" -> 5
+        "RUNNING" -> 4
+        "RETRYABLE" -> 3
+        "QUEUED" -> 2
+        "PENDING_QUEUE" -> 1
+        else -> 0
+    }
 }
 
 internal fun shouldRestartOperation(
@@ -469,7 +1137,5 @@ internal fun shouldRestartOperation(
     requestedState: String,
     userInitiated: Boolean
 ): Boolean {
-    if (requestedState !in setOf("PENDING_QUEUE", "QUEUED", "RUNNING")) return false
-    return existingState == "RETRYABLE" ||
-        (userInitiated && existingState in setOf("STOPPED", "CANCEL_REQUESTED", "CANCELLED"))
+    return false
 }

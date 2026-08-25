@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -88,6 +89,33 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertEquals("Song", entry.nameWithoutExtension.substringAfter(" - "))
         assertEquals("", entry.extension)
         assertEquals("", entry.playbackUri)
+    }
+
+    @Test
+    fun `pending audio names remain unique after a process restart`() {
+        val finalName = "Artist - Song.mp3"
+        val beforeRestart = ManagedDownloadPendingAudioWriteNames()
+            .buildPendingAudioWriteName(finalName)
+        val afterRestart = ManagedDownloadPendingAudioWriteNames()
+            .buildPendingAudioWriteName(finalName)
+
+        assertNotEquals(beforeRestart, afterRestart)
+        assertTrue(beforeRestart.endsWith(".pending"))
+        assertTrue(afterRestart.endsWith(".pending"))
+    }
+
+    @Test
+    fun `bounded audio names leave room for pending write recovery`() {
+        val finalName = boundManagedDownloadFileName(
+            "今、歩き出す君へ。 - Ceui - PCゲーム「いますぐお兄ちゃんに妹だっていいたい!」" +
+                "ボーカルアルバム - netease - 😀😀😀😀😀😀😀😀.mp3"
+        )
+        val names = ManagedDownloadPendingAudioWriteNames()
+        val pendingName = names.buildPendingAudioWriteName(finalName)
+
+        assertEquals(finalName, names.logicalAudioName(pendingName))
+        assertTrue(pendingName.toByteArray(Charsets.UTF_8).size <= 192)
+        assertTrue(names.isPendingAudioWriteName(pendingName))
     }
 
     @Test
@@ -303,7 +331,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
-    fun `migration collector keeps stable and metadata referenced covers`() {
+    fun `migration collector keeps short legacy digest java hash and pure sha covers`() {
         fun entry(name: String) = ManagedDownloadStorage.StoredEntry(
             name = name,
             reference = "/old/Covers/$name",
@@ -333,22 +361,41 @@ class ManagedDownloadStorageMigrationCompatTest {
             .buildStableCoverCandidateNames("Artist - Song", stableKey)
             .first()
         val stableCover = entry(stableCoverName)
-        val referencedCover = entry("custom-cover.png")
+        val legacyDigestCover = entry(
+            "Artist - Song-${ManagedDownloadStorageNaming.stableKeySuffix(stableKey)}.jpg"
+        )
+        val legacyJavaHashCover = entry(
+            ManagedDownloadStorageNaming
+                .buildLegacyStableCoverCandidateNames("Artist - Song", stableKey)
+                .first()
+        )
+        val pureHashCover = entry("${"c".repeat(64)}.jpg")
         val parsedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
             stableKey = stableKey,
-            coverPath = referencedCover.reference
+            coverPath = pureHashCover.reference
         )
 
         val entries = ManagedDownloadMigrationEntryCollector.collect(
             rootEntries = listOf(audio, metadata),
-            coverEntries = listOf(stableCover, referencedCover),
+            coverEntries = listOf(
+                stableCover,
+                legacyDigestCover,
+                legacyJavaHashCover,
+                pureHashCover
+            ),
             lyricEntries = emptyList(),
             parsedMetadataByAudioName = mapOf(audio.name to parsedMetadata),
             allowMetadataLessAudio = false
         )
 
         assertTrue(entries.any { it.subdirectory == "Covers" && it.entry == stableCover })
-        assertTrue(entries.any { it.subdirectory == "Covers" && it.entry == referencedCover })
+        assertTrue(entries.any {
+            it.subdirectory == "Covers" && it.entry == legacyDigestCover
+        })
+        assertTrue(entries.any {
+            it.subdirectory == "Covers" && it.entry == legacyJavaHashCover
+        })
+        assertTrue(entries.any { it.subdirectory == "Covers" && it.entry == pureHashCover })
     }
 
     @Test

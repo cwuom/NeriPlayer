@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 
 @Dao
@@ -16,25 +17,48 @@ internal interface DownloadOperationDao {
 
     @Query(
         "SELECT * FROM download_operation " +
-            "WHERE stable_key = :stableKey AND state IN (:states) " +
+            "WHERE library_id = :libraryId AND stable_key = :stableKey AND state IN (:states) " +
             "AND stop_requested_by_user = 0 " +
             "ORDER BY updated_at_ms DESC, operation_id ASC LIMIT 1"
     )
     suspend fun findLatestByStableKey(
+        libraryId: String,
         stableKey: String,
         states: List<String>
     ): DownloadOperationEntity?
 
     @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND stable_key = :stableKey AND state IN (:states) " +
+            "ORDER BY updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllByStableKey(
+        libraryId: String,
+        stableKey: String,
+        states: List<String>
+    ): List<DownloadOperationEntity>
+
+    @Query(
         "SELECT operation_id FROM download_operation " +
-            "WHERE stable_key = :stableKey AND state IN (:states) " +
+            "WHERE library_id = :libraryId AND stable_key = :stableKey AND state IN (:states) " +
             "AND stop_requested_by_user = 0 " +
             "ORDER BY updated_at_ms DESC, operation_id ASC LIMIT 1"
     )
     suspend fun findLatestOperationIdByStableKey(
+        libraryId: String,
         stableKey: String,
         states: List<String>
     ): String?
+
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE stable_key = :stableKey AND state IN (:states) " +
+            "ORDER BY updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllByStableKeyAnyLibrary(
+        stableKey: String,
+        states: List<String>
+    ): List<DownloadOperationEntity>
 
     @Query("SELECT * FROM download_operation WHERE state = :state")
     suspend fun findByState(state: String): List<DownloadOperationEntity>
@@ -43,25 +67,36 @@ internal interface DownloadOperationDao {
     suspend fun findByStates(states: List<String>): List<DownloadOperationEntity>
 
     @Query(
-        "DELETE FROM download_operation " +
-            "WHERE state = :state AND stable_key IN (:stableKeys)"
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states)"
     )
-    suspend fun deleteByStateAndStableKeys(state: String, stableKeys: List<String>)
-
-    @Query("DELETE FROM download_operation WHERE state = :state")
-    suspend fun deleteByState(state: String)
+    suspend fun findByStatesInLibrary(
+        libraryId: String,
+        states: List<String>
+    ): List<DownloadOperationEntity>
 
     @Query(
-        "DELETE FROM download_operation WHERE operation_id IN (" +
-            "SELECT operation_id FROM download_operation " +
-            "WHERE state IN (:states) AND updated_at_ms < :cutoffMs " +
-            "ORDER BY updated_at_ms ASC, operation_id ASC LIMIT :limit)"
+        "SELECT operation_id FROM download_operation " +
+            "WHERE state = :state AND stable_key IN (:stableKeys)"
     )
-    suspend fun deleteTerminalBefore(
+    suspend fun findOperationIdsByStateAndStableKeys(
+        state: String,
+        stableKeys: List<String>
+    ): List<String>
+
+    @Query("SELECT operation_id FROM download_operation WHERE state = :state")
+    suspend fun findOperationIdsByState(state: String): List<String>
+
+    @Query(
+        "SELECT operation_id FROM download_operation " +
+            "WHERE state IN (:states) AND updated_at_ms < :cutoffMs " +
+            "ORDER BY updated_at_ms ASC, operation_id ASC LIMIT :limit"
+    )
+    suspend fun findTerminalOperationIdsBefore(
         states: List<String>,
         cutoffMs: Long,
         limit: Int
-    ): Int
+    ): List<String>
 
     @Query("SELECT * FROM download_operation ORDER BY queue_order ASC, updated_at_ms ASC")
     suspend fun findAll(): List<DownloadOperationEntity>
@@ -80,7 +115,8 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = :state, " +
             "updated_at_ms = :updatedAtMs, last_error_code = :errorCode " +
-            "WHERE operation_id = :operationId AND state IN (:expectedStates)"
+            "WHERE operation_id = :operationId AND state IN (:expectedStates) " +
+            "AND stop_requested_by_user = 0"
     )
     suspend fun transitionState(
         operationId: String,
@@ -91,10 +127,86 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET state = :state, " +
+            "updated_at_ms = :updatedAtMs, last_error_code = :errorCode " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
+    )
+    suspend fun transitionStateForStableKey(
+        operationId: String,
+        stableKey: String,
+        expectedStates: List<String>,
+        state: String,
+        updatedAtMs: Long,
+        errorCode: String?
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
+            "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId " +
+            "AND stable_key = :stableKey"
+    )
+    suspend fun updateRequestPayload(
+        operationId: String,
+        stableKey: String,
+        sourceHintJson: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET stop_requested_by_user = 1, " +
             "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId"
     )
     suspend fun requestUserStop(operationId: String, updatedAtMs: Long): Int
+
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 1, " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE operation_id = :operationId AND state IN (:expectedStates)"
+    )
+    suspend fun requestCommitBoundaryStop(
+        operationId: String,
+        expectedStates: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'CANCEL_REQUESTED', " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE operation_id = :operationId AND state = 'STOPPED'"
+    )
+    suspend fun requestStoppedCancellation(operationId: String, updatedAtMs: Long): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'CANCEL_REQUESTED', " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE operation_id IN (:operationIds) AND (" +
+            "(state IN ('PENDING_QUEUE', 'QUEUED', 'RUNNING', 'RETRYABLE') " +
+            "AND stop_requested_by_user = 0) OR state = 'STOPPED')"
+    )
+    suspend fun requestCancellations(operationIds: List<String>, updatedAtMs: Long): Int
+
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 1, " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE operation_id IN (:operationIds) " +
+            "AND state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0"
+    )
+    suspend fun requestCommitBoundaryCancellations(
+        operationIds: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'CANCELLED', " +
+            "updated_at_ms = :updatedAtMs WHERE operation_id IN (:operationIds) " +
+            "AND state = 'CANCEL_REQUESTED' AND stop_requested_by_user = 0"
+    )
+    suspend fun finalizeRequestedCancellations(
+        operationIds: List<String>,
+        updatedAtMs: Long
+    ): Int
 
     @Query(
         "SELECT stop_requested_by_user FROM download_operation " +
@@ -103,21 +215,88 @@ internal interface DownloadOperationDao {
     suspend fun isUserStopped(operationId: String): Boolean?
 
     @Query(
+        "SELECT EXISTS(SELECT 1 FROM download_operation " +
+            "WHERE operation_id = :operationId AND stop_requested_by_user = 1 " +
+            "AND last_error_code = 'USER_CANCELLED')"
+    )
+    suspend fun isUserCancellationRequested(operationId: String): Boolean
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM download_operation " +
+            "WHERE operation_id = :operationId AND library_id = :libraryId " +
+            "AND stable_key = :stableKey " +
+            "AND state IN ('RUNNING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0 " +
+            "AND NOT EXISTS(SELECT 1 FROM download_operation competitor " +
+            "WHERE competitor.library_id = :libraryId " +
+            "AND competitor.stable_key = :stableKey " +
+            "AND competitor.operation_id != :operationId " +
+            "AND competitor.stop_requested_by_user = 0 " +
+            "AND competitor.state IN ('PENDING_QUEUE', 'QUEUED', 'RETRYABLE', " +
+            "'RUNNING', 'COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING')))"
+    )
+    suspend fun isExecutionOwned(
+        operationId: String,
+        libraryId: String,
+        stableKey: String
+    ): Boolean
+
+    @Query(
         "UPDATE download_operation SET stop_requested_by_user = 0, " +
-            "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys)"
+            "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
+            "THEN NULL ELSE last_error_code END, " +
+            "updated_at_ms = :updatedAtMs WHERE library_id = :libraryId " +
+            "AND stable_key IN (:stableKeys)"
     )
     suspend fun clearUserStopForStableKeys(
+        libraryId: String,
         stableKeys: List<String>,
         updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'RETRYABLE', " +
+            "stop_requested_by_user = 0, updated_at_ms = :updatedAtMs, " +
+            "last_error_code = NULL WHERE operation_id = :operationId " +
+            "AND stable_key = :stableKey AND state IN (:expectedStates) " +
+            "AND (last_error_code IS NULL OR last_error_code != 'USER_CANCELLED')"
+    )
+    suspend fun prepareExplicitResume(
+        operationId: String,
+        stableKey: String,
+        expectedStates: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET state = 'STOPPED', " +
+            "stop_requested_by_user = 1, updated_at_ms = :updatedAtMs, " +
+            "last_error_code = :errorCode WHERE operation_id = :operationId " +
+            "AND stable_key = :stableKey AND state IN (:expectedStates)"
+    )
+    suspend fun restoreExplicitStop(
+        operationId: String,
+        stableKey: String,
+        expectedStates: List<String>,
+        updatedAtMs: Long,
+        errorCode: String
     ): Int
 
     @Query("SELECT * FROM download_operation WHERE stop_requested_by_user = 1")
     suspend fun findUserStopped(): List<DownloadOperationEntity>
 
     @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND stop_requested_by_user = 1"
+    )
+    suspend fun findUserStoppedInLibrary(libraryId: String): List<DownloadOperationEntity>
+
+    @Query(
         "UPDATE download_operation SET state = 'CORE_COMMITTED', " +
-            "stop_requested_by_user = 0, updated_at_ms = :updatedAtMs, " +
-            "last_error_code = NULL WHERE operation_id = :operationId " +
+            "updated_at_ms = :updatedAtMs, " +
+            "last_error_code = CASE WHEN stop_requested_by_user = 1 " +
+            "AND last_error_code = 'USER_CANCELLED' THEN last_error_code ELSE NULL END " +
+            "WHERE operation_id = :operationId " +
             "AND state IN (:expectedStates)"
     )
     suspend fun markCoreCommitted(
@@ -135,4 +314,59 @@ internal interface DownloadOperationDao {
 
     @Query("DELETE FROM download_operation WHERE operation_id = :operationId")
     suspend fun delete(operationId: String)
+
+    @Query("DELETE FROM download_operation WHERE operation_id IN (:operationIds)")
+    suspend fun deleteOperations(operationIds: List<String>): Int
+
+    @Query(
+        "SELECT operation_id FROM download_operation WHERE operation_id IN (:operationIds) " +
+            "AND updated_at_ms <= :cancelledAtMs AND state IN (" +
+            "'PENDING_QUEUE', 'QUEUED', 'RETRYABLE', 'STOPPED', " +
+            "'CANCEL_REQUESTED', 'CANCELLED', 'INVALID', 'DEGRADED_COMPLETE')"
+    )
+    suspend fun findClearedOperationIds(
+        operationIds: List<String>,
+        cancelledAtMs: Long
+    ): List<String>
+
+    @Query(
+        "SELECT COUNT(*) FROM download_host_admission " +
+            "WHERE process_token = :processToken"
+    )
+    suspend fun countHostAdmissions(processToken: String): Int
+
+    @Query(
+        "SELECT * FROM download_host_admission " +
+            "WHERE operation_id = :operationId LIMIT 1"
+    )
+    suspend fun findHostAdmission(operationId: String): DownloadHostAdmissionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHostAdmission(admission: DownloadHostAdmissionEntity)
+
+    @Query("DELETE FROM download_host_admission WHERE operation_id = :operationId")
+    suspend fun deleteHostAdmission(operationId: String): Int
+
+    @Query("DELETE FROM download_host_admission WHERE operation_id IN (:operationIds)")
+    suspend fun deleteHostAdmissions(operationIds: List<String>): Int
+
+    @Query(
+        "DELETE FROM download_host_admission WHERE operation_id NOT IN (" +
+            "SELECT operation_id FROM download_operation)"
+    )
+    suspend fun deleteOrphanHostAdmissions(): Int
+
+    @Query("DELETE FROM download_host_admission WHERE process_token != :processToken")
+    suspend fun deleteHostAdmissionsFromOtherProcesses(processToken: String): Int
+
+    @Query(
+        "DELETE FROM download_host_admission WHERE process_token = :processToken " +
+            "AND admitted_at_ms < :cutoffMs AND operation_id IN (" +
+            "SELECT operation_id FROM download_operation WHERE state IN (:states))"
+    )
+    suspend fun deleteExpiredHostAdmissions(
+        processToken: String,
+        cutoffMs: Long,
+        states: List<String>
+    ): Int
 }

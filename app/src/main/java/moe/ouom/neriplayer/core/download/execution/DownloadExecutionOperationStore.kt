@@ -4,6 +4,14 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
+internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES = setOf(
+    "RUNNING",
+    "COMMITTING",
+    "CORE_COMMITTED",
+    "ASSETS_ENRICHING",
+    "DEGRADED_COMPLETE"
+)
+
 internal interface DownloadExecutionOperationJournal {
     fun save(context: Context, request: DownloadExecutionRequest)
 
@@ -15,16 +23,22 @@ internal interface DownloadExecutionOperationJournal {
 
     fun isStopped(context: Context, operationId: String): Boolean
 
+    fun isUserCancellationRequested(context: Context, operationId: String): Boolean = false
+
     fun stoppedSongKeys(context: Context): Set<String>
 
     fun findOperationIdForSong(context: Context, songKey: String): String?
+
+    fun findOperationIdsForSong(context: Context, songKey: String): List<String> {
+        return listOfNotNull(findOperationIdForSong(context, songKey))
+    }
 
     fun updateState(
         context: Context,
         operationId: String,
         state: String,
         errorCode: String? = null
-    )
+    ): Boolean
 
     fun currentState(context: Context, operationId: String): String?
 
@@ -34,17 +48,21 @@ internal interface DownloadExecutionOperationJournal {
         operationId: String,
         allowExistingRunning: Boolean = false
     ): Boolean {
+        if (isStopped(context, operationId)) return false
         val state = currentState(context, operationId) ?: return false
         val claimableStates = if (allowExistingRunning) {
-            setOf("PENDING_QUEUE", "QUEUED", "RUNNING", "RETRYABLE")
+            setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE") +
+                INTERRUPTED_DOWNLOAD_OPERATION_STATES
         } else {
             setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE")
         }
         if (state !in claimableStates) {
             return false
         }
-        updateState(context, operationId, "RUNNING")
-        return currentState(context, operationId) == "RUNNING"
+        if (state in RESUMABLE_CORE_EXECUTION_STATES) {
+            return true
+        }
+        return updateState(context, operationId, "RUNNING")
     }
 
     fun requestCancel(context: Context, operationId: String): Boolean
@@ -58,6 +76,21 @@ internal interface DownloadExecutionOperationJournal {
         cutoffMs: Long,
         limit: Int
     ): Int
+
+    /** reserves an execution slot; in-memory journals keep unit tests isolated from Room */
+    fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean = capacity > 0
+
+    fun releaseHostAdmission(context: Context, operationId: String) = Unit
+
+    fun releaseHostAdmissions(context: Context, operationIds: Collection<String>) {
+        operationIds.forEach { operationId ->
+            releaseHostAdmission(context, operationId)
+        }
+    }
 }
 
 private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperationJournal {
@@ -95,6 +128,12 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override fun isUserCancellationRequested(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.isUserCancellationRequested(context, operationId)
+        }
+    }
+
     override fun stoppedSongKeys(context: Context): Set<String> {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.stoppedSongKeys(context)
@@ -107,13 +146,19 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override fun findOperationIdsForSong(context: Context, songKey: String): List<String> {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.findOperationIdsForSong(context, songKey)
+        }
+    }
+
     override fun updateState(
         context: Context,
         operationId: String,
         state: String,
         errorCode: String?
-    ) {
-        runBlocking(Dispatchers.IO) {
+    ): Boolean {
+        return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.updateState(
                 context = context,
                 operationId = operationId,
@@ -175,6 +220,32 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
+    override fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                context = context,
+                operationId = operationId,
+                capacity = capacity
+            )
+        }
+    }
+
+    override fun releaseHostAdmission(context: Context, operationId: String) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.releaseHostAdmission(context, operationId)
+        }
+    }
+
+    override fun releaseHostAdmissions(context: Context, operationIds: Collection<String>) {
+        runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.releaseHostAdmissions(context, operationIds)
+        }
+    }
+
     private const val ACTIVE_STATE = "QUEUED"
 }
 
@@ -212,6 +283,12 @@ class DownloadExecutionOperationStore internal constructor(
         return journalProvider(appContext).isStopped(appContext, normalizedId)
     }
 
+    fun isUserCancellationRequested(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).isUserCancellationRequested(appContext, normalizedId)
+    }
+
     fun stoppedSongKeys(context: Context): Set<String> {
         val appContext = context.applicationContext
         return journalProvider(appContext).stoppedSongKeys(appContext)
@@ -226,15 +303,24 @@ class DownloadExecutionOperationStore internal constructor(
         )
     }
 
+    fun findOperationIdsForSong(context: Context, songKey: String): List<String> {
+        val normalizedSongKey = songKey.trim().takeIf(String::isNotEmpty) ?: return emptyList()
+        val appContext = context.applicationContext
+        return journalProvider(appContext).findOperationIdsForSong(
+            appContext,
+            normalizedSongKey
+        ).distinct()
+    }
+
     fun updateState(
         context: Context,
         operationId: String,
         state: String,
         errorCode: String? = null
-    ) {
-        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
         val appContext = context.applicationContext
-        journalProvider(appContext).updateState(
+        return journalProvider(appContext).updateState(
             appContext,
             normalizedId,
             state,
@@ -294,6 +380,34 @@ class DownloadExecutionOperationStore internal constructor(
         )
     }
 
+    fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        if (capacity <= 0) return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).tryAcquireHostAdmission(
+            context = appContext,
+            operationId = normalizedId,
+            capacity = capacity
+        )
+    }
+
+    fun releaseHostAdmission(context: Context, operationId: String) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        val appContext = context.applicationContext
+        journalProvider(appContext).releaseHostAdmission(appContext, normalizedId)
+    }
+
+    fun releaseHostAdmissions(context: Context, operationIds: Collection<String>) {
+        val ids = operationIds.mapNotNull(::normalizeDownloadOperationId).distinct()
+        if (ids.isEmpty()) return
+        val appContext = context.applicationContext
+        journalProvider(appContext).releaseHostAdmissions(appContext, ids)
+    }
+
     fun clearUserStopForStableKeys(
         context: Context,
         stableKeys: Collection<String>
@@ -336,8 +450,33 @@ internal fun resolveDownloadOperationState(
             current == "COMMITTING"
         }
     }
+    if (
+        requestedState == "RUNNING" &&
+            current in setOf("RUNNING", "COMMITTING")
+    ) {
+        return requestedState
+    }
+    if (requestedState == "RETRYABLE") {
+        return requestedState.takeIf {
+            current in setOf("PENDING_QUEUE", "QUEUED") ||
+                current in setOf("RUNNING", "COMMITTING")
+        }
+    }
     if (current == "CANCEL_REQUESTED") {
         return requestedState.takeIf { it in CORE_COMMITTED_STATES }
+    }
+    if (requestedState == "INVALID") {
+        return requestedState.takeIf {
+            current in setOf(
+                "PENDING_QUEUE",
+                "QUEUED",
+                "RUNNING",
+                "COMMITTING",
+                "CANCEL_REQUESTED",
+                "STOPPED",
+                "RETRYABLE"
+            )
+        }
     }
     if (requestedState == "COMPLETED") {
         return requestedState.takeIf {
@@ -357,7 +496,10 @@ internal fun resolveDownloadOperationState(
         return requestedState.takeIf { requestedCoreIndex >= currentCoreIndex }
     }
     return requestedState.takeIf {
-        current == "PENDING_QUEUE" || current == "QUEUED" || current == "RUNNING"
+        current == "PENDING_QUEUE" ||
+            current == "QUEUED" ||
+            current == "RUNNING" ||
+            current == "RETRYABLE"
     }
 }
 
@@ -365,5 +507,11 @@ private val CORE_COMMITTED_STATES = listOf(
     "CORE_COMMITTED",
     "ASSETS_ENRICHING",
     "FINALIZED",
+    "DEGRADED_COMPLETE"
+)
+
+private val RESUMABLE_CORE_EXECUTION_STATES = setOf(
+    "CORE_COMMITTED",
+    "ASSETS_ENRICHING",
     "DEGRADED_COMPLETE"
 )

@@ -341,6 +341,35 @@ class ManagedDownloadNamingTest {
     }
 
     @Test
+    fun `boundManagedDownloadFileName keeps the extension within the pending write budget`() {
+        val fileName =
+            "今、歩き出す君へ。 - Ceui - PCゲーム「いますぐお兄ちゃんに妹だっていいたい!」" +
+                "ボーカルアルバム - netease - 😀😀😀😀😀😀😀😀😀😀.mp3"
+
+        val result = boundManagedDownloadFileName(fileName)
+
+        assertTrue(result.endsWith(".mp3"))
+        assertTrue(
+            result.toByteArray(Charsets.UTF_8).size <=
+                MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES
+        )
+        assertTrue(
+            result.indices.all { index ->
+                val character = result[index]
+                when {
+                    Character.isHighSurrogate(character) -> {
+                        index + 1 < result.length && Character.isLowSurrogate(result[index + 1])
+                    }
+                    Character.isLowSurrogate(character) -> {
+                        index > 0 && Character.isHighSurrogate(result[index - 1])
+                    }
+                    else -> true
+                }
+            }
+        )
+    }
+
+    @Test
     fun `candidate names preserve untruncated historical hash names`() {
         val title = "a".repeat(MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES + 32)
         val song = SongItem(

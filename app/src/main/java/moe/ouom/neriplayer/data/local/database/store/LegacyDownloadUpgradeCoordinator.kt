@@ -43,6 +43,49 @@ internal data class LegacyDownloadUpgradeResult(
         get() = rowsPending == 0 && temporaryTableCleaned && legacyProjectionTablesCleaned
 }
 
+internal fun resolveLegacyManagedCoverEntry(
+    reference: String?,
+    persistedFileName: String?,
+    coverEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>
+): ManagedDownloadStorage.StoredEntry? {
+    val normalizedReference = reference?.trim()?.takeIf(String::isNotBlank)
+    normalizedReference?.let { target ->
+        coverEntriesByName.values.firstOrNull { entry ->
+            target == entry.reference ||
+                target == entry.mediaUri ||
+                target == entry.localFilePath
+        }?.let { return it }
+    }
+    val normalizedFileName = persistedFileName
+        ?.trim()
+        ?.takeIf { name ->
+            name.isNotBlank() &&
+                name != "." &&
+                name != ".." &&
+                '/' !in name &&
+                '\\' !in name
+        }
+        ?: return null
+    return coverEntriesByName[normalizedFileName]
+        ?: coverEntriesByName.values.firstOrNull { entry ->
+            entry.name.equals(normalizedFileName, ignoreCase = true)
+        }
+}
+
+internal fun selectLegacyRestorableCoverReference(
+    existingReference: String?,
+    sourceReference: String?,
+    existingReferenceIsManaged: Boolean
+): String? {
+    val existing = existingReference?.trim()?.takeIf(String::isNotBlank)
+    val source = sourceReference?.trim()?.takeIf(String::isNotBlank)
+    return when {
+        existing == null -> source
+        existingReferenceIsManaged && source != null -> source
+        else -> existing
+    }
+}
+
 /**
  * 把 v15 迁移留下的一次性 payload 逐行落到托管 root
  */
@@ -297,7 +340,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                     put("localFilePath", audio.localFilePath)
                 }
             }
-            val coverResult = materializeLegacyCoverAssets(merged)
+            val coverResult = materializeLegacyCoverAssets(merged, resolvedSnapshot)
             if (!coverResult.complete) {
                 return LegacyDownloadUpgradeRowResult(
                     stableKey = effectiveStableKey,
@@ -404,7 +447,8 @@ internal class LegacyDownloadUpgradeCoordinator(
     )
 
     private suspend fun materializeLegacyCoverAssets(
-        metadata: JSONObject
+        metadata: JSONObject,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): LegacyCoverMaterializationResult {
         val restorable = metadata.optJSONObject("restorableMetadata")
             ?: return LegacyCoverMaterializationResult(metadata, complete = true)
@@ -415,11 +459,45 @@ internal class LegacyDownloadUpgradeCoordinator(
             .takeIf(String::isNotBlank)
         val currentHash = assets.optString("currentCoverHash")
             .takeIf(String::isNotBlank)
+        val baselineFileName = assets.optString("baselineCoverFileName")
+            .takeIf(String::isNotBlank)
+        val currentFileName = assets.optString("currentCoverFileName")
+            .takeIf(String::isNotBlank)
+        val customCoverSource = metadata.optString("customCoverUrl")
+            .takeIf(String::isNotBlank)
+        val baselineCoverSource = listOf(
+            metadata.optString("originalCoverUrl"),
+            metadata.optString("coverUrl").takeUnless { cover ->
+                cover.isBlank() || cover == customCoverSource
+            }
+        ).firstOrNull(::isNonBlank)
+        val existingBaselineReference = baseline.optString("coverReference")
+            .takeIf(String::isNotBlank)
+        val existingCurrentReference = overrides.optString("coverReference")
+            .takeIf(String::isNotBlank)
+        selectLegacyRestorableCoverReference(
+            existingReference = existingBaselineReference,
+            sourceReference = baselineCoverSource,
+            existingReferenceIsManaged = resolveLegacyManagedCoverEntry(
+                reference = existingBaselineReference,
+                persistedFileName = null,
+                coverEntriesByName = snapshot.coverEntriesByName
+            ) != null
+        )?.let { reference -> baseline.put("coverReference", reference) }
+        selectLegacyRestorableCoverReference(
+            existingReference = existingCurrentReference,
+            sourceReference = customCoverSource,
+            existingReferenceIsManaged = resolveLegacyManagedCoverEntry(
+                reference = existingCurrentReference,
+                persistedFileName = null,
+                coverEntriesByName = snapshot.coverEntriesByName
+            ) != null
+        )?.let { reference -> overrides.put("coverReference", reference) }
         val baselineReferences = listOf(
             baseline.optString("coverReference"),
             metadata.optString("originalCoverUrl"),
             metadata.optString("coverUrl"),
-            metadata.optString("coverPath")
+            metadata.optString("coverPath").takeIf { customCoverSource == null }
         )
         val currentReferences = listOf(
             overrides.optString("coverReference"),
@@ -429,20 +507,40 @@ internal class LegacyDownloadUpgradeCoordinator(
         )
         val baselineReference = baselineReferences.firstOrNull(::isNonBlank)
         val currentReference = currentReferences.firstOrNull(::isNonBlank)
-        val baselineCover = if (baselineHash == null) {
-            materializeFirstAvailable(*baselineReferences.toTypedArray())
-        } else {
-            null
+        val baselineCover = when {
+            baselineHash == null -> materializeFirstAvailable(
+                snapshot = snapshot,
+                persistedFileName = baselineFileName,
+                references = baselineReferences
+            )
+            baselineFileName == null -> fingerprintFirstManagedAvailable(
+                snapshot = snapshot,
+                expectedHash = baselineHash,
+                references = baselineReferences
+            )
+            else -> null
         }
-        val currentCover = if (currentHash == null) {
+        val currentCover = if (currentHash == null || currentFileName == null) {
             if (
                 baselineCover != null &&
                     currentReference != null &&
-                    currentReference == baselineReference
+                    currentReference == baselineReference &&
+                    (currentHash == null ||
+                        currentHash.equals(baselineCover.assetHash, ignoreCase = true))
             ) {
                 baselineCover
+            } else if (currentHash == null) {
+                materializeFirstAvailable(
+                    snapshot = snapshot,
+                    persistedFileName = currentFileName,
+                    references = currentReferences
+                )
             } else {
-                materializeFirstAvailable(*currentReferences.toTypedArray())
+                fingerprintFirstManagedAvailable(
+                    snapshot = snapshot,
+                    expectedHash = currentHash,
+                    references = currentReferences
+                )
             }
         } else {
             null
@@ -451,19 +549,29 @@ internal class LegacyDownloadUpgradeCoordinator(
             baselineReferences.any(::isMaterializableReference)
         val currentNeedsMaterialization = currentHash == null &&
             currentReferences.any(::isMaterializableReference)
+        val baselineNeedsFileName = baselineHash != null &&
+            baselineFileName == null &&
+            baselineReferences.any(::isMaterializableReference)
+        val currentNeedsFileName = currentHash != null &&
+            currentFileName == null &&
+            currentReferences.any(::isMaterializableReference)
         if (
             (baselineNeedsMaterialization && baselineCover == null) ||
-            (currentNeedsMaterialization && currentCover == null)
+            (currentNeedsMaterialization && currentCover == null) ||
+            (baselineNeedsFileName && baselineCover == null) ||
+            (currentNeedsFileName && currentCover == null)
         ) {
             return LegacyCoverMaterializationResult(metadata, complete = false)
         }
-        baselineCover?.let { assets.put("baselineCoverHash", it.assetHash) }
+        baselineCover?.let {
+            assets.put("baselineCoverHash", it.assetHash)
+            it.fileName?.let { fileName -> assets.put("baselineCoverFileName", fileName) }
+        }
         currentCover?.let {
             assets.put("currentCoverHash", it.assetHash)
+            it.fileName?.let { fileName -> assets.put("currentCoverFileName", fileName) }
             metadata.put("coverPath", it.reference)
         }
-        baseline.remove("coverReference")
-        overrides.remove("coverReference")
         restorable.put("baseline", baseline)
         restorable.put("overrides", overrides)
         restorable.put("assetRefs", assets)
@@ -472,19 +580,66 @@ internal class LegacyDownloadUpgradeCoordinator(
     }
 
     private suspend fun materializeFirstAvailable(
-        vararg references: String?
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        persistedFileName: String?,
+        references: List<String?>
     ): ManagedDownloadCoverAssetStore.MaterializedCover? {
         references.asSequence()
             .mapNotNull { reference -> reference?.trim()?.takeIf(String::isNotBlank) }
             .distinct()
             .forEach { reference ->
-                val materialized = ManagedDownloadCoverAssetStore.materialize(
-                    context = context,
-                    reference = reference
+                val managedEntry = resolveLegacyManagedCoverEntry(
+                    reference = reference,
+                    persistedFileName = persistedFileName,
+                    coverEntriesByName = snapshot.coverEntriesByName
                 )
+                val materialized = if (managedEntry != null) {
+                    ManagedDownloadCoverAssetStore.materialize(
+                        context = context,
+                        reference = managedEntry.reference,
+                        preferredFileName = null
+                    )
+                } else {
+                    ManagedDownloadCoverAssetStore.materializeLegacyReadable(
+                        context = context,
+                        reference = reference
+                    )
+                }
                 if (materialized != null) return materialized
             }
         return null
+    }
+
+    private suspend fun fingerprintFirstManagedAvailable(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        expectedHash: String,
+        references: List<String?>
+    ): ManagedDownloadCoverAssetStore.MaterializedCover? {
+        val managedEntries = references.asSequence()
+            .mapNotNull { reference ->
+                resolveLegacyManagedCoverEntry(
+                    reference = reference,
+                    persistedFileName = null,
+                    coverEntriesByName = snapshot.coverEntriesByName
+                )
+            }
+            .plus(
+                snapshot.coverEntriesByName.values.asSequence().filter { entry ->
+                    entry.name.substringBeforeLast('.', entry.name)
+                        .equals(expectedHash, ignoreCase = true)
+                }
+            )
+            .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        return fingerprintFirstMatchingManagedCover(
+            managedEntries = managedEntries,
+            expectedHash = expectedHash
+        ) { managedEntry ->
+            ManagedDownloadCoverAssetStore.materialize(
+                context = context,
+                reference = managedEntry.reference,
+                preferredFileName = null
+            )
+        }
     }
 
     private fun isNonBlank(value: String?): Boolean = !value.isNullOrBlank()
@@ -663,6 +818,22 @@ internal class LegacyDownloadUpgradeCoordinator(
             "managed_download_artifact"
         )
     }
+}
+
+internal suspend fun fingerprintFirstMatchingManagedCover(
+    managedEntries: Sequence<ManagedDownloadStorage.StoredEntry>,
+    expectedHash: String,
+    fingerprint: suspend (
+        ManagedDownloadStorage.StoredEntry
+    ) -> ManagedDownloadCoverAssetStore.MaterializedCover?
+): ManagedDownloadCoverAssetStore.MaterializedCover? {
+    managedEntries.forEach { managedEntry ->
+        val result = fingerprint(managedEntry) ?: return@forEach
+        if (result.assetHash.equals(expectedHash, ignoreCase = true)) {
+            return result
+        }
+    }
+    return null
 }
 
 internal data class LegacyAudioLookupHints(

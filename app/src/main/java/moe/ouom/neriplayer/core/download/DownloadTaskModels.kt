@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
@@ -54,8 +55,61 @@ enum class DownloadStatus {
 
 internal data class QueuedDownloadRequest(
     val song: SongItem,
-    val attemptId: Long
+    val attemptId: Long,
+    val operationId: String
 )
+
+internal enum class BatchOperationScheduleAction {
+    SCHEDULE,
+    HANDED_OFF,
+    RELEASE,
+    SETTLED,
+    INVALID
+}
+
+internal fun resolveBatchOperationScheduleAction(
+    operationState: String?,
+    requestMatchesSong: Boolean
+): BatchOperationScheduleAction {
+    if (operationState == null || !requestMatchesSong) {
+        return BatchOperationScheduleAction.INVALID
+    }
+    if (operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES) {
+        return BatchOperationScheduleAction.HANDED_OFF
+    }
+    if (operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES) {
+        return BatchOperationScheduleAction.SCHEDULE
+    }
+    if (operationState in setOf("CANCEL_REQUESTED", "CANCELLED", "STOPPED")) {
+        return BatchOperationScheduleAction.RELEASE
+    }
+    return BatchOperationScheduleAction.SETTLED
+}
+
+internal fun canScheduleRecoveredDownloadOperation(operationState: String?): Boolean {
+    return operationState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES ||
+        operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
+}
+
+internal fun selectBatchDownloadCandidates(
+    songs: Collection<SongItem>,
+    inFlightSongKeys: Set<String>
+): List<SongItem> {
+    return songs.distinctBy(SongItem::stableKey)
+        .filterNot { song -> song.stableKey() in inFlightSongKeys }
+}
+
+internal fun resolveDownloadPreserveStaging(
+    persistedPreserveStaging: Boolean,
+    preserveRequested: Boolean
+): Boolean = persistedPreserveStaging || preserveRequested
+
+internal fun selectBatchArtifactLeaseForCancellation(
+    handedOff: Boolean,
+    capturedLeaseId: String?
+): String? {
+    return capturedLeaseId?.takeUnless { handedOff }
+}
 
 internal fun isDownloadTaskFinalizing(task: DownloadTask?): Boolean {
     return task?.status == DownloadStatus.DOWNLOADING &&
@@ -66,6 +120,11 @@ internal fun isDownloadTaskCancellable(task: DownloadTask?): Boolean {
     return task?.status == DownloadStatus.QUEUED ||
         task?.status == DownloadStatus.DOWNLOADING ||
         task?.status == DownloadStatus.WAITING_NETWORK
+}
+
+internal fun isDownloadTaskCancellationCandidate(task: DownloadTask): Boolean {
+    return task.status != DownloadStatus.COMPLETED &&
+        task.status != DownloadStatus.CANCELLED
 }
 
 internal fun isDownloadTaskClearable(task: DownloadTask): Boolean {

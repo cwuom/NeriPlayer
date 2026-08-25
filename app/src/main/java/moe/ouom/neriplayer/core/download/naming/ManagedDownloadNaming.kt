@@ -14,6 +14,8 @@ internal const val PREVIOUS_DEFAULT_DOWNLOAD_FILE_NAME_TEMPLATE = "%title% - %ar
 internal const val PREVIOUS_SOURCE_DOWNLOAD_FILE_NAME_TEMPLATE = "%source% - %artist% - %title%"
 internal const val LEGACY_DOWNLOAD_FILE_NAME_TEMPLATE = "%artist% - %title%"
 internal const val MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES = 200
+internal const val MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES = 128
+private const val MAX_MANAGED_DOWNLOAD_FILE_EXTENSION_UTF8_BYTES = 16
 private const val MIN_MANAGED_DOWNLOAD_BASE_NAME_CODE_POINTS = 2
 private const val MANAGED_DOWNLOAD_IDENTITY_HASH_LENGTH = 12
 private const val YOUTUBE_MUSIC_DOWNLOAD_SOURCE = "youtubeMusic"
@@ -91,10 +93,45 @@ internal fun normalizeManagedDownloadAlbumName(album: String): String? {
 }
 
 private fun truncateManagedDownloadBaseName(name: String): String {
-    if (name.toByteArray(Charsets.UTF_8).size <= MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES) {
-        return name
+    return truncateUtf8(name, MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES)
+        .trimEnd()
+        .ifBlank { "audio" }
+}
+
+internal fun boundManagedDownloadFileName(fileName: String): String {
+    val sanitized = sanitizeManagedDownloadFileName(fileName)
+    if (sanitized.toByteArray(Charsets.UTF_8).size <= MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES) {
+        return sanitized
     }
 
+    val extensionStart = sanitized.lastIndexOf('.')
+    val rawExtension = if (extensionStart in 1 until sanitized.lastIndex) {
+        sanitized.substring(extensionStart)
+    } else {
+        ""
+    }
+    val extension = truncateUtf8(
+        rawExtension,
+        MAX_MANAGED_DOWNLOAD_FILE_EXTENSION_UTF8_BYTES
+    )
+    val baseName = sanitized.removeSuffix(rawExtension)
+    val maxBaseBytes = (
+        MAX_MANAGED_DOWNLOAD_FILE_NAME_UTF8_BYTES -
+            extension.toByteArray(Charsets.UTF_8).size
+        ).coerceAtLeast(1)
+    val boundedBaseName = truncateUtf8(baseName, maxBaseBytes)
+        .trimEnd()
+        .ifBlank { "audio" }
+    return "$boundedBaseName$extension"
+}
+
+private fun truncateUtf8(name: String, maximumBytes: Int): String {
+    if (maximumBytes <= 0 || name.isEmpty()) {
+        return ""
+    }
+    if (name.toByteArray(Charsets.UTF_8).size <= maximumBytes) {
+        return name
+    }
     val truncated = StringBuilder()
     var offset = 0
     var byteCount = 0
@@ -104,14 +141,14 @@ private fun truncateManagedDownloadBaseName(name: String): String {
         val codePointBytes = name.substring(offset, offset + codePointLength)
             .toByteArray(Charsets.UTF_8)
             .size
-        if (byteCount + codePointBytes > MAX_MANAGED_DOWNLOAD_BASE_NAME_UTF8_BYTES) {
+        if (byteCount + codePointBytes > maximumBytes) {
             break
         }
         truncated.appendCodePoint(codePoint)
         byteCount += codePointBytes
         offset += codePointLength
     }
-    return truncated.toString().trimEnd().ifBlank { "audio" }
+    return truncated.toString()
 }
 
 internal fun normalizeDownloadFileNameTemplate(template: String?): String? {

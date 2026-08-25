@@ -79,7 +79,6 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.displayAlbum
-import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.data.local.playlist.model.LocalArtistSummary
@@ -245,11 +244,8 @@ fun LocalArtistDetailScreen(
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val selectedSongsForAction by remember(songs, selectedKeys) {
         derivedStateOf {
-            songs.filter { it.stableKey() in selectedKeys }
+            selectedSongsInSourceOrder(songs, selectedKeys)
         }
-    }
-    val hasSelectedOnlineSongs by remember(selectedSongsForAction) {
-        derivedStateOf { selectedSongsForAction.any { !it.isLocalSong() } }
     }
 
     fun toggleSelect(song: SongItem) {
@@ -273,9 +269,8 @@ fun LocalArtistDetailScreen(
         keyboardController?.hide()
     }
 
-    LaunchedEffect(displayedSongs) {
-        val validKeys = displayedSongs.map { it.stableKey() }.toSet()
-        selectedKeys = selectedKeys.intersect(validKeys)
+    LaunchedEffect(songs) {
+        selectedKeys = retainExistingSongSelectionKeys(songs, selectedKeys)
         if (selectionMode && selectedKeys.isEmpty()) {
             selectionMode = false
         }
@@ -450,14 +445,17 @@ fun LocalArtistDetailScreen(
                             }
                             HapticIconButton(
                                 onClick = {
-                                    val onlineSongs = selectedSongsForAction.filterNot { it.isLocalSong() }
-                                    if (onlineSongs.isNotEmpty()) {
+                                    val selectedSongs = selectedSongsForAction
+                                    if (selectedSongs.isNotEmpty()) {
                                         showDownloadManager = true
                                         exitSelectionMode()
-                                        GlobalDownloadManager.startBatchDownload(context, onlineSongs)
+                                        GlobalDownloadManager.startBatchDownload(
+                                            context,
+                                            selectedSongs
+                                        )
                                     }
                                 },
-                                enabled = selectedSongsForAction.isNotEmpty() && hasSelectedOnlineSongs
+                                enabled = selectedSongsForAction.isNotEmpty()
                             ) {
                                 Icon(
                                     Icons.Outlined.Download,

@@ -90,6 +90,25 @@ internal interface ManagedDownloadArtifactDao {
         errorCode: String
     ): Int
 
+    @Query(
+        "UPDATE managed_library_item SET " +
+            "state = :state, updated_at_ms = :updatedAtMs, " +
+            "needs_reconcile = :needsReconcile, last_error_code = :errorCode " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey " +
+            "AND lease_id IS NULL AND state = :expectedState " +
+            "AND updated_at_ms = :expectedUpdatedAtMs"
+    )
+    suspend fun updateLeaseFreeIfUnchanged(
+        rootKey: String,
+        stableKey: String,
+        expectedState: String,
+        expectedUpdatedAtMs: Long,
+        state: String,
+        updatedAtMs: Long,
+        needsReconcile: Boolean,
+        errorCode: String?
+    ): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: ManagedLibraryItemEntity)
 
@@ -101,4 +120,19 @@ internal interface ManagedDownloadArtifactDao {
             "WHERE library_id = :rootKey AND stable_key = :stableKey"
     )
     suspend fun delete(rootKey: String, stableKey: String)
+
+    @Query(
+        "DELETE FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND stable_key = :stableKey " +
+            "AND state = :expectedState AND updated_at_ms = :expectedUpdatedAtMs " +
+            "AND ((lease_id IS NULL AND :expectedLeaseId IS NULL) " +
+            "OR lease_id = :expectedLeaseId)"
+    )
+    suspend fun deleteIfUnchanged(
+        rootKey: String,
+        stableKey: String,
+        expectedState: String,
+        expectedLeaseId: String?,
+        expectedUpdatedAtMs: Long
+    ): Int
 }

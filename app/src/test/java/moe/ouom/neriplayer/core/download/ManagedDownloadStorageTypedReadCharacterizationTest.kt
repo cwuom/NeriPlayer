@@ -42,7 +42,7 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     fun `SAF promote fallback copies through typed backend`() {
         val source = readSource()
         val promote = source
-            .substringAfter("private fun promotePendingAudioBlocking")
+            .substringAfter("private suspend fun promotePendingAudio")
             .substringBefore("private fun writeSeedMetadataAfterAudioCommit")
 
         assertFalse(

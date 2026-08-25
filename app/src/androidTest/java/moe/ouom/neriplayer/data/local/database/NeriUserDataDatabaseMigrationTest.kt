@@ -527,6 +527,38 @@ class NeriUserDataDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFromVersion16ToVersion17CreatesHostAdmissionTable() {
+        helper.createDatabase(TEST_DATABASE_VERSION_16_NAME, 16).close()
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_16_NAME,
+            17,
+            true,
+            NeriUserDataDatabase.MIGRATION_16_17
+        )
+
+        try {
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'table' AND name = 'download_host_admission'"
+                )
+            )
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'index' " +
+                        "AND name = 'index_download_host_admission_process_library'"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertVersion1LocalPlaylistFixture() {
         val songPayload = sqlText(
             """
@@ -658,5 +690,6 @@ class NeriUserDataDatabaseMigrationTest {
             "neri-user-data-migration-v15-unverified-test"
         const val TEST_DATABASE_VERSION_15_ORPHAN_METADATA_NAME =
             "neri-user-data-migration-v15-orphan-metadata-test"
+        const val TEST_DATABASE_VERSION_16_NAME = "neri-user-data-migration-v16-test"
     }
 }

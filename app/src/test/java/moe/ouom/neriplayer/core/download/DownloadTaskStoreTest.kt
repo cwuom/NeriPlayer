@@ -15,6 +15,29 @@ import org.junit.Test
 class DownloadTaskStoreTest {
 
     @Test
+    fun `active transfer flag remains true until every concurrent transfer ends`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+
+            store.beginDownloadTransfer()
+            store.beginDownloadTransfer()
+            assertTrue(store.isSingleDownloading)
+
+            store.endDownloadTransfer()
+            assertTrue(store.isSingleDownloading)
+
+            store.endDownloadTransfer()
+            assertFalse(store.isSingleDownloading)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `prepareDownloadTasks prepares large batches with stable dedupe`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
@@ -157,6 +180,41 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `ensureDownloadTasks restores durable attempts and keeps active attempts`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val activeSong = song(1L, "Active")
+            val restoredSong = song(2L, "Restored")
+            val activeAttemptId = store.prepareDownloadTask(
+                song = activeSong,
+                status = DownloadStatus.QUEUED
+            ) ?: error("active attempt was not prepared")
+
+            val ensured = store.ensureDownloadTasks(
+                songs = listOf(activeSong, restoredSong),
+                status = DownloadStatus.QUEUED,
+                durableAttemptIds = mapOf(
+                    activeSong.stableKey() to 99L,
+                    restoredSong.stableKey() to 100L
+                )
+            )
+
+            assertEquals(activeAttemptId, ensured.getValue(activeSong.stableKey()))
+            assertEquals(100L, ensured.getValue(restoredSong.stableKey()))
+            assertEquals(100L, store.findTask(restoredSong.stableKey())?.attemptId)
+            val nextSong = song(3L, "Next")
+            val nextAttemptId = store.prepareDownloadTask(nextSong)
+            assertTrue(nextAttemptId != null && nextAttemptId > 100L)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `removeDownloadTasks only removes matching attempts`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
@@ -290,6 +348,22 @@ class DownloadTaskStoreTest {
         } finally {
             scope.cancel()
         }
+    }
+
+    @Test
+    fun `failed task remains a cancellation candidate until durable retry is cancelled`() {
+        val failedTask = DownloadTask(
+            song = song(91L),
+            progress = null,
+            status = DownloadStatus.FAILED,
+            attemptId = 7L
+        )
+        val completedTask = failedTask.copy(status = DownloadStatus.COMPLETED)
+        val cancelledTask = failedTask.copy(status = DownloadStatus.CANCELLED)
+
+        assertTrue(isDownloadTaskCancellationCandidate(failedTask))
+        assertFalse(isDownloadTaskCancellationCandidate(completedTask))
+        assertFalse(isDownloadTaskCancellationCandidate(cancelledTask))
     }
 
     private fun song(

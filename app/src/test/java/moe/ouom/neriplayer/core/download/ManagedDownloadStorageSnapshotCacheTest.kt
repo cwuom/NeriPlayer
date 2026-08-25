@@ -381,6 +381,64 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `concurrent cover cache writes retain every managed entry`() {
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
+        val cacheStore = ManagedDownloadSnapshotCacheStore(
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            cacheKeyProvider = { "root" },
+            persistenceStoreProvider = { NoOpSnapshotPersistenceStore }
+        )
+        cacheStore.putSnapshot(context, "root", emptySnapshot())
+        val ready = CountDownLatch(2)
+        val release = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(2)
+        val entries = listOf(
+            ManagedDownloadStorage.StoredEntry(
+                name = "first-12345678.jpg",
+                reference = "/music/Covers/first-12345678.jpg",
+                mediaUri = "file:///music/Covers/first-12345678.jpg",
+                localFilePath = "/music/Covers/first-12345678.jpg",
+                sizeBytes = 1L,
+                lastModifiedMs = 1L
+            ),
+            ManagedDownloadStorage.StoredEntry(
+                name = "second-87654321.jpg",
+                reference = "/music/Covers/second-87654321.jpg",
+                mediaUri = "file:///music/Covers/second-87654321.jpg",
+                localFilePath = "/music/Covers/second-87654321.jpg",
+                sizeBytes = 1L,
+                lastModifiedMs = 1L
+            )
+        )
+
+        try {
+            val writes = entries.map { entry ->
+                executor.submit<Boolean> {
+                    ready.countDown()
+                    assertTrue(release.await(5, TimeUnit.SECONDS))
+                    cacheStore.updateAfterStoredEntryWrite(
+                        context = context,
+                        storedEntry = entry,
+                        bucket = ManagedDownloadStorage.SnapshotEntryBucket.COVER
+                    )
+                }
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            release.countDown()
+            writes.forEach { write -> assertTrue(write.get(5, TimeUnit.SECONDS)) }
+
+            assertEquals(
+                entries.mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name),
+                cacheStore.peekSnapshot()?.coverEntriesByName?.keys
+            )
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `empty snapshot keeps all lookup indexes empty`() {
         val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
 
@@ -1119,5 +1177,18 @@ class ManagedDownloadStorageSnapshotCacheTest {
                 clearFinished.countDown()
             }
         }
+    }
+
+    private data object NoOpSnapshotPersistenceStore : ManagedDownloadSnapshotPersistenceStore {
+        override suspend fun restore(
+            expectedKey: String?
+        ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? = null
+
+        override suspend fun persist(
+            cacheKey: String,
+            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        ): Boolean = true
+
+        override suspend fun clear() = Unit
     }
 }

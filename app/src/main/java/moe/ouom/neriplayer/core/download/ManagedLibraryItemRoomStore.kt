@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import androidx.room.withTransaction
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
 import moe.ouom.neriplayer.data.model.SongItem
@@ -17,8 +18,7 @@ internal object ManagedLibraryItemRoomStore {
     ) {
         val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context)
         val stableKey = song.stableKey()
-        database.managedLibraryItemDao().upsert(
-            ManagedLibraryItemEntity(
+        val preview = ManagedLibraryItemEntity(
                 rootKey = libraryId,
                 stableKey = stableKey,
                 artifactId = "managed:$libraryId:$stableKey",
@@ -32,7 +32,24 @@ internal object ManagedLibraryItemRoomStore {
                 downloadedAtMs = audio.lastModifiedMs.takeIf { it > 0L },
                 metadataRevision = metadataRevision
             )
-        )
+        database.withTransaction {
+            val dao = database.managedLibraryItemDao()
+            dao.insertIfAbsent(preview)
+            dao.updatePreview(
+                libraryId = libraryId,
+                stableKey = stableKey,
+                audioReference = audio.reference,
+                audioName = audio.logicalName,
+                fileSize = audio.sizeBytes.takeIf { it > 0L },
+                downloadedAtMs = audio.lastModifiedMs.takeIf { it > 0L },
+                metadataName = "${audio.logicalName}.npmeta.json",
+                locatorHint = audio.reference,
+                titlePreview = song.name,
+                artistPreview = song.artist,
+                coverKeyPreview = null,
+                metadataRevision = metadataRevision
+            )
+        }
     }
 
     suspend fun upsertPreview(
@@ -47,8 +64,8 @@ internal object ManagedLibraryItemRoomStore {
         val reference = song.mediaUri?.takeIf(String::isNotBlank)
             ?: song.filePath.takeIf(String::isNotBlank)
             ?: return
-        database.managedLibraryItemDao().upsert(
-            ManagedLibraryItemEntity(
+        val metadataRevision = System.currentTimeMillis()
+        val preview = ManagedLibraryItemEntity(
                 rootKey = libraryId,
                 stableKey = stableKey,
                 artifactId = "managed:$libraryId:$stableKey",
@@ -63,9 +80,26 @@ internal object ManagedLibraryItemRoomStore {
                 titlePreview = song.displayName(),
                 artistPreview = song.displayArtist(),
                 downloadedAtMs = song.downloadTime.takeIf { it > 0L },
-                metadataRevision = System.currentTimeMillis()
+                metadataRevision = metadataRevision
             )
-        )
+        database.withTransaction {
+            val dao = database.managedLibraryItemDao()
+            dao.insertIfAbsent(preview)
+            dao.updatePreview(
+                libraryId = libraryId,
+                stableKey = stableKey,
+                audioReference = reference,
+                audioName = preview.audioName,
+                fileSize = song.fileSize.takeIf { it > 0L },
+                downloadedAtMs = song.downloadTime.takeIf { it > 0L },
+                metadataName = null,
+                locatorHint = reference,
+                titlePreview = song.displayName(),
+                artistPreview = song.displayArtist(),
+                coverKeyPreview = null,
+                metadataRevision = metadataRevision
+            )
+        }
     }
 
     suspend fun restore(
@@ -97,17 +131,7 @@ internal object ManagedLibraryItemRoomStore {
         songs: List<DownloadedSong>,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ) {
-        val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context)
-        val dao = database.managedLibraryItemDao()
-        if (songs.isEmpty()) {
-            dao.clear(libraryId)
-            return
-        }
-        val stableKeys = songs.mapNotNull { it.stableKey?.trim()?.takeIf(String::isNotBlank) }
-        if (stableKeys.isEmpty()) {
-            return
-        }
-        dao.deleteExcept(libraryId, stableKeys)
+        // catalog snapshots are previews and must not delete active artifact leases
         songs.forEach { song -> upsertPreview(context, song, database = database) }
     }
 

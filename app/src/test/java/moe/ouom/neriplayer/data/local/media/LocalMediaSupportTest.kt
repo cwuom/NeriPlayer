@@ -346,6 +346,22 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `nearby cover lookup reads legacy 32 digit digest name`() {
+        val directory = tempFolder.newFolder("legacy-cover")
+        val audio = File(directory, "Artist - Song.mp3").apply {
+            writeBytes(byteArrayOf(1))
+        }
+        val legacyCover = File(
+            directory,
+            "Artist - Song-${"a".repeat(32)}.jpg"
+        ).apply {
+            writeBytes(byteArrayOf(1))
+        }
+
+        assertEquals(legacyCover, LocalMediaSupport.findNearbyCover(audio))
+    }
+
+    @Test
     fun `managed sidecar directory matching reuses numbered directory`() {
         assertTrue(
             LocalMediaSupport.isManagedSidecarDirectoryName(

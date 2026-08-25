@@ -34,6 +34,30 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long
 )
 
+/**
+ * represents the bounded OS-host handoff for one operation in the current app process
+ *
+ * Queued operations are deliberately not represented here.  A row is created only
+ * immediately before handing an operation to WorkManager or UIDT, so a large batch
+ * cannot make every durable QUEUED row consume a host slot.
+ */
+@Entity(
+    tableName = "download_host_admission",
+    primaryKeys = ["operation_id"],
+    indices = [
+        Index(
+            value = ["process_token", "library_id"],
+            name = "index_download_host_admission_process_library"
+        )
+    ]
+)
+internal data class DownloadHostAdmissionEntity(
+    @ColumnInfo(name = "operation_id") val operationId: String,
+    @ColumnInfo(name = "library_id") val libraryId: String,
+    @ColumnInfo(name = "process_token") val processToken: String,
+    @ColumnInfo(name = "admitted_at_ms") val admittedAtMs: Long
+)
+
 @Entity(
     tableName = "managed_library_item",
     primaryKeys = ["library_id", "stable_key"],

@@ -23,9 +23,16 @@ internal object ManagedDownloadStorageNaming {
     }
 
     fun buildStableCoverCandidateNames(baseName: String, stableKey: String): List<String> {
-        val suffix = stableKeySuffix(stableKey)
-        return imageExtensions.map { extension ->
-            "$baseName-$suffix.$extension"
+        val suffixes = listOf(
+            coverStableKeySuffix(stableKey),
+            stableKeySuffix(stableKey)
+        ).distinct()
+        return buildList {
+            suffixes.forEach { suffix ->
+                imageExtensions.forEach { extension ->
+                    add("$baseName-$suffix.$extension")
+                }
+            }
         }
     }
 
@@ -42,6 +49,10 @@ internal object ManagedDownloadStorageNaming {
             .digest(stableKey.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
             .take(32)
+    }
+
+    fun coverStableKeySuffix(stableKey: String): String {
+        return stableKeySuffix(stableKey).take(8)
     }
 
     fun legacyStableKeySuffix(stableKey: String): String {

@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -74,6 +75,29 @@ class AssetEnrichmentCoordinatorTest {
         assertTrue(timeout.get() is kotlinx.coroutines.TimeoutCancellationException)
         assertTrue(job.isCompleted)
         assertTrue(!job.isCancelled)
+        scope.cancel()
+    }
+
+    @Test
+    fun `awaited enrichment keeps its caller active until assets finish`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val caller = launch {
+            coordinator.enqueueAndAwait("durable-operation") {
+                started.complete(Unit)
+                release.await()
+            }
+        }
+
+        started.await()
+        assertTrue(caller.isActive)
+        assertEquals(1, coordinator.activeCount())
+        release.complete(Unit)
+        withTimeout(2_000L) { caller.join() }
+        assertTrue(caller.isCompleted)
+        assertEquals(0, coordinator.activeCount())
         scope.cancel()
     }
 }

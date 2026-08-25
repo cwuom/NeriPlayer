@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.backend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -55,6 +56,35 @@ class StorageBackendContractTest {
 
         assertFalse(writer.contains("contentResolver.openOutputStream"))
         assertFalse(committer.contains("contentResolver.openOutputStream"))
+    }
+
+    @Test
+    fun `normal file sidecar commits use the recoverable file backend`() {
+        val writer = readSource(
+            "src/main/java/moe/ouom/neriplayer/core/download/storage/commit/" +
+                "ManagedDownloadStorageCommitWriter.kt"
+        )
+
+        assertTrue(writer.contains("FileStorageBackend(root).writeRecoverable"))
+        assertFalse(writer.contains("target.outputStream()"))
+        assertFalse(writer.contains("target.writeBytes("))
+    }
+
+    @Test
+    fun `SAF replacement requires confirmed cleanup and backup recovery`() {
+        val backend = readSource(
+            "src/main/java/moe/ouom/neriplayer/core/download/storage/backend/" +
+                "StorageBackend.kt"
+        )
+
+        assertTrue(backend.contains("rollbackSafReplacement("))
+        assertTrue(backend.contains("deleteSafDocumentAndConfirm("))
+        assertTrue(backend.contains("restoreBackupAndConfirm("))
+        assertTrue(backend.contains("confirmSafDocumentName("))
+        assertTrue(backend.contains("reconcileSafBackupBeforeWrite("))
+        assertTrue(backend.contains("safBackupName("))
+        assertTrue(backend.contains("val temporaryCleanupError =\n                                deleteSafDocumentAndConfirm(temporaryUri)"))
+        assertFalse(backend.contains("private fun restoreBackup("))
     }
 
     private fun readSource(relativePath: String): String {

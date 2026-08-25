@@ -50,6 +50,7 @@ internal class ManagedDownloadSnapshotCacheStore(
     @Volatile
     private var snapshotGeneration: Long = 0L
 
+    private val snapshotMutationLock = Any()
     private val snapshotPersistenceLock = Any()
 
     fun currentKey(context: Context): String {
@@ -57,7 +58,7 @@ internal class ManagedDownloadSnapshotCacheStore(
     }
 
     fun peekSnapshot(): ManagedDownloadStorage.DownloadLibrarySnapshot? {
-        return snapshotCache?.snapshot
+        return synchronized(snapshotMutationLock) { snapshotCache?.snapshot }
     }
 
     fun ensureReady(context: Context): Boolean {
@@ -87,6 +88,16 @@ internal class ManagedDownloadSnapshotCacheStore(
     }
 
     fun putSnapshot(
+        context: Context,
+        cacheKey: String,
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+    ) {
+        synchronized(snapshotMutationLock) {
+            putSnapshotLocked(context.applicationContext, cacheKey, snapshot)
+        }
+    }
+
+    private fun putSnapshotLocked(
         context: Context,
         cacheKey: String,
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
@@ -124,13 +135,21 @@ internal class ManagedDownloadSnapshotCacheStore(
         val restored = roomRestored
             ?: ManagedDownloadSnapshotDiskCache.restore(appContext, expectedKey)
             ?: return null
-        synchronized(snapshotPersistenceLock) {
-            if (generation != snapshotGeneration || snapshotClearInFlight) {
-                return null
+        return synchronized(snapshotMutationLock) {
+            val restoreStillValid = synchronized(snapshotPersistenceLock) {
+                generation == snapshotGeneration && !snapshotClearInFlight
+            }
+            if (!restoreStillValid) {
+                return@synchronized null
+            }
+            val currentCache = snapshotCache
+            if (currentCache?.key == restored.first) {
+                currentCache.snapshot
+            } else {
+                snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
+                restored.second
             }
         }
-        snapshotCache = SnapshotCache(key = restored.first, snapshot = restored.second)
-        return restored.second
     }
 
     fun updateAfterMetadataWrite(
@@ -140,18 +159,22 @@ internal class ManagedDownloadSnapshotCacheStore(
     ): Boolean {
         val appContext = context.applicationContext
         val cacheKey = currentKey(appContext)
-        val currentSnapshot = snapshotCache
-            ?.takeIf { it.key == cacheKey }
-            ?.snapshot
-            ?: restorePersisted(appContext, expectedKey = cacheKey)
-            ?: return true
-        val updatedSnapshot = ManagedDownloadSnapshotIndex.applyMetadataWrite(
-            snapshot = currentSnapshot,
-            metadataEntry = metadataEntry,
-            metadata = metadata
-        )
-        putSnapshot(appContext, cacheKey, updatedSnapshot)
-        return true
+        if (snapshotCache?.key != cacheKey) {
+            restorePersisted(appContext, expectedKey = cacheKey)
+        }
+        return synchronized(snapshotMutationLock) {
+            val currentSnapshot = snapshotCache
+                ?.takeIf { it.key == cacheKey }
+                ?.snapshot
+                ?: return@synchronized true
+            val updatedSnapshot = ManagedDownloadSnapshotIndex.applyMetadataWrite(
+                snapshot = currentSnapshot,
+                metadataEntry = metadataEntry,
+                metadata = metadata
+            )
+            putSnapshotLocked(appContext, cacheKey, updatedSnapshot)
+            true
+        }
     }
 
     fun updateAfterStoredEntryWrite(
@@ -161,18 +184,22 @@ internal class ManagedDownloadSnapshotCacheStore(
     ): Boolean {
         val appContext = context.applicationContext
         val cacheKey = currentKey(appContext)
-        val currentSnapshot = snapshotCache
-            ?.takeIf { it.key == cacheKey }
-            ?.snapshot
-            ?: restorePersisted(appContext, expectedKey = cacheKey)
-            ?: return false
-        val updatedSnapshot = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
-            snapshot = currentSnapshot,
-            storedEntry = storedEntry,
-            bucket = bucket
-        )
-        putSnapshot(appContext, cacheKey, updatedSnapshot)
-        return true
+        if (snapshotCache?.key != cacheKey) {
+            restorePersisted(appContext, expectedKey = cacheKey)
+        }
+        return synchronized(snapshotMutationLock) {
+            val currentSnapshot = snapshotCache
+                ?.takeIf { it.key == cacheKey }
+                ?.snapshot
+                ?: return@synchronized false
+            val updatedSnapshot = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
+                snapshot = currentSnapshot,
+                storedEntry = storedEntry,
+                bucket = bucket
+            )
+            putSnapshotLocked(appContext, cacheKey, updatedSnapshot)
+            true
+        }
     }
 
     fun updateAfterDelete(
@@ -184,32 +211,38 @@ internal class ManagedDownloadSnapshotCacheStore(
         }
         val appContext = context.applicationContext
         val cacheKey = currentKey(appContext)
-        val currentSnapshot = snapshotCache
-            ?.takeIf { it.key == cacheKey }
-            ?.snapshot
-            ?: restorePersisted(appContext, expectedKey = cacheKey)
-            ?: return true
-        val updatedSnapshot = ManagedDownloadSnapshotIndex.applyReferenceDeletes(
-            snapshot = currentSnapshot,
-            references = deletedReferences
-        )
-        putSnapshot(appContext, cacheKey, updatedSnapshot)
-        return true
+        if (snapshotCache?.key != cacheKey) {
+            restorePersisted(appContext, expectedKey = cacheKey)
+        }
+        return synchronized(snapshotMutationLock) {
+            val currentSnapshot = snapshotCache
+                ?.takeIf { it.key == cacheKey }
+                ?.snapshot
+                ?: return@synchronized true
+            val updatedSnapshot = ManagedDownloadSnapshotIndex.applyReferenceDeletes(
+                snapshot = currentSnapshot,
+                references = deletedReferences
+            )
+            putSnapshotLocked(appContext, cacheKey, updatedSnapshot)
+            true
+        }
     }
 
     fun invalidate(context: Context? = null) {
-        snapshotCache = null
         val appContext = context?.applicationContext
-        synchronized(snapshotPersistenceLock) {
-            snapshotGeneration += 1L
-            snapshotPersistJob?.cancel()
-            snapshotPersistJob = null
-            snapshotClearJob?.cancel()
-            snapshotClearJob = null
-            if (appContext == null) {
-                snapshotClearInFlight = false
-            } else {
-                snapshotClearInFlight = true
+        synchronized(snapshotMutationLock) {
+            snapshotCache = null
+            synchronized(snapshotPersistenceLock) {
+                snapshotGeneration += 1L
+                snapshotPersistJob?.cancel()
+                snapshotPersistJob = null
+                snapshotClearJob?.cancel()
+                snapshotClearJob = null
+                if (appContext == null) {
+                    snapshotClearInFlight = false
+                } else {
+                    snapshotClearInFlight = true
+                }
             }
         }
         appContext ?: return

@@ -10,6 +10,7 @@
     <string name="download_failed">下载失败</string>
     <string name="download_cancelled">下载已取消</string>
     <string name="download_no_tasks">暂无下载任务</string>
+    <string name="download_clearing_tasks">正在停止并清空下载任务…</string>
     <string name="download_empty">暂无已下载歌曲</string>
     <string name="download_desc">管理下载任务和本地文件</string>
     <string name="download_manage_desc">管理音乐下载和本地文件</string>

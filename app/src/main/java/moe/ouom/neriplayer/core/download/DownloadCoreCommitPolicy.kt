@@ -24,7 +24,8 @@ internal fun shouldPreserveAudioAfterCancellation(
         "CORE_COMMITTED",
         "ASSETS_ENRICHING",
         "FINALIZED",
-        "DEGRADED_COMPLETE"
+        "DEGRADED_COMPLETE",
+        "COMPLETE"
     )
 }
 
@@ -67,6 +68,15 @@ internal fun isDurableCoreArtifactState(state: String?): Boolean {
         "ASSETS_ENRICHING",
         "FINALIZED",
         "DEGRADED_COMPLETE",
+        "COMPLETE",
         "COMPLETED"
+    )
+}
+
+internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
+    return state in setOf(
+        "CORE_COMMITTED",
+        "ASSETS_ENRICHING",
+        "DEGRADED_COMPLETE"
     )
 }

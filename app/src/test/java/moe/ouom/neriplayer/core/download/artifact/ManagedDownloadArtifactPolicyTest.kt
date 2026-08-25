@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.artifact
 
 import moe.ouom.neriplayer.data.local.database.entity.ManagedDownloadArtifactEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ManagedDownloadArtifactPolicyTest {
@@ -35,6 +36,40 @@ class ManagedDownloadArtifactPolicyTest {
                 existing = artifact(ManagedDownloadArtifactState.DOWNLOADING, 900L),
                 nowMs = 1_000L,
                 staleLeaseMs = 500L
+            )
+        )
+    }
+
+    @Test
+    fun `active fresh lease can resume through its durable operation owner`() {
+        assertEquals(
+            ManagedDownloadArtifactDecision.Acquire,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = artifact(
+                    state = ManagedDownloadArtifactState.DOWNLOADING,
+                    updatedAtMs = 900L,
+                    leaseId = "operation-42"
+                ),
+                nowMs = 1_000L,
+                staleLeaseMs = 500L,
+                leaseOwnerId = "operation-42"
+            )
+        )
+    }
+
+    @Test
+    fun `active fresh lease still rejects a different operation owner`() {
+        assertEquals(
+            ManagedDownloadArtifactDecision.InFlight,
+            ManagedDownloadArtifactPolicy.decide(
+                existing = artifact(
+                    state = ManagedDownloadArtifactState.DOWNLOADING,
+                    updatedAtMs = 900L,
+                    leaseId = "operation-42"
+                ),
+                nowMs = 1_000L,
+                staleLeaseMs = 500L,
+                leaseOwnerId = "operation-43"
             )
         )
     }
@@ -99,17 +134,117 @@ class ManagedDownloadArtifactPolicyTest {
         )
     }
 
+    @Test
+    fun `missing expected lease cannot mutate an owned artifact`() {
+        assertEquals(
+            false,
+            matchesManagedDownloadArtifactLease(
+                currentLeaseId = "operation-42",
+                expectedLeaseId = null
+            )
+        )
+    }
+
+    @Test
+    fun `stale cancellation lease cannot clear a newer owner`() {
+        assertEquals(
+            false,
+            matchesManagedDownloadArtifactLease(
+                currentLeaseId = "new-operation",
+                expectedLeaseId = "old-operation"
+            )
+        )
+    }
+
+    @Test
+    fun `only an acquired artifact exposes a mutation lease`() {
+        val acquired = artifact(
+            state = ManagedDownloadArtifactState.DOWNLOADING,
+            updatedAtMs = 100L,
+            leaseId = "operation-42"
+        )
+        val repair = artifact(
+            state = ManagedDownloadArtifactState.REPAIR_REQUIRED,
+            updatedAtMs = 100L,
+            audioReference = "content://downloads/song.mp3"
+        )
+
+        assertEquals(
+            "operation-42",
+            ManagedDownloadArtifactClaim.Acquired(acquired).ownedLeaseIdOrNull()
+        )
+        assertNull(ManagedDownloadArtifactClaim.RepairRequired(repair).ownedLeaseIdOrNull())
+        assertNull(ManagedDownloadArtifactClaim.AlreadyDownloaded(repair).ownedLeaseIdOrNull())
+        assertNull(null.ownedLeaseIdOrNull())
+    }
+
+    @Test
+    fun `lease-free state accepts a lease-free transition`() {
+        assertEquals(
+            true,
+            matchesManagedDownloadArtifactLease(
+                currentLeaseId = null,
+                expectedLeaseId = null
+            )
+        )
+    }
+
+    @Test
+    fun `lease-free update cannot overwrite an active owned artifact`() {
+        assertEquals(
+            false,
+            canApplyLeaseFreeArtifactTransition(
+                currentState = ManagedDownloadArtifactState.DOWNLOADING,
+                currentLeaseId = "operation-42",
+                requestedState = ManagedDownloadArtifactState.MISSING_CONFIRMED
+            )
+        )
+    }
+
+    @Test
+    fun `lease-free update cannot downgrade an unowned active transfer`() {
+        assertEquals(
+            false,
+            canApplyLeaseFreeArtifactTransition(
+                currentState = ManagedDownloadArtifactState.COMMITTING,
+                currentLeaseId = null,
+                requestedState = ManagedDownloadArtifactState.MISSING_CONFIRMED
+            )
+        )
+    }
+
+    @Test
+    fun `post core enrichment transitions remain lease free`() {
+        assertEquals(
+            true,
+            canApplyLeaseFreeArtifactTransition(
+                currentState = ManagedDownloadArtifactState.CORE_COMMITTED,
+                currentLeaseId = null,
+                requestedState = ManagedDownloadArtifactState.ASSETS_ENRICHING
+            )
+        )
+        assertEquals(
+            true,
+            canApplyLeaseFreeArtifactTransition(
+                currentState = ManagedDownloadArtifactState.ASSETS_ENRICHING,
+                currentLeaseId = null,
+                requestedState = ManagedDownloadArtifactState.DEGRADED_COMPLETE
+            )
+        )
+    }
+
     private fun artifact(
         state: ManagedDownloadArtifactState,
         updatedAtMs: Long,
-        audioReference: String? = null
+        audioReference: String? = null,
+        leaseId: String = "lease"
     ): ManagedDownloadArtifactEntity {
         return ManagedDownloadArtifactEntity(
             rootKey = "root",
             stableKey = "netease|1|",
             artifactId = "managed:root:netease|1|",
             state = state.name,
-            leaseId = "lease",
+            leaseId = leaseId,
             audioReference = audioReference,
             audioName = null,
             fileSize = null,

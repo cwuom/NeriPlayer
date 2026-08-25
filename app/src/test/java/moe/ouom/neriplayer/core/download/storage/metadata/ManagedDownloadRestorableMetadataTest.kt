@@ -29,6 +29,8 @@ class ManagedDownloadRestorableMetadataTest {
             ),
             baselineCoverAssetHash = "base-hash",
             currentCoverAssetHash = "edited-hash",
+            baselineCoverAssetFileName = "base-12345678.jpg",
+            currentCoverAssetFileName = "edited-12345678.jpg",
             createdAtMs = 10L,
             updatedAtMs = 20L
         )
@@ -49,6 +51,8 @@ class ManagedDownloadRestorableMetadataTest {
         assertEquals("Edited title", restored?.overrides?.title)
         assertEquals(-321L, restored?.overrides?.userLyricOffsetMs)
         assertEquals("base-hash", restored?.baselineCoverAssetHash)
+        assertEquals("base-12345678.jpg", restored?.baselineCoverAssetFileName)
+        assertEquals("edited-12345678.jpg", restored?.currentCoverAssetFileName)
         assertEquals(20L, restored?.updatedAtMs)
     }
 

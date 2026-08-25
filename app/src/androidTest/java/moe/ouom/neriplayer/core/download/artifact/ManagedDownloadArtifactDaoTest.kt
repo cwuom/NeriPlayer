@@ -140,6 +140,54 @@ class ManagedDownloadArtifactDaoTest {
         }
     }
 
+    @Test
+    fun leaseFreeUpdateCannotClearANewerLease() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).build()
+        try {
+            val dao = database.managedDownloadArtifactDao()
+            val leaseFree = artifact("unused").copy(
+                state = ManagedDownloadArtifactState.CORE_COMMITTED.name,
+                leaseId = null
+            )
+            dao.insertIfAbsent(leaseFree)
+            assertEquals(
+                1,
+                dao.tryAcquire(
+                    rootKey = leaseFree.rootKey,
+                    stableKey = leaseFree.stableKey,
+                    expectedState = leaseFree.state,
+                    expectedUpdatedAtMs = leaseFree.updatedAtMs,
+                    state = ManagedDownloadArtifactState.DOWNLOADING.name,
+                    leaseId = "new-owner",
+                    updatedAtMs = 2L
+                )
+            )
+
+            assertEquals(
+                0,
+                dao.updateLeaseFreeIfUnchanged(
+                    rootKey = leaseFree.rootKey,
+                    stableKey = leaseFree.stableKey,
+                    expectedState = leaseFree.state,
+                    expectedUpdatedAtMs = leaseFree.updatedAtMs,
+                    state = ManagedDownloadArtifactState.DEGRADED_COMPLETE.name,
+                    updatedAtMs = 3L,
+                    needsReconcile = true,
+                    errorCode = "STALE_LEASE_FREE_WRITE"
+                )
+            )
+            val stored = dao.find(leaseFree.rootKey, leaseFree.stableKey)
+            assertEquals("new-owner", stored?.leaseId)
+            assertEquals(ManagedDownloadArtifactState.DOWNLOADING.name, stored?.state)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun artifact(leaseId: String): ManagedDownloadArtifactEntity {
         return ManagedDownloadArtifactEntity(
             rootKey = "root",

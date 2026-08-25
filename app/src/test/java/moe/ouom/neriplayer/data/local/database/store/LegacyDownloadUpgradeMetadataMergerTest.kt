@@ -91,7 +91,7 @@ class LegacyDownloadUpgradeMetadataMergerTest {
     }
 
     @Test
-    fun legacyCoverReferencesAreNotStoredInRestorableUriFields() {
+    fun legacyCoverSourcesRemainInRestorableMetadata() {
         val merged = LegacyDownloadUpgradeMetadataMerger.merge(
             payload = JSONObject(
                 """
@@ -108,8 +108,41 @@ class LegacyDownloadUpgradeMetadataMergerTest {
         )
 
         val restorable = merged.getJSONObject("restorableMetadata")
-        assertFalse(restorable.getJSONObject("baseline").has("coverReference"))
-        assertFalse(restorable.getJSONObject("overrides").has("coverReference"))
+        assertEquals(
+            "https://example.test/original.jpg",
+            restorable.getJSONObject("baseline").getString("coverReference")
+        )
+        assertEquals(
+            "content://legacy/Covers/custom.jpg",
+            restorable.getJSONObject("overrides").getString("coverReference")
+        )
         assertTrue(restorable.has("assetRefs"))
+    }
+
+    @Test
+    fun customCoverIsNotPromotedToBaselineWhenOriginalIsAbsent() {
+        val merged = LegacyDownloadUpgradeMetadataMerger.merge(
+            payload = JSONObject(
+                """
+                {
+                  "stableKey": "file:song.flac",
+                  "coverUrl": "https://example.test/original.jpg",
+                  "customCoverUrl": "content://legacy/Covers/custom.jpg"
+                }
+                """.trimIndent()
+            ),
+            existing = null,
+            audioFileName = "song.flac"
+        )
+
+        val restorable = merged.getJSONObject("restorableMetadata")
+        assertEquals(
+            "https://example.test/original.jpg",
+            restorable.getJSONObject("baseline").getString("coverReference")
+        )
+        assertEquals(
+            "content://legacy/Covers/custom.jpg",
+            restorable.getJSONObject("overrides").getString("coverReference")
+        )
     }
 }

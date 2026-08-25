@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.core.player.download
 
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -7,6 +14,76 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioDownloadManagerSidecarReferenceTest {
+
+    @Test
+    fun `cover single flight shares one producer for the same target`() = runBlocking {
+        val singleFlight = CoverDownloadSingleFlight<String, String?>()
+        val releaseProducer = CompletableDeferred<Unit>()
+        val producerCalls = AtomicInteger(0)
+
+        val first = async(start = CoroutineStart.UNDISPATCHED) {
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                producerCalls.incrementAndGet()
+                releaseProducer.await()
+                "content://covers/Song-12345678.jpg"
+            }
+        }
+        val second = async(start = CoroutineStart.UNDISPATCHED) {
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                producerCalls.incrementAndGet()
+                "content://covers/duplicate.jpg"
+            }
+        }
+
+        releaseProducer.complete(Unit)
+
+        assertEquals("content://covers/Song-12345678.jpg", first.await())
+        assertEquals("content://covers/Song-12345678.jpg", second.await())
+        assertEquals(1, producerCalls.get())
+        assertEquals(0, singleFlight.inFlightCount)
+    }
+
+    @Test
+    fun `cover single flight releases cancelled owner before the next retry`() = runBlocking {
+        val singleFlight = CoverDownloadSingleFlight<String, String?>()
+        val owner = async(start = CoroutineStart.UNDISPATCHED) {
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                awaitCancellation()
+            }
+        }
+
+        owner.cancelAndJoin()
+
+        assertEquals(0, singleFlight.inFlightCount)
+        assertEquals(
+            "content://covers/Song-12345678.jpg",
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                "content://covers/Song-12345678.jpg"
+            }
+        )
+        assertEquals(0, singleFlight.inFlightCount)
+    }
+
+    @Test
+    fun `cover single flight releases failed owner before the next retry`() = runBlocking {
+        val singleFlight = CoverDownloadSingleFlight<String, String?>()
+
+        val failure = runCatching {
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                throw IllegalStateException("network failure")
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(0, singleFlight.inFlightCount)
+        assertEquals(
+            "content://covers/Song-12345678.jpg",
+            singleFlight.run("song-key|Song-12345678.jpg") {
+                "content://covers/Song-12345678.jpg"
+            }
+        )
+        assertEquals(0, singleFlight.inFlightCount)
+    }
 
     @Test
     fun `resolveVisibleDownloadFileName prefers target file name over staging temp file`() {

@@ -12,16 +12,16 @@ import org.mockito.Mockito.`when`
 
 class DownloadExecutionOperationJournalCharacterizationTest {
     @Test
-    fun `new user download may restart a cancelled operation identity`() {
+    fun `generic upsert never reopens a cancelled operation identity`() {
         assertTrue(
-            shouldRestartOperation(
+            !shouldRestartOperation(
                 existingState = "CANCELLED",
                 requestedState = "QUEUED",
                 userInitiated = true
             )
         )
         assertTrue(
-            shouldRestartOperation(
+            !shouldRestartOperation(
                 existingState = "CANCEL_REQUESTED",
                 requestedState = "RUNNING",
                 userInitiated = true
@@ -29,7 +29,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
         )
         assertTrue(
             !shouldRestartOperation(
-                existingState = "CANCELLED",
+                existingState = "RETRYABLE",
                 requestedState = "QUEUED",
                 userInitiated = false
             )
@@ -37,7 +37,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
     }
 
     @Test
-    fun `late cancel cannot overwrite core committed operation`() {
+    fun `late cancel stops enrichment without overwriting core committed operation`() {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         val journal = InMemoryDownloadExecutionOperationJournal()
@@ -50,11 +50,12 @@ class DownloadExecutionOperationJournalCharacterizationTest {
         store.save(context, request)
         assertTrue(store.markCommitting(context, request.operationId))
         assertTrue(store.markCoreCommitted(context, request.operationId))
-        assertTrue(!store.requestCancel(context, request.operationId))
+        assertTrue(store.requestCancel(context, request.operationId))
         assertEquals(
             "CORE_COMMITTED",
             store.currentState(context, request.operationId)
         )
+        assertTrue(store.isStopped(context, request.operationId))
     }
 
     @Test
@@ -94,6 +95,24 @@ class DownloadExecutionOperationJournalCharacterizationTest {
     }
 
     @Test
+    fun `recovery claim preserves a durable core state`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-core-recovery",
+            song = SongItemFixtures.sampleSong()
+        )
+
+        store.save(context, request)
+        journal.forceState(request.operationId, "CORE_COMMITTED", updatedAtMs = 1L)
+
+        assertTrue(store.tryStart(context, request.operationId, allowExistingRunning = true))
+        assertEquals("CORE_COMMITTED", store.currentState(context, request.operationId))
+    }
+
+    @Test
     fun `cancel request before the linearization point blocks core commit`() {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
@@ -118,7 +137,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
     }
 
     @Test
-    fun `late cancel cannot enter after committing linearizes the core commit`() {
+    fun `late cancel records a stop without reversing the committing state`() {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         val journal = InMemoryDownloadExecutionOperationJournal()
@@ -130,9 +149,33 @@ class DownloadExecutionOperationJournalCharacterizationTest {
 
         store.save(context, request)
         assertTrue(store.markCommitting(context, request.operationId))
-        assertTrue(!store.requestCancel(context, request.operationId))
+        assertTrue(store.requestCancel(context, request.operationId))
+        assertTrue(store.isStopped(context, request.operationId))
+        assertEquals("COMMITTING", store.currentState(context, request.operationId))
         assertTrue(store.markCoreCommitted(context, request.operationId))
         assertEquals("CORE_COMMITTED", store.currentState(context, request.operationId))
+    }
+
+    @Test
+    fun `failed core commit returns to retryable and can be claimed again`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-commit-retry",
+            song = SongItemFixtures.sampleSong()
+        )
+
+        store.save(context, request)
+        assertTrue(store.tryStart(context, request.operationId))
+        assertTrue(store.markCommitting(context, request.operationId))
+
+        store.updateState(context, request.operationId, "RETRYABLE", "COMMIT_FAILED")
+
+        assertEquals("RETRYABLE", store.currentState(context, request.operationId))
+        assertTrue(store.tryStart(context, request.operationId))
+        assertEquals("RUNNING", store.currentState(context, request.operationId))
     }
 
     @Test
@@ -155,6 +198,36 @@ class DownloadExecutionOperationJournalCharacterizationTest {
         assertEquals("COMMITTING", store.currentState(context, request.operationId))
         assertTrue(store.markCoreCommitted(context, request.operationId))
         assertEquals("CORE_COMMITTED", store.currentState(context, request.operationId))
+    }
+
+    @Test
+    fun `cancel at commit boundary preserves core audio without requeueing`() {
+        val context = mock(Context::class.java)
+        `when`(context.applicationContext).thenReturn(context)
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-cancel-at-commit",
+            song = SongItemFixtures.sampleSong()
+        )
+
+        store.save(context, request)
+        assertTrue(store.markCommitting(context, request.operationId))
+        assertTrue(store.requestCancel(context, request.operationId))
+        assertTrue(store.isStopped(context, request.operationId))
+        assertEquals("COMMITTING", store.currentState(context, request.operationId))
+        assertTrue(store.markCoreCommitted(context, request.operationId))
+        assertEquals("CORE_COMMITTED", store.currentState(context, request.operationId))
+        assertTrue(store.isStopped(context, request.operationId))
+        assertTrue(!store.tryStart(context, request.operationId, allowExistingRunning = true))
+        assertTrue(
+            !store.updateState(
+                context = context,
+                operationId = request.operationId,
+                state = "RETRYABLE",
+                errorCode = "LATE_HOST_CANCEL"
+            )
+        )
     }
 
     @Test
@@ -185,7 +258,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
     }
 
     @Test
-    fun `queue lookup can return an operation id without decoding its request payload`() {
+    fun `raw lookup stays lightweight while reusable lookup validates its payload`() {
         var directory = java.io.File(System.getProperty("user.dir") ?: ".")
         val sourceFile = generateSequence(directory) { it.parentFile }
             .map {
@@ -197,15 +270,23 @@ class DownloadExecutionOperationJournalCharacterizationTest {
             .firstOrNull(java.io.File::isFile)
             ?: error("operation room store source not found")
         val source = sourceFile.readText()
-        val lookup = source.substringAfter("suspend fun findOperationIdForSong")
+        val rawLookup = source.substringAfter("suspend fun findOperationIdForSong")
+            .substringBefore("suspend fun findReadableOperationIdForSong")
+        val readableLookup = source.substringAfter("suspend fun findReadableOperationIdForSong")
             .substringBefore("suspend fun isStopped")
-        assertTrue(lookup.contains("findLatestOperationIdByStableKey"))
-        assertTrue(!lookup.contains("requestFromEntity"))
+        assertTrue(rawLookup.contains("findLatestOperationIdByStableKey"))
+        assertTrue(!rawLookup.contains("requestFromEntity"))
+        assertTrue(readableLookup.contains("requestFromEntity"))
+        assertTrue(readableLookup.contains("INVALID_OPERATION_PAYLOAD"))
     }
 }
 
 internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOperationJournal {
     private val entries = linkedMapOf<String, DownloadExecutionJournalEntry>()
+    var afterStateUpdate: ((String, String) -> Unit)? = null
+    var hostAdmissionAllowed: Boolean = true
+    var hostAdmissionAcquireCount: Int = 0
+    var hostAdmissionReleaseCount: Int = 0
 
     override fun save(context: Context, request: DownloadExecutionRequest) {
         entries[request.operationId] = DownloadExecutionJournalEntry(request, "QUEUED")
@@ -236,12 +317,21 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
         entries.values.firstOrNull { it.request.song.stableKey() == songKey }
             ?.request?.operationId
 
-    override fun updateState(context: Context, operationId: String, state: String, errorCode: String?) {
-        entries[operationId]?.let { entry ->
-            resolveDownloadOperationState(entry.state, state)?.let { nextState ->
-                entries[operationId] = entry.copy(state = nextState)
-            }
-        }
+    override fun updateState(
+        context: Context,
+        operationId: String,
+        state: String,
+        errorCode: String?
+    ): Boolean {
+        val entry = entries[operationId] ?: return false
+        if (entry.userStopped) return false
+        val nextState = resolveDownloadOperationState(entry.state, state) ?: return false
+        entries[operationId] = entry.copy(
+            state = nextState,
+            updatedAtMs = System.currentTimeMillis()
+        )
+        afterStateUpdate?.invoke(operationId, state)
+        return true
     }
 
     override fun currentState(context: Context, operationId: String): String? {
@@ -251,7 +341,13 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     override fun requestCancel(context: Context, operationId: String): Boolean {
         val entry = entries[operationId] ?: return false
         val nextState = resolveDownloadOperationState(entry.state, "CANCEL_REQUESTED")
-            ?: return false
+        if (nextState == null) {
+            if (entry.state !in setOf("COMMITTING", "CORE_COMMITTED", "ASSETS_ENRICHING")) {
+                return false
+            }
+            entries[operationId] = entry.copy(userStopped = true)
+            return true
+        }
         if (nextState == entry.state) return false
         entries[operationId] = entry.copy(state = nextState)
         return true
@@ -268,6 +364,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
 
     override fun markCommitting(context: Context, operationId: String): Boolean {
         val entry = entries[operationId] ?: return false
+        if (entry.userStopped) return false
         if (entry.state != "QUEUED" && entry.state != "RUNNING") return false
         entries[operationId] = entry.copy(state = "COMMITTING")
         return true
@@ -289,9 +386,28 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
         return candidates.size
     }
 
+    override fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int
+    ): Boolean {
+        hostAdmissionAcquireCount++
+        return hostAdmissionAllowed && capacity > 0
+    }
+
+    override fun releaseHostAdmission(context: Context, operationId: String) {
+        hostAdmissionReleaseCount++
+    }
+
     fun forceState(operationId: String, state: String, updatedAtMs: Long) {
         entries[operationId]?.let { entry ->
             entries[operationId] = entry.copy(state = state, updatedAtMs = updatedAtMs)
+        }
+    }
+
+    fun forceRequest(request: DownloadExecutionRequest) {
+        entries[request.operationId]?.let { entry ->
+            entries[request.operationId] = entry.copy(request = request)
         }
     }
 }

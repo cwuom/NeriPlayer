@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
@@ -80,7 +81,9 @@ internal class ManagedDownloadStorageCommitWriter(
                 val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
-                target.outputStream().use { it.write(bytes) }
+                writeFileEntry(root = root.dir, target = target, displayName = displayName) { output ->
+                    output.write(bytes)
+                }
                 val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
                     target = target,
                     expectedSizeBytes = bytes.size.toLong(),
@@ -142,7 +145,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
                 val target = File(dir, displayName)
                 var copiedBytes = 0L
-                target.outputStream().use { output ->
+                writeFileEntry(root = root.dir, target = target, displayName = displayName) { output ->
                     copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
                 }
                 val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
@@ -222,7 +225,9 @@ internal class ManagedDownloadStorageCommitWriter(
             is ManagedDownloadRootHandle.FileRoot -> {
                 val target = File(root.dir, displayName)
                 val encoded = content.toByteArray(Charsets.UTF_8)
-                target.writeBytes(encoded)
+                writeFileEntry(root = root.dir, target = target, displayName = displayName) { output ->
+                    output.write(encoded)
+                }
                 val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
                     target = target,
                     expectedSizeBytes = encoded.size.toLong(),
@@ -241,6 +246,34 @@ internal class ManagedDownloadStorageCommitWriter(
                     expectedSizeBytes = encoded.size.toLong()
                 ) { output -> output.write(encoded) }
             }
+        }
+    }
+
+    private fun writeFileEntry(
+        root: File,
+        target: File,
+        displayName: String,
+        writer: suspend (java.io.OutputStream) -> Unit
+    ) {
+        val logicalPath = target.relativeTo(root).path
+        val result = runBlocking(Dispatchers.IO) {
+            FileStorageBackend(root).writeRecoverable(
+                target = StorageTarget.FileTarget(logicalPath),
+                writer = writer
+            )
+        }
+        when (result) {
+            is StorageWriteResult.Written -> Unit
+            StorageWriteResult.Missing -> throw IOException("文件写入目标不存在: $displayName")
+            StorageWriteResult.OutOfScope -> throw IOException("文件写入目标越界: $displayName")
+            StorageWriteResult.PermissionLost -> throw SecurityException("文件写入权限丢失: $displayName")
+            is StorageWriteResult.ProviderFailure -> throw IOException(
+                "文件写入失败: $displayName",
+                result.error
+            )
+            is StorageWriteResult.Unsupported -> throw IOException(
+                "文件系统不支持写入: $displayName (${result.operation})"
+            )
         }
     }
 

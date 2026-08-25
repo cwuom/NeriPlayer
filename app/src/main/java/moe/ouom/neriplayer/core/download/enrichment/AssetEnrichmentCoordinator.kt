@@ -49,6 +49,24 @@ internal class AssetEnrichmentCoordinator(
         return job
     }
 
+    suspend fun enqueueAndAwait(
+        operationId: String,
+        onTimeout: suspend (Throwable) -> Unit = {},
+        block: suspend () -> Unit
+    ) {
+        val job = enqueue(
+            operationId = operationId,
+            onTimeout = onTimeout,
+            block = block
+        )
+        try {
+            job.join()
+        } catch (cancellation: CancellationException) {
+            cancel(operationId)
+            throw cancellation
+        }
+    }
+
     fun cancel(operationId: String): Boolean {
         val job = jobsByOperationId.remove(operationId) ?: return false
         val wasActive = job.isActive

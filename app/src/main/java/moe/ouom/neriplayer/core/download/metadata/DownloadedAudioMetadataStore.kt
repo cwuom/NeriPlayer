@@ -22,6 +22,65 @@ internal data class RestorableMetadataClearPolicy(
     val lyrics: Boolean = false
 )
 
+internal data class RestorableCoverAssetRefs(
+    val baselineHash: String?,
+    val currentHash: String?,
+    val baselineFileName: String?,
+    val currentFileName: String?
+)
+
+internal fun mergeRestorableCoverAssetRefs(
+    existing: ManagedDownloadRestorableMetadata?,
+    hasCustomCover: Boolean,
+    coverAssetHash: String?,
+    coverAssetFileName: String?,
+    clearCoverOverride: Boolean
+): RestorableCoverAssetRefs {
+    val incomingHash = coverAssetHash?.trim()?.takeIf(String::isNotBlank)
+    val incomingFileName = coverAssetFileName
+        ?.trim()
+        ?.takeIf { name ->
+            name.isNotBlank() &&
+                name != "." &&
+                name != ".." &&
+                '/' !in name &&
+                '\\' !in name
+        }
+    val baselineHash = existing?.baselineCoverAssetHash
+        ?: incomingHash.takeUnless { hasCustomCover }
+    val baselineFileName = existing?.baselineCoverAssetFileName
+        ?: incomingFileName.takeUnless { hasCustomCover }
+    return RestorableCoverAssetRefs(
+        baselineHash = baselineHash,
+        currentHash = when {
+            clearCoverOverride -> incomingHash ?: baselineHash
+            else -> incomingHash ?: existing?.currentCoverAssetHash
+        },
+        baselineFileName = baselineFileName,
+        currentFileName = when {
+            clearCoverOverride -> incomingFileName ?: baselineFileName
+            else -> incomingFileName ?: existing?.currentCoverAssetFileName
+        }
+    )
+}
+
+internal suspend fun resolveDownloadedMetadataCoverAsset(
+    sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+    coverReference: String?,
+    inspect: suspend (String) -> ManagedDownloadCoverAssetStore.MaterializedCover?,
+    materialize: suspend (String) -> ManagedDownloadCoverAssetStore.MaterializedCover?
+): ManagedDownloadCoverAssetStore.MaterializedCover? {
+    val normalizedReference = coverReference?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val createdReference = sidecarReferences?.coverReference
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    return if (sidecarReferences?.createdCover == true && createdReference == normalizedReference) {
+        inspect(normalizedReference)
+    } else {
+        materialize(normalizedReference)
+    }
+}
+
 internal class DownloadedAudioMetadataStore(
     private val maxWriteAttempts: Int,
     private val writeRetryDelayMs: Long,
@@ -49,9 +108,22 @@ internal class DownloadedAudioMetadataStore(
             existingMetadata = existingMetadata,
             resolveExistingSidecars = resolveExistingSidecars
         )
-        val materializedCover = ManagedDownloadCoverAssetStore.materialize(
-            context = context,
-            reference = sidecars.coverReference
+        val materializedCover = resolveDownloadedMetadataCoverAsset(
+            sidecarReferences = sidecarReferences,
+            coverReference = sidecars.coverReference,
+            inspect = { reference ->
+                ManagedDownloadCoverAssetStore.inspect(
+                    context = context,
+                    reference = reference
+                )
+            },
+            materialize = { reference ->
+                ManagedDownloadCoverAssetStore.materialize(
+                    context = context,
+                    reference = reference,
+                    preferredFileName = null
+                )
+            }
         )
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
@@ -83,6 +155,7 @@ internal class DownloadedAudioMetadataStore(
             existing = existingMetadata?.restorableMetadata,
             coverReference = persistedSidecars.coverReference,
             coverAssetHash = materializedCover?.assetHash,
+            coverAssetFileName = materializedCover?.fileName,
             sidecarOriginalLyric = sidecarLyrics.original,
             sidecarTranslatedLyric = sidecarLyrics.translated,
             sidecarRomanizedLyric = sidecarLyrics.romanized,
@@ -172,13 +245,15 @@ internal class DownloadedAudioMetadataStore(
             ?: return false
         val materialized = ManagedDownloadCoverAssetStore.materialize(
             context = context,
-            reference = coverReference
+            reference = coverReference,
+            preferredFileName = null
         )
         val effectiveReference = materialized?.reference ?: coverReference
         val patchedPayload = patchDownloadedMetadataCoverReference(
             rawMetadata = raw,
             coverReference = effectiveReference,
-            coverAssetHash = materialized?.assetHash
+            coverAssetHash = materialized?.assetHash,
+            coverAssetFileName = materialized?.fileName
         )
             ?: return false
         var lastError: Throwable? = null
@@ -355,6 +430,7 @@ internal class DownloadedAudioMetadataStore(
         existing: ManagedDownloadRestorableMetadata?,
         coverReference: String?,
         coverAssetHash: String?,
+        coverAssetFileName: String?,
         sidecarOriginalLyric: String?,
         sidecarTranslatedLyric: String?,
         sidecarRomanizedLyric: String?,
@@ -376,23 +452,25 @@ internal class DownloadedAudioMetadataStore(
             overrides = ManagedDownloadRestorableMetadata.Overrides(),
             createdAtMs = createdAtMs
         )
+        val coverAssets = mergeRestorableCoverAssetRefs(
+            existing = existing,
+            hasCustomCover = !song.customCoverUrl.isNullOrBlank(),
+            coverAssetHash = coverAssetHash,
+            coverAssetFileName = coverAssetFileName,
+            clearCoverOverride = clearRestorableOverrides.cover
+        )
         return previous.copy(
             sourceStableKey = previous.sourceStableKey ?: identity.stableKey(),
             baseline = baseline,
             overrides = mergeRestorableOverrides(
                 previous = previous.overrides,
                 song = song,
-                coverReference = coverReference,
                 clearRestorableOverrides = clearRestorableOverrides
             ),
-            baselineCoverAssetHash = previous.baselineCoverAssetHash ?:
-                coverAssetHash.takeIf { song.customCoverUrl.isNullOrBlank() },
-            currentCoverAssetHash = when {
-                clearRestorableOverrides.cover -> {
-                    coverAssetHash ?: previous.baselineCoverAssetHash
-                }
-                else -> coverAssetHash ?: previous.currentCoverAssetHash
-            },
+            baselineCoverAssetHash = coverAssets.baselineHash,
+            currentCoverAssetHash = coverAssets.currentHash,
+            baselineCoverAssetFileName = coverAssets.baselineFileName,
+            currentCoverAssetFileName = coverAssets.currentFileName,
             createdAtMs = previous.createdAtMs ?: createdAtMs,
             updatedAtMs = System.currentTimeMillis()
         )
@@ -415,7 +493,6 @@ internal class DownloadedAudioMetadataStore(
 internal fun mergeRestorableOverrides(
     previous: ManagedDownloadRestorableMetadata.Overrides,
     song: SongItem,
-    coverReference: String?,
     clearRestorableOverrides: RestorableMetadataClearPolicy =
         RestorableMetadataClearPolicy()
 ): ManagedDownloadRestorableMetadata.Overrides {
@@ -509,22 +586,44 @@ internal fun resolveDownloadedUserLyricOffset(
 internal fun patchDownloadedMetadataCoverReference(
     rawMetadata: String,
     coverReference: String,
-    coverAssetHash: String? = null
+    coverAssetHash: String? = null,
+    coverAssetFileName: String? = null
 ): String? {
     return runCatching {
         val root = JSONObject(rawMetadata).put("coverPath", coverReference)
         val restorable = root.optJSONObject("restorableMetadata")
-        if (restorable != null) {
-            val overrides = restorable.optJSONObject("overrides") ?: JSONObject()
-            overrides.put("coverReference", coverReference)
-            restorable.put("overrides", overrides)
-            coverAssetHash?.let { hash ->
-                val assets = restorable.optJSONObject("assetRefs") ?: JSONObject()
-                assets.put("currentCoverHash", hash)
-                restorable.put("assetRefs", assets)
+            ?: return@runCatching null
+        val overrides = restorable.optJSONObject("overrides") ?: JSONObject()
+        overrides.put("coverReference", coverReference)
+        restorable.put("overrides", overrides)
+        coverAssetHash?.let { hash ->
+            val assets = restorable.optJSONObject("assetRefs") ?: JSONObject()
+            assets.put("currentCoverHash", hash)
+            coverAssetFileName?.let { fileName ->
+                assets.put("currentCoverFileName", fileName)
             }
-            root.put("restorableMetadata", restorable)
+            val hasCustomCover = root.has("customCoverUrl") &&
+                !root.isNull("customCoverUrl") &&
+                root.optString("customCoverUrl").trim().isNotBlank()
+            if (!hasCustomCover) {
+                val baselineHash = assets.optString("baselineCoverHash")
+                if (baselineHash.isBlank()) {
+                    assets.put("baselineCoverHash", hash)
+                    coverAssetFileName?.let { fileName ->
+                        assets.put("baselineCoverFileName", fileName)
+                    }
+                } else if (
+                    baselineHash.equals(hash, ignoreCase = true) &&
+                    assets.optString("baselineCoverFileName").isBlank()
+                ) {
+                    coverAssetFileName?.let { fileName ->
+                        assets.put("baselineCoverFileName", fileName)
+                    }
+                }
+            }
+            restorable.put("assetRefs", assets)
         }
+        root.put("restorableMetadata", restorable)
         root.toString()
     }.getOrNull()
 }
@@ -585,8 +684,10 @@ internal fun mergeRestorableBaseline(
         // the first write must capture the source cover, never the current override
         coverReference = current.coverReference
             ?: song.originalCoverUrl
-            ?: coverReference
-            ?: song.coverUrl,
+            ?: song.coverUrl.takeUnless { cover ->
+                cover.isNullOrBlank() || cover == song.customCoverUrl
+            }
+            ?: coverReference.takeIf { song.customCoverUrl.isNullOrBlank() },
         originalLyric = resolveLyric(
             currentValue = current.originalLyric,
             songValue = song.originalLyric,

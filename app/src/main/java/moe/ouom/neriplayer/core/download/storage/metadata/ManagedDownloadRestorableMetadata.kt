@@ -8,6 +8,8 @@ internal data class ManagedDownloadRestorableMetadata(
     val overrides: Overrides,
     val baselineCoverAssetHash: String? = null,
     val currentCoverAssetHash: String? = null,
+    val baselineCoverAssetFileName: String? = null,
+    val currentCoverAssetFileName: String? = null,
     val createdAtMs: Long? = null,
     val updatedAtMs: Long? = null
 ) {
@@ -41,6 +43,8 @@ internal data class ManagedDownloadRestorableMetadata(
             put("assetRefs", JSONObject().apply {
                 put("baselineCoverHash", baselineCoverAssetHash)
                 put("currentCoverHash", currentCoverAssetHash)
+                put("baselineCoverFileName", baselineCoverAssetFileName)
+                put("currentCoverFileName", currentCoverAssetFileName)
             })
             put("times", JSONObject().apply {
                 put("createdAtMs", createdAtMs)
@@ -65,6 +69,8 @@ internal data class ManagedDownloadRestorableMetadata(
                 overrides = overrides,
                 baselineCoverAssetHash = assets?.optionalString("baselineCoverHash"),
                 currentCoverAssetHash = assets?.optionalString("currentCoverHash"),
+                baselineCoverAssetFileName = assets?.optionalString("baselineCoverFileName"),
+                currentCoverAssetFileName = assets?.optionalString("currentCoverFileName"),
                 createdAtMs = times?.optionalLong("createdAtMs"),
                 updatedAtMs = times?.optionalLong("updatedAtMs")
             )

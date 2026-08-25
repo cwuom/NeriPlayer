@@ -18,9 +18,10 @@ internal fun shouldRequireExplicitResume(
     userInitiated: Boolean,
     state: String?,
     hasPendingUidtJob: Boolean,
-    stopRequestedByUser: Boolean = false
+    stopRequestedByUser: Boolean = false,
+    cancellationRequestedByUser: Boolean = false
 ): Boolean {
-    if (!userInitiated) return false
+    if (!userInitiated || cancellationRequestedByUser) return false
     if (stopRequestedByUser) return true
     return state in setOf("RUNNING", "QUEUED", "RETRYABLE") &&
         !hasPendingUidtJob

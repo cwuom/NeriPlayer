@@ -79,4 +79,17 @@ class UidtDownloadJobPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `explicit cancellation never reappears as a resume task`() {
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "CORE_COMMITTED",
+                hasPendingUidtJob = false,
+                stopRequestedByUser = true,
+                cancellationRequestedByUser = true
+            )
+        )
+    }
 }

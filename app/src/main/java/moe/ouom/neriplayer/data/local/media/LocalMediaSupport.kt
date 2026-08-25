@@ -6853,7 +6853,7 @@ object LocalMediaSupport {
     ): String {
         val normalizedKey = stableIdentityKey?.trim()?.takeIf(String::isNotBlank)
             ?: return "$baseName.$extension"
-        val suffix = ManagedDownloadStorageNaming.stableKeySuffix(normalizedKey)
+        val suffix = ManagedDownloadStorageNaming.coverStableKeySuffix(normalizedKey)
         return "$baseName-$suffix.$extension"
     }
 
@@ -6920,7 +6920,7 @@ object LocalMediaSupport {
         val hash = stem.removePrefix(prefix)
         return stem.startsWith(prefix) &&
             hash.isNotEmpty() &&
-            hash.length <= 8 &&
+            (hash.length <= 8 || hash.length == 32) &&
             hash.all { it in "0123456789abcdefABCDEF" }
     }
 

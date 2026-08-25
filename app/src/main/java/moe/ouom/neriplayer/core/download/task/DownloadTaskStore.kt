@@ -34,6 +34,7 @@ internal class DownloadTaskStore(
     private val _isSingleDownloading = MutableStateFlow(false)
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
     private val _activeBatchDownloadJobCount = MutableStateFlow(0)
+    private var activeDownloadTransferCount = 0
     @Volatile private var songKeyIndex = emptyMap<String, Int>()
 
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
@@ -81,11 +82,22 @@ internal class DownloadTaskStore(
         initialValue = false
     )
 
-    var isSingleDownloading: Boolean
+    val isSingleDownloading: Boolean
         get() = _isSingleDownloading.value
-        set(value) {
-            _isSingleDownloading.value = value
+
+    fun beginDownloadTransfer() {
+        synchronized(mutationLock) {
+            activeDownloadTransferCount++
+            _isSingleDownloading.value = true
         }
+    }
+
+    fun endDownloadTransfer() {
+        synchronized(mutationLock) {
+            activeDownloadTransferCount = (activeDownloadTransferCount - 1).coerceAtLeast(0)
+            _isSingleDownloading.value = activeDownloadTransferCount > 0
+        }
+    }
 
     private data class TaskProgressPublishState(
         val bytesRead: Long,
@@ -266,6 +278,51 @@ internal class DownloadTaskStore(
             updatedTasks
         }
         return preparedAttemptIds
+    }
+
+    fun ensureDownloadTasks(
+        songs: List<SongItem>,
+        status: DownloadStatus = DownloadStatus.QUEUED,
+        durableAttemptIds: Map<String, Long> = emptyMap()
+    ): Map<String, Long> {
+        if (songs.isEmpty()) {
+            return emptyMap()
+        }
+        val attemptIds = linkedMapOf<String, Long>()
+        mutate { tasks ->
+            val updatedTasks = tasks.toMutableList()
+            val existingIndexesBySongKey = HashMap<String, Int>(songKeyIndex)
+            songs.distinctBy { it.stableKey() }.forEach { song ->
+                val songKey = song.stableKey()
+                val existingIndex = existingIndexesBySongKey[songKey]
+                val existingTask = existingIndex?.let(updatedTasks::get)
+                if (existingTask != null && (
+                        existingTask.status == DownloadStatus.QUEUED ||
+                            existingTask.status == DownloadStatus.DOWNLOADING
+                        )
+                ) {
+                    attemptIds[songKey] = existingTask.attemptId
+                    return@forEach
+                }
+                val attemptId = adoptDurableAttemptId(durableAttemptIds[songKey])
+                attemptIds[songKey] = attemptId
+                clearProgressPublishState(songKey)
+                val task = DownloadTask(
+                    song = song,
+                    progress = null,
+                    status = status,
+                    attemptId = attemptId
+                )
+                if (existingIndex == null) {
+                    existingIndexesBySongKey[songKey] = updatedTasks.size
+                    updatedTasks += task
+                } else {
+                    updatedTasks[existingIndex] = task
+                }
+            }
+            updatedTasks
+        }
+        return attemptIds
     }
 
     fun registerActiveDownloadTask(
@@ -487,6 +544,12 @@ internal class DownloadTaskStore(
 
     private fun nextAttemptId(): Long {
         return attemptIdGenerator.incrementAndGet()
+    }
+
+    private fun adoptDurableAttemptId(attemptId: Long?): Long {
+        val durableAttemptId = attemptId?.takeIf { it > 0L } ?: return nextAttemptId()
+        attemptIdGenerator.updateAndGet { current -> maxOf(current, durableAttemptId) }
+        return durableAttemptId
     }
 
     private inline fun mutate(

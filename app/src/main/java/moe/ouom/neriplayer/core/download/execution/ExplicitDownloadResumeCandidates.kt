@@ -12,6 +12,9 @@ private val EXPLICIT_RESUME_OPERATION_STATES = listOf(
     "QUEUED",
     "RUNNING",
     "COMMITTING",
+    "CORE_COMMITTED",
+    "ASSETS_ENRICHING",
+    "DEGRADED_COMPLETE",
     "RETRYABLE",
     "STOPPED"
 )
@@ -20,6 +23,9 @@ internal suspend fun loadExplicitDownloadResumeCandidates(
     context: Context
 ): List<ExplicitDownloadResumeCandidate> = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
+    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+        return@withContext emptyList()
+    }
     val entries = DownloadExecutionRoomStore.listByStates(
         context = appContext,
         states = EXPLICIT_RESUME_OPERATION_STATES
@@ -54,28 +60,66 @@ internal suspend fun resumeExplicitDownload(
     candidate: ExplicitDownloadResumeCandidate
 ): DownloadExecutionSchedule = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
-    val operationStore = DownloadExecutionOperationStore()
     val request = buildExplicitResumeRequest(candidate)
-    operationStore.clearUserStopForStableKeys(
-        context = appContext,
-        stableKeys = setOf(candidate.song.stableKey())
-    )
+    val stableKey = candidate.song.stableKey()
+    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+        return@withContext DownloadExecutionSchedule.Rejected(
+            "download clear is in progress"
+        )
+    }
+    if (!DownloadExecutionRoomStore.prepareExplicitResume(
+            context = appContext,
+            operationId = candidate.operationId,
+            stableKey = stableKey
+        )
+    ) {
+        return@withContext DownloadExecutionSchedule.Rejected(
+            "operation is no longer resumable"
+        )
+    }
+    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+        cancelExplicitResumeDuringClear(
+            context = appContext,
+            operationId = candidate.operationId
+        )
+        return@withContext DownloadExecutionSchedule.Rejected(
+            "download clear is in progress"
+        )
+    }
     val schedule = DownloadExecutionHosts.default.schedule(
         context = appContext,
         request = request
     )
     if (schedule is DownloadExecutionSchedule.Rejected) {
-        // keep the candidate visible when the OS host is temporarily unavailable
-        runCatching {
-            DownloadExecutionRoomStore.upsert(
+        if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+            cancelExplicitResumeDuringClear(
                 context = appContext,
-                request = request,
-                state = "QUEUED"
+                operationId = candidate.operationId
             )
-            DownloadExecutionRoomStore.markStopped(appContext, candidate.operationId)
+        } else {
+            runCatching {
+                DownloadExecutionRoomStore.restoreExplicitStop(
+                    context = appContext,
+                    operationId = candidate.operationId,
+                    stableKey = stableKey,
+                    errorCode = "EXPLICIT_RESUME_HOST_REJECTED"
+                )
+            }
         }
     }
     schedule
+}
+
+private suspend fun cancelExplicitResumeDuringClear(
+    context: Context,
+    operationId: String
+) {
+    runCatching {
+        DownloadExecutionRoomStore.requestCancel(
+            context = context,
+            operationId = operationId
+        )
+    }
 }
 
 internal fun buildExplicitResumeRequest(
