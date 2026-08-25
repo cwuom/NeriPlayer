@@ -29,6 +29,11 @@ internal object DownloadExecutionRoomStore {
         val stableKey: String
     )
 
+    internal data class ProgressCheckpoint(
+        val bytesWritten: Long,
+        val totalBytes: Long?
+    )
+
     suspend fun upsert(
         context: Context,
         request: DownloadExecutionRequest,
@@ -93,6 +98,78 @@ internal object DownloadExecutionRoomStore {
         return database.downloadOperationDao()
             .find(operationId)
             ?.let(::requestFromEntity)
+    }
+
+    suspend fun checkpointProgress(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        attemptId: Long?,
+        bytesWritten: Long,
+        totalBytes: Long?,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return false
+        val normalizedTotalBytes = totalBytes?.takeIf { it > 0L }
+        val libraryId = currentLibraryId(context)
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val entity = dao.find(operationId) ?: return@withTransaction false
+            if (
+                entity.libraryId != libraryId ||
+                    entity.stableKey != normalizedKey ||
+                    entity.state != "RUNNING" ||
+                    entity.stopRequestedByUser
+            ) {
+                return@withTransaction false
+            }
+            val request = requestFromEntity(entity) ?: return@withTransaction false
+            if (
+                request.attemptId != normalizedAttemptId ||
+                    request.song.stableKey() != normalizedKey
+            ) {
+                return@withTransaction false
+            }
+            dao.updateProgressCheckpoint(
+                operationId = operationId,
+                libraryId = libraryId,
+                stableKey = normalizedKey,
+                bytesWritten = bytesWritten.coerceAtLeast(0L),
+                totalBytes = normalizedTotalBytes
+            ) > 0
+        }
+    }
+
+    suspend fun readProgressCheckpoint(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        attemptId: Long?,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): ProgressCheckpoint? {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return null
+        val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return null
+        val entity = database.downloadOperationDao().find(operationId) ?: return null
+        if (
+            entity.libraryId != currentLibraryId(context) ||
+                entity.stableKey != normalizedKey ||
+                entity.state != "RUNNING" ||
+                entity.stopRequestedByUser
+        ) {
+            return null
+        }
+        val request = requestFromEntity(entity) ?: return null
+        if (
+            request.attemptId != normalizedAttemptId ||
+                request.song.stableKey() != normalizedKey
+        ) {
+            return null
+        }
+        return ProgressCheckpoint(
+            bytesWritten = entity.bytesWritten.coerceAtLeast(0L),
+            totalBytes = entity.totalBytes?.takeIf { it > 0L }
+        )
     }
 
     suspend fun listByState(

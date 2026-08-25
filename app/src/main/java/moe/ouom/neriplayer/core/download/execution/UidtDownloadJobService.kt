@@ -101,7 +101,7 @@ class UidtDownloadJobService : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        val shouldReschedule = shouldRescheduleUidtJob(
+        val stopAction = resolveUidtStopAction(
             stopReason = params.stopReason,
             sdkInt = Build.VERSION.SDK_INT
         )
@@ -113,14 +113,25 @@ class UidtDownloadJobService : JobService() {
             .getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
             ?.let { operationId ->
-                DownloadExecutionHosts.default.stop(
-                    context = applicationContext,
-                    operationId = operationId,
-                    preventReschedule = userStopped
-                )
+                when (stopAction) {
+                    UidtStopAction.RETRY_WITHOUT_CANCELLING_BACKENDS -> {
+                        DownloadExecutionHosts.stopForSystemRetry(
+                            context = applicationContext,
+                            operationId = operationId
+                        )
+                    }
+
+                    UidtStopAction.STOP_AND_CANCEL_BACKENDS -> {
+                        DownloadExecutionHosts.default.stop(
+                            context = applicationContext,
+                            operationId = operationId,
+                            preventReschedule = userStopped
+                        )
+                    }
+                }
             }
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
-        return shouldReschedule
+        return stopAction == UidtStopAction.RETRY_WITHOUT_CANCELLING_BACKENDS
     }
 
     override fun onDestroy() {

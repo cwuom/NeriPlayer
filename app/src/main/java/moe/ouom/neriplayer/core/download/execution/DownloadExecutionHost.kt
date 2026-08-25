@@ -158,6 +158,7 @@ class DefaultDownloadExecutionHost(
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
+    private val systemRetryStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val executionAdmissionLock = Any()
     private val deferredRequests = DeferredDownloadScheduleQueue()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -357,6 +358,36 @@ class DefaultDownloadExecutionHost(
         operationId: String,
         preventReschedule: Boolean
     ) {
+        stopInternal(
+            context = context,
+            operationId = operationId,
+            preventReschedule = preventReschedule,
+            cancelExecutionBackends = true
+        )
+    }
+
+    internal fun stopForSystemRetry(
+        context: Context,
+        operationId: String
+    ) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        if (executingOperationIds.contains(normalizedId)) {
+            systemRetryStopOperationIds.add(normalizedId)
+        }
+        stopInternal(
+            context = context,
+            operationId = normalizedId,
+            preventReschedule = false,
+            cancelExecutionBackends = false
+        )
+    }
+
+    private fun stopInternal(
+        context: Context,
+        operationId: String,
+        preventReschedule: Boolean,
+        cancelExecutionBackends: Boolean
+    ) {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
         val appContext = context.applicationContext
         val request = operationStore.read(appContext, normalizedId) ?: return
@@ -366,7 +397,9 @@ class DefaultDownloadExecutionHost(
         }
         val currentState = operationStore.currentState(appContext, normalizedId)
         if (!shouldHandleHostStop(currentState)) {
-            cancelExecutionBackends(appContext, normalizedId)
+            if (cancelExecutionBackends) {
+                cancelExecutionBackends(appContext, normalizedId)
+            }
             operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return
@@ -388,7 +421,9 @@ class DefaultDownloadExecutionHost(
                 errorCode = "HOST_STOPPED"
             )
         }
-        cancelExecutionBackends(appContext, normalizedId)
+        if (cancelExecutionBackends) {
+            cancelExecutionBackends(appContext, normalizedId)
+        }
         GlobalDownloadManager.stopDownloadOperation(
             context = appContext,
             songKey = request.song.stableKey(),
@@ -524,7 +559,9 @@ class DefaultDownloadExecutionHost(
         val claimResult = synchronized(executionAdmissionLock) {
             when {
                 !tryAcquireHostAdmission(appContext, normalizedId) -> DownloadExecutionResult.Retry
-                !executingOperationIds.add(normalizedId) -> DownloadExecutionResult.AlreadyHandled
+                !executingOperationIds.add(normalizedId) -> resolveConcurrentExecutionResult(
+                    systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
+                )
                 else -> null
             }
         }
@@ -614,6 +651,9 @@ class DefaultDownloadExecutionHost(
             }
             result
         } catch (cancellation: CancellationException) {
+            if (systemRetryStopOperationIds.contains(normalizedId)) {
+                throw cancellation
+            }
             val latestState = operationStore.currentState(
                 context.applicationContext,
                 normalizedId
@@ -650,6 +690,7 @@ class DefaultDownloadExecutionHost(
             DownloadExecutionResult.Failed(error)
         } finally {
             executingOperationIds.remove(normalizedId)
+            systemRetryStopOperationIds.remove(normalizedId)
             releaseHostAdmissionIfIdle(appContext, normalizedId)
         }
     }
@@ -767,6 +808,16 @@ internal fun shouldBlockHostReschedule(
     alreadyStoppedByUser: Boolean
 ): Boolean = preventReschedule || alreadyStoppedByUser
 
+internal fun resolveConcurrentExecutionResult(
+    systemRetryStopPending: Boolean
+): DownloadExecutionResult {
+    return if (systemRetryStopPending) {
+        DownloadExecutionResult.Retry
+    } else {
+        DownloadExecutionResult.AlreadyHandled
+    }
+}
+
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 private fun hasPendingUidtJob(context: Context, operationId: String): Boolean {
     return UidtDownloadJobService.hasPendingJob(context, operationId)
@@ -807,6 +858,22 @@ object DownloadExecutionHosts {
             context = context,
             operationId = operationId
         )
+    }
+
+    internal fun stopForSystemRetry(
+        context: Context,
+        operationId: String
+    ) {
+        val host = default
+        if (host is DefaultDownloadExecutionHost) {
+            host.stopForSystemRetry(context, operationId)
+        } else {
+            host.stop(
+                context = context,
+                operationId = operationId,
+                preventReschedule = false
+            )
+        }
     }
 }
 

@@ -29,7 +29,6 @@
     <string name="download_cancel_download">Cancel Download</string>
     <string name="download_cancelled_status">Cancelled</string>
     <string name="download_queued_status">Waiting to start</string>
-    <string name="download_waiting_queue_summary">The remaining tasks are queued and waiting for a free download slot</string>
     <string name="download_finalizing">Audio has been written; lyrics, covers, and metadata are being sorted</string>
     <string name="download_waiting_network_recovery">Network is switching, download will resume automatically</string>
     <string name="download_explicit_resume_summary">The system stopped these user-started downloads. They will not restart automatically.</string>
@@ -67,8 +66,10 @@
     <string name="download_execution_notification_title">Downloading</string>
     <string name="download_execution_notification_content">Operation %1$s is running</string>
     <string name="download_progress_format" formatted="false">Download progress: %1$d/%2$d</string>
+    <string name="download_progress_with_percentage" formatted="false">Download progress: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">Downloading: %s</string>
     <string name="download_overall_progress">Overall progress: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">Current file: %1$d%% (%2$d KB/s)</string>
+    <string name="download_current_file_progress" formatted="false">Current song: %1$d%%</string>
+    <string name="download_current_file_progress_detail" formatted="false">Current song: %1$d%%</string>
     <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>

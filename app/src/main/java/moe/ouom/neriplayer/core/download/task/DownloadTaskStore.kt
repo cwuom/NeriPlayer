@@ -134,24 +134,27 @@ internal class DownloadTaskStore(
         )
     }
 
-    fun updateProgress(progress: AudioDownloadManager.DownloadProgress) {
-        if (!shouldPublishProgress(progress)) {
-            return
-        }
-        mutate { tasks ->
+    fun updateProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
+        return synchronized(mutationLock) {
+            val tasks = _downloadTasks.value
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
-            if (taskIndex < 0) return@mutate tasks
+            if (taskIndex < 0) return@synchronized false
             val currentTask = tasks[taskIndex]
             if (currentTask.status != DownloadStatus.DOWNLOADING ||
                 !shouldApplyTaskMutation(currentTask, progress.attemptId)
             ) {
-                return@mutate tasks
+                return@synchronized false
             }
             if (currentTask.progress == progress) {
-                return@mutate tasks
+                return@synchronized false
             }
-
-            tasks.replaceAt(taskIndex, currentTask.copy(progress = progress))
+            if (!shouldPublishProgress(progress)) {
+                return@synchronized false
+            }
+            val updatedTasks = tasks.replaceAt(taskIndex, currentTask.copy(progress = progress))
+            _downloadTasks.value = updatedTasks
+            songKeyIndex = buildSongKeyIndex(updatedTasks)
+            true
         }
     }
 
@@ -387,15 +390,17 @@ internal class DownloadTaskStore(
         songKey: String,
         status: DownloadStatus,
         expectedAttemptId: Long? = null
-    ) {
-        if (status != DownloadStatus.DOWNLOADING) {
+    ): Boolean {
+        val retainedProgress = status == DownloadStatus.WAITING_NETWORK
+        if (!retainedProgress) {
             clearProgressPublishState(songKey)
         }
-        updateTask(songKey, expectedAttemptId) { task ->
-            if (task.status == status && task.progress == null) {
+        return updateTask(songKey, expectedAttemptId) { task ->
+            val nextProgress = if (retainedProgress) task.progress else null
+            if (task.status == status && task.progress == nextProgress) {
                 return@updateTask task
             }
-            task.copy(status = status, progress = null)
+            task.copy(status = status, progress = nextProgress)
         }
     }
 

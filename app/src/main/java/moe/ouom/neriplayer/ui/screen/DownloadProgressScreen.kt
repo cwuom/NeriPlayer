@@ -51,11 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
+import moe.ouom.neriplayer.core.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
+import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.execution.loadExplicitDownloadResumeCandidates
@@ -66,7 +68,6 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
-import moe.ouom.neriplayer.util.format.formatFileSize
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
 private const val EXPLICIT_RESUME_REFRESH_ATTEMPTS = 3
@@ -81,10 +82,9 @@ fun DownloadProgressScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsStateWithLifecycle()
+    val batchDownloadProgress by GlobalDownloadManager.batchDownloadProgressFlow
+        .collectAsStateWithLifecycle()
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
-    val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsStateWithLifecycle()
-    val activeDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsStateWithLifecycle()
     val isClearingDownloadTasks by GlobalDownloadManager.isClearingDownloadTasks
         .collectAsStateWithLifecycle()
     var explicitResumeCandidates by remember {
@@ -119,18 +119,26 @@ fun DownloadProgressScreen(
             kotlinx.coroutines.delay(EXPLICIT_RESUME_REFRESH_DELAY_MS)
         }
     }
-    val pendingTaskCount = if (isClearingDownloadTasks) 0 else taskSummary.pendingTaskCount
-    val queuedTaskCount = if (isClearingDownloadTasks) 0 else taskSummary.queuedTaskCount
-    val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
-    val visibleBatchProgress = batchDownloadProgress?.takeIf { progress ->
-        !isClearingDownloadTasks && (
-            pendingTaskCount <= 1 || progress.totalSongs >= pendingTaskCount
-        )
+    val pendingTaskCount = remember(downloadTasks, isClearingDownloadTasks) {
+        if (isClearingDownloadTasks) {
+            0
+        } else {
+            downloadTasks.count { task ->
+                task.status == DownloadStatus.QUEUED ||
+                    task.status == DownloadStatus.DOWNLOADING ||
+                    task.status == DownloadStatus.WAITING_NETWORK
+            }
+        }
     }
-    // 排队任务也保留在列表中，批量下载可看到每首歌的状态
-    val visibleTasks = if (isClearingDownloadTasks) emptyList() else downloadTasks
-    val visibleActiveDownloadOperations = activeDownloadOperations &&
-        !isClearingDownloadTasks && visibleTasks.isNotEmpty()
+    val visibleBatchProgress = batchDownloadProgress?.takeUnless {
+        isClearingDownloadTasks
+    }
+    val visibleTasks = if (isClearingDownloadTasks) {
+        emptyList()
+    } else {
+        visibleDownloadProgressTasks(downloadTasks)
+    }
+    val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -173,21 +181,26 @@ fun DownloadProgressScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Text(
-                        text = if (visibleBatchProgress != null) {
-                            stringResource(
-                                R.string.download_progress_format,
+                        text = when {
+                            visibleBatchProgress != null -> stringResource(
+                                R.string.download_progress_with_percentage,
                                 visibleBatchProgress.completedSongs,
-                                visibleBatchProgress.totalSongs
+                                visibleBatchProgress.totalSongs,
+                                visibleBatchProgress.percentage
                             )
-                        } else {
-                            pluralStringResource(
+
+                            displayedPendingTaskCount > 0 -> pluralStringResource(
                                 R.plurals.download_tasks_count,
                                 displayedPendingTaskCount,
                                 displayedPendingTaskCount
                             )
+
+                            else -> stringResource(R.string.download_no_tasks)
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             },
@@ -231,10 +244,10 @@ fun DownloadProgressScreen(
                 }
             }
         } else if (
-            visibleTasks.isEmpty() &&
-            queuedTaskCount == 0 &&
-            !visibleActiveDownloadOperations &&
-            explicitResumeCandidates.isEmpty()
+            visibleBatchProgress == null &&
+                visibleTasks.isEmpty() &&
+                explicitResumeCandidates.isEmpty() &&
+                pendingTaskCount == 0
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -270,6 +283,16 @@ fun DownloadProgressScreen(
                     bottom = 16.dp + miniPlayerHeight
                 )
             ) {
+                visibleBatchProgress?.let { progress ->
+                    item(key = "batch-overall-progress") {
+                        BatchDownloadOverallProgressCard(progress = progress)
+                    }
+                }
+                if (visibleBatchProgress == null && pendingTaskCount > 0 && visibleTasks.isEmpty()) {
+                    item(key = "pending-download-summary") {
+                        PendingDownloadSummaryCard(count = pendingTaskCount)
+                    }
+                }
                 if (explicitResumeCandidates.isNotEmpty()) {
                     item(key = "explicit-resume-summary") {
                         ExplicitResumeSummaryCard(
@@ -298,97 +321,24 @@ fun DownloadProgressScreen(
                         )
                     }
                 }
-                if (queuedTaskCount > 0) {
-                    item(key = "queued-summary") {
-                        val shape = RoundedCornerShape(12.dp)
-                        val baseColor = MaterialTheme.colorScheme.surfaceVariant
-                        AdvancedGlassSurface(
-                            role = AdvancedGlassRole.SemanticCard,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = shape,
-                            fallbackColor = baseColor.copy(alpha = 0.3f),
-                            tintColor = baseColor
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = pluralStringResource(
-                                        R.plurals.download_tasks_count,
-                                        queuedTaskCount,
-                                        queuedTaskCount
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = stringResource(R.string.download_waiting_queue_summary),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-
                 items(
                     items = visibleTasks,
                     key = { it.song.stableKey() },
                     contentType = { task -> task.status }
                 ) { task ->
                     val songKey = task.song.stableKey()
-                    val canDismiss = task.status == DownloadStatus.COMPLETED || task.status == DownloadStatus.CANCELLED
-
-                    if (canDismiss) {
-                        val dismissState = rememberSwipeToDismissBoxState()
-
-                        LaunchedEffect(dismissState.currentValue, songKey) {
-                            if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-                                context.performHapticFeedback()
-                                GlobalDownloadManager.removeDownloadTask(songKey)
-                            }
-                        }
-
-                        SwipeToDismissBox(
-                            state = dismissState,
-                            backgroundContent = { },
-                            enableDismissFromStartToEnd = false,
-                            enableDismissFromEndToStart = true,
-                            modifier = Modifier.animateItem(
-                                fadeInSpec = tween(durationMillis = 250),
-                                fadeOutSpec = tween(durationMillis = 250),
-                                placementSpec = tween(durationMillis = 250)
-                            )
-                        ) {
-                            DownloadTaskItem(
-                                task = task,
-                                onCancel = {
-                                    context.performHapticFeedback()
-                                    GlobalDownloadManager.cancelDownloadTask(songKey)
-                                },
-                                onResume = {
-                                    context.performHapticFeedback()
-                                    GlobalDownloadManager.resumeDownloadTask(context, songKey)
-                                }
-                            )
-                        }
-                    } else {
-                        DownloadTaskItem(
-                            task = task,
-                            onCancel = {
-                                context.performHapticFeedback()
-                                GlobalDownloadManager.cancelDownloadTask(songKey)
-                            },
-                            onResume = {
-                                context.performHapticFeedback()
-                                GlobalDownloadManager.resumeDownloadTask(context, songKey)
-                            },
-                            modifier = Modifier
+                    DownloadTaskItem(
+                        task = task,
+                        onCancel = {
+                            context.performHapticFeedback()
+                            GlobalDownloadManager.cancelDownloadTask(songKey)
+                        },
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = tween(durationMillis = 250),
+                            fadeOutSpec = tween(durationMillis = 250),
+                            placementSpec = tween(durationMillis = 250)
                         )
-                    }
+                    )
                 }
             }
         }
@@ -455,6 +405,78 @@ private fun DownloadTaskItem(
             Spacer(modifier = Modifier.height(12.dp))
 
             DownloadTaskProgressSection(task = task)
+        }
+    }
+}
+
+@Composable
+private fun BatchDownloadOverallProgressCard(progress: BatchDownloadOverallProgress) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.download_progress_with_percentage,
+                    progress.completedSongs,
+                    progress.totalSongs,
+                    progress.percentage
+                ),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            LinearProgressIndicator(
+                progress = { progress.fraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+            )
+        }
+    }
+}
+
+@Composable
+private fun PendingDownloadSummaryCard(count: Int) {
+    val shape = RoundedCornerShape(12.dp)
+    val baseColor = MaterialTheme.colorScheme.surfaceVariant
+    AdvancedGlassSurface(
+        role = AdvancedGlassRole.SemanticCard,
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        fallbackColor = baseColor.copy(alpha = 0.3f),
+        tintColor = baseColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = pluralStringResource(R.plurals.download_tasks_count, count, count),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium
+            )
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+            )
         }
     }
 }
@@ -638,6 +660,9 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            task.progress?.let { progress ->
+                DownloadTaskRetainedProgress(progress)
+            }
         }
 
         DownloadStatus.DOWNLOADING -> {
@@ -652,21 +677,7 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                if (progress.totalBytes > 0L) {
-                    LinearProgressIndicator(
-                        progress = {
-                            (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                                .coerceIn(0f, 1f)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                    )
-                } else {
-                    DownloadTaskIndeterminateProgress()
-                }
+                DownloadTaskRetainedProgress(progress)
                 return
             }
             if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
@@ -689,28 +700,11 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                     .coerceIn(0f, 1f)
             }
             val progressText = remember(progress.percentage) { "${progress.percentage}%" }
-            val sizeText = remember(progress.bytesRead, progress.totalBytes) {
-                "${formatFileSize(progress.bytesRead)} / ${formatFileSize(progress.totalBytes)}"
-            }
-            val speedText = remember(progress.speedBytesPerSec) {
-                "${formatFileSize(progress.speedBytesPerSec)}/s"
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = progressText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = sizeText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = progressText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary
+            )
             Spacer(modifier = Modifier.height(4.dp))
             LinearProgressIndicator(
                 progress = { progressFraction },
@@ -718,12 +712,6 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = speedText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
@@ -751,6 +739,31 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
             )
         }
     }
+}
+
+@Composable
+private fun DownloadTaskRetainedProgress(progress: AudioDownloadManager.DownloadProgress) {
+    if (progress.totalBytes <= 0L) {
+        Spacer(modifier = Modifier.height(4.dp))
+        DownloadTaskIndeterminateProgress()
+        return
+    }
+    val progressFraction = (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+        .coerceIn(0f, 1f)
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = "${progress.percentage}%",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    LinearProgressIndicator(
+        progress = { progressFraction },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+    )
 }
 
 @Composable

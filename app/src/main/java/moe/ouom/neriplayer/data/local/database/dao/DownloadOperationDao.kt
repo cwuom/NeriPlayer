@@ -154,6 +154,20 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET bytes_written = :bytesWritten, " +
+            "total_bytes = :totalBytes WHERE operation_id = :operationId " +
+            "AND library_id = :libraryId AND stable_key = :stableKey " +
+            "AND state = 'RUNNING' AND stop_requested_by_user = 0"
+    )
+    suspend fun updateProgressCheckpoint(
+        operationId: String,
+        libraryId: String,
+        stableKey: String,
+        bytesWritten: Long,
+        totalBytes: Long?
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET stop_requested_by_user = 1, " +
             "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId"
     )

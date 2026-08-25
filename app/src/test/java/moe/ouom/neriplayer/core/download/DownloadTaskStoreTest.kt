@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -32,6 +33,112 @@ class DownloadTaskStoreTest {
 
             store.endDownloadTransfer()
             assertFalse(store.isSingleDownloading)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `stale progress cannot throttle the first event of the active attempt`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(1L)
+            val activeAttemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            val currentProgress = progress(
+                song = downloadSong,
+                attemptId = activeAttemptId,
+                bytesRead = 42L
+            )
+
+            assertFalse(
+                store.updateProgress(
+                    progress(
+                        song = downloadSong,
+                        attemptId = activeAttemptId + 1L,
+                        bytesRead = 42L
+                    )
+                )
+            )
+            assertTrue(store.updateProgress(currentProgress))
+            assertEquals(
+                currentProgress,
+                store.findTask(downloadSong.stableKey())?.progress
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `network pause retains verified partial progress for recovery`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(1L)
+            val attemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            val partialProgress = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 42L
+            )
+
+            assertTrue(store.updateProgress(partialProgress))
+            store.updateTaskStatus(
+                songKey = downloadSong.stableKey(),
+                status = DownloadStatus.WAITING_NETWORK,
+                expectedAttemptId = attemptId
+            )
+
+            assertEquals(DownloadStatus.WAITING_NETWORK, store.findTask(downloadSong.stableKey())?.status)
+            assertEquals(partialProgress, store.findTask(downloadSong.stableKey())?.progress)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `large active batch keeps per song progress isolated`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val songs = (1L..512L).map(::song)
+            val attemptIds = store.prepareDownloadTasks(
+                songs = songs,
+                status = DownloadStatus.DOWNLOADING
+            )
+
+            songs.forEachIndexed { index, downloadSong ->
+                val bytesRead = (index + 1).toLong()
+                assertTrue(
+                    store.updateProgress(
+                        progress(
+                            song = downloadSong,
+                            attemptId = attemptIds.getValue(downloadSong.stableKey()),
+                            bytesRead = bytesRead
+                        )
+                    )
+                )
+            }
+
+            assertEquals(512, store.currentTasks().size)
+            songs.forEachIndexed { index, downloadSong ->
+                assertEquals(
+                    (index + 1).toLong(),
+                    store.findTask(downloadSong.stableKey())?.progress?.bytesRead
+                )
+            }
         } finally {
             scope.cancel()
         }
@@ -379,6 +486,22 @@ class DownloadTaskStoreTest {
             durationMs = 180_000L,
             coverUrl = null,
             mediaUri = "https://example.com/$id"
+        )
+    }
+
+    private fun progress(
+        song: SongItem,
+        attemptId: Long,
+        bytesRead: Long
+    ): AudioDownloadManager.DownloadProgress {
+        return AudioDownloadManager.DownloadProgress(
+            songKey = song.stableKey(),
+            songId = song.id,
+            fileName = "song.mp3",
+            bytesRead = bytesRead,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 100L,
+            attemptId = attemptId
         )
     }
 }

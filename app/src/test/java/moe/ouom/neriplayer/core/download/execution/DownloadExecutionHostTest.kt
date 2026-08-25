@@ -607,6 +607,18 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `fallback retries while a system stopped UIDT execution is unwinding`() {
+        assertEquals(
+            DownloadExecutionResult.Retry,
+            resolveConcurrentExecutionResult(systemRetryStopPending = true)
+        )
+        assertEquals(
+            DownloadExecutionResult.AlreadyHandled,
+            resolveConcurrentExecutionResult(systemRetryStopPending = false)
+        )
+    }
+
+    @Test
     fun `fresh host resumes interrupted commit and enrichment operations`() = runTest {
         val context = mockContext()
         val store = DownloadExecutionOperationStore { testJournal }

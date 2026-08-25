@@ -4,6 +4,7 @@ import android.app.job.JobParameters
 import android.os.Build
 import android.app.ApplicationExitInfo
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,6 +57,31 @@ class UidtDownloadJobPolicyTest {
         assertTrue(
             shouldMarkUidtJobStopped(
                 stopReason = JobParameters.STOP_REASON_USER,
+                sdkInt = Build.VERSION_CODES.S
+            )
+        )
+    }
+
+    @Test
+    fun `system stop keeps both UIDT and worker recovery paths alive`() {
+        assertEquals(
+            UidtStopAction.RETRY_WITHOUT_CANCELLING_BACKENDS,
+            resolveUidtStopAction(
+                stopReason = JobParameters.STOP_REASON_QUOTA,
+                sdkInt = Build.VERSION_CODES.S
+            )
+        )
+        assertEquals(
+            UidtStopAction.STOP_AND_CANCEL_BACKENDS,
+            resolveUidtStopAction(
+                stopReason = JobParameters.STOP_REASON_USER,
+                sdkInt = Build.VERSION_CODES.S
+            )
+        )
+        assertEquals(
+            UidtStopAction.STOP_AND_CANCEL_BACKENDS,
+            resolveUidtStopAction(
+                stopReason = JobParameters.STOP_REASON_CANCELLED_BY_APP,
                 sdkInt = Build.VERSION_CODES.S
             )
         )

@@ -29,7 +29,6 @@
     <string name="download_cancel_download">取消下载</string>
     <string name="download_cancelled_status">已取消</string>
     <string name="download_queued_status">等待开始</string>
-    <string name="download_waiting_queue_summary">其余任务正在排队，等待空闲下载槽</string>
     <string name="download_finalizing">音频已写入，正在整理歌词、封面和元信息</string>
     <string name="download_waiting_network_recovery">网络切换中，恢复后会自动继续</string>
     <string name="download_explicit_resume_summary">系统停止了用户发起的下载，不会自动重新调度</string>
@@ -67,8 +66,10 @@
     <string name="download_execution_notification_title">正在下载</string>
     <string name="download_execution_notification_content">操作 %1$s 正在执行</string>
     <string name="download_progress_format" formatted="false">下载进度: %1$d/%2$d</string>
+    <string name="download_progress_with_percentage" formatted="false">下载进度: %1$d/%2$d · %3$d%%</string>
     <string name="download_current_song">正在下载: %s</string>
     <string name="download_overall_progress">总体进度: %d%%</string>
-    <string name="download_current_file_progress" formatted="false">当前文件: %1$d%% (%2$d KB/s)</string>
+    <string name="download_current_file_progress" formatted="false">当前歌曲: %1$d%%</string>
+    <string name="download_current_file_progress_detail" formatted="false">当前歌曲: %1$d%%</string>
     <string name="download_progress_file_label">%1$d%% - %2$s</string>
 </resources>

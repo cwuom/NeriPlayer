@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download
 
+import kotlin.math.floor
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
@@ -11,6 +12,123 @@ data class DownloadTask(
     val status: DownloadStatus,
     val attemptId: Long = 0L
 )
+
+/** immutable membership for one user initiated batch, kept apart from transient task cards */
+internal data class BatchDownloadPresentationState(
+    val id: Long,
+    val memberAttemptIds: Map<String, Long?>,
+    val terminalStates: Map<String, BatchDownloadTerminalState> = emptyMap()
+)
+
+internal enum class BatchDownloadTerminalState {
+    COMPLETED,
+    FAILED,
+    CANCELLED
+}
+
+/** progress shown for a batch, where every selected song has equal weight */
+internal data class BatchDownloadOverallProgress(
+    val totalSongs: Int,
+    val completedSongs: Int,
+    val percentage: Int,
+    val fraction: Float,
+    val activeSongCount: Int,
+    val hasPendingSongs: Boolean
+)
+
+internal fun aggregateBatchDownloadProgress(
+    presentation: BatchDownloadPresentationState,
+    tasks: List<DownloadTask>
+): BatchDownloadOverallProgress? {
+    if (presentation.memberAttemptIds.isEmpty()) {
+        return null
+    }
+
+    val tasksBySongKey = tasks.associateBy { task -> task.song.stableKey() }
+    var completedSongs = 0
+    var completedFraction = 0f
+    var activeSongCount = 0
+    var hasPendingSongs = false
+
+    presentation.memberAttemptIds.forEach { (songKey, expectedAttemptId) ->
+        when (presentation.terminalStates[songKey]) {
+            BatchDownloadTerminalState.COMPLETED -> {
+                completedSongs++
+                completedFraction += 1f
+            }
+
+            BatchDownloadTerminalState.FAILED,
+            BatchDownloadTerminalState.CANCELLED -> Unit
+
+            null -> {
+                val task = tasksBySongKey[songKey]
+                    ?.takeIf { candidate ->
+                        if (expectedAttemptId == null) {
+                            candidate.status == DownloadStatus.QUEUED ||
+                                candidate.status == DownloadStatus.DOWNLOADING ||
+                                candidate.status == DownloadStatus.WAITING_NETWORK
+                        } else {
+                            candidate.attemptId == expectedAttemptId
+                        }
+                    }
+                when (task?.status) {
+                    DownloadStatus.COMPLETED -> {
+                        completedSongs++
+                        completedFraction += 1f
+                    }
+
+                    DownloadStatus.DOWNLOADING -> {
+                        activeSongCount++
+                        val progress = task.progress
+                        when {
+                            progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
+                                completedSongs++
+                                completedFraction += 1f
+                                hasPendingSongs = true
+                            }
+
+                            progress != null && progress.totalBytes > 0L -> {
+                                completedFraction += progressFraction(progress)
+                                hasPendingSongs = true
+                            }
+
+                            else -> hasPendingSongs = true
+                        }
+                    }
+
+                    DownloadStatus.WAITING_NETWORK -> {
+                        task.progress?.takeIf { progress -> progress.totalBytes > 0L }
+                            ?.let(::progressFraction)
+                            ?.let { fraction -> completedFraction += fraction }
+                        hasPendingSongs = true
+                    }
+
+                    DownloadStatus.QUEUED,
+                    null -> hasPendingSongs = true
+
+                    DownloadStatus.FAILED,
+                    DownloadStatus.CANCELLED -> Unit
+                }
+            }
+        }
+    }
+
+    val totalSongs = presentation.memberAttemptIds.size
+    val fraction = (completedFraction / totalSongs.toFloat()).coerceIn(0f, 1f)
+    return BatchDownloadOverallProgress(
+        totalSongs = totalSongs,
+        completedSongs = completedSongs,
+        percentage = floor(fraction * 100f).toInt(),
+        fraction = fraction,
+        activeSongCount = activeSongCount,
+        hasPendingSongs = hasPendingSongs
+    )
+}
+
+private fun progressFraction(progress: AudioDownloadManager.DownloadProgress): Float {
+    return (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+        .coerceIn(0f, 1f)
+}
 
 /** durable candidates that must wait for a user action after an OS stop */
 internal data class ExplicitDownloadResumeCandidate(
@@ -58,6 +176,22 @@ internal data class QueuedDownloadRequest(
     val attemptId: Long,
     val operationId: String
 )
+
+internal fun selectBatchRequestsForEarlyHandoff(
+    pendingRequests: List<QueuedDownloadRequest>,
+    scheduledSongKeys: Set<String>,
+    maximumHandoffs: Int
+): List<QueuedDownloadRequest> {
+    val remainingHandoffs = maximumHandoffs - scheduledSongKeys.size
+    if (remainingHandoffs <= 0) {
+        return emptyList()
+    }
+    return pendingRequests
+        .asSequence()
+        .filter { request -> request.song.stableKey() !in scheduledSongKeys }
+        .take(remainingHandoffs)
+        .toList()
+}
 
 internal enum class BatchOperationScheduleAction {
     SCHEDULE,
@@ -131,6 +265,19 @@ internal fun isDownloadTaskClearable(task: DownloadTask): Boolean {
     return task.status == DownloadStatus.COMPLETED ||
         task.status == DownloadStatus.CANCELLED ||
         task.status == DownloadStatus.FAILED
+}
+
+internal fun visibleDownloadProgressTasks(tasks: List<DownloadTask>): List<DownloadTask> {
+    return tasks.filter { task -> task.status == DownloadStatus.DOWNLOADING }
+}
+
+internal fun activeDownloadTaskWithProgress(tasks: List<DownloadTask>): DownloadTask? {
+    return tasks.firstOrNull { task ->
+        task.status == DownloadStatus.DOWNLOADING &&
+            task.progress?.let { progress ->
+                progress.attemptId == null || progress.attemptId == task.attemptId
+            } == true
+    }
 }
 
 internal fun shouldHideRemoteDownloadAction(
@@ -249,7 +396,7 @@ internal fun applyWaitingNetworkStatus(
             return@map task
         }
         changed = true
-        task.copy(status = DownloadStatus.WAITING_NETWORK, progress = null)
+        task.copy(status = DownloadStatus.WAITING_NETWORK)
     }
     return if (changed) updatedTasks else tasks
 }

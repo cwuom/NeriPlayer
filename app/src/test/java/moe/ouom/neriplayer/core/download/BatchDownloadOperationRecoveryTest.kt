@@ -101,6 +101,26 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `batch publishes its membership before preparation and hands off prepared songs early`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val startBody = methodBody(source, "startBatchDownload")
+        val preparationBody = methodBody(source, "prepareAndScheduleBatchDownloadSession")
+
+        assertTrue(
+            startBody.indexOf("beginBatchDownloadPresentation(requestedSongs)") <
+                startBody.indexOf("scope.launch")
+        )
+        assertTrue(preparationBody.contains("selectBatchRequestsForEarlyHandoff("))
+        assertTrue(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
+        assertTrue(
+            preparationBody.indexOf("schedulePendingBatchDownload(") <
+                preparationBody.indexOf("schedulePendingBatchDownloads(session, pendingAttemptIds)")
+        )
+    }
+
+    @Test
     fun `cancel before host handoff releases only the captured artifact lease`() {
         assertEquals(
             "old-operation",

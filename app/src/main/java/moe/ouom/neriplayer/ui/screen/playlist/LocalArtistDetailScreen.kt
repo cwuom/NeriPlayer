@@ -76,8 +76,6 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -625,28 +623,9 @@ fun LocalArtistDetailScreen(
         }
 
         if (showDownloadManager) {
-            val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
             val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-            val currentPendingTaskCount = remember(downloadTasks) {
-                countPendingDownloadTasks(downloadTasks)
-            }
-            val progress = batchDownloadProgress
             BatchDownloadManagerSheet(
-                batchDownloadProgress = progress,
                 downloadTasks = downloadTasks,
-                progressSummaryText = if (progress != null) {
-                    stringResource(
-                        R.string.bili_download_progress_format,
-                        progress.completedSongs,
-                        progress.totalSongs
-                    )
-                } else {
-                    pluralStringResource(
-                        R.plurals.download_tasks_count,
-                        currentPendingTaskCount,
-                        currentPendingTaskCount
-                    )
-                },
                 onDismiss = { showDownloadManager = false }
             )
         }

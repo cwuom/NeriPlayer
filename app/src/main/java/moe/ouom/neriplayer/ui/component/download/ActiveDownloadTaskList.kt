@@ -20,8 +20,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
-import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -34,19 +34,8 @@ fun ActiveDownloadTaskList(
     maxHeight: androidx.compose.ui.unit.Dp = 320.dp
 ) {
     val visibleTasks = remember(tasks, maxVisibleTasks) {
-        tasks.filter { task ->
-            task.status == DownloadStatus.DOWNLOADING ||
-                task.status == DownloadStatus.WAITING_NETWORK
-        }
-            .sortedWith(
-                compareBy<DownloadTask> { task ->
-                    when (task.status) {
-                        DownloadStatus.DOWNLOADING -> 0
-                        DownloadStatus.WAITING_NETWORK -> 1
-                        else -> 2
-                    }
-                }.thenBy { task -> task.attemptId }
-            )
+        visibleDownloadProgressTasks(tasks)
+            .sortedBy(DownloadTask::attemptId)
             .take(maxVisibleTasks)
     }
     if (visibleTasks.isEmpty()) {
@@ -71,20 +60,6 @@ fun ActiveDownloadTaskList(
                     )
 
                     when {
-                        task.status == DownloadStatus.WAITING_NETWORK -> {
-                            Text(
-                                text = stringResource(R.string.download_waiting_network_recovery),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                            )
-                        }
-
                         progress?.stage == AudioDownloadManager.DownloadStage.FINALIZING -> {
                             Text(
                                 text = stringResource(R.string.download_finalizing),
@@ -130,8 +105,7 @@ fun ActiveDownloadTaskList(
                             Text(
                                 text = stringResource(
                                     R.string.download_current_file_progress,
-                                    progress.percentage,
-                                    progress.speedBytesPerSec / 1024
+                                    progress.percentage
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

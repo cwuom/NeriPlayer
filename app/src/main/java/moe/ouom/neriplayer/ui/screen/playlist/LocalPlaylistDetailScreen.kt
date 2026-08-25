@@ -164,10 +164,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
-import moe.ouom.neriplayer.core.download.countPendingDownloadTasks
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.toPlaybackSongItem
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
@@ -2758,28 +2756,9 @@ fun LocalPlaylistDetailScreen(
 
                 // 下载管理器
                 if (showDownloadManager) {
-                    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
                     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsState()
-                    val pendingTaskCount = remember(downloadTasks) {
-                        countPendingDownloadTasks(downloadTasks)
-                    }
-                    val progress = batchDownloadProgress
                     BatchDownloadManagerSheet(
-                        batchDownloadProgress = progress,
                         downloadTasks = downloadTasks,
-                        progressSummaryText = if (progress != null) {
-                            stringResource(
-                                R.string.bili_download_progress_format,
-                                progress.completedSongs,
-                                progress.totalSongs
-                            )
-                        } else {
-                            pluralStringResource(
-                                R.plurals.download_tasks_count,
-                                pendingTaskCount,
-                                pendingTaskCount
-                            )
-                        },
                         onDismiss = { showDownloadManager = false }
                     )
                 }

@@ -412,11 +412,9 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         assertTrue(screenSource.contains("if (isClearingDownloadTasks)"))
         assertTrue(screenSource.contains("R.string.download_clearing_tasks"))
-        assertTrue(
-            screenSource.contains(
-                "val visibleTasks = if (isClearingDownloadTasks) emptyList() else downloadTasks"
-            )
-        )
+        assertTrue(screenSource.contains("visibleDownloadProgressTasks(downloadTasks)"))
+        assertFalse(screenSource.contains("item(key = \"queued-summary\")"))
+        assertTrue(screenSource.contains("R.string.download_progress_with_percentage"))
     }
 
     @Test
