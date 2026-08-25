@@ -47,6 +47,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.platform.netease.neteaseRadarCacheContext
 import moe.ouom.neriplayer.util.platform.LanguageManager
 import moe.ouom.neriplayer.core.logging.NPLogger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.io.IOException
 
 private const val TAG = "NERI-HomeVM"
@@ -430,15 +432,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         playlistJob = viewModelScope.launch {
-            sources.forEach { source ->
-                val section = fetchPlaylistSection(source)
-                _uiState.update { state ->
-                    state.copy(
-                        playlistSections = replacePlaylistSection(
-                            state.playlistSections,
-                            section
+            // 并行请求所有板块，避免逐个串行等待网络导致首页加载慢
+            coroutineScope {
+                val deferred = sources.map { source -> async { fetchPlaylistSection(source) } }
+                deferred.forEach { job ->
+                    val section = job.await()
+                    _uiState.update { state ->
+                        state.copy(
+                            playlistSections = replacePlaylistSection(
+                                state.playlistSections,
+                                section
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -483,15 +489,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         hotSongsJob = viewModelScope.launch {
-            sources.forEach { source ->
-                val section = fetchSongSection("refreshHotSongs", source)
-                _uiState.update { state ->
-                    state.copy(
-                        trendingSongSections = replaceSongSection(
-                            state.trendingSongSections,
-                            section
+            // 并行请求所有板块，避免逐个串行等待网络导致首页加载慢
+            coroutineScope {
+                val deferred = sources.map { source -> async { fetchSongSection("refreshHotSongs", source) } }
+                deferred.forEach { job ->
+                    val section = job.await()
+                    _uiState.update { state ->
+                        state.copy(
+                            trendingSongSections = replaceSongSection(
+                                state.trendingSongSections,
+                                section
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -520,15 +530,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         radarSongsJob = viewModelScope.launch {
-            sources.forEach { source ->
-                val section = fetchSongSection("refreshRadarSongs", source)
-                _uiState.update { state ->
-                    state.copy(
-                        radarSongSections = replaceSongSection(
-                            state.radarSongSections,
-                            section
+            // 并行请求所有板块，避免逐个串行等待网络导致首页加载慢
+            coroutineScope {
+                val deferred = sources.map { source -> async { fetchSongSection("refreshRadarSongs", source) } }
+                deferred.forEach { job ->
+                    val section = job.await()
+                    _uiState.update { state ->
+                        state.copy(
+                            radarSongSections = replaceSongSection(
+                                state.radarSongSections,
+                                section
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -870,8 +884,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 n = HOME_NETEASE_SONG_LIMIT,
                 s = 0
             )
+            // afresh=false 走网易云当日缓存，避免每次进首页都让服务端重新生成导致加载慢
             NeteaseHomeSongSource.DAILY_RECOMMEND -> client.getDailyRecommendedSongs(
-                afresh = true
+                afresh = false
             )
             NeteaseHomeSongSource.PRIVATE_FM -> client.getPersonalFmSongs()
             NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS -> client.getPersonalizedNewSongs(
