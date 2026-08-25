@@ -8,9 +8,11 @@ import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
@@ -67,7 +69,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.drawable.toBitmap
 import androidx.core.graphics.get
 import androidx.core.graphics.scale
 import androidx.core.graphics.withClip
@@ -563,17 +564,46 @@ private suspend fun loadCoverBitmap(context: Context, coverUrl: String?): Bitmap
             allowHardware = false
         )
         val result = Coil.imageLoader(context).execute(request)
-        (result as? SuccessResult)
-            ?.drawable
-            ?.toBitmap(width = 512, height = 512, config = Bitmap.Config.ARGB_8888)
+        (result as? SuccessResult)?.drawable?.let { drawable ->
+            copyDrawableToOwnedBitmap(
+                drawable = drawable,
+                width = 512,
+                height = 512,
+                config = Bitmap.Config.ARGB_8888
+            )
+        }
     }.getOrNull()
+}
+
+// Coil may return a cache-owned bitmap, so the share card must keep its own copy
+internal fun copyDrawableToOwnedBitmap(
+    drawable: Drawable,
+    width: Int,
+    height: Int,
+    config: Bitmap.Config
+): Bitmap {
+    val bitmap = Bitmap.createBitmap(width, height, config)
+    val originalBounds = Rect(drawable.bounds)
+    return try {
+        drawable.setBounds(0, 0, width, height)
+        drawable.draw(Canvas(bitmap))
+        bitmap
+    } catch (error: Throwable) {
+        bitmap.recycle()
+        throw error
+    } finally {
+        drawable.bounds = originalBounds
+    }
 }
 
 private fun loadAppIconBitmap(context: Context): Bitmap? {
     return runCatching {
-        context.packageManager
-            .getApplicationIcon(context.applicationInfo)
-            .toBitmap(width = 128, height = 128, config = Bitmap.Config.ARGB_8888)
+        copyDrawableToOwnedBitmap(
+            drawable = context.packageManager.getApplicationIcon(context.applicationInfo),
+            width = 128,
+            height = 128,
+            config = Bitmap.Config.ARGB_8888
+        )
     }.getOrNull()
 }
 
