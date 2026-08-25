@@ -58,7 +58,6 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
-import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
@@ -111,12 +110,9 @@ private fun SettingsDownloadExpandedContent(
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
-    val batchDownloadProgress by AudioDownloadManager.batchProgressFlow.collectAsState()
+    val batchDownloadProgress by GlobalDownloadManager.batchDownloadProgressFlow.collectAsState()
     val taskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val visibleProgress = batchDownloadProgress?.takeIf { progress ->
-        taskSummary.hasPendingTasks &&
-            (taskSummary.pendingTaskCount <= 1 || progress.totalSongs >= taskSummary.pendingTaskCount)
-    }
+    val visibleProgress = batchDownloadProgress?.takeIf { taskSummary.hasPendingTasks }
 
     Column(
         modifier = Modifier

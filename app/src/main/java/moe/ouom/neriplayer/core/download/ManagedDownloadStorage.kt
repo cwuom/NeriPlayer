@@ -35,7 +35,6 @@ import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
-import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
@@ -163,9 +162,6 @@ internal object ManagedDownloadStorage {
     private val treeFileCommitter = ManagedDownloadTreeFileCommitter(
         treeChildRegistry = treeChildRegistry,
         tag = TAG,
-        deleteTrustedReference = { context, reference ->
-            deleteTrustedReference(context, reference)
-        },
         verifyDocumentCommittedLength = { context, uri, expectedSizeBytes, description ->
             verifyDocumentCommittedLength(
                 context = context,
@@ -178,7 +174,6 @@ internal object ManagedDownloadStorage {
     private val commitWriter = ManagedDownloadStorageCommitWriter(
         treeChildRegistry = treeChildRegistry,
         treeDirectories = treeDirectories,
-        treeFileCommitter = treeFileCommitter,
         tag = TAG
     )
     private val migrationCopyWorker = ManagedDownloadMigrationCopyWorker(
@@ -238,11 +233,12 @@ internal object ManagedDownloadStorage {
                 context = context,
                 root = root,
                 displayName = displayName,
-                content = content,
-                invalidateSnapshot = false
+                content = content
             )
         },
-        restoreLastModified = ::restoreStoredEntryLastModified,
+        restoreLastModified = { _, entry, lastModifiedMs ->
+            restoreStoredEntryLastModified(entry, lastModifiedMs)
+        },
         deleteReference = { context, reference, root ->
             deleteEnumeratedMigrationReference(
                 context = context,
@@ -673,23 +669,6 @@ internal object ManagedDownloadStorage {
         ).isNotEmpty()
     }
 
-    suspend fun mayHaveMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val root = resolveRoot(context, directoryUri) ?: return@withContext true
-            collectManagedMigrationEntries(
-                context = context,
-                root = root,
-                allowMetadataLessAudio = shouldIndexMetadataLessAudio(directoryUri)
-            ).isNotEmpty()
-        } catch (error: java.util.concurrent.CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            // 迁移前探测失败时必须保守弹窗, 不能把未知状态当成空目录
-            NPLogger.w(TAG, "迁移前目录探测失败, 保留迁移确认: ${error.message}", error)
-            true
-        }
-    }
-
     suspend fun migrateManagedDownloads(
         context: Context,
         fromDirectoryUri: String?,
@@ -849,14 +828,6 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    fun hasDownloadedAudio(
-        context: Context,
-        song: SongItem,
-        forceRefresh: Boolean = false
-    ): Boolean {
-        return findDownloadedAudioBlocking(context, song, forceRefresh) != null
-    }
-
     fun buildDisplayBaseName(song: SongItem): String {
         return renderManagedDownloadBaseName(song, settings.fileNameTemplate)
     }
@@ -867,10 +838,6 @@ internal object ManagedDownloadStorage {
         operationId: String? = null
     ): String {
         return ManagedDownloadRecoveryFiles.buildWorkingFileName(songKey, fileName, operationId)
-    }
-
-    internal fun buildWorkingSongKeyHash(songKey: String): String {
-        return ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(songKey)
     }
 
     fun createWorkingFile(
@@ -907,13 +874,6 @@ internal object ManagedDownloadStorage {
         nowMs: Long = System.currentTimeMillis()
     ): Boolean {
         return ManagedDownloadRecoveryFiles.shouldPreserveWorkingCheckpointForResume(entry, nowMs)
-    }
-
-    internal fun shouldPreserveWorkingResumeMetadataForResume(
-        entry: File,
-        nowMs: Long = System.currentTimeMillis()
-    ): Boolean {
-        return ManagedDownloadRecoveryFiles.shouldPreserveWorkingResumeMetadataForResume(entry, nowMs)
     }
 
     internal fun saveWorkingResumeMetadata(
@@ -1001,35 +961,6 @@ internal object ManagedDownloadStorage {
         ManagedDownloadRecoveryFiles.clearPendingDownloadQueue(context)
     }
 
-    internal fun markCancelledDownloadKeys(
-        context: Context,
-        songKeys: Collection<String>
-    ) {
-        ManagedDownloadRecoveryFiles.markCancelledDownloadKeys(context, songKeys)
-    }
-
-    internal fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return ManagedDownloadRecoveryFiles.listCancelledDownloadKeys(context)
-    }
-
-    internal fun removeCancelledDownloadKeys(
-        context: Context,
-        songKeys: Collection<String>
-    ) {
-        ManagedDownloadRecoveryFiles.removeCancelledDownloadKeys(context, songKeys)
-    }
-
-    internal fun discardCancelledDownloadKeys(
-        context: Context,
-        songKeys: Collection<String>
-    ) {
-        ManagedDownloadRecoveryFiles.discardCancelledDownloadKeys(context, songKeys)
-    }
-
-    internal fun clearCancelledDownloadKeys(context: Context) {
-        ManagedDownloadRecoveryFiles.clearCancelledDownloadKeys(context)
-    }
-
     internal fun listPendingResumableDownloadsInDirectory(
         stagingDir: File,
         nowMs: Long = System.currentTimeMillis()
@@ -1052,14 +983,6 @@ internal object ManagedDownloadStorage {
         nowMs: Long = System.currentTimeMillis()
     ): StartupRecoveryResult {
         return ManagedDownloadRecoveryFiles.cleanupStagingFilesInDirectory(stagingDir, nowMs)
-    }
-
-    fun findAudio(
-        context: Context,
-        song: SongItem,
-        forceRefresh: Boolean = false
-    ): StoredEntry? {
-        return findDownloadedAudioBlocking(context, song, forceRefresh)
     }
 
     fun peekDownloadedAudio(song: SongItem): StoredEntry? {
@@ -1367,7 +1290,7 @@ internal object ManagedDownloadStorage {
             normalizedHint
                 ?.substringAfterLast('.', "")
                 ?.lowercase()
-                ?.let { it in moe.ouom.neriplayer.core.download.storage.audioExtensions }
+                ?.let { it in audioExtensions }
                 == true
             )
         if (contentUri == null || (hintLooksUsable && '%' !in rawFileName.orEmpty())) {
@@ -1568,38 +1491,6 @@ internal object ManagedDownloadStorage {
             }
     }
 
-    suspend fun refreshStoredEntry(
-        context: Context,
-        reference: String?
-    ): StoredEntry? = withContext(Dispatchers.IO) {
-        val target = reference?.takeIf { it.isNotBlank() } ?: return@withContext null
-        val cachedEntry = buildDownloadLibrarySnapshotBlocking(context)
-            .audioEntriesByLookupKey[target]
-        val directEntry = refreshStoredEntryDirect(
-            context = context,
-            reference = target,
-            cachedEntry = cachedEntry
-        )
-        if (directEntry != null) {
-            updateSnapshotCacheAfterStoredEntryWrite(
-                context = context,
-                storedEntry = directEntry,
-                bucket = SnapshotEntryBucket.AUDIO
-            )
-            return@withContext directEntry
-        }
-        buildDownloadLibrarySnapshotBlocking(context, forceRefresh = true)
-            .audioEntriesByLookupKey[target]
-            ?.takeIf { refreshedEntry ->
-                inspectStorageReference(context, refreshedEntry.playbackUri) ==
-                    ManagedDownloadReferenceIo.AccessResult.Accessible
-            }
-    }
-
-    suspend fun listDownloadedAudio(context: Context): List<StoredEntry> = withContext(Dispatchers.IO) {
-        buildDownloadLibrarySnapshotBlocking(context).audioEntries
-    }
-
     suspend fun buildDownloadLibrarySnapshot(
         context: Context,
         forceRefresh: Boolean = false
@@ -1690,12 +1581,6 @@ internal object ManagedDownloadStorage {
         return snapshot.rootEntriesComplete && snapshot.audioEntriesWithoutMetadata.isEmpty()
     }
 
-    internal suspend fun readFastIndex(
-        context: Context
-    ): List<ManagedLibraryIndexEntry> = withContext(Dispatchers.IO) {
-        readFastIndexBlocking(context)
-    }
-
     internal suspend fun restoreFastIndexPreview(
         context: Context
     ): DownloadLibrarySnapshot? = withContext(Dispatchers.IO) {
@@ -1706,10 +1591,6 @@ internal object ManagedDownloadStorage {
             context = context,
             restorePersisted = false
         )
-    }
-
-    private fun readFastIndexBlocking(context: Context): List<ManagedLibraryIndexEntry> {
-        return readFastIndexWithRootEntriesBlocking(context)?.entries.orEmpty()
     }
 
     private data class FastIndexReadResult(
@@ -1907,19 +1788,6 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    suspend fun hasReadableReference(
-        context: Context,
-        reference: String?
-    ): Boolean = withContext(Dispatchers.IO) {
-        val target = reference?.takeIf(String::isNotBlank) ?: return@withContext false
-        val entry = refreshStoredEntryDirect(
-            context = context,
-            reference = target,
-            cachedEntry = null
-        ) ?: return@withContext false
-        hasReadableContent(context, entry)
-    }
-
     private fun findDownloadedAudioBlocking(
         context: Context,
         song: SongItem,
@@ -1937,34 +1805,6 @@ internal object ManagedDownloadStorage {
             return null
         }
         return findDownloadedAudioBlocking(context, song, forceRefresh = true)
-    }
-
-    private fun refreshStoredEntryDirect(
-        context: Context,
-        reference: String,
-        cachedEntry: StoredEntry?
-    ): StoredEntry? {
-        if (reference.startsWith("/")) {
-            return File(reference)
-                .takeIf { file -> file.exists() && file.isFile }
-                ?.toStoredEntry()
-        }
-        val uri = runCatching { reference.toUri() }.getOrNull() ?: return null
-        if (uri.scheme.equals("file", ignoreCase = true)) {
-            return uri.path
-                ?.let(::File)
-                ?.takeIf { file -> file.exists() && file.isFile }
-                ?.toStoredEntry()
-        }
-        if (
-            inspectStorageReference(context, uri.toString()) !=
-                ManagedDownloadReferenceIo.AccessResult.Accessible
-        ) {
-            return null
-        }
-        return ManagedDownloadReferenceIo.resolveDocumentFile(context, uri)
-            ?.takeIf(DocumentFile::isFile)
-            ?.toStoredEntry(knownName = cachedEntry?.name)
     }
 
     private fun buildDownloadLibrarySnapshotBlocking(
@@ -2421,8 +2261,7 @@ internal object ManagedDownloadStorage {
             context = context,
             root = resolveRootBlocking(context),
             displayName = "${audio.logicalName}$METADATA_SUFFIX",
-            content = json,
-            invalidateSnapshot = false
+            content = json
         )
         if (metadataEntry == null) {
             invalidateSnapshotCache(context)
@@ -2443,10 +2282,9 @@ internal object ManagedDownloadStorage {
 
     private fun ensureManagedLibraryManifestBlocking(context: Context): String {
         val root = resolveRootBlocking(context)
-        val existing = findRootNamedEntry(
+        val existing = findManagedLibraryManifestEntry(
             context = context,
-            root = root,
-            displayName = MANAGED_LIBRARY_MANIFEST_FILE_NAME
+            root = root
         )
             ?.let { entry -> readTextInternal(context, entry.reference) }
             ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
@@ -2467,8 +2305,7 @@ internal object ManagedDownloadStorage {
             context = context,
             root = root,
             displayName = MANAGED_LIBRARY_MANIFEST_FILE_NAME,
-            content = payload,
-            invalidateSnapshot = false
+            content = payload
         )
         if (written == null) {
             throw IOException("无法写入 Managed SAF root manifest")
@@ -2476,21 +2313,22 @@ internal object ManagedDownloadStorage {
         return libraryId
     }
 
-    private fun findRootNamedEntry(
+    private fun findManagedLibraryManifestEntry(
         context: Context,
-        root: RootHandle,
-        displayName: String
+        root: RootHandle
     ): StoredEntry? {
         return when (root) {
             is RootHandle.FileRoot -> {
-                File(root.dir, displayName).takeIf { it.isFile }?.toStoredEntry()
+                File(root.dir, MANAGED_LIBRARY_MANIFEST_FILE_NAME)
+                    .takeIf { it.isFile }
+                    ?.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
                 treeChildRegistry.cachedTreeChild(
                     context = context,
                     parent = root.tree,
-                    childName = displayName,
+                    childName = MANAGED_LIBRARY_MANIFEST_FILE_NAME,
                     maxCacheAgeMs = 0L
                 )?.toStoredEntry()
             }
@@ -2539,21 +2377,6 @@ internal object ManagedDownloadStorage {
             invalidateSnapshotCache(context)
         }
         return deletedReferences.containsAll(references)
-    }
-
-    suspend fun markDownloadedAudioFinalized(context: Context, audio: StoredEntry): Boolean = withContext(Dispatchers.IO) {
-        markDownloadedAudioFinalizedBlocking(context, audio)
-    }
-
-    private fun markDownloadedAudioFinalizedBlocking(context: Context, audio: StoredEntry): Boolean {
-        val metadataEntry = findMetadataForAudioBlocking(context, audio) ?: return false
-        val raw = readTextInternal(context, metadataEntry.reference) ?: return false
-        val finalized = finalizedDownloadedMetadataJson(raw) ?: return false
-        return runCatching {
-            saveMetadataBlocking(context, audio, finalized)
-        }.onFailure {
-            NPLogger.w(TAG, "恢复下载元数据 finalized 标记失败: ${audio.name}, ${it.message}")
-        }.getOrDefault(false)
     }
 
     suspend fun usesDocumentTree(context: Context): Boolean = withContext(Dispatchers.IO) {
@@ -2612,10 +2435,6 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    suspend fun deleteReference(context: Context, reference: String?): Boolean = withContext(Dispatchers.IO) {
-        deleteInternal(context, reference)
-    }
-
     /**
      * 兼容旧业务调用，真正的删除只在策略验证后进入 typed 执行器
      */
@@ -2631,25 +2450,6 @@ internal object ManagedDownloadStorage {
                 )
             }
         }
-
-    internal suspend fun deleteTrustedReferences(
-        context: Context,
-        references: Collection<TrustedManagedRef>
-    ): Set<String> = withContext(Dispatchers.IO) {
-        batchReferenceDeleteMutex.withLock {
-            deleteReferencesInternalConcurrently(
-                context = context,
-                references = references,
-                deletePolicy = buildManagedDeletePolicy(
-                    context = context,
-                    trustedReferences = references.mapTo(linkedSetOf()) {
-                        it.externalReference
-                    }
-                ),
-                invalidateSnapshot = true
-            )
-        }
-    }
 
     suspend fun saveAudioFromTemp(
         context: Context,
@@ -3042,9 +2842,8 @@ internal object ManagedDownloadStorage {
             is RootHandle.TreeRoot -> {
                 val pendingUri = audio.reference.toUri()
                 val pendingBackend = SafStorageBackend(context)
-                val pendingStat = runBlocking(Dispatchers.IO) {
-                    pendingBackend.stat(StorageReference.SafRef(pendingUri))
-                }
+                val initialPendingReference = StorageReference.SafRef(pendingUri)
+                val pendingStat = pendingBackend.stat(initialPendingReference)
                 val pending = when (pendingStat) {
                     is StorageLookupResult.Found -> pendingStat.value
                         .takeUnless(StorageStat::isDirectory)
@@ -3073,8 +2872,22 @@ internal object ManagedDownloadStorage {
                         treeChildRegistry.toDocumentFile(context, root.tree, child)
                     }
                     ?: return null
+                val pendingReference = StorageReference.SafRef(pending.uri)
+                val pendingSizeStat = if (pending.uri == pendingUri) {
+                    pendingStat
+                } else {
+                    pendingBackend.stat(pendingReference)
+                }
+                val pendingReportedSizeBytes = (pendingSizeStat as? StorageLookupResult.Found)
+                    ?.value
+                    ?.sizeBytes
                 val committedAtMs = System.currentTimeMillis()
-                val expectedSizeBytes = audio.sizeBytes.coerceAtLeast(1L)
+                val expectedSizeBytes = resolveCurrentTreePendingAudioSize(
+                    backend = pendingBackend,
+                    reference = pendingReference,
+                    reportedSizeBytes = pendingReportedSizeBytes,
+                    description = audio.name
+                )
                 val treePending = treeChildRegistry.toTreeDocumentFile(
                     context = context,
                     parent = root.tree,
@@ -3139,6 +2952,56 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    internal fun resolvePendingTreeAudioPromotionExpectedSize(
+        reportedSizeBytes: Long?,
+        countedSizeBytes: Long?
+    ): Long? {
+        return countedSizeBytes?.takeIf { size -> size > 0L }
+            ?: reportedSizeBytes?.takeIf { size -> size > 0L }
+    }
+
+    private suspend fun resolveCurrentTreePendingAudioSize(
+        backend: SafStorageBackend,
+        reference: StorageReference.SafRef,
+        reportedSizeBytes: Long?,
+        description: String
+    ): Long {
+        val countedSizeBytes = when (val read = backend.read(reference) { input ->
+            ManagedDownloadCommitIo.countInputStreamBytes(
+                input,
+                STREAM_COPY_BUFFER_SIZE_BYTES
+            )
+        }) {
+            is StorageLookupResult.Found -> read.value
+            StorageLookupResult.Missing -> throw IOException(
+                "SAF pending 音频在提升前不存在: $description"
+            )
+            StorageLookupResult.PermissionLost -> throw SecurityException(
+                "SAF pending 音频提升前权限丢失: $description"
+            )
+            is StorageLookupResult.ProviderFailure -> throw IOException(
+                "SAF pending 音频提升前读回失败: $description",
+                read.error
+            )
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> throw IOException(
+                "SAF pending 音频提升前不可读: $description"
+            )
+        }
+        val expectedSizeBytes = resolvePendingTreeAudioPromotionExpectedSize(
+            reportedSizeBytes = reportedSizeBytes,
+            countedSizeBytes = countedSizeBytes
+        ) ?: throw IOException("SAF pending 音频提升前为空: $description")
+        if (reportedSizeBytes != null && reportedSizeBytes != countedSizeBytes) {
+            NPLogger.w(
+                TAG,
+                "SAF pending 音频报告大小与读回大小不一致，使用读回值: " +
+                    "$description, reported=$reportedSizeBytes, counted=$countedSizeBytes"
+            )
+        }
+        return expectedSizeBytes
+    }
+
     private suspend fun demotePublishedTreeAudio(
         context: Context,
         root: RootHandle.TreeRoot,
@@ -3147,9 +3010,7 @@ internal object ManagedDownloadStorage {
     ): StoredEntry? {
         val sourceUri = runCatching { audio.reference.toUri() }.getOrNull() ?: return null
         val backend = SafStorageBackend(context)
-        val sourceStat = runBlocking(Dispatchers.IO) {
-            backend.stat(StorageReference.SafRef(sourceUri))
-        }
+        val sourceStat = backend.stat(StorageReference.SafRef(sourceUri))
         val source = when (sourceStat) {
             is StorageLookupResult.Found -> sourceStat.value
                 .takeUnless(StorageStat::isDirectory)
@@ -3198,7 +3059,7 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun copyPendingTreeAudioWithoutReplacing(
+    private suspend fun copyPendingTreeAudioWithoutReplacing(
         context: Context,
         root: RootHandle.TreeRoot,
         pending: DocumentFile,
@@ -3207,120 +3068,135 @@ internal object ManagedDownloadStorage {
         expectedSizeBytes: Long,
         fallbackLastModifiedMs: Long
     ): StoredEntry? {
-        return ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
-            val beforeCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
-            if (!canCreateTreePromotionTargetWithoutReplacing(
-                    enumerationComplete = beforeCreate.isComplete,
-                    existingNames = beforeCreate.children.map(QueriedTreeChild::name),
-                    targetName = finalName
-                )
-            ) {
-                NPLogger.w(
-                    TAG,
-                    "SAF 提升目标不可安全创建，保留 pending 音频: $finalName"
-                )
-                return@withLock null
-            }
-            val existingDocumentUris = beforeCreate.children.map(QueriedTreeChild::documentUri)
-            val createdUri = try {
-                DocumentsContract.createDocument(
-                    context.contentResolver,
-                    root.tree.uri,
-                    ManagedDownloadTreeNaming.documentCreateMimeType(
-                        finalName,
-                        mimeTypeFromName(finalName, null)
-                    ),
-                    finalName
-                )
-            } catch (error: SecurityException) {
-                throw error
-            } catch (error: UnsupportedOperationException) {
-                NPLogger.w(TAG, "SAF 不支持无覆写提升创建: $finalName", error)
-                return@withLock null
-            } catch (error: Throwable) {
-                throw IOException("SAF 无覆写提升创建失败: $finalName", error)
-            } ?: return@withLock null
-            val created = DocumentFile.fromSingleUri(context, createdUri)
-                ?.let { document ->
-                    treeChildRegistry.toTreeDocumentFile(
-                        context = context,
-                        parent = root.tree,
-                        child = document
-                    ) ?: document
+        val backend = SafStorageBackend(context)
+        val copied = backend.read(StorageReference.SafRef(pending.uri)) { source ->
+            ManagedDownloadTreeMutationLocks.withLock(root.tree.uri) {
+                val beforeCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+                if (!canCreateTreePromotionTargetWithoutReplacing(
+                        enumerationComplete = beforeCreate.isComplete,
+                        existingNames = beforeCreate.children.map(QueriedTreeChild::name),
+                        targetName = finalName
+                    )
+                ) {
+                    NPLogger.w(
+                        TAG,
+                        "SAF 提升目标不可安全创建，保留 pending 音频: $finalName"
+                    )
+                    return@withLock null
                 }
-            if (created == null) {
-                if (existingDocumentUris.none { uri -> sameTreeDocument(uri, createdUri) }) {
-                    discardNewTreePromotionTarget(context, root.tree, finalName, createdUri)
-                }
-                return@withLock null
-            }
-            if (existingDocumentUris.any { uri -> sameTreeDocument(uri, created.uri) }) {
-                NPLogger.w(TAG, "SAF 提升创建返回已有文件，保留 pending 音频: $finalName")
-                return@withLock null
-            }
-            if (created.isDirectory) {
-                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
-                NPLogger.w(TAG, "SAF 提升创建了目录而非音频文件: $finalName")
-                return@withLock null
-            }
-            if (!ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
-                discardNewTreePromotionTarget(context, root.tree, created.name ?: finalName, created.uri)
-                NPLogger.w(
-                    TAG,
-                    "SAF 提升创建返回非目标名称，保留 pending 音频: " +
-                        "expected=$finalName, actual=${created.name}"
+                val existingDocumentUris = beforeCreate.children.map(QueriedTreeChild::documentUri)
+                val createdUri = try {
+                    DocumentsContract.createDocument(
+                        context.contentResolver,
+                        root.tree.uri,
+                        ManagedDownloadTreeNaming.documentCreateMimeType(
+                            finalName,
+                            mimeTypeFromName(finalName, null)
+                        ),
+                        finalName
+                    )
+                } catch (error: SecurityException) {
+                    throw error
+                } catch (error: UnsupportedOperationException) {
+                    NPLogger.w(TAG, "SAF 不支持无覆写提升创建: $finalName", error)
+                    return@withLock null
+                } catch (error: Throwable) {
+                    throw IOException("SAF 无覆写提升创建失败: $finalName", error)
+                } ?: return@withLock null
+                val created = resolveNewTreePromotionDocument(
+                    context = context,
+                    parent = root.tree,
+                    uri = createdUri
                 )
-                return@withLock null
-            }
-            val afterCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
-            val exactTargets = afterCreate.children.filter { child ->
-                ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
-            }
-            if (
-                !afterCreate.isComplete ||
-                    exactTargets.size != 1 ||
-                    exactTargets.none { child -> sameTreeDocument(child.documentUri, created.uri) }
-            ) {
-                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
-                NPLogger.w(TAG, "SAF 提升创建后目标不唯一，保留 pending 音频: $finalName")
-                return@withLock null
-            }
-            try {
-                val input = context.contentResolver.openInputStream(pending.uri)
-                    ?: throw IOException("SAF pending 音频不可读: $pendingName")
-                input.use { source ->
+                if (created == null) {
+                    if (existingDocumentUris.none { uri -> sameTreeDocument(uri, createdUri) }) {
+                        discardNewTreePromotionTarget(context, root.tree, finalName, createdUri)
+                    }
+                    return@withLock null
+                }
+                if (existingDocumentUris.any { uri -> sameTreeDocument(uri, created.uri) }) {
+                    NPLogger.w(TAG, "SAF 提升创建返回已有文件，保留 pending 音频: $finalName")
+                    return@withLock null
+                }
+                if (created.isDirectory) {
+                    discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                    NPLogger.w(TAG, "SAF 提升创建了目录而非音频文件: $finalName")
+                    return@withLock null
+                }
+                if (!ManagedDownloadTreeNaming.isExactTreeStoredName(created.name, finalName)) {
+                    discardNewTreePromotionTarget(context, root.tree, created.name ?: finalName, created.uri)
+                    NPLogger.w(
+                        TAG,
+                        "SAF 提升创建返回非目标名称，保留 pending 音频: " +
+                            "expected=$finalName, actual=${created.name}"
+                    )
+                    return@withLock null
+                }
+                val afterCreate = treeChildRegistry.treeChildrenForWrite(context, root.tree)
+                val exactTargets = afterCreate.children.filter { child ->
+                    ManagedDownloadTreeNaming.isExactTreeStoredName(child.name, finalName)
+                }
+                if (
+                    !afterCreate.isComplete ||
+                        exactTargets.size != 1 ||
+                        exactTargets.none { child -> sameTreeDocument(child.documentUri, created.uri) }
+                ) {
+                    discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                    NPLogger.w(TAG, "SAF 提升创建后目标不唯一，保留 pending 音频: $finalName")
+                    return@withLock null
+                }
+                try {
                     val output = context.contentResolver.openOutputStream(created.uri, "w")
                         ?: throw IOException("SAF final 音频不可写: $finalName")
                     output.use { target ->
                         source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
                     }
-                }
-                val entry = verifiedTreeStoredEntry(
-                    context = context,
-                    target = created,
-                    expectedName = finalName,
-                    expectedSizeBytes = expectedSizeBytes,
-                    fallbackLastModifiedMs = fallbackLastModifiedMs,
-                    description = finalName
-                )
-                val pendingDeleted = deleteTrustedReference(
-                    context,
-                    TrustedManagedRef(
-                        reference = StorageReference.SafRef(pending.uri),
-                        externalReference = pending.uri.toString()
+                    val entry = verifiedTreeStoredEntry(
+                        context = context,
+                        target = created,
+                        expectedName = finalName,
+                        expectedSizeBytes = expectedSizeBytes,
+                        fallbackLastModifiedMs = fallbackLastModifiedMs,
+                        description = finalName
                     )
-                ).isConfirmedStorageMutation()
-                if (pendingDeleted) {
-                    treeChildRegistry.forgetTreeChildName(root.tree, pendingName)
-                } else {
-                    NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
+                    val pendingDeleted = deleteTrustedReference(
+                        context,
+                        TrustedManagedRef(
+                            reference = StorageReference.SafRef(pending.uri),
+                            externalReference = pending.uri.toString()
+                        )
+                    ).isConfirmedStorageMutation()
+                    if (pendingDeleted) {
+                        treeChildRegistry.forgetTreeChildName(root.tree, pendingName)
+                    } else {
+                        NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
+                    }
+                    treeChildRegistry.rememberTreeChild(root.tree, entry)
+                    entry
+                } catch (error: Throwable) {
+                    discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
+                    throw error
                 }
-                treeChildRegistry.rememberTreeChild(root.tree, entry)
-                entry
-            } catch (error: Throwable) {
-                discardNewTreePromotionTarget(context, root.tree, finalName, created.uri)
-                throw error
             }
+        }
+        return when (copied) {
+            is StorageLookupResult.Found -> copied.value
+            StorageLookupResult.Missing -> throw IOException(
+                "SAF pending 音频在提升时不存在: $pendingName"
+            )
+            StorageLookupResult.PermissionLost -> throw SecurityException(
+                "SAF pending 音频提升时权限丢失: $pendingName"
+            )
+            is StorageLookupResult.ProviderFailure -> {
+                if (copied.error is SecurityException) {
+                    throw copied.error
+                }
+                throw IOException("SAF pending 音频提升时读取失败: $pendingName", copied.error)
+            }
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> throw IOException(
+                "SAF pending 音频提升时不可读: $pendingName"
+            )
         }
     }
 
@@ -3396,8 +3272,7 @@ internal object ManagedDownloadStorage {
                 context = context,
                 root = root,
                 displayName = "$audioName$METADATA_SUFFIX",
-                content = content,
-                invalidateSnapshot = false
+                content = content
             )
         } catch (error: Throwable) {
             NPLogger.w(
@@ -3407,22 +3282,6 @@ internal object ManagedDownloadStorage {
                 error
             )
         }
-    }
-
-    fun commitCoverFile(
-        context: Context,
-        tempFile: File,
-        fileName: String,
-        mimeType: String?
-    ): StoredEntry? {
-        val sourceFile = tempFile.takeIf(File::exists) ?: return null
-        return writeSubdirectoryFileBlocking(
-            context = context,
-            subdirectory = COVER_SUBDIRECTORY,
-            displayName = fileName,
-            sourceFile = sourceFile,
-            mimeType = mimeTypeFromName(fileName, mimeType)
-        )
     }
 
     fun commitCoverBytes(
@@ -3459,14 +3318,6 @@ internal object ManagedDownloadStorage {
             bytes = bytes,
             mimeType = mimeTypeFromName(fileName, mimeType)
         )?.reference
-    }
-
-    suspend fun saveLyricText(
-        context: Context,
-        displayName: String,
-        content: String
-    ): String? = withContext(Dispatchers.IO) {
-        saveLyricTextBlocking(context, displayName, content)
     }
 
     private fun saveLyricTextBlocking(context: Context, displayName: String, content: String): String? {
@@ -3588,8 +3439,7 @@ internal object ManagedDownloadStorage {
                 // 索引刷新可能被 provider 节流或并发扫描保守地保留旧值，当前歌曲仍需直读
                 readLyricsBundleFromManagedRootFast(
                     context = context,
-                    song = song,
-                    metadataOverride = null
+                    song = song
                 )
             }
             return mergeLyricsBundles(
@@ -3620,8 +3470,7 @@ internal object ManagedDownloadStorage {
         }
         val directLyrics = readLyricsBundleFromManagedRootFast(
             context = context,
-            song = song,
-            metadataOverride = null
+            song = song
         )
         val mergedLyrics = mergeLyricsBundles(
             preferred = directLyrics,
@@ -3700,14 +3549,6 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    internal fun hasIndexedDownloadedSong(context: Context, song: SongItem): Boolean {
-        val snapshot = snapshotCacheStore.cachedSnapshot(
-            context = context,
-            restorePersisted = false
-        ) ?: return false
-        return findAudioEntry(snapshot, song) != null
-    }
-
     private fun hasManagedLocalReference(song: SongItem): Boolean {
         return song.localFilePath?.isNotBlank() == true ||
             song.mediaUri?.startsWith("/", ignoreCase = false) == true ||
@@ -3740,8 +3581,7 @@ internal object ManagedDownloadStorage {
                 // 首次从 SAF 树恢复歌曲时没有可用索引, 仅查询当前歌曲的目录并缓存结果
                 readLyricsBundleFromManagedRootFast(
                     context = context,
-                    song = song,
-                    metadataOverride = null
+                    song = song
                 )
             }
             return mergeLyricsBundles(
@@ -3802,8 +3642,7 @@ internal object ManagedDownloadStorage {
         // 编辑器需要识别用户刚刚新建或删除的 Lyrics 文件, 播放首屏不会走这条冷探测
         val directSidecar = readLyricsBundleFromManagedRootFast(
             context = context,
-            song = song,
-            metadataOverride = null
+            song = song
         )
         return mergeLyricsBundles(
             preferred = directSidecar,
@@ -3862,8 +3701,7 @@ internal object ManagedDownloadStorage {
 
     private fun readLyricsBundleFromManagedRootFast(
         context: Context,
-        song: SongItem,
-        metadataOverride: DownloadedAudioMetadata?
+        song: SongItem
     ): DownloadedLyricsBundle {
         val startedAtNs = System.nanoTime()
         val configuredRoot = try {
@@ -3872,7 +3710,7 @@ internal object ManagedDownloadStorage {
             throw error
         } catch (error: IllegalStateException) {
             // 配置了 SAF 根目录时不能静默回退到其他根目录
-            if (error is moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException) {
+            if (error is ManagedDownloadRootUnavailableException) {
                 throw error
             }
             NPLogger.d(
@@ -3903,7 +3741,7 @@ internal object ManagedDownloadStorage {
             song = song,
             audioName = audioName
         )
-        val metadata = metadataOverride ?: readDownloadedMetadataFast(
+        val metadata = readDownloadedMetadataFast(
             context = context,
             root = root,
             song = song,
@@ -4209,7 +4047,7 @@ internal object ManagedDownloadStorage {
                         }
                 }
                 candidates.firstOrNull { it.isFile }
-                    ?.let { file -> file.toStoredEntry() }
+                    ?.toStoredEntry()
             }
             is RootHandle.TreeRoot -> {
                 findTreeSiblingByNameFast(
@@ -4217,7 +4055,6 @@ internal object ManagedDownloadStorage {
                     root = root,
                     song = song,
                     childName = metadataName,
-                    allowRefresh = true,
                     nameMatches = { actualName ->
                         ManagedDownloadTreeNaming.metadataNameOrdinal(actualName, resolvedAudioName) != null
                     }
@@ -4235,22 +4072,17 @@ internal object ManagedDownloadStorage {
         root: RootHandle.TreeRoot,
         song: SongItem,
         childName: String,
-        allowRefresh: Boolean,
         nameMatches: (String) -> Boolean = { actualName ->
             actualName.equals(childName, ignoreCase = true)
         }
     ): StoredEntry? {
         val parent = findTreeParentDocumentFast(context, root, song) ?: return null
         val children = try {
-            if (allowRefresh) {
-                treeChildRegistry.cachedTreeChildren(
-                    context = context,
-                    parent = parent,
-                    maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
-                )
-            } else {
-                treeChildRegistry.peekTreeChildren(parent).orEmpty()
-            }
+            treeChildRegistry.cachedTreeChildren(
+                context = context,
+                parent = parent,
+                maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+            )
         } catch (error: SecurityException) {
             throw error
         } catch (error: Exception) {
@@ -5075,10 +4907,6 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    internal fun isPendingAudioWriteName(name: String): Boolean {
-        return pendingAudioWriteNames.isPendingAudioWriteName(name)
-    }
-
     private fun buildPendingAudioWriteName(fileName: String): String {
         return pendingAudioWriteNames.buildPendingAudioWriteName(fileName)
     }
@@ -5163,44 +4991,19 @@ internal object ManagedDownloadStorage {
         ) ?: direct
     }
 
-    private fun createRootFile(
+    private fun resolveNewTreePromotionDocument(
         context: Context,
         parent: DocumentFile,
-        desiredName: String,
-        mimeType: String,
-        replace: Boolean
-    ): DocumentFile {
-        return treeFileCommitter.createRootFile(
-            context = context,
-            parent = parent,
-            desiredName = desiredName,
-            mimeType = mimeType,
-            replace = replace
-        )
-    }
-
-    private fun commitTreeAudioAfterRenameFailure(
-        context: Context,
-        parent: DocumentFile,
-        pendingTarget: DocumentFile,
-        pendingName: String,
-        finalName: String,
-        mimeType: String,
-        tempFile: File,
-        actualSizeBytes: Long,
-        committedAtMs: Long
-    ): StoredEntry {
-        return treeFileCommitter.commitTreeAudioAfterRenameFailure(
-            context = context,
-            parent = parent,
-            pendingTarget = pendingTarget,
-            pendingName = pendingName,
-            finalName = finalName,
-            mimeType = mimeType,
-            tempFile = tempFile,
-            actualSizeBytes = actualSizeBytes,
-            committedAtMs = committedAtMs
-        )
+        uri: Uri
+    ): DocumentFile? {
+        return DocumentFile.fromSingleUri(context, uri)
+            ?.let { document ->
+                treeChildRegistry.toTreeDocumentFile(
+                    context = context,
+                    parent = parent,
+                    child = document
+                ) ?: document
+            }
     }
 
     internal fun documentCreateMimeType(desiredName: String, mimeType: String): String {
@@ -5353,25 +5156,6 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun writeSubdirectoryFileBlocking(
-        context: Context,
-        subdirectory: String,
-        displayName: String,
-        sourceFile: File,
-        mimeType: String
-    ): StoredEntry? {
-        return commitWriter.writeSubdirectoryFile(
-            context = context,
-            root = resolveRootBlocking(context),
-            subdirectory = subdirectory,
-            displayName = displayName,
-            sourceFile = sourceFile,
-            mimeType = mimeType
-        ).also { entry ->
-            updateSnapshotAfterSubdirectoryWrite(context, subdirectory, entry)
-        }
-    }
-
     private fun updateSnapshotAfterSubdirectoryWrite(
         context: Context,
         subdirectory: String,
@@ -5418,19 +5202,14 @@ internal object ManagedDownloadStorage {
         context: Context,
         root: RootHandle,
         displayName: String,
-        content: String,
-        invalidateSnapshot: Boolean = true
+        content: String
     ): StoredEntry? {
-        val storedEntry = commitWriter.writeRootText(
+        return commitWriter.writeRootText(
             context = context,
             root = root,
             displayName = displayName,
             content = content
         )
-        if (invalidateSnapshot) {
-            invalidateSnapshotCache(context)
-        }
-        return storedEntry
     }
 
     private suspend fun writeTextThroughBackend(
@@ -5491,19 +5270,6 @@ internal object ManagedDownloadStorage {
 
     internal fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {
         return ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(actualName, desiredName)
-    }
-
-    private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
-        treeDirectories.ensureManagedMediaScanIsolation(subdirectory, directory)
-    }
-
-    private fun findSubdirectories(
-        context: Context,
-        root: RootHandle,
-        desiredName: String,
-        canonicalLast: Boolean = false
-    ): List<RootHandle> {
-        return treeDirectories.findSubdirectories(context, root, desiredName, canonicalLast)
     }
 
     private fun openStoredEntryInputStream(context: Context, entry: StoredEntry): InputStream? {
@@ -5567,11 +5333,7 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun restoreStoredEntryLastModified(
-        context: Context,
-        entry: StoredEntry,
-        lastModifiedMs: Long
-    ) {
+    private fun restoreStoredEntryLastModified(entry: StoredEntry, lastModifiedMs: Long) {
         if (lastModifiedMs <= 0L) {
             return
         }
@@ -5648,18 +5410,18 @@ internal object ManagedDownloadStorage {
             when (val result = target.backend.read(target.reference) { input ->
                 input.bufferedReader(Charsets.UTF_8).use { it.readText() }
             }) {
-                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                is StorageLookupResult.Found -> {
                     result.value
                 }
-                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Missing -> null
-                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.PermissionLost -> {
+                StorageLookupResult.Missing -> null
+                StorageLookupResult.PermissionLost -> {
                     throw SecurityException("storage permission lost: $reference")
                 }
-                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.ProviderFailure -> {
+                is StorageLookupResult.ProviderFailure -> {
                     throw result.error
                 }
-                moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.OutOfScope,
-                is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Unsupported -> null
+                StorageLookupResult.OutOfScope,
+                is StorageLookupResult.Unsupported -> null
             }
         }
     }
@@ -5673,24 +5435,24 @@ internal object ManagedDownloadStorage {
         return try {
             runBlocking(Dispatchers.IO) {
                 when (val result = target.backend.stat(target.reference)) {
-                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
+                    is StorageLookupResult.Found -> {
                         ManagedDownloadReferenceIo.AccessResult.Accessible
                     }
-                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Missing -> {
+                    StorageLookupResult.Missing -> {
                         ManagedDownloadReferenceIo.AccessResult.Missing
                     }
-                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.PermissionLost -> {
+                    StorageLookupResult.PermissionLost -> {
                         ManagedDownloadReferenceIo.AccessResult.PermissionLost
                     }
-                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.ProviderFailure -> {
+                    is StorageLookupResult.ProviderFailure -> {
                         ManagedDownloadReferenceIo.AccessResult.ProviderFailure(result.error)
                     }
-                    moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.OutOfScope -> {
+                    StorageLookupResult.OutOfScope -> {
                         ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
                             IllegalArgumentException("storage reference out of scope")
                         )
                     }
-                    is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Unsupported -> {
+                    is StorageLookupResult.Unsupported -> {
                         ManagedDownloadReferenceIo.AccessResult.ProviderFailure(
                             UnsupportedOperationException(result.operation)
                         )
@@ -5699,7 +5461,7 @@ internal object ManagedDownloadStorage {
             }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             ManagedDownloadReferenceIo.AccessResult.PermissionLost
         } catch (error: Throwable) {
             ManagedDownloadReferenceIo.AccessResult.ProviderFailure(error)
@@ -5977,7 +5739,7 @@ internal object ManagedDownloadStorage {
                     )
                 }
             }
-        } catch (error: SecurityException) {
+        } catch (_: SecurityException) {
             StorageMutationResult.PermissionLost
         } catch (error: Throwable) {
             StorageMutationResult.ProviderFailure(error)
@@ -6017,10 +5779,6 @@ internal object ManagedDownloadStorage {
                 NPLogger.w(TAG, "受信引用不在托管根内，拒绝删除: $normalizedReference")
             }
         )
-    }
-
-    internal fun isFileReferenceUnderManagedRoot(reference: String, managedRootPath: String): Boolean {
-        return ManagedDownloadDeleteGuard.isFileReferenceUnderManagedRoot(reference, managedRootPath)
     }
 
     private fun deleteInternal(
@@ -6122,28 +5880,6 @@ internal object ManagedDownloadStorage {
 
     internal fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
         return ManagedDownloadRecoveryFiles.parseWorkingResumeMetadataSong(rawJson)
-    }
-
-    internal fun serializePendingDownloadQueuePayload(
-        entries: List<PendingDownloadQueueEntry>,
-        updatedAtMs: Long
-    ): String {
-        return ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(entries, updatedAtMs)
-    }
-
-    internal fun parsePendingDownloadQueuePayload(rawJson: String): List<PendingDownloadQueueEntry> {
-        return ManagedDownloadStorageJsonCodec.parsePendingDownloadQueuePayload(rawJson)
-    }
-
-    internal fun serializeCancelledDownloadKeysPayload(
-        songKeys: Set<String>,
-        updatedAtMs: Long
-    ): String {
-        return ManagedDownloadStorageJsonCodec.serializeCancelledDownloadKeysPayload(songKeys, updatedAtMs)
-    }
-
-    internal fun parseCancelledDownloadKeysPayload(rawJson: String): Set<String> {
-        return ManagedDownloadStorageJsonCodec.parseCancelledDownloadKeysPayload(rawJson)
     }
 
     internal fun parseDownloadedAudioMetadataJson(rawJson: String): DownloadedAudioMetadata? {

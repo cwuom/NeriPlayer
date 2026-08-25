@@ -20,12 +20,10 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
-import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
     private val treeDirectories: ManagedDownloadTreeDirectories,
-    private val treeFileCommitter: ManagedDownloadTreeFileCommitter,
     private val tag: String
 ) {
     private val migrationTargetResolver = ManagedDownloadCommitMigrationTargetResolver(
@@ -104,74 +102,6 @@ internal class ManagedDownloadStorageCommitWriter(
                     expectedSizeBytes = bytes.size.toLong()
                 ) { output -> output.write(bytes) }
                 entry
-            }
-        }
-    }
-
-    fun writeSubdirectoryFile(
-        context: Context,
-        root: ManagedDownloadRootHandle,
-        subdirectory: String,
-        displayName: String,
-        sourceFile: File,
-        mimeType: String
-    ): ManagedDownloadStorage.StoredEntry? {
-        if (!sourceFile.exists()) {
-            return null
-        }
-        sourceFile.inputStream().use { input ->
-            return writeSubdirectoryStream(
-                context = context,
-                root = root,
-                subdirectory = subdirectory,
-                displayName = displayName,
-                mimeType = mimeType,
-                input = input
-            )
-        }
-    }
-
-    fun writeSubdirectoryStream(
-        context: Context,
-        root: ManagedDownloadRootHandle,
-        subdirectory: String,
-        displayName: String,
-        mimeType: String,
-        input: InputStream
-    ): ManagedDownloadStorage.StoredEntry {
-        return when (root) {
-            is ManagedDownloadRootHandle.FileRoot -> {
-                val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
-                treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
-                val target = File(dir, displayName)
-                var copiedBytes = 0L
-                writeFileEntry(root = root.dir, target = target, displayName = displayName) { output ->
-                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                }
-                val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
-                    target = target,
-                    expectedSizeBytes = copiedBytes,
-                    description = displayName
-                )
-                ManagedDownloadStoredEntryMapper.fromFile(target).copy(sizeBytes = verifiedSize)
-            }
-
-            is ManagedDownloadRootHandle.TreeRoot -> {
-                val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
-                    ?: throw IOException("无法创建目录: $subdirectory")
-                treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
-                var copiedBytes = 0L
-                val entry = writeSafEntry(
-                    context = context,
-                    parent = directory,
-                    displayName = displayName,
-                    mimeType = mimeType,
-                    expectedSizeBytes = null
-                ) { output ->
-                    copiedBytes = input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
-                }
-                entry.takeIf { it.sizeBytes > 0L || copiedBytes <= 0L }
-                    ?: entry.copy(sizeBytes = copiedBytes)
             }
         }
     }

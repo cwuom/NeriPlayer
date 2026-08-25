@@ -4,6 +4,7 @@ import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,6 +91,109 @@ class DownloadProgressPresentationTest {
 
         assertEquals(0, aggregate.percentage)
         assertEquals(0, aggregate.activeSongCount)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `finalizing transfer remains pending without being counted as a completed song`() {
+        val selected = song(1L)
+        val presentation = BatchDownloadPresentationState(
+            id = 3L,
+            memberAttemptIds = mapOf(selected.stableKey() to 7L)
+        )
+        val finalizing = progress(
+            songKey = selected.stableKey(),
+            attemptId = 7L,
+            bytesRead = 99L
+        ).copy(stage = AudioDownloadManager.DownloadStage.FINALIZING)
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(
+                presentation,
+                listOf(
+                    DownloadTask(
+                        song = selected,
+                        progress = finalizing,
+                        status = DownloadStatus.DOWNLOADING,
+                        attemptId = 7L
+                    )
+                )
+            )
+        )
+
+        assertEquals(0, aggregate.completedSongs)
+        assertEquals(100, aggregate.percentage)
+        assertEquals(1, aggregate.activeSongCount)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `failed batch item retains its highest observed fraction`() {
+        val selected = song(1L)
+        val presentation = BatchDownloadPresentationState(
+            id = 4L,
+            memberAttemptIds = mapOf(selected.stableKey() to 8L),
+            terminalStates = mapOf(selected.stableKey() to BatchDownloadTerminalState.FAILED),
+            maximumObservedFractions = mapOf(selected.stableKey() to 0.75f)
+        )
+
+        val aggregate = requireNotNull(aggregateBatchDownloadProgress(presentation, emptyList()))
+
+        assertEquals(0, aggregate.completedSongs)
+        assertEquals(75, aggregate.percentage)
+        assertFalse(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `retrying a failed batch item restores pending state without losing its watermark`() {
+        val selected = song(1L)
+        val failedPresentation = BatchDownloadPresentationState(
+            id = 5L,
+            memberAttemptIds = mapOf(selected.stableKey() to 8L),
+            terminalStates = mapOf(selected.stableKey() to BatchDownloadTerminalState.FAILED),
+            maximumObservedFractions = mapOf(selected.stableKey() to 0.75f)
+        )
+        val resumedPresentation = resumeBatchDownloadPresentationForRetry(
+            presentation = failedPresentation,
+            songKey = selected.stableKey(),
+            attemptId = 8L
+        )
+        val retryingTask = DownloadTask(
+            song = selected,
+            progress = progress(selected.stableKey(), 8L, bytesRead = 20L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 8L
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(resumedPresentation, listOf(retryingTask))
+        )
+
+        assertNull(resumedPresentation.terminalStates[selected.stableKey()])
+        assertEquals(75, aggregate.percentage)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `batch progress never falls below its retained task watermark`() {
+        val selected = song(1L)
+        val presentation = BatchDownloadPresentationState(
+            id = 6L,
+            memberAttemptIds = mapOf(selected.stableKey() to 9L),
+            maximumObservedFractions = mapOf(selected.stableKey() to 0.8f)
+        )
+        val regressiveTask = DownloadTask(
+            song = selected,
+            progress = progress(selected.stableKey(), 9L, bytesRead = 20L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 9L
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(presentation, listOf(regressiveTask))
+        )
+
+        assertEquals(80, aggregate.percentage)
         assertTrue(aggregate.hasPendingSongs)
     }
 

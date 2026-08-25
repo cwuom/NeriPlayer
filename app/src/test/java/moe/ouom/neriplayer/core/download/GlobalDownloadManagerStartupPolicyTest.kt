@@ -502,7 +502,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         val ensureIndex = executionBody.indexOf("taskStore.ensureDownloadTasks(")
         val upsertIndex = executionBody.indexOf("DownloadExecutionRoomStore.upsert(")
         val generationIndex = executionBody.indexOf(
-            "admittedRequestGeneration = beginDownloadRequestGeneration"
+            "admittedRequestGeneration = reuseOrBeginDownloadRequestGeneration"
         )
 
         assertTrue(executionBody.indexOf("val admissionTicket = downloadAdmissionGate.ticket()") >= 0)

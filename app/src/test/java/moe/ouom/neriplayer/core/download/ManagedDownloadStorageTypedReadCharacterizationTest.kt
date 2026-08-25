@@ -61,11 +61,28 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     }
 
     @Test
+    fun `SAF promotion keeps suspend calls off runBlocking bridges`() {
+        val source = readSource()
+        val promotion = source
+            .substringAfter("private suspend fun promotePendingAudio")
+            .substringBefore("private fun discardNewTreePromotionTarget")
+
+        assertFalse(
+            "suspend SAF promotion must not block an IO worker through runBlocking",
+            promotion.contains("runBlocking")
+        )
+        assertTrue(
+            "SAF promotion must use the typed suspend read operation",
+            promotion.contains("backend.read(StorageReference.SafRef(pending.uri))")
+        )
+    }
+
+    @Test
     fun `managed SAF rename is delegated to the typed backend`() {
         val source = readSource()
         val rename = source
             .substringAfter("private fun renameTreeDocument")
-            .substringBefore("private fun createRootFile")
+            .substringBefore("private fun resolvePendingTreeDocument")
 
         assertFalse(
             "managed storage must not call DocumentsContract.renameDocument directly",

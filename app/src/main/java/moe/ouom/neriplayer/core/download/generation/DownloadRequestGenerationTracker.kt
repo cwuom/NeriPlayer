@@ -37,8 +37,21 @@ internal class DownloadRequestGenerationTracker {
         return generationsBySongKey[songKey] == generation
     }
 
-    fun cancellationGeneration(songKey: String): Long? {
+    fun reuseOrBegin(song: SongItem, reuseCurrent: Boolean): Long {
+        if (reuseCurrent) {
+            currentGeneration(song.stableKey())?.let { generation ->
+                return generation
+            }
+        }
+        return begin(listOf(song)).generation
+    }
+
+    fun currentGeneration(songKey: String): Long? {
         return generationsBySongKey[songKey]
+    }
+
+    fun cancellationGeneration(songKey: String): Long? {
+        return currentGeneration(songKey)
     }
 
     fun cancellationGenerations(songKeys: Collection<String>): Map<String, Long?> {

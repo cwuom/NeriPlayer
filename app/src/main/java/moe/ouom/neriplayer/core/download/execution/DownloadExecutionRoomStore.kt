@@ -677,17 +677,6 @@ internal object DownloadExecutionRoomStore {
         ) > 0
     }
 
-    suspend fun clearCancellation(
-        context: Context,
-        operationId: String,
-        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): Boolean {
-        return database.downloadOperationDao().clearCancellation(
-            operationId = operationId,
-            updatedAtMs = System.currentTimeMillis()
-        ) > 0
-    }
-
     suspend fun purgeCancelled(
         context: Context,
         stableKeys: Collection<String>,

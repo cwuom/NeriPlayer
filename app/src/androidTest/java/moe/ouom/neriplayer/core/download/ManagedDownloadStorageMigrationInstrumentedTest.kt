@@ -283,6 +283,64 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         )
     }
 
+    @Test
+    fun finalizedPendingAudioPromotesFromTreeChildAfterStoredUriIsMissing() = runBlocking {
+        val rootId = ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
+        val treeUri = treeUri(rootId)
+        val treeRoot = treeRoot(rootId)
+        val finalName = "Recovered.mp3"
+        val pendingName = "$finalName.npdl_pending.stale-uri.pending"
+        val payload = "pending-audio-payload".encodeToByteArray()
+        val pendingDocument = writeDocument(
+            parent = treeRoot,
+            name = pendingName,
+            mimeType = "application/octet-stream",
+            content = payload
+        )
+        writeDocument(
+            parent = treeRoot,
+            name = "$finalName.npmeta.json",
+            mimeType = "application/json",
+            content = JSONObject(
+                metadataJson(
+                    stableKey = "stale-pending-uri",
+                    mediaUri = pendingDocument.uri.toString(),
+                    coverPath = null,
+                    lyricPath = null,
+                    translatedLyricPath = null,
+                    romanizedLyricPath = null
+                )
+            ).apply {
+                put("downloadFinalized", true)
+                put(
+                    "metadataEmbeddingState",
+                    DownloadedAudioEmbeddingState.USER_DISABLED.name
+                )
+            }.toString().encodeToByteArray()
+        )
+        ManagedDownloadStorage.primeSettings(treeUri.toString(), "test-tree")
+        val missingReference = DocumentsContract.buildDocumentUri(
+            ManagedDownloadMigrationTestDocumentProvider.AUTHORITY,
+            "missing-pending-document"
+        )
+
+        val promoted = ManagedDownloadStorage.promoteFinalizedPendingAudio(
+            context = appContext,
+            audio = ManagedDownloadStorage.StoredEntry(
+                name = pendingName,
+                reference = missingReference.toString(),
+                mediaUri = missingReference.toString(),
+                localFilePath = null,
+                sizeBytes = payload.size.toLong(),
+                lastModifiedMs = System.currentTimeMillis()
+            )
+        )
+
+        assertEquals(finalName, requireNotNull(promoted).name)
+        assertArrayEquals(payload, readDocument(requireTreeFile(treeRoot, finalName)))
+        assertNull(treeRoot.findFile(pendingName))
+    }
+
     private suspend fun awaitWork(workId: String): WorkInfo {
         val deadlineMs = SystemClock.elapsedRealtime() + 30_000L
         val uuid = java.util.UUID.fromString(workId)

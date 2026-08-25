@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.core.download.DownloadTaskSummary
 import moe.ouom.neriplayer.core.download.applyWaitingNetworkStatus
 import moe.ouom.neriplayer.core.download.buildDownloadTaskSummary
 import moe.ouom.neriplayer.core.download.hasActiveDownloadOperations
-import moe.ouom.neriplayer.core.download.isDownloadTaskClearable
+import moe.ouom.neriplayer.core.download.mergeDownloadTaskProgress
 import moe.ouom.neriplayer.core.download.shouldApplyTaskMutation
 import moe.ouom.neriplayer.core.download.stabilizeDownloadTaskSummary
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -145,13 +145,20 @@ internal class DownloadTaskStore(
             ) {
                 return@synchronized false
             }
-            if (currentTask.progress == progress) {
+            val effectiveProgress = mergeDownloadTaskProgress(
+                current = currentTask.progress,
+                incoming = progress
+            )
+            if (currentTask.progress == effectiveProgress) {
                 return@synchronized false
             }
-            if (!shouldPublishProgress(progress)) {
+            if (!shouldPublishProgress(effectiveProgress)) {
                 return@synchronized false
             }
-            val updatedTasks = tasks.replaceAt(taskIndex, currentTask.copy(progress = progress))
+            val updatedTasks = tasks.replaceAt(
+                taskIndex,
+                currentTask.copy(progress = effectiveProgress)
+            )
             _downloadTasks.value = updatedTasks
             songKeyIndex = buildSongKeyIndex(updatedTasks)
             true
@@ -332,7 +339,6 @@ internal class DownloadTaskStore(
         song: SongItem,
         expectedAttemptId: Long
     ) {
-        clearProgressPublishState(song.stableKey())
         updateTask(
             songKey = song.stableKey(),
             expectedAttemptId = expectedAttemptId
@@ -342,46 +348,7 @@ internal class DownloadTaskStore(
             }
             task.copy(
                 song = song,
-                progress = null,
                 status = DownloadStatus.DOWNLOADING
-            )
-        }
-    }
-
-    fun registerDownloadTask(
-        song: SongItem,
-        status: DownloadStatus,
-        attemptId: Long
-    ) {
-        val songKey = song.stableKey()
-        mutate { tasks ->
-            clearProgressPublishState(songKey)
-            val existingIndex = songKeyIndex[songKey] ?: -1
-            if (existingIndex >= 0) {
-                val existingTask = tasks[existingIndex]
-                if (
-                    existingTask.attemptId == attemptId &&
-                    existingTask.status == status &&
-                    existingTask.progress == null
-                ) {
-                    return@mutate tasks
-                }
-                return@mutate tasks.replaceAt(
-                    existingIndex,
-                    DownloadTask(
-                        song = song,
-                        progress = null,
-                        status = status,
-                        attemptId = attemptId
-                    )
-                )
-            }
-
-            tasks + DownloadTask(
-                song = song,
-                progress = null,
-                status = status,
-                attemptId = attemptId
             )
         }
     }
@@ -439,27 +406,6 @@ internal class DownloadTaskStore(
         removedSongKeys.forEach(::clearProgressPublishState)
     }
 
-    fun removeActiveDownloadTasks(activeTasks: Collection<DownloadTask>) {
-        if (activeTasks.isEmpty()) {
-            return
-        }
-        val activeTaskKeys = activeTasks.mapTo(mutableSetOf()) { task ->
-            task.song.stableKey() to task.attemptId
-        }
-        activeTasks.forEach { task ->
-            clearProgressPublishState(task.song.stableKey())
-        }
-        mutate { tasks ->
-            tasks.filterNot { task ->
-                task.status in arrayOf(
-                    DownloadStatus.QUEUED,
-                    DownloadStatus.DOWNLOADING,
-                    DownloadStatus.WAITING_NETWORK
-                ) && activeTaskKeys.contains(task.song.stableKey() to task.attemptId)
-            }
-        }
-    }
-
     fun applyWaitingNetworkStatus(activeTasks: List<DownloadTask>) {
         activeTasks.forEach { task ->
             clearProgressPublishState(task.song.stableKey())
@@ -470,20 +416,6 @@ internal class DownloadTaskStore(
     fun clearAllTasks() {
         mutate { emptyList() }
         progressPublishStates.clear()
-    }
-
-    fun clearCompletedTasks() {
-        val removedSongKeys = mutableSetOf<String>()
-        mutate { tasks ->
-            tasks.filterNot { task ->
-                val shouldClear = isDownloadTaskClearable(task)
-                if (shouldClear) {
-                    removedSongKeys += task.song.stableKey()
-                }
-                shouldClear
-            }
-        }
-        removedSongKeys.forEach(::clearProgressPublishState)
     }
 
     fun isDownloadAttemptCurrent(songKey: String, attemptId: Long?): Boolean {

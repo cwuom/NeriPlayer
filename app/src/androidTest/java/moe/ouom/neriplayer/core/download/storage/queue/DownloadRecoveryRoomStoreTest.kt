@@ -303,16 +303,14 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
-    fun queueAndCancellationRoundTripWithoutRewritingLegacyFiles() = runTest {
+    fun queueRoundTripDoesNotRewriteLegacyFiles() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
         val queueFile = File(context.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
-        val cancelledFile = File(context.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
         queueFile.delete()
-        cancelledFile.delete()
 
         try {
             val first = song(1L, "first")
@@ -321,23 +319,17 @@ class DownloadRecoveryRoomStoreTest {
 
             store.upsertPendingDownloadQueue(listOf(first, second), nowMs = 10L)
             store.upsertPendingDownloadQueue(listOf(first.copy(name = "updated")), nowMs = 20L)
-            store.markCancelledDownloadKeys(listOf(second.stableKey()), nowMs = 30L)
 
             val queued = store.listPendingQueuedDownloads()
             assertEquals(listOf("updated", "second"), queued.map { it.song.name })
             assertEquals(10L, queued.first().queuedAtMs)
             assertEquals("updated", queued.first().song.name)
-            assertEquals(setOf(second.stableKey()), store.listCancelledDownloadKeys())
             assertTrue(!queueFile.exists())
-            assertTrue(!cancelledFile.exists())
 
             store.removePendingDownloadQueueEntries(listOf(first.stableKey()))
-            store.removeCancelledDownloadKeys(listOf(second.stableKey()))
             assertEquals(listOf("second"), store.listPendingQueuedDownloads().map { it.song.name })
-            assertTrue(store.listCancelledDownloadKeys().isEmpty())
         } finally {
             queueFile.delete()
-            cancelledFile.delete()
             database.close()
         }
     }
@@ -377,7 +369,16 @@ class DownloadRecoveryRoomStoreTest {
 
             store.bootstrapLegacyFilesOnce()
             assertEquals(listOf("legacy"), store.listPendingQueuedDownloads().map { it.song.name })
-            assertEquals(setOf(first.stableKey()), store.listCancelledDownloadKeys())
+            assertEquals(
+                setOf(first.stableKey()),
+                DownloadExecutionRoomStore.listByStates(
+                    context = context,
+                    states = listOf("CANCEL_REQUESTED", "CANCELLED"),
+                    database = database
+                )
+                    .map { it.request.song.stableKey() }
+                    .toSet()
+            )
             assertEquals(
                 DownloadRecoveryRoomStore.ROOM_PRIMARY_STATE,
                 database.syncMetadataDao()
@@ -1596,7 +1597,6 @@ class DownloadRecoveryRoomStoreTest {
             val store = DownloadRecoveryRoomStore(context, database)
 
             store.bootstrapLegacyFilesOnce()
-            assertTrue(store.listCancelledDownloadKeys().isEmpty())
             assertTrue(database.downloadOperationDao().findAll().isEmpty())
         } finally {
             cancelledFile.delete()

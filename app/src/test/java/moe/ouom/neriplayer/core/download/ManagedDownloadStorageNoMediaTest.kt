@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.core.download
 
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadMediaScanIsolation
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -38,12 +40,10 @@ class ManagedDownloadStorageNoMediaTest {
     }
 
     private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {
-        val method = ManagedDownloadStorage::class.java.getDeclaredMethod(
-            "ensureManagedMediaScanIsolation",
-            String::class.java,
-            File::class.java
+        ManagedDownloadMediaScanIsolation.ensureFileDirectory(
+            subdirectory = subdirectory,
+            directory = directory,
+            ensuredMarkers = ConcurrentHashMap()
         )
-        method.isAccessible = true
-        method.invoke(ManagedDownloadStorage, subdirectory, directory)
     }
 }

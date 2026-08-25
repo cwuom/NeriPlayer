@@ -15,6 +15,34 @@ import org.junit.Test
 
 class ManagedDownloadStoragePendingAudioPromotionTest {
     @Test
+    fun `tree promotion uses the counted tagged pending size instead of stale provider data`() {
+        assertEquals(
+            5_060_359L,
+            ManagedDownloadStorage.resolvePendingTreeAudioPromotionExpectedSize(
+                reportedSizeBytes = 4_955_786L,
+                countedSizeBytes = 5_060_359L
+            )
+        )
+    }
+
+    @Test
+    fun `tree promotion counts pending audio when the provider omits its size`() {
+        assertEquals(
+            5_060_359L,
+            ManagedDownloadStorage.resolvePendingTreeAudioPromotionExpectedSize(
+                reportedSizeBytes = null,
+                countedSizeBytes = 5_060_359L
+            )
+        )
+        assertNull(
+            ManagedDownloadStorage.resolvePendingTreeAudioPromotionExpectedSize(
+                reportedSizeBytes = 0L,
+                countedSizeBytes = 0L
+            )
+        )
+    }
+
+    @Test
     fun `tree promotion only creates a final target after a complete vacant directory check`() {
         val targetName = "song.mp3"
 

@@ -9,7 +9,6 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -354,75 +353,6 @@ class DownloadTaskStoreTest {
     }
 
     @Test
-    fun `clearCompletedTasks keeps active tasks and clears finished tasks`() {
-        val scope = CoroutineScope(SupervisorJob())
-        try {
-            val store = DownloadTaskStore(
-                scope = scope,
-                progressEmitIntervalNs = Long.MAX_VALUE
-            )
-            val queuedSong = song(1L, "Queued")
-            val downloadingSong = song(2L, "Downloading")
-            val waitingSong = song(3L, "Waiting")
-            val failedSong = song(4L, "Failed")
-            val cancelledSong = song(5L, "Cancelled")
-            val completedSong = song(6L, "Completed")
-            val songs = listOf(
-                queuedSong,
-                downloadingSong,
-                waitingSong,
-                failedSong,
-                cancelledSong,
-                completedSong
-            )
-            val attemptIds = store.prepareDownloadTasks(songs, DownloadStatus.QUEUED)
-
-            store.updateTaskStatus(
-                downloadingSong.stableKey(),
-                DownloadStatus.DOWNLOADING,
-                expectedAttemptId = attemptIds.getValue(downloadingSong.stableKey())
-            )
-            store.updateTaskStatus(
-                waitingSong.stableKey(),
-                DownloadStatus.WAITING_NETWORK,
-                expectedAttemptId = attemptIds.getValue(waitingSong.stableKey())
-            )
-            store.updateTaskStatus(
-                failedSong.stableKey(),
-                DownloadStatus.FAILED,
-                expectedAttemptId = attemptIds.getValue(failedSong.stableKey())
-            )
-            store.updateTaskStatus(
-                cancelledSong.stableKey(),
-                DownloadStatus.CANCELLED,
-                expectedAttemptId = attemptIds.getValue(cancelledSong.stableKey())
-            )
-            store.updateTaskStatus(
-                completedSong.stableKey(),
-                DownloadStatus.COMPLETED,
-                expectedAttemptId = attemptIds.getValue(completedSong.stableKey())
-            )
-
-            store.clearCompletedTasks()
-
-            assertEquals(
-                listOf(
-                    queuedSong.stableKey(),
-                    downloadingSong.stableKey(),
-                    waitingSong.stableKey()
-                ),
-                store.currentTasks().map { task -> task.song.stableKey() }
-            )
-            assertEquals(DownloadStatus.QUEUED, store.findTask(queuedSong.stableKey())?.status)
-            assertEquals(DownloadStatus.DOWNLOADING, store.findTask(downloadingSong.stableKey())?.status)
-            assertEquals(DownloadStatus.WAITING_NETWORK, store.findTask(waitingSong.stableKey())?.status)
-            assertNull(store.findTask(failedSong.stableKey()))
-        } finally {
-            scope.cancel()
-        }
-    }
-
-    @Test
     fun `clearAllTasks removes every task status`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
@@ -473,6 +403,52 @@ class DownloadTaskStoreTest {
         assertFalse(isDownloadTaskCancellationCandidate(cancelledTask))
     }
 
+    @Test
+    fun `same attempt retains its progress across a retry and worker reactivation`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(1L)
+            val attemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+
+            assertTrue(store.updateProgress(progress(downloadSong, attemptId, bytesRead = 800L)))
+            assertTrue(
+                store.updateProgress(
+                    progress(
+                        song = downloadSong,
+                        attemptId = attemptId,
+                        bytesRead = 200L,
+                        stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+                    )
+                )
+            )
+            val waitingProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
+            assertEquals(800L, waitingProgress.bytesRead)
+            assertEquals(AudioDownloadManager.DownloadStage.WAITING_RETRY, waitingProgress.stage)
+
+            store.registerActiveDownloadTask(downloadSong, attemptId)
+            assertEquals(800L, store.findTask(downloadSong.stableKey())?.progress?.bytesRead)
+            assertTrue(
+                store.updateProgress(
+                    progress(
+                        song = downloadSong,
+                        attemptId = attemptId,
+                        bytesRead = 300L
+                    )
+                )
+            )
+            val restartedProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
+            assertEquals(800L, restartedProgress.bytesRead)
+            assertEquals(AudioDownloadManager.DownloadStage.TRANSFERRING, restartedProgress.stage)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun song(
         id: Long,
         name: String = "Song $id"
@@ -492,7 +468,9 @@ class DownloadTaskStoreTest {
     private fun progress(
         song: SongItem,
         attemptId: Long,
-        bytesRead: Long
+        bytesRead: Long,
+        stage: AudioDownloadManager.DownloadStage =
+            AudioDownloadManager.DownloadStage.TRANSFERRING
     ): AudioDownloadManager.DownloadProgress {
         return AudioDownloadManager.DownloadProgress(
             songKey = song.stableKey(),
@@ -501,6 +479,7 @@ class DownloadTaskStoreTest {
             bytesRead = bytesRead,
             totalBytes = 1_000L,
             speedBytesPerSec = 100L,
+            stage = stage,
             attemptId = attemptId
         )
     }

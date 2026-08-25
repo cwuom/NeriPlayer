@@ -15,12 +15,7 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
             "upsertPendingDownloadQueue",
             "listPendingQueuedDownloads",
             "removePendingDownloadQueueEntries",
-            "clearPendingDownloadQueue",
-            "markCancelledDownloadKeys",
-            "listCancelledDownloadKeys",
-            "removeCancelledDownloadKeys",
-            "discardCancelledDownloadKeys",
-            "clearCancelledDownloadKeys"
+            "clearPendingDownloadQueue"
         ).forEach { methodName ->
             val body = methodBody(source, methodName)
             assertFalse(
@@ -30,6 +25,26 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
                     body.contains("markPrimary(") ||
                     body.contains("ManagedDownloadQueueStore") ||
                     body.contains("filesDir")
+            )
+        }
+    }
+
+    @Test
+    fun recovery_facade_does_not_expose_legacy_cancelled_key_api() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadRecoveryFiles.kt"
+        ).readText()
+
+        listOf(
+            "markCancelledDownloadKeys",
+            "listCancelledDownloadKeys",
+            "removeCancelledDownloadKeys",
+            "discardCancelledDownloadKeys",
+            "clearCancelledDownloadKeys"
+        ).forEach { methodName ->
+            assertFalse(
+                "recovery facade must not reintroduce stable-key cancellation state",
+                source.contains("fun $methodName(")
             )
         }
     }

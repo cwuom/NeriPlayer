@@ -330,13 +330,6 @@ internal interface DownloadOperationDao {
         updatedAtMs: Long
     ): Int
 
-    @Query(
-        "UPDATE download_operation SET state = 'QUEUED', " +
-            "updated_at_ms = :updatedAtMs, last_error_code = NULL " +
-            "WHERE operation_id = :operationId AND state IN ('CANCEL_REQUESTED', 'CANCELLED')"
-    )
-    suspend fun clearCancellation(operationId: String, updatedAtMs: Long): Int
-
     @Query("DELETE FROM download_operation WHERE operation_id = :operationId")
     suspend fun delete(operationId: String)
 

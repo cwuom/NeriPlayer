@@ -201,36 +201,6 @@ internal object ManagedDownloadRecoveryFiles {
         }
     }
 
-    fun markCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).markCancelledDownloadKeys(songKeys)
-        }
-    }
-
-    fun listCancelledDownloadKeys(context: Context): Set<String> {
-        return runBlocking(Dispatchers.IO) {
-            roomStore(context).listCancelledDownloadKeys()
-        }
-    }
-
-    fun removeCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).removeCancelledDownloadKeys(songKeys)
-        }
-    }
-
-    fun discardCancelledDownloadKeys(context: Context, songKeys: Collection<String>) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).discardCancelledDownloadKeys(songKeys)
-        }
-    }
-
-    fun clearCancelledDownloadKeys(context: Context) {
-        runBlocking(Dispatchers.IO) {
-            roomStore(context).clearCancelledDownloadKeys()
-        }
-    }
-
     fun parseWorkingResumeMetadataSong(rawJson: String): SongItem? {
         return runCatching {
             ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(rawJson)
