@@ -9,10 +9,24 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.task.DownloadTaskStore
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadAdmissionGateTest {
+    @Test
+    fun `open ticket is unavailable while clear owns the gate`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val openTicket = requireNotNull(gate.openTicketOrNull())
+        val clearToken = gate.beginClear()
+
+        assertNull(gate.openTicketOrNull())
+        assertFalse(gate.admit(openTicket) {})
+
+        gate.runClear(clearToken) {}
+        assertTrue(requireNotNull(gate.openTicketOrNull()) > openTicket)
+    }
+
     @Test
     fun `clear waits for admitted work and rejects its stale ticket`() = runTest {
         val gate = DownloadAdmissionGate()

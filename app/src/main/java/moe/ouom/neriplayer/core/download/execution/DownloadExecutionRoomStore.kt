@@ -7,8 +7,11 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.json.JSONObject
+
+internal const val WAITING_STORAGE_MUTATION_OPERATION_STATE = "WAITING_STORAGE_MUTATION"
 
 internal object DownloadExecutionRoomStore {
     internal data class StateEntry(
@@ -392,6 +395,7 @@ internal object DownloadExecutionRoomStore {
         songKey: String,
         states: List<String>,
         excludeUserCancelledStops: Boolean = false,
+        excludeUserStoppedOperations: Boolean = false,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): String? {
         val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
@@ -404,9 +408,11 @@ internal object DownloadExecutionRoomStore {
         )
         entities.forEach { entity ->
             if (
-                excludeUserCancelledStops &&
-                    entity.stopRequestedByUser &&
-                    entity.lastErrorCode == "USER_CANCELLED"
+                entity.stopRequestedByUser && (
+                    excludeUserStoppedOperations ||
+                        (excludeUserCancelledStops &&
+                            entity.lastErrorCode == "USER_CANCELLED")
+                )
             ) {
                 return@forEach
             }
@@ -416,6 +422,51 @@ internal object DownloadExecutionRoomStore {
             invalidateMalformedPayload(database, entity)
         }
         return null
+    }
+
+    /**
+     * restores a reusable journal row only when the caller has supplied a fresh
+     * song payload for the same stable key
+     */
+    suspend fun rehydrateMalformedReusableOperation(
+        context: Context,
+        song: SongItem,
+        userInitiated: Boolean,
+        updatedAtMs: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        val libraryId = currentLibraryId(context)
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val candidates = dao.findAllByStableKey(
+                libraryId = libraryId,
+                stableKey = stableKey,
+                states = REUSABLE_OPERATION_STATES
+            ).filterNot(DownloadOperationEntity::stopRequestedByUser)
+            if (candidates.isEmpty() || candidates.any { requestFromEntity(it) != null }) {
+                return@withTransaction false
+            }
+            val existing = candidates.first()
+            val request = DownloadExecutionRequest(
+                operationId = existing.operationId,
+                song = song,
+                artifactLeaseId = UUID.randomUUID().toString(),
+                userInitiated = userInitiated
+            )
+            val replaced = dao.replaceMalformedReusablePayload(
+                operationId = existing.operationId,
+                libraryId = libraryId,
+                stableKey = stableKey,
+                expectedStates = REUSABLE_OPERATION_STATES,
+                sourceHintJson = requestToJson(request).toString(),
+                updatedAtMs = updatedAtMs
+            ) > 0
+            if (replaced) {
+                dao.deleteHostAdmission(existing.operationId)
+            }
+            replaced
+        }
     }
 
     suspend fun isStopped(
@@ -495,6 +546,46 @@ internal object DownloadExecutionRoomStore {
         ) > 0
     }
 
+    /**
+     * promotes a user intent only after the caller has observed that storage mutation
+     * and the clear fence are both settled
+     */
+    suspend fun promoteWaitingStorageMutation(
+        context: Context,
+        operationId: String,
+        stableKey: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
+        val libraryId = currentLibraryId(context)
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val entity = dao.find(operationId) ?: return@withTransaction false
+            if (
+                entity.libraryId != libraryId ||
+                    entity.stableKey != normalizedKey ||
+                    entity.state != WAITING_STORAGE_MUTATION_OPERATION_STATE ||
+                    entity.stopRequestedByUser
+            ) {
+                return@withTransaction false
+            }
+            val request = requestFromEntity(entity) ?: run {
+                invalidateMalformedPayloadInTransaction(database, entity)
+                return@withTransaction false
+            }
+            if (request.song.stableKey() != normalizedKey) {
+                invalidateMalformedPayloadInTransaction(database, entity)
+                return@withTransaction false
+            }
+            dao.promoteWaitingStorageMutation(
+                operationId = operationId,
+                libraryId = libraryId,
+                stableKey = normalizedKey,
+                updatedAtMs = System.currentTimeMillis()
+            ) > 0
+        }
+    }
+
     suspend fun markStagingPrepared(
         context: Context,
         operationId: String,
@@ -555,6 +646,9 @@ internal object DownloadExecutionRoomStore {
                 }
             }
             if (target.state !in expectedStates) return@withTransaction false
+            if (hasOtherValidWaitingStorageMutation(database, target)) {
+                return@withTransaction false
+            }
 
             val contenders = dao.findAllByStableKey(
                 libraryId = target.libraryId,
@@ -768,6 +862,15 @@ internal object DownloadExecutionRoomStore {
                 return@withTransaction true
             }
             val operation = dao.find(operationId) ?: return@withTransaction false
+            if (
+                operation.stopRequestedByUser ||
+                    operation.state !in HOST_ADMISSION_HANDOFF_STATES
+            ) {
+                return@withTransaction false
+            }
+            if (hasOtherValidWaitingStorageMutation(database, operation)) {
+                return@withTransaction false
+            }
             if (dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN) >= capacity) {
                 return@withTransaction false
             }
@@ -1066,10 +1169,38 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
+    private suspend fun hasOtherValidWaitingStorageMutation(
+        database: NeriUserDataDatabase,
+        target: DownloadOperationEntity
+    ): Boolean {
+        val dao = database.downloadOperationDao()
+        val candidates = dao.findAllByStableKey(
+            libraryId = target.libraryId,
+            stableKey = target.stableKey,
+            states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
+        )
+        for (candidate in candidates) {
+            if (
+                candidate.operationId == target.operationId ||
+                    candidate.stopRequestedByUser
+            ) {
+                continue
+            }
+            val request = requestFromEntity(candidate)
+            if (request == null || request.song.stableKey() != candidate.stableKey) {
+                invalidateMalformedPayloadInTransaction(database, candidate)
+                continue
+            }
+            return true
+        }
+        return false
+    }
+
     private fun requiresDirectCancellation(entity: DownloadOperationEntity): Boolean {
         return when (entity.state) {
             "PENDING_QUEUE",
             "QUEUED",
+            WAITING_STORAGE_MUTATION_OPERATION_STATE,
             "RUNNING",
             "RETRYABLE" -> !entity.stopRequestedByUser
 
@@ -1114,6 +1245,7 @@ internal object DownloadExecutionRoomStore {
     private val ACTIVE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
+        WAITING_STORAGE_MUTATION_OPERATION_STATE,
         "RUNNING",
         "COMMITTING",
         "CORE_COMMITTED",
@@ -1138,6 +1270,7 @@ internal object DownloadExecutionRoomStore {
     private val CANCELABLE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
+        WAITING_STORAGE_MUTATION_OPERATION_STATE,
         "RUNNING",
         "STOPPED",
         "RETRYABLE"
@@ -1145,6 +1278,7 @@ internal object DownloadExecutionRoomStore {
     private val CANCELLATION_CANDIDATE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",
+        WAITING_STORAGE_MUTATION_OPERATION_STATE,
         "RUNNING",
         "COMMITTING",
         "CORE_COMMITTED",

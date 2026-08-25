@@ -18,7 +18,15 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val committingIndex = indexOfOperationCall(body, "markCommitting")
         val metadataWriteIndex = body.indexOf("persistDownloadedMetadata")
         val coreCommittedIndex = indexOfOperationCall(body, "markCoreCommitted")
-        val completedIndex = body.indexOf("DownloadStatus.COMPLETED")
+        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueueAndAwait")
+        val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
+        val finalizedBody = methodBody(source, "publishFinalizedDownload")
+        val completedIndex = finalizedBody.indexOf("DownloadStatus.COMPLETED")
+        val journalFailureIndex = body.indexOf("if (!journalCommitted)")
+        val journalFailureReturnIndex = body.indexOf(
+            "return@withContext false",
+            startIndex = journalFailureIndex
+        )
 
         assertTrue(
             "core commit must mark the durable operation COMMITTING before metadata I/O",
@@ -29,8 +37,15 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             coreCommittedIndex > metadataWriteIndex
         )
         assertTrue(
-            "task completion must be published only after the operation core commit",
-            completedIndex > coreCommittedIndex
+            "enrichment must be dispatched only after the operation core commit",
+            enrichmentDispatchIndex > coreCommittedIndex &&
+                enrichmentBody.contains("publishFinalizedDownload(") &&
+                completedIndex >= 0
+        )
+        assertTrue(
+            "a failed core journal commit must stop final completion",
+            journalFailureIndex > coreCommittedIndex &&
+                journalFailureReturnIndex > journalFailureIndex
         )
     }
 

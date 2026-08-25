@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
@@ -257,23 +258,32 @@ class DownloadRecoveryRoomStoreTest {
         try {
             val song = song(72L, "invalid-operation")
             val invalidOperationId = "invalid-running-72"
+            val libraryId = currentLibraryId(context)
             database.downloadOperationDao().upsert(
                 DownloadOperationEntity(
                     operationId = invalidOperationId,
                     stableKey = song.stableKey(),
-                    libraryId = "library",
+                    libraryId = libraryId,
                     state = "RUNNING",
                     queueOrder = 0,
                     sourceHintJson = "{invalid",
                     stagingDirName = invalidOperationId,
-                    bytesWritten = 0L,
-                    totalBytes = null,
-                    resumeJson = null,
-                    retryCount = 0,
-                    nextRetryAtMs = null,
-                    lastErrorCode = null,
+                    bytesWritten = 123L,
+                    totalBytes = 456L,
+                    resumeJson = "{\"legacy\":true}",
+                    retryCount = 2,
+                    nextRetryAtMs = 30L,
+                    lastErrorCode = "LEGACY_PAYLOAD",
                     createdAtMs = 1L,
                     updatedAtMs = 1L
+                )
+            )
+            database.downloadOperationDao().upsertHostAdmission(
+                DownloadHostAdmissionEntity(
+                    operationId = invalidOperationId,
+                    libraryId = libraryId,
+                    processToken = "legacy-payload",
+                    admittedAtMs = 10L
                 )
             )
 
@@ -296,6 +306,74 @@ class DownloadRecoveryRoomStoreTest {
                     operationId = replacementId,
                     database = database
                 )?.song?.stableKey()
+            )
+            assertEquals(
+                null,
+                database.downloadOperationDao().findHostAdmission(invalidOperationId)
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun validInFlightOperationWinsOverMalformedReusableDuplicate() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(73L, "in-flight-wins")
+            val runningOperationId = "running-73"
+            val malformedOperationId = "malformed-queued-73"
+            val libraryId = currentLibraryId(context)
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = runningOperationId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                database = database
+            )
+            database.downloadOperationDao().upsert(
+                DownloadOperationEntity(
+                    operationId = malformedOperationId,
+                    stableKey = song.stableKey(),
+                    libraryId = libraryId,
+                    state = "QUEUED",
+                    queueOrder = 1,
+                    sourceHintJson = "{invalid",
+                    stagingDirName = malformedOperationId,
+                    bytesWritten = 0L,
+                    totalBytes = null,
+                    resumeJson = null,
+                    retryCount = 0,
+                    nextRetryAtMs = null,
+                    lastErrorCode = null,
+                    createdAtMs = 2L,
+                    updatedAtMs = 2L
+                )
+            )
+
+            val selectedOperationId = DownloadRecoveryRoomStore(context, database)
+                .upsertPendingDownloadQueue(
+                    songs = listOf(song.copy(name = "updated")),
+                    userInitiated = true
+                )
+                .single()
+
+            assertEquals(runningOperationId, selectedOperationId)
+            assertEquals(
+                "INVALID",
+                database.downloadOperationDao().find(malformedOperationId)?.state
+            )
+            assertTrue(
+                DownloadRecoveryRoomStore(context, database)
+                    .listPendingQueuedDownloads()
+                    .isEmpty()
             )
         } finally {
             database.close()
@@ -495,23 +573,32 @@ class DownloadRecoveryRoomStoreTest {
         try {
             val song = song(5L, "legacy-operation")
             val operationId = "legacy-operation-5"
+            val libraryId = currentLibraryId(context)
             database.downloadOperationDao().upsert(
                 DownloadOperationEntity(
                     operationId = operationId,
                     stableKey = song.stableKey(),
-                    libraryId = "test-library",
+                    libraryId = libraryId,
                     state = "QUEUED",
                     queueOrder = 0,
                     sourceHintJson = "{\"channelId\":\"netease\",\"audioId\":\"5\"}",
                     stagingDirName = operationId,
-                    bytesWritten = 0L,
-                    totalBytes = null,
-                    resumeJson = null,
-                    retryCount = 0,
-                    nextRetryAtMs = null,
-                    lastErrorCode = null,
+                    bytesWritten = 123L,
+                    totalBytes = 456L,
+                    resumeJson = "{\"legacy\":true}",
+                    retryCount = 2,
+                    nextRetryAtMs = 30L,
+                    lastErrorCode = "LEGACY_PAYLOAD",
                     createdAtMs = 10L,
                     updatedAtMs = 10L
+                )
+            )
+            database.downloadOperationDao().upsertHostAdmission(
+                DownloadHostAdmissionEntity(
+                    operationId = operationId,
+                    libraryId = libraryId,
+                    processToken = "legacy-payload",
+                    admittedAtMs = 10L
                 )
             )
 
@@ -529,6 +616,17 @@ class DownloadRecoveryRoomStoreTest {
                 store.listPendingQueuedDownloads().map { it.operationId }
             )
             assertEquals(1, database.downloadOperationDao().findAll().size)
+            val rehydrated = database.downloadOperationDao().find(operationId)
+            assertEquals(0L, rehydrated?.bytesWritten)
+            assertEquals(null, rehydrated?.totalBytes)
+            assertEquals(null, rehydrated?.resumeJson)
+            assertEquals(0, rehydrated?.retryCount)
+            assertEquals(null, rehydrated?.nextRetryAtMs)
+            assertEquals(null, rehydrated?.lastErrorCode)
+            assertEquals(
+                null,
+                database.downloadOperationDao().findHostAdmission(operationId)
+            )
         } finally {
             database.close()
         }
@@ -623,13 +721,21 @@ class DownloadRecoveryRoomStoreTest {
                 database.downloadOperationDao().find(deterministicId)
                     ?.stopRequestedByUser
             )
+            assertEquals(
+                "QUEUED",
+                database.downloadOperationDao().find(operationId)?.state
+            )
+            assertEquals(
+                false,
+                database.downloadOperationDao().find(operationId)?.stopRequestedByUser
+            )
         } finally {
             database.close()
         }
     }
 
     @Test
-    fun queueRefresh_reusesRetryableOperationAfterHostPause() = runTest {
+    fun queueRefresh_preservesRetryableOperationAfterHostPause() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
@@ -674,8 +780,14 @@ class DownloadRecoveryRoomStoreTest {
             )
             assertEquals(1, database.downloadOperationDao().findAll().size)
             assertEquals(
-                "QUEUED",
+                "RETRYABLE",
                 database.downloadOperationDao().find(operationId)?.state
+            )
+            assertEquals(
+                listOf(operationId),
+                DownloadRecoveryRoomStore(context, database)
+                    .listPendingQueuedDownloads()
+                    .map { entry -> entry.operationId }
             )
         } finally {
             database.close()
@@ -811,6 +923,166 @@ class DownloadRecoveryRoomStoreTest {
                     context = context,
                     database = database
                 ).operationIds.isEmpty()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun waitingStorageMutationIsHiddenAndPromotesOnlyAfterAnAtomicCheck() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(77L, "storage-mutation-wait")
+            val store = DownloadRecoveryRoomStore(context, database)
+
+            val firstOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(song),
+                nowMs = 100L,
+                userInitiated = true
+            ).single()
+            val secondOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(song),
+                nowMs = 200L,
+                userInitiated = true
+            ).single()
+
+            assertEquals(firstOperationId, secondOperationId)
+            assertTrue(store.listPendingQueuedDownloads().isEmpty())
+            assertEquals(
+                listOf(firstOperationId),
+                store.listWaitingStorageMutations().map { entry -> entry.request.operationId }
+            )
+            val competingOperationId = "queued-during-storage-mutation-wait"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = competingOperationId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "QUEUED",
+                database = database
+            )
+            assertFalse(
+                DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                    context = context,
+                    operationId = competingOperationId,
+                    capacity = 1,
+                    database = database
+                )
+            )
+            assertFalse(
+                DownloadExecutionRoomStore.tryStart(
+                    context = context,
+                    operationId = competingOperationId,
+                    allowExistingRunning = true,
+                    database = database
+                )
+            )
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(firstOperationId)?.state
+            )
+            assertEquals(
+                "QUEUED",
+                database.downloadOperationDao().find(competingOperationId)?.state
+            )
+            assertFalse(
+                store.promoteWaitingStorageMutation(
+                    operationId = firstOperationId,
+                    stableKey = "other:${song.id}"
+                )
+            )
+            assertTrue(
+                store.promoteWaitingStorageMutation(
+                    operationId = firstOperationId,
+                    stableKey = song.stableKey()
+                )
+            )
+            assertEquals(
+                "QUEUED",
+                database.downloadOperationDao().find(firstOperationId)?.state
+            )
+            assertTrue(store.listWaitingStorageMutations().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun cancelledOrStoppedWaitingStorageMutationCannotBeSilentlyRevived() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val cancelledSong = song(78L, "cancelled-storage-mutation-wait")
+            val stoppedSong = song(79L, "stopped-storage-mutation-wait")
+            val store = DownloadRecoveryRoomStore(context, database)
+            val cancelledOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(cancelledSong),
+                userInitiated = true
+            ).single()
+            val cancellation = DownloadExecutionRoomStore.requestCancelAll(
+                context = context,
+                database = database
+            )
+
+            assertTrue(cancellation.operationIds.contains(cancelledOperationId))
+            assertEquals(
+                "CANCEL_REQUESTED",
+                database.downloadOperationDao().find(cancelledOperationId)?.state
+            )
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.finalizeRequestedCancellations(
+                    context = context,
+                    operationIds = cancellation.operationIds,
+                    database = database
+                )
+            )
+            assertEquals(
+                "CANCELLED",
+                database.downloadOperationDao().find(cancelledOperationId)?.state
+            )
+            assertTrue(
+                store.upsertWaitingStorageMutation(
+                    songs = listOf(cancelledSong),
+                    userInitiated = true
+                ).isEmpty()
+            )
+
+            val stoppedOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(stoppedSong),
+                userInitiated = true
+            ).single()
+            database.downloadOperationDao().requestUserStop(
+                operationId = stoppedOperationId,
+                updatedAtMs = 300L
+            )
+
+            assertTrue(store.listWaitingStorageMutations().isEmpty())
+            assertFalse(
+                store.promoteWaitingStorageMutation(
+                    operationId = stoppedOperationId,
+                    stableKey = stoppedSong.stableKey()
+                )
+            )
+            assertTrue(
+                store.upsertWaitingStorageMutation(
+                    songs = listOf(stoppedSong),
+                    userInitiated = true
+                ).isEmpty()
+            )
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(stoppedOperationId)?.state
             )
         } finally {
             database.close()
@@ -1029,15 +1301,19 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
-    fun interruptedCommitStatesCanBeClaimedByFreshHost() = runTest {
+    fun interruptedCommitStatesCanBeClaimedWithoutDowngradingCommittedCore() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
             context,
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
         try {
-            val interruptedStates = listOf("COMMITTING", "CORE_COMMITTED", "ASSETS_ENRICHING")
-            interruptedStates.forEachIndexed { index, state ->
+            val interruptedStates = linkedMapOf(
+                "COMMITTING" to "RUNNING",
+                "CORE_COMMITTED" to "CORE_COMMITTED",
+                "ASSETS_ENRICHING" to "ASSETS_ENRICHING"
+            )
+            interruptedStates.entries.forEachIndexed { index, (state, expectedState) ->
                 val operationId = "interrupted-commit-$index"
                 DownloadExecutionRoomStore.upsert(
                     context = context,
@@ -1059,7 +1335,7 @@ class DownloadRecoveryRoomStoreTest {
                     )
                 )
                 assertEquals(
-                    "RUNNING",
+                    expectedState,
                     database.downloadOperationDao().find(operationId)?.state
                 )
             }
@@ -1612,6 +1888,7 @@ class DownloadRecoveryRoomStoreTest {
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
         try {
+            val libraryId = currentLibraryId(context)
             val operationIds = (0 until LARGE_OPERATION_COUNT).map { index ->
                 "large-clear-operation-$index"
             }
@@ -1620,13 +1897,14 @@ class DownloadRecoveryRoomStoreTest {
                 dao.upsert(
                     largeCancelledOperation(
                         operationId = operationId,
-                        stableKey = "large-clear-key-$index"
+                        stableKey = "large-clear-key-$index",
+                        libraryId = libraryId
                     )
                 )
                 dao.upsertHostAdmission(
                     DownloadHostAdmissionEntity(
                         operationId = operationId,
-                        libraryId = "large-clear-library",
+                        libraryId = libraryId,
                         processToken = "test-process",
                         admittedAtMs = index.toLong()
                     )
@@ -1669,6 +1947,7 @@ class DownloadRecoveryRoomStoreTest {
             NeriUserDataDatabase::class.java
         ).allowMainThreadQueries().build()
         try {
+            val libraryId = currentLibraryId(context)
             val stableKeys = (0 until LARGE_OPERATION_COUNT).map { index ->
                 "large-cancel-key-$index"
             }
@@ -1678,7 +1957,8 @@ class DownloadRecoveryRoomStoreTest {
                     largeCancelledOperation(
                         operationId = "large-cancel-operation-$index",
                         stableKey = stableKey,
-                        state = "CANCELLED"
+                        state = "CANCELLED",
+                        libraryId = libraryId
                     )
                 )
             }
@@ -1698,12 +1978,13 @@ class DownloadRecoveryRoomStoreTest {
     private fun largeCancelledOperation(
         operationId: String,
         stableKey: String,
-        state: String = "CANCEL_REQUESTED"
+        state: String = "CANCEL_REQUESTED",
+        libraryId: String
     ): DownloadOperationEntity {
         return DownloadOperationEntity(
             operationId = operationId,
             stableKey = stableKey,
-            libraryId = "large-clear-library",
+            libraryId = libraryId,
             state = state,
             queueOrder = 0,
             sourceHintJson = "{}",
@@ -1717,6 +1998,10 @@ class DownloadRecoveryRoomStoreTest {
             createdAtMs = 1L,
             updatedAtMs = 1L
         )
+    }
+
+    private fun currentLibraryId(context: Context): String {
+        return ManagedDownloadStorage.currentSnapshotCacheKey(context)
     }
 
     private fun song(id: Long, name: String): SongItem {

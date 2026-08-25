@@ -295,6 +295,19 @@ internal object ManagedDownloadReferenceIo {
     }
 
     private fun deleteContentReferenceOnce(context: Context, uri: Uri): DeleteResult {
+        try {
+            if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
+                return DeleteResult.Deleted
+            }
+        } catch (error: SecurityException) {
+            return DeleteResult.PermissionLost
+        } catch (error: Exception) {
+            return deleteExceptionResult(error) ?: deleteContentReferenceWithFallback(context, uri)
+        }
+        return deleteContentReferenceWithFallback(context, uri)
+    }
+
+    private fun deleteContentReferenceWithFallback(context: Context, uri: Uri): DeleteResult {
         when (val access = inspect(context, uri.toString())) {
             AccessResult.Missing -> return DeleteResult.Missing
             AccessResult.PermissionLost -> return DeleteResult.PermissionLost
@@ -302,14 +315,13 @@ internal object ManagedDownloadReferenceIo {
             AccessResult.Accessible -> Unit
         }
         try {
-            DocumentsContract.deleteDocument(context.contentResolver, uri)
+            if (context.contentResolver.delete(uri, null, null) > 0) {
+                return DeleteResult.Deleted
+            }
         } catch (error: SecurityException) {
             return DeleteResult.PermissionLost
         } catch (error: Exception) {
-            if (isMissingDocumentFailure(error)) {
-                return DeleteResult.Missing
-            }
-            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
+            deleteExceptionResult(error)?.let { return it }
         }
         when (val access = inspect(context, uri.toString())) {
             AccessResult.Missing -> return DeleteResult.Deleted
@@ -317,24 +329,6 @@ internal object ManagedDownloadReferenceIo {
             is AccessResult.ProviderFailure -> return DeleteResult.ProviderFailure(access.error)
             AccessResult.Accessible -> Unit
         }
-
-        try {
-            context.contentResolver.delete(uri, null, null)
-        } catch (error: SecurityException) {
-            return DeleteResult.PermissionLost
-        } catch (error: Exception) {
-            if (isMissingDocumentFailure(error)) {
-                return DeleteResult.Missing
-            }
-            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
-        }
-        when (val access = inspect(context, uri.toString())) {
-            AccessResult.Missing -> return DeleteResult.Deleted
-            AccessResult.PermissionLost -> return DeleteResult.PermissionLost
-            is AccessResult.ProviderFailure -> return DeleteResult.ProviderFailure(access.error)
-            AccessResult.Accessible -> Unit
-        }
-
         try {
             if (resolveDocumentFile(context, uri)?.delete() != true) {
                 return DeleteResult.ProviderFailure(
@@ -344,11 +338,7 @@ internal object ManagedDownloadReferenceIo {
         } catch (error: SecurityException) {
             return DeleteResult.PermissionLost
         } catch (error: Exception) {
-            if (isMissingDocumentFailure(error)) {
-                return DeleteResult.Missing
-            }
-            if (isPermissionDocumentFailure(error)) return DeleteResult.PermissionLost
-            return DeleteResult.ProviderFailure(error)
+            return deleteExceptionResult(error) ?: DeleteResult.ProviderFailure(error)
         }
         return when (val access = inspect(context, uri.toString())) {
             AccessResult.Missing -> DeleteResult.Deleted
@@ -357,6 +347,14 @@ internal object ManagedDownloadReferenceIo {
             AccessResult.Accessible -> DeleteResult.ProviderFailure(
                 IllegalStateException("content reference delete was not confirmed")
             )
+        }
+    }
+
+    private fun deleteExceptionResult(error: Exception): DeleteResult? {
+        return when {
+            isMissingDocumentFailure(error) -> DeleteResult.Missing
+            isPermissionDocumentFailure(error) -> DeleteResult.PermissionLost
+            else -> null
         }
     }
 

@@ -38,7 +38,7 @@ internal const val MIGRATION_IO_MAX_ATTEMPTS = 3
 internal const val MIGRATION_IO_RETRY_DELAY_MS = 150L
 internal const val SAF_DELETE_MAX_ATTEMPTS = 3
 internal const val SAF_DELETE_RETRY_DELAY_MS = 80L
-internal const val SAF_REFERENCE_DELETE_PARALLELISM = 2
+internal const val SAF_REFERENCE_DELETE_PARALLELISM = 8
 internal const val STREAM_COPY_BUFFER_SIZE_BYTES = 1 * 1024 * 1024
 internal const val SAF_COMMITTED_SIZE_TOLERANCE_BYTES = 1L
 

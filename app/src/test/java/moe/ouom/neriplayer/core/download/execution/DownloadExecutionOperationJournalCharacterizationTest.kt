@@ -277,7 +277,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
         assertTrue(rawLookup.contains("findLatestOperationIdByStableKey"))
         assertTrue(!rawLookup.contains("requestFromEntity"))
         assertTrue(readableLookup.contains("requestFromEntity"))
-        assertTrue(readableLookup.contains("INVALID_OPERATION_PAYLOAD"))
+        assertTrue(readableLookup.contains("invalidateMalformedPayload(database, entity)"))
     }
 }
 

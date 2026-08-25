@@ -7,6 +7,7 @@ import java.util.UUID
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.PENDING_DOWNLOAD_QUEUE_FILE_NAME
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
@@ -37,6 +38,17 @@ internal class DownloadRecoveryRoomStore(
                     excludeUserCancelledStops = true
                 )
             }
+            distinctSongs
+                .filter { song -> inFlightOperationIds[song.stableKey()] == null }
+                .forEach { song ->
+                    DownloadExecutionRoomStore.rehydrateMalformedReusableOperation(
+                        context = appContext,
+                        song = song,
+                        userInitiated = userInitiated,
+                        updatedAtMs = nowMs,
+                        database = database
+                    )
+                }
             val reusableEntries = DownloadExecutionRoomStore.listByStates(
                 context = appContext,
                 states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
@@ -77,7 +89,8 @@ internal class DownloadRecoveryRoomStore(
                     context = appContext,
                     songKey = song.stableKey(),
                     database = database,
-                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                    excludeUserStoppedOperations = true
                 )
             }
             var nextOrder = (existing.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
@@ -121,6 +134,152 @@ internal class DownloadRecoveryRoomStore(
         )
     }
 
+    /**
+     * records a user request that must wait for a SAF mutation without letting an
+     * execution host observe it as runnable work
+     * returns only operation ids that remain in the waiting state
+     */
+    suspend fun upsertWaitingStorageMutation(
+        songs: List<SongItem>,
+        nowMs: Long = System.currentTimeMillis(),
+        userInitiated: Boolean = false
+    ): List<String> {
+        if (songs.isEmpty()) return emptyList()
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            val distinctSongs = songs.distinctBy(SongItem::stableKey)
+            val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
+            val waitingEntries = DownloadExecutionRoomStore.listByStates(
+                context = appContext,
+                states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
+                database = database
+            ).filter { entry ->
+                dao.isUserStopped(entry.request.operationId) != true
+            }
+            val waitingGroups = waitingEntries.groupBy { entry ->
+                entry.request.song.stableKey()
+            }
+            val waitingWinners = waitingGroups.mapValues { (_, entries) ->
+                entries.maxWithOrNull(
+                    compareBy<DownloadExecutionRoomStore.StateEntry> { entry ->
+                        entry.createdAtMs
+                    }.thenBy { entry -> entry.request.operationId }
+                ) ?: error("missing waiting storage mutation entry")
+            }
+            waitingGroups.forEach { (_, entries) ->
+                val winnerId = entries.maxWithOrNull(
+                    compareBy<DownloadExecutionRoomStore.StateEntry> { entry ->
+                        entry.createdAtMs
+                    }.thenBy { entry -> entry.request.operationId }
+                )?.request?.operationId
+                entries.filterNot { entry -> entry.request.operationId == winnerId }
+                    .forEach { entry ->
+                        dao.transitionState(
+                            operationId = entry.request.operationId,
+                            expectedStates = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
+                            state = "INVALID",
+                            updatedAtMs = nowMs,
+                            errorCode = "DUPLICATE_STABLE_KEY_OPERATION"
+                        )
+                    }
+            }
+            val inFlightOperationIds = distinctSongs.associate { song ->
+                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+                    context = appContext,
+                    songKey = song.stableKey(),
+                    database = database,
+                    states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
+                    excludeUserCancelledStops = true
+                )
+            }
+            val reusableOperationIds = distinctSongs.associate { song ->
+                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+                    context = appContext,
+                    songKey = song.stableKey(),
+                    database = database,
+                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                    excludeUserStoppedOperations = true
+                )
+            }
+            val blockedOperationIds = distinctSongs.associate { song ->
+                song.stableKey() to dao.findAllByStableKey(
+                    libraryId = libraryId,
+                    stableKey = song.stableKey(),
+                    states = WAITING_STORAGE_MUTATION_BLOCKING_STATES
+                ).firstOrNull()?.operationId
+            }
+            val stoppedWaitingOperationIds = distinctSongs.associate { song ->
+                song.stableKey() to dao.findAllByStableKey(
+                    libraryId = libraryId,
+                    stableKey = song.stableKey(),
+                    states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
+                ).firstOrNull { entity -> entity.stopRequestedByUser }?.operationId
+            }
+            var nextOrder = (
+                (waitingWinners.values + DownloadExecutionRoomStore.listByStates(
+                    context = appContext,
+                    states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                    database = database
+                ))
+                    .maxOfOrNull { entry -> entry.queueOrder } ?: -1
+                ) + 1
+            distinctSongs.mapNotNull { song ->
+                val key = song.stableKey()
+                if (
+                    inFlightOperationIds[key] != null ||
+                        reusableOperationIds[key] != null ||
+                        blockedOperationIds[key] != null ||
+                        stoppedWaitingOperationIds[key] != null
+                ) {
+                    return@mapNotNull null
+                }
+                val existing = waitingWinners[key]
+                val operationId = existing?.request?.operationId
+                    ?: waitingStorageMutationOperationId(libraryId, key)
+                DownloadExecutionRoomStore.upsert(
+                    context = appContext,
+                    request = DownloadExecutionRequest(
+                        operationId = operationId,
+                        song = song,
+                        preserveStaging = existing?.request?.preserveStaging ?: false,
+                        attemptId = existing?.request?.attemptId,
+                        artifactLeaseId = existing?.request?.artifactLeaseId
+                            ?: UUID.randomUUID().toString(),
+                        userInitiated = existing?.request?.userInitiated == true || userInitiated
+                    ),
+                    state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                    queueOrder = existing?.queueOrder ?: nextOrder++,
+                    createdAtMs = existing?.createdAtMs ?: nowMs,
+                    database = database
+                )
+                operationId
+            }
+        }
+    }
+
+    suspend fun listWaitingStorageMutations(): List<DownloadExecutionRoomStore.StateEntry> {
+        val dao = database.downloadOperationDao()
+        return DownloadExecutionRoomStore.listByStates(
+            context = appContext,
+            states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
+            database = database
+        )
+            .filter { entry -> dao.isUserStopped(entry.request.operationId) != true }
+            .sortedWith(compareBy({ it.queueOrder }, { it.request.operationId }))
+    }
+
+    suspend fun promoteWaitingStorageMutation(
+        operationId: String,
+        stableKey: String
+    ): Boolean {
+        return DownloadExecutionRoomStore.promoteWaitingStorageMutation(
+            context = appContext,
+            operationId = operationId,
+            stableKey = stableKey,
+            database = database
+        )
+    }
+
     suspend fun listPendingQueuedDownloads(): List<ManagedDownloadStorage.PendingDownloadQueueEntry> {
         return DownloadExecutionRoomStore.listByStates(
             context = appContext,
@@ -141,7 +300,7 @@ internal class DownloadRecoveryRoomStore(
 
     suspend fun removePendingDownloadQueueEntries(songKeys: Collection<String>) {
         val keys = songKeys.filter(String::isNotBlank).toSet().toList()
-        PENDING_QUEUE_STATES.forEach { state ->
+        CLEARABLE_PENDING_QUEUE_STATES.forEach { state ->
             DownloadExecutionRoomStore.deleteByStateAndStableKeys(
                 context = appContext,
                 state = state,
@@ -152,7 +311,7 @@ internal class DownloadRecoveryRoomStore(
     }
 
     suspend fun clearPendingDownloadQueue() {
-        PENDING_QUEUE_STATES.forEach { state ->
+        CLEARABLE_PENDING_QUEUE_STATES.forEach { state ->
             DownloadExecutionRoomStore.deleteByState(
                 context = appContext,
                 state = state,
@@ -208,7 +367,8 @@ internal class DownloadRecoveryRoomStore(
             val existing = DownloadExecutionRoomStore.listByStates(
                 context = appContext,
                 states = PENDING_QUEUE_VISIBLE_STATES + listOf(
-                    "QUEUED", "RUNNING", "STOPPED", "RETRYABLE", "CANCEL_REQUESTED", "CANCELLED"
+                    "QUEUED", WAITING_STORAGE_MUTATION_OPERATION_STATE, "RUNNING", "STOPPED",
+                    "RETRYABLE", "CANCEL_REQUESTED", "CANCELLED"
                 ),
                 database = database
             ).filter { it.request.song.stableKey() == stableKey }
@@ -253,6 +413,13 @@ internal class DownloadRecoveryRoomStore(
             PENDING_QUEUE_STATE,
             "PENDING_QUEUE"
         )
+        private val CLEARABLE_PENDING_QUEUE_STATES = PENDING_QUEUE_STATES +
+            WAITING_STORAGE_MUTATION_OPERATION_STATE
+        private val WAITING_STORAGE_MUTATION_BLOCKING_STATES = listOf(
+            "CANCEL_REQUESTED",
+            "CANCELLED",
+            "STOPPED"
+        )
         private val PENDING_QUEUE_VISIBLE_STATES = listOf(
             PENDING_QUEUE_STATE,
             "CANCEL_REQUESTED",
@@ -262,6 +429,15 @@ internal class DownloadRecoveryRoomStore(
         private fun pendingOperationId(stableKey: String): String {
             return UUID.nameUUIDFromBytes(
                 "pending-download:$stableKey".toByteArray(Charsets.UTF_8)
+            ).toString()
+        }
+
+        private fun waitingStorageMutationOperationId(
+            libraryId: String,
+            stableKey: String
+        ): String {
+            return UUID.nameUUIDFromBytes(
+                "waiting-storage-mutation:$libraryId:$stableKey".toByteArray(Charsets.UTF_8)
             ).toString()
         }
 

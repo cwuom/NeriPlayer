@@ -530,6 +530,40 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `waiting storage mutation is never scheduled or executed`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-storage-mutation-wait",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        journal.forceState(
+            operationId = request.operationId,
+            state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
+            updatedAtMs = 1L
+        )
+        var executions = 0
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                executions++
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        assertTrue(host.schedule(context, request) is DownloadExecutionSchedule.Rejected)
+        assertEquals(
+            DownloadExecutionResult.AlreadyHandled,
+            host.execute(context, request.operationId)
+        )
+        assertEquals(0, executions)
+        assertEquals(0, journal.hostAdmissionAcquireCount)
+    }
+
+    @Test
     fun `scheduling refreshes the durable attempt before the worker starts`() {
         val store = DownloadExecutionOperationStore { testJournal }
         val context = mockContext()

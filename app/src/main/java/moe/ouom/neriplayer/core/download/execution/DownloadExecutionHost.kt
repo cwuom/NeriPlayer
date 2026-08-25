@@ -191,7 +191,7 @@ class DefaultDownloadExecutionHost(
                 } == true
                 if (existingOperationId != null &&
                     existingOperationId != request.operationId &&
-                    existingState in ACTIVE_SCHEDULING_STATES &&
+                    existingState in BLOCKING_SCHEDULING_STATES &&
                     existingReadable
                 ) {
                     return@runCatching DownloadExecutionSchedule.Rejected(
@@ -263,6 +263,8 @@ class DefaultDownloadExecutionHost(
         )
         private val ACTIVE_SCHEDULING_STATES = SCHEDULABLE_OPERATION_STATES +
             INTERRUPTED_DOWNLOAD_OPERATION_STATES
+        private val BLOCKING_SCHEDULING_STATES = ACTIVE_SCHEDULING_STATES +
+            WAITING_STORAGE_MUTATION_OPERATION_STATE
     }
 
     override fun cancel(
@@ -556,6 +558,13 @@ class DefaultDownloadExecutionHost(
         if (operationStore.currentState(appContext, normalizedId) == "CANCEL_REQUESTED") {
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext DownloadExecutionResult.Cancelled
+        }
+        if (
+            operationStore.currentState(appContext, normalizedId) ==
+                WAITING_STORAGE_MUTATION_OPERATION_STATE
+        ) {
+            releaseHostAdmissionIfIdle(appContext, normalizedId)
+            return@withContext DownloadExecutionResult.AlreadyHandled
         }
         val claimResult = synchronized(executionAdmissionLock) {
             when {

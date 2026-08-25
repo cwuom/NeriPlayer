@@ -88,6 +88,7 @@ import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.policy.tagPostProcessingAction
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -302,6 +303,14 @@ object GlobalDownloadManager {
         val metadata: ManagedDownloadStorage.DownloadedAudioMetadata
     )
 
+    private data class DownloadedSongDeleteSession(
+        val targetSongs: List<DownloadedSong>,
+        val previousSongs: List<DownloadedSong>,
+        val deletionKeys: Set<String>,
+        val visibilityToken: DownloadedSongDeleteVisibility.Token,
+        val clearJob: Job?
+    )
+
     internal enum class DownloadedSongMetadataSyncOutcome {
         SUCCESS,
         NOT_DOWNLOADED,
@@ -400,9 +409,13 @@ object GlobalDownloadManager {
 
     private val cancelledSongKeys = Collections.synchronizedSet(mutableSetOf<String>())
     private val catalogPersistenceLock = Any()
+    private val catalogPersistenceMutex = Mutex()
+    private val downloadedSongCatalogMutationLock = Any()
     private val downloadedSongMetadataSyncMutex = Mutex()
     private val downloadedSongDeleteMutex = Mutex()
     private val downloadedSongDeletionCounts = ConcurrentHashMap<String, AtomicInteger>()
+    private val downloadedSongDeleteVisibility = DownloadedSongDeleteVisibility()
+    private val downloadedSongCatalogPersistenceRevision = AtomicLong(0L)
     private val downloadedSongMetadataRevision = AtomicLong(0L)
     private val emptyScanSequence = AtomicLong(0L)
     private var refreshJob: Job? = null
@@ -450,6 +463,120 @@ object GlobalDownloadManager {
 
     private fun isDownloadClearFenceActive(context: Context): Boolean {
         return PersistentDownloadClearFenceStore.isActive(context.applicationContext)
+    }
+
+    /**
+     * captures an admission generation only after a durable clear has finished
+     */
+    private suspend fun awaitDownloadAdmissionTicket(context: Context): Long {
+        val appContext = context.applicationContext
+        while (true) {
+            val openTicket = downloadAdmissionGate.openTicketOrNull()
+            if (openTicket != null && !isDownloadClearFenceActive(appContext)) {
+                return openTicket
+            }
+            if (openTicket == null) {
+                downloadAdmissionGate.awaitOpen()
+            } else {
+                delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+            }
+        }
+    }
+
+    /**
+     * keeps a request bound to the generation that existed when the user made it
+     */
+    private suspend fun admitDownloadMutation(
+        context: Context,
+        admissionTicket: Long,
+        block: suspend () -> Unit
+    ): Boolean {
+        val appContext = context.applicationContext
+        if (
+            isDownloadClearFenceActive(appContext) ||
+                downloadAdmissionGate.openTicketOrNull() != admissionTicket
+        ) {
+            return false
+        }
+        var ranBlock = false
+        val admitted = downloadAdmissionGate.admit(admissionTicket) admission@{
+            if (isDownloadClearFenceActive(appContext)) {
+                return@admission
+            }
+            ranBlock = true
+            block()
+        }
+        return admitted && ranBlock
+    }
+
+    /**
+     * keeps a new operation non-runnable until queue persistence can be committed atomically
+     */
+    private suspend fun stageAndPromotePendingDownloadQueue(
+        context: Context,
+        songs: List<SongItem>,
+        userInitiated: Boolean
+    ): List<String>? {
+        val distinctSongs = songs.distinctBy(SongItem::stableKey)
+        if (distinctSongs.isEmpty()) {
+            return emptyList()
+        }
+        val recoveryStore = DownloadRecoveryRoomStore(context.applicationContext)
+        val waitingOperationIds = recoveryStore.upsertWaitingStorageMutation(
+            songs = distinctSongs,
+            userInitiated = userInitiated
+        )
+        for (operationId in waitingOperationIds) {
+            val request = DownloadExecutionRoomStore.read(context, operationId)
+            val promoted = request != null && recoveryStore.promoteWaitingStorageMutation(
+                operationId = operationId,
+                stableKey = request.song.stableKey()
+            )
+            if (!promoted) {
+                NPLogger.d(
+                    TAG,
+                    "下载意图在存储变更期间已被取消，避免重新创建: " +
+                        "operationId=$operationId"
+                )
+                return null
+            }
+        }
+        return rememberPendingDownloadQueue(
+            context = context,
+            songs = distinctSongs,
+            userInitiated = userInitiated
+        )
+    }
+
+    private suspend fun promoteWaitingStorageMutationsForRecovery(context: Context): Int {
+        val appContext = context.applicationContext
+        val recoveryStore = DownloadRecoveryRoomStore(appContext)
+        val waitingEntries = recoveryStore.listWaitingStorageMutations()
+        if (waitingEntries.isEmpty()) {
+            return 0
+        }
+        val admissionTicket = awaitDownloadAdmissionTicket(appContext)
+        var promotedCount = 0
+        val admitted = admitDownloadMutation(appContext, admissionTicket) {
+            waitingEntries.forEach { entry ->
+                if (
+                    recoveryStore.promoteWaitingStorageMutation(
+                        operationId = entry.request.operationId,
+                        stableKey = entry.request.song.stableKey()
+                    )
+                ) {
+                    promotedCount += 1
+                }
+            }
+        }
+        if (admitted && promotedCount > 0) {
+            NPLogger.d(
+                TAG,
+                "恢复存储变更等待下载意图: promoted=$promotedCount, " +
+                    "waiting=${waitingEntries.size}"
+            )
+        }
+        return promotedCount
     }
 
     fun initialize(context: Context) {
@@ -704,6 +831,7 @@ object GlobalDownloadManager {
             NPLogger.d(TAG, "跳过启动下载恢复: 清空栅栏仍在生效")
             return
         }
+        promoteWaitingStorageMutationsForRecovery(appContext)
         if (!tryBeginPendingDownloadRecovery()) {
             NPLogger.d(TAG, "跳过启动下载恢复: 已有恢复任务执行中")
             return
@@ -1090,6 +1218,7 @@ object GlobalDownloadManager {
             if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
                 return@launch
             }
+            promoteWaitingStorageMutationsForRecovery(appContext)
             // a core file can survive process death without an in-memory task or a
             // resumable transfer record, so repair finalization before testing the
             // ordinary queue-based recovery candidates
@@ -1256,19 +1385,23 @@ object GlobalDownloadManager {
         songs: List<DownloadedSong>,
         persistCatalog: Boolean
     ) {
-        val previousSongs = _downloadedSongs.value
-        val changedSongKeys = changedDownloadedSongKeys(
-            previousSongs = previousSongs,
-            currentSongs = songs
-        )
-        // 先发布索引再通知列表, 避免界面首帧看到歌曲时索引仍为空
-        downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(songs)
-        downloadedSongCatalogReady = true
-        _downloadedSongs.value = songs
-        LocalAssetInvalidationBus.bumpSongs(changedSongKeys)
-        _downloadPresenceVersion.value += 1
-        if (persistCatalog) {
-            scheduleDownloadedSongsCatalogPersist(context, songs)
+        synchronized(downloadedSongCatalogMutationLock) {
+            val visibleSongs = downloadedSongDeleteVisibility.filterVisible(songs)
+            val previousSongs = _downloadedSongs.value
+            val changedSongKeys = changedDownloadedSongKeys(
+                previousSongs = previousSongs,
+                currentSongs = visibleSongs
+            )
+            // 先发布索引再通知列表, 避免界面首帧看到歌曲时索引仍为空
+            downloadedSongCatalogIndex = buildDownloadedSongCatalogIndex(visibleSongs)
+            downloadedSongCatalogReady = true
+            _downloadedSongs.value = visibleSongs
+            downloadedSongCatalogPersistenceRevision.incrementAndGet()
+            LocalAssetInvalidationBus.bumpSongs(changedSongKeys)
+            _downloadPresenceVersion.value += 1
+            if (persistCatalog && visibleSongs == songs) {
+                scheduleDownloadedSongsCatalogPersist(context)
+            }
         }
     }
 
@@ -1292,16 +1425,21 @@ object GlobalDownloadManager {
         _downloadPresenceVersion.value += 1
     }
 
-    private fun scheduleDownloadedSongsCatalogPersist(
-        context: Context,
-        songs: List<DownloadedSong>
-    ) {
+    private fun scheduleDownloadedSongsCatalogPersist(context: Context) {
         val appContext = context.applicationContext
+        val expectedRevision = downloadedSongCatalogPersistenceRevision.get()
         synchronized(catalogPersistenceLock) {
             catalogPersistJob?.cancel()
             catalogPersistJob = scope.launch {
                 delay(DOWNLOAD_CATALOG_PERSIST_DEBOUNCE_MS)
-                persistDownloadedSongsCatalog(appContext, songs)
+                catalogPersistenceMutex.withLock {
+                    val songs = synchronized(downloadedSongCatalogMutationLock) {
+                        _downloadedSongs.value.takeIf {
+                            downloadedSongCatalogPersistenceRevision.get() == expectedRevision
+                        }
+                    } ?: return@withLock
+                    persistDownloadedSongsCatalog(appContext, songs)
+                }
             }
         }
     }
@@ -1663,6 +1801,7 @@ object GlobalDownloadManager {
                     "core metadata 已写入但 operation journal 未确认 CORE_COMMITTED: " +
                         "song=${song.name}, operationId=$operationId"
                 )
+                return@withContext false
             }
             true
         }
@@ -2338,6 +2477,11 @@ object GlobalDownloadManager {
     }
 
     private suspend fun reloadDownloadedSongs(context: Context, forceRefresh: Boolean = false) {
+        if (isDownloadedSongDeletionActive()) {
+            NPLogger.d(TAG, "下载删除进行中，延后目录扫描")
+            awaitAllDownloadedSongDeletions()
+            return reloadDownloadedSongs(context, forceRefresh = true)
+        }
         _isRefreshing.value = true
         try {
             val metadataRevisionAtScanStart = downloadedSongMetadataRevision.get()
@@ -2350,6 +2494,11 @@ object GlobalDownloadManager {
                 snapshot = snapshot,
                 forceRefresh = forceRefresh
             )
+            if (isDownloadedSongDeletionActive()) {
+                NPLogger.d(TAG, "下载删除进行中，丢弃已完成的目录扫描")
+                awaitAllDownloadedSongDeletions()
+                return reloadDownloadedSongs(context, forceRefresh = true)
+            }
             runCatching {
                 ManagedDownloadStorage.persistFastIndex(context, snapshot)
             }.onFailure { error ->
@@ -2395,7 +2544,13 @@ object GlobalDownloadManager {
                 }
                 return
             }
+            var retryAfterDeletion = false
             downloadedSongMetadataSyncMutex.withLock {
+                if (isDownloadedSongDeletionActive()) {
+                    NPLogger.d(TAG, "下载删除进行中，拒绝发布过期目录扫描")
+                    retryAfterDeletion = true
+                    return@withLock
+                }
                 if (metadataRevisionAtScanStart != downloadedSongMetadataRevision.get()) {
                     NPLogger.d(TAG, "跳过过期下载目录扫描结果: metadata changed during scan")
                     return@withLock
@@ -2492,6 +2647,10 @@ object GlobalDownloadManager {
                     downloadedSongCatalogReady = true
                     downloadedSongCatalogRootKey = scanRootKey
                 }
+            }
+            if (retryAfterDeletion) {
+                awaitAllDownloadedSongDeletions()
+                reloadDownloadedSongs(context, forceRefresh = true)
             }
         } catch (error: Exception) {
             NPLogger.e(TAG, "扫描已下载文件失败: ${error.message}", error)
@@ -3097,13 +3256,16 @@ object GlobalDownloadManager {
         if (targetSongs.isEmpty()) {
             return
         }
-        val deletionKeys = downloadedSongDeletionKeys(targetSongs)
-        beginDownloadedSongDeletion(deletionKeys)
+        val session = beginDownloadedSongDeleteSession(appContext, targetSongs)
         scope.launch {
             try {
-                deleteDownloadedSongsWithResult(appContext, targetSongs)
+                withContext(Dispatchers.IO) {
+                    downloadedSongDeleteMutex.withLock {
+                        deleteDownloadedSongsOnIo(appContext, session)
+                    }
+                }
             } finally {
-                endDownloadedSongDeletion(deletionKeys)
+                endDownloadedSongDeletion(session.deletionKeys)
             }
         }
     }
@@ -3118,16 +3280,60 @@ object GlobalDownloadManager {
             return DownloadedSongDeleteResult.empty()
         }
 
-        val deletionKeys = downloadedSongDeletionKeys(targetSongs)
-        beginDownloadedSongDeletion(deletionKeys)
+        val session = beginDownloadedSongDeleteSession(appContext, targetSongs)
         return try {
             withContext(Dispatchers.IO) {
                 downloadedSongDeleteMutex.withLock {
-                    deleteDownloadedSongsOnIo(appContext, targetSongs)
+                    deleteDownloadedSongsOnIo(appContext, session)
                 }
             }
         } finally {
+            endDownloadedSongDeletion(session.deletionKeys)
+        }
+    }
+
+    private fun beginDownloadedSongDeleteSession(
+        context: Context,
+        targetSongs: List<DownloadedSong>
+    ): DownloadedSongDeleteSession {
+        val deletionKeys = downloadedSongDeletionKeys(targetSongs)
+        beginDownloadedSongDeletion(deletionKeys)
+        var visibilityToken: DownloadedSongDeleteVisibility.Token? = null
+        return try {
+            synchronized(downloadedSongCatalogMutationLock) {
+                val previousSongs = _downloadedSongs.value
+                val currentVisibilityToken = downloadedSongDeleteVisibility.begin(targetSongs)
+                visibilityToken = currentVisibilityToken
+                val visibleSongs = downloadedSongDeleteVisibility.filterVisible(previousSongs)
+                if (visibleSongs != previousSongs) {
+                    publishDownloadedSongs(context, visibleSongs, persistCatalog = false)
+                }
+                val clearJob = if (
+                    isCompleteDownloadedSongSelection(
+                        selectedSongs = targetSongs,
+                        availableSongs = previousSongs
+                    )
+                ) {
+                    NPLogger.d(
+                        TAG,
+                        "全选删除已被接受，立即建立下载清空栅栏: songs=${targetSongs.size}"
+                    )
+                    requestAllDownloadTaskCancellation()
+                } else {
+                    null
+                }
+                DownloadedSongDeleteSession(
+                    targetSongs = targetSongs,
+                    previousSongs = previousSongs,
+                    deletionKeys = deletionKeys,
+                    visibilityToken = currentVisibilityToken,
+                    clearJob = clearJob
+                )
+            }
+        } catch (error: Throwable) {
+            visibilityToken?.let(downloadedSongDeleteVisibility::finish)
             endDownloadedSongDeletion(deletionKeys)
+            throw error
         }
     }
 
@@ -3161,36 +3367,92 @@ object GlobalDownloadManager {
         }
     }
 
+    private suspend fun awaitAllDownloadedSongDeletions() {
+        while (isDownloadedSongDeletionActive()) {
+            delay(DOWNLOADED_SONG_DELETE_BARRIER_POLL_MS)
+        }
+    }
+
+    private fun isDownloadedSongDeletionActive(): Boolean {
+        return downloadedSongDeletionCounts.isNotEmpty() ||
+            downloadedSongDeleteVisibility.hasActiveDeletions()
+    }
+
+    private fun settleDownloadedSongDeleteSession(
+        context: Context,
+        session: DownloadedSongDeleteSession,
+        deletedSongs: List<DownloadedSong>,
+        restoredSongs: List<DownloadedSong>
+    ): List<DownloadedSong> {
+        var shouldPersistCatalog = false
+        val settledSongs = synchronized(downloadedSongCatalogMutationLock) {
+            downloadedSongDeleteVisibility.recordDeleted(
+                token = session.visibilityToken,
+                songs = deletedSongs
+            )
+            val ownedDeletedSongs = deletedSongs.filter { song ->
+                downloadedSongDeleteVisibility.owns(session.visibilityToken, song)
+            }
+            val ownedRestoredSongs = restoredSongs.filter { song ->
+                downloadedSongDeleteVisibility.owns(session.visibilityToken, song) &&
+                    !downloadedSongDeleteVisibility.wasPhysicallyDeleted(
+                        session.visibilityToken,
+                        song
+                    )
+            }
+            val currentSongs = _downloadedSongs.value
+            val restorationSourceSongs = (
+                session.previousSongs +
+                    session.visibilityToken.baselineSongsByIdentity.values
+                ).distinctBy { song -> song.deletionIdentity().trim() }
+            val mergedSongs = mergeDownloadedSongsAfterDelete(
+                currentSongs = currentSongs,
+                previousSongs = restorationSourceSongs,
+                deletedSongs = ownedDeletedSongs,
+                restoredSongs = ownedRestoredSongs
+            )
+            shouldPersistCatalog = ownedDeletedSongs.isNotEmpty() ||
+                ownedRestoredSongs.isNotEmpty() ||
+                deletedSongs.any { song ->
+                    downloadedSongDeleteVisibility.wasPhysicallyDeleted(
+                        session.visibilityToken,
+                        song
+                    )
+                }
+            downloadedSongDeleteVisibility.finish(session.visibilityToken)
+            if (mergedSongs != currentSongs) {
+                publishDownloadedSongs(context, mergedSongs, persistCatalog = false)
+            }
+            mergedSongs
+        }
+        if (shouldPersistCatalog) {
+            scheduleDownloadedSongsCatalogPersist(context)
+        }
+        return settledSongs
+    }
+
     private suspend fun deleteDownloadedSongsOnIo(
         appContext: Context,
-        targetSongs: List<DownloadedSong>
+        session: DownloadedSongDeleteSession
     ): DownloadedSongDeleteResult {
         val startedAtMs = System.currentTimeMillis()
-        val previousSongs = _downloadedSongs.value
+        val targetSongs = session.targetSongs
+        val previousSongs = session.previousSongs
         val deletesEntireCatalog = isCompleteDownloadedSongSelection(
             selectedSongs = targetSongs,
             availableSongs = previousSongs
         )
-        if (deletesEntireCatalog) {
-            NPLogger.d(
-                TAG,
-                "全选删除下载目录，先取消活动下载并保留清理标记直到收敛: songs=${targetSongs.size}"
-            )
-            cancelAllDownloadTasksAndWait()
-        } else {
-            val deletionSongKeys = downloadedSongDeletionKeys(targetSongs)
-            deletionSongKeys.forEach(::cancelDownloadTask)
-            awaitDownloadCancellationsSettled(deletionSongKeys)
-        }
-        val optimisticKeys = targetSongs.mapTo(mutableSetOf()) { it.deletionIdentity() }
-        val optimisticSongs = previousSongs.filterNot { candidate ->
-            optimisticKeys.contains(candidate.deletionIdentity())
-        }
-        if (optimisticSongs != previousSongs) {
-            publishDownloadedSongs(appContext, optimisticSongs, persistCatalog = false)
-        }
-
         try {
+            if (deletesEntireCatalog) {
+                NPLogger.d(
+                    TAG,
+                    "全选删除下载目录，先取消活动下载并保留清理标记直到收敛: songs=${targetSongs.size}"
+                )
+                session.clearJob?.join() ?: cancelAllDownloadTasksAndWait()
+            } else {
+                session.deletionKeys.forEach(::cancelDownloadTask)
+                awaitDownloadCancellationsSettled(session.deletionKeys)
+            }
             val deletePlans = buildManagedDownloadDeletePlans(
                 context = appContext,
                 songs = targetSongs
@@ -3200,7 +3462,8 @@ object GlobalDownloadManager {
             )
             NPLogger.d(
                 TAG,
-                "批量删除下载开始: songs=${targetSongs.size}, references=${requestedReferences.size}, optimisticRemoved=${previousSongs.size - optimisticSongs.size}"
+                "批量删除下载开始: songs=${targetSongs.size}, references=${requestedReferences.size}, " +
+                    "visible=${_downloadedSongs.value.size}"
             )
             val deletedReferences = if (requestedReferences.isNotEmpty()) {
                 ManagedDownloadStorage.deleteReferences(appContext, requestedReferences)
@@ -3211,19 +3474,12 @@ object GlobalDownloadManager {
                 deletePlans = deletePlans,
                 deletedReferences = deletedReferences
             )
-            val currentSongs = _downloadedSongs.value
-            val finalSongs = mergeDownloadedSongsAfterDelete(
-                currentSongs = currentSongs,
-                previousSongs = previousSongs,
+            settleDownloadedSongDeleteSession(
+                context = appContext,
+                session = session,
                 deletedSongs = deletionResult.deletedSongs,
                 restoredSongs = deletionResult.failedSongs
             )
-            if (finalSongs != currentSongs) {
-                publishDownloadedSongs(appContext, finalSongs, persistCatalog = false)
-            }
-            if (finalSongs != previousSongs) {
-                scheduleDownloadedSongsCatalogPersist(appContext, finalSongs)
-            }
 
             val remainingReferences = requestedReferences - deletedReferences
             deletionResult.failedSongs.forEach { song ->
@@ -3257,28 +3513,21 @@ object GlobalDownloadManager {
             )
             return deletionResult
         } catch (error: CancellationException) {
-            val currentSongs = _downloadedSongs.value
-            val restoredSongs = mergeDownloadedSongsAfterDelete(
-                currentSongs = currentSongs,
-                previousSongs = previousSongs,
+            settleDownloadedSongDeleteSession(
+                context = appContext,
+                session = session,
                 deletedSongs = emptyList(),
                 restoredSongs = targetSongs
             )
-            if (restoredSongs != currentSongs) {
-                publishDownloadedSongs(appContext, restoredSongs, persistCatalog = false)
-            }
+            scheduleCatalogReconcile(appContext, forceRefresh = true)
             throw error
         } catch (error: Exception) {
-            val currentSongs = _downloadedSongs.value
-            val restoredSongs = mergeDownloadedSongsAfterDelete(
-                currentSongs = currentSongs,
-                previousSongs = previousSongs,
+            settleDownloadedSongDeleteSession(
+                context = appContext,
+                session = session,
                 deletedSongs = emptyList(),
                 restoredSongs = targetSongs
             )
-            if (restoredSongs != currentSongs) {
-                publishDownloadedSongs(appContext, restoredSongs, persistCatalog = false)
-            }
             scheduleCatalogReconcile(appContext, forceRefresh = true)
             NPLogger.e(TAG, "删除下载文件失败: ${error.message}", error)
             return DownloadedSongDeleteResult(
@@ -3695,10 +3944,6 @@ object GlobalDownloadManager {
     }
 
     fun startDownload(context: Context, song: SongItem) {
-        if (isDownloadClearFenceActive(context)) {
-            NPLogger.d(TAG, "忽略下载请求: 清空栅栏仍在生效, song=${song.name}")
-            return
-        }
         scheduleUserDownload(context, song, skipTrafficRiskPrompt = false)
     }
 
@@ -3728,15 +3973,11 @@ object GlobalDownloadManager {
         preserveStaging: Boolean = false
     ) {
         val appContext = context.applicationContext
-        if (isDownloadClearFenceActive(appContext)) {
-            NPLogger.d(TAG, "忽略下载调度: 清空栅栏仍在生效, song=${song.name}")
-            return
-        }
-        val admissionTicket = downloadAdmissionGate.ticket()
         scope.launch {
             awaitDownloadedSongDeletion(setOf(song.stableKey()))
+            val admissionTicket = awaitDownloadAdmissionTicket(appContext)
             var inFlightRequestToRecover: DownloadExecutionRequest? = null
-            val admitted = downloadAdmissionGate.admit(admissionTicket) admission@{
+            val admitted = admitDownloadMutation(appContext, admissionTicket) admission@{
                 clearSongCancellationForFreshStart(appContext, setOf(song.stableKey()))
                 if (
                     maybeRequestTrafficRiskDownloadConfirmation(
@@ -3748,11 +3989,18 @@ object GlobalDownloadManager {
                 ) {
                     return@admission
                 }
-                val operationId = rememberPendingDownloadQueue(
+                val operationIds = stageAndPromotePendingDownloadQueue(
                     context = appContext,
                     songs = listOf(song),
                     userInitiated = true
-                ).singleOrNull()
+                ) ?: run {
+                    NPLogger.d(
+                        TAG,
+                        "单曲下载意图在存储变更期间已被取消: song=${song.name}"
+                    )
+                    return@admission
+                }
+                val operationId = operationIds.singleOrNull()
                 if (operationId == null) {
                     NPLogger.w(TAG, "持久化下载 operation 失败: song=${song.name}")
                     return@admission
@@ -3892,9 +4140,9 @@ object GlobalDownloadManager {
             return DownloadExecutionResult.Cancelled
         }
         val songKey = song.stableKey()
-        val admissionTicket = downloadAdmissionGate.ticket()
         downloadAdmissionGate.awaitOpen()
         awaitDownloadedSongDeletion(setOf(songKey))
+        val admissionTicket = downloadAdmissionGate.ticket()
         var admissionResult: DownloadExecutionResult? = null
         var admittedRequest: DownloadExecutionRequest? = null
         var admittedAttemptId: Long? = null
@@ -4606,20 +4854,16 @@ object GlobalDownloadManager {
         if (songs.isEmpty()) return
 
         val appContext = context.applicationContext
-        if (isDownloadClearFenceActive(appContext)) {
-            NPLogger.d(TAG, "忽略批量下载请求: 清空栅栏仍在生效, count=${songs.size}")
-            return
-        }
         val requestedSongs = songs.distinctBy(SongItem::stableKey)
         if (requestedSongs.isEmpty()) {
             return
         }
         val batchPresentationId = beginBatchDownloadPresentation(requestedSongs)
-        val admissionTicket = downloadAdmissionGate.ticket()
         scope.launch {
             awaitDownloadedSongDeletion(requestedSongs.map(SongItem::stableKey))
+            val admissionTicket = awaitDownloadAdmissionTicket(appContext)
             var inFlightRequestsToRecover = emptyList<DownloadExecutionRequest>()
-            val admitted = downloadAdmissionGate.admit(admissionTicket) admission@{
+            val admitted = admitDownloadMutation(appContext, admissionTicket) admission@{
                 inFlightRequestsToRecover = requestedSongs.mapNotNull { song ->
                     val songKey = song.stableKey()
                     val operationId = DownloadExecutionRoomStore.findReadableOperationIdForSong(
@@ -4668,11 +4912,19 @@ object GlobalDownloadManager {
                     clearBatchDownloadPresentation(batchPresentationId)
                     return@admission
                 }
-                val operationIds = rememberPendingDownloadQueue(
+                val operationIds = stageAndPromotePendingDownloadQueue(
                     context = appContext,
                     songs = candidateSongs,
                     userInitiated = userInitiated
-                )
+                ) ?: run {
+                    NPLogger.d(
+                        TAG,
+                        "批量下载意图在存储变更期间已被取消: " +
+                            "requested=${candidateSongs.size}"
+                    )
+                    clearBatchDownloadPresentation(batchPresentationId)
+                    return@admission
+                }
                 val operationIdsBySongKey = linkedMapOf<String, String>()
                 operationIds.forEach { operationId ->
                     val request = DownloadExecutionRoomStore.read(appContext, operationId)
@@ -6322,6 +6574,7 @@ object GlobalDownloadManager {
             }
             catalogReconcileJob = scope.launch {
                 delay(DOWNLOAD_CATALOG_RECONCILE_DELAY_MS)
+                awaitAllDownloadedSongDeletions()
                 val shouldForceRefresh = synchronized(catalogPersistenceLock) {
                     val requestedForceRefresh = pendingCatalogReconcileForceRefresh
                     pendingCatalogReconcileForceRefresh = false
@@ -6586,6 +6839,10 @@ object GlobalDownloadManager {
             return
         }
         cancelledSongKeys.removeAll(keys)
+        DownloadExecutionRoomStore.clearUserStopForStableKeys(
+            context = context.applicationContext,
+            stableKeys = keys
+        )
         // clear the old terminal operation before writing the replacement queue entry
         DownloadExecutionRoomStore.purgeCancelled(context.applicationContext, keys)
         runCatching {
@@ -7072,6 +7329,7 @@ object GlobalDownloadManager {
             if (networkType != TrafficNetworkType.WIFI && !mobileDataDownloadOverrideAllowed) {
                 return@launch
             }
+            promoteWaitingStorageMutationsForRecovery(appContext)
             if (!tryBeginPendingDownloadRecovery()) {
                 return@launch
             }

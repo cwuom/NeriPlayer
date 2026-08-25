@@ -121,6 +121,29 @@ class BatchDownloadOperationRecoveryTest {
     }
 
     @Test
+    fun `new download intents wait for storage deletion before becoming runnable`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val singleBody = methodBody(source, "scheduleUserDownload")
+        val batchBody = methodBody(source, "startBatchDownload")
+
+        listOf(singleBody, batchBody).forEach { body ->
+            val deletionBarrierIndex = body.indexOf("awaitDownloadedSongDeletion(")
+            val ticketIndex = body.indexOf("awaitDownloadAdmissionTicket(appContext)")
+            val admissionIndex = body.indexOf(
+                "admitDownloadMutation(appContext, admissionTicket)"
+            )
+            val stagingIndex = body.indexOf("stageAndPromotePendingDownloadQueue(")
+
+            assertTrue(deletionBarrierIndex >= 0)
+            assertTrue(ticketIndex > deletionBarrierIndex)
+            assertTrue(admissionIndex > ticketIndex)
+            assertTrue(stagingIndex > admissionIndex)
+        }
+    }
+
+    @Test
     fun `cancel before host handoff releases only the captured artifact lease`() {
         assertEquals(
             "old-operation",

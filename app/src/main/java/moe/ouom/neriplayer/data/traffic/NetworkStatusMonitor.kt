@@ -6,8 +6,9 @@ import android.net.NetworkCapabilities
 import android.os.Build
 
 fun Context.hasLikelyInternetAccess(): Boolean {
-    val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return false
-    return connectivityManager.hasLikelyInternetAccess()
+    return resolveLikelyInternetAccess(
+        availability = currentLikelyNetworkTransportAvailability()
+    )
 }
 
 fun Context.isOfflineModeNow(): Boolean = !hasLikelyInternetAccess()
@@ -18,46 +19,81 @@ fun Context.currentTrafficNetworkType(): TrafficNetworkType {
     return connectivityManager.currentTrafficNetworkType()
 }
 
-private fun ConnectivityManager.hasLikelyInternetAccess(): Boolean = runCatching {
-    val network = activeNetwork ?: return@runCatching false
-    val capabilities = getNetworkCapabilities(network)
-    hasLikelyNetworkTransport(
-        hasActiveNetwork = true,
-        activeHasDirectTransport = capabilities?.hasDirectNetworkTransport() == true,
-        anyKnownHasDirectTransport = { anyKnownNetworkHasDirectTransport() }
-    )
-}.getOrDefault(false)
-
-@Suppress("DEPRECATION")
-private fun ConnectivityManager.anyKnownNetworkHasDirectTransport(): Boolean {
-    return allNetworks.any { network ->
-        getNetworkCapabilities(network)?.hasDirectNetworkTransport() == true
-    }
+internal fun Context.currentLikelyNetworkTransportAvailability(): LikelyNetworkTransportAvailability {
+    val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        ?: return LikelyNetworkTransportAvailability.INDETERMINATE
+    return connectivityManager.currentLikelyNetworkTransportAvailability()
 }
 
-private fun NetworkCapabilities.hasDirectNetworkTransport(): Boolean {
-    return isDirectNetworkTransport(
+// allNetworks provides the complete interface snapshot needed for this strict offline rule
+@Suppress("DEPRECATION")
+private fun ConnectivityManager.currentLikelyNetworkTransportAvailability(): LikelyNetworkTransportAvailability {
+    val networks = runCatching { allNetworks }.getOrElse {
+        return LikelyNetworkTransportAvailability.INDETERMINATE
+    }
+    var hasLegalNetworkInterface = false
+    var hasUnresolvedNetworkInterface = false
+    networks.forEach { network ->
+        val capabilities = runCatching { getNetworkCapabilities(network) }.getOrNull()
+        if (capabilities == null) {
+            hasUnresolvedNetworkInterface = true
+        } else if (capabilities.hasLegalNetworkTransport()) {
+            hasLegalNetworkInterface = true
+        } else {
+            // an unrecognized transport must not be mistaken for proof of being offline
+            hasUnresolvedNetworkInterface = true
+        }
+    }
+    return resolveNetworkInterfaceAvailability(
+        interfaceScanCompleted = true,
+        hasLegalNetworkInterface = hasLegalNetworkInterface,
+        hasUnresolvedNetworkInterface = hasUnresolvedNetworkInterface
+    )
+}
+
+private fun NetworkCapabilities.hasLegalNetworkTransport(): Boolean {
+    return isLegalNetworkTransport(
         hasWifiTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
         hasCellularTransport = hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
         hasEthernetTransport = hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
         hasBluetoothTransport = hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH),
+        hasWifiAwareTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI_AWARE),
+        hasLowpanTransport = hasTransport(NetworkCapabilities.TRANSPORT_LOWPAN),
         hasUsbTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             hasTransport(NetworkCapabilities.TRANSPORT_USB),
         hasSatelliteTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
-            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE)
+            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE),
+        hasThreadTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            hasTransport(NetworkCapabilities.TRANSPORT_THREAD),
+        hasVpnTransport = hasTransport(NetworkCapabilities.TRANSPORT_VPN)
     )
 }
 
-internal fun hasLikelyNetworkTransport(
-    hasActiveNetwork: Boolean,
-    activeHasDirectTransport: Boolean,
-    anyKnownHasDirectTransport: () -> Boolean
-): Boolean {
-    if (!hasActiveNetwork) return false
-    if (activeHasDirectTransport) return true
-
-    return anyKnownHasDirectTransport()
+internal enum class LikelyNetworkTransportAvailability {
+    ONLINE,
+    OFFLINE,
+    INDETERMINATE
 }
+
+internal fun resolveNetworkInterfaceAvailability(
+    interfaceScanCompleted: Boolean,
+    hasLegalNetworkInterface: Boolean,
+    hasUnresolvedNetworkInterface: Boolean
+): LikelyNetworkTransportAvailability {
+    // only a complete interface snapshot may prove that offline mode is safe
+    return when {
+        hasLegalNetworkInterface -> LikelyNetworkTransportAvailability.ONLINE
+        !interfaceScanCompleted || hasUnresolvedNetworkInterface -> {
+            LikelyNetworkTransportAvailability.INDETERMINATE
+        }
+
+        else -> LikelyNetworkTransportAvailability.OFFLINE
+    }
+}
+
+internal fun resolveLikelyInternetAccess(
+    availability: LikelyNetworkTransportAvailability
+): Boolean = availability != LikelyNetworkTransportAvailability.OFFLINE
 
 internal fun isDirectNetworkTransport(
     hasWifiTransport: Boolean,
@@ -73,6 +109,31 @@ internal fun isDirectNetworkTransport(
         hasBluetoothTransport ||
         hasUsbTransport ||
         hasSatelliteTransport
+}
+
+internal fun isLegalNetworkTransport(
+    hasWifiTransport: Boolean,
+    hasCellularTransport: Boolean,
+    hasEthernetTransport: Boolean,
+    hasBluetoothTransport: Boolean,
+    hasWifiAwareTransport: Boolean,
+    hasLowpanTransport: Boolean,
+    hasUsbTransport: Boolean,
+    hasSatelliteTransport: Boolean,
+    hasThreadTransport: Boolean,
+    hasVpnTransport: Boolean
+): Boolean {
+    return isDirectNetworkTransport(
+        hasWifiTransport = hasWifiTransport,
+        hasCellularTransport = hasCellularTransport,
+        hasEthernetTransport = hasEthernetTransport,
+        hasBluetoothTransport = hasBluetoothTransport,
+        hasUsbTransport = hasUsbTransport,
+        hasSatelliteTransport = hasSatelliteTransport
+    ) || hasWifiAwareTransport ||
+        hasLowpanTransport ||
+        hasThreadTransport ||
+        hasVpnTransport
 }
 
 private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {

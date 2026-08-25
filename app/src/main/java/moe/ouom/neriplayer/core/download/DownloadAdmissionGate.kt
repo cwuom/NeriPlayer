@@ -26,6 +26,10 @@ internal class DownloadAdmissionGate {
 
     fun ticket(): Long = synchronized(stateLock) { generation }
 
+    fun openTicketOrNull(): Long? = synchronized(stateLock) {
+        generation.takeIf { activeClear == null }
+    }
+
     fun beginClear(): ClearToken = synchronized(stateLock) {
         activeClear?.let { completion ->
             return@synchronized ClearToken(

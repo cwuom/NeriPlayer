@@ -153,6 +153,20 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET state = 'QUEUED', " +
+            "updated_at_ms = :updatedAtMs, last_error_code = NULL " +
+            "WHERE operation_id = :operationId AND library_id = :libraryId " +
+            "AND stable_key = :stableKey AND state = 'WAITING_STORAGE_MUTATION' " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun promoteWaitingStorageMutation(
+        operationId: String,
+        libraryId: String,
+        stableKey: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
             "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey"
@@ -160,6 +174,23 @@ internal interface DownloadOperationDao {
     suspend fun updateRequestPayload(
         operationId: String,
         stableKey: String,
+        sourceHintJson: String,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
+            "bytes_written = 0, total_bytes = NULL, resume_json = NULL, retry_count = 0, " +
+            "next_retry_at_ms = NULL, last_error_code = NULL, updated_at_ms = :updatedAtMs " +
+            "WHERE operation_id = :operationId AND library_id = :libraryId " +
+            "AND stable_key = :stableKey AND state IN (:expectedStates) " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun replaceMalformedReusablePayload(
+        operationId: String,
+        libraryId: String,
+        stableKey: String,
+        expectedStates: List<String>,
         sourceHintJson: String,
         updatedAtMs: Long
     ): Int
@@ -206,7 +237,8 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET state = 'CANCEL_REQUESTED', " +
             "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
             "WHERE operation_id IN (:operationIds) AND (" +
-            "(state IN ('PENDING_QUEUE', 'QUEUED', 'RUNNING', 'RETRYABLE') " +
+            "(state IN ('PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', " +
+            "'RUNNING', 'RETRYABLE') " +
             "AND stop_requested_by_user = 0) OR state = 'STOPPED')"
     )
     suspend fun requestCancellations(operationIds: List<String>, updatedAtMs: Long): Int
@@ -339,7 +371,7 @@ internal interface DownloadOperationDao {
     @Query(
         "SELECT operation_id FROM download_operation WHERE operation_id IN (:operationIds) " +
             "AND updated_at_ms <= :cancelledAtMs AND state IN (" +
-            "'PENDING_QUEUE', 'QUEUED', 'RETRYABLE', 'STOPPED', " +
+            "'PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', 'RETRYABLE', 'STOPPED', " +
             "'CANCEL_REQUESTED', 'CANCELLED', 'INVALID', 'DEGRADED_COMPLETE')"
     )
     suspend fun findClearedOperationIds(
