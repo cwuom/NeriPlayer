@@ -50,7 +50,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -319,6 +321,8 @@ object PlayerManager {
     internal var mainScope = newMainScope()
     internal var progressJob: Job? = null
     internal var lyriconUpdateJob: Job? = null
+    private val lyriconUpdateLock = Any()
+    private var lyriconUpdateGeneration = 0L
     internal var externalBluetoothLyricsLoadJob: Job? = null
     internal var externalBluetoothTranslationLoadJob: Job? = null
     internal var volumeFadeJob: Job? = null
@@ -801,7 +805,14 @@ object PlayerManager {
         )
     }
 
-    internal fun syncLyriconSong(song: SongItem?) {
+    internal fun syncLyriconSong(
+        song: SongItem?,
+        lyricOffsetOverrideMs: Long? = null,
+    ) {
+        val updateGeneration = synchronized(lyriconUpdateLock) {
+            lyriconUpdateGeneration += 1L
+            lyriconUpdateGeneration
+        }
         lyriconUpdateJob?.cancel()
         if (!lyriconEnabled) {
             lyriconUpdateJob = null
@@ -815,7 +826,7 @@ object PlayerManager {
             LyriconManager.setPosition(0L)
             return
         }
-        val lyricOffsetMs = resolveLyriconLyricOffsetMs(song)
+        val lyricOffsetMs = lyricOffsetOverrideMs ?: resolveLyriconLyricOffsetMs(song)
         LyriconManager.updateSong(
             song = song,
             lyrics = null,
@@ -824,15 +835,23 @@ object PlayerManager {
         )
         lyriconUpdateJob = ioScope.launch {
             val lyrics = getLyrics(song)
+            currentCoroutineContext().ensureActive()
             val translatedLyrics = getTranslatedLyrics(song)
-            val currentSong = _currentSongFlow.value
-            if (currentSong?.sameIdentityAs(song) == true) {
-                LyriconManager.updateSong(
-                    song = currentSong,
-                    lyrics = lyrics,
-                    translatedLyrics = translatedLyrics,
-                    lyricOffsetMs = resolveLyriconLyricOffsetMs(currentSong),
-                )
+            currentCoroutineContext().ensureActive()
+            synchronized(lyriconUpdateLock) {
+                if (updateGeneration != lyriconUpdateGeneration) {
+                    return@synchronized
+                }
+                val currentSong = _currentSongFlow.value
+                if (currentSong?.sameIdentityAs(song) == true) {
+                    LyriconManager.updateSong(
+                        song = currentSong,
+                        lyrics = lyrics,
+                        translatedLyrics = translatedLyrics,
+                        lyricOffsetMs = lyricOffsetOverrideMs
+                            ?: resolveLyriconLyricOffsetMs(currentSong),
+                    )
+                }
             }
         }
     }
@@ -841,6 +860,7 @@ object PlayerManager {
         if (!lyriconEnabled) return
         val lyricOffsetMs = song?.let { resolveLyriconLyricOffsetMs(it) } ?: 0L
         LyriconManager.setLyricOffset(lyricOffsetMs)
+        LyriconManager.setPosition(song?.let { _playbackPositionMs.value } ?: 0L)
     }
 
     private fun resolveLyriconLyricOffsetMs(song: SongItem): Long {
