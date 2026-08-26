@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -1009,6 +1010,99 @@ class DownloadRecoveryRoomStoreTest {
                 database.downloadOperationDao().find(firstOperationId)?.state
             )
             assertTrue(store.listWaitingStorageMutations().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun terminalWaitingOperationGetsANewIdWithoutBlockingTheRestOfTheBatch() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val redownloadedSong = song(80L, "terminal-storage-mutation")
+            val secondPlaylistSong = song(81L, "second-playlist-storage-mutation")
+            val store = DownloadRecoveryRoomStore(context, database)
+            val completedOperationId = store.upsertWaitingStorageMutation(
+                songs = listOf(redownloadedSong),
+                nowMs = 100L,
+                userInitiated = true
+            ).single()
+            assertTrue(
+                store.promoteWaitingStorageMutation(
+                    operationId = completedOperationId,
+                    stableKey = redownloadedSong.stableKey()
+                )
+            )
+            assertEquals(
+                1,
+                database.downloadOperationDao().transitionState(
+                    operationId = completedOperationId,
+                    expectedStates = listOf("QUEUED"),
+                    state = "COMPLETED",
+                    updatedAtMs = 200L,
+                    errorCode = null
+                )
+            )
+
+            val waitingOperationIds = store.upsertWaitingStorageMutation(
+                songs = listOf(redownloadedSong, secondPlaylistSong),
+                nowMs = 300L,
+                userInitiated = true
+            )
+            val operationIdsBySongKey = waitingOperationIds.associateBy { operationId ->
+                requireNotNull(
+                    DownloadExecutionRoomStore.read(
+                        context = context,
+                        operationId = operationId,
+                        database = database
+                    )
+                ).song.stableKey()
+            }
+            val replacementOperationId = requireNotNull(
+                operationIdsBySongKey[redownloadedSong.stableKey()]
+            )
+
+            assertEquals(2, waitingOperationIds.size)
+            assertNotEquals(completedOperationId, replacementOperationId)
+            assertEquals(
+                "COMPLETED",
+                database.downloadOperationDao().find(completedOperationId)?.state
+            )
+            waitingOperationIds.forEach { operationId ->
+                val request = requireNotNull(
+                    DownloadExecutionRoomStore.read(
+                        context = context,
+                        operationId = operationId,
+                        database = database
+                    )
+                )
+                assertEquals(
+                    WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                    database.downloadOperationDao().find(operationId)?.state
+                )
+                assertTrue(
+                    store.promoteWaitingStorageMutation(
+                        operationId = operationId,
+                        stableKey = request.song.stableKey()
+                    )
+                )
+            }
+            listOf(redownloadedSong, secondPlaylistSong).forEach { song ->
+                assertEquals(
+                    1,
+                    database.downloadOperationDao().findAll().count { entity ->
+                        entity.stableKey == song.stableKey() &&
+                            entity.state in listOf(
+                                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                                "QUEUED"
+                            )
+                    }
+                )
+            }
         } finally {
             database.close()
         }

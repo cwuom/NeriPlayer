@@ -381,16 +381,16 @@ object GlobalDownloadManager {
     private val managedLibraryReconciler = ManagedLibraryReconciler()
     private val requestGenerationTracker = DownloadRequestGenerationTracker()
     private val batchDownloadPresentationIdGenerator = AtomicLong(0L)
-    private val _batchDownloadPresentation =
-        MutableStateFlow<BatchDownloadPresentationState?>(null)
+    private val _batchDownloadPresentations =
+        MutableStateFlow<Map<Long, BatchDownloadPresentationState>>(emptyMap())
     val downloadTasks: StateFlow<List<DownloadTask>> = taskStore.downloadTasks
     val downloadTaskSummary: StateFlow<DownloadTaskSummary> = taskStore.downloadTaskSummary
     val activeDownloadOperationsFlow: StateFlow<Boolean> = taskStore.activeDownloadOperationsFlow
     internal val batchDownloadProgressFlow: StateFlow<BatchDownloadOverallProgress?> = combine(
-        _batchDownloadPresentation,
+        _batchDownloadPresentations,
         downloadTasks
-    ) { presentation: BatchDownloadPresentationState?, tasks: List<DownloadTask> ->
-        presentation?.let { state -> aggregateBatchDownloadProgress(state, tasks) }
+    ) { presentations: Map<Long, BatchDownloadPresentationState>, tasks: List<DownloadTask> ->
+        aggregateBatchDownloadProgress(presentations.values, tasks)
     }.stateIn(
         scope = scope,
         started = SharingStarted.Eagerly,
@@ -512,39 +512,74 @@ object GlobalDownloadManager {
     /**
      * keeps a new operation non-runnable until queue persistence can be committed atomically
      */
+    private data class StagedPendingDownloadQueue(
+        val operationIds: List<String>,
+        val skippedSongKeys: Set<String>
+    )
+
     private suspend fun stageAndPromotePendingDownloadQueue(
         context: Context,
         songs: List<SongItem>,
         userInitiated: Boolean
-    ): List<String>? {
+    ): StagedPendingDownloadQueue? {
         val distinctSongs = songs.distinctBy(SongItem::stableKey)
         if (distinctSongs.isEmpty()) {
-            return emptyList()
+            return StagedPendingDownloadQueue(
+                operationIds = emptyList(),
+                skippedSongKeys = emptySet()
+            )
         }
         val recoveryStore = DownloadRecoveryRoomStore(context.applicationContext)
         val waitingOperationIds = recoveryStore.upsertWaitingStorageMutation(
             songs = distinctSongs,
             userInitiated = userInitiated
         )
+        val skippedSongKeys = linkedSetOf<String>()
         for (operationId in waitingOperationIds) {
             val request = DownloadExecutionRoomStore.read(context, operationId)
-            val promoted = request != null && recoveryStore.promoteWaitingStorageMutation(
-                operationId = operationId,
-                stableKey = request.song.stableKey()
-            )
-            if (!promoted) {
-                NPLogger.d(
+            if (request == null) {
+                NPLogger.w(
                     TAG,
-                    "下载意图在存储变更期间已被取消，避免重新创建: " +
+                    "下载意图在提升前丢失，停止当前请求以避免错误重建: " +
                         "operationId=$operationId"
                 )
                 return null
             }
+            val promoted = recoveryStore.promoteWaitingStorageMutation(
+                operationId = operationId,
+                stableKey = request.song.stableKey()
+            )
+            if (!promoted) {
+                val latestState = DownloadExecutionRoomStore.state(context, operationId)
+                if (
+                    latestState in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES ||
+                        latestState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
+                ) {
+                    NPLogger.d(
+                        TAG,
+                        "下载意图已被并行恢复接管，复用现有 operation: " +
+                            "operationId=$operationId, state=$latestState"
+                    )
+                    continue
+                }
+                skippedSongKeys += request.song.stableKey()
+                NPLogger.w(
+                    TAG,
+                    "下载意图在存储变更期间不可提升，仅跳过该歌曲: " +
+                        "operationId=$operationId, state=$latestState"
+                )
+            }
         }
-        return rememberPendingDownloadQueue(
-            context = context,
-            songs = distinctSongs,
-            userInitiated = userInitiated
+        val queueableSongs = distinctSongs.filterNot { song ->
+            song.stableKey() in skippedSongKeys
+        }
+        return StagedPendingDownloadQueue(
+            operationIds = rememberPendingDownloadQueue(
+                context = context,
+                songs = queueableSongs,
+                userInitiated = userInitiated
+            ),
+            skippedSongKeys = skippedSongKeys
         )
     }
 
@@ -3989,7 +4024,7 @@ object GlobalDownloadManager {
                 ) {
                     return@admission
                 }
-                val operationIds = stageAndPromotePendingDownloadQueue(
+                val stagedQueue = stageAndPromotePendingDownloadQueue(
                     context = appContext,
                     songs = listOf(song),
                     userInitiated = true
@@ -4000,7 +4035,7 @@ object GlobalDownloadManager {
                     )
                     return@admission
                 }
-                val operationId = operationIds.singleOrNull()
+                val operationId = stagedQueue.operationIds.singleOrNull()
                 if (operationId == null) {
                     NPLogger.w(TAG, "持久化下载 operation 失败: song=${song.name}")
                     return@admission
@@ -4858,49 +4893,62 @@ object GlobalDownloadManager {
         if (requestedSongs.isEmpty()) {
             return
         }
+        val requestedSongKeys = requestedSongs.mapTo(linkedSetOf()) { song ->
+            song.stableKey()
+        }
         val batchPresentationId = beginBatchDownloadPresentation(requestedSongs)
         scope.launch {
             awaitDownloadedSongDeletion(requestedSongs.map(SongItem::stableKey))
             val admissionTicket = awaitDownloadAdmissionTicket(appContext)
-            var inFlightRequestsToRecover = emptyList<DownloadExecutionRequest>()
+            var existingRequestsToRecover = emptyList<DownloadExecutionRequest>()
             val admitted = admitDownloadMutation(appContext, admissionTicket) admission@{
-                inFlightRequestsToRecover = requestedSongs.mapNotNull { song ->
+                val existingOperationRequests = requestedSongs.mapNotNull { song ->
                     val songKey = song.stableKey()
                     val operationId = DownloadExecutionRoomStore.findReadableOperationIdForSong(
                         context = appContext,
                         songKey = songKey,
                         states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
                         excludeUserCancelledStops = true
+                    ) ?: DownloadExecutionRoomStore.findReadableOperationIdForSong(
+                        context = appContext,
+                        songKey = songKey,
+                        states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                        excludeUserStoppedOperations = true
                     ) ?: return@mapNotNull null
                     DownloadExecutionRoomStore.read(appContext, operationId)
                         ?.takeIf { request -> request.song.stableKey() == songKey }
                 }
-                val alreadyExecutingSongKeys = inFlightRequestsToRecover
+                val existingOperationSongKeys = existingOperationRequests
                     .mapTo(linkedSetOf()) { request -> request.song.stableKey() }
+                existingRequestsToRecover = existingOperationRequests.filter { request ->
+                    taskStore.findTask(request.song.stableKey()) == null
+                }
                 bindBatchDownloadPresentationAttempts(
                     batchId = batchPresentationId,
                     attemptIdsBySongKey = taskStore.currentTasks()
                         .asSequence()
-                        .filter { task -> task.song.stableKey() in alreadyExecutingSongKeys }
+                        .filter { task -> task.song.stableKey() in requestedSongKeys }
                         .associate { task -> task.song.stableKey() to task.attemptId }
                 )
                 val candidateSongs = selectBatchDownloadCandidates(
                     songs = requestedSongs,
-                    inFlightSongKeys = alreadyExecutingSongKeys
+                    inFlightSongKeys = existingOperationSongKeys
                 )
                 if (candidateSongs.isEmpty()) {
                     NPLogger.d(
                         TAG,
-                        "批量下载请求均已有执行中的 operation: " +
+                        "批量下载请求均已有关联 operation: " +
                             "requested=${requestedSongs.size}"
                     )
-                    if (alreadyExecutingSongKeys.isEmpty()) {
+                    if (existingOperationSongKeys.isEmpty()) {
                         clearBatchDownloadPresentation(batchPresentationId)
                     }
                     return@admission
                 }
-                val requestedSongKeys = candidateSongs.mapTo(linkedSetOf()) { it.stableKey() }
-                clearSongCancellationForFreshStart(appContext, requestedSongKeys)
+                val candidateSongKeys = candidateSongs.mapTo(linkedSetOf()) { song ->
+                    song.stableKey()
+                }
+                clearSongCancellationForFreshStart(appContext, candidateSongKeys)
                 if (
                     maybeRequestTrafficRiskDownloadConfirmation(
                         context = appContext,
@@ -4912,7 +4960,7 @@ object GlobalDownloadManager {
                     clearBatchDownloadPresentation(batchPresentationId)
                     return@admission
                 }
-                val operationIds = stageAndPromotePendingDownloadQueue(
+                val stagedQueue = stageAndPromotePendingDownloadQueue(
                     context = appContext,
                     songs = candidateSongs,
                     userInitiated = userInitiated
@@ -4925,12 +4973,40 @@ object GlobalDownloadManager {
                     clearBatchDownloadPresentation(batchPresentationId)
                     return@admission
                 }
+                if (stagedQueue.skippedSongKeys.isNotEmpty()) {
+                    removeBatchDownloadPresentationMembers(
+                        batchId = batchPresentationId,
+                        songKeys = stagedQueue.skippedSongKeys
+                    )
+                    NPLogger.w(
+                        TAG,
+                        "批量下载跳过无法提升的持久化意图，继续其余歌曲: " +
+                            "skipped=${stagedQueue.skippedSongKeys.size}, " +
+                            "requested=${candidateSongs.size}"
+                    )
+                }
+                val operationIds = stagedQueue.operationIds
                 val operationIdsBySongKey = linkedMapOf<String, String>()
                 operationIds.forEach { operationId ->
                     val request = DownloadExecutionRoomStore.read(appContext, operationId)
                     if (request != null) {
                         operationIdsBySongKey[request.song.stableKey()] = operationId
                     }
+                }
+                val handedOffSongKeys = operationIdsBySongKey
+                    .filterValues { operationId ->
+                        DownloadExecutionRoomStore.state(appContext, operationId) in
+                            DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
+                    }
+                    .keys
+                if (handedOffSongKeys.isNotEmpty()) {
+                    bindBatchDownloadPresentationAttempts(
+                        batchId = batchPresentationId,
+                        attemptIdsBySongKey = taskStore.currentTasks()
+                            .asSequence()
+                            .filter { task -> task.song.stableKey() in handedOffSongKeys }
+                            .associate { task -> task.song.stableKey() to task.attemptId }
+                    )
                 }
                 val schedulableSongs = candidateSongs.filter { song ->
                     val operationId = operationIdsBySongKey[song.stableKey()]
@@ -4944,7 +5020,10 @@ object GlobalDownloadManager {
                         "批量下载 operation 已被其他执行接管: " +
                             "requested=${candidateSongs.size}"
                     )
-                    if (alreadyExecutingSongKeys.isEmpty()) {
+                    if (
+                        existingOperationSongKeys.isEmpty() &&
+                            handedOffSongKeys.isEmpty()
+                    ) {
                         clearBatchDownloadPresentation(batchPresentationId)
                     }
                     return@admission
@@ -4965,7 +5044,7 @@ object GlobalDownloadManager {
             if (admitted) {
                 recoverInFlightDownloadOperations(
                     context = appContext,
-                    requests = inFlightRequestsToRecover,
+                    requests = existingRequestsToRecover,
                     admissionTicket = admissionTicket
                 )
             }
@@ -5265,8 +5344,7 @@ object GlobalDownloadManager {
                     markBatchDownloadPresentationTerminal(
                         songKey = songKey,
                         attemptId = attemptId,
-                        terminalState = BatchDownloadTerminalState.CANCELLED,
-                        batchId = session.batchPresentationId
+                        terminalState = BatchDownloadTerminalState.CANCELLED
                     )
                 }
                 return
@@ -5281,8 +5359,7 @@ object GlobalDownloadManager {
                             markBatchDownloadPresentationTerminal(
                                 songKey = songKey,
                                 attemptId = attemptId,
-                                terminalState = BatchDownloadTerminalState.COMPLETED,
-                                batchId = session.batchPresentationId
+                                terminalState = BatchDownloadTerminalState.COMPLETED
                             )
                         }
                         NPLogger.d(TAG, "批量下载跳过已完成 artifact: song=${song.name}")
@@ -5333,8 +5410,7 @@ object GlobalDownloadManager {
                 markBatchDownloadPresentationTerminal(
                     songKey = songKey,
                     attemptId = attemptId,
-                    terminalState = BatchDownloadTerminalState.COMPLETED,
-                    batchId = session.batchPresentationId
+                    terminalState = BatchDownloadTerminalState.COMPLETED
                 )
                 NPLogger.d(TAG, "批量下载跳过本地歌曲: song=${song.name}, songKey=$songKey")
                 return
@@ -5394,8 +5470,7 @@ object GlobalDownloadManager {
                 markBatchDownloadPresentationTerminal(
                     songKey = songKey,
                     attemptId = attemptId,
-                    terminalState = BatchDownloadTerminalState.FAILED,
-                    batchId = session.batchPresentationId
+                    terminalState = BatchDownloadTerminalState.FAILED
                 )
                 NPLogger.w(TAG, "批量下载缺少持久化 operation: song=${song.name}")
                 return
@@ -5524,8 +5599,7 @@ object GlobalDownloadManager {
         markBatchDownloadPresentationTerminal(
             songKey = songKey,
             attemptId = attemptId,
-            terminalState = BatchDownloadTerminalState.COMPLETED,
-            batchId = session.batchPresentationId
+            terminalState = BatchDownloadTerminalState.COMPLETED
         )
         if (repairedSong != downloadedSong) {
             session.optimisticDownloadedSongs += repairedSong
@@ -5560,8 +5634,7 @@ object GlobalDownloadManager {
         markBatchDownloadPresentationTerminal(
             songKey = songKey,
             attemptId = attemptId,
-            terminalState = BatchDownloadTerminalState.COMPLETED,
-            batchId = session.batchPresentationId
+            terminalState = BatchDownloadTerminalState.COMPLETED
         )
         session.optimisticDownloadedSongs += repairDownloadedCoverIfMissing(
             context = session.context,
@@ -5643,8 +5716,7 @@ object GlobalDownloadManager {
                 markBatchDownloadPresentationTerminal(
                     songKey = songKey,
                     attemptId = attemptId,
-                    terminalState = BatchDownloadTerminalState.CANCELLED,
-                    batchId = session.batchPresentationId
+                    terminalState = BatchDownloadTerminalState.CANCELLED
                 )
                 removeDownloadTask(songKey, expectedAttemptId = attemptId)
             }
@@ -6638,12 +6710,20 @@ object GlobalDownloadManager {
             .map(SongItem::stableKey)
             .filter(String::isNotBlank)
             .distinct()
-            .associateWith { null }
+            .associateWith { songKey ->
+                taskStore.findTask(songKey)
+                    ?.attemptId
+                    ?.takeIf { attemptId -> attemptId > 0L }
+            }
         val batchId = batchDownloadPresentationIdGenerator.incrementAndGet()
-        _batchDownloadPresentation.value = BatchDownloadPresentationState(
-            id = batchId,
-            memberAttemptIds = memberAttemptIds
-        )
+        _batchDownloadPresentations.update { presentations ->
+            presentations + (
+                batchId to BatchDownloadPresentationState(
+                    id = batchId,
+                    memberAttemptIds = memberAttemptIds
+                )
+            )
+        }
         return batchId
     }
 
@@ -6654,14 +6734,32 @@ object GlobalDownloadManager {
         if (attemptIdsBySongKey.isEmpty()) {
             return
         }
-        _batchDownloadPresentation.update { presentation ->
-            if (presentation?.id != batchId) {
-                return@update presentation
-            }
+        _batchDownloadPresentations.update { presentations ->
+            val presentation = presentations[batchId] ?: return@update presentations
+            val newlyBoundKeys = attemptIdsBySongKey
+                .filter { (songKey, attemptId) ->
+                    attemptId > 0L && presentation.memberAttemptIds[songKey] != attemptId
+                }
+                .keys
             val updatedMemberAttemptIds = presentation.memberAttemptIds.mapValues { (songKey, attemptId) ->
-                attemptIdsBySongKey[songKey]?.takeIf { candidate -> candidate > 0L } ?: attemptId
+                attemptIdsBySongKey[songKey]
+                    ?.takeIf { candidate -> candidate > 0L }
+                    ?: attemptId
             }
-            presentation.copy(memberAttemptIds = updatedMemberAttemptIds)
+            if (
+                updatedMemberAttemptIds == presentation.memberAttemptIds &&
+                    newlyBoundKeys.isEmpty()
+            ) {
+                return@update presentations
+            }
+            presentations + (
+                batchId to presentation.copy(
+                    memberAttemptIds = updatedMemberAttemptIds,
+                    terminalStates = presentation.terminalStates.filterKeys { songKey ->
+                        songKey !in newlyBoundKeys
+                    }
+                )
+            )
         }
     }
 
@@ -6670,105 +6768,144 @@ object GlobalDownloadManager {
     ) {
         val songKey = progress.songKey
         val fraction = downloadProgressFraction(progress)
-        _batchDownloadPresentation.update { presentation ->
-            if (presentation == null) {
-                return@update null
+        _batchDownloadPresentations.update { presentations ->
+            var changed = false
+            val updatedPresentations = presentations.mapValues { (_, presentation) ->
+                val expectedAttemptId = presentation.memberAttemptIds[songKey]
+                if (
+                    songKey !in presentation.memberAttemptIds ||
+                        (expectedAttemptId != null && expectedAttemptId != progress.attemptId)
+                ) {
+                    return@mapValues presentation
+                }
+                val retainedFraction = presentation.maximumObservedFractions[songKey] ?: 0f
+                if (fraction <= retainedFraction) {
+                    return@mapValues presentation
+                }
+                changed = true
+                presentation.copy(
+                    maximumObservedFractions = presentation.maximumObservedFractions +
+                        (songKey to fraction)
+                )
             }
-            val expectedAttemptId = presentation.memberAttemptIds[songKey]
-            if (
-                songKey !in presentation.memberAttemptIds ||
-                    (expectedAttemptId != null && expectedAttemptId != progress.attemptId)
-            ) {
-                return@update presentation
-            }
-            val retainedFraction = presentation.maximumObservedFractions[songKey] ?: 0f
-            if (fraction <= retainedFraction) {
-                return@update presentation
-            }
-            presentation.copy(
-                maximumObservedFractions = presentation.maximumObservedFractions +
-                    (songKey to fraction)
-            )
+            if (changed) updatedPresentations else presentations
         }
     }
 
     private fun markBatchDownloadPresentationTerminal(
         songKey: String,
         attemptId: Long?,
-        terminalState: BatchDownloadTerminalState,
-        batchId: Long? = null
+        terminalState: BatchDownloadTerminalState
     ) {
         if (attemptId == null || attemptId <= 0L) {
             return
         }
-        var completedBatchId: Long? = null
-        _batchDownloadPresentation.update { presentation ->
-            if (presentation == null || (batchId != null && presentation.id != batchId)) {
-                return@update presentation
+        val completedBatchIds = linkedSetOf<Long>()
+        _batchDownloadPresentations.update { presentations ->
+            var changed = false
+            val updatedPresentations = presentations.mapValues { (presentationId, presentation) ->
+                val memberAttemptId = presentation.memberAttemptIds[songKey]
+                if (
+                    songKey !in presentation.memberAttemptIds ||
+                        (memberAttemptId != null && memberAttemptId != attemptId) ||
+                        presentation.terminalStates[songKey] != null
+                ) {
+                    return@mapValues presentation
+                }
+                val updatedMemberAttemptIds = if (memberAttemptId == null) {
+                    presentation.memberAttemptIds + (songKey to attemptId)
+                } else {
+                    presentation.memberAttemptIds
+                }
+                val updatedTerminalStates = presentation.terminalStates +
+                    (songKey to terminalState)
+                val updatedPresentation = presentation.copy(
+                    memberAttemptIds = updatedMemberAttemptIds,
+                    terminalStates = updatedTerminalStates
+                )
+                if (updatedTerminalStates.size == updatedMemberAttemptIds.size) {
+                    completedBatchIds += presentationId
+                }
+                changed = true
+                updatedPresentation
             }
-            val memberAttemptId = presentation.memberAttemptIds[songKey]
-            if (
-                songKey !in presentation.memberAttemptIds ||
-                    (memberAttemptId != null && memberAttemptId != attemptId)
-            ) {
-                return@update presentation
-            }
-            val updatedMemberAttemptIds = if (memberAttemptId == null) {
-                presentation.memberAttemptIds + (songKey to attemptId)
-            } else {
-                presentation.memberAttemptIds
-            }
-            val updatedTerminalStates = presentation.terminalStates + (songKey to terminalState)
-            val updatedPresentation = presentation.copy(
-                memberAttemptIds = updatedMemberAttemptIds,
-                terminalStates = updatedTerminalStates
-            )
-            if (updatedTerminalStates.size == updatedPresentation.memberAttemptIds.size) {
-                completedBatchId = updatedPresentation.id
-            }
-            updatedPresentation
+            if (changed) updatedPresentations else presentations
         }
-        completedBatchId?.let(::scheduleCompletedBatchDownloadPresentationRemoval)
+        completedBatchIds.forEach(::scheduleCompletedBatchDownloadPresentationRemoval)
     }
 
     private fun resumeBatchDownloadPresentationOnRetry(
         songKey: String,
         attemptId: Long
     ) {
-        _batchDownloadPresentation.update { presentation ->
-            presentation?.let { state ->
-                resumeBatchDownloadPresentationForRetry(
-                    presentation = state,
+        _batchDownloadPresentations.update { presentations ->
+            var changed = false
+            val updatedPresentations = presentations.mapValues { (_, presentation) ->
+                val updatedPresentation = resumeBatchDownloadPresentationForRetry(
+                    presentation = presentation,
                     songKey = songKey,
                     attemptId = attemptId
                 )
+                if (updatedPresentation != presentation) {
+                    changed = true
+                }
+                updatedPresentation
             }
+            if (changed) updatedPresentations else presentations
         }
     }
 
     private fun scheduleCompletedBatchDownloadPresentationRemoval(batchId: Long) {
         scope.launch {
             delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)
-            _batchDownloadPresentation.update { presentation ->
-                if (
-                    presentation?.id == batchId &&
-                        presentation.terminalStates.size == presentation.memberAttemptIds.size
-                ) {
-                    null
+            _batchDownloadPresentations.update { presentations ->
+                val presentation = presentations[batchId] ?: return@update presentations
+                if (presentation.terminalStates.size == presentation.memberAttemptIds.size) {
+                    presentations - batchId
                 } else {
-                    presentation
+                    presentations
                 }
             }
         }
     }
 
     private fun clearBatchDownloadPresentation(batchId: Long? = null) {
-        _batchDownloadPresentation.update { presentation ->
-            if (batchId == null || presentation?.id == batchId) {
-                null
+        _batchDownloadPresentations.update { presentations ->
+            if (batchId == null) {
+                emptyMap()
             } else {
-                presentation
+                presentations - batchId
             }
+        }
+    }
+
+    private fun removeBatchDownloadPresentationMembers(
+        batchId: Long,
+        songKeys: Collection<String>
+    ) {
+        val keysToRemove = songKeys.filter(String::isNotBlank).toSet()
+        if (keysToRemove.isEmpty()) {
+            return
+        }
+        _batchDownloadPresentations.update { presentations ->
+            val presentation = presentations[batchId] ?: return@update presentations
+            val memberAttemptIds = presentation.memberAttemptIds.filterKeys { songKey ->
+                songKey !in keysToRemove
+            }
+            if (memberAttemptIds.isEmpty()) {
+                return@update presentations - batchId
+            }
+            presentations + (
+                batchId to presentation.copy(
+                    memberAttemptIds = memberAttemptIds,
+                    terminalStates = presentation.terminalStates.filterKeys { songKey ->
+                        songKey in memberAttemptIds
+                    },
+                    maximumObservedFractions = presentation.maximumObservedFractions.filterKeys { songKey ->
+                        songKey in memberAttemptIds
+                    }
+                )
+            )
         }
     }
 

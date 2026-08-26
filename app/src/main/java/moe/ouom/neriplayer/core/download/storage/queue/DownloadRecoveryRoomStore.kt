@@ -234,8 +234,17 @@ internal class DownloadRecoveryRoomStore(
                     return@mapNotNull null
                 }
                 val existing = waitingWinners[key]
+                val deterministicOperationId = waitingStorageMutationOperationId(libraryId, key)
+                val deterministicOperation = dao.find(deterministicOperationId)
                 val operationId = existing?.request?.operationId
-                    ?: waitingStorageMutationOperationId(libraryId, key)
+                    ?: if (
+                        deterministicOperation?.state in
+                            WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
+                    ) {
+                        UUID.randomUUID().toString()
+                    } else {
+                        deterministicOperationId
+                    }
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = DownloadExecutionRequest(
@@ -419,6 +428,11 @@ internal class DownloadRecoveryRoomStore(
             "CANCEL_REQUESTED",
             "CANCELLED",
             "STOPPED"
+        )
+        private val WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES = setOf(
+            "COMPLETED",
+            "FINALIZED",
+            "INVALID"
         )
         private val PENDING_QUEUE_VISIBLE_STATES = listOf(
             PENDING_QUEUE_STATE,

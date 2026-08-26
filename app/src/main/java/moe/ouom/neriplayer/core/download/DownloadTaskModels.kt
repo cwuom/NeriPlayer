@@ -125,6 +125,122 @@ internal fun aggregateBatchDownloadProgress(
     )
 }
 
+/** combines overlapping user batch selections without double-counting one song */
+internal fun aggregateBatchDownloadProgress(
+    presentations: Collection<BatchDownloadPresentationState>,
+    tasks: List<DownloadTask>
+): BatchDownloadOverallProgress? {
+    val mergedPresentation = mergeBatchDownloadPresentations(presentations, tasks)
+        ?: return null
+    return aggregateBatchDownloadProgress(mergedPresentation, tasks)
+}
+
+/**
+ * chooses one current membership for each stable key before deriving overall progress
+ *
+ * A second batch can select a song already owned by an earlier batch. The durable
+ * operation remains singular, while the presentation keeps both user selections until
+ * they settle. Prefer the current non-terminal membership so a newer retry never
+ * inherits a completed state from an older request.
+ */
+internal fun mergeBatchDownloadPresentations(
+    presentations: Collection<BatchDownloadPresentationState>,
+    tasks: List<DownloadTask>
+): BatchDownloadPresentationState? {
+    val membersBySongKey = linkedMapOf<String, MutableList<BatchPresentationMember>>()
+    presentations
+        .asSequence()
+        .filter { presentation -> presentation.memberAttemptIds.isNotEmpty() }
+        .sortedBy(BatchDownloadPresentationState::id)
+        .forEach { presentation ->
+            presentation.memberAttemptIds.forEach { (songKey, attemptId) ->
+                if (songKey.isBlank()) {
+                    return@forEach
+                }
+                membersBySongKey.getOrPut(songKey, ::mutableListOf) +=
+                    BatchPresentationMember(
+                        presentationId = presentation.id,
+                        attemptId = attemptId,
+                        terminalState = presentation.terminalStates[songKey],
+                        maximumObservedFraction =
+                            presentation.maximumObservedFractions[songKey] ?: 0f
+                    )
+            }
+        }
+    if (membersBySongKey.isEmpty()) {
+        return null
+    }
+
+    val tasksBySongKey = tasks.associateBy { task -> task.song.stableKey() }
+    val memberAttemptIds = linkedMapOf<String, Long?>()
+    val terminalStates = linkedMapOf<String, BatchDownloadTerminalState>()
+    val maximumObservedFractions = linkedMapOf<String, Float>()
+    membersBySongKey.forEach { (songKey, members) ->
+        val selected = selectBatchPresentationMember(
+            members = members,
+            task = tasksBySongKey[songKey]
+        )
+        memberAttemptIds[songKey] = selected.attemptId
+        selected.terminalState?.let { terminalState ->
+            terminalStates[songKey] = terminalState
+        }
+        mergedBatchPresentationMaximumObservedFraction(selected, members)
+            .coerceIn(0f, 1f)
+            .takeIf { fraction -> fraction > 0f }
+            ?.let { fraction -> maximumObservedFractions[songKey] = fraction }
+    }
+    return BatchDownloadPresentationState(
+        id = presentations.maxOf(BatchDownloadPresentationState::id),
+        memberAttemptIds = memberAttemptIds,
+        terminalStates = terminalStates,
+        maximumObservedFractions = maximumObservedFractions
+    )
+}
+
+private data class BatchPresentationMember(
+    val presentationId: Long,
+    val attemptId: Long?,
+    val terminalState: BatchDownloadTerminalState?,
+    val maximumObservedFraction: Float
+)
+
+private fun selectBatchPresentationMember(
+    members: List<BatchPresentationMember>,
+    task: DownloadTask?
+): BatchPresentationMember {
+    val pendingMembers = members.filter { member -> member.terminalState == null }
+    if (pendingMembers.isEmpty()) {
+        return requireNotNull(members.maxByOrNull(BatchPresentationMember::presentationId))
+    }
+    val currentAttemptId = task
+        ?.takeIf { candidate ->
+            candidate.status == DownloadStatus.QUEUED ||
+                candidate.status == DownloadStatus.DOWNLOADING ||
+                candidate.status == DownloadStatus.WAITING_NETWORK
+        }
+        ?.attemptId
+    if (currentAttemptId != null) {
+        pendingMembers.lastOrNull { member -> member.attemptId == currentAttemptId }
+            ?.let { member -> return member }
+    }
+    return requireNotNull(pendingMembers.maxByOrNull(BatchPresentationMember::presentationId))
+}
+
+private fun mergedBatchPresentationMaximumObservedFraction(
+    selected: BatchPresentationMember,
+    members: List<BatchPresentationMember>
+): Float {
+    val matchingMembers = if (selected.terminalState == null) {
+        members.filter { member ->
+            member.terminalState == null && member.attemptId == selected.attemptId
+        }
+    } else {
+        listOf(selected)
+    }
+    return matchingMembers.maxOfOrNull(BatchPresentationMember::maximumObservedFraction)
+        ?: selected.maximumObservedFraction
+}
+
 internal fun downloadProgressFraction(progress: AudioDownloadManager.DownloadProgress): Float {
     if (progress.stage == AudioDownloadManager.DownloadStage.FINALIZING) {
         return 1f

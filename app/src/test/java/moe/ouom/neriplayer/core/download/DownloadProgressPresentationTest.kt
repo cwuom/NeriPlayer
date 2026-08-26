@@ -220,6 +220,105 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `separate playlist batches share one overall progress denominator`() {
+        val first = song(1L)
+        val second = song(2L)
+        val third = song(3L)
+        val fourth = song(4L)
+        val firstBatch = BatchDownloadPresentationState(
+            id = 1L,
+            memberAttemptIds = mapOf(first.stableKey() to 1L, second.stableKey() to 2L)
+        )
+        val secondBatch = BatchDownloadPresentationState(
+            id = 2L,
+            memberAttemptIds = mapOf(third.stableKey() to 3L, fourth.stableKey() to 4L)
+        )
+        val tasks = listOf(
+            DownloadTask(
+                song = first,
+                progress = progress(first.stableKey(), 1L, bytesRead = 50L),
+                status = DownloadStatus.DOWNLOADING,
+                attemptId = 1L
+            ),
+            DownloadTask(second, null, DownloadStatus.QUEUED, attemptId = 2L),
+            DownloadTask(third, null, DownloadStatus.QUEUED, attemptId = 3L),
+            DownloadTask(fourth, null, DownloadStatus.QUEUED, attemptId = 4L)
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(listOf(firstBatch, secondBatch), tasks)
+        )
+
+        assertEquals(4, aggregate.totalSongs)
+        assertEquals(12, aggregate.percentage)
+        assertEquals(1, aggregate.activeSongCount)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `overlapping newer batch does not inherit an older completed membership`() {
+        val selected = song(1L)
+        val completedBatch = BatchDownloadPresentationState(
+            id = 1L,
+            memberAttemptIds = mapOf(selected.stableKey() to 1L),
+            terminalStates = mapOf(selected.stableKey() to BatchDownloadTerminalState.COMPLETED),
+            maximumObservedFractions = mapOf(selected.stableKey() to 1f)
+        )
+        val retryBatch = BatchDownloadPresentationState(
+            id = 2L,
+            memberAttemptIds = mapOf(selected.stableKey() to 2L)
+        )
+        val retryTask = DownloadTask(
+            song = selected,
+            progress = null,
+            status = DownloadStatus.QUEUED,
+            attemptId = 2L
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(
+                presentations = listOf(completedBatch, retryBatch),
+                tasks = listOf(retryTask)
+            )
+        )
+
+        assertEquals(1, aggregate.totalSongs)
+        assertEquals(0, aggregate.completedSongs)
+        assertEquals(0, aggregate.percentage)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
+    fun `overlapping batches retain the shared attempt progress watermark`() {
+        val selected = song(1L)
+        val firstBatch = BatchDownloadPresentationState(
+            id = 1L,
+            memberAttemptIds = mapOf(selected.stableKey() to 9L),
+            maximumObservedFractions = mapOf(selected.stableKey() to 0.8f)
+        )
+        val secondBatch = BatchDownloadPresentationState(
+            id = 2L,
+            memberAttemptIds = mapOf(selected.stableKey() to 9L)
+        )
+        val regressiveTask = DownloadTask(
+            song = selected,
+            progress = progress(selected.stableKey(), 9L, bytesRead = 20L),
+            status = DownloadStatus.DOWNLOADING,
+            attemptId = 9L
+        )
+
+        val aggregate = requireNotNull(
+            aggregateBatchDownloadProgress(
+                presentations = listOf(firstBatch, secondBatch),
+                tasks = listOf(regressiveTask)
+            )
+        )
+
+        assertEquals(80, aggregate.percentage)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
     fun `early handoff only selects unscheduled requests up to the host window`() {
         val requests = (1L..4L).map { id ->
             QueuedDownloadRequest(song(id), attemptId = id, operationId = "operation-$id")
