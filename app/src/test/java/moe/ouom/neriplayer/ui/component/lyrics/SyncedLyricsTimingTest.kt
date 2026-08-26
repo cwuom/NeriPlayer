@@ -78,6 +78,85 @@ class SyncedLyricsViewTimingTest {
     }
 
     @Test
+    fun `parseNeteaseLyricsAuto preserves square bracket word timing`() {
+        val lyrics = parseNeteaseLyricsAuto(
+            """
+            [00:01.000]A[00:01.200][00:01.300] B[00:01.500]CD[00:02.000]
+            """.trimIndent()
+        )
+
+        val line = lyrics.single()
+        assertEquals("A BCD", line.text)
+        assertEquals(1_000L, line.startTimeMs)
+        assertEquals(2_000L, line.endTimeMs)
+        assertEquals(3, line.words?.size)
+        assertEquals(1_000L, line.words?.get(0)?.startTimeMs)
+        assertEquals(1_200L, line.words?.get(0)?.endTimeMs)
+        assertEquals(1, line.words?.get(0)?.charCount)
+        assertEquals(1_300L, line.words?.get(1)?.startTimeMs)
+        assertEquals(1_500L, line.words?.get(1)?.endTimeMs)
+        assertEquals(2, line.words?.get(1)?.charCount)
+        assertEquals(1_500L, line.words?.get(2)?.startTimeMs)
+        assertEquals(2_000L, line.words?.get(2)?.endTimeMs)
+        assertEquals(2, line.words?.get(2)?.charCount)
+    }
+
+    @Test
+    fun `parseNeteaseLrc treats an inline trailing timestamp as a line end`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:05.790]plain line[00:11.470]
+            [00:11.470]next line
+            """.trimIndent()
+        )
+
+        assertEquals(listOf("plain line", "next line"), lyrics.map { it.text })
+        assertEquals(11_470L, lyrics[0].endTimeMs)
+        assertEquals(null, lyrics[0].words)
+    }
+
+    @Test
+    fun `parseNeteaseLrc folds an adjacent same timestamp translation into square word timing`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:01.000]日[00:01.200]本[00:01.400]
+            [00:01.000]translation
+            [00:01.400]next line
+            """.trimIndent()
+        )
+
+        assertEquals(2, lyrics.size)
+        assertEquals("日本", lyrics[0].text)
+        assertEquals("translation", lyrics[0].translation)
+        assertEquals(2, lyrics[0].words?.size)
+        assertEquals("next line", lyrics[1].text)
+    }
+
+    @Test
+    fun `parseNeteaseLrc keeps adjacent credits separate from square word timing`() {
+        val lyrics = parseNeteaseLrc(
+            """
+            [00:01.000]日[00:01.200]本[00:01.400]
+            [00:01.000]词：author
+            [00:01.400]next line
+            """.trimIndent()
+        )
+
+        assertEquals(3, lyrics.size)
+        assertEquals(null, lyrics[0].translation)
+        assertEquals("词：author", lyrics[1].text)
+    }
+
+    @Test
+    fun `parseNeteaseLrc keeps multiple leading timestamps as ordinary lines`() {
+        val lyrics = parseNeteaseLrc("[00:01.000][00:02.000]repeated line")
+
+        assertEquals(listOf(1_000L, 2_000L), lyrics.map { it.startTimeMs })
+        assertEquals(listOf("repeated line", "repeated line"), lyrics.map { it.text })
+        assertTrue(lyrics.all { it.words == null })
+    }
+
+    @Test
     fun `parseNeteaseLrc trims credits after a terminal empty timestamp`() {
         val lyrics = parseNeteaseLrc(
             """
