@@ -931,8 +931,7 @@ internal fun PlayerManager.initializeImpl(
                         LyriconManager.setPosition(_playbackPositionMs.value)
                     }
                 } else {
-                    lyriconUpdateJob?.cancel()
-                    lyriconUpdateJob = null
+                    cancelLyriconUpdate()
                 }
             }
         }
@@ -3811,8 +3810,7 @@ internal fun PlayerManager.releaseImpl() {
         currentGenericUrlPrefetchJob = null
         currentGenericUrlPrefetchKey = null
         genericUrlPrefetchCache.clear()
-        lyriconUpdateJob?.cancel()
-        lyriconUpdateJob = null
+        cancelLyriconUpdate()
         externalBluetoothLyricsLoadJob?.cancel()
         externalBluetoothLyricsLoadJob = null
         externalBluetoothTranslationLoadJob?.cancel()

@@ -7,7 +7,7 @@ internal const val LYRICON_FEED_INTERVAL_MS = 200L
  * 推给 Lyricon/词幕的显示预推 (媒体时间轴)
  * 锚点用真实媒体进度, 仅显示层加 lead, 避免 dead-reckon 叠推
  */
-internal const val LYRICON_DISPLAY_LEAD_MS = 750L
+internal const val LYRICON_DISPLAY_LEAD_MS = 400L
 
 /**
  * 与高级歌词 resolveInterpolatedPlaybackPosition 同构的媒体锚点

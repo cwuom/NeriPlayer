@@ -2076,7 +2076,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
             )
         }
     if (currentSongForRebase != null && rebasedCurrentSong != null) {
-        val hasPendingLyriconUpdate = lyriconUpdateJob?.isActive == true
+        val hasPendingLyriconUpdate = hasPendingLyriconUpdate()
         setCurrentSongForPlayback(rebasedCurrentSong, syncLyricon = false)
         if (hasPendingLyriconUpdate) {
             syncLyriconSong(
