@@ -330,6 +330,7 @@ internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boo
         DownloadExecutionResult.MissingOperation,
         DownloadExecutionResult.Cancelled,
         DownloadExecutionResult.UserStopped,
-        DownloadExecutionResult.UserActionRequired -> false
+        DownloadExecutionResult.UserActionRequired,
+        DownloadExecutionResult.NetworkPolicyWaiting -> false
     }
 }

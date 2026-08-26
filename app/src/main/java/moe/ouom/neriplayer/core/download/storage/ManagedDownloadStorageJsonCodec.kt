@@ -389,7 +389,12 @@ internal object ManagedDownloadStorageJsonCodec {
             song = song,
             order = optInt("order", Int.MAX_VALUE),
             queuedAtMs = optLong("queuedAtMs").coerceAtLeast(0L),
-            operationId = optString("operationId").takeIf(String::isNotBlank)
+            operationId = optString("operationId").takeIf(String::isNotBlank),
+            requiresWifiNetwork = if (has("requiresWifiNetwork")) {
+                optBoolean("requiresWifiNetwork", true)
+            } else {
+                true
+            }
         )
     }
 
@@ -399,6 +404,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("order", order)
             put("queuedAtMs", queuedAtMs)
             operationId?.takeIf(String::isNotBlank)?.let { put("operationId", it) }
+            put("requiresWifiNetwork", requiresWifiNetwork)
             put("song", song.toWorkingResumeMetadataJson())
         }
     }

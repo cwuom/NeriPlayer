@@ -60,7 +60,6 @@ internal suspend fun resumeExplicitDownload(
     candidate: ExplicitDownloadResumeCandidate
 ): DownloadExecutionSchedule = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
-    val request = buildExplicitResumeRequest(candidate)
     val stableKey = candidate.song.stableKey()
     if (PersistentDownloadClearFenceStore.isActive(appContext)) {
         return@withContext DownloadExecutionSchedule.Rejected(
@@ -77,6 +76,22 @@ internal suspend fun resumeExplicitDownload(
             "operation is no longer resumable"
         )
     }
+    val persistedRequest = DownloadExecutionRoomStore.read(
+        context = appContext,
+        operationId = candidate.operationId
+    )?.takeIf { request -> request.song.stableKey() == stableKey }
+        ?: run {
+            DownloadExecutionRoomStore.restoreExplicitStop(
+                context = appContext,
+                operationId = candidate.operationId,
+                stableKey = stableKey,
+                errorCode = "EXPLICIT_RESUME_MISSING_OPERATION"
+            )
+            return@withContext DownloadExecutionSchedule.Rejected(
+                "operation is no longer resumable"
+            )
+        }
+    val request = buildExplicitResumeRequest(candidate, persistedRequest)
     if (PersistentDownloadClearFenceStore.isActive(appContext)) {
         cancelExplicitResumeDuringClear(
             context = appContext,
@@ -123,11 +138,16 @@ private suspend fun cancelExplicitResumeDuringClear(
 }
 
 internal fun buildExplicitResumeRequest(
-    candidate: ExplicitDownloadResumeCandidate
+    candidate: ExplicitDownloadResumeCandidate,
+    persistedRequest: DownloadExecutionRequest
 ): DownloadExecutionRequest {
-    return DownloadExecutionRequest(
-        operationId = candidate.operationId,
-        song = candidate.song,
+    require(persistedRequest.operationId == candidate.operationId) {
+        "persisted operation must match the resume candidate"
+    }
+    require(persistedRequest.song.stableKey() == candidate.song.stableKey()) {
+        "persisted song must match the resume candidate"
+    }
+    return persistedRequest.copy(
         preserveStaging = true,
         userInitiated = true
     )

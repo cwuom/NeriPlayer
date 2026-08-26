@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.displayName
@@ -80,6 +81,11 @@ fun ActiveDownloadTaskList(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Text(
+                                text = formatDownloadTransferProgress(progress, showSpeed = false),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             if (progress.totalBytes > 0L) {
                                 LinearProgressIndicator(
                                     progress = {
@@ -101,25 +107,31 @@ fun ActiveDownloadTaskList(
                             }
                         }
 
-                        progress != null && progress.totalBytes > 0L -> {
+                        progress != null -> {
                             Text(
-                                text = stringResource(
-                                    R.string.download_current_file_progress,
-                                    progress.percentage
-                                ),
+                                text = formatDownloadTransferProgress(progress),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            LinearProgressIndicator(
-                                progress = {
-                                    (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                                        .coerceIn(0f, 1f)
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                            )
+                            if (progress.totalBytes > 0L) {
+                                LinearProgressIndicator(
+                                    progress = {
+                                        (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                                            .coerceIn(0f, 1f)
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            } else {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                )
+                            }
                         }
 
                         else -> {

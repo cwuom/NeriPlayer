@@ -38,7 +38,13 @@ import moe.ouom.neriplayer.core.download.policy.resolvePreExistingDownloadedAudi
 import moe.ouom.neriplayer.core.download.policy.runNonCancellableDownloadRollback as runNonCancellableDownloadRollbackDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldRepairMetadataLessManagedDownload as shouldRepairMetadataLessManagedDownloadDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferPendingDownloadRecoveryForNetwork as shouldDeferPendingDownloadRecoveryForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldDeferDownloadExecutionForNetwork as shouldDeferDownloadExecutionForNetworkDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferQueuedDownloadStartForNetwork as shouldDeferQueuedDownloadStartForNetworkDelegate
+import moe.ouom.neriplayer.core.download.policy.hasWifiBoundNetworkPolicyDownloads as hasWifiBoundNetworkPolicyDownloadsDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadForWifiDisconnect as shouldPauseDownloadForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldPauseDownloadsForWifiDisconnect as shouldPauseDownloadsForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldRevokeMobileDataDownloadOverrideForWifiDisconnect as shouldRevokeMobileDataDownloadOverrideForWifiDisconnectDelegate
+import moe.ouom.neriplayer.core.download.policy.shouldClearNetworkPolicyPauseAfterCancellationSettled as shouldClearNetworkPolicyPauseAfterCancellationSettledDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldDeferStartupManagedCleanup as shouldDeferStartupManagedCleanupDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldInspectDownloadedAudioDetails as shouldInspectDownloadedAudioDetailsDelegate
 import moe.ouom.neriplayer.core.download.policy.shouldKeepCancellationCleanup as shouldKeepCancellationCleanupDelegate
@@ -170,6 +176,48 @@ internal fun shouldDeferQueuedDownloadStartForNetwork(
     mobileDataOverrideAllowed,
     deferForNetworkPolicy
 )
+
+internal fun shouldDeferDownloadExecutionForNetwork(
+    requiresWifiNetwork: Boolean,
+    networkType: TrafficNetworkType,
+    mobileDataOverrideAllowed: Boolean
+): Boolean = shouldDeferDownloadExecutionForNetworkDelegate(
+    requiresWifiNetwork,
+    networkType,
+    mobileDataOverrideAllowed
+)
+
+internal fun hasWifiBoundNetworkPolicyDownloads(
+    activeTaskCount: Int,
+    persistedQueuedCount: Int
+): Boolean = hasWifiBoundNetworkPolicyDownloadsDelegate(
+    activeTaskCount,
+    persistedQueuedCount
+)
+
+internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean = shouldRevokeMobileDataDownloadOverrideForWifiDisconnectDelegate(
+    callbackNetworkType,
+    currentNetworkType
+)
+
+internal fun shouldPauseDownloadsForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean = shouldPauseDownloadsForWifiDisconnectDelegate(
+    callbackNetworkType,
+    currentNetworkType
+)
+
+internal fun shouldPauseDownloadForWifiDisconnect(
+    requiresWifiNetwork: Boolean
+): Boolean = shouldPauseDownloadForWifiDisconnectDelegate(requiresWifiNetwork)
+
+internal fun shouldClearNetworkPolicyPauseAfterCancellationSettled(
+    cancellationSettled: Boolean
+): Boolean = shouldClearNetworkPolicyPauseAfterCancellationSettledDelegate(cancellationSettled)
 
 internal fun shouldKeepCancellationCleanup(
     currentGeneration: Long?,

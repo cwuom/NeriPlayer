@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
@@ -690,29 +691,27 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
                 DownloadTaskIndeterminateProgress()
                 return
             }
-            if (progress.totalBytes <= 0L) {
-                DownloadTaskIndeterminateProgress()
-                return
-            }
-
-            val progressFraction = remember(progress.bytesRead, progress.totalBytes) {
-                (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-                    .coerceIn(0f, 1f)
-            }
-            val progressText = remember(progress.percentage) { "${progress.percentage}%" }
             Text(
-                text = progressText,
+                text = formatDownloadTransferProgress(progress),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { progressFraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-            )
+            if (progress.totalBytes > 0L) {
+                val progressFraction = remember(progress.bytesRead, progress.totalBytes) {
+                    (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+                        .coerceIn(0f, 1f)
+                }
+                LinearProgressIndicator(
+                    progress = { progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                )
+            } else {
+                DownloadTaskIndeterminateProgress()
+            }
         }
 
         DownloadStatus.COMPLETED -> {
@@ -743,27 +742,26 @@ private fun DownloadTaskProgressSection(task: DownloadTask) {
 
 @Composable
 private fun DownloadTaskRetainedProgress(progress: AudioDownloadManager.DownloadProgress) {
-    if (progress.totalBytes <= 0L) {
-        Spacer(modifier = Modifier.height(4.dp))
-        DownloadTaskIndeterminateProgress()
-        return
-    }
-    val progressFraction = (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
-        .coerceIn(0f, 1f)
     Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "${progress.percentage}%",
+        text = formatDownloadTransferProgress(progress, showSpeed = false),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.primary
     )
     Spacer(modifier = Modifier.height(4.dp))
-    LinearProgressIndicator(
-        progress = { progressFraction },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(4.dp)
-            .clip(RoundedCornerShape(2.dp))
-    )
+    if (progress.totalBytes > 0L) {
+        val progressFraction = (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
+            .coerceIn(0f, 1f)
+        LinearProgressIndicator(
+            progress = { progressFraction },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+        )
+    } else {
+        DownloadTaskIndeterminateProgress()
+    }
 }
 
 @Composable

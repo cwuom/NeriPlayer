@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.execution
 
-import android.content.Context
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
+import android.content.Context
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.core.content.edit
@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
@@ -86,6 +85,7 @@ data class DownloadExecutionRequest(
     val operationId: String,
     val song: SongItem,
     val preserveStaging: Boolean = false,
+    val requiresWifiNetwork: Boolean = true,
     val attemptId: Long? = null,
     val artifactLeaseId: String = UUID.randomUUID().toString(),
     val userInitiated: Boolean = true
@@ -122,6 +122,7 @@ sealed interface DownloadExecutionResult {
     data object AlreadyHandled : DownloadExecutionResult
     data object MissingOperation : DownloadExecutionResult
     data object Retry : DownloadExecutionResult
+    data object NetworkPolicyWaiting : DownloadExecutionResult
     data object Cancelled : DownloadExecutionResult
     data object UserStopped : DownloadExecutionResult
     data object UserActionRequired : DownloadExecutionResult
@@ -274,6 +275,7 @@ class DefaultDownloadExecutionHost(
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
         val appContext = context.applicationContext
         deferredRequests.remove(normalizedId)
+        WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
         val request = operationStore.read(appContext, normalizedId)
         val cancelAccepted = request != null &&
             operationStore.requestCancel(appContext, normalizedId)
@@ -317,6 +319,7 @@ class DefaultDownloadExecutionHost(
             UidtDownloadJobService.cancelAll(appContext, normalizedIds)
         }
         ForegroundDownloadWorker.cancelAll(appContext, normalizedIds)
+        WifiBoundDownloadWakeWorker.cancelAll(appContext, normalizedIds)
         operationIdsBySongKey.entries.removeIf { entry -> entry.value in normalizedIds }
         deferredRequests.removeAll(normalizedIds)
         val idleOperationIds = normalizedIds.filterNot(executingOperationIds::contains)
@@ -335,6 +338,7 @@ class DefaultDownloadExecutionHost(
             UidtDownloadJobService.cancelAllOwned(appContext)
         }
         ForegroundDownloadWorker.cancelAllOwned(appContext)
+        WifiBoundDownloadWakeWorker.cancelAllOwned(appContext)
         val ownedOperationIds = operationIdsBySongKey.values + deferredRequests.operationIds()
         val idleOperationIds = ownedOperationIds.filterNot(executingOperationIds::contains)
         operationStore.releaseHostAdmissions(appContext, idleOperationIds)
@@ -400,6 +404,9 @@ class DefaultDownloadExecutionHost(
         }
         val currentState = operationStore.currentState(appContext, normalizedId)
         if (!shouldHandleHostStop(currentState)) {
+            if (preventReschedule) {
+                WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
+            }
             if (cancelExecutionBackends) {
                 cancelExecutionBackends(appContext, normalizedId)
             }
@@ -412,6 +419,9 @@ class DefaultDownloadExecutionHost(
             preventReschedule = preventReschedule,
             alreadyStoppedByUser = operationStore.isStopped(appContext, normalizedId)
         )
+        if (rescheduleBlocked) {
+            WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
+        }
         val retryPrepared = if (rescheduleBlocked) {
             operationStore.markStopped(appContext, normalizedId)
             false
@@ -610,6 +620,7 @@ class DefaultDownloadExecutionHost(
                 context = context.applicationContext,
                 request = request
             )
+            var returnedResult = result
             when (result) {
                 DownloadExecutionResult.Accepted -> {
                     operationStore.updateState(
@@ -669,9 +680,26 @@ class DefaultDownloadExecutionHost(
                         state = "RETRYABLE"
                     )
                 }
+                DownloadExecutionResult.NetworkPolicyWaiting -> {
+                    operationStore.updateState(
+                        context = context.applicationContext,
+                        operationId = normalizedId,
+                        state = "RETRYABLE",
+                        errorCode = "NETWORK_POLICY_WAITING"
+                    )
+                    val wakeRearmed = !request.requiresWifiNetwork ||
+                        WifiBoundDownloadWakeWorker.rearmAfterNetworkPolicyWait(
+                            context = context.applicationContext,
+                            operationId = normalizedId
+                        )
+                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    if (!wakeRearmed) {
+                        returnedResult = DownloadExecutionResult.Retry
+                    }
+                }
                 DownloadExecutionResult.MissingOperation -> Unit
             }
-            result
+            returnedResult
         } catch (cancellation: CancellationException) {
             if (systemRetryStopOperationIds.contains(normalizedId)) {
                 throw cancellation

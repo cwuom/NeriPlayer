@@ -682,6 +682,157 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `wifi admitted execution waits after transport moves to mobile until user continues`() {
+        assertTrue(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.ROAMING,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.WIFI,
+                mobileDataOverrideAllowed = false
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = true,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = true
+            )
+        )
+        assertFalse(
+            shouldDeferDownloadExecutionForNetwork(
+                requiresWifiNetwork = false,
+                networkType = TrafficNetworkType.MOBILE,
+                mobileDataOverrideAllowed = false
+            )
+        )
+    }
+
+    @Test
+    fun `only Wi-Fi-bound durable work keeps network policy active before memory rehydrates`() {
+        assertFalse(
+            hasWifiBoundNetworkPolicyDownloads(
+                activeTaskCount = 0,
+                persistedQueuedCount = 0
+            )
+        )
+        assertTrue(
+            hasWifiBoundNetworkPolicyDownloads(
+                activeTaskCount = 0,
+                persistedQueuedCount = 1
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi disconnect revokes mobile override only while the current route remains non Wi-Fi`() {
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.WIFI,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertFalse(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.ROAMING,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertTrue(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertTrue(
+            shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.ROAMING,
+                currentNetworkType = TrafficNetworkType.ROAMING
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi disconnect skips stale callback after Wi-Fi is restored`() {
+        assertFalse(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertTrue(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.MOBILE,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertFalse(
+            shouldPauseDownloadsForWifiDisconnect(
+                callbackNetworkType = TrafficNetworkType.WIFI,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `explicit mobile permission is not paused by a later Wi-Fi disconnect`() {
+        assertTrue(shouldPauseDownloadForWifiDisconnect(requiresWifiNetwork = true))
+        assertFalse(shouldPauseDownloadForWifiDisconnect(requiresWifiNetwork = false))
+    }
+
+    @Test
+    fun `network pause marker survives an unsettled prior transfer`() {
+        assertFalse(
+            shouldClearNetworkPolicyPauseAfterCancellationSettled(
+                cancellationSettled = false
+            )
+        )
+        assertTrue(
+            shouldClearNetworkPolicyPauseAfterCancellationSettled(
+                cancellationSettled = true
+            )
+        )
+    }
+
+    @Test
+    fun `new execution keeps network pause until the prior transfer settles`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val startBody = source.substringAfter("private suspend fun startDownloadConfirmed")
+            .substringBefore("fun startBatchDownload(context")
+
+        val settleIndex = startBody.indexOf("val cancellationSettled = awaitSongCancellationSettled(")
+        val guardIndex = startBody.indexOf(
+            "shouldClearNetworkPolicyPauseAfterCancellationSettled(cancellationSettled)"
+        )
+        val clearIndex = startBody.indexOf("AudioDownloadManager.clearNetworkPolicyPause")
+
+        assertTrue(settleIndex >= 0)
+        assertTrue(guardIndex > settleIndex)
+        assertTrue(clearIndex > guardIndex)
+        assertTrue(startBody.contains("CANCELLATION_SETTLEMENT_PENDING"))
+    }
+
+    @Test
     fun `prepared recovery download start is blocked on mobile data until user confirms`() {
         assertFalse(
             shouldDeferQueuedDownloadStartForNetwork(
@@ -2236,7 +2387,8 @@ class GlobalDownloadManagerStartupPolicyTest {
                 stableKey = firstSong.stableKey(),
                 song = firstSong,
                 order = 0,
-                queuedAtMs = 10L
+                queuedAtMs = 10L,
+                requiresWifiNetwork = false
             ),
             ManagedDownloadStorage.PendingDownloadQueueEntry(
                 stableKey = secondSong.stableKey(),
@@ -2260,6 +2412,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertEquals(listOf(firstSong.stableKey(), secondSong.stableKey()), merged.map { it.song.stableKey() })
         assertEquals(partialFile, merged.first().workingFile)
         assertEquals(2_000L, merged.first().song.durationMs)
+        assertFalse(merged.first().requiresWifiNetwork)
         assertNull(merged[1].workingFile)
     }
 

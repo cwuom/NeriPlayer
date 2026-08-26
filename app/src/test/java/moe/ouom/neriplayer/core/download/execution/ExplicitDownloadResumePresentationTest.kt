@@ -35,15 +35,26 @@ class ExplicitDownloadResumePresentationTest {
     }
 
     @Test
-    fun `explicit resume keeps the durable operation identity and staging`() {
+    fun `explicit resume keeps durable identity staging and network policy`() {
         val candidate = candidate("operation-preserved", id = 13L)
+        val persisted = DownloadExecutionRequest(
+            operationId = candidate.operationId,
+            song = candidate.song,
+            requiresWifiNetwork = false,
+            attemptId = 17L,
+            artifactLeaseId = "preserved-lease",
+            userInitiated = true
+        )
 
-        val request = buildExplicitResumeRequest(candidate)
+        val request = buildExplicitResumeRequest(candidate, persisted)
 
         assertEquals(candidate.operationId, request.operationId)
         assertEquals(candidate.song.stableKey(), request.song.stableKey())
         assertEquals(true, request.preserveStaging)
         assertEquals(true, request.userInitiated)
+        assertEquals(false, request.requiresWifiNetwork)
+        assertEquals(17L, request.attemptId)
+        assertEquals("preserved-lease", request.artifactLeaseId)
     }
 
     private fun candidate(operationId: String, id: Long): ExplicitDownloadResumeCandidate {

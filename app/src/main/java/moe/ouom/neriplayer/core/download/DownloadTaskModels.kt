@@ -5,6 +5,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.util.format.formatFileSize
 
 data class DownloadTask(
     val song: SongItem,
@@ -250,6 +251,32 @@ internal fun downloadProgressFraction(progress: AudioDownloadManager.DownloadPro
     }
     return (progress.bytesRead.toFloat() / progress.totalBytes.toFloat())
         .coerceIn(0f, 1f)
+}
+
+/** renders only values that are known so an unknown content length stays honest */
+internal fun formatDownloadTransferProgress(
+    progress: AudioDownloadManager.DownloadProgress,
+    showSpeed: Boolean = true
+): String {
+    val totalBytes = progress.totalBytes.takeIf { total -> total > 0L }
+    val downloadedBytes = progress.bytesRead
+        .coerceAtLeast(0L)
+        .let { bytes -> totalBytes?.let(bytes::coerceAtMost) ?: bytes }
+    val percentageText = totalBytes?.let { total ->
+        "${((downloadedBytes.toDouble() / total.toDouble()) * 100.0).toInt().coerceIn(0, 100)}%"
+    }
+    val transferText = totalBytes?.let { total ->
+        "${formatFileSize(downloadedBytes)} / ${formatFileSize(total)}"
+    } ?: formatFileSize(downloadedBytes)
+    val speedText = progress.speedBytesPerSec
+        .takeIf { speed ->
+            showSpeed &&
+                progress.stage == AudioDownloadManager.DownloadStage.TRANSFERRING &&
+                speed > 0L
+        }
+        ?.let { speed -> "${formatFileSize(speed)}/s" }
+    return listOfNotNull(percentageText, transferText, speedText)
+        .joinToString(" · ")
 }
 
 internal fun mergeDownloadTaskProgress(

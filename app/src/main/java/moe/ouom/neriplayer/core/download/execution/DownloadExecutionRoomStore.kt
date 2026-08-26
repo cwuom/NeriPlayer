@@ -432,6 +432,7 @@ internal object DownloadExecutionRoomStore {
         context: Context,
         song: SongItem,
         userInitiated: Boolean,
+        requiresWifiNetwork: Boolean,
         updatedAtMs: Long,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Boolean {
@@ -452,6 +453,7 @@ internal object DownloadExecutionRoomStore {
                 operationId = existing.operationId,
                 song = song,
                 artifactLeaseId = UUID.randomUUID().toString(),
+                requiresWifiNetwork = requiresWifiNetwork,
                 userInitiated = userInitiated
             )
             val replaced = dao.replaceMalformedReusablePayload(
@@ -1067,6 +1069,7 @@ internal object DownloadExecutionRoomStore {
             // persist the identity used by the entity, not only optional source metadata
             put("sourceStableKey", request.song.stableKey())
             put("preserveStaging", request.preserveStaging)
+            put("requiresWifiNetwork", request.requiresWifiNetwork)
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
             put("artifactLeaseId", request.artifactLeaseId)
@@ -1116,6 +1119,11 @@ internal object DownloadExecutionRoomStore {
                 operationId = entity.operationId,
                 song = song,
                 preserveStaging = root.optBoolean("preserveStaging", false),
+                requiresWifiNetwork = if (root.has("requiresWifiNetwork")) {
+                    root.optBoolean("requiresWifiNetwork", true)
+                } else {
+                    true
+                },
                 attemptId = root.optLong("attemptId", 0L).takeIf { it > 0L },
                 artifactLeaseId = root.optString("artifactLeaseId")
                     .takeIf(String::isNotBlank)

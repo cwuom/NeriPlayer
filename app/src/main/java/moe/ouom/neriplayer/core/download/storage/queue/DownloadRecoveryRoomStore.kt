@@ -25,7 +25,8 @@ internal class DownloadRecoveryRoomStore(
     suspend fun upsertPendingDownloadQueue(
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis(),
-        userInitiated: Boolean = false
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true
     ): List<String> {
         return database.withTransaction {
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
@@ -45,6 +46,7 @@ internal class DownloadRecoveryRoomStore(
                         context = appContext,
                         song = song,
                         userInitiated = userInitiated,
+                        requiresWifiNetwork = requiresWifiNetwork,
                         updatedAtMs = nowMs,
                         database = database
                     )
@@ -103,12 +105,18 @@ internal class DownloadRecoveryRoomStore(
                 val operationId = existingOperationIds[key]
                     ?: old?.request?.operationId
                     ?: UUID.randomUUID().toString()
+                val effectiveRequiresWifiNetwork = if (userInitiated) {
+                    requiresWifiNetwork
+                } else {
+                    old?.request?.requiresWifiNetwork ?: requiresWifiNetwork
+                }
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = DownloadExecutionRequest(
                         operationId = operationId,
                         song = song,
                         preserveStaging = old?.request?.preserveStaging ?: false,
+                        requiresWifiNetwork = effectiveRequiresWifiNetwork,
                         attemptId = old?.request?.attemptId,
                         artifactLeaseId = old?.request?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
@@ -142,7 +150,8 @@ internal class DownloadRecoveryRoomStore(
     suspend fun upsertWaitingStorageMutation(
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis(),
-        userInitiated: Boolean = false
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true
     ): List<String> {
         if (songs.isEmpty()) return emptyList()
         return database.withTransaction {
@@ -245,12 +254,18 @@ internal class DownloadRecoveryRoomStore(
                     } else {
                         deterministicOperationId
                     }
+                val effectiveRequiresWifiNetwork = if (userInitiated) {
+                    requiresWifiNetwork
+                } else {
+                    existing?.request?.requiresWifiNetwork ?: requiresWifiNetwork
+                }
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
                     request = DownloadExecutionRequest(
                         operationId = operationId,
                         song = song,
                         preserveStaging = existing?.request?.preserveStaging ?: false,
+                        requiresWifiNetwork = effectiveRequiresWifiNetwork,
                         attemptId = existing?.request?.attemptId,
                         artifactLeaseId = existing?.request?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
@@ -302,7 +317,8 @@ internal class DownloadRecoveryRoomStore(
                     song = entry.request.song,
                     order = entry.queueOrder,
                     queuedAtMs = entry.createdAtMs,
-                    operationId = entry.request.operationId
+                    operationId = entry.request.operationId,
+                    requiresWifiNetwork = entry.request.requiresWifiNetwork
                 )
             }
     }

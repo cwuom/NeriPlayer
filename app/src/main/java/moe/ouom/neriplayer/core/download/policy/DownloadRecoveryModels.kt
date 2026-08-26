@@ -11,6 +11,7 @@ internal data class PendingDownloadRecoveryCandidate(
     val order: Int,
     val cancelled: Boolean,
     val operationId: String? = null,
+    val requiresWifiNetwork: Boolean = true,
     val requiresExplicitResume: Boolean = false
 )
 
@@ -40,7 +41,8 @@ internal fun mergePendingDownloadRecoveryCandidates(
                 workingFile = null,
                 order = entry.order,
                 cancelled = entry.stableKey in cancelledKeys,
-                operationId = entry.operationId
+                operationId = entry.operationId,
+                requiresWifiNetwork = entry.requiresWifiNetwork
             )
         }
 
@@ -52,7 +54,8 @@ internal fun mergePendingDownloadRecoveryCandidates(
             workingFile = pendingDownload.workingFile,
             order = existing?.order ?: queuedDownloads.size + index,
             cancelled = existing?.cancelled == true || songKey in cancelledKeys,
-            operationId = pendingDownload.operationId ?: existing?.operationId
+            operationId = pendingDownload.operationId ?: existing?.operationId,
+            requiresWifiNetwork = existing?.requiresWifiNetwork ?: true
         )
     }
 

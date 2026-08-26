@@ -102,6 +102,59 @@ internal fun shouldDeferQueuedDownloadStartForNetwork(
     )
 }
 
+/**
+ * protects an operation that was admitted on a Wi-Fi-class network from a later
+ * host restart on mobile data, unless the user explicitly continued this session
+ */
+internal fun shouldDeferDownloadExecutionForNetwork(
+    requiresWifiNetwork: Boolean,
+    networkType: TrafficNetworkType,
+    mobileDataOverrideAllowed: Boolean
+): Boolean {
+    return requiresWifiNetwork && shouldDeferPendingDownloadRecoveryForNetwork(
+        networkType = networkType,
+        mobileDataOverrideAllowed = mobileDataOverrideAllowed
+    )
+}
+
+internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean {
+    return callbackNetworkType != TrafficNetworkType.WIFI &&
+        currentNetworkType != TrafficNetworkType.WIFI
+}
+
+internal fun shouldPauseDownloadsForWifiDisconnect(
+    callbackNetworkType: TrafficNetworkType,
+    currentNetworkType: TrafficNetworkType
+): Boolean {
+    return shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
+        callbackNetworkType = callbackNetworkType,
+        currentNetworkType = currentNetworkType
+    )
+}
+
+internal fun shouldPauseDownloadForWifiDisconnect(
+    requiresWifiNetwork: Boolean
+): Boolean {
+    return requiresWifiNetwork
+}
+
+/** keeps a Wi-Fi pause marker until the previous transfer has fully stopped */
+internal fun shouldClearNetworkPolicyPauseAfterCancellationSettled(
+    cancellationSettled: Boolean
+): Boolean = cancellationSettled
+
+/** keeps Wi-Fi-bound durable work visible to the network policy before memory state rehydrates */
+internal fun hasWifiBoundNetworkPolicyDownloads(
+    activeTaskCount: Int,
+    persistedQueuedCount: Int
+): Boolean {
+    return activeTaskCount > 0 ||
+        persistedQueuedCount > 0
+}
+
 internal fun shouldKeepCancellationCleanup(
     currentGeneration: Long?,
     cancellationGeneration: Long?,

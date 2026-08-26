@@ -19,6 +19,7 @@ import okhttp3.Response
 import okio.Timeout
 import okio.Buffer
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
@@ -27,6 +28,90 @@ import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioDownloadManagerTest {
+
+    @Test
+    fun `wifi to mobile default transition requests protection only once`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertTrue(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "mobile",
+                networkType = TrafficNetworkType.MOBILE
+            )
+        )
+        tracker.markWifiLossHandled()
+
+        assertFalse(tracker.onDefaultNetworkLost(networkKey = "wifi"))
+        assertFalse(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "mobile",
+                networkType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `wifi loss before mobile replacement requests protection only once`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertTrue(tracker.onDefaultNetworkLost(networkKey = "wifi"))
+        tracker.markWifiLossHandled()
+
+        assertFalse(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "mobile",
+                networkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertFalse(tracker.onDefaultNetworkLost(networkKey = "wifi"))
+    }
+
+    @Test
+    fun `network policy pause aborts only the Wi-Fi bound song work`() {
+        assertTrue(
+            shouldAbortDownloadWork(
+                allDownloadsCancelled = false,
+                batchSessionCurrent = true,
+                songCancelled = false,
+                networkPolicyPaused = true,
+                attemptAllowsWork = true
+            )
+        )
+        assertFalse(
+            shouldAbortDownloadWork(
+                allDownloadsCancelled = false,
+                batchSessionCurrent = true,
+                songCancelled = false,
+                networkPolicyPaused = false,
+                attemptAllowsWork = true
+            )
+        )
+    }
+
+    @Test
+    fun `network policy pause keeps unrelated batch state and gates working file mutations`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val pauseBody = methodBody(source, "pauseDownloadsForNetworkPolicy")
+        val executionBody = methodBody(source, "executeDownloadSong")
+        val hlsBody = methodBody(source, "singleThreadHlsDownload")
+
+        assertFalse(pauseBody.contains("_isCancelled.value = true"))
+        assertFalse(pauseBody.contains("invalidateBatchSession()"))
+        assertFalse(pauseBody.contains("_batchProgressFlow.value = null"))
+        assertTrue(pauseBody.contains("snapshotActiveCalls(songKey)"))
+        assertTrue(source.contains("clearVisibleProgressForSong(songKey)"))
+        assertTrue(executionBody.contains("stage = \"source_resolved\""))
+        assertTrue(executionBody.contains("stage = \"prepare_working_file\""))
+        assertTrue(hlsBody.contains("stage = \"hls_resume_reset\""))
+        assertTrue(hlsBody.contains("stage = \"hls_open_working_file\""))
+        assertFalse(hlsBody.contains("clearHlsResumeState(destFile)\n\n        NPLogger.d"))
+        assertTrue(source.contains("onSongPausedForNetworkPolicy"))
+        assertTrue(source.contains("!completionDispatched && !pausedForNetworkPolicy"))
+    }
 
     @Test
     fun `managed local references require a strictly verified replacement`() {

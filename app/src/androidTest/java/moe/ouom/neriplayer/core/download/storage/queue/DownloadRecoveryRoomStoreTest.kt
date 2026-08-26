@@ -85,6 +85,54 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
+    fun mobileApprovedQueueKeepsItsNetworkPolicyAcrossAutomaticRefresh() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(72L, "mobile-policy")
+            val store = DownloadRecoveryRoomStore(context, database)
+            val operationId = store.upsertPendingDownloadQueue(
+                songs = listOf(song),
+                userInitiated = true,
+                requiresWifiNetwork = false
+            ).single()
+
+            assertFalse(
+                requireNotNull(
+                    DownloadExecutionRoomStore.read(
+                        context = context,
+                        operationId = operationId,
+                        database = database
+                    )
+                ).requiresWifiNetwork
+            )
+            assertFalse(store.listPendingQueuedDownloads().single().requiresWifiNetwork)
+
+            store.upsertPendingDownloadQueue(
+                songs = listOf(song),
+                userInitiated = false,
+                requiresWifiNetwork = true
+            )
+
+            assertFalse(
+                requireNotNull(
+                    DownloadExecutionRoomStore.read(
+                        context = context,
+                        operationId = operationId,
+                        database = database
+                    )
+                ).requiresWifiNetwork
+            )
+            assertFalse(store.listPendingQueuedDownloads().single().requiresWifiNetwork)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun concurrentHostAdmissionsNeverExceedTheSharedCapacity() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

@@ -3,11 +3,13 @@ package moe.ouom.neriplayer.core.download.execution
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.ListenableWorker
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import org.junit.Assert.assertEquals
@@ -161,6 +163,47 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `Wi-Fi wake work only resumes Wi-Fi-bound reusable operations`() {
+        assertTrue(
+            shouldScheduleWifiBoundDownloadWakeup(
+                requiresWifiNetwork = true,
+                operationState = "RETRYABLE"
+            )
+        )
+        assertFalse(
+            shouldScheduleWifiBoundDownloadWakeup(
+                requiresWifiNetwork = false,
+                operationState = "RETRYABLE"
+            )
+        )
+        assertFalse(
+            shouldScheduleWifiBoundDownloadWakeup(
+                requiresWifiNetwork = true,
+                operationState = "RUNNING"
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi wake only appends for a host handoff that must survive an active wake`() {
+        assertEquals(
+            ExistingWorkPolicy.KEEP,
+            wifiBoundDownloadWakeExistingWorkPolicy
+        )
+        assertEquals(
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            wifiBoundDownloadWakeHandoffRearmPolicy
+        )
+    }
+
+    @Test
+    fun `Wi-Fi wake only hands off while the default route remains Wi-Fi-class`() {
+        assertTrue(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.WIFI))
+        assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.MOBILE))
+        assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.ROAMING))
+    }
+
+    @Test
     fun `missing operation terminates WorkManager without an infinite retry`() {
         assertEquals(
             ListenableWorker.Result.success()::class,
@@ -173,6 +216,14 @@ class DownloadExecutionHostTest {
         assertEquals(
             ListenableWorker.Result.success()::class,
             DownloadExecutionResult.UserActionRequired.toWorkerResult()::class
+        )
+    }
+
+    @Test
+    fun `network policy waiting terminates WorkManager without an infinite retry`() {
+        assertEquals(
+            ListenableWorker.Result.success()::class,
+            DownloadExecutionResult.NetworkPolicyWaiting.toWorkerResult()::class
         )
     }
 
@@ -370,6 +421,30 @@ class DownloadExecutionHostTest {
                 assertEquals(request.operationId, restoredRequest.operationId)
                 assertEquals(request.attemptId, restoredRequest.attemptId)
                 DownloadExecutionResult.Retry
+            },
+            sdkInt = 28
+        )
+
+        assertEquals(
+            DownloadExecutionResult.Retry,
+            host.execute(context, request.operationId)
+        )
+        assertEquals("RETRYABLE", store.currentState(context, request.operationId))
+    }
+
+    @Test
+    fun `network policy wait retries when its durable Wi-Fi wake cannot be armed`() = runTest {
+        val store = DownloadExecutionOperationStore { testJournal }
+        val context = mockContext()
+        val request = DownloadExecutionRequest(
+            operationId = "operation-network-policy-wait",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                DownloadExecutionResult.NetworkPolicyWaiting
             },
             sdkInt = 28
         )

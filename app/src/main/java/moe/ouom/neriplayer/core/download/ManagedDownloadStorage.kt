@@ -387,7 +387,8 @@ internal object ManagedDownloadStorage {
         val song: SongItem,
         val order: Int,
         val queuedAtMs: Long,
-        val operationId: String? = null
+        val operationId: String? = null,
+        val requiresWifiNetwork: Boolean = true
     )
 
     data class StoredEntry(
@@ -933,12 +934,14 @@ internal object ManagedDownloadStorage {
     internal fun upsertPendingDownloadQueue(
         context: Context,
         songs: List<SongItem>,
-        userInitiated: Boolean = false
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true
     ): List<String> {
         return ManagedDownloadRecoveryFiles.upsertPendingDownloadQueue(
             context = context,
             songs = songs,
-            userInitiated = userInitiated
+            userInitiated = userInitiated,
+            requiresWifiNetwork = requiresWifiNetwork
         )
     }
 

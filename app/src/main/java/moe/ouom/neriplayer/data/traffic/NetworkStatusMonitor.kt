@@ -140,15 +140,18 @@ private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType 
     val activeNetwork = activeNetwork ?: return@runCatching TrafficNetworkType.MOBILE
     val capabilities = getNetworkCapabilities(activeNetwork)
         ?: return@runCatching TrafficNetworkType.MOBILE
-
-    resolveTrafficNetworkType(
-        hasCellularTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
-        hasWifiTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
-        hasEthernetTransport = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
-        isNotRoaming = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
-        isNotMetered = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
-    )
+    capabilities.trafficNetworkType()
 }.getOrDefault(TrafficNetworkType.MOBILE)
+
+internal fun NetworkCapabilities.trafficNetworkType(): TrafficNetworkType {
+    return resolveTrafficNetworkType(
+        hasCellularTransport = hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+        hasWifiTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+        hasEthernetTransport = hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
+        isNotRoaming = hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
+        isNotMetered = hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    )
+}
 
 internal fun resolveTrafficNetworkType(
     hasCellularTransport: Boolean,

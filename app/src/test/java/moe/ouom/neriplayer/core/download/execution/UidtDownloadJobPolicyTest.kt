@@ -122,6 +122,7 @@ class UidtDownloadJobPolicyTest {
     @Test
     fun `metadata action required does not reschedule UIDT`() {
         assertFalse(shouldRescheduleUidtExecution(DownloadExecutionResult.UserActionRequired))
+        assertFalse(shouldRescheduleUidtExecution(DownloadExecutionResult.NetworkPolicyWaiting))
         assertTrue(shouldRescheduleUidtExecution(DownloadExecutionResult.Retry))
         assertTrue(
             shouldRescheduleUidtExecution(

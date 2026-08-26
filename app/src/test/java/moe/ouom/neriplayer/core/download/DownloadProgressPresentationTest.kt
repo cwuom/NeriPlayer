@@ -375,6 +375,64 @@ class DownloadProgressPresentationTest {
         )
     }
 
+    @Test
+    fun `transfer presentation includes percent sizes and byte based speed`() {
+        val mebibyte = 1024L * 1024L
+        val text = formatDownloadTransferProgress(
+            AudioDownloadManager.DownloadProgress(
+                songKey = "song-key",
+                songId = 1L,
+                fileName = "song.mp3",
+                bytesRead = 3L * mebibyte,
+                totalBytes = 8L * mebibyte,
+                speedBytesPerSec = mebibyte + mebibyte / 2L
+            )
+        )
+
+        assertTrue(text.startsWith("37% · 3"))
+        assertTrue(text.contains(" / 8"))
+        assertTrue(text.endsWith("MB/s"))
+    }
+
+    @Test
+    fun `transfer presentation keeps an unknown total honest`() {
+        val mebibyte = 1024L * 1024L
+        val text = formatDownloadTransferProgress(
+            AudioDownloadManager.DownloadProgress(
+                songKey = "song-key",
+                songId = 1L,
+                fileName = "song.mp3",
+                bytesRead = 3L * mebibyte,
+                totalBytes = 0L,
+                speedBytesPerSec = mebibyte
+            )
+        )
+
+        assertFalse(text.contains('%'))
+        assertFalse(text.contains(" / "))
+        assertTrue(text.contains("MB"))
+        assertTrue(text.endsWith("MB/s"))
+    }
+
+    @Test
+    fun `retained transfer presentation hides stale speed and normalizes invalid bytes`() {
+        val text = formatDownloadTransferProgress(
+            AudioDownloadManager.DownloadProgress(
+                songKey = "song-key",
+                songId = 1L,
+                fileName = "song.mp3",
+                bytesRead = -1L,
+                totalBytes = -1L,
+                speedBytesPerSec = 1024L * 1024L,
+                stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+            ),
+            showSpeed = false
+        )
+
+        assertEquals("0 B", text)
+        assertFalse(text.contains("/s"))
+    }
+
     private fun progress(
         songKey: String,
         attemptId: Long,

@@ -167,12 +167,14 @@ internal object ManagedDownloadRecoveryFiles {
     fun upsertPendingDownloadQueue(
         context: Context,
         songs: List<SongItem>,
-        userInitiated: Boolean = false
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true
     ): List<String> {
         return runBlocking(Dispatchers.IO) {
             roomStore(context).upsertPendingDownloadQueue(
                 songs = songs,
-                userInitiated = userInitiated
+                userInitiated = userInitiated,
+                requiresWifiNetwork = requiresWifiNetwork
             )
         }
     }
