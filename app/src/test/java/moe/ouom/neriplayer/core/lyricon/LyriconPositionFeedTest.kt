@@ -183,6 +183,58 @@ class LyriconPositionFeedTest {
     }
 
     @Test
+    fun `display position applies lyric offset before display lead`() {
+        assertEquals(
+            2_750L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 1_000L,
+                durationMs = 10_000L,
+                lyricOffsetMs = 1_000L,
+            )
+        )
+        assertEquals(
+            1_250L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 1_000L,
+                durationMs = 10_000L,
+                lyricOffsetMs = -500L,
+            )
+        )
+    }
+
+    @Test
+    fun `negative lyric offset clamps before lead and output remains bounded`() {
+        assertEquals(
+            750L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 100L,
+                durationMs = 10_000L,
+                lyricOffsetMs = -500L,
+            )
+        )
+        assertEquals(
+            10_000L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 9_500L,
+                durationMs = 10_000L,
+                lyricOffsetMs = 1_000L,
+            )
+        )
+    }
+
+    @Test
+    fun `display position saturates when duration is unknown`() {
+        assertEquals(
+            Long.MAX_VALUE,
+            displayLyriconPositionMs(
+                mediaPositionMs = Long.MAX_VALUE,
+                durationMs = 0L,
+                lyricOffsetMs = 1L,
+            )
+        )
+    }
+
+    @Test
     fun `position clamp never goes negative or past duration`() {
         assertEquals(0L, clampLyriconPositionMs(-10L, 1_000L))
         assertEquals(1_000L, clampLyriconPositionMs(5_000L, 1_000L))

@@ -1020,12 +1020,14 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.cloudMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 cloudMusicLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
             }
         }
         ioScope.launch {
             settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 qqMusicLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
             }
         }
         ioScope.launch {

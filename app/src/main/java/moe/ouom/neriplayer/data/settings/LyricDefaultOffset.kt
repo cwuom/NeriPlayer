@@ -27,6 +27,19 @@ internal fun resolveLyricDefaultOffsetMs(
     }
 }
 
+internal fun resolveEffectiveLyricOffsetMs(
+    lyricSource: MusicPlatform?,
+    cloudMusicDefaultOffsetMs: Long,
+    qqMusicDefaultOffsetMs: Long,
+    userLyricOffsetMs: Long
+): Long {
+    return resolveLyricDefaultOffsetMs(
+        lyricSource = lyricSource,
+        cloudMusicDefaultOffsetMs = cloudMusicDefaultOffsetMs,
+        qqMusicDefaultOffsetMs = qqMusicDefaultOffsetMs
+    ) + userLyricOffsetMs
+}
+
 internal fun shouldRebaseLyricOffsetForSource(
     lyricSource: MusicPlatform?,
     targetSource: MusicPlatform,

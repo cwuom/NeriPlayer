@@ -46,6 +46,8 @@ object LyriconManager {
     private var songDurationMs: Long = 0L
     @Volatile
     private var playbackSpeed: Float = 1f
+    @Volatile
+    private var effectiveLyricOffsetMs: Long = 0L
 
     fun initialize(context: Context) {
         if (provider != null) return
@@ -133,6 +135,7 @@ object LyriconManager {
             val displayPositionMs = displayLyriconPositionMs(
                 mediaPositionMs = mediaPositionMs,
                 durationMs = songDurationMs,
+                lyricOffsetMs = effectiveLyricOffsetMs,
             )
             runCatching { provider?.player?.setPosition(displayPositionMs) }
             updateSuperLyric(displayPositionMs)
@@ -157,13 +160,24 @@ object LyriconManager {
         val displaySynced = displayLyriconPositionMs(
             mediaPositionMs = mediaSynced,
             durationMs = songDurationMs,
+            lyricOffsetMs = effectiveLyricOffsetMs,
         )
         runCatching { provider?.player?.setPosition(displaySynced) }
     }
 
-    fun updateSong(song: SongItem, lyrics: List<LyricEntry>?, translatedLyrics: List<LyricEntry>?) {
+    fun setLyricOffset(lyricOffsetMs: Long) {
+        effectiveLyricOffsetMs = lyricOffsetMs
+    }
+
+    fun updateSong(
+        song: SongItem,
+        lyrics: List<LyricEntry>?,
+        translatedLyrics: List<LyricEntry>?,
+        lyricOffsetMs: Long = 0L,
+    ) {
         if (!enabled) return
         try {
+            setLyricOffset(lyricOffsetMs)
             LyriconManager.lyrics = lyrics
             LyriconManager.translatedLyrics = translatedLyrics
             translationMatchesByIndex = if (lyrics.isNullOrEmpty()) {
@@ -297,6 +311,7 @@ object LyriconManager {
         translationMatchesByIndex = emptyMap()
         currentSong = null
         songDurationMs = 0L
+        setLyricOffset(0L)
     }
 
     private fun updatePositionAnchor(positionMs: Long) {
@@ -336,6 +351,7 @@ object LyriconManager {
                         val displayPositionMs = displayLyriconPositionMs(
                             mediaPositionMs = mediaPositionMs,
                             durationMs = songDurationMs,
+                            lyricOffsetMs = effectiveLyricOffsetMs,
                         )
                         runCatching { activeProvider.player.setPosition(displayPositionMs) }
                     }

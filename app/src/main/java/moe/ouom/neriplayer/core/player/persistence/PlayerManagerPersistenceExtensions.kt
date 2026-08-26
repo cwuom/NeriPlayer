@@ -2074,7 +2074,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
             )
         }
     if (rebasedCurrentSong != null) {
-        setCurrentSongForPlayback(rebasedCurrentSong)
+        setCurrentSongForPlayback(rebasedCurrentSong, syncLyricon = false)
     }
 
     val localUpdateSucceeded = runLocalPlaylistMutationSafely("rebaseLyricOffsetsForSource") {

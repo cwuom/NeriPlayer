@@ -42,6 +42,28 @@ class LyricDefaultOffsetTest {
     }
 
     @Test
+    fun resolveEffectiveLyricOffsetMs_combinesPlatformDefaultAndUserOffset() {
+        assertEquals(
+            1_250L,
+            resolveEffectiveLyricOffsetMs(
+                lyricSource = MusicPlatform.CLOUD_MUSIC,
+                cloudMusicDefaultOffsetMs = 1_000L,
+                qqMusicDefaultOffsetMs = 500L,
+                userLyricOffsetMs = 250L,
+            )
+        )
+        assertEquals(
+            -100L,
+            resolveEffectiveLyricOffsetMs(
+                lyricSource = MusicPlatform.QQ_MUSIC,
+                cloudMusicDefaultOffsetMs = 1_000L,
+                qqMusicDefaultOffsetMs = 500L,
+                userLyricOffsetMs = -600L,
+            )
+        )
+    }
+
+    @Test
     fun shouldRebaseLyricOffsetForSource_onlyTouchesCustomizedSongsOfTheTargetSource() {
         assertTrue(
             shouldRebaseLyricOffsetForSource(

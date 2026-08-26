@@ -220,6 +220,7 @@ import moe.ouom.neriplayer.data.settings.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.settings.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.UsbExclusivePreferences
+import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.listentogether.mapping.buildStableTrackKey
 import moe.ouom.neriplayer.listentogether.mapping.resolvedAudioId
 import moe.ouom.neriplayer.listentogether.mapping.resolvedChannelId
@@ -810,17 +811,45 @@ object PlayerManager {
         if (song == null) {
             lyriconUpdateJob = null
             LyriconManager.setPlaybackState(false)
+            updateLyriconLyricOffset(null)
             LyriconManager.setPosition(0L)
             return
         }
-        LyriconManager.updateSong(song, lyrics = null, translatedLyrics = null)
+        val lyricOffsetMs = resolveLyriconLyricOffsetMs(song)
+        LyriconManager.updateSong(
+            song = song,
+            lyrics = null,
+            translatedLyrics = null,
+            lyricOffsetMs = lyricOffsetMs,
+        )
         lyriconUpdateJob = ioScope.launch {
             val lyrics = getLyrics(song)
             val translatedLyrics = getTranslatedLyrics(song)
-            if (_currentSongFlow.value?.sameIdentityAs(song) == true) {
-                LyriconManager.updateSong(song, lyrics, translatedLyrics)
+            val currentSong = _currentSongFlow.value
+            if (currentSong?.sameIdentityAs(song) == true) {
+                LyriconManager.updateSong(
+                    song = currentSong,
+                    lyrics = lyrics,
+                    translatedLyrics = translatedLyrics,
+                    lyricOffsetMs = resolveLyriconLyricOffsetMs(currentSong),
+                )
             }
         }
+    }
+
+    internal fun updateLyriconLyricOffset(song: SongItem? = _currentSongFlow.value) {
+        if (!lyriconEnabled) return
+        val lyricOffsetMs = song?.let { resolveLyriconLyricOffsetMs(it) } ?: 0L
+        LyriconManager.setLyricOffset(lyricOffsetMs)
+    }
+
+    private fun resolveLyriconLyricOffsetMs(song: SongItem): Long {
+        return resolveEffectiveLyricOffsetMs(
+            lyricSource = song.matchedLyricSource,
+            cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
+            qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+            userLyricOffsetMs = song.userLyricOffsetMs,
+        )
     }
 
     internal fun isApplicationInitialized(): Boolean = this::application.isInitialized
