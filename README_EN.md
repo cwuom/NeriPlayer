@@ -154,8 +154,10 @@ Current positioning:
   requires Android 12+, while advanced blur requires Android 13+; older versions
   automatically use a compatible fallback without those effects.
 - **Apple Music-style lyrics, backed by the playback pipeline**:
-  `SyncedLyricsView` and `AdvancedLyricsView` support word/character-timed
-  highlighting, translated lyrics, phonetic display, lyric offset, click-to-seek,
+  `SyncedLyricsView` and `AdvancedLyricsView` support line-, word-, and
+  character-timed LRC (including trailing timestamps and square-bracket word
+  timestamps), plus YRC/TTML highlighting, translated lyrics, phonetic display,
+  lyric offset, click-to-seek,
   long-press sharing, depth blur, edge fade, and a full-screen Lyrics page.
   `LyricShareSheet` can select lyric lines, copy text, share the song, or render
   a 1080px lyric card. The Now Playing cover lyric view and bottom Dock can be

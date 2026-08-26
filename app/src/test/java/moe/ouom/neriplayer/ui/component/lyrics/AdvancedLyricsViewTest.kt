@@ -66,6 +66,28 @@ class AdvancedLyricsViewTest {
     }
 
     @Test
+    fun `buildAdvancedSyncedLyrics renders square bracket word timing and translation`() {
+        val rawLyrics = """
+            [00:01.000]日[00:01.200]本[00:01.400]
+            [00:01.000]translation
+            """.trimIndent()
+        val parsedLyrics = parseNeteaseLyricsAuto(rawLyrics)
+
+        val result = buildAdvancedSyncedLyrics(
+            rawLyrics = rawLyrics,
+            rawTranslatedLyrics = null,
+            lyrics = parsedLyrics,
+            translatedLyrics = emptyList()
+        )
+
+        val line = result.lines.single() as KaraokeLine.MainKaraokeLine
+        assertEquals("日本", line.syllables.joinToString(separator = "") { it.content })
+        assertEquals(1_000, line.syllables.first().start)
+        assertEquals(1_400, line.syllables.last().end)
+        assertEquals("translation", line.translation)
+    }
+
+    @Test
     fun `parseTtmlLyrics keeps inline translation on word timed lines`() {
         val ttml = """
             <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">

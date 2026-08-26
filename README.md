@@ -129,7 +129,8 @@ NeriPlayer 是一个基于 **Jetpack Compose + Media3** 的原生 Android
   shader 内部基于封面取色、动态色块和轻量颗粒噪声生成流体背景，
   并接入 `uMusicLevel / uBeat` 做音频响应，不是简单把封面做高斯模糊。
 - **仿 Apple Music 的深度歌词体验**：
-  `SyncedLyricsView` 与 `AdvancedLyricsView` 支持逐词/逐字高亮、翻译歌词、
+  `SyncedLyricsView` 与 `AdvancedLyricsView` 支持逐行、逐词/逐字 LRC（含行尾
+  时间和方括号逐字时间戳）以及 YRC/TTML 歌词的高亮、翻译歌词、
   音译显示、歌词偏移、点击跳转、长按分享、景深模糊、边缘渐隐和全屏歌词；
   `LyricShareSheet` 可选择歌词行，复制文本、分享歌曲或生成 1080px 歌词卡片；
   歌词页遇到含假名的日语原文时，会为翻译行额外留出间距，避免日文字形和译文挤在一起；
