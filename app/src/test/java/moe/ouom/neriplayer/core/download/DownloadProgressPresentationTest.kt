@@ -95,6 +95,29 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `new batch shows immediate zero progress before its task store hydration completes`() {
+        val first = song(1L)
+        val second = song(2L)
+        val third = song(3L)
+        val presentation = BatchDownloadPresentationState(
+            id = 22L,
+            memberAttemptIds = mapOf(
+                first.stableKey() to null,
+                second.stableKey() to null,
+                third.stableKey() to null
+            )
+        )
+
+        val aggregate = requireNotNull(aggregateBatchDownloadProgress(presentation, emptyList()))
+
+        assertEquals(3, aggregate.totalSongs)
+        assertEquals(0, aggregate.completedSongs)
+        assertEquals(0, aggregate.percentage)
+        assertEquals(0, aggregate.activeSongCount)
+        assertTrue(aggregate.hasPendingSongs)
+    }
+
+    @Test
     fun `finalizing transfer remains pending without being counted as a completed song`() {
         val selected = song(1L)
         val presentation = BatchDownloadPresentationState(

@@ -416,6 +416,19 @@ internal fun canScheduleRecoveredDownloadOperation(operationState: String?): Boo
         operationState in DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES
 }
 
+/** avoids handing the same durable operation to a second live execution host */
+internal fun shouldRehandoffRecoveredDownloadOperation(
+    operationState: String?,
+    requestMatchesSong: Boolean,
+    isExecuting: Boolean,
+    isStoppedByUser: Boolean
+): Boolean {
+    return requestMatchesSong &&
+        !isExecuting &&
+        !isStoppedByUser &&
+        canScheduleRecoveredDownloadOperation(operationState)
+}
+
 internal fun selectBatchDownloadCandidates(
     songs: Collection<SongItem>,
     inFlightSongKeys: Set<String>

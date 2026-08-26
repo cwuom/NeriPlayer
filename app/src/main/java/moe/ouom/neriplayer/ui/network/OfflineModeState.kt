@@ -16,12 +16,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.traffic.LikelyNetworkTransportAvailability
 import moe.ouom.neriplayer.data.traffic.currentLikelyNetworkTransportAvailability
 import moe.ouom.neriplayer.data.traffic.hasLikelyInternetAccess
 
 private const val NETWORK_STATE_SETTLE_RECHECK_MS = 300L
 private const val NETWORK_OFFLINE_CONFIRMATION_MS = 1_500L
+private const val NETWORK_STATUS_LOG_TAG = "NERI-NetworkStatus"
 
 private fun buildAllNetworkObservationRequest(): NetworkRequest {
     val builder = NetworkRequest.Builder()
@@ -107,13 +109,17 @@ fun rememberOfflineModeState(): State<Boolean> {
                 isOfflineConfirmation: Boolean
             ) {
                 if (disposed) return
-                when (
-                    resolveOfflineModeStateUpdate(
-                        currentlyOffline = offlineState.value,
-                        availability = availability,
-                        isOfflineConfirmation = isOfflineConfirmation
-                    )
-                ) {
+                val update = resolveOfflineModeStateUpdate(
+                    currentlyOffline = offlineState.value,
+                    availability = availability,
+                    isOfflineConfirmation = isOfflineConfirmation
+                )
+                NPLogger.d(
+                    NETWORK_STATUS_LOG_TAG,
+                    "ui availability=$availability currentlyOffline=${offlineState.value} " +
+                        "confirmation=$isOfflineConfirmation action=$update"
+                )
+                when (update) {
                     OfflineModeStateUpdate.SET_ONLINE -> {
                         cancelPendingOfflineConfirmation()
                         offlineState.value = false

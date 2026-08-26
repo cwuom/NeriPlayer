@@ -16,6 +16,9 @@ internal interface DownloadOperationDao {
     @Query("SELECT * FROM download_operation WHERE operation_id = :operationId LIMIT 1")
     suspend fun find(operationId: String): DownloadOperationEntity?
 
+    @Query("SELECT * FROM download_operation WHERE operation_id IN (:operationIds)")
+    suspend fun findAllByOperationIds(operationIds: List<String>): List<DownloadOperationEntity>
+
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE library_id = :libraryId AND stable_key = :stableKey AND state IN (:states) " +
@@ -36,6 +39,17 @@ internal interface DownloadOperationDao {
     suspend fun findAllByStableKey(
         libraryId: String,
         stableKey: String,
+        states: List<String>
+    ): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND stable_key IN (:stableKeys) AND state IN (:states) " +
+            "ORDER BY stable_key ASC, updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllByStableKeys(
+        libraryId: String,
+        stableKeys: List<String>,
         states: List<String>
     ): List<DownloadOperationEntity>
 

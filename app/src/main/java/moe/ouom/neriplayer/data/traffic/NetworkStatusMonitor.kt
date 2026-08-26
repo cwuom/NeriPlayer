@@ -4,6 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import java.net.NetworkInterface
+import moe.ouom.neriplayer.core.logging.NPLogger
+
+private const val NETWORK_STATUS_LOG_TAG = "NERI-NetworkStatus"
 
 fun Context.hasLikelyInternetAccess(): Boolean {
     return resolveLikelyInternetAccess(
@@ -25,48 +29,181 @@ internal fun Context.currentLikelyNetworkTransportAvailability(): LikelyNetworkT
     return connectivityManager.currentLikelyNetworkTransportAvailability()
 }
 
-// allNetworks provides the complete interface snapshot needed for this strict offline rule
 @Suppress("DEPRECATION")
 private fun ConnectivityManager.currentLikelyNetworkTransportAvailability(): LikelyNetworkTransportAvailability {
-    val networks = runCatching { allNetworks }.getOrElse {
+    val activeNetwork = runCatching { this.activeNetwork }.getOrElse {
+        NPLogger.d(NETWORK_STATUS_LOG_TAG, "read active network failed: ${it.message}")
+        return LikelyNetworkTransportAvailability.INDETERMINATE
+    } ?: run {
+        NPLogger.d(NETWORK_STATUS_LOG_TAG, "active network unavailable: result=OFFLINE")
+        return LikelyNetworkTransportAvailability.OFFLINE
+    }
+
+    val activeCapabilities = runCatching { getNetworkCapabilities(activeNetwork) }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read active capabilities failed: network=$activeNetwork error=${it.message}"
+        )
+        return LikelyNetworkTransportAvailability.INDETERMINATE
+    } ?: run {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "active capabilities unavailable: network=$activeNetwork result=INDETERMINATE"
+        )
         return LikelyNetworkTransportAvailability.INDETERMINATE
     }
-    var hasLegalNetworkInterface = false
+    val activeTransports = activeCapabilities.transportSummary()
+    if (activeCapabilities.hasDirectNetworkTransport()) {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "active=$activeNetwork transports=$activeTransports direct=true result=ONLINE"
+        )
+        return LikelyNetworkTransportAvailability.ONLINE
+    }
+
+    val networks = runCatching { allNetworks }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read network interfaces failed: active=$activeNetwork " +
+                "transports=$activeTransports error=${it.message}"
+        )
+        return LikelyNetworkTransportAvailability.INDETERMINATE
+    }
+    var hasDirectNetworkInterface = false
     var hasUnresolvedNetworkInterface = false
+    val interfaceSummaries = mutableListOf<String>()
     networks.forEach { network ->
-        val capabilities = runCatching { getNetworkCapabilities(network) }.getOrNull()
+        val capabilities = runCatching { getNetworkCapabilities(network) }.getOrElse {
+            hasUnresolvedNetworkInterface = true
+            interfaceSummaries += "$network:capabilities_error"
+            return@forEach
+        }
         if (capabilities == null) {
-            hasUnresolvedNetworkInterface = true
-        } else if (capabilities.hasLegalNetworkTransport()) {
-            hasLegalNetworkInterface = true
-        } else {
-            // an unrecognized transport must not be mistaken for proof of being offline
-            hasUnresolvedNetworkInterface = true
+            interfaceSummaries += "$network:gone"
+            return@forEach
+        }
+        if (!capabilities.hasDirectNetworkTransport()) {
+            interfaceSummaries += "$network:${capabilities.transportSummary()}"
+            return@forEach
+        }
+
+        when (directNetworkInterfaceState(network)) {
+            DirectNetworkInterfaceState.AVAILABLE -> {
+                hasDirectNetworkInterface = true
+                interfaceSummaries += "$network:${capabilities.transportSummary()}:up"
+            }
+
+            DirectNetworkInterfaceState.UNAVAILABLE -> {
+                interfaceSummaries += "$network:${capabilities.transportSummary()}:down"
+            }
+
+            DirectNetworkInterfaceState.INDETERMINATE -> {
+                hasUnresolvedNetworkInterface = true
+                interfaceSummaries += "$network:${capabilities.transportSummary()}:unknown"
+            }
         }
     }
-    return resolveNetworkInterfaceAvailability(
+    val availability = resolveNetworkInterfaceAvailability(
+        hasActiveNetwork = true,
         interfaceScanCompleted = true,
-        hasLegalNetworkInterface = hasLegalNetworkInterface,
+        hasDirectNetworkInterface = hasDirectNetworkInterface,
         hasUnresolvedNetworkInterface = hasUnresolvedNetworkInterface
     )
+    NPLogger.d(
+        NETWORK_STATUS_LOG_TAG,
+        "active=$activeNetwork transports=$activeTransports direct=false " +
+            "interfaces=${interfaceSummaries.joinToString(separator = ",", limit = 8)} " +
+            "result=$availability"
+    )
+    return availability
 }
 
-private fun NetworkCapabilities.hasLegalNetworkTransport(): Boolean {
-    return isLegalNetworkTransport(
+@Suppress("DEPRECATION")
+private fun ConnectivityManager.directNetworkInterfaceState(
+    network: android.net.Network
+): DirectNetworkInterfaceState {
+    val networkInfo = runCatching { getNetworkInfo(network) }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read network state failed: network=$network error=${it.message}"
+        )
+        return DirectNetworkInterfaceState.INDETERMINATE
+    } ?: return DirectNetworkInterfaceState.UNAVAILABLE
+    if (!networkInfo.isConnected) return DirectNetworkInterfaceState.UNAVAILABLE
+
+    val linkProperties = runCatching { getLinkProperties(network) }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read link properties failed: network=$network error=${it.message}"
+        )
+        return DirectNetworkInterfaceState.INDETERMINATE
+    } ?: return DirectNetworkInterfaceState.UNAVAILABLE
+    val interfaceName = linkProperties.interfaceName
+        ?: return DirectNetworkInterfaceState.UNAVAILABLE
+    if (linkProperties.linkAddresses.isEmpty() && linkProperties.routes.isEmpty()) {
+        return DirectNetworkInterfaceState.UNAVAILABLE
+    }
+
+    val networkInterface = runCatching { NetworkInterface.getByName(interfaceName) }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read system interface failed: interface=$interfaceName error=${it.message}"
+        )
+        return DirectNetworkInterfaceState.INDETERMINATE
+    }
+    val interfaceIsUp = runCatching { networkInterface?.isUp ?: true }.getOrElse {
+        NPLogger.d(
+            NETWORK_STATUS_LOG_TAG,
+            "read interface state failed: interface=$interfaceName error=${it.message}"
+        )
+        return DirectNetworkInterfaceState.INDETERMINATE
+    }
+    return if (interfaceIsUp) {
+        DirectNetworkInterfaceState.AVAILABLE
+    } else {
+        DirectNetworkInterfaceState.UNAVAILABLE
+    }
+}
+
+private enum class DirectNetworkInterfaceState {
+    AVAILABLE,
+    UNAVAILABLE,
+    INDETERMINATE
+}
+
+private fun NetworkCapabilities.hasDirectNetworkTransport(): Boolean {
+    return isDirectNetworkTransport(
+        hasVpnTransport = hasTransport(NetworkCapabilities.TRANSPORT_VPN),
         hasWifiTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
         hasCellularTransport = hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
         hasEthernetTransport = hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
         hasBluetoothTransport = hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH),
-        hasWifiAwareTransport = hasTransport(NetworkCapabilities.TRANSPORT_WIFI_AWARE),
-        hasLowpanTransport = hasTransport(NetworkCapabilities.TRANSPORT_LOWPAN),
         hasUsbTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             hasTransport(NetworkCapabilities.TRANSPORT_USB),
         hasSatelliteTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
-            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE),
-        hasThreadTransport = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
-            hasTransport(NetworkCapabilities.TRANSPORT_THREAD),
-        hasVpnTransport = hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE)
     )
+}
+
+private fun NetworkCapabilities.transportSummary(): String {
+    val transports = buildList {
+        if (hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) add("wifi")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) add("cellular")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) add("ethernet")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)) add("bluetooth")
+        if (hasTransport(NetworkCapabilities.TRANSPORT_VPN)) add("vpn")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            hasTransport(NetworkCapabilities.TRANSPORT_USB)
+        ) {
+            add("usb")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+            hasTransport(NetworkCapabilities.TRANSPORT_SATELLITE)
+        ) {
+            add("satellite")
+        }
+    }
+    return transports.ifEmpty { listOf("other") }.joinToString(separator = "|")
 }
 
 internal enum class LikelyNetworkTransportAvailability {
@@ -76,13 +213,14 @@ internal enum class LikelyNetworkTransportAvailability {
 }
 
 internal fun resolveNetworkInterfaceAvailability(
+    hasActiveNetwork: Boolean,
     interfaceScanCompleted: Boolean,
-    hasLegalNetworkInterface: Boolean,
+    hasDirectNetworkInterface: Boolean,
     hasUnresolvedNetworkInterface: Boolean
 ): LikelyNetworkTransportAvailability {
-    // only a complete interface snapshot may prove that offline mode is safe
     return when {
-        hasLegalNetworkInterface -> LikelyNetworkTransportAvailability.ONLINE
+        !hasActiveNetwork -> LikelyNetworkTransportAvailability.OFFLINE
+        hasDirectNetworkInterface -> LikelyNetworkTransportAvailability.ONLINE
         !interfaceScanCompleted || hasUnresolvedNetworkInterface -> {
             LikelyNetworkTransportAvailability.INDETERMINATE
         }
@@ -101,14 +239,15 @@ internal fun isDirectNetworkTransport(
     hasEthernetTransport: Boolean,
     hasBluetoothTransport: Boolean,
     hasUsbTransport: Boolean,
-    hasSatelliteTransport: Boolean
+    hasSatelliteTransport: Boolean,
+    hasVpnTransport: Boolean = false
 ): Boolean {
-    return hasWifiTransport ||
+    return !hasVpnTransport && (hasWifiTransport ||
         hasCellularTransport ||
         hasEthernetTransport ||
         hasBluetoothTransport ||
         hasUsbTransport ||
-        hasSatelliteTransport
+        hasSatelliteTransport)
 }
 
 internal fun isLegalNetworkTransport(
@@ -129,11 +268,11 @@ internal fun isLegalNetworkTransport(
         hasEthernetTransport = hasEthernetTransport,
         hasBluetoothTransport = hasBluetoothTransport,
         hasUsbTransport = hasUsbTransport,
-        hasSatelliteTransport = hasSatelliteTransport
+        hasSatelliteTransport = hasSatelliteTransport,
+        hasVpnTransport = hasVpnTransport
     ) || hasWifiAwareTransport ||
         hasLowpanTransport ||
-        hasThreadTransport ||
-        hasVpnTransport
+        hasThreadTransport
 }
 
 private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {

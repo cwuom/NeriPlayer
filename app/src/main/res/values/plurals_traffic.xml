@@ -5,6 +5,6 @@
         <item quantity="other">当前正在使用%1$s，下载 %2$d 首歌曲可能消耗较多流量。</item>
     </plurals>
     <plurals name="mobile_data_download_interruption_message">
-        <item quantity="other">当前已切换到%1$s，正在下载的 %2$d 个任务已暂停。请选择如何处理。</item>
+        <item quantity="other">当前已切换到%1$s，%2$d 个下载任务正在等待 WIFI。请选择如何处理。</item>
     </plurals>
 </resources>

@@ -30,36 +30,32 @@ internal class DownloadRecoveryRoomStore(
     ): List<String> {
         return database.withTransaction {
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
-            val inFlightOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+            val songKeys = distinctSongs.map(SongItem::stableKey)
+            val inFlightOperationIds = DownloadExecutionRoomStore
+                .findReadableOperationsBySongKeys(
                     context = appContext,
-                    songKey = song.stableKey(),
+                    songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
                     excludeUserCancelledStops = true
                 )
-            }
-            distinctSongs
-                .filter { song -> inFlightOperationIds[song.stableKey()] == null }
-                .forEach { song ->
-                    DownloadExecutionRoomStore.rehydrateMalformedReusableOperation(
-                        context = appContext,
-                        song = song,
-                        userInitiated = userInitiated,
-                        requiresWifiNetwork = requiresWifiNetwork,
-                        updatedAtMs = nowMs,
-                        database = database
-                    )
-                }
+                .mapValues { (_, request) -> request.operationId }
+            DownloadExecutionRoomStore.rehydrateMalformedReusableOperations(
+                context = appContext,
+                songs = distinctSongs.filter { song ->
+                    inFlightOperationIds[song.stableKey()] == null
+                },
+                userInitiated = userInitiated,
+                requiresWifiNetwork = requiresWifiNetwork,
+                updatedAtMs = nowMs,
+                database = database
+            )
             val reusableEntries = DownloadExecutionRoomStore.listByStates(
                 context = appContext,
                 states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                excludeUserStoppedOperations = true,
                 database = database
             )
-                .filter { entry ->
-                    database.downloadOperationDao()
-                        .isUserStopped(entry.request.operationId) != true
-                }
             val reusableGroups = reusableEntries.groupBy { it.request.song.stableKey() }
             val existing = reusableGroups
                 .mapValues { (_, entries) ->
@@ -86,15 +82,15 @@ internal class DownloadRecoveryRoomStore(
                         )
                     }
             }
-            val existingOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+            val existingOperationIds = DownloadExecutionRoomStore
+                .findReadableOperationsBySongKeys(
                     context = appContext,
-                    songKey = song.stableKey(),
+                    songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
                     excludeUserStoppedOperations = true
                 )
-            }
+                .mapValues { (_, request) -> request.operationId }
             var nextOrder = (existing.values.maxOfOrNull { it.queueOrder } ?: -1) + 1
             distinctSongs.map { song ->
                 val key = song.stableKey()
@@ -157,14 +153,14 @@ internal class DownloadRecoveryRoomStore(
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
+            val songKeys = distinctSongs.map(SongItem::stableKey)
             val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
             val waitingEntries = DownloadExecutionRoomStore.listByStates(
                 context = appContext,
                 states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
+                excludeUserStoppedOperations = true,
                 database = database
-            ).filter { entry ->
-                dao.isUserStopped(entry.request.operationId) != true
-            }
+            )
             val waitingGroups = waitingEntries.groupBy { entry ->
                 entry.request.song.stableKey()
             }
@@ -192,38 +188,57 @@ internal class DownloadRecoveryRoomStore(
                         )
                     }
             }
-            val inFlightOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+            val inFlightOperationIds = DownloadExecutionRoomStore
+                .findReadableOperationsBySongKeys(
                     context = appContext,
-                    songKey = song.stableKey(),
+                    songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
                     excludeUserCancelledStops = true
                 )
-            }
-            val reusableOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to DownloadExecutionRoomStore.findReadableOperationIdForSong(
+                .mapValues { (_, request) -> request.operationId }
+            val reusableOperationIds = DownloadExecutionRoomStore
+                .findReadableOperationsBySongKeys(
                     context = appContext,
-                    songKey = song.stableKey(),
+                    songKeys = songKeys,
                     database = database,
                     states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
                     excludeUserStoppedOperations = true
                 )
-            }
-            val blockedOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to dao.findAllByStableKey(
+                .mapValues { (_, request) -> request.operationId }
+            val blockedOperationIds = linkedMapOf<String, String>()
+            songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
+                dao.findAllByStableKeys(
                     libraryId = libraryId,
-                    stableKey = song.stableKey(),
+                    stableKeys = stableKeyChunk,
                     states = WAITING_STORAGE_MUTATION_BLOCKING_STATES
-                ).firstOrNull()?.operationId
+                ).forEach { entity ->
+                    blockedOperationIds.putIfAbsent(entity.stableKey, entity.operationId)
+                }
             }
-            val stoppedWaitingOperationIds = distinctSongs.associate { song ->
-                song.stableKey() to dao.findAllByStableKey(
+            val stoppedWaitingOperationIds = linkedMapOf<String, String>()
+            songKeys.chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
+                dao.findAllByStableKeys(
                     libraryId = libraryId,
-                    stableKey = song.stableKey(),
+                    stableKeys = stableKeyChunk,
                     states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE)
-                ).firstOrNull { entity -> entity.stopRequestedByUser }?.operationId
+                ).forEach { entity ->
+                    if (entity.stopRequestedByUser) {
+                        stoppedWaitingOperationIds.putIfAbsent(entity.stableKey, entity.operationId)
+                    }
+                }
             }
+            val deterministicOperationIdsBySongKey = distinctSongs.associate { song ->
+                song.stableKey() to waitingStorageMutationOperationId(libraryId, song.stableKey())
+            }
+            val deterministicOperationsById = linkedMapOf<String, String>()
+            deterministicOperationIdsBySongKey.values
+                .chunked(DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE)
+                .forEach { operationIdChunk ->
+                    dao.findAllByOperationIds(operationIdChunk).forEach { entity ->
+                        deterministicOperationsById[entity.operationId] = entity.state
+                    }
+                }
             var nextOrder = (
                 (waitingWinners.values + DownloadExecutionRoomStore.listByStates(
                     context = appContext,
@@ -243,13 +258,16 @@ internal class DownloadRecoveryRoomStore(
                     return@mapNotNull null
                 }
                 val existing = waitingWinners[key]
-                val deterministicOperationId = waitingStorageMutationOperationId(libraryId, key)
-                val deterministicOperation = dao.find(deterministicOperationId)
+                val deterministicOperationId = checkNotNull(
+                    deterministicOperationIdsBySongKey[key]
+                )
+                val deterministicOperationState = deterministicOperationsById[
+                    deterministicOperationId
+                ]
+                val mustReplaceDeterministicOperation =
+                    deterministicOperationState in WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
                 val operationId = existing?.request?.operationId
-                    ?: if (
-                        deterministicOperation?.state in
-                            WAITING_STORAGE_MUTATION_REPLACED_TERMINAL_STATES
-                    ) {
+                    ?: if (mustReplaceDeterministicOperation) {
                         UUID.randomUUID().toString()
                     } else {
                         deterministicOperationId
@@ -282,13 +300,12 @@ internal class DownloadRecoveryRoomStore(
     }
 
     suspend fun listWaitingStorageMutations(): List<DownloadExecutionRoomStore.StateEntry> {
-        val dao = database.downloadOperationDao()
         return DownloadExecutionRoomStore.listByStates(
             context = appContext,
             states = listOf(WAITING_STORAGE_MUTATION_OPERATION_STATE),
+            excludeUserStoppedOperations = true,
             database = database
         )
-            .filter { entry -> dao.isUserStopped(entry.request.operationId) != true }
             .sortedWith(compareBy({ it.queueOrder }, { it.request.operationId }))
     }
 
@@ -434,6 +451,7 @@ internal class DownloadRecoveryRoomStore(
         const val CANCELLED_KEYS_CUTOVER_STATE_KEY = "download_cancelled_keys_cutover_state"
         const val ROOM_PRIMARY_STATE = "room_primary"
         private const val PENDING_QUEUE_STATE = "QUEUED"
+        private const val DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE = 900
         private val PENDING_QUEUE_STATES = listOf(
             PENDING_QUEUE_STATE,
             "PENDING_QUEUE"

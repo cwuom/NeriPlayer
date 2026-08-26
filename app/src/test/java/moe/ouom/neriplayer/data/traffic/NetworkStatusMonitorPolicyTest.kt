@@ -46,12 +46,46 @@ class NetworkStatusMonitorPolicyTest {
     }
 
     @Test
+    fun `vpn transport never counts as a direct network interface`() {
+        assertFalse(
+            isDirectNetworkTransport(
+                hasVpnTransport = true,
+                hasWifiTransport = true,
+                hasCellularTransport = false,
+                hasEthernetTransport = false,
+                hasBluetoothTransport = false,
+                hasUsbTransport = false,
+                hasSatelliteTransport = false
+            )
+        )
+    }
+
+    @Test
+    fun `vpn transport alone is not legal network interface evidence`() {
+        assertFalse(
+            isLegalNetworkTransport(
+                hasWifiTransport = false,
+                hasCellularTransport = false,
+                hasEthernetTransport = false,
+                hasBluetoothTransport = false,
+                hasWifiAwareTransport = false,
+                hasLowpanTransport = false,
+                hasUsbTransport = false,
+                hasSatelliteTransport = false,
+                hasThreadTransport = false,
+                hasVpnTransport = true
+            )
+        )
+    }
+
+    @Test
     fun `unresolved interface capabilities keep the result indeterminate`() {
         assertEquals(
             LikelyNetworkTransportAvailability.INDETERMINATE,
             resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
                 interfaceScanCompleted = true,
-                hasLegalNetworkInterface = false,
+                hasDirectNetworkInterface = false,
                 hasUnresolvedNetworkInterface = true
             )
         )
@@ -62,32 +96,35 @@ class NetworkStatusMonitorPolicyTest {
         assertEquals(
             LikelyNetworkTransportAvailability.INDETERMINATE,
             resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
                 interfaceScanCompleted = false,
-                hasLegalNetworkInterface = false,
+                hasDirectNetworkInterface = false,
                 hasUnresolvedNetworkInterface = false
             )
         )
     }
 
     @Test
-    fun `a legal interface keeps the result online despite another unresolved entry`() {
+    fun `a direct interface keeps the result online despite another unresolved entry`() {
         assertEquals(
             LikelyNetworkTransportAvailability.ONLINE,
             resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
                 interfaceScanCompleted = true,
-                hasLegalNetworkInterface = true,
+                hasDirectNetworkInterface = true,
                 hasUnresolvedNetworkInterface = true
             )
         )
     }
 
     @Test
-    fun `offline requires a complete scan with no legal interfaces`() {
+    fun `offline requires a complete scan with no direct interfaces`() {
         assertEquals(
             LikelyNetworkTransportAvailability.OFFLINE,
             resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
                 interfaceScanCompleted = true,
-                hasLegalNetworkInterface = false,
+                hasDirectNetworkInterface = false,
                 hasUnresolvedNetworkInterface = false
             )
         )
@@ -98,38 +135,38 @@ class NetworkStatusMonitorPolicyTest {
         assertEquals(
             LikelyNetworkTransportAvailability.INDETERMINATE,
             resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
                 interfaceScanCompleted = true,
-                hasLegalNetworkInterface = false,
+                hasDirectNetworkInterface = false,
                 hasUnresolvedNetworkInterface = true
             )
         )
     }
 
     @Test
-    fun `vpn and additional legal transports keep app online`() {
-        val cases = listOf(
-            legalNetworkTransport(hasVpnTransport = true),
-            legalNetworkTransport(hasWifiAwareTransport = true),
-            legalNetworkTransport(hasLowpanTransport = true),
-            legalNetworkTransport(hasThreadTransport = true)
-        )
-
-        cases.forEach { transport ->
-            assertTrue(
-                isLegalNetworkTransport(
-                    hasWifiTransport = transport.hasWifiTransport,
-                    hasCellularTransport = transport.hasCellularTransport,
-                    hasEthernetTransport = transport.hasEthernetTransport,
-                    hasBluetoothTransport = transport.hasBluetoothTransport,
-                    hasWifiAwareTransport = transport.hasWifiAwareTransport,
-                    hasLowpanTransport = transport.hasLowpanTransport,
-                    hasUsbTransport = transport.hasUsbTransport,
-                    hasSatelliteTransport = transport.hasSatelliteTransport,
-                    hasThreadTransport = transport.hasThreadTransport,
-                    hasVpnTransport = transport.hasVpnTransport
-                )
+    fun `missing active network stays offline despite stale direct interface`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.OFFLINE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = false,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = true,
+                hasUnresolvedNetworkInterface = false
             )
-        }
+        )
+    }
+
+    @Test
+    fun `virtual-only active network stays offline`() {
+        assertEquals(
+            LikelyNetworkTransportAvailability.OFFLINE,
+            resolveNetworkInterfaceAvailability(
+                hasActiveNetwork = true,
+                interfaceScanCompleted = true,
+                hasDirectNetworkInterface = false,
+                hasUnresolvedNetworkInterface = false
+            )
+        )
     }
 
     @Test
@@ -157,19 +194,6 @@ class NetworkStatusMonitorPolicyTest {
         val hasBluetoothTransport: Boolean = false,
         val hasUsbTransport: Boolean = false,
         val hasSatelliteTransport: Boolean = false
-    )
-
-    private data class LegalNetworkTransport(
-        val hasWifiTransport: Boolean = false,
-        val hasCellularTransport: Boolean = false,
-        val hasEthernetTransport: Boolean = false,
-        val hasBluetoothTransport: Boolean = false,
-        val hasWifiAwareTransport: Boolean = false,
-        val hasLowpanTransport: Boolean = false,
-        val hasUsbTransport: Boolean = false,
-        val hasSatelliteTransport: Boolean = false,
-        val hasThreadTransport: Boolean = false,
-        val hasVpnTransport: Boolean = false
     )
 
     @Test
@@ -272,29 +296,4 @@ class NetworkStatusMonitorPolicyTest {
         )
     }
 
-    private fun legalNetworkTransport(
-        hasWifiTransport: Boolean = false,
-        hasCellularTransport: Boolean = false,
-        hasEthernetTransport: Boolean = false,
-        hasBluetoothTransport: Boolean = false,
-        hasWifiAwareTransport: Boolean = false,
-        hasLowpanTransport: Boolean = false,
-        hasUsbTransport: Boolean = false,
-        hasSatelliteTransport: Boolean = false,
-        hasThreadTransport: Boolean = false,
-        hasVpnTransport: Boolean = false
-    ): LegalNetworkTransport {
-        return LegalNetworkTransport(
-            hasWifiTransport = hasWifiTransport,
-            hasCellularTransport = hasCellularTransport,
-            hasEthernetTransport = hasEthernetTransport,
-            hasBluetoothTransport = hasBluetoothTransport,
-            hasWifiAwareTransport = hasWifiAwareTransport,
-            hasLowpanTransport = hasLowpanTransport,
-            hasUsbTransport = hasUsbTransport,
-            hasSatelliteTransport = hasSatelliteTransport,
-            hasThreadTransport = hasThreadTransport,
-            hasVpnTransport = hasVpnTransport
-        )
-    }
 }

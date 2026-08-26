@@ -432,6 +432,148 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
+    fun batchReadableLookupSkipsStoppedAndMalformedCandidatesPerSong() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val first = song(74L, "batch-readable-first")
+            val second = song(75L, "batch-readable-second")
+            val olderFirstOperationId = "batch-readable-first-old"
+            val stoppedFirstOperationId = "batch-readable-first-stopped"
+            val validSecondOperationId = "batch-readable-second-valid"
+            val malformedSecondOperationId = "batch-readable-second-malformed"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = olderFirstOperationId,
+                    song = first,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                createdAtMs = 10L,
+                database = database
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = stoppedFirstOperationId,
+                    song = first,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                createdAtMs = 20L,
+                database = database
+            )
+            database.downloadOperationDao().requestUserStop(
+                operationId = stoppedFirstOperationId,
+                updatedAtMs = 30L
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = validSecondOperationId,
+                    song = second,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                createdAtMs = 10L,
+                database = database
+            )
+            val validSecondEntity = requireNotNull(
+                database.downloadOperationDao().find(validSecondOperationId)
+            )
+            database.downloadOperationDao().upsert(
+                validSecondEntity.copy(
+                    operationId = malformedSecondOperationId,
+                    sourceHintJson = "{invalid",
+                    stagingDirName = malformedSecondOperationId,
+                    createdAtMs = 20L,
+                    updatedAtMs = 20L
+                )
+            )
+
+            val operations = DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
+                context = context,
+                songKeys = listOf(first.stableKey(), second.stableKey(), "missing"),
+                states = DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES,
+                excludeUserStoppedOperations = true,
+                database = database
+            )
+
+            assertEquals(olderFirstOperationId, operations[first.stableKey()]?.operationId)
+            assertEquals(validSecondOperationId, operations[second.stableKey()]?.operationId)
+            assertEquals(
+                "INVALID",
+                database.downloadOperationDao().find(malformedSecondOperationId)?.state
+            )
+            val snapshots = DownloadExecutionRoomStore.readOperationSnapshots(
+                context = context,
+                operationIds = listOf(
+                    olderFirstOperationId,
+                    malformedSecondOperationId,
+                    "missing"
+                ),
+                database = database
+            )
+            assertEquals("RUNNING", snapshots[olderFirstOperationId]?.state)
+            assertFalse(snapshots.containsKey(malformedSecondOperationId))
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun batchReadableLookupPagesPastSqliteInClauseLimit() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val songs = List(901) { index ->
+                song(80_000L + index, "batch-page-$index")
+            }
+            val operationIds = songs.mapIndexed { index, _ -> "batch-page-$index" }
+            for (index in songs.indices) {
+                DownloadExecutionRoomStore.upsert(
+                    context = context,
+                    request = DownloadExecutionRequest(
+                        operationId = operationIds[index],
+                        song = songs[index],
+                        userInitiated = true
+                    ),
+                    state = "RETRYABLE",
+                    createdAtMs = index.toLong(),
+                    database = database
+                )
+            }
+
+            val operations = DownloadExecutionRoomStore.findReadableOperationsBySongKeys(
+                context = context,
+                songKeys = songs.map(SongItem::stableKey),
+                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES,
+                excludeUserStoppedOperations = true,
+                database = database
+            )
+            val snapshots = DownloadExecutionRoomStore.readOperationSnapshots(
+                context = context,
+                operationIds = operationIds,
+                database = database
+            )
+
+            assertEquals(901, operations.size)
+            assertEquals(operationIds.first(), operations[songs.first().stableKey()]?.operationId)
+            assertEquals(operationIds.last(), operations[songs.last().stableKey()]?.operationId)
+            assertEquals(901, snapshots.size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun queueRoundTripDoesNotRewriteLegacyFiles() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(

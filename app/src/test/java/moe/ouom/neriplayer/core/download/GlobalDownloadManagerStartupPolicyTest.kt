@@ -543,7 +543,47 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertFalse(schedulingBody.contains("wakeupEntries.forEach"))
         assertTrue(workerSource.contains("private const val GLOBAL_WORK_NAME"))
         assertTrue(workerSource.contains("fun scheduleAll(context: Context)"))
+        assertFalse(workerSource.contains("fun rearmAll(context: Context)"))
         assertTrue(workerSource.contains("recoverPendingDownloadsFromWifiWake(applicationContext)"))
+    }
+
+    @Test
+    fun `Wi-Fi wake keeps its current work retryable until recovery reaches a terminal state`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val wakeBody = source.substringAfter(
+            "internal suspend fun recoverPendingDownloadsFromWifiWake"
+        ).substringBefore("private suspend fun cancelDownloadTaskInBackground")
+
+        val lockBusyIndex = wakeBody.indexOf("if (!tryBeginPendingDownloadRecovery())")
+        val activeBranchIndex = wakeBody.indexOf("if (hasBlockingActiveDownloadOperationsForRecovery())")
+        val acceptedIndex = wakeBody.indexOf("val accepted = recoverPendingResumableDownloads")
+
+        assertTrue(lockBusyIndex >= 0)
+        assertTrue(
+            wakeBody.substring(
+                lockBusyIndex,
+                wakeBody.indexOf("return try", lockBusyIndex)
+            ).contains("return false")
+        )
+        assertTrue(activeBranchIndex >= 0)
+        assertTrue(
+            wakeBody.substring(
+                activeBranchIndex,
+                wakeBody.indexOf("} else", activeBranchIndex)
+            ).contains("false")
+        )
+        assertTrue(acceptedIndex >= 0)
+        assertTrue(
+            wakeBody.substring(
+                acceptedIndex,
+                wakeBody.indexOf("} else {", acceptedIndex)
+            ).contains("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+        assertFalse(wakeBody.contains("WifiBoundDownloadWakeWorker.rearmAll(appContext)"))
+        assertFalse(wakeBody.contains("rearmWifiWakeAfterCompletion"))
+        assertTrue(wakeBody.contains("WIFI 唤醒恢复尚未成为终态，保留 WorkManager 重试"))
     }
 
     @Test
@@ -820,6 +860,116 @@ class GlobalDownloadManagerStartupPolicyTest {
             wifiBoundDownloadTaskCount(
                 activeSongKeys = listOf("active-a", "shared", "  "),
                 persistedSongKeys = listOf("shared", "persisted-c", "persisted-d", "")
+            )
+        )
+    }
+
+    @Test
+    fun `mobile interruption recount distinguishes unavailable data from an authoritative zero`() {
+        assertEquals(
+            843,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = null,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            0,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = 0,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            2,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 843,
+                observedTaskCount = 2,
+                fallbackTaskCount = 1
+            )
+        )
+        assertEquals(
+            3,
+            resolveMobileDataDownloadInterruptionTaskCount(
+                existingTaskCount = 1,
+                observedTaskCount = null,
+                fallbackTaskCount = 3
+            )
+        )
+    }
+
+    @Test
+    fun `mobile interruption snapshot cannot publish after a clear advances its epoch`() {
+        assertTrue(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = null,
+                currentEpoch = 5L
+            )
+        )
+        assertTrue(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = 5L,
+                currentEpoch = 5L
+            )
+        )
+        assertFalse(
+            isMobileDataDownloadInterruptionSnapshotCurrent(
+                snapshotEpoch = 5L,
+                currentEpoch = 6L
+            )
+        )
+    }
+
+    @Test
+    fun `authoritative mobile interruption counts carry their sampling epoch into publication`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val networkPolicyBody = source.substringAfter(
+            "private suspend fun pauseActiveDownloadsForNetworkPolicyIfNeeded"
+        ).substringBefore("private suspend fun deferQueuedDownloadStartForNetworkPolicyIfNeeded")
+        val wifiDisconnectBody = source.substringAfter(
+            "fun interruptDownloadsForWifiDisconnected"
+        ).substringBefore("fun continueDownloadsOnMobileData")
+        val publicationBody = source.substringAfter(
+            "private suspend fun publishMobileDataDownloadInterruptionRequestIfNeeded"
+        ).substringBefore("private suspend fun observeWifiBoundMobileDataTaskCount")
+
+        assertTrue(networkPolicyBody.contains("val interruptionSnapshotEpoch"))
+        assertTrue(networkPolicyBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
+        assertTrue(wifiDisconnectBody.contains("val interruptionSnapshotEpoch"))
+        assertTrue(wifiDisconnectBody.contains("interruptionSnapshotEpoch = interruptionSnapshotEpoch"))
+        assertTrue(publicationBody.contains("interruptionSnapshotEpoch: Long? = null"))
+        assertTrue(
+            publicationBody.contains("isMobileDataDownloadInterruptionSnapshotCurrent(")
+        )
+    }
+
+    @Test
+    fun `known cancelled durable operation is not counted through a stale fallback queue entry`() {
+        assertNull(
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = true,
+                durableRequiresWifi = null
+            )
+        )
+        assertEquals(
+            true,
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = false,
+                durableRequiresWifi = null
+            )
+        )
+        assertEquals(
+            false,
+            resolvePersistedWifiBoundRequirement(
+                fallbackRequiresWifi = true,
+                hasKnownOperation = true,
+                durableRequiresWifi = false
             )
         )
     }

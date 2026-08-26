@@ -22,6 +22,11 @@ internal object DownloadExecutionRoomStore {
         val createdAtMs: Long
     )
 
+    internal data class OperationSnapshot(
+        val request: DownloadExecutionRequest,
+        val state: String
+    )
+
     internal data class CancellationSnapshot(
         val entries: List<StateEntry>,
         val operationIds: List<String>,
@@ -103,6 +108,35 @@ internal object DownloadExecutionRoomStore {
         return database.downloadOperationDao()
             .find(operationId)
             ?.let(::requestFromEntity)
+    }
+
+    suspend fun readOperationSnapshots(
+        context: Context,
+        operationIds: Collection<String>,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, OperationSnapshot> {
+        val normalizedOperationIds = operationIds
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedOperationIds.isEmpty()) {
+            return emptyMap()
+        }
+        val snapshots = linkedMapOf<String, OperationSnapshot>()
+        normalizedOperationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { operationIdChunk ->
+            database.downloadOperationDao()
+                .findAllByOperationIds(operationIdChunk)
+                .forEach { entity ->
+                    val request = requestFromEntity(entity) ?: return@forEach
+                    snapshots[entity.operationId] = OperationSnapshot(
+                        request = request,
+                        state = entity.state
+                    )
+                }
+        }
+        return snapshots
     }
 
     suspend fun checkpointProgress(
@@ -192,6 +226,7 @@ internal object DownloadExecutionRoomStore {
     suspend fun listByStates(
         context: Context,
         states: List<String>,
+        excludeUserStoppedOperations: Boolean = false,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<StateEntry> {
         if (states.isEmpty()) return emptyList()
@@ -214,7 +249,7 @@ internal object DownloadExecutionRoomStore {
                 val request = requestFromEntity(entity)
                 if (request == null) {
                     malformedEntities += entity
-                } else {
+                } else if (!excludeUserStoppedOperations || !entity.stopRequestedByUser) {
                     entries += StateEntry(request, entity.queueOrder, entity.createdAtMs)
                 }
             }
@@ -430,29 +465,64 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): String? {
         val normalizedKey = songKey.trim().takeIf(String::isNotBlank) ?: return null
+        return findReadableOperationsBySongKeys(
+            context = context,
+            songKeys = listOf(normalizedKey),
+            states = states,
+            excludeUserCancelledStops = excludeUserCancelledStops,
+            excludeUserStoppedOperations = excludeUserStoppedOperations,
+            database = database
+        )[normalizedKey]?.operationId
+    }
+
+    suspend fun findReadableOperationsBySongKeys(
+        context: Context,
+        songKeys: Collection<String>,
+        states: List<String>,
+        excludeUserCancelledStops: Boolean = false,
+        excludeUserStoppedOperations: Boolean = false,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Map<String, DownloadExecutionRequest> {
+        val normalizedKeys = songKeys
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .toList()
+        if (normalizedKeys.isEmpty() || states.isEmpty()) {
+            return emptyMap()
+        }
         val libraryId = currentLibraryId(context)
         val dao = database.downloadOperationDao()
-        val entities = dao.findAllByStableKey(
-            libraryId = libraryId,
-            stableKey = normalizedKey,
-            states = states
-        )
-        entities.forEach { entity ->
-            if (
-                entity.stopRequestedByUser && (
-                    excludeUserStoppedOperations ||
-                        (excludeUserCancelledStops &&
-                            entity.lastErrorCode == "USER_CANCELLED")
-                )
-            ) {
-                return@forEach
+        val readableOperations = linkedMapOf<String, DownloadExecutionRequest>()
+        normalizedKeys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { keyChunk ->
+            dao.findAllByStableKeys(
+                libraryId = libraryId,
+                stableKeys = keyChunk,
+                states = states
+            ).forEach entityLoop@{ entity ->
+                val entitySongKey = entity.stableKey
+                if (entitySongKey in readableOperations) {
+                    return@entityLoop
+                }
+                if (
+                    entity.stopRequestedByUser && (
+                        excludeUserStoppedOperations ||
+                            (excludeUserCancelledStops &&
+                                entity.lastErrorCode == "USER_CANCELLED")
+                    )
+                ) {
+                    return@entityLoop
+                }
+                val request = requestFromEntity(entity)
+                if (request != null) {
+                    readableOperations[entitySongKey] = request
+                } else {
+                    invalidateMalformedPayload(database, entity)
+                }
             }
-            if (requestFromEntity(entity) != null) {
-                return entity.operationId
-            }
-            invalidateMalformedPayload(database, entity)
         }
-        return null
+        return readableOperations
     }
 
     /**
@@ -468,37 +538,75 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Boolean {
         val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        return stableKey in rehydrateMalformedReusableOperations(
+            context = context,
+            songs = listOf(song),
+            userInitiated = userInitiated,
+            requiresWifiNetwork = requiresWifiNetwork,
+            updatedAtMs = updatedAtMs,
+            database = database
+        )
+    }
+
+    suspend fun rehydrateMalformedReusableOperations(
+        context: Context,
+        songs: Collection<SongItem>,
+        userInitiated: Boolean,
+        requiresWifiNetwork: Boolean,
+        updatedAtMs: Long,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Set<String> {
+        val songsByStableKey = linkedMapOf<String, SongItem>()
+        songs.forEach { song ->
+            val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return@forEach
+            songsByStableKey.putIfAbsent(stableKey, song)
+        }
+        if (songsByStableKey.isEmpty()) {
+            return emptySet()
+        }
         val libraryId = currentLibraryId(context)
         return database.withTransaction {
             val dao = database.downloadOperationDao()
-            val candidates = dao.findAllByStableKey(
-                libraryId = libraryId,
-                stableKey = stableKey,
-                states = REUSABLE_OPERATION_STATES
-            ).filterNot(DownloadOperationEntity::stopRequestedByUser)
-            if (candidates.isEmpty() || candidates.any { requestFromEntity(it) != null }) {
-                return@withTransaction false
+            val candidatesByStableKey = linkedMapOf<String, MutableList<DownloadOperationEntity>>()
+            songsByStableKey.keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { stableKeyChunk ->
+                dao.findAllByStableKeys(
+                    libraryId = libraryId,
+                    stableKeys = stableKeyChunk,
+                    states = REUSABLE_OPERATION_STATES
+                ).forEach { entity ->
+                    candidatesByStableKey.getOrPut(entity.stableKey) { mutableListOf() } += entity
+                }
             }
-            val existing = candidates.first()
-            val request = DownloadExecutionRequest(
-                operationId = existing.operationId,
-                song = song,
-                artifactLeaseId = UUID.randomUUID().toString(),
-                requiresWifiNetwork = requiresWifiNetwork,
-                userInitiated = userInitiated
-            )
-            val replaced = dao.replaceMalformedReusablePayload(
-                operationId = existing.operationId,
-                libraryId = libraryId,
-                stableKey = stableKey,
-                expectedStates = REUSABLE_OPERATION_STATES,
-                sourceHintJson = requestToJson(request).toString(),
-                updatedAtMs = updatedAtMs
-            ) > 0
-            if (replaced) {
-                dao.deleteHostAdmission(existing.operationId)
+            val rehydratedStableKeys = linkedSetOf<String>()
+            songsByStableKey.forEach { (stableKey, song) ->
+                val candidates = candidatesByStableKey[stableKey]
+                    .orEmpty()
+                    .filterNot(DownloadOperationEntity::stopRequestedByUser)
+                if (candidates.isEmpty() || candidates.any { requestFromEntity(it) != null }) {
+                    return@forEach
+                }
+                val existing = candidates.first()
+                val request = DownloadExecutionRequest(
+                    operationId = existing.operationId,
+                    song = song,
+                    artifactLeaseId = UUID.randomUUID().toString(),
+                    requiresWifiNetwork = requiresWifiNetwork,
+                    userInitiated = userInitiated
+                )
+                val replaced = dao.replaceMalformedReusablePayload(
+                    operationId = existing.operationId,
+                    libraryId = libraryId,
+                    stableKey = stableKey,
+                    expectedStates = REUSABLE_OPERATION_STATES,
+                    sourceHintJson = requestToJson(request).toString(),
+                    updatedAtMs = updatedAtMs
+                ) > 0
+                if (replaced) {
+                    dao.deleteHostAdmission(existing.operationId)
+                    rehydratedStableKeys += stableKey
+                }
             }
-            replaced
+            rehydratedStableKeys
         }
     }
 
