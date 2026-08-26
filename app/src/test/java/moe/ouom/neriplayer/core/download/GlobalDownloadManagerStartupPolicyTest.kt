@@ -395,7 +395,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
 
         assertTrue(journalIndex >= 0)
-        assertTrue(immediateHostCancellationIndex in 0 until journalIndex)
+        assertTrue(journalIndex in 0 until immediateHostCancellationIndex)
         assertTrue(finalizationIndex > journalIndex)
         assertTrue(backgroundCleanupIndex > finalizationIndex)
         assertTrue(
@@ -423,6 +423,11 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(managerSource.contains("val isClearingDownloadTasks: StateFlow<Boolean>"))
         assertTrue(
+            managerSource.contains(
+                "val isDownloadTaskClearPresentationCleared: StateFlow<Boolean>"
+            )
+        )
+        assertTrue(
             clearAllBody.indexOf("downloadClearVisibility.begin(clearToken)") <
                 clearAllBody.indexOf("taskStore.clearAllTasks()")
         )
@@ -433,6 +438,13 @@ class GlobalDownloadManagerStartupPolicyTest {
             )
         )
         assertTrue(screenSource.contains("if (isClearingDownloadTasks)"))
+        assertTrue(screenSource.contains("isDownloadTaskClearPresentationCleared"))
+        assertTrue(
+            screenSource.contains(
+                "val visibleTasks = if (isDownloadTaskClearPresentationCleared)"
+            )
+        )
+        assertFalse(screenSource.contains("val visibleTasks = if (isClearingDownloadTasks)"))
         assertTrue(screenSource.contains("R.string.download_clearing_tasks"))
         assertTrue(screenSource.contains("visibleDownloadProgressTasks(downloadTasks)"))
         assertFalse(screenSource.contains("item(key = \"queued-summary\")"))
@@ -450,7 +462,11 @@ class GlobalDownloadManagerStartupPolicyTest {
         val initializeBody = source.substringAfter("fun initialize(context: Context)")
             .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
 
+        val clearVisibilityIndex = clearAllBody.indexOf("downloadClearVisibility.begin(clearToken)")
         val activateIndex = clearAllBody.indexOf("activateDownloadClearFence(appContext)")
+        val presentationClearedIndex = clearAllBody.indexOf(
+            "downloadClearVisibility.markFencePersisted(clearToken)"
+        )
         val immediateStopIndex = clearAllBody.indexOf("stopDownloadExecutionImmediately(")
         val firstTaskClearIndex = clearAllBody.indexOf("taskStore.clearAllTasks()")
         val journalIndex = clearAllBody.indexOf(
@@ -463,10 +479,14 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(clearRequestIndex >= 0)
         assertTrue(clearRequestIndex > clearAllBody.indexOf("downloadAdmissionGate.beginClear()"))
-        assertTrue(activateIndex >= 0)
-        assertTrue(immediateStopIndex > activateIndex)
+        assertTrue(clearVisibilityIndex > clearRequestIndex)
+        assertTrue(activateIndex > clearVisibilityIndex)
+        assertTrue(presentationClearedIndex > activateIndex)
         assertTrue(firstTaskClearIndex > activateIndex)
-        assertTrue(immediateStopIndex < journalIndex)
+        assertTrue(firstTaskClearIndex > presentationClearedIndex)
+        assertTrue(clearAllBody.indexOf("taskStore.currentTasks()") > activateIndex)
+        assertTrue(clearAllBody.indexOf("clearBatchDownloadPresentation()") > activateIndex)
+        assertTrue(immediateStopIndex > journalIndex)
         assertTrue(journalIndex > firstTaskClearIndex)
         assertTrue(clearFenceIndex > journalIndex)
         assertTrue(
@@ -480,12 +500,69 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(source.contains("private fun stopDownloadExecutionImmediately"))
         assertTrue(source.contains("private suspend fun clearDownloadClearFence"))
         assertTrue(source.contains("if (isDownloadClearFenceActive(appContext))"))
+        assertFalse(clearAllBody.contains("beginAndActivate"))
         assertTrue(clearAllBody.contains("while (true)"))
         assertTrue(clearAllBody.contains("下载清空流程失败，保持栅栏并重试"))
         assertTrue(
             clearAllBody.lastIndexOf("retrying failed download clear") <
                 clearAllBody.indexOf("clearDownloadClearFence(")
         )
+    }
+
+    @Test
+    fun `single cancellation removes presentation before durable cancellation work`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val entryBody = source.substringAfter("fun cancelDownloadTask(songKey: String)")
+            .substringBefore("private suspend fun cancelDownloadTaskDurably")
+        val durableBody = source.substringAfter("private suspend fun cancelDownloadTaskDurably")
+            .substringBefore("fun clearAllDownloadTasks()")
+
+        assertFalse(entryBody.contains("operationIdForSong("))
+        assertFalse(entryBody.contains("DownloadExecutionOperationStore().read("))
+        assertTrue(entryBody.contains("cancelDownloadTaskDurably("))
+        assertTrue(entryBody.indexOf("removeDownloadTask(") < entryBody.indexOf("scope.launch"))
+        assertTrue(durableBody.contains("operationIdForSong("))
+        assertTrue(durableBody.contains("requestOperationCancellation(setOf(songKey))"))
+    }
+
+    @Test
+    fun `batch Wi-Fi wait schedules one global wake instead of one work per operation`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/WifiBoundDownloadWakeWorker.kt"
+        ).readText()
+        val schedulingBody = managerSource.substringAfter(
+            "private suspend fun scheduleWifiBoundDownloadWakeups"
+        ).substringBefore("private suspend fun pauseActiveDownloadsForNetworkPolicyIfNeeded")
+
+        assertTrue(schedulingBody.contains("WifiBoundDownloadWakeWorker.scheduleAll("))
+        assertFalse(schedulingBody.contains("wakeupEntries.forEach"))
+        assertTrue(workerSource.contains("private const val GLOBAL_WORK_NAME"))
+        assertTrue(workerSource.contains("fun scheduleAll(context: Context)"))
+        assertTrue(workerSource.contains("recoverPendingDownloadsFromWifiWake(applicationContext)"))
+    }
+
+    @Test
+    fun `cover sidecar is checked before finalized metadata is written`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val enrichmentBody = source.substringAfter("private suspend fun enrichCoreCommittedDownload")
+            .substringBefore("private suspend fun publishFinalizedDownload")
+
+        val sidecarIndex = enrichmentBody.indexOf("downloadSidecarsForCompletedAudio(")
+        val coverGateIndex = enrichmentBody.indexOf("shouldFinalizeDownloadedSidecars(")
+        val finalizedMetadataIndex = enrichmentBody.indexOf("downloadFinalized = true")
+
+        assertTrue(sidecarIndex >= 0)
+        assertTrue(coverGateIndex > sidecarIndex)
+        assertTrue(finalizedMetadataIndex > coverGateIndex)
+        assertTrue(source.contains("repairFinalizedDownloadedCoversFromRoot(appContext)"))
+        assertTrue(source.contains("finalizedCoverRepairActive.compareAndSet(false, true)"))
     }
 
     @Test
@@ -732,6 +809,17 @@ class GlobalDownloadManagerStartupPolicyTest {
             hasWifiBoundNetworkPolicyDownloads(
                 activeTaskCount = 0,
                 persistedQueuedCount = 1
+            )
+        )
+    }
+
+    @Test
+    fun `Wi-Fi waiting count is the stable-key union across active and durable work`() {
+        assertEquals(
+            4,
+            wifiBoundDownloadTaskCount(
+                activeSongKeys = listOf("active-a", "shared", "  "),
+                persistedSongKeys = listOf("shared", "persisted-c", "persisted-d", "")
             )
         )
     }
@@ -2479,6 +2567,10 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         assertTrue(
             networkRecoveryBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(appContext)") <
+                networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
+        )
+        assertTrue(
+            networkRecoveryBody.indexOf("repairFinalizedDownloadedCoversFromRoot(appContext)") <
                 networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
         )
     }

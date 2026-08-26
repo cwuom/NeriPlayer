@@ -195,6 +195,16 @@ internal fun hasWifiBoundNetworkPolicyDownloads(
     persistedQueuedCount
 )
 
+internal fun wifiBoundDownloadTaskCount(
+    activeSongKeys: Collection<String>,
+    persistedSongKeys: Collection<String>
+): Int = (activeSongKeys + persistedSongKeys)
+    .asSequence()
+    .map(String::trim)
+    .filter(String::isNotBlank)
+    .toSet()
+    .size
+
 internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
     callbackNetworkType: TrafficNetworkType,
     currentNetworkType: TrafficNetworkType

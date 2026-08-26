@@ -14,6 +14,8 @@ import org.json.JSONObject
 internal const val WAITING_STORAGE_MUTATION_OPERATION_STATE = "WAITING_STORAGE_MUTATION"
 
 internal object DownloadExecutionRoomStore {
+    private const val OPERATION_QUERY_PAGE_SIZE = 64
+
     internal data class StateEntry(
         val request: DownloadExecutionRequest,
         val queueOrder: Int,
@@ -180,25 +182,11 @@ internal object DownloadExecutionRoomStore {
         state: String,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<StateEntry> {
-        val libraryId = currentLibraryId(context)
-        val entities = database.downloadOperationDao()
-            .findByStatesInLibrary(libraryId, listOf(state))
-        return buildList {
-            for (entity in entities) {
-                val request = requestFromEntity(entity)
-                if (request == null) {
-                    invalidateMalformedPayload(database, entity)
-                } else {
-                    add(
-                        StateEntry(
-                            request = request,
-                            queueOrder = entity.queueOrder,
-                            createdAtMs = entity.createdAtMs
-                        )
-                    )
-                }
-            }
-        }
+        return listByStates(
+            context = context,
+            states = listOf(state),
+            database = database
+        )
     }
 
     suspend fun listByStates(
@@ -208,18 +196,35 @@ internal object DownloadExecutionRoomStore {
     ): List<StateEntry> {
         if (states.isEmpty()) return emptyList()
         val libraryId = currentLibraryId(context)
-        val entities = database.downloadOperationDao()
-            .findByStatesInLibrary(libraryId, states)
-        return buildList {
-            for (entity in entities) {
+        val dao = database.downloadOperationDao()
+        val entries = mutableListOf<StateEntry>()
+        val malformedEntities = mutableListOf<DownloadOperationEntity>()
+        var offset = 0
+        while (true) {
+            val page = dao.findByStatesInLibraryPage(
+                libraryId = libraryId,
+                states = states,
+                limit = OPERATION_QUERY_PAGE_SIZE,
+                offset = offset
+            )
+            if (page.isEmpty()) {
+                break
+            }
+            page.forEach { entity ->
                 val request = requestFromEntity(entity)
                 if (request == null) {
-                    invalidateMalformedPayload(database, entity)
+                    malformedEntities += entity
                 } else {
-                    add(StateEntry(request, entity.queueOrder, entity.createdAtMs))
+                    entries += StateEntry(request, entity.queueOrder, entity.createdAtMs)
                 }
             }
+            offset += page.size
+            if (page.size < OPERATION_QUERY_PAGE_SIZE) {
+                break
+            }
         }
+        malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        return entries
     }
 
     suspend fun listCancellationCandidates(
@@ -246,13 +251,29 @@ internal object DownloadExecutionRoomStore {
         context: Context,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): List<OperationIdentity> {
-        return database.downloadOperationDao().findAll()
-            .map { entity ->
+        val dao = database.downloadOperationDao()
+        val identities = mutableListOf<OperationIdentity>()
+        var offset = 0
+        while (true) {
+            val page = dao.findAllOperationIdentitiesPage(
+                limit = OPERATION_QUERY_PAGE_SIZE,
+                offset = offset
+            )
+            if (page.isEmpty()) {
+                break
+            }
+            identities += page.map { row ->
                 OperationIdentity(
-                    operationId = entity.operationId,
-                    stableKey = entity.stableKey
+                    operationId = row.operationId,
+                    stableKey = row.stableKey
                 )
             }
+            offset += page.size
+            if (page.size < OPERATION_QUERY_PAGE_SIZE) {
+                break
+            }
+        }
+        return identities
     }
 
     suspend fun requestCancelAll(
@@ -260,24 +281,34 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): CancellationSnapshot {
         val requestedAtMs = System.currentTimeMillis()
-        val entities = database.withTransaction {
-            val dao = database.downloadOperationDao()
-            val entities = dao.findByStates(CANCELLATION_CANDIDATE_OPERATION_STATES)
-            val directCancellationIds = entities.asSequence()
-                .filter(::requiresDirectCancellation)
-                .map(DownloadOperationEntity::operationId)
-                .toList()
-            val commitBoundaryCancellationIds = entities.asSequence()
-                .filter(::requiresCommitBoundaryCancellation)
-                .map(DownloadOperationEntity::operationId)
-                .toList()
-            directCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
-                dao.requestCancellations(ids, requestedAtMs)
+        val entities = mutableListOf<DownloadOperationEntity>()
+        while (true) {
+            val page = database.withTransaction {
+                val dao = database.downloadOperationDao()
+                val candidates = dao.findCancellationCandidatesPage(
+                    states = CANCELLATION_CANDIDATE_OPERATION_STATES,
+                    limit = OPERATION_QUERY_PAGE_SIZE
+                )
+                val directCancellationIds = candidates.asSequence()
+                    .filter(::requiresDirectCancellation)
+                    .map(DownloadOperationEntity::operationId)
+                    .toList()
+                val commitBoundaryCancellationIds = candidates.asSequence()
+                    .filter(::requiresCommitBoundaryCancellation)
+                    .map(DownloadOperationEntity::operationId)
+                    .toList()
+                directCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
+                    dao.requestCancellations(ids, requestedAtMs)
+                }
+                commitBoundaryCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
+                    dao.requestCommitBoundaryCancellations(ids, requestedAtMs)
+                }
+                candidates
             }
-            commitBoundaryCancellationIds.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).forEach { ids ->
-                dao.requestCommitBoundaryCancellations(ids, requestedAtMs)
+            if (page.isEmpty()) {
+                break
             }
-            entities
+            entities += page
         }
         val entries = entities.asSequence()
             .filter { entity ->

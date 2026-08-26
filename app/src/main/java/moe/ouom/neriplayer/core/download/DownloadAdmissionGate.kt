@@ -122,12 +122,27 @@ internal class DownloadClearVisibility {
     private val stateLock = Any()
     private val _isClearing = MutableStateFlow(false)
     val isClearing: StateFlow<Boolean> = _isClearing.asStateFlow()
+    private val _isTaskPresentationCleared = MutableStateFlow(false)
+    val isTaskPresentationCleared: StateFlow<Boolean> =
+        _isTaskPresentationCleared.asStateFlow()
     private var activeGeneration: Long? = null
 
     fun begin(token: DownloadAdmissionGate.ClearToken) {
         synchronized(stateLock) {
+            val isNewGeneration = activeGeneration != token.generation
             activeGeneration = token.generation
             _isClearing.value = true
+            if (isNewGeneration) {
+                _isTaskPresentationCleared.value = false
+            }
+        }
+    }
+
+    fun markFencePersisted(token: DownloadAdmissionGate.ClearToken) {
+        synchronized(stateLock) {
+            if (activeGeneration == token.generation) {
+                _isTaskPresentationCleared.value = true
+            }
         }
     }
 
@@ -135,6 +150,7 @@ internal class DownloadClearVisibility {
         synchronized(stateLock) {
             if (activeGeneration == token.generation) {
                 activeGeneration = null
+                _isTaskPresentationCleared.value = false
                 _isClearing.value = false
             }
         }

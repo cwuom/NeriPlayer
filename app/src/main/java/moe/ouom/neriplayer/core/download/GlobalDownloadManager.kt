@@ -111,6 +111,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.UUID
@@ -399,6 +400,8 @@ object GlobalDownloadManager {
     )
     private val downloadClearVisibility = DownloadClearVisibility()
     val isClearingDownloadTasks: StateFlow<Boolean> = downloadClearVisibility.isClearing
+    val isDownloadTaskClearPresentationCleared: StateFlow<Boolean> =
+        downloadClearVisibility.isTaskPresentationCleared
 
     private val _downloadedSongs = MutableStateFlow<List<DownloadedSong>>(emptyList())
     val downloadedSongs: StateFlow<List<DownloadedSong>> = _downloadedSongs.asStateFlow()
@@ -449,6 +452,7 @@ object GlobalDownloadManager {
     private val mobileDataInterruptionRequestIdGenerator = AtomicLong(0L)
     private val songExecutionLocks = Array(SONG_EXECUTION_LOCK_STRIPES) { Mutex() }
     private val pendingDownloadRecoveryMutex = Mutex()
+    private val finalizedCoverRepairActive = AtomicBoolean(false)
     private val activeBatchDownloadJobs = Collections.newSetFromMap(ConcurrentHashMap<Job, Boolean>())
     private val managedDownloadArtifactLeases = ConcurrentHashMap<String, String>()
     private val activeProgressCheckpointBindings =
@@ -653,6 +657,7 @@ object GlobalDownloadManager {
             recoverPendingAudioWritesFromRoot(appContext)
             recoverUnfinalizedPublishedAudioFromRoot(appContext)
             recoverPendingDownloadsForStartup(appContext)
+            repairFinalizedDownloadedCoversFromRoot(appContext)
             LegacyJsonCleanupScheduler.schedule(appContext, "download-startup")
             if (
                 !shouldRunInitialDownloadScan(
@@ -845,6 +850,79 @@ object GlobalDownloadManager {
                     "恢复未最终化已发布音频失败，保留等待重试: " +
                         "song=${song.name}, file=${audio.name}, error=${error.message}"
                 )
+            }
+        }
+    }
+
+    private fun repairFinalizedDownloadedCoversFromRoot(context: Context) {
+        val appContext = context.applicationContext
+        if (!finalizedCoverRepairActive.compareAndSet(false, true)) {
+            return
+        }
+        scope.launch {
+            try {
+                if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
+                    return@launch
+                }
+                val snapshot = runCatching {
+                    ManagedDownloadStorage.buildDownloadLibrarySnapshot(
+                        context = appContext,
+                        forceRefresh = true
+                    )
+                }.getOrElse { error ->
+                    NPLogger.w(TAG, "读取历史缺失封面失败，等待下次恢复: ${error.message}")
+                    return@launch
+                }
+                val candidates = snapshot.audioEntries.mapNotNull { audio ->
+                    val metadata = snapshot.metadataByAudioName[audio.name]
+                        ?: readDownloadedMetadata(appContext, audio)
+                        ?: return@mapNotNull null
+                    if (!isFinalizedDownloadedMetadata(metadata)) {
+                        return@mapNotNull null
+                    }
+                    val song = buildSongFromDurableMetadata(audio, metadata)
+                        ?: return@mapNotNull null
+                    if (AudioDownloadManager.buildCoverDownloadCandidateUrls(song).isEmpty()) {
+                        return@mapNotNull null
+                    }
+                    song to audio
+                }
+                if (candidates.isEmpty()) {
+                    return@launch
+                }
+                val nextCandidateIndex = AtomicInteger(0)
+                coroutineScope {
+                    List(
+                        size = minOf(METADATA_POST_PROCESSING_PARALLELISM, candidates.size)
+                    ) {
+                        async {
+                            while (true) {
+                                val candidate = candidates.getOrNull(nextCandidateIndex.getAndIncrement())
+                                    ?: return@async
+                                val (song, audio) = candidate
+                                withSongExecutionLock(song.stableKey()) {
+                                    val currentMetadata = readDownloadedMetadata(appContext, audio)
+                                        ?: return@withSongExecutionLock
+                                    if (!isFinalizedDownloadedMetadata(currentMetadata)) {
+                                        return@withSongExecutionLock
+                                    }
+                                    val beforeRepair = buildOptimisticDownloadedSong(song, audio)
+                                    val repaired = repairDownloadedCoverIfMissing(
+                                        context = appContext,
+                                        song = song,
+                                        downloadedSong = beforeRepair
+                                    )
+                                    if (repaired.coverPath != beforeRepair.coverPath) {
+                                        publishOptimisticDownloadedSongs(appContext, listOf(repaired))
+                                    }
+                                }
+                            }
+                        }
+                    }.awaitAll()
+                }
+                scheduleCatalogReconcile(appContext, forceRefresh = true)
+            } finally {
+                finalizedCoverRepairActive.set(false)
             }
         }
     }
@@ -1216,6 +1294,31 @@ object GlobalDownloadManager {
         }
     }
 
+    private suspend fun persistedWifiBoundSongKeys(context: Context): Set<String> {
+        val fallbackRequirements = linkedMapOf<String, Boolean>()
+        ManagedDownloadStorage.listPendingQueuedDownloads(context).forEach { entry ->
+            fallbackRequirements[entry.stableKey] = entry.requiresWifiNetwork
+        }
+        ManagedDownloadStorage.listPendingResumableDownloads(context).forEach { entry ->
+            fallbackRequirements.putIfAbsent(entry.song.stableKey(), true)
+        }
+        if (fallbackRequirements.isEmpty()) {
+            return emptySet()
+        }
+        val durableRequirements = durableWifiRequirementBySongKey(
+            context = context,
+            songKeys = fallbackRequirements.keys
+        )
+        return fallbackRequirements
+            .filter { (songKey, fallbackRequiresWifi) ->
+                shouldPauseDownloadForWifiDisconnect(
+                    requiresWifiNetwork = durableRequirements[songKey] ?: fallbackRequiresWifi
+                )
+            }
+            .keys
+            .toSet()
+    }
+
     private suspend fun durableWifiRequirementBySongKey(
         context: Context,
         songKeys: Collection<String>
@@ -1255,27 +1358,13 @@ object GlobalDownloadManager {
         if (songKeys.isEmpty()) {
             return
         }
-        val wakeupEntries = runCatching {
-            DownloadExecutionRoomStore.listByStates(
-                context = context.applicationContext,
-                states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
-            )
-                .filter { entry ->
-                    entry.request.requiresWifiNetwork &&
-                        entry.request.song.stableKey() in songKeys
-                }
-        }.getOrElse { error ->
+        val scheduled = WifiBoundDownloadWakeWorker.scheduleAll(
+            context = context.applicationContext
+        )
+        if (!scheduled) {
             NPLogger.w(
                 TAG,
-                "登记 WIFI 恢复唤醒失败: error=${error.message}",
-                error
-            )
-            emptyList()
-        }
-        wakeupEntries.forEach { entry ->
-            WifiBoundDownloadWakeWorker.schedule(
-                context = context.applicationContext,
-                operationId = entry.request.operationId
+                "登记批量 WIFI 恢复唤醒失败: songs=${songKeys.size}"
             )
         }
     }
@@ -1292,23 +1381,27 @@ object GlobalDownloadManager {
             context = context,
             tasks = currentActiveNetworkPolicyTasks()
         )
-        val persistedQueuedEntries = ManagedDownloadStorage
-            .listPendingQueuedDownloads(context)
-            .filter { entry ->
-                shouldPauseDownloadForWifiDisconnect(entry.requiresWifiNetwork)
-            }
+        val waitingSongs = wifiBoundSongsForNetworkPolicy(
+            context = context,
+            songs = currentWaitingNetworkTaskSongs()
+        )
+        val persistedSongKeys = persistedWifiBoundSongKeys(context)
         if (!hasWifiBoundNetworkPolicyDownloads(
                 activeTaskCount = activeTasks.size,
-                persistedQueuedCount = persistedQueuedEntries.size
+                persistedQueuedCount = persistedSongKeys.size + waitingSongs.size
             )
         ) {
             return false
         }
         mobileDataDownloadOverrideAllowed = false
-        val taskCount = maxOf(activeTasks.size, persistedQueuedEntries.size)
+        val taskCount = wifiBoundDownloadTaskCount(
+            activeSongKeys = activeTasks.map { task -> task.song.stableKey() } +
+                waitingSongs.map(SongItem::stableKey),
+            persistedSongKeys = persistedSongKeys
+        )
         NPLogger.w(
             TAG,
-            "非 WIFI 网络下检测到仅 WIFI 下载，先暂停并等待用户选择: reason=$reason, networkType=$networkType, activeTasks=${activeTasks.size}, persistedQueued=${persistedQueuedEntries.size}"
+            "非 WIFI 网络下检测到仅 WIFI 下载，先暂停并等待用户选择: reason=$reason, networkType=$networkType, activeTasks=${activeTasks.size}, persisted=${persistedSongKeys.size}, waiting=${waitingSongs.size}"
         )
         publishMobileDataDownloadInterruptionRequestIfNeeded(
             networkType = networkType,
@@ -1382,10 +1475,16 @@ object GlobalDownloadManager {
         taskCount: Int,
         reason: String
     ) {
+        val normalizedTaskCount = taskCount.coerceAtLeast(1)
         _mobileDataDownloadInterruptionRequest.value?.let { existingRequest ->
+            if (existingRequest.taskCount != normalizedTaskCount) {
+                _mobileDataDownloadInterruptionRequest.value = existingRequest.copy(
+                    taskCount = normalizedTaskCount
+                )
+            }
             NPLogger.d(
                 TAG,
-                "移动网络下载确认请求已存在，跳过重复发布: reason=$reason, requestId=${existingRequest.id}, taskCount=${existingRequest.taskCount}"
+                "移动网络下载确认请求已存在，更新等待数量: reason=$reason, requestId=${existingRequest.id}, taskCount=$normalizedTaskCount"
             )
             return
         }
@@ -1399,7 +1498,7 @@ object GlobalDownloadManager {
         val request = MobileDataDownloadInterruptionRequest(
             id = mobileDataInterruptionRequestIdGenerator.incrementAndGet(),
             networkType = networkType,
-            taskCount = taskCount.coerceAtLeast(1)
+            taskCount = normalizedTaskCount
         )
         _mobileDataDownloadInterruptionRequest.value = request
         NPLogger.w(
@@ -1427,6 +1526,7 @@ object GlobalDownloadManager {
             // ordinary queue-based recovery candidates
             recoverPendingAudioWritesFromRoot(appContext)
             recoverUnfinalizedPublishedAudioFromRoot(appContext)
+            repairFinalizedDownloadedCoversFromRoot(appContext)
             if (!hasPendingRecoveryCandidates(appContext)) {
                 return@launch
             }
@@ -2133,6 +2233,18 @@ object GlobalDownloadManager {
                 song = song,
                 storedAudio = storedAudio
             )
+            val coverReference = sidecarReferences.coverReference
+            val coverAccessible = coverReference?.let { reference ->
+                ManagedDownloadReferenceLookup.inspect(context, reference) is
+                    ManagedDownloadReferenceLookup.Result.Present
+            } == true
+            check(
+                shouldFinalizeDownloadedSidecars(
+                    hasNetworkCoverCandidate = sidecarReferences.expectedCover,
+                    coverReference = coverReference,
+                    coverAccessible = coverAccessible
+                )
+            ) { "COVER_SIDECAR_MISSING" }
             val metadataEmbeddingState = if (isDownloadMetadataPostProcessingEnabled(context)) {
                 when (
                     runDownloadedAudioMetadataPostProcessing(
@@ -7317,72 +7429,85 @@ object GlobalDownloadManager {
     fun cancelDownloadTask(songKey: String) {
         val appContext = AppContainer.applicationContext
         val task = taskStore.findTask(songKey)
-        val operationId = DownloadExecutionHosts.default.operationIdForSong(appContext, songKey)
-        val operationRequest = operationId
-            ?.let { id -> DownloadExecutionOperationStore().read(appContext, id) }
-            ?.takeIf { request -> request.song.stableKey() == songKey }
-        if (task == null) {
-            markSongCancelled(songKey)
-            if (operationId != null) {
-                DownloadExecutionHosts.default.cancel(appContext, operationId)
-            } else {
-                DownloadExecutionHosts.default.cancelForSong(appContext, songKey)
-            }
-            requestOperationCancellation(setOf(songKey))
-            val cancellationGeneration = requestGenerationTracker.cancellationGeneration(songKey)
-            invalidateDownloadRequestGenerations(setOf(songKey))
-            scope.launch {
-                awaitSongCancellationSettled(
-                    songKey = songKey,
-                    timeoutMs = DOWNLOAD_CANCEL_FAST_SETTLE_TIMEOUT_MS,
-                    clearCancellationWhenSettled = false
-                )
-                if (isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
-                    if (operationId != null && operationRequest != null) {
-                        releaseDownloadArtifactAfterExecutionOwnershipLoss(
-                            context = appContext,
-                            song = operationRequest.song,
-                            operationId = operationId,
-                            expectedLeaseId = operationRequest.artifactLeaseId
-                        )
-                    }
-                    ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(
-                        appContext,
-                        setOf(songKey)
-                    )
-                    DownloadExecutionRoomStore.purgeCancelled(appContext, setOf(songKey))
-                    clearSongCancelled(songKey)
-                }
-            }
+        if (task != null && !isDownloadTaskCancellationCandidate(task)) {
             return
-        }
-        if (!isDownloadTaskCancellationCandidate(task)) {
-            return
-        }
-
-        if (operationId != null) {
-            DownloadExecutionHosts.default.cancel(appContext, operationId)
-        } else {
-            DownloadExecutionHosts.default.cancelForSong(appContext, songKey)
         }
         markSongCancelled(songKey)
-        requestOperationCancellation(setOf(songKey))
-        markBatchDownloadPresentationTerminal(
-            songKey = songKey,
-            attemptId = task.attemptId,
-            terminalState = BatchDownloadTerminalState.CANCELLED
-        )
-        removeDownloadTask(songKey, expectedAttemptId = task.attemptId)
-        forgetPendingDownloadQueueEntries(appContext, setOf(songKey))
         val cancellationGeneration = requestGenerationTracker.cancellationGeneration(songKey)
         invalidateDownloadRequestGenerations(setOf(songKey))
+        task?.let { currentTask ->
+            markBatchDownloadPresentationTerminal(
+                songKey = songKey,
+                attemptId = currentTask.attemptId,
+                terminalState = BatchDownloadTerminalState.CANCELLED
+            )
+            removeDownloadTask(songKey, expectedAttemptId = currentTask.attemptId)
+        }
         scope.launch {
-            cancelDownloadTaskInBackground(
+            cancelDownloadTaskDurably(
+                context = appContext,
                 task = task,
                 cancellationGeneration = cancellationGeneration,
-                operationRequest = operationRequest
+                songKey = songKey
             )
         }
+    }
+
+    private suspend fun cancelDownloadTaskDurably(
+        context: Context,
+        task: DownloadTask?,
+        cancellationGeneration: Long?,
+        songKey: String
+    ) {
+        if (!isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
+            return
+        }
+        val operationId = DownloadExecutionHosts.default.operationIdForSong(context, songKey)
+        val operationRequest = operationId
+            ?.let { id -> DownloadExecutionOperationStore().read(context, id) }
+            ?.takeIf { request -> request.song.stableKey() == songKey }
+        if (!isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
+            return
+        }
+        if (operationId != null) {
+            DownloadExecutionHosts.default.cancel(context, operationId)
+        } else {
+            DownloadExecutionHosts.default.cancelForSong(context, songKey)
+        }
+        if (!isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
+            return
+        }
+        requestOperationCancellation(setOf(songKey))
+        if (task == null) {
+            awaitSongCancellationSettled(
+                songKey = songKey,
+                timeoutMs = DOWNLOAD_CANCEL_FAST_SETTLE_TIMEOUT_MS,
+                clearCancellationWhenSettled = false
+            )
+            if (isCancellationCleanupStillCurrent(songKey, cancellationGeneration)) {
+                operationRequest?.let { request ->
+                    releaseDownloadArtifactAfterExecutionOwnershipLoss(
+                        context = context,
+                        song = request.song,
+                        operationId = request.operationId,
+                        expectedLeaseId = request.artifactLeaseId
+                    )
+                }
+                ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(
+                    context,
+                    setOf(songKey)
+                )
+                DownloadExecutionRoomStore.purgeCancelled(context, setOf(songKey))
+                clearSongCancelled(songKey)
+            }
+            return
+        }
+        forgetPendingDownloadQueueEntries(context, setOf(songKey))
+        cancelDownloadTaskInBackground(
+            task = task,
+            cancellationGeneration = cancellationGeneration,
+            operationRequest = operationRequest
+        )
     }
 
     fun clearAllDownloadTasks() {
@@ -7395,7 +7520,6 @@ object GlobalDownloadManager {
 
     private fun requestAllDownloadTaskCancellation(): Job {
         val appContext = AppContainer.applicationContext
-        clearBatchDownloadPresentation()
         val clearToken = downloadAdmissionGate.beginClear()
         val clearFenceEpoch = if (clearToken.ownsClear) {
             PersistentDownloadClearFenceStore.beginClear()
@@ -7412,10 +7536,8 @@ object GlobalDownloadManager {
         return scope.launch {
             try {
                 activateDownloadClearFence(appContext)
-                stopDownloadExecutionImmediately(
-                    context = appContext,
-                    reason = "download clear fence activated"
-                )
+                downloadClearVisibility.markFencePersisted(clearToken)
+                clearBatchDownloadPresentation()
                 val initiallyVisibleTasks = taskStore.currentTasks()
                 val initiallyCancellationTasks = initiallyVisibleTasks
                     .filter(::isDownloadTaskCancellationCandidate)
@@ -7485,10 +7607,12 @@ object GlobalDownloadManager {
                                 cancellationGenerations.putIfAbsent(songKey, generation)
                             }
                             clearPendingDownloadQueue(appContext)
-                            if (
-                                initialHostCancellationSnapshotCaptured &&
-                                    newlyDiscoveredOperationIds.isNotEmpty()
-                            ) {
+                            if (!initialHostCancellationSnapshotCaptured) {
+                                stopDownloadExecutionImmediately(
+                                    context = appContext,
+                                    reason = "durable download cancellation recorded"
+                                )
+                            } else if (newlyDiscoveredOperationIds.isNotEmpty()) {
                                 DownloadExecutionHosts.default.cancelAll(
                                     context = appContext,
                                     operationIds = newlyDiscoveredOperationIds
@@ -7726,27 +7850,32 @@ object GlobalDownloadManager {
                 context = appContext,
                 tasks = currentActiveNetworkPolicyTasks()
             )
-            val persistedQueuedEntries = ManagedDownloadStorage
-                .listPendingQueuedDownloads(appContext)
-                .filter { entry ->
-                    shouldPauseDownloadForWifiDisconnect(entry.requiresWifiNetwork)
-                }
+            val waitingSongs = wifiBoundSongsForNetworkPolicy(
+                context = appContext,
+                songs = currentWaitingNetworkTaskSongs()
+            )
+            val persistedSongKeys = persistedWifiBoundSongKeys(appContext)
             if (!hasWifiBoundNetworkPolicyDownloads(
                     activeTaskCount = activeTasks.size,
-                    persistedQueuedCount = persistedQueuedEntries.size
+                    persistedQueuedCount = persistedSongKeys.size + waitingSongs.size
                 )
             ) {
                 return@launch
             }
+            val taskCount = wifiBoundDownloadTaskCount(
+                activeSongKeys = activeTasks.map { task -> task.song.stableKey() } +
+                    waitingSongs.map(SongItem::stableKey),
+                persistedSongKeys = persistedSongKeys
+            )
             NPLogger.w(
                 TAG,
                 "WIFI 已断开，等待用户确认下载策略: callbackType=$callbackNetworkType, " +
                     "currentType=$currentNetworkType, " +
-                    "activeTasks=${activeTasks.size}, persistedQueued=${persistedQueuedEntries.size}"
+                    "activeTasks=${activeTasks.size}, persisted=${persistedSongKeys.size}, waiting=${waitingSongs.size}"
             )
             publishMobileDataDownloadInterruptionRequestIfNeeded(
                 networkType = currentNetworkType,
-                taskCount = maxOf(activeTasks.size, persistedQueuedEntries.size).coerceAtLeast(1),
+                taskCount = taskCount.coerceAtLeast(1),
                 reason = "wifi_disconnected"
             )
             pauseDownloadTasksForNetworkPolicy(appContext, activeTasks)
@@ -7815,6 +7944,50 @@ object GlobalDownloadManager {
             } finally {
                 finishPendingDownloadRecovery()
             }
+        }
+    }
+
+    internal suspend fun recoverPendingDownloadsFromWifiWake(context: Context): Boolean {
+        val appContext = context.applicationContext
+        if (isDownloadClearFenceActive(appContext)) {
+            return true
+        }
+        if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
+            return false
+        }
+        if (!tryBeginPendingDownloadRecovery()) {
+            return true
+        }
+        return try {
+            promoteWaitingStorageMutationsForRecovery(appContext)
+            repairFinalizedDownloadedCoversFromRoot(appContext)
+            if (!hasPendingRecoveryCandidates(appContext)) {
+                true
+            } else {
+                reconcilePendingDownloadArtifacts(appContext)
+                waitForActiveDownloadJobsToSettle()
+                waitForQueuedTasksToAttachToBatch()
+                if (hasBlockingActiveDownloadOperationsForRecovery()) {
+                    true
+                } else {
+                    recoverPendingResumableDownloads(
+                        context = appContext,
+                        reason = "wifi_wake"
+                    )
+                    true
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "WIFI 唤醒恢复失败，将由 WorkManager 重试: ${error.message}",
+                error
+            )
+            false
+        } finally {
+            finishPendingDownloadRecovery()
         }
     }
 
@@ -8028,20 +8201,24 @@ object GlobalDownloadManager {
             context = context,
             tasks = activeTasks
         )
-        val activeKeys = ManagedDownloadStorage.listPendingQueuedDownloads(context)
-            .asSequence()
-            .filter { entry -> shouldPauseDownloadForWifiDisconnect(entry.requiresWifiNetwork) }
-            .mapTo(mutableSetOf()) { entry -> entry.stableKey }
+        val activeKeys = persistedWifiBoundSongKeys(context).toMutableSet()
         wifiBoundActiveTasks.mapTo(activeKeys) { task -> task.song.stableKey() }
+        wifiBoundSongsForNetworkPolicy(
+            context = context,
+            songs = currentWaitingNetworkTaskSongs()
+        ).mapTo(activeKeys) { song -> song.stableKey() }
         if (activeKeys.isEmpty()) {
             return
         }
         AudioDownloadManager.pauseDownloadsForNetworkPolicy(activeKeys)
         taskStore.applyWaitingNetworkStatus(wifiBoundActiveTasks)
-        activeKeys.forEach { songKey ->
+        wifiBoundActiveTasks.filter { task ->
+            task.status == DownloadStatus.DOWNLOADING ||
+                AudioDownloadManager.isSongDownloadActive(task.song.stableKey())
+        }.forEach { task ->
             DownloadExecutionHosts.default.stopForSong(
                 context = context.applicationContext,
-                songKey = songKey,
+                songKey = task.song.stableKey(),
                 preventReschedule = false
             )
         }

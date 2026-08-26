@@ -34,6 +34,11 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long
 )
 
+internal data class DownloadOperationIdentityRow(
+    @ColumnInfo(name = "operation_id") val operationId: String,
+    @ColumnInfo(name = "stable_key") val stableKey: String
+)
+
 /**
  * represents the bounded OS-host handoff for one operation in the current app process
  *

@@ -88,6 +88,9 @@ fun DownloadProgressScreen(
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
     val isClearingDownloadTasks by GlobalDownloadManager.isClearingDownloadTasks
         .collectAsStateWithLifecycle()
+    val isDownloadTaskClearPresentationCleared by
+        GlobalDownloadManager.isDownloadTaskClearPresentationCleared
+            .collectAsStateWithLifecycle()
     var explicitResumeCandidates by remember {
         mutableStateOf<List<ExplicitDownloadResumeCandidate>>(emptyList())
     }
@@ -120,8 +123,8 @@ fun DownloadProgressScreen(
             kotlinx.coroutines.delay(EXPLICIT_RESUME_REFRESH_DELAY_MS)
         }
     }
-    val pendingTaskCount = remember(downloadTasks, isClearingDownloadTasks) {
-        if (isClearingDownloadTasks) {
+    val pendingTaskCount = remember(downloadTasks, isDownloadTaskClearPresentationCleared) {
+        if (isDownloadTaskClearPresentationCleared) {
             0
         } else {
             downloadTasks.count { task ->
@@ -132,9 +135,9 @@ fun DownloadProgressScreen(
         }
     }
     val visibleBatchProgress = batchDownloadProgress?.takeUnless {
-        isClearingDownloadTasks
+        isDownloadTaskClearPresentationCleared
     }
-    val visibleTasks = if (isClearingDownloadTasks) {
+    val visibleTasks = if (isDownloadTaskClearPresentationCleared) {
         emptyList()
     } else {
         visibleDownloadProgressTasks(downloadTasks)
@@ -183,6 +186,9 @@ fun DownloadProgressScreen(
                     )
                     Text(
                         text = when {
+                            isClearingDownloadTasks ->
+                                stringResource(R.string.download_clearing_tasks)
+
                             visibleBatchProgress != null -> stringResource(
                                 R.string.download_progress_with_percentage,
                                 visibleBatchProgress.completedSongs,
@@ -216,6 +222,7 @@ fun DownloadProgressScreen(
             ),
             actions = {
                 IconButton(
+                    enabled = !isClearingDownloadTasks,
                     onClick = {
                         context.performHapticFeedback()
                         showClearDialog = true
@@ -226,25 +233,7 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (isClearingDownloadTasks) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        stringResource(R.string.download_clearing_tasks),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else if (
+        if (
             visibleBatchProgress == null &&
                 visibleTasks.isEmpty() &&
                 explicitResumeCandidates.isEmpty() &&
@@ -270,6 +259,14 @@ fun DownloadProgressScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (isClearingDownloadTasks) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.download_clearing_tasks),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         } else {
@@ -308,14 +305,16 @@ fun DownloadProgressScreen(
                         ExplicitResumeTaskItem(
                             candidate = candidate,
                             onResume = {
-                                context.performHapticFeedback()
-                                coroutineScope.launch {
-                                    val schedule = runCatching {
-                                        resumeExplicitDownload(context, candidate)
-                                    }.getOrNull()
-                                    if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
-                                        explicitResumeCandidates = explicitResumeCandidates
-                                            .filterNot { item -> item.operationId == candidate.operationId }
+                                if (!isClearingDownloadTasks) {
+                                    context.performHapticFeedback()
+                                    coroutineScope.launch {
+                                        val schedule = runCatching {
+                                            resumeExplicitDownload(context, candidate)
+                                        }.getOrNull()
+                                        if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
+                                            explicitResumeCandidates = explicitResumeCandidates
+                                                .filterNot { item -> item.operationId == candidate.operationId }
+                                        }
                                     }
                                 }
                             }
@@ -334,6 +333,7 @@ fun DownloadProgressScreen(
                             context.performHapticFeedback()
                             GlobalDownloadManager.cancelDownloadTask(songKey)
                         },
+                        actionsEnabled = !isClearingDownloadTasks,
                         modifier = Modifier.animateItem(
                             fadeInSpec = tween(durationMillis = 250),
                             fadeOutSpec = tween(durationMillis = 250),
@@ -350,6 +350,7 @@ fun DownloadProgressScreen(
 private fun DownloadTaskItem(
     task: DownloadTask,
     onCancel: () -> Unit,
+    actionsEnabled: Boolean,
     modifier: Modifier = Modifier,
     onResume: () -> Unit = {}
 ) {
@@ -399,7 +400,8 @@ private fun DownloadTaskItem(
                 DownloadTaskActionButton(
                     task = task,
                     onCancel = onCancel,
-                    onResume = onResume
+                    onResume = onResume,
+                    actionsEnabled = actionsEnabled
                 )
             }
 
@@ -607,20 +609,22 @@ private fun DownloadTaskStatusIcon(status: DownloadStatus) {
 private fun DownloadTaskActionButton(
     task: DownloadTask,
     onCancel: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    actionsEnabled: Boolean
 ) {
     when (task.status) {
         DownloadStatus.QUEUED,
         DownloadStatus.WAITING_NETWORK,
         DownloadStatus.DOWNLOADING -> {
             val cancellable = isDownloadTaskCancellable(task)
-            IconButton(onClick = onCancel, enabled = cancellable) {
+            val actionEnabled = cancellable && actionsEnabled
+            IconButton(onClick = onCancel, enabled = actionEnabled) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = stringResource(
-                        if (cancellable) R.string.download_cancel_download else R.string.download_finalizing
+                        if (actionEnabled) R.string.download_cancel_download else R.string.download_finalizing
                     ),
-                    tint = if (cancellable) {
+                    tint = if (actionEnabled) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -631,7 +635,7 @@ private fun DownloadTaskActionButton(
 
         DownloadStatus.CANCELLED,
         DownloadStatus.FAILED -> {
-            IconButton(onClick = onResume) {
+            IconButton(onClick = onResume, enabled = actionsEnabled) {
                 Icon(
                     Icons.Default.Refresh,
                     contentDescription = stringResource(R.string.download_to_local),

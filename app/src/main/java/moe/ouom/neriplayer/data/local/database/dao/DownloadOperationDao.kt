@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
+import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 
 @Dao
 internal interface DownloadOperationDao {
@@ -76,6 +77,36 @@ internal interface DownloadOperationDao {
     ): List<DownloadOperationEntity>
 
     @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states) " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit OFFSET :offset"
+    )
+    suspend fun findByStatesInLibraryPage(
+        libraryId: String,
+        states: List<String>,
+        limit: Int,
+        offset: Int
+    ): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT * FROM download_operation WHERE state IN (:states) " +
+            "AND (" +
+            "(state IN ('PENDING_QUEUE', 'QUEUED', 'WAITING_STORAGE_MUTATION', " +
+            "'RUNNING', 'RETRYABLE') AND stop_requested_by_user = 0) " +
+            "OR state = 'STOPPED' " +
+            "OR (state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0)" +
+            ") " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit"
+    )
+    suspend fun findCancellationCandidatesPage(
+        states: List<String>,
+        limit: Int
+    ): List<DownloadOperationEntity>
+
+    @Query(
         "SELECT operation_id FROM download_operation " +
             "WHERE state = :state AND stable_key IN (:stableKeys)"
     )
@@ -100,6 +131,16 @@ internal interface DownloadOperationDao {
 
     @Query("SELECT * FROM download_operation ORDER BY queue_order ASC, updated_at_ms ASC")
     suspend fun findAll(): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit OFFSET :offset"
+    )
+    suspend fun findAllOperationIdentitiesPage(
+        limit: Int,
+        offset: Int
+    ): List<DownloadOperationIdentityRow>
 
     @Query(
         "UPDATE download_operation SET state = :state, updated_at_ms = :updatedAtMs, " +

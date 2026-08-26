@@ -119,6 +119,43 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
+    fun `task presentation only clears after the fence is persisted`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token)
+        assertTrue(visibility.isClearing.value)
+        assertFalse(visibility.isTaskPresentationCleared.value)
+
+        visibility.markFencePersisted(token)
+        assertTrue(visibility.isTaskPresentationCleared.value)
+
+        gate.runClear(token) {}
+        visibility.finish(token)
+        assertFalse(visibility.isClearing.value)
+        assertFalse(visibility.isTaskPresentationCleared.value)
+    }
+
+    @Test
+    fun `follower clear keeps a persisted task presentation hidden`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val owner = gate.beginClear()
+        visibility.begin(owner)
+        visibility.markFencePersisted(owner)
+
+        val follower = gate.beginClear()
+        visibility.begin(follower)
+
+        assertTrue(visibility.isTaskPresentationCleared.value)
+
+        gate.runClear(owner) {}
+        visibility.finish(owner)
+        assertFalse(visibility.isClearing.value)
+    }
+
+    @Test
     fun `clear rejects stale task creation and admits a request created afterward`() = runTest {
         val taskScope = CoroutineScope(SupervisorJob())
         try {

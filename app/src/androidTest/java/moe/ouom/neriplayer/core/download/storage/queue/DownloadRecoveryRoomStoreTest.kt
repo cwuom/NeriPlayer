@@ -12,6 +12,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.CANCELLED_DOWNLOAD_KEYS_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
@@ -972,6 +974,73 @@ class DownloadRecoveryRoomStoreTest {
                     context = context,
                     database = database
                 ).operationIds.isEmpty()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun clearAllCancellationDrainsPagesWithoutReselectingRequestedRows() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val operationIds = List(130) { index ->
+                val song = song(76_000L + index, "clear-page-$index")
+                val operationId = "clear-page-$index"
+                DownloadExecutionRoomStore.upsert(
+                    context = context,
+                    request = DownloadExecutionRequest(
+                        operationId = operationId,
+                        song = song,
+                        userInitiated = true
+                    ),
+                    state = "QUEUED",
+                    database = database
+                )
+                operationId
+            }
+            val alreadyRequestedOperationId = "clear-page-already-requested"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = alreadyRequestedOperationId,
+                    song = song(76_500L, "clear-page-already-requested"),
+                    userInitiated = true
+                ),
+                state = "QUEUED",
+                database = database
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.requestCancel(
+                    context = context,
+                    operationId = alreadyRequestedOperationId,
+                    database = database
+                )
+            )
+
+            val snapshot = withContext(Dispatchers.Default.limitedParallelism(1)) {
+                withTimeout(15_000L) {
+                    DownloadExecutionRoomStore.requestCancelAll(
+                        context = context,
+                        database = database
+                    )
+                }
+            }
+
+            assertEquals(operationIds.toSet(), snapshot.operationIds.toSet())
+            operationIds.forEach { operationId ->
+                assertEquals(
+                    "CANCEL_REQUESTED",
+                    database.downloadOperationDao().find(operationId)?.state
+                )
+            }
+            assertEquals(
+                "CANCEL_REQUESTED",
+                database.downloadOperationDao().find(alreadyRequestedOperationId)?.state
             )
         } finally {
             database.close()

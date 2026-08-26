@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 
@@ -25,7 +26,18 @@ class WifiBoundDownloadWakeWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val operationId = inputData.getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
-            ?: return@withContext Result.failure()
+        if (operationId == null) {
+            if (!shouldHandoffWifiBoundDownloadWake(applicationContext.currentTrafficNetworkType())) {
+                return@withContext Result.retry()
+            }
+            return@withContext if (
+                GlobalDownloadManager.recoverPendingDownloadsFromWifiWake(applicationContext)
+            ) {
+                Result.success()
+            } else {
+                Result.retry()
+            }
+        }
         val request = DownloadExecutionRoomStore.read(
             context = applicationContext,
             operationId = operationId
@@ -57,8 +69,21 @@ class WifiBoundDownloadWakeWorker(
     companion object {
         internal const val OPERATION_ID_KEY = "operation_id"
         private const val WORK_NAME_PREFIX = "download_wifi_wake_"
+        private const val GLOBAL_WORK_NAME = "download_wifi_wake_all"
         private const val WORK_TAG_PREFIX = "download_wifi_wake_operation_"
         private const val ALL_WIFI_WAKE_WORK_TAG = "download_wifi_wake_all"
+
+        fun scheduleAll(context: Context): Boolean {
+            return runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .enqueueUniqueWork(
+                        GLOBAL_WORK_NAME,
+                        wifiBoundDownloadWakeExistingWorkPolicy,
+                        buildGlobalRequest()
+                    )
+                true
+            }.getOrDefault(false)
+        }
 
         fun schedule(
             context: Context,
@@ -138,6 +163,13 @@ class WifiBoundDownloadWakeWorker(
                 .setInputData(workDataOf(OPERATION_ID_KEY to operationId))
                 .setConstraints(wifiClassNetworkConstraints())
                 .addTag(WORK_TAG_PREFIX + operationId)
+                .addTag(ALL_WIFI_WAKE_WORK_TAG)
+                .build()
+        }
+
+        internal fun buildGlobalRequest(): OneTimeWorkRequest {
+            return OneTimeWorkRequestBuilder<WifiBoundDownloadWakeWorker>()
+                .setConstraints(wifiClassNetworkConstraints())
                 .addTag(ALL_WIFI_WAKE_WORK_TAG)
                 .build()
         }

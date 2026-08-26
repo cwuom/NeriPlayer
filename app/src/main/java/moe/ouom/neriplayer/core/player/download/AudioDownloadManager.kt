@@ -2427,6 +2427,7 @@ object AudioDownloadManager {
         storedAudio: ManagedDownloadStorage.StoredEntry
     ): DownloadedSidecarReferences = withContext(Dispatchers.IO) {
         val songKey = song.stableKey()
+        val expectedCover = buildCoverDownloadCandidateUrls(song).isNotEmpty()
         clearPartialSidecarReferences(songKey)
         val downloadedReferences = runCatching {
             downloadSidecars(
@@ -2448,7 +2449,7 @@ object AudioDownloadManager {
                     error
                 )
             }
-            DownloadedSidecarReferences()
+            DownloadedSidecarReferences(expectedCover = expectedCover)
         }
         val createdReferences = consumePartialSidecarReferences(songKey)
             ?.retainCreatedOnly()
@@ -2546,6 +2547,7 @@ object AudioDownloadManager {
             requireActiveAttempt = requireActiveAttempt
         )
         val useSequentialSidecarWrites = ManagedDownloadStorage.usesDocumentTree(context)
+        val expectedCover = buildCoverDownloadCandidateUrls(song).isNotEmpty()
         val allowIndexedSidecarLookup = shouldUseIndexedSidecarLookup(
             usesDocumentTree = useSequentialSidecarWrites,
             allowSlowLookup = true
@@ -2574,6 +2576,7 @@ object AudioDownloadManager {
             DownloadedSidecarReferences(
                 coverReference = cachedCover?.reference,
                 createdCover = cachedCover?.created == true,
+                expectedCover = expectedCover,
                 lyricReference = lyricReferences.lyricReference,
                 translatedLyricReference = lyricReferences.translatedLyricReference,
                 romanizedLyricReference = lyricReferences.romanizedLyricReference,
@@ -2612,6 +2615,7 @@ object AudioDownloadManager {
                 DownloadedSidecarReferences(
                     coverReference = cachedCover?.reference,
                     createdCover = cachedCover?.created == true,
+                    expectedCover = expectedCover,
                     lyricReference = lyricReferences.lyricReference,
                     translatedLyricReference = lyricReferences.translatedLyricReference,
                     romanizedLyricReference = lyricReferences.romanizedLyricReference,

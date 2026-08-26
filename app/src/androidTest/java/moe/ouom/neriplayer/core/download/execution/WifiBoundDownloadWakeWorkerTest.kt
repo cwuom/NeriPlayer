@@ -20,4 +20,19 @@ class WifiBoundDownloadWakeWorkerTest {
         assertTrue(networkRequest.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
         assertTrue(networkRequest.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
     }
+
+    @Test
+    fun globalWifiWakeUsesTheSameStrictNetworkConstraintWithoutAnOperationId() {
+        val request = WifiBoundDownloadWakeWorker.buildGlobalRequest()
+        val networkRequest = requireNotNull(request.workSpec.constraints.requiredNetworkRequest)
+
+        assertEquals(
+            null,
+            request.workSpec.input.getString(WifiBoundDownloadWakeWorker.OPERATION_ID_KEY)
+        )
+        assertEquals(NetworkType.NOT_REQUIRED, request.workSpec.constraints.requiredNetworkType)
+        assertTrue(networkRequest.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+        assertTrue(networkRequest.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
+        assertTrue(networkRequest.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+    }
 }
