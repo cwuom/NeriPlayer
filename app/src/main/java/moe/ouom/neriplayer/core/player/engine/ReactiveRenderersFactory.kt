@@ -52,6 +52,8 @@ import moe.ouom.neriplayer.core.player.effects.AudioReactive
  */
 @UnstableApi
 class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    private var forceFfmpegPcm16Output = true
+
     init {
         val ffmpegCanDecodeFlac = runCatching {
             FfmpegLibrary.isAvailable() && FfmpegLibrary.supportsFormat(MimeTypes.AUDIO_FLAC)
@@ -108,7 +110,10 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         out[ffmpegRendererIndex] = FfmpegAudioRenderer(
             eventHandler,
             eventListener,
-            FfmpegPcm16AudioSink(audioSink)
+            FfmpegPcm16AudioSink(
+                delegate = audioSink,
+                forcePcm16 = forceFfmpegPcm16Output
+            )
         )
     }
 
@@ -117,6 +122,7 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
         enableFloatOutput: Boolean,
         enableAudioTrackPlaybackParams: Boolean
     ): AudioSink {
+        forceFfmpegPcm16Output = !enableFloatOutput
         val volumeNormalization = VolumeNormalizationAudioProcessor()
         val balance = StereoBalanceAudioProcessor()
         val tee = TeeAudioProcessor(AudioReactive.teeSink)
@@ -133,14 +139,15 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
 
 @UnstableApi
 internal class FfmpegPcm16AudioSink(
-    delegate: AudioSink
+    delegate: AudioSink,
+    private val forcePcm16: Boolean
 ) : ForwardingAudioSink(delegate) {
     override fun supportsFormat(format: Format): Boolean {
-        return !format.isFloatPcm() && super.supportsFormat(format)
+        return (!forcePcm16 || !format.isFloatPcm()) && super.supportsFormat(format)
     }
 
     override fun getFormatSupport(format: Format): Int {
-        return if (format.isFloatPcm()) {
+        return if (forcePcm16 && format.isFloatPcm()) {
             SINK_FORMAT_UNSUPPORTED
         } else {
             super.getFormatSupport(format)

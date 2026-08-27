@@ -449,6 +449,7 @@ internal class ConditionalChunkedHttpDataSource(
             }
 
             bytesReadFromRequest += read
+            retriedZeroProgressChunk = false
             if (bytesRemainingInRequest != C.LENGTH_UNSET.toLong()) {
                 bytesRemainingInRequest = (bytesRemainingInRequest - read).coerceAtLeast(0L)
             }

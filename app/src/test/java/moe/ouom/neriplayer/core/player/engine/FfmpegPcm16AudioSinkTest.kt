@@ -23,7 +23,7 @@ class FfmpegPcm16AudioSinkTest {
         `when`(delegate.supportsFormat(format)).thenReturn(true)
         `when`(delegate.getFormatSupport(format))
             .thenReturn(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
-        val sink = FfmpegPcm16AudioSink(delegate)
+        val sink = FfmpegPcm16AudioSink(delegate, forcePcm16 = true)
 
         assertFalse(sink.supportsFormat(format))
         assertEquals(AudioSink.SINK_FORMAT_UNSUPPORTED, sink.getFormatSupport(format))
@@ -38,7 +38,7 @@ class FfmpegPcm16AudioSinkTest {
         `when`(delegate.supportsFormat(format)).thenReturn(true)
         `when`(delegate.getFormatSupport(format))
             .thenReturn(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
-        val sink = FfmpegPcm16AudioSink(delegate)
+        val sink = FfmpegPcm16AudioSink(delegate, forcePcm16 = true)
 
         assertTrue(sink.supportsFormat(format))
         assertEquals(
@@ -52,11 +52,29 @@ class FfmpegPcm16AudioSinkTest {
     @Test
     fun `java default methods are forwarded to the wrapped sink`() {
         val delegate = mock(AudioSink::class.java)
-        val sink = FfmpegPcm16AudioSink(delegate)
+        val sink = FfmpegPcm16AudioSink(delegate, forcePcm16 = true)
 
         sink.setOutputStreamOffsetUs(123L)
 
         verify(delegate).setOutputStreamOffsetUs(123L)
+    }
+
+    @Test
+    fun `float pcm support is delegated when high resolution output is enabled`() {
+        val delegate = mock(AudioSink::class.java)
+        val format = rawPcmFormat(C.ENCODING_PCM_FLOAT)
+        `when`(delegate.supportsFormat(format)).thenReturn(true)
+        `when`(delegate.getFormatSupport(format))
+            .thenReturn(AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY)
+        val sink = FfmpegPcm16AudioSink(delegate, forcePcm16 = false)
+
+        assertTrue(sink.supportsFormat(format))
+        assertEquals(
+            AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY,
+            sink.getFormatSupport(format)
+        )
+        verify(delegate).supportsFormat(format)
+        verify(delegate).getFormatSupport(format)
     }
 
     private fun rawPcmFormat(encoding: Int): Format = Format.Builder()

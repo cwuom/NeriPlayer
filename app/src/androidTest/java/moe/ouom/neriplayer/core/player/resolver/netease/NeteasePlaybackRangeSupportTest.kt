@@ -154,6 +154,30 @@ class NeteasePlaybackRangeSupportTest {
         assertEquals(listOf(0L, 0L), fixture.requestPositions)
     }
 
+    @Test
+    fun zeroByteRangeRetryIsResetAfterThePreviousRangeMakesProgress() {
+        val fixture = RangeFixture(
+            content = sampleContent(size = 2 * 1024 * 1024),
+            readableBytesForOpen = { openIndex, requestedLength ->
+                if (openIndex == 0 || openIndex == 2) 0 else requestedLength
+            }
+        )
+        val dataSource = createDataSource(fixture)
+
+        val read = try {
+            dataSource.open(neteaseFlacDataSpec())
+            readAll(dataSource)
+        } finally {
+            dataSource.close()
+        }
+
+        assertArrayEquals(fixture.content, read)
+        assertEquals(
+            listOf(0L, 0L, 1024L * 1024L, 1024L * 1024L),
+            fixture.requestPositions
+        )
+    }
+
     private fun createDataSource(fixture: RangeFixture): HttpDataSource {
         return ConditionalChunkedHttpDataSource(
             upstreamFactory = FixtureHttpDataSourceFactory(fixture),
@@ -167,8 +191,8 @@ class NeteasePlaybackRangeSupportTest {
             .build()
     }
 
-    private fun sampleContent(): ByteArray {
-        return ByteArray(256 * 1024) { index -> (index % 251).toByte() }
+    private fun sampleContent(size: Int = 256 * 1024): ByteArray {
+        return ByteArray(size) { index -> (index % 251).toByte() }
     }
 
     private fun readAll(dataSource: HttpDataSource): ByteArray {
