@@ -7,7 +7,7 @@ internal const val LYRICON_FEED_INTERVAL_MS = 200L
  * 推给 Lyricon/词幕的显示预推 (媒体时间轴)
  * 锚点用真实媒体进度, 仅显示层加 lead, 避免 dead-reckon 叠推
  */
-internal const val LYRICON_DISPLAY_LEAD_MS = 750L
+internal const val LYRICON_DISPLAY_LEAD_MS = 400L
 
 /**
  * 与高级歌词 resolveInterpolatedPlaybackPosition 同构的媒体锚点
@@ -65,18 +65,34 @@ internal fun mediaLyriconPositionMs(
 }
 
 /**
- * 推给 Lyricon/SuperLyric 的显示位置: 媒体进度 + 固定 lead
- * lead 不进锚点, 避免叠推
+ * 推给 Lyricon/SuperLyric 的显示位置: 先应用歌词偏移, 再加固定 lead
+ * 偏移与应用内歌词一样先在零点截断, lead 不进锚点, 避免叠推
  */
 internal fun displayLyriconPositionMs(
     mediaPositionMs: Long,
     durationMs: Long,
     leadMs: Long = LYRICON_DISPLAY_LEAD_MS,
+    lyricOffsetMs: Long = 0L,
 ): Long {
+    val lyricPositionMs = saturatingAddLyriconPositionMs(
+        mediaPositionMs.coerceAtLeast(0L),
+        lyricOffsetMs,
+    ).coerceAtLeast(0L)
     return clampLyriconPositionMs(
-        positionMs = mediaPositionMs.coerceAtLeast(0L) + leadMs.coerceAtLeast(0L),
+        positionMs = saturatingAddLyriconPositionMs(
+            lyricPositionMs,
+            leadMs.coerceAtLeast(0L),
+        ),
         durationMs = durationMs,
     )
+}
+
+private fun saturatingAddLyriconPositionMs(value: Long, delta: Long): Long {
+    return when {
+        delta > 0L && value > Long.MAX_VALUE - delta -> Long.MAX_VALUE
+        delta < 0L && value < Long.MIN_VALUE - delta -> Long.MIN_VALUE
+        else -> value + delta
+    }
 }
 
 /**

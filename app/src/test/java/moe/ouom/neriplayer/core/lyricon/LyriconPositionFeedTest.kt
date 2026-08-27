@@ -165,13 +165,13 @@ class LyriconPositionFeedTest {
 
     @Test
     fun `display lead compensates status bar lag without stacking into anchor`() {
-        assertEquals(750L, LYRICON_DISPLAY_LEAD_MS)
+        assertEquals(400L, LYRICON_DISPLAY_LEAD_MS)
         assertEquals(
-            1_750L,
+            1_400L,
             displayLyriconPositionMs(mediaPositionMs = 1_000L, durationMs = 10_000L)
         )
         assertEquals(
-            10_000L,
+            9_900L,
             displayLyriconPositionMs(mediaPositionMs = 9_500L, durationMs = 10_000L)
         )
         // lead 不进媒体锚点: 同一 media 多次 display 结果稳定
@@ -179,6 +179,58 @@ class LyriconPositionFeedTest {
         assertEquals(
             displayLyriconPositionMs(mediaPositionMs = media, durationMs = 10_000L),
             displayLyriconPositionMs(mediaPositionMs = media, durationMs = 10_000L),
+        )
+    }
+
+    @Test
+    fun `display position applies lyric offset before display lead`() {
+        assertEquals(
+            2_400L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 1_000L,
+                durationMs = 10_000L,
+                lyricOffsetMs = 1_000L,
+            )
+        )
+        assertEquals(
+            900L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 1_000L,
+                durationMs = 10_000L,
+                lyricOffsetMs = -500L,
+            )
+        )
+    }
+
+    @Test
+    fun `negative lyric offset clamps before lead and output remains bounded`() {
+        assertEquals(
+            400L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 100L,
+                durationMs = 10_000L,
+                lyricOffsetMs = -500L,
+            )
+        )
+        assertEquals(
+            10_000L,
+            displayLyriconPositionMs(
+                mediaPositionMs = 9_500L,
+                durationMs = 10_000L,
+                lyricOffsetMs = 1_000L,
+            )
+        )
+    }
+
+    @Test
+    fun `display position saturates when duration is unknown`() {
+        assertEquals(
+            Long.MAX_VALUE,
+            displayLyriconPositionMs(
+                mediaPositionMs = Long.MAX_VALUE,
+                durationMs = 0L,
+                lyricOffsetMs = 1L,
+            )
         )
     }
 

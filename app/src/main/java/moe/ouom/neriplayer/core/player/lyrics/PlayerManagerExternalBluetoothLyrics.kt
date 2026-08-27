@@ -14,7 +14,7 @@ import moe.ouom.neriplayer.core.player.metadata.resolveExternalBluetoothLyricPay
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
-import moe.ouom.neriplayer.data.settings.resolveLyricDefaultOffsetMs
+import moe.ouom.neriplayer.data.settings.resolveEffectiveLyricOffsetMs
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.matchTranslationsToLineIndices
 
@@ -145,11 +145,12 @@ internal fun PlayerManager.updateExternalBluetoothLyricLine(positionMs: Long) {
         return
     }
 
-    val lyricOffsetMs = resolveLyricDefaultOffsetMs(
+    val lyricOffsetMs = resolveEffectiveLyricOffsetMs(
         lyricSource = song.matchedLyricSource,
         cloudMusicDefaultOffsetMs = cloudMusicLyricDefaultOffsetMs,
-        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs
-    ) + song.userLyricOffsetMs
+        qqMusicDefaultOffsetMs = qqMusicLyricDefaultOffsetMs,
+        userLyricOffsetMs = song.userLyricOffsetMs,
+    )
 
     val line = findExternalBluetoothLyricLine(
         lyrics = externalBluetoothLyrics,

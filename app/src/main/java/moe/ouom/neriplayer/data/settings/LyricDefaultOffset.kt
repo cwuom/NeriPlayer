@@ -27,6 +27,38 @@ internal fun resolveLyricDefaultOffsetMs(
     }
 }
 
+internal fun resolveEffectiveLyricOffsetMs(
+    lyricSource: MusicPlatform?,
+    cloudMusicDefaultOffsetMs: Long,
+    qqMusicDefaultOffsetMs: Long,
+    userLyricOffsetMs: Long
+): Long {
+    return saturatingAddLyricOffsetMs(
+        value = resolveLyricDefaultOffsetMs(
+            lyricSource = lyricSource,
+            cloudMusicDefaultOffsetMs = cloudMusicDefaultOffsetMs,
+            qqMusicDefaultOffsetMs = qqMusicDefaultOffsetMs
+        ),
+        delta = userLyricOffsetMs
+    )
+}
+
+internal fun saturatingAddLyricOffsetMs(value: Long, delta: Long): Long {
+    return when {
+        delta > 0L && value > Long.MAX_VALUE - delta -> Long.MAX_VALUE
+        delta < 0L && value < Long.MIN_VALUE - delta -> Long.MIN_VALUE
+        else -> value + delta
+    }
+}
+
+private fun saturatingSubtractLyricOffsetMs(value: Long, delta: Long): Long {
+    return when {
+        delta > 0L && value < Long.MIN_VALUE + delta -> Long.MIN_VALUE
+        delta < 0L && value > Long.MAX_VALUE + delta -> Long.MAX_VALUE
+        else -> value - delta
+    }
+}
+
 internal fun shouldRebaseLyricOffsetForSource(
     lyricSource: MusicPlatform?,
     targetSource: MusicPlatform,
@@ -46,5 +78,11 @@ internal fun rebaseLyricUserOffsetMs(
     previousDefaultOffsetMs: Long,
     newDefaultOffsetMs: Long
 ): Long {
-    return userOffsetMs + previousDefaultOffsetMs - newDefaultOffsetMs
+    return saturatingSubtractLyricOffsetMs(
+        value = saturatingAddLyricOffsetMs(
+            value = userOffsetMs,
+            delta = previousDefaultOffsetMs
+        ),
+        delta = newDefaultOffsetMs
+    )
 }

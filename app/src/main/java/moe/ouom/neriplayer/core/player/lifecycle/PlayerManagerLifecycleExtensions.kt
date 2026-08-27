@@ -931,8 +931,7 @@ internal fun PlayerManager.initializeImpl(
                         LyriconManager.setPosition(_playbackPositionMs.value)
                     }
                 } else {
-                    lyriconUpdateJob?.cancel()
-                    lyriconUpdateJob = null
+                    cancelLyriconUpdate()
                 }
             }
         }
@@ -1020,12 +1019,14 @@ internal fun PlayerManager.initializeImpl(
             settingsRepo.cloudMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 cloudMusicLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
             }
         }
         ioScope.launch {
             settingsRepo.qqMusicLyricDefaultOffsetMsFlow.collect { offsetMs ->
                 qqMusicLyricDefaultOffsetMs = offsetMs
                 updateExternalBluetoothLyricLine(_playbackPositionMs.value)
+                updateLyriconLyricOffset()
             }
         }
         ioScope.launch {
@@ -3809,8 +3810,7 @@ internal fun PlayerManager.releaseImpl() {
         currentGenericUrlPrefetchJob = null
         currentGenericUrlPrefetchKey = null
         genericUrlPrefetchCache.clear()
-        lyriconUpdateJob?.cancel()
-        lyriconUpdateJob = null
+        cancelLyriconUpdate()
         externalBluetoothLyricsLoadJob?.cancel()
         externalBluetoothLyricsLoadJob = null
         externalBluetoothTranslationLoadJob?.cancel()

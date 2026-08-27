@@ -58,6 +58,7 @@ import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.settings.rebaseLyricUserOffsetMs
+import moe.ouom.neriplayer.data.settings.saturatingAddLyricOffsetMs
 import moe.ouom.neriplayer.data.settings.shouldRebaseLyricOffsetForSource
 import moe.ouom.neriplayer.ui.component.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
@@ -2056,7 +2057,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
     }
 
     val currentSong = _currentSongFlow.value
-    val rebasedCurrentSong = currentSong
+    val currentSongForRebase = currentSong
         ?.takeIf {
             shouldRebaseLyricOffsetForSource(
                 lyricSource = it.matchedLyricSource,
@@ -2064,6 +2065,7 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
                 userOffsetMs = it.userLyricOffsetMs
             )
         }
+    val rebasedCurrentSong = currentSongForRebase
         ?.let { song ->
             song.copy(
                 userLyricOffsetMs = rebaseLyricUserOffsetMs(
@@ -2073,8 +2075,18 @@ internal suspend fun PlayerManager.rebaseUserLyricOffsetsForSourceImpl(
                 )
             )
         }
-    if (rebasedCurrentSong != null) {
-        setCurrentSongForPlayback(rebasedCurrentSong)
+    if (currentSongForRebase != null && rebasedCurrentSong != null) {
+        val hasPendingLyriconUpdate = hasPendingLyriconUpdate()
+        setCurrentSongForPlayback(rebasedCurrentSong, syncLyricon = false)
+        if (hasPendingLyriconUpdate) {
+            syncLyriconSong(
+                song = rebasedCurrentSong,
+                lyricOffsetOverrideMs = saturatingAddLyricOffsetMs(
+                    value = previousDefaultOffsetMs,
+                    delta = currentSongForRebase.userLyricOffsetMs
+                )
+            )
+        }
     }
 
     val localUpdateSucceeded = runLocalPlaylistMutationSafely("rebaseLyricOffsetsForSource") {
