@@ -2790,11 +2790,17 @@ object PlayerManager {
         songToUpdate: SongItem,
         newLyrics: String?,
         newTranslatedLyrics: String?,
-        writeLocalMetadata: Boolean = false
-    ) = updateSongLyricsAndTranslationImpl(
+        newRomanizedLyrics: String? = null,
+        writeLocalMetadata: Boolean = false,
+        persistLocalSidecars: Boolean = true,
+        syncDownloadedMetadata: Boolean = true
+    ): Boolean = updateSongLyricsAndTranslationImpl(
         songToUpdate = songToUpdate,
         newLyrics = newLyrics,
         newTranslatedLyrics = newTranslatedLyrics,
-        writeLocalMetadata = writeLocalMetadata
+        newRomanizedLyrics = newRomanizedLyrics,
+        writeLocalMetadata = writeLocalMetadata,
+        persistLocalSidecars = persistLocalSidecars,
+        syncDownloadedMetadata = syncDownloadedMetadata
     )
 }
