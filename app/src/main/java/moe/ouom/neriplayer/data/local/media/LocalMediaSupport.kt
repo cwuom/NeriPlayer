@@ -2654,56 +2654,13 @@ object LocalMediaSupport {
             return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
         }
 
-        val verified = openTagLibDescriptor(
+        val verified = verifyEditableMetadataReadback(
             context = context,
-            uri = sourceUri,
-            file = resolved.file
-        )?.use { target ->
-            val propertyMap = loadTagLibPropertyMap(target) ?: return@use false
-            val propertiesMatch = hasExpectedEditableMetadata(
-                propertyMap = propertyMap,
-                title = song.displayName(),
-                artist = song.displayArtist(),
-                lyrics = if (metadataSnapshot.writesLyrics) {
-                    song.matchedLyric ?: song.originalLyric
-                } else {
-                    null
-                },
-                translatedLyrics = if (metadataSnapshot.writesLyrics) {
-                    song.matchedTranslatedLyric ?: song.originalTranslatedLyric
-                } else {
-                    null
-                },
-                romanizedLyrics = if (metadataSnapshot.writesLyrics) {
-                    song.matchedRomanizedLyric ?: song.originalRomanizedLyric
-                } else {
-                    null
-                },
-                audioExtension = resolved.fileExtension,
-                expectedStandardLyrics = metadataSnapshot.expectedStandardLyrics,
-                verifyStandardLyrics = metadataSnapshot.writesLyrics,
-                verifyMissingLyrics = metadataSnapshot.clearsMissingLyrics,
-                sourceStableKey = metadataSnapshot.sourceStableKey
-            )
-            val coverMatch = when (val picturePlan = metadataSnapshot.picturePlan) {
-                EditableCoverWritePlan.Unchanged -> true
-                EditableCoverWritePlan.Unreadable -> false
-                is EditableCoverWritePlan.Update -> {
-                    val pictures = runCatching {
-                        TagLib.getPictures(target.dup().detachFd())
-                    }.getOrElse { error ->
-                        NPLogger.w(TAG, "verify local cover failed for $sourceUri: ${error.message}")
-                        return@use false
-                    }
-                    hasExpectedEditableCover(
-                        actualPictures = pictures,
-                        expectedPictures = picturePlan.pictures,
-                        audioExtension = resolved.fileExtension
-                    )
-                }
-            }
-            propertiesMatch && coverMatch
-        } == true
+            song = song,
+            sourceUri = sourceUri,
+            resolved = resolved,
+            metadataSnapshot = metadataSnapshot
+        )
         if (!verified) {
             rollbackEmbeddedMetadata()
             return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
@@ -2716,6 +2673,85 @@ object LocalMediaSupport {
             outcome = LocalMediaMetadataWriteOutcome.SUCCESS,
             rollback = ::rollbackEmbeddedMetadata
         )
+    }
+
+    private fun verifyEditableMetadataReadback(
+        context: Context,
+        song: SongItem,
+        sourceUri: Uri,
+        resolved: ResolvedInspectableLocalMedia,
+        metadataSnapshot: EditableMetadataSnapshot
+    ): Boolean {
+        return retryEditableMetadataReadback(sourceUri.scheme) {
+            openTagLibDescriptor(
+                context = context,
+                uri = sourceUri,
+                file = resolved.file
+            )?.use { target ->
+                val propertyMap = loadTagLibPropertyMap(target) ?: return@use false
+                val propertiesMatch = hasExpectedEditableMetadata(
+                    propertyMap = propertyMap,
+                    title = song.displayName(),
+                    artist = song.displayArtist(),
+                    lyrics = if (metadataSnapshot.writesLyrics) {
+                        song.matchedLyric ?: song.originalLyric
+                    } else {
+                        null
+                    },
+                    translatedLyrics = if (metadataSnapshot.writesLyrics) {
+                        song.matchedTranslatedLyric ?: song.originalTranslatedLyric
+                    } else {
+                        null
+                    },
+                    romanizedLyrics = if (metadataSnapshot.writesLyrics) {
+                        song.matchedRomanizedLyric ?: song.originalRomanizedLyric
+                    } else {
+                        null
+                    },
+                    audioExtension = resolved.fileExtension,
+                    expectedStandardLyrics = metadataSnapshot.expectedStandardLyrics,
+                    verifyStandardLyrics = metadataSnapshot.writesLyrics,
+                    verifyMissingLyrics = metadataSnapshot.clearsMissingLyrics,
+                    sourceStableKey = metadataSnapshot.sourceStableKey
+                )
+                val coverMatch = when (val picturePlan = metadataSnapshot.picturePlan) {
+                    EditableCoverWritePlan.Unchanged -> true
+                    EditableCoverWritePlan.Unreadable -> false
+                    is EditableCoverWritePlan.Update -> {
+                        val pictures = runCatching {
+                            TagLib.getPictures(target.dup().detachFd())
+                        }.getOrElse { error ->
+                            NPLogger.w(TAG, "verify local cover failed for $sourceUri: ${error.message}")
+                            return@use false
+                        }
+                        hasExpectedEditableCover(
+                            actualPictures = pictures,
+                            expectedPictures = picturePlan.pictures,
+                            audioExtension = resolved.fileExtension
+                        )
+                    }
+                }
+                propertiesMatch && coverMatch
+            } == true
+        }
+    }
+
+    internal fun retryEditableMetadataReadback(
+        sourceScheme: String?,
+        readBack: () -> Boolean
+    ): Boolean {
+        val attemptCount = if (sourceScheme.equals("content", ignoreCase = true)) {
+            SAF_WRITE_READBACK_RETRY_COUNT
+        } else {
+            1
+        }
+        repeat(attemptCount) { attempt ->
+            if (readBack()) return true
+            if (attempt + 1 < attemptCount) {
+                SystemClock.sleep(SAF_WRITE_READBACK_DELAYS_MS[attempt + 1])
+            }
+        }
+        return false
     }
 
     private fun writeEditableMetadataThroughStagedContentCopy(
@@ -5326,14 +5362,24 @@ object LocalMediaSupport {
         if (!uri.isSupportedLocalMediaUri()) {
             return null
         }
-        return runCatching {
-            file?.let {
-                ParcelFileDescriptor.open(it, ParcelFileDescriptor.MODE_READ_ONLY)
-            } ?: context.contentResolver.openFileDescriptor(uri, "r")
-        }.getOrElse {
-            NPLogger.w(TAG, "openTagLibDescriptor failed for $uri: ${it.message}")
-            null
+        val isContentUri = uri.scheme.equals("content", ignoreCase = true)
+        if (isContentUri) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "r")
+            }.getOrNull()?.let { return it }
         }
+        file?.let { localFile ->
+            runCatching {
+                ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            }.getOrNull()?.let { return it }
+        }
+        if (!isContentUri) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "r")
+            }.getOrNull()?.let { return it }
+        }
+        NPLogger.w(TAG, "openTagLibDescriptor failed for $uri")
+        return null
     }
 
     private fun openWritableTagLibDescriptor(
@@ -5341,6 +5387,12 @@ object LocalMediaSupport {
         uri: Uri,
         file: File?
     ): ParcelFileDescriptor? {
+        val isContentUri = uri.scheme.equals("content", ignoreCase = true)
+        if (isContentUri) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "rw")
+            }.getOrNull()?.let { return it }
+        }
         val fileDescriptor = file?.let { localFile ->
             runCatching {
                 ParcelFileDescriptor.open(localFile, ParcelFileDescriptor.MODE_READ_WRITE)
@@ -5350,18 +5402,7 @@ object LocalMediaSupport {
             return fileDescriptor
         }
 
-        val contentDescriptor = if (uri.scheme.equals("content", ignoreCase = true)) {
-            runCatching {
-                context.contentResolver.openFileDescriptor(uri, "rw")
-            }.getOrNull()
-        } else {
-            null
-        }
-        if (contentDescriptor != null) {
-            return contentDescriptor
-        }
-
-        val fallbackDescriptor = if (!uri.scheme.equals("content", ignoreCase = true)) {
+        val fallbackDescriptor = if (!isContentUri) {
             runCatching {
                 context.contentResolver.openFileDescriptor(uri, "rw")
             }.getOrNull()

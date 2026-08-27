@@ -24,6 +24,34 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `finalized temporary cleanup keeps audio and both metadata targets together`() {
+        assertEquals(
+            listOf(
+                "song.mp3",
+                "song.mp3.npmeta.json",
+                "song.mp3.npmeta.pending.json"
+            ),
+            finalizedTemporaryWriteTargetNames(" song.mp3 ")
+        )
+        assertTrue(finalizedTemporaryWriteTargetNames(" ").isEmpty())
+    }
+
+    @Test
+    fun `terminal temporary cleanup batch coalesces valid targets without duplicates`() {
+        val batch = TerminalTemporaryWriteCleanupBatch()
+
+        batch.addAll(listOf(" song.mp3 ", "", "song.mp3", "song.mp3.npmeta.json"))
+        assertEquals(
+            listOf("song.mp3", "song.mp3.npmeta.json"),
+            batch.takeAll()
+        )
+        assertTrue(batch.isEmpty())
+
+        batch.addAll(listOf("song.mp3.npmeta.pending.json"))
+        assertEquals(listOf("song.mp3.npmeta.pending.json"), batch.takeAll())
+    }
+
+    @Test
     fun `wifi restoration invalidates stale wifi-bound pause work`() {
         assertTrue(
             isWifiBoundNetworkPolicyObservationCurrent(

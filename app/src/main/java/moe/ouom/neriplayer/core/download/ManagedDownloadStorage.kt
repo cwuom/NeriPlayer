@@ -26,6 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEntry
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadPendingArtifactCleanupPlanner
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
@@ -68,7 +69,6 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgr
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
-import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteCleaner
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
@@ -80,6 +80,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteCleanupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
@@ -87,6 +88,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.backend.cleanupTerminalTemporaryWrites
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
@@ -366,6 +368,11 @@ internal object ManagedDownloadStorage {
         val song: SongItem,
         val workingFile: File,
         val operationId: String? = null
+    )
+
+    internal data class CancelledPendingDownloadOperation(
+        val stableKey: String,
+        val operationId: String
     )
 
     internal data class WorkingResumeFingerprint(
@@ -2245,6 +2252,245 @@ internal object ManagedDownloadStorage {
             ?: return@withContext false
         val root = resolveRootBlocking(context)
         deletePendingAudioMetadataBlocking(context, root, normalizedName)
+    }
+
+    /**
+     * removes only a pre-commit pending pair that is proven to belong to one cancelled operation
+     */
+    internal suspend fun cleanupCancelledPendingDownloadArtifacts(
+        context: Context,
+        stableKey: String,
+        operationId: String
+    ): StartupRecoveryResult = cleanupCancelledPendingDownloadArtifacts(
+        context = context,
+        operations = listOf(CancelledPendingDownloadOperation(stableKey, operationId))
+    )
+
+    /**
+     * resolves all operation-owned pending pairs from one complete root snapshot so clear-all
+     * cleanup does not enumerate the same SAF directory once per song
+     */
+    internal suspend fun cleanupCancelledPendingDownloadArtifacts(
+        context: Context,
+        operations: Collection<CancelledPendingDownloadOperation>
+    ): StartupRecoveryResult = withContext(Dispatchers.IO) {
+        val normalizedOperations = operations.mapNotNull { operation ->
+            val stableKey = operation.stableKey.trim().takeIf(String::isNotBlank)
+                ?: return@mapNotNull null
+            val operationId = operation.operationId.trim().takeIf(String::isNotBlank)
+                ?: return@mapNotNull null
+            CancelledPendingDownloadOperation(stableKey, operationId)
+        }.distinct()
+        if (normalizedOperations.isEmpty()) {
+            return@withContext StartupRecoveryResult()
+        }
+        try {
+            val root = resolveRootBlocking(context)
+            val refresh = treeDirectories.refreshRootEntries(context, root)
+            if (!refresh.isComplete) {
+                NPLogger.w(
+                    TAG,
+                    "取消清理跳过不完整下载目录枚举: operations=${normalizedOperations.size}"
+                )
+                return@withContext StartupRecoveryResult(
+                    failedCount = normalizedOperations.size
+                )
+            }
+            val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
+            val parsedPendingMetadataEntries = rootEntries
+                .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
+                .mapNotNull { entry ->
+                    val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                        ?: return@mapNotNull null
+                    if (!ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, audioName)) {
+                        return@mapNotNull null
+                    }
+                    parseDownloadedAudioMetadata(context, entry)
+                        ?.let { metadata -> ManagedDownloadParsedMetadataEntry(entry, metadata) }
+                }
+            val referencesToDelete = normalizedOperations.flatMapTo(linkedSetOf<String>()) { operation ->
+                ManagedDownloadPendingArtifactCleanupPlanner.planCancelledOperationReferences(
+                    rootEntries = rootEntries,
+                    parsedMetadataEntries = parsedPendingMetadataEntries,
+                    stableKey = operation.stableKey,
+                    operationId = operation.operationId
+                )
+            }
+            if (referencesToDelete.isEmpty()) {
+                return@withContext StartupRecoveryResult()
+            }
+            val entriesToDelete = rootEntries.filter { entry ->
+                entry.reference in referencesToDelete
+            }
+            val deletedReferences = deleteReferencesInternal(
+                context = context,
+                references = referencesToDelete,
+                allowedRoot = root,
+                trustedReferences = referencesToDelete,
+                invalidateSnapshot = true
+            )
+            val temporaryCleanup = cleanupTerminalTemporaryWriteArtifactsBlocking(
+                context = context,
+                root = root,
+                targetNames = entriesToDelete.map { entry ->
+                    if (entry.isPendingAudioWrite) entry.logicalName else entry.name
+                }
+            )
+            val failedCount =
+                referencesToDelete.size - deletedReferences.size + temporaryCleanup.failedCount
+            NPLogger.d(
+                TAG,
+                "取消下载 pending 半成品清理完成: operations=${normalizedOperations.size}, " +
+                    "cleaned=${deletedReferences.size + temporaryCleanup.cleanedCount}, " +
+                    "failed=$failedCount"
+            )
+            StartupRecoveryResult(
+                cleanedCount = deletedReferences.size + temporaryCleanup.cleanedCount,
+                failedCount = failedCount
+            )
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: SecurityException) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 半成品清理缺少权限，保留等待恢复: " +
+                    "operations=${normalizedOperations.size}, error=${error.message}"
+            )
+            StartupRecoveryResult(failedCount = normalizedOperations.size)
+        } catch (error: ManagedDownloadRootUnavailableException) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 半成品清理缺少目录，保留等待恢复: " +
+                    "operations=${normalizedOperations.size}, error=${error.message}"
+            )
+            StartupRecoveryResult(failedCount = normalizedOperations.size)
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 半成品清理失败，保留等待恢复: " +
+                    "operations=${normalizedOperations.size}, error=${error.message}",
+                error
+            )
+            StartupRecoveryResult(failedCount = normalizedOperations.size)
+        }
+    }
+
+    /**
+     * clears only v2 temporary writes whose target is known to have reached a terminal state
+     */
+    internal suspend fun cleanupTerminalTemporaryWriteArtifacts(
+        context: Context,
+        targetNames: Collection<String>
+    ): StartupRecoveryResult = withContext(Dispatchers.IO) {
+        try {
+            cleanupTerminalTemporaryWriteArtifactsBlocking(
+                context = context,
+                root = resolveRootBlocking(context),
+                targetNames = targetNames
+            )
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: SecurityException) {
+            NPLogger.w(
+                TAG,
+                "终态临时写入清理缺少权限，保留等待恢复: ${error.message}"
+            )
+            StartupRecoveryResult()
+        } catch (error: ManagedDownloadRootUnavailableException) {
+            NPLogger.w(
+                TAG,
+                "终态临时写入清理缺少目录，保留等待恢复: ${error.message}"
+            )
+            StartupRecoveryResult()
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "终态临时写入清理失败，保留等待恢复: ${error.message}",
+                error
+            )
+            StartupRecoveryResult()
+        }
+    }
+
+    private suspend fun cleanupTerminalTemporaryWriteArtifactsBlocking(
+        context: Context,
+        root: RootHandle,
+        targetNames: Collection<String>
+    ): StartupRecoveryResult {
+        val normalizedTargetNames = targetNames
+            .mapNotNull(::normalizeTerminalTemporaryWriteTargetName)
+            .distinct()
+        if (normalizedTargetNames.isEmpty()) {
+            return StartupRecoveryResult()
+        }
+        val backend: StorageBackend
+        val targetForName: (String) -> StorageTarget
+        when (root) {
+            is RootHandle.FileRoot -> {
+                backend = FileStorageBackend(root.dir)
+                targetForName = StorageTarget::FileTarget
+            }
+
+            is RootHandle.TreeRoot -> {
+                backend = SafStorageBackend(context)
+                targetForName = { displayName ->
+                    StorageTarget.SafTarget(
+                        parent = StorageReference.SafRef(root.tree.uri),
+                        displayName = displayName,
+                        mimeType = "application/octet-stream"
+                    )
+                }
+            }
+        }
+        var cleanedCount = 0
+        var failedCount = 0
+        when (
+            val result = backend.cleanupTerminalTemporaryWrites(
+                normalizedTargetNames.map(targetForName)
+            )
+        ) {
+            is ManagedTemporaryWriteCleanupResult.Completed -> {
+                cleanedCount += result.deletedCount
+                failedCount += result.failures.size
+                if (result.retainedActiveCount > 0) {
+                    NPLogger.d(
+                        TAG,
+                        "终态临时写入清理跳过活跃写入: targets=${normalizedTargetNames.size}, " +
+                            "count=${result.retainedActiveCount}"
+                    )
+                }
+                if (result.failures.isNotEmpty()) {
+                    NPLogger.w(
+                        TAG,
+                        "终态临时写入未完全清理: targets=${normalizedTargetNames.size}, " +
+                            "failed=${result.failures.size}"
+                    )
+                }
+            }
+
+            is ManagedTemporaryWriteCleanupResult.Skipped -> {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理跳过非完整目录枚举: " +
+                        "targets=${normalizedTargetNames.size}, reason=${result.reason}"
+                )
+            }
+        }
+        if (cleanedCount > 0) {
+            invalidateSnapshotCache(context)
+        }
+        return StartupRecoveryResult(
+            cleanedCount = cleanedCount,
+            failedCount = failedCount
+        )
+    }
+
+    private fun normalizeTerminalTemporaryWriteTargetName(rawName: String): String? {
+        val name = rawName.trim().takeIf(String::isNotBlank) ?: return null
+        if (name == "." || name == ".." || '/' in name || '\\' in name) {
+            return null
+        }
+        return name
     }
 
     internal fun pendingMetadataEntryNames(
@@ -4806,15 +5052,17 @@ internal object ManagedDownloadStorage {
     private fun cleanupPendingAudioWrites(context: Context): StartupRecoveryResult {
         return try {
             val root = resolveRootBlocking(context)
-            val rootEntries = runCatching { listChildren(context, root) }.getOrNull()
-            val metadataNames = rootEntries
-                ?.filterNot(StoredEntry::isDirectory)
-                ?.mapTo(linkedSetOf(), StoredEntry::name)
-            val preservePendingAudio = { pendingName: String ->
-                if (metadataNames == null) {
-                    true
-                } else {
-                    val logicalName = pendingAudioWriteNames.logicalAudioName(pendingName)
+            val refresh = treeDirectories.refreshRootEntries(context, root)
+            if (!refresh.isComplete) {
+                NPLogger.w(TAG, "下载目录枚举不完整，跳过待提交音频清理")
+                return StartupRecoveryResult()
+            }
+            val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
+            val metadataNames = rootEntries.mapTo(linkedSetOf(), StoredEntry::name)
+            val referencesToDelete = rootEntries
+                .filter { entry -> pendingAudioWriteNames.isPendingAudioWriteName(entry.name) }
+                .filterNot { entry ->
+                    val logicalName = pendingAudioWriteNames.logicalAudioName(entry.name)
                     metadataNames.any { candidate ->
                         candidate == "$logicalName$METADATA_SUFFIX" ||
                             ManagedDownloadTreeNaming.isPendingMetadataName(
@@ -4823,32 +5071,28 @@ internal object ManagedDownloadStorage {
                             )
                     }
                 }
+                .mapTo(linkedSetOf(), StoredEntry::reference)
+            if (referencesToDelete.isEmpty()) {
+                return StartupRecoveryResult()
             }
-            ManagedDownloadPendingAudioWriteCleaner.cleanup(
+            val deletedReferences = deleteReferencesInternal(
                 context = context,
-                root = root,
-                names = pendingAudioWriteNames,
-                treeChildRegistry = treeChildRegistry,
-                deleteTreeChild = { child ->
-                    runCatching {
-                        deleteTrustedReference(
-                            context,
-                            TrustedManagedRef(
-                                reference = StorageReference.SafRef(child.documentUri),
-                                externalReference = child.documentUri.toString()
-                            )
-                        )
-                    }.getOrElse { error ->
-                        if (error is SecurityException) {
-                            StorageMutationResult.PermissionLost
-                        } else {
-                            StorageMutationResult.ProviderFailure(error)
-                        }
-                    }
-                },
-                preserveEntry = preservePendingAudio,
-                tag = TAG
+                references = referencesToDelete,
+                allowedRoot = root,
+                trustedReferences = referencesToDelete,
+                invalidateSnapshot = true
             )
+            val failedCount = referencesToDelete.size - deletedReferences.size
+            NPLogger.d(
+                TAG,
+                "清理下载提交残留完成: cleaned=${deletedReferences.size}, failed=$failedCount"
+            )
+            StartupRecoveryResult(
+                cleanedCount = deletedReferences.size,
+                failedCount = failedCount
+            )
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             throw error
         } catch (error: ManagedDownloadRootUnavailableException) {
@@ -4862,15 +5106,20 @@ internal object ManagedDownloadStorage {
     internal fun cleanupUnfinalizedDownloadArtifacts(context: Context): StartupRecoveryResult {
         return try {
             val root = resolveRootBlocking(context)
-            val rootEntries = listChildren(context, root).filterNot(StoredEntry::isDirectory)
+            val refresh = treeDirectories.refreshManagedMigrationEntries(context, root)
+            if (!refresh.isComplete) {
+                NPLogger.w(TAG, "下载目录枚举不完整，跳过未完成半成品清理")
+                return StartupRecoveryResult()
+            }
+            val rootEntries = refresh.rootEntries.filterNot(StoredEntry::isDirectory)
             val parsedMetadataEntries = rootEntries
                 .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
                 .mapNotNull { entry ->
                     val metadata = parseDownloadedAudioMetadata(context, entry) ?: return@mapNotNull null
                     ManagedDownloadParsedMetadataEntry(entry, metadata)
                 }
-            val managedSidecarReferences = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
-                .plus(listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY))
+            val managedSidecarReferences = refresh.coverEntries
+                .plus(refresh.lyricEntries)
                 .mapTo(linkedSetOf(), StoredEntry::reference)
             val referencesToDelete = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
                 rootEntries = rootEntries,

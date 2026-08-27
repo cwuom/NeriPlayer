@@ -52,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +69,7 @@ import moe.ouom.neriplayer.data.settings.normalizeDownloadYouTubeAudioQuality
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 
 @Composable
 internal fun SettingsDownloadSection(
@@ -246,6 +248,28 @@ private enum class DownloadAudioQualityPlatform {
     BILI
 }
 
+internal const val DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG =
+    "download-quality-follow-playback-card"
+
+@Composable
+internal fun SettingsDownloadQualityFollowPlaybackCard(
+    highlightTargetId: String?,
+    highlightPulse: Int,
+    onHighlightFinished: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    MiuixSettingsSectionCard(
+        modifier = modifier.testTag(DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG)
+    ) {
+        AutoSettingSpecSwitchItem(
+            setting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+    }
+}
+
 @Composable
 private fun DownloadAudioQualitySettings(
     highlightTargetId: String?,
@@ -271,13 +295,6 @@ private fun DownloadAudioQualitySettings(
         repository.flow(biliSetting)
     }.collectAsState(initial = biliSetting.defaultValue)
     var dialogPlatform by remember { mutableStateOf<DownloadAudioQualityPlatform?>(null) }
-
-    AutoSettingSpecSwitchItem(
-        setting = followPlaybackSetting,
-        highlightTargetId = highlightTargetId,
-        highlightPulse = highlightPulse,
-        onHighlightFinished = onHighlightFinished
-    )
 
     if (!followPlaybackQuality) {
         Text(

@@ -73,6 +73,10 @@ internal fun isDurableCoreArtifactState(state: String?): Boolean {
     )
 }
 
+internal fun shouldCleanupCancelledPendingArtifacts(operationState: String?): Boolean {
+    return operationState == "CANCEL_REQUESTED" || operationState == "CANCELLED"
+}
+
 internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
     return state in setOf(
         "CORE_COMMITTED",

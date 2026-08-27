@@ -127,17 +127,26 @@ class ManagedDownloadStorageMigrationCompatTest {
         val committedMetadata = "$audioName.npmeta.json"
 
         assertTrue(ManagedDownloadTreeNaming.isPendingMetadataName(canonicalPending, audioName))
+        assertEquals(audioName, ManagedDownloadTreeNaming.metadataAudioName(canonicalPending))
         assertTrue(
             ManagedDownloadTreeNaming.isPendingMetadataName(
                 numberedBeforeExtension,
                 audioName
             )
         )
+        assertEquals(
+            audioName,
+            ManagedDownloadTreeNaming.metadataAudioName(numberedBeforeExtension)
+        )
         assertTrue(
             ManagedDownloadTreeNaming.isPendingMetadataName(
                 numberedAfterExtension,
                 audioName
             )
+        )
+        assertEquals(
+            audioName,
+            ManagedDownloadTreeNaming.metadataAudioName(numberedAfterExtension)
         )
         assertFalse(ManagedDownloadTreeNaming.isPendingMetadataName(committedMetadata, audioName))
         assertEquals(

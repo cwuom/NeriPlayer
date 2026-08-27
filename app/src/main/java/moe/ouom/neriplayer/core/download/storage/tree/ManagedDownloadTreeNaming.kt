@@ -156,6 +156,23 @@ internal object ManagedDownloadTreeNaming {
                 }
             }
         }
+        val pendingExtension = PENDING_METADATA_SUFFIX.substringAfterLast('.')
+        val pendingExtensionSuffix = ".${pendingExtension}"
+        if (actualName.endsWith(pendingExtensionSuffix, ignoreCase = true)) {
+            val stem = actualName.substring(0, actualName.length - pendingExtensionSuffix.length)
+            val markerIndex = stem.lastIndexOf(" (")
+            if (markerIndex >= 0 && stem.endsWith(")")) {
+                val ordinal = stem.substring(markerIndex + 2, stem.length - 1).toIntOrNull()
+                val unnumberedStem = stem.substring(0, markerIndex)
+                val pendingStemSuffix = PENDING_METADATA_SUFFIX.removeSuffix(pendingExtensionSuffix)
+                if (ordinal != null && unnumberedStem.endsWith(pendingStemSuffix, ignoreCase = true)) {
+                    return unnumberedStem.substring(
+                        0,
+                        unnumberedStem.length - pendingStemSuffix.length
+                    )
+                }
+            }
+        }
         if (actualName.endsWith(PENDING_METADATA_SUFFIX, ignoreCase = true)) {
             return actualName.substring(0, actualName.length - PENDING_METADATA_SUFFIX.length)
         }

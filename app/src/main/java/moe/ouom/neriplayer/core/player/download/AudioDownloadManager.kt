@@ -2094,28 +2094,44 @@ object AudioDownloadManager {
                                 NPLogger.d(TAG, "下载已取消: ${song.name}")
                                 if (
                                     !preserveArtifacts &&
-                                    shouldRollbackCancelledAudio(coreCommitTracker.phase) &&
-                                    (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
+                                    shouldRollbackCancelledAudio(coreCommitTracker.phase)
                                 ) {
                                     runCatching {
-                                        NPLogger.d(
+                                        ManagedDownloadStorage
+                                            .cleanupCancelledPendingDownloadArtifacts(
+                                                context = context,
+                                                stableKey = songKey,
+                                                operationId = effectiveOperationId
+                                            )
+                                    }.onFailure { cleanupError ->
+                                        NPLogger.w(
                                             TAG,
-                                            "下载取消后回滚半成品: song=${song.name}, audio=${storedAudio?.reference}, sidecars=$partialSidecarReferences"
+                                            "取消下载 pending 半成品清理失败: " +
+                                                "song=${song.name}, ${cleanupError.message}",
+                                            cleanupError
                                         )
-                                        GlobalDownloadManager.rollbackCancelledDownload(
-                                            context = context,
-                                            song = song,
-                                            storedAudio = storedAudio,
-                                            sidecarReferences = partialSidecarReferences,
-                                            operationId = effectiveOperationId
-                                        )
-                                        storedAudio = null
-                                    }.onFailure { rollbackError ->
-                                        NPLogger.e(
-                                            TAG,
-                                            "回滚已取消下载失败: ${song.name}, ${rollbackError.message}",
-                                            rollbackError
-                                        )
+                                    }
+                                    if (storedAudio != null || partialSidecarReferences?.isEmpty == false) {
+                                        runCatching {
+                                            NPLogger.d(
+                                                TAG,
+                                                "下载取消后回滚半成品: song=${song.name}, audio=${storedAudio?.reference}, sidecars=$partialSidecarReferences"
+                                            )
+                                            GlobalDownloadManager.rollbackCancelledDownload(
+                                                context = context,
+                                                song = song,
+                                                storedAudio = storedAudio,
+                                                sidecarReferences = partialSidecarReferences,
+                                                operationId = effectiveOperationId
+                                            )
+                                            storedAudio = null
+                                        }.onFailure { rollbackError ->
+                                            NPLogger.e(
+                                                TAG,
+                                                "回滚已取消下载失败: ${song.name}, ${rollbackError.message}",
+                                                rollbackError
+                                            )
+                                        }
                                     }
                                 }
                                 if (
@@ -2214,28 +2230,43 @@ object AudioDownloadManager {
                         val preserveArtifacts = shouldPreserveArtifactsForNetworkPolicy(songKey)
                         if (
                             !preserveArtifacts &&
-                            shouldRollbackCancelledAudio(coreCommitTracker.phase) &&
-                            (storedAudio != null || !(partialSidecarReferences?.isEmpty ?: true))
+                            shouldRollbackCancelledAudio(coreCommitTracker.phase)
                         ) {
                             runCatching {
-                                NPLogger.d(
-                                    TAG,
-                                    "下载取消后回滚半成品: song=${song.name}, audio=${storedAudio?.reference}, sidecars=$partialSidecarReferences"
-                                )
-                                GlobalDownloadManager.rollbackCancelledDownload(
+                                ManagedDownloadStorage.cleanupCancelledPendingDownloadArtifacts(
                                     context = context,
-                                    song = song,
-                                    storedAudio = storedAudio,
-                                    sidecarReferences = partialSidecarReferences,
+                                    stableKey = songKey,
                                     operationId = effectiveOperationId
                                 )
-                                storedAudio = null
-                            }.onFailure { rollbackError ->
-                                NPLogger.e(
+                            }.onFailure { cleanupError ->
+                                NPLogger.w(
                                     TAG,
-                                    "回滚已取消下载失败: ${song.name}, ${rollbackError.message}",
-                                    rollbackError
+                                    "取消下载 pending 半成品清理失败: " +
+                                        "song=${song.name}, ${cleanupError.message}",
+                                    cleanupError
                                 )
+                            }
+                            if (storedAudio != null || partialSidecarReferences?.isEmpty == false) {
+                                runCatching {
+                                    NPLogger.d(
+                                        TAG,
+                                        "下载取消后回滚半成品: song=${song.name}, audio=${storedAudio?.reference}, sidecars=$partialSidecarReferences"
+                                    )
+                                    GlobalDownloadManager.rollbackCancelledDownload(
+                                        context = context,
+                                        song = song,
+                                        storedAudio = storedAudio,
+                                        sidecarReferences = partialSidecarReferences,
+                                        operationId = effectiveOperationId
+                                    )
+                                    storedAudio = null
+                                }.onFailure { rollbackError ->
+                                    NPLogger.e(
+                                        TAG,
+                                        "回滚已取消下载失败: ${song.name}, ${rollbackError.message}",
+                                        rollbackError
+                                    )
+                                }
                             }
                         }
                         if (!preserveArtifacts) {

@@ -359,6 +359,7 @@ private val PlaybackActionToolbarMinimumTouchTarget = 48.dp
 private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val NowPlayingMainControlsMinimumSpacing = 4.dp
 private val NowPlayingFeedbackExtraBottomPadding = 24.dp
+private val EditSongInfoFeedbackControlClearance = 72.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal fun resolveDisplayedNowPlayingCoverUrl(
@@ -4568,7 +4569,13 @@ fun MoreOptionsSheet(
 
         NeriOverlaySnackbarHost(
             hostState = snackbarHostState,
-            bottomPadding = LocalMiniPlayerHeight.current + NowPlayingFeedbackExtraBottomPadding
+            bottomPadding = LocalMiniPlayerHeight.current +
+                NowPlayingFeedbackExtraBottomPadding +
+                if (page == MoreOptionsPage.EDIT_INFO) {
+                    EditSongInfoFeedbackControlClearance
+                } else {
+                    0.dp
+                }
         )
         }
     }
@@ -5386,7 +5393,9 @@ fun EditSongInfoSheet(
                 )
                 if (importedCover == null) {
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.music_cover_import_failed)
+                        message = composeResources.getString(R.string.music_cover_import_failed),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
                     )
                 } else {
                     coverUrl = importedCover.toString()
@@ -5397,7 +5406,9 @@ fun EditSongInfoSheet(
             } catch (error: Exception) {
                 NPLogger.e("NowPlayingScreen", "导入本地封面失败", error)
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.music_cover_import_failed)
+                    message = composeResources.getString(R.string.music_cover_import_failed),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
                 )
             } finally {
                 isCoverImporting = false
@@ -5667,7 +5678,9 @@ fun EditSongInfoSheet(
 
                 if (!lyricsWriteSucceeded) {
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.local_song_lyrics_write_failed)
+                        message = composeResources.getString(R.string.local_song_lyrics_write_failed),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
                     )
                     return@launch
                 }
@@ -5695,7 +5708,9 @@ fun EditSongInfoSheet(
 
                 if (!metadataWriteSucceeded) {
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.local_song_metadata_write_failed)
+                        message = composeResources.getString(R.string.local_song_metadata_write_failed),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
                     )
                     return@launch
                 }
@@ -5719,7 +5734,12 @@ fun EditSongInfoSheet(
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingScreen", "保存歌曲信息失败", e)
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.toast_save_failed, e.message.orEmpty()),
+                    message = composeResources.getString(
+                        R.string.toast_save_failed,
+                        e.message.orEmpty()
+                    ),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
                 )
             } finally {
                 if (!dismissed) {
@@ -5749,13 +5769,20 @@ fun EditSongInfoSheet(
                 )
                 if (!writeSucceeded) {
                     snackbarHostState.showNeriSnackbar(
-                        composeResources.getString(R.string.local_song_metadata_write_failed)
+                        message = composeResources.getString(R.string.local_song_metadata_write_failed),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
                     )
                 }
             } catch (error: Exception) {
                 NPLogger.e("NowPlayingScreen", "回写填充歌词失败", error)
                 snackbarHostState.showNeriSnackbar(
-                    composeResources.getString(R.string.toast_save_failed, error.message.orEmpty())
+                    message = composeResources.getString(
+                        R.string.toast_save_failed,
+                        error.message.orEmpty()
+                    ),
+                    withDismissAction = true,
+                    duration = SnackbarDuration.Long
                 )
             } finally {
                 isSaving = false
@@ -6182,9 +6209,11 @@ fun EditSongInfoSheet(
                                                 pendingLyricsSourceSeed = null
                                                 isPendingEmbeddedLyricsLoading = false
                                                 snackbarHostState.showNeriSnackbar(
-                                                    composeResources.getString(
+                                                    message = composeResources.getString(
                                                         R.string.settings_download_directory_permission_lost
-                                                    )
+                                                    ),
+                                                    withDismissAction = true,
+                                                    duration = SnackbarDuration.Long
                                                 )
                                             }
                                             return@launch
@@ -6256,9 +6285,11 @@ fun EditSongInfoSheet(
                                 isPendingEmbeddedLyricsLoading = false
                                 isLyricsEditorOpening = false
                                 snackbarHostState.showNeriSnackbar(
-                                    composeResources.getString(
+                                    message = composeResources.getString(
                                         R.string.settings_download_directory_permission_lost
-                                    )
+                                    ),
+                                    withDismissAction = true,
+                                    duration = SnackbarDuration.Long
                                 )
                             }
                         } catch (e: SecurityException) {
@@ -6269,9 +6300,11 @@ fun EditSongInfoSheet(
                                 isPendingEmbeddedLyricsLoading = false
                                 isLyricsEditorOpening = false
                                 snackbarHostState.showNeriSnackbar(
-                                    composeResources.getString(
+                                    message = composeResources.getString(
                                         R.string.settings_download_directory_permission_lost
-                                    )
+                                    ),
+                                    withDismissAction = true,
+                                    duration = SnackbarDuration.Long
                                 )
                             }
                         } catch (e: Exception) {

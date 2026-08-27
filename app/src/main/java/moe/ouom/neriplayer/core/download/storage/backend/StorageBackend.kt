@@ -21,9 +21,6 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 
-private const val TEMPORARY_WRITE_NAME_PREFIX = ".npdl_tmp_"
-private const val TEMPORARY_WRITE_NAME_SUFFIX = ".pending"
-
 sealed interface StorageReference {
     data class FileRef(val logicalPath: String) : StorageReference
     data class SafRef(val uri: Uri) : StorageReference
@@ -272,14 +269,16 @@ internal class FileStorageBackend(
             )
         return@withContext FileStorageMutationLocks.withTargetLock(targetFile) {
             var temporary: File? = null
+            var temporaryLease: ManagedTemporaryWriteLease? = null
             try {
                 parent.mkdirs()
-                val temporaryFile = Files.createTempFile(
-                    parent.toPath(),
-                    TEMPORARY_WRITE_NAME_PREFIX,
-                    TEMPORARY_WRITE_NAME_SUFFIX
-                ).toFile()
+                val managedTemporary = ManagedTemporaryWriteArtifacts.createFile(
+                    target = fileTarget,
+                    parent = parent
+                )
+                val temporaryFile = managedTemporary.file
                 temporary = temporaryFile
+                temporaryLease = managedTemporary.lease
                 val output = temporaryFile.outputStream()
                 try {
                     writer(output)
@@ -294,6 +293,8 @@ internal class FileStorageBackend(
             } catch (error: Throwable) {
                 temporary?.let { file -> cleanupTemporaryFileWriteFailure(file, error) }
                     ?: StorageWriteResult.ProviderFailure(error)
+            } finally {
+                temporaryLease?.close()
             }
         }
     }
@@ -575,7 +576,9 @@ internal class SafStorageBackend(
         if (parent.flags and DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE.toLong() == 0L) {
             return@withContext StorageWriteResult.Unsupported("provider create unsupported")
         }
-        val temporaryName = "$TEMPORARY_WRITE_NAME_PREFIX${UUID.randomUUID()}$TEMPORARY_WRITE_NAME_SUFFIX"
+        val temporaryLease = ManagedTemporaryWriteArtifacts.acquire(safTarget)
+        val temporaryName = temporaryLease.displayName
+        try {
         val temporaryUri = try {
             DocumentsContract.createDocument(
                 context.contentResolver,
@@ -917,6 +920,9 @@ internal class SafStorageBackend(
                 }
             }
         }
+        }
+        } finally {
+            temporaryLease.close()
         }
     }
 

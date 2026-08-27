@@ -15,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
@@ -62,8 +61,16 @@ class SafStorageBackendWriteCapabilityTest {
         val finalUri = mock(Uri::class.java)
         val childrenUri = mock(Uri::class.java)
         val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000001")
-        val temporaryName = ".npdl_tmp_$operationUuid.pending"
         val targetName = "x".repeat(226) + ".mp3"
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = targetName,
+            mimeType = "audio/mpeg"
+        )
+        val temporaryName = ManagedTemporaryWriteArtifacts.displayNameFor(
+            target = target,
+            nonce = operationUuid.toString().replace("-", "").take(16)
+        )
         val resolver = mock(ContentResolver::class.java)
         val context = mock(Context::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
@@ -151,17 +158,14 @@ class SafStorageBackendWriteCapabilityTest {
             }.thenReturn(finalUri)
 
             val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
-                target = StorageTarget.SafTarget(
-                    parent = StorageReference.SafRef(parentUri),
-                    displayName = targetName,
-                    mimeType = "audio/mpeg"
-                )
+                target = target
             ) { output ->
                 output.write("audio".toByteArray())
             }
 
             assertTrue("result=$result", result is StorageWriteResult.Written)
             assertEquals("audio", finalBytes.toString())
+            assertTrue(temporaryName.startsWith(".npdl_tmp_v2_"))
             assertTrue(temporaryName.toByteArray(Charsets.UTF_8).size < 64)
             }
         }
@@ -228,7 +232,15 @@ class SafStorageBackendWriteCapabilityTest {
         val finalUri = mock(Uri::class.java)
         val childrenUri = mock(Uri::class.java)
         val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000002")
-        val temporaryName = ".npdl_tmp_$operationUuid.pending"
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = "song.mp3",
+            mimeType = "audio/mpeg"
+        )
+        val temporaryName = ManagedTemporaryWriteArtifacts.displayNameFor(
+            target = target,
+            nonce = operationUuid.toString().replace("-", "").take(16)
+        )
         val resolver = mock(ContentResolver::class.java)
         val context = mock(Context::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
@@ -312,11 +324,7 @@ class SafStorageBackendWriteCapabilityTest {
                 }.thenReturn(finalUri)
 
                 val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
-                    target = StorageTarget.SafTarget(
-                        parent = StorageReference.SafRef(parentUri),
-                        displayName = "song.mp3",
-                        mimeType = "audio/mpeg"
-                    )
+                    target = target
                 ) { output ->
                     output.write("audio".toByteArray())
                 }
@@ -326,6 +334,7 @@ class SafStorageBackendWriteCapabilityTest {
                     (result as StorageWriteResult.ProviderFailure).error.message
                         ?.contains("SAF 删除未确认") == true
                 )
+                assertTrue(temporaryName.startsWith(".npdl_tmp_v2_"))
                 assertTrue(temporaryDeleted)
             }
         }
@@ -336,7 +345,15 @@ class SafStorageBackendWriteCapabilityTest {
         val parentUri = mock(Uri::class.java)
         val temporaryUri = mock(Uri::class.java)
         val operationUuid = UUID.fromString("00000000-0000-0000-0000-000000000003")
-        val temporaryName = ".npdl_tmp_$operationUuid.pending"
+        val target = StorageTarget.SafTarget(
+            parent = StorageReference.SafRef(parentUri),
+            displayName = "song.mp3",
+            mimeType = "audio/mpeg"
+        )
+        val temporaryName = ManagedTemporaryWriteArtifacts.displayNameFor(
+            target = target,
+            nonce = operationUuid.toString().replace("-", "").take(16)
+        )
         val resolver = mock(ContentResolver::class.java)
         val context = mock(Context::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
@@ -385,16 +402,13 @@ class SafStorageBackendWriteCapabilityTest {
                 }
 
                 val result = SafStorageBackend(context, Dispatchers.Unconfined).writeRecoverable(
-                    target = StorageTarget.SafTarget(
-                        parent = StorageReference.SafRef(parentUri),
-                        displayName = "song.mp3",
-                        mimeType = "audio/mpeg"
-                    )
+                    target = target
                 ) { output ->
                     output.write("audio".toByteArray())
                 }
 
                 assertTrue(deletionAttempted)
+                assertTrue(temporaryName.startsWith(".npdl_tmp_v2_"))
                 assertTrue(result is StorageWriteResult.ProviderFailure)
                 assertTrue(
                     (result as StorageWriteResult.ProviderFailure).error.message

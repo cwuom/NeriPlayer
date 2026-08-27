@@ -134,6 +134,16 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
+    fun `only pre-core cancellation states can remove pending artifacts`() {
+        assertTrue(shouldCleanupCancelledPendingArtifacts("CANCEL_REQUESTED"))
+        assertTrue(shouldCleanupCancelledPendingArtifacts("CANCELLED"))
+        assertFalse(shouldCleanupCancelledPendingArtifacts("COMMITTING"))
+        assertFalse(shouldCleanupCancelledPendingArtifacts("CORE_COMMITTED"))
+        assertFalse(shouldCleanupCancelledPendingArtifacts("FINALIZED"))
+        assertFalse(shouldCleanupCancelledPendingArtifacts(null))
+    }
+
+    @Test
     fun `only incomplete durable artifacts resume final enrichment`() {
         assertTrue(requiresDownloadFinalizationRecovery("CORE_COMMITTED"))
         assertTrue(requiresDownloadFinalizationRecovery("ASSETS_ENRICHING"))

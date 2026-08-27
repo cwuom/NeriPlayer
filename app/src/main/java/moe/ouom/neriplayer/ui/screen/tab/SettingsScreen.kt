@@ -186,6 +186,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.component.PlaybackServiceIdleS
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsAudioQualitySection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsDownloadQualityFollowPlaybackCard
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsLyricsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsMotionSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.SettingsPlaybackSection
@@ -2179,6 +2180,14 @@ fun SettingsScreen(
                 }
 
                 SettingsPage.Downloads -> {
+                    item(key = "${selectedPage.name}:quality_follow_playback") {
+                        SettingsDownloadQualityFollowPlaybackCard(
+                            highlightTargetId = settingsHighlightTargetId,
+                            highlightPulse = settingsHighlightPulse,
+                            onHighlightFinished = onSettingsHighlightFinished,
+                            modifier = Modifier.animateItem()
+                        )
+                    }
                     miuixSettingsSectionCardItem("${selectedPage.name}:content") {
                         SettingsDownloadSection(
                             expanded = true,

@@ -87,6 +87,8 @@ import moe.ouom.neriplayer.core.download.reconcile.EmptyScanObservation
 import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
+import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
@@ -156,6 +158,29 @@ internal fun resolveRecoveredDownloadProgress(
         bytesRead = durableBytes,
         totalBytes = totalBytes
     )
+}
+
+internal fun finalizedTemporaryWriteTargetNames(audioName: String): List<String> {
+    val normalizedAudioName = audioName.trim().takeIf(String::isNotBlank) ?: return emptyList()
+    return listOf(
+        normalizedAudioName,
+        "$normalizedAudioName$METADATA_SUFFIX",
+        "$normalizedAudioName$PENDING_METADATA_SUFFIX"
+    )
+}
+
+internal class TerminalTemporaryWriteCleanupBatch {
+    private val targetNames = linkedSetOf<String>()
+
+    fun addAll(candidates: Collection<String>) {
+        candidates.forEach { candidate ->
+            candidate.trim().takeIf(String::isNotBlank)?.let(targetNames::add)
+        }
+    }
+
+    fun takeAll(): List<String> = targetNames.toList().also { targetNames.clear() }
+
+    fun isEmpty(): Boolean = targetNames.isEmpty()
 }
 
 internal suspend fun awaitBatchDownloadJobsSettled(
@@ -277,6 +302,7 @@ object GlobalDownloadManager {
     private const val METADATA_POST_PROCESSING_PARALLELISM = 2
     private const val SONG_EXECUTION_LOCK_STRIPES = 256
     private const val BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT = 6
+    private const val TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS = 750L
     internal const val PLAYBACK_METADATA_HYDRATION_DELAY_MS = 1_500L
     internal const val LOCAL_PLAYBACK_METADATA_HYDRATION_DELAY_MS = 4_000L
 
@@ -291,13 +317,15 @@ object GlobalDownloadManager {
         val activeSongKeys: Set<String>,
         val activeOperationIds: Set<String>,
         val batchJobsSettled: Boolean,
-        val residualWorkingSongKeys: Set<String> = emptySet()
+        val residualWorkingSongKeys: Set<String> = emptySet(),
+        val residualPendingArtifactSongKeys: Set<String> = emptySet()
     ) {
         val isSettled: Boolean
             get() = activeSongKeys.isEmpty() &&
                 activeOperationIds.isEmpty() &&
                 batchJobsSettled &&
-                residualWorkingSongKeys.isEmpty()
+                residualWorkingSongKeys.isEmpty() &&
+                residualPendingArtifactSongKeys.isEmpty()
     }
 
     private data class ActiveProgressCheckpointBinding(
@@ -423,6 +451,8 @@ object GlobalDownloadManager {
     private val downloadedSongCatalogMutationLock = Any()
     private val downloadedSongMetadataSyncMutex = Mutex()
     private val downloadedSongDeleteMutex = Mutex()
+    private val terminalTemporaryWriteCleanupMutex = Mutex()
+    private val terminalTemporaryWriteCleanupBatch = TerminalTemporaryWriteCleanupBatch()
     private val downloadedSongDeletionCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val downloadedSongDeleteVisibility = DownloadedSongDeleteVisibility()
     private val downloadedSongCatalogPersistenceRevision = AtomicLong(0L)
@@ -432,6 +462,7 @@ object GlobalDownloadManager {
     private val refreshWaiters = mutableSetOf<CompletableDeferred<Unit>>()
     private var catalogPersistJob: Job? = null
     private var catalogReconcileJob: Job? = null
+    private var terminalTemporaryWriteCleanupJob: Job? = null
     private var pendingCatalogReconcileForceRefresh = false
     private val metadataPostProcessingSemaphore = Semaphore(METADATA_POST_PROCESSING_PARALLELISM)
 
@@ -2374,16 +2405,25 @@ object GlobalDownloadManager {
             if (!shouldPublishCoreCommit(coreMetadataReady, coreMetadataWritten)) {
                 return@withContext false
             }
-            runCatching {
+            val pendingMetadataDeleted = runCatching {
                 ManagedDownloadStorage.deletePendingAudioMetadata(
                     context = context,
                     audioName = storedAudio.logicalName
                 )
-            }.onFailure { error ->
+            }.getOrElse { error ->
                 NPLogger.w(
                     TAG,
                     "core metadata 已写入但 pending 清理失败，保留可恢复残留: " +
-                        "audio=${storedAudio.logicalName}, error=${error.message}"
+                        "audio=${storedAudio.logicalName}, error=${error.message}",
+                    error
+                )
+                false
+            }
+            if (!pendingMetadataDeleted) {
+                NPLogger.w(
+                    TAG,
+                    "core metadata 已写入但 pending 清理未确认，最终发布后将重试: " +
+                        "audio=${storedAudio.logicalName}"
                 )
             }
             val journalCommitted = normalizedOperationId?.let { id ->
@@ -2758,10 +2798,134 @@ object GlobalDownloadManager {
                 state = "FINALIZED"
             )
         }
+        cleanupFinalizedPendingArtifacts(
+            context = context,
+            pendingAudio = storedAudio,
+            finalizedAudio = finalizedAudio,
+            operationId = operationId
+        )
         if (refreshCatalog) {
             scheduleCatalogReconcile(context, forceRefresh = false)
         }
         return true
+    }
+
+    private suspend fun cleanupFinalizedPendingArtifacts(
+        context: Context,
+        pendingAudio: ManagedDownloadStorage.StoredEntry,
+        finalizedAudio: ManagedDownloadStorage.StoredEntry,
+        operationId: String?
+    ) {
+        try {
+            val pendingMetadataDeleted = ManagedDownloadStorage.deletePendingAudioMetadata(
+                context = context,
+                audioName = finalizedAudio.logicalName
+            )
+            if (!pendingMetadataDeleted) {
+                NPLogger.w(
+                    TAG,
+                    "最终发布后 pending metadata 清理未确认，保留下次恢复重试: " +
+                        "audio=${finalizedAudio.logicalName}"
+                )
+            }
+            val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank)
+            val residualPendingAudio = if (
+                normalizedOperationId != null &&
+                    pendingAudio.isPendingAudioWrite &&
+                    pendingAudio.reference != finalizedAudio.reference
+            ) {
+                ManagedDownloadStorage.queryStoredEntry(
+                    context = context,
+                    reference = pendingAudio.reference
+                )?.takeIf { entry ->
+                    entry.isPendingAudioWrite && entry.logicalName == finalizedAudio.logicalName
+                }
+            } else {
+                null
+            }
+            residualPendingAudio?.let { residualAudio ->
+                val residualMetadata = readDownloadedMetadata(context, residualAudio)
+                if (
+                    residualMetadata?.operationId == normalizedOperationId &&
+                        isFinalizedDownloadedMetadata(residualMetadata)
+                ) {
+                    val deletedReferences = ManagedDownloadStorage.deleteReferences(
+                        context = context,
+                        references = listOf(residualAudio.reference)
+                    )
+                    if (residualAudio.reference !in deletedReferences) {
+                        NPLogger.w(
+                            TAG,
+                            "最终发布后 pending 音频清理未确认，保留下次恢复重试: " +
+                                "audio=${residualAudio.name}"
+                        )
+                    }
+                }
+            }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "最终发布后 pending 半成品清理失败，保留下次恢复重试: " +
+                    "audio=${finalizedAudio.logicalName}, error=${error.message}",
+                error
+            )
+        }
+        scheduleFinalizedTemporaryWriteCleanup(
+            context = context,
+            targetNames = finalizedTemporaryWriteTargetNames(finalizedAudio.logicalName)
+        )
+    }
+
+    private fun scheduleFinalizedTemporaryWriteCleanup(
+        context: Context,
+        targetNames: Collection<String>
+    ) {
+        if (targetNames.isEmpty()) return
+
+        val appContext = context.applicationContext
+        scope.launch {
+            terminalTemporaryWriteCleanupMutex.withLock {
+                terminalTemporaryWriteCleanupBatch.addAll(targetNames)
+                if (terminalTemporaryWriteCleanupBatch.isEmpty()) {
+                    return@withLock
+                }
+                if (terminalTemporaryWriteCleanupJob?.isActive == true) {
+                    return@withLock
+                }
+                terminalTemporaryWriteCleanupJob = scope.launch cleanupLoop@{
+                    delay(TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS)
+                    while (true) {
+                        val targets = terminalTemporaryWriteCleanupMutex.withLock {
+                            terminalTemporaryWriteCleanupBatch.takeAll()
+                        }
+                        if (targets.isNotEmpty()) {
+                            val result = ManagedDownloadStorage.cleanupTerminalTemporaryWriteArtifacts(
+                                context = appContext,
+                                targetNames = targets
+                            )
+                            if (result.failedCount > 0) {
+                                NPLogger.w(
+                                    TAG,
+                                    "最终发布后临时写入清理未完全确认，保留下次恢复重试: " +
+                                        "targets=${targets.size}, failed=${result.failedCount}"
+                                )
+                            }
+                        }
+                        val hasMoreTargets = terminalTemporaryWriteCleanupMutex.withLock {
+                            if (terminalTemporaryWriteCleanupBatch.isEmpty()) {
+                                terminalTemporaryWriteCleanupJob = null
+                                false
+                            } else {
+                                true
+                            }
+                        }
+                        if (!hasMoreTargets) return@cleanupLoop
+                    }
+                }
+            }
+        }
     }
 
     private fun isDurableCoreOperationState(state: String?): Boolean {
@@ -2996,14 +3160,95 @@ object GlobalDownloadManager {
     private suspend fun cleanupCancelledDownloadArtifacts(
         context: Context,
         song: SongItem,
-        keepCancellationOperation: Boolean = false
+        operationId: String? = null,
+        keepCancellationOperation: Boolean = false,
+        cleanupRootPendingArtifacts: Boolean = true
     ) {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
         ManagedDownloadStorage.deletePendingWorkingDownloadArtifacts(appContext, setOf(songKey))
+        if (cleanupRootPendingArtifacts) {
+            cleanupCancelledPendingDownloadArtifacts(
+                context = appContext,
+                song = song,
+                operationId = operationId
+            )
+        }
         if (!keepCancellationOperation) {
             DownloadExecutionRoomStore.purgeCancelled(appContext, setOf(songKey))
         }
+    }
+
+    private suspend fun cleanupCancelledPendingDownloadArtifacts(
+        context: Context,
+        song: SongItem,
+        operationId: String?
+    ) {
+        val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank) ?: return
+        val operationState = DownloadExecutionRoomStore.state(context, normalizedOperationId)
+        if (!shouldCleanupCancelledPendingArtifacts(operationState)) {
+            NPLogger.d(
+                TAG,
+                "跳过非取消终态的 pending 清理: song=${song.name}, " +
+                    "operationId=$normalizedOperationId, state=$operationState"
+            )
+            return
+        }
+        val result = ManagedDownloadStorage.cleanupCancelledPendingDownloadArtifacts(
+            context = context,
+            stableKey = song.stableKey(),
+            operationId = normalizedOperationId
+        )
+        if (result.failedCount > 0) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 半成品未完全清理，保留下次恢复处理: " +
+                    "song=${song.name}, operationId=$normalizedOperationId, " +
+                    "failed=${result.failedCount}"
+            )
+        }
+    }
+
+    private suspend fun cleanupCancelledPendingDownloadArtifacts(
+        context: Context,
+        operationRequests: Collection<DownloadExecutionRequest>,
+        cancellationGenerations: Map<String, Long?>
+    ): Set<String> {
+        val operations = operationRequests
+            .distinctBy(DownloadExecutionRequest::operationId)
+            .mapNotNull { request ->
+                val songKey = request.song.stableKey()
+                if (!isCancellationCleanupStillCurrent(songKey, cancellationGenerations[songKey])) {
+                    return@mapNotNull null
+                }
+                val state = DownloadExecutionRoomStore.state(context, request.operationId)
+                if (!shouldCleanupCancelledPendingArtifacts(state)) {
+                    return@mapNotNull null
+                }
+                ManagedDownloadStorage.CancelledPendingDownloadOperation(
+                    stableKey = songKey,
+                    operationId = request.operationId
+                )
+            }
+        if (operations.isEmpty()) {
+            return emptySet()
+        }
+        val result = ManagedDownloadStorage.cleanupCancelledPendingDownloadArtifacts(
+            context = context,
+            operations = operations
+        )
+        if (result.failedCount == 0) {
+            return emptySet()
+        }
+        val affectedSongKeys = operations.mapTo(linkedSetOf()) { operation ->
+            operation.stableKey
+        }
+        NPLogger.w(
+            TAG,
+            "批量取消 pending 半成品未完全清理，保持清空栅栏并重试: " +
+                "operations=${operations.size}, failed=${result.failedCount}"
+        )
+        return affectedSongKeys
     }
 
     fun scanLocalFiles(context: Context, forceRefresh: Boolean = false) {
@@ -7854,6 +8099,13 @@ object GlobalDownloadManager {
                     context,
                     setOf(songKey)
                 )
+                operationRequest?.let { request ->
+                    cleanupCancelledPendingDownloadArtifacts(
+                        context = context,
+                        song = request.song,
+                        operationId = request.operationId
+                    )
+                }
                 DownloadExecutionRoomStore.purgeCancelled(context, setOf(songKey))
                 clearSongCancelled(songKey)
             }
@@ -8011,7 +8263,9 @@ object GlobalDownloadManager {
                                         "${settlement.activeSongKeys.size}, activeOperations=" +
                                         "${settlement.activeOperationIds.size}, " +
                                         "batchJobsSettled=${settlement.batchJobsSettled}, " +
-                                        "residualWorking=${settlement.residualWorkingSongKeys.size}"
+                                        "residualWorking=${settlement.residualWorkingSongKeys.size}, " +
+                                        "residualPending=" +
+                                        settlement.residualPendingArtifactSongKeys.size
                                 )
                                 taskStore.clearAllTasks()
                                 stopDownloadExecutionImmediately(
@@ -8431,7 +8685,11 @@ object GlobalDownloadManager {
                     expectedLeaseId = request.artifactLeaseId
                 )
             }
-            cleanupCancelledDownloadArtifacts(appContext, task.song)
+            cleanupCancelledDownloadArtifacts(
+                context = appContext,
+                song = task.song,
+                operationId = operationRequest?.operationId
+            )
             clearSongCancelled(songKey)
         }
     }
@@ -8510,9 +8768,34 @@ object GlobalDownloadManager {
             )
         }
         val focusedCleanupKeys = mutableSetOf<String>()
+        operationRequests.distinctBy(DownloadExecutionRequest::operationId).forEach { request ->
+            val songKey = request.song.stableKey()
+            if (!isCancellationCleanupStillCurrent(songKey, cancellationGenerations[songKey])) {
+                return@forEach
+            }
+            withSongExecutionLock(songKey) {
+                if (!isCancellationCleanupStillCurrent(songKey, cancellationGenerations[songKey])) {
+                    return@withSongExecutionLock
+                }
+                cleanupCancelledDownloadArtifacts(
+                    context = appContext,
+                    song = request.song,
+                    operationId = request.operationId,
+                    keepCancellationOperation = true,
+                    cleanupRootPendingArtifacts = false
+                )
+                focusedCleanupKeys += songKey
+            }
+        }
+        val residualPendingArtifactSongKeys = cleanupCancelledPendingDownloadArtifacts(
+            context = appContext,
+            operationRequests = operationRequests,
+            cancellationGenerations = cancellationGenerations
+        )
         tasks.forEach { task ->
             val songKey = task.song.stableKey()
             if (songKey !in activeDownloadTaskKeys) return@forEach
+            if (songKey in focusedCleanupKeys) return@forEach
             withSongExecutionLock(songKey) {
                 if (!isCancellationCleanupStillCurrent(songKey, cancellationGenerations[songKey])) {
                     NPLogger.d(TAG, "跳过过期批量取消清理: song=${task.song.name}, songKey=$songKey")
@@ -8558,7 +8841,8 @@ object GlobalDownloadManager {
             activeSongKeys = emptySet(),
             activeOperationIds = emptySet(),
             batchJobsSettled = true,
-            residualWorkingSongKeys = residualWorkingSongKeys
+            residualWorkingSongKeys = residualWorkingSongKeys,
+            residualPendingArtifactSongKeys = residualPendingArtifactSongKeys
         )
     }
 
