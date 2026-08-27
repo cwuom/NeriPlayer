@@ -42,6 +42,7 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.usb.sink.UsbExclusiveAudioSink
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 
@@ -112,7 +113,9 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
             eventListener,
             FfmpegPcm16AudioSink(
                 delegate = audioSink,
-                forcePcm16 = forceFfmpegPcm16Output
+                shouldForcePcm16 = {
+                    forceFfmpegPcm16Output && !PlayerManager.usbExclusivePlaybackEnabled
+                }
             )
         )
     }
@@ -140,14 +143,14 @@ class ReactiveRenderersFactory(context: Context) : DefaultRenderersFactory(conte
 @UnstableApi
 internal class FfmpegPcm16AudioSink(
     delegate: AudioSink,
-    private val forcePcm16: Boolean
+    private val shouldForcePcm16: () -> Boolean
 ) : ForwardingAudioSink(delegate) {
     override fun supportsFormat(format: Format): Boolean {
-        return (!forcePcm16 || !format.isFloatPcm()) && super.supportsFormat(format)
+        return (!shouldForcePcm16() || !format.isFloatPcm()) && super.supportsFormat(format)
     }
 
     override fun getFormatSupport(format: Format): Int {
-        return if (forcePcm16 && format.isFloatPcm()) {
+        return if (shouldForcePcm16() && format.isFloatPcm()) {
             SINK_FORMAT_UNSUPPORTED
         } else {
             super.getFormatSupport(format)
