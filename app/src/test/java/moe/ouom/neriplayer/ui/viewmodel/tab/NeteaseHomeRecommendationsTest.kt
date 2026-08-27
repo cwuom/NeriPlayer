@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.coroutineContext
@@ -321,6 +323,112 @@ class NeteaseHomeRecommendationsTest {
     fun privateFmDisablesOuterRetry() {
         assertEquals(1, homeSongFetchAttemptCount(NeteaseHomeSongSource.PRIVATE_FM))
         assertEquals(3, homeSongFetchAttemptCount(NeteaseHomeSongSource.DAILY_RECOMMEND))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun homeSectionLoadCoordinator_publishesCompletedSourcesWithoutWaitingForEarlierSources() = runTest {
+        val coordinator = HomeSectionLoadCoordinator(maxConcurrentLoads = 2)
+        val first = CompletableDeferred<Int>()
+        val second = CompletableDeferred<Int>()
+        val published = mutableListOf<Int>()
+        val load = async {
+            coordinator.load(
+                group = HomeSectionLoadGroup.PLAYLISTS,
+                sources = listOf("first", "second"),
+                fetch = { source ->
+                    if (source == "first") first.await() else second.await()
+                },
+                onResult = published::add
+            )
+        }
+
+        runCurrent()
+        second.complete(2)
+        runCurrent()
+
+        assertEquals(listOf(2), published)
+        assertFalse(load.isCompleted)
+
+        first.complete(1)
+        load.await()
+
+        assertEquals(listOf(2, 1), published)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun homeSectionLoadCoordinator_capsConcurrentSourcesAcrossGroups() = runTest {
+        val coordinator = HomeSectionLoadCoordinator(
+            maxConcurrentLoads = 2,
+            maxConcurrentLoadsPerGroup = 1
+        )
+        val release = CompletableDeferred<Unit>()
+        var active = 0
+        var maxActive = 0
+        var completed = 0
+        val loads = HomeSectionLoadGroup.values().map { group ->
+            async {
+                coordinator.load(
+                    group = group,
+                    sources = listOf(1, 2),
+                    fetch = { source ->
+                        active += 1
+                        maxActive = maxOf(maxActive, active)
+                        release.await()
+                        active -= 1
+                        source
+                    },
+                    onResult = { completed += 1 }
+                )
+            }
+        }
+
+        runCurrent()
+
+        assertEquals(2, active)
+        assertEquals(2, maxActive)
+
+        release.complete(Unit)
+        loads.forEach { it.await() }
+
+        assertEquals(0, active)
+        assertEquals(6, completed)
+        assertEquals(2, maxActive)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun homeSectionLoadCoordinator_cancellationPreventsQueuedSourcesAndPublishing() = runTest {
+        val coordinator = HomeSectionLoadCoordinator(maxConcurrentLoads = 1)
+        val release = CompletableDeferred<Unit>()
+        val started = mutableListOf<String>()
+        val published = mutableListOf<String>()
+        val load = async {
+            coordinator.load(
+                group = HomeSectionLoadGroup.RADAR_SONGS,
+                sources = listOf("running", "queued"),
+                fetch = { source ->
+                    started += source
+                    if (source == "running") release.await()
+                    source
+                },
+                onResult = published::add
+            )
+        }
+
+        runCurrent()
+
+        assertEquals(listOf("running"), started)
+
+        load.cancel()
+        load.join()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(load.isCancelled)
+        assertEquals(listOf("running"), started)
+        assertTrue(published.isEmpty())
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
