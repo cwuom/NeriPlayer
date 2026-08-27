@@ -85,6 +85,25 @@ class PlayerUrlResolverTest {
     }
 
     @Test
+    fun buildNeteaseSuccessResult_exposesFlacMimeTypeToMedia3() {
+        val result = buildNeteaseSuccessResult(
+            parsed = NeteasePlaybackResponseParser.PlaybackResult.Success(
+                url = "http://m801.music.126.net/track.flac",
+                type = "flac",
+                level = "lossless",
+                bitrateKbps = 960
+            ),
+            resolvedQualityKey = "hires",
+            fallbackDurationMs = 242_819L,
+            getLocalizedString = { it.toString() }
+        )
+
+        assertEquals("https://m801.music.126.net/track.flac", result.url)
+        assertEquals("audio/flac", result.mimeType)
+        assertEquals("audio/flac", result.audioInfo?.mimeType)
+    }
+
+    @Test
     fun inferBiliQualityKey_detectsLosslessTagsAndFlacStreams() {
         val taggedLossless = BiliAudioStreamInfo(
             id = 30280,
