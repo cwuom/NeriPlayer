@@ -10,6 +10,13 @@ import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirect
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
+internal enum class ManagedDownloadDirectoryChangeDecision {
+    APPLY_DIRECTLY,
+    REATTACH_EXISTING_TARGET,
+    CONFIRM_MIGRATION,
+    CONFIRM_MIGRATION_WITH_NON_EMPTY_TARGET
+}
+
 internal object ManagedDownloadMigrationPolicy {
     fun requiresExplicitConfirmation(
         fromDirectoryUri: String?,
@@ -18,7 +25,7 @@ internal object ManagedDownloadMigrationPolicy {
         return !ManagedDownloadDirectoryIdentity.areEquivalentDirectoryUris(
             fromDirectoryUri,
             toDirectoryUri
-        )
+        ) && !(fromDirectoryUri.isNullOrBlank() && toDirectoryUri.isNullOrBlank())
     }
 
     fun shouldReattachExistingManagedDirectory(
@@ -52,6 +59,37 @@ internal object ManagedDownloadMigrationPolicy {
             sourceHasManagedEntries = false,
             targetHasManagedEntries = probeTargetHasManagedEntries()
         )
+    }
+
+    suspend fun resolveDirectoryChangeAfterProbes(
+        fromDirectoryUri: String?,
+        toDirectoryUri: String?,
+        probeSourceHasManagedEntries: suspend () -> Boolean,
+        probeTargetHasManagedEntries: suspend () -> Boolean,
+        probeTargetNonEmpty: suspend () -> Boolean = probeTargetHasManagedEntries
+    ): ManagedDownloadDirectoryChangeDecision {
+        if (ManagedDownloadDirectoryIdentity.areEquivalentDirectoryUris(
+                fromDirectoryUri,
+                toDirectoryUri
+            )
+        ) {
+            return ManagedDownloadDirectoryChangeDecision.APPLY_DIRECTLY
+        }
+
+        if (probeSourceHasManagedEntries()) {
+            val targetNonEmpty = probeTargetNonEmpty()
+            return if (targetNonEmpty) {
+                ManagedDownloadDirectoryChangeDecision.CONFIRM_MIGRATION_WITH_NON_EMPTY_TARGET
+            } else {
+                ManagedDownloadDirectoryChangeDecision.CONFIRM_MIGRATION
+            }
+        }
+
+        if (fromDirectoryUri.isNullOrBlank() && probeTargetHasManagedEntries()) {
+            return ManagedDownloadDirectoryChangeDecision.REATTACH_EXISTING_TARGET
+        }
+
+        return ManagedDownloadDirectoryChangeDecision.APPLY_DIRECTLY
     }
 
     fun mimeTypeFor(entry: ManagedMigrationEntryRef): String {

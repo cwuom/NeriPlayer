@@ -70,6 +70,37 @@ class CoverUrlStateTest {
     }
 
     @Test
+    fun `unverified SAF cover defers its remote fallback until validation finishes`() {
+        assertNull(
+            resolvePrevalidatedCoverCandidate(
+                primaryCoverUrl = "content://old-root/Covers/song.jpg",
+                fallbackCoverUrl = "https://example.com/original.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `remote fallback is immediate only when no primary cover is pending`() {
+        assertEquals(
+            "https://example.com/original.jpg",
+            resolvePrevalidatedCoverCandidate(
+                primaryCoverUrl = null,
+                fallbackCoverUrl = "https://example.com/original.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `unverified local references are never published before validation`() {
+        assertNull(
+            resolvePrevalidatedCoverCandidate(
+                primaryCoverUrl = "content://old-root/Covers/song.jpg",
+                fallbackCoverUrl = "file:///old-root/Covers/song.jpg"
+            )
+        )
+    }
+
+    @Test
     fun `embedded local cover fallback remains available outside scroll constrained rows`() {
         assertTrue(
             shouldResolveEmbeddedCoverFallback(

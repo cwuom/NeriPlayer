@@ -67,6 +67,31 @@ internal class ManagedDownloadRootResolver(
         }
     }
 
+    fun probeTreeRoot(
+        context: Context,
+        directoryUriString: String?
+    ): ManagedDownloadRootProbeResult {
+        val normalizedUri = ManagedDownloadDirectoryIdentity
+            .normalizeConfiguredDirectoryUri(directoryUriString)
+            ?: return ManagedDownloadRootProbeResult.Accessible
+        return try {
+            if (resolveTreeRoot(context, normalizedUri) != null) {
+                ManagedDownloadRootProbeResult.Accessible
+            } else {
+                ManagedDownloadRootProbeResult.Unavailable
+            }
+        } catch (error: ManagedDownloadRootProviderException) {
+            ManagedDownloadRootProbeResult.ProviderFailure(error)
+        } catch (error: Exception) {
+            ManagedDownloadRootProbeResult.ProviderFailure(
+                ManagedDownloadRootProviderException(
+                    reference = "configured-root",
+                    cause = error
+                )
+            )
+        }
+    }
+
     fun hasPersistedWritePermission(context: Context, directoryUriString: String?): Boolean {
         val normalizedUri = ManagedDownloadDirectoryIdentity.normalizeConfiguredDirectoryUri(directoryUriString)
             ?: return false
@@ -170,6 +195,14 @@ internal class ManagedDownloadRootProviderException(
     reference: String,
     cause: Throwable
 ) : IOException("DocumentsProvider 暂时无法检查下载目录: $reference", cause)
+
+internal sealed interface ManagedDownloadRootProbeResult {
+    data object Accessible : ManagedDownloadRootProbeResult
+    data object Unavailable : ManagedDownloadRootProbeResult
+    data class ProviderFailure(
+        val error: ManagedDownloadRootProviderException
+    ) : ManagedDownloadRootProbeResult
+}
 
 internal fun requireAccessibleManagedDownloadRoot(
     reference: String,

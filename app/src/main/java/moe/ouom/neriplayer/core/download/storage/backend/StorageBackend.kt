@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import android.database.Cursor
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.AtomicMoveNotSupportedException
@@ -117,6 +118,8 @@ sealed interface StorageWriteResult {
     data class Unsupported(val operation: String) : StorageWriteResult
 }
 
+internal class StorageTargetChangedException(message: String) : IOException(message)
+
 internal enum class SafWriteCommitMode {
     AtomicRename,
     DirectCreate,
@@ -187,6 +190,32 @@ interface StorageBackend {
     suspend fun capabilities(reference: StorageReference): StorageCapabilities
 }
 
+private class StorageReadBlockFailure(
+    val blockFailure: Throwable
+) : RuntimeException(blockFailure)
+
+internal suspend fun <T> StorageBackend.readPreservingBlockFailure(
+    reference: StorageReference,
+    block: suspend (InputStream) -> T
+): StorageLookupResult<Result<T>> {
+    return try {
+        read(reference) { input ->
+            try {
+                Result.success(block(input))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                throw StorageReadBlockFailure(error)
+            }
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: StorageReadBlockFailure) {
+        error.suppressed.forEach(error.blockFailure::addSuppressed)
+        StorageLookupResult.Found(Result.failure(error.blockFailure))
+    }
+}
+
 internal class FileStorageBackend(
     private val root: File
 ) : StorageBackend {
@@ -245,14 +274,13 @@ internal class FileStorageBackend(
             ?: return@withContext StorageLookupResult.OutOfScope
         if (!file.isFile) return@withContext StorageLookupResult.Missing
         return@withContext try {
-            val input = file.inputStream()
-            val value = try {
+            val value = file.inputStream().use { input ->
                 block(input)
-            } finally {
-                input.close()
             }
             StorageLookupResult.Found(value)
         } catch (error: CancellationException) {
+            throw error
+        } catch (error: StorageReadBlockFailure) {
             throw error
         } catch (error: Throwable) {
             StorageLookupResult.ProviderFailure(error)
@@ -547,14 +575,13 @@ internal class SafStorageBackend(
             IllegalStateException("provider returned null input stream")
         )
         return@withContext try {
-            val value = block(input)
-            input.close()
+            val value = input.use { stream -> block(stream) }
             StorageLookupResult.Found(value)
         } catch (error: CancellationException) {
-            runCatching { input.close() }
+            throw error
+        } catch (error: StorageReadBlockFailure) {
             throw error
         } catch (error: Throwable) {
-            runCatching { input.close() }
             StorageLookupResult.ProviderFailure(error)
         }
     }
@@ -562,9 +589,46 @@ internal class SafStorageBackend(
     override suspend fun writeRecoverable(
         target: StorageTarget,
         writer: suspend (OutputStream) -> Unit
-    ): StorageWriteResult = withContext(ioDispatcher) {
+    ): StorageWriteResult {
         val safTarget = target as? StorageTarget.SafTarget
-            ?: return@withContext StorageWriteResult.Unsupported("SAF target required")
+            ?: return StorageWriteResult.Unsupported("SAF target required")
+        return writeSafRecoverable(
+            safTarget = safTarget,
+            expectedAbsent = false,
+            writer = writer
+        )
+    }
+
+    internal suspend fun writeCreateOnlyRecoverable(
+        target: StorageTarget.SafTarget,
+        writer: suspend (OutputStream) -> Unit
+    ): StorageWriteResult {
+        return writeSafRecoverable(
+            safTarget = target,
+            expectedAbsent = true,
+            writer = writer
+        )
+    }
+
+    internal suspend fun replaceKnownRecoverable(
+        target: StorageTarget.SafTarget,
+        existingReference: StorageReference.SafRef,
+        writer: suspend (OutputStream) -> Unit
+    ): StorageWriteResult {
+        return writeSafRecoverable(
+            safTarget = target,
+            expectedAbsent = false,
+            knownExistingReference = existingReference,
+            writer = writer
+        )
+    }
+
+    private suspend fun writeSafRecoverable(
+        safTarget: StorageTarget.SafTarget,
+        expectedAbsent: Boolean,
+        knownExistingReference: StorageReference.SafRef? = null,
+        writer: suspend (OutputStream) -> Unit
+    ): StorageWriteResult = withContext(ioDispatcher) {
         if (safTarget.displayName.isBlank() || safTarget.displayName == "." || safTarget.displayName == "..") {
             return@withContext StorageWriteResult.Unsupported("valid SAF display name required")
         }
@@ -633,11 +697,7 @@ internal class SafStorageBackend(
             )
         }
         try {
-            try {
-                writer(output)
-            } finally {
-                output.close()
-            }
+            output.use { stream -> writer(stream) }
         } catch (error: CancellationException) {
             cleanupTemporarySafWriteCancellation(temporaryUri, error)
             throw error
@@ -681,11 +741,55 @@ internal class SafStorageBackend(
             )
         }
 
-        reconcileSafBackupBeforeWrite(parentUri, safTarget.displayName)?.let { result ->
-            return@commit cleanupTemporarySafWriteFailure(temporaryUri, result)
+        if (!expectedAbsent && knownExistingReference == null) {
+            reconcileSafBackupBeforeWrite(parentUri, safTarget.displayName)?.let { result ->
+                return@commit cleanupTemporarySafWriteFailure(temporaryUri, result)
+            }
         }
 
-        val existingTarget = when (val children = queryChildren(parentUri)) {
+        val existingTarget = if (expectedAbsent) {
+            null
+        } else if (knownExistingReference != null) {
+            when (val existing = queryDocument(knownExistingReference.uri)) {
+                SafQueryResult.Missing -> {
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.ProviderFailure(
+                            StorageTargetChangedException(
+                                "known SAF target disappeared: ${safTarget.displayName}"
+                            )
+                        )
+                    )
+                }
+                SafQueryResult.PermissionLost -> {
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.PermissionLost
+                    )
+                }
+                is SafQueryResult.ProviderFailure -> {
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.ProviderFailure(existing.error)
+                    )
+                }
+                is SafQueryResult.Found -> {
+                    if (existing.document.displayName != safTarget.displayName) {
+                        return@commit cleanupTemporarySafWriteFailure(
+                            temporaryUri,
+                            StorageWriteResult.ProviderFailure(
+                                StorageTargetChangedException(
+                                    "known SAF target changed name: " +
+                                        "expected=${safTarget.displayName} " +
+                                        "actual=${existing.document.displayName}"
+                                )
+                            )
+                        )
+                    }
+                    existing.document.toStat(knownExistingReference.uri)
+                }
+            }
+        } else when (val children = queryChildren(parentUri)) {
             is SafChildrenResult.Found -> children.entries.firstOrNull {
                 it.displayName == safTarget.displayName
             }
@@ -717,6 +821,12 @@ internal class SafStorageBackend(
             )
         }
         val canRename = temporaryStat.flags and DocumentsContract.Document.FLAG_SUPPORTS_RENAME.toLong() != 0L
+        if (expectedAbsent && canRename) {
+            return@commit commitSafCreateOnlyByRename(
+                temporaryUri = temporaryUri,
+                displayName = safTarget.displayName
+            )
+        }
         when (chooseSafWriteCommitMode(canRename, existingTarget != null)) {
             SafWriteCommitMode.Unsupported -> {
                 return@commit cleanupTemporarySafWriteFailure(
@@ -799,7 +909,11 @@ internal class SafStorageBackend(
             ?.let { it as? StorageReference.SafRef }
             ?.uri
             ?.let { existingUri ->
-                val backupName = safBackupName(safTarget.displayName)
+                val backupName = if (knownExistingReference == null) {
+                    safBackupName(safTarget.displayName)
+                } else {
+                    ".${safTarget.displayName}.${UUID.randomUUID()}.backup"
+                }
                 val renamedUri = try {
                     DocumentsContract.renameDocument(context.contentResolver, existingUri, backupName)
                 } catch (error: SecurityException) {
@@ -824,10 +938,14 @@ internal class SafStorageBackend(
                     )
                 }
                 confirmSafDocumentName(renamedUri, backupName)?.let { error ->
-                    return@commit cleanupTemporarySafWriteFailure(
-                        temporaryUri,
-                        storageWriteFailure(error)
+                    val restoreError = restoreBackupAndConfirm(
+                        uri = renamedUri,
+                        displayName = safTarget.displayName
                     )
+                    val temporaryCleanupError = deleteSafDocumentAndConfirm(temporaryUri)
+                    return@commit restoreError?.let(::storageWriteFailure)
+                        ?: temporaryCleanupError?.let(::storageWriteFailure)
+                        ?: storageWriteFailure(error)
                 }
                 renamedUri
             }
@@ -1203,6 +1321,58 @@ internal class SafStorageBackend(
                 SafFileFailure.Missing -> SafChildrenResult.Missing
                 SafFileFailure.PermissionLost -> SafChildrenResult.PermissionLost
                 SafFileFailure.ProviderFailure -> SafChildrenResult.ProviderFailure(error)
+            }
+        }
+    }
+
+    private fun commitSafCreateOnlyByRename(
+        temporaryUri: Uri,
+        displayName: String
+    ): StorageWriteResult {
+        val finalUri = try {
+            DocumentsContract.renameDocument(context.contentResolver, temporaryUri, displayName)
+        } catch (error: SecurityException) {
+            return cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.PermissionLost
+            )
+        } catch (error: UnsupportedOperationException) {
+            return cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.Unsupported("provider rename")
+            )
+        } catch (error: Throwable) {
+            return cleanupTemporarySafWriteFailure(
+                temporaryUri,
+                StorageWriteResult.ProviderFailure(error)
+            )
+        } ?: return cleanupTemporarySafWriteFailure(
+            temporaryUri,
+            StorageWriteResult.ProviderFailure(
+                StorageTargetChangedException("SAF 迁移目标名称已被占用: $displayName")
+            )
+        )
+
+        return when (val result = queryDocument(finalUri)) {
+            SafQueryResult.Missing -> StorageWriteResult.ProviderFailure(
+                IllegalStateException("renamed create-only document cannot be queried")
+            )
+            SafQueryResult.PermissionLost -> StorageWriteResult.PermissionLost
+            is SafQueryResult.ProviderFailure -> StorageWriteResult.ProviderFailure(result.error)
+            is SafQueryResult.Found -> {
+                if (result.document.displayName == displayName) {
+                    StorageWriteResult.Written(result.document.toStat(finalUri))
+                } else {
+                    cleanupTemporarySafWriteFailure(
+                        finalUri,
+                        StorageWriteResult.ProviderFailure(
+                            StorageTargetChangedException(
+                                "SAF Provider 调整了迁移目标名称: " +
+                                    "expected=$displayName actual=${result.document.displayName}"
+                            )
+                        )
+                    )
+                }
             }
         }
     }

@@ -84,6 +84,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -108,6 +109,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -122,6 +124,7 @@ import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveLoudnessPeakSource
 import moe.ouom.neriplayer.core.player.policy.usb.UsbExclusiveOutputDeviceClass
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
+import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.StartupStage
 import moe.ouom.neriplayer.core.startup.StartupStageResolver
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
@@ -166,6 +169,9 @@ import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
 import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
+
+private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
+internal const val STARTUP_LOADING_INDICATOR_DELAY_MS = 1_000L
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -383,10 +389,36 @@ class MainActivity : ComponentActivity() {
             val followSystemDark by settingsRepository.followSystemDarkFlow.collectAsStateWithLifecycle(
                 initialValue = startupThemeSnapshot.followSystemDark
             )
-            val disclaimerAccepted by settingsRepository.disclaimerAcceptedFlow
+            val startupDisclaimerFlow = remember(settingsRepository) {
+                settingsRepository.disclaimerAcceptedFlow.catch { error ->
+                    NPLogger.w(
+                        "MainActivity",
+                        "启动免责声明状态读取失败，回退到未同意: ${error.message}"
+                    )
+                    emit(false)
+                }
+            }
+            val startupOnboardingFlow = remember(settingsRepository) {
+                settingsRepository.startupOnboardingCompletedFlow.catch { error ->
+                    NPLogger.w(
+                        "MainActivity",
+                        "启动引导状态读取失败，回退到未完成: ${error.message}"
+                    )
+                    emit(false)
+                }
+            }
+            val disclaimerAccepted by startupDisclaimerFlow
                 .collectAsStateWithLifecycle(initialValue = null)
-            val startupOnboardingCompleted by settingsRepository.startupOnboardingCompletedFlow
+            val startupOnboardingCompleted by startupOnboardingFlow
                 .collectAsStateWithLifecycle(initialValue = null)
+            var startupSettingsReadTimedOut by rememberSaveable { mutableStateOf(false) }
+            LaunchedEffect(disclaimerAccepted, startupOnboardingCompleted) {
+                if (disclaimerAccepted != null && startupOnboardingCompleted != null) {
+                    return@LaunchedEffect
+                }
+                delay(STARTUP_SETTINGS_READ_TIMEOUT_MS)
+                startupSettingsReadTimedOut = true
+            }
             var pendingDisclaimerAccepted by rememberSaveable {
                 mutableStateOf(false)
             }
@@ -470,18 +502,24 @@ class MainActivity : ComponentActivity() {
                             controller.isAppearanceLightNavigationBars = !useLightSystemBarIcons
                         }
 
-                // 入场动画状态
                 var playedEntrance by rememberSaveable { mutableStateOf(false) }
                 LaunchedEffect(Unit) { playedEntrance = true }
 
                 val stage = remember(
                     disclaimerAccepted,
                     startupOnboardingCompleted,
-                    pendingDisclaimerAccepted
+                    pendingDisclaimerAccepted,
+                    startupSettingsReadTimedOut
                 ) {
                     StartupStageResolver.resolve(
-                        disclaimerAccepted = disclaimerAccepted,
-                        startupOnboardingCompleted = startupOnboardingCompleted,
+                        disclaimerAccepted = resolveStartupSetting(
+                            disclaimerAccepted,
+                            startupSettingsReadTimedOut
+                        ),
+                        startupOnboardingCompleted = resolveStartupSetting(
+                            startupOnboardingCompleted,
+                            startupSettingsReadTimedOut
+                        ),
                         pendingDisclaimerAccepted = pendingDisclaimerAccepted
                     )
                 }
@@ -492,6 +530,10 @@ class MainActivity : ComponentActivity() {
                         hasDisplayedDisclaimer = true
                     }
                     previousStartupStage = stage
+                    if (stage != StartupStage.Loading) {
+                        withFrameNanos { }
+                        AppStartupWorkGate.markInteractiveContentReady()
+                    }
                 }
                 val pendingMobileDataDownloadInterruptionRequest by
                     GlobalDownloadManager.mobileDataDownloadInterruptionRequest.collectAsStateWithLifecycle()
@@ -1428,13 +1470,28 @@ fun NeriTheme(
 }
 
 @Composable
-internal fun StartupLoadingContent() {
+internal fun StartupLoadingContent(
+    showProgress: Boolean? = null,
+    indicatorDelayMillis: Long = STARTUP_LOADING_INDICATOR_DELAY_MS
+) {
+    var delayedProgressVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(showProgress, indicatorDelayMillis) {
+        if (showProgress != null) {
+            delayedProgressVisible = showProgress
+            return@LaunchedEffect
+        }
+        delayedProgressVisible = false
+        delay(indicatorDelayMillis.coerceAtLeast(0L))
+        delayedProgressVisible = true
+    }
+    val progressVisible = showProgress ?: delayedProgressVisible
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .navigationBarsPadding(),
+            .navigationBarsPadding()
+            .testTag("startup_loading_surface"),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -1446,11 +1503,17 @@ internal fun StartupLoadingContent() {
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            CircularProgressIndicator(
-                modifier = Modifier.testTag("startup_loading_progress")
-            )
+            if (progressVisible) {
+                CircularProgressIndicator(
+                    modifier = Modifier.testTag("startup_loading_progress")
+                )
+            }
         }
     }
+}
+
+internal fun resolveStartupSetting(value: Boolean?, readTimedOut: Boolean): Boolean? {
+    return value ?: false.takeIf { readTimedOut }
 }
 
 @Composable

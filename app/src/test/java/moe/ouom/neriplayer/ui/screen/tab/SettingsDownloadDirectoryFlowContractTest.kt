@@ -83,6 +83,138 @@ class SettingsDownloadDirectoryFlowContractTest {
         assertTrue(source.contains("persistedMigrationProgress = null"))
     }
 
+    @Test
+    fun `reset probes readable source and bypasses migration only when unavailable`() {
+        val resetFlow = resetFlow(settingsSource())
+
+        assertTrue(resetFlow.contains("resolveDownloadDirectoryAvailability("))
+        assertTrue(resetFlow.contains("DownloadDirectoryAvailability.Available"))
+        assertTrue(resetFlow.contains("prepareDirectoryChange("))
+        assertTrue(resetFlow.contains("DownloadDirectoryAvailability.Unavailable"))
+        assertTrue(resetFlow.contains("applyDirectoryChange("))
+        assertTrue(resetFlow.contains("targetUri = null"))
+        assertTrue(resetFlow.contains("is DownloadDirectoryAvailability.ProviderFailure"))
+        assertTrue(resetFlow.contains("directoryProbeRetryMessage(resources)"))
+        assertFalse(resetFlow.contains("throw availability.error"))
+    }
+
+    @Test
+    fun `directory preflight has a bounded retryable deadline`() {
+        val source = settingsSource()
+
+        assertTrue(source.contains("DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L"))
+        assertTrue(source.contains("runDownloadDirectoryPreflight"))
+        assertTrue(source.contains("status=retryable"))
+        assertTrue(source.contains("RELEASE_PERSISTED_PERMISSION"))
+    }
+
+    @Test
+    fun `migration skip keeps the selected target and switches without copying`() {
+        val source = settingsSource()
+        val dialogs = source.substringAfter("private fun DownloadDirectoryDialogs(")
+
+        assertTrue(source.contains("val onSkipPendingChange:"))
+        assertTrue(source.contains("onSkipPendingChange = { change ->"))
+        assertTrue(source.contains("applyPendingChangeWithoutMigration(change)"))
+        assertTrue(dialogs.contains("controller.onSkipPendingChange(change)"))
+        assertTrue(dialogs.contains("R.string.settings_download_directory_migrate_skip"))
+        assertTrue(source.contains("if (change.targetUri.isNullOrBlank())"))
+    }
+
+    @Test
+    fun `migration preflight enumerates each root once without reading every sidecar`() {
+        val storageSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        ).readText()
+        val presenceProbe = storageSource
+            .substringAfter("suspend fun hasMigratableDownloads(")
+            .substringBefore("suspend fun migrateManagedDownloads(")
+
+        assertEquals(
+            1,
+            Regex("refreshManagedMigrationEntries").findAll(presenceProbe).count()
+        )
+        assertTrue(presenceProbe.contains("hasAnyManagedEntry("))
+        assertTrue(presenceProbe.contains("requiresSidecarEntries ="))
+        assertFalse(presenceProbe.contains("collectManagedMigrationEntries("))
+        assertFalse(presenceProbe.contains("parseDownloadedAudioMetadata("))
+        assertFalse(presenceProbe.contains("readManagedLibraryIdBlocking("))
+        assertFalse(presenceProbe.contains("readText"))
+    }
+
+    @Test
+    fun `populated migration target shows localized conflict semantics`() {
+        val source = settingsSource()
+        val localizedResources = listOf(
+            "app/src/main/res/values/strings_settings_general.xml",
+            "app/src/main/res/values-zh/strings_settings_general.xml",
+            "app/src/main/res/values-en/strings_settings_general.xml"
+        ).map { path -> locateProjectFile(path).readText() }
+
+        assertTrue(source.contains("targetNonEmpty"))
+        assertTrue(source.contains("hasActualDirectoryEntries(context, targetUri)"))
+        assertTrue(
+            source.contains("settings_download_directory_migrate_conflict_warning")
+        )
+        localizedResources.forEach { resources ->
+            assertTrue(
+                resources.contains(
+                    "<string name=\"settings_download_directory_migrate_conflict_warning\">"
+                )
+            )
+            assertTrue(
+                resources.contains("同曲") ||
+                    resources.contains("matching tracks", ignoreCase = true)
+            )
+        }
+    }
+
+    @Test
+    fun `directory mutation requires the shared exclusive processing lease`() {
+        val source = settingsSource()
+        val controller = controllerFlow(source)
+        val applyFlow = controller
+            .substringAfter("suspend fun applyDirectoryChange(")
+            .substringBefore("suspend fun prepareDirectoryChange(")
+
+        assertTrue(
+            source.contains(
+                "libraryProcessingState.value != ManagedLibraryProcessingState.Idle"
+            )
+        )
+        assertTrue(
+            applyFlow.contains(
+                "ManagedLibraryProcessingCoordinator.tryBeginExclusive("
+            )
+        )
+        assertTrue(applyFlow.contains("ManagedLibraryProcessingBusyException("))
+        assertTrue(
+            applyFlow.indexOf("tryBeginExclusive(") <
+                applyFlow.indexOf("updateConfiguredTreeUri(")
+        )
+    }
+
+    @Test
+    fun `generic retry copy does not claim the readable directory is unavailable`() {
+        val localizedResources = listOf(
+            "app/src/main/res/values/strings_settings_general.xml",
+            "app/src/main/res/values-zh/strings_settings_general.xml",
+            "app/src/main/res/values-en/strings_settings_general.xml"
+        ).map { path -> locateProjectFile(path).readText() }
+
+        localizedResources.forEach { resources ->
+            val retryCopy = resources
+                .substringAfter("<string name=\"managed_library_processing_retry\">")
+                .substringBefore("</string>")
+            assertFalse(retryCopy.contains("无法读取"))
+            assertFalse(retryCopy.contains("temporarily unavailable", ignoreCase = true))
+            assertTrue(
+                retryCopy.contains("自动重试") ||
+                    retryCopy.contains("retry automatically", ignoreCase = true)
+            )
+        }
+    }
+
     private fun pickerFlow(source: String): String {
         return controllerFlow(source)
             .substringAfter("val directoryLauncher =")

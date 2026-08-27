@@ -13,13 +13,15 @@ internal data class ManagedLibraryRebuildItem(
 
 internal object ManagedLibraryRebuilder {
     fun plan(
-        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        allowIncompleteRootPreview: Boolean = false
     ): List<ManagedLibraryRebuildItem> {
         return snapshot.audioEntries.mapNotNull { audio ->
             val metadata = snapshot.metadataByAudioName[audio.name]
             if (
                 !isFinalizedDownloadedAudioEntry(
-                    rootEntriesComplete = snapshot.rootEntriesComplete,
+                    rootEntriesComplete = snapshot.rootEntriesComplete ||
+                        allowIncompleteRootPreview,
                     isPendingAudioWrite = audio.isPendingAudioWrite,
                     metadata = metadata
                 )

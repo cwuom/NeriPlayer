@@ -318,10 +318,16 @@
     <string name="settings_download_directory_switch_warning_confirm">Continue</string>
     <string name="settings_download_directory_migrate_title">Move Existing Downloads</string>
     <string name="settings_download_directory_migrate_message">Move your downloaded songs, lyrics, and covers to \"%1$s\"?</string>
+    <string name="settings_download_directory_migrate_conflict_warning">The target already contains downloads, so matching tracks may conflict. For confirmed matches, this migration\'s source data takes precedence; distinct files that cannot be confirmed as the same track are both kept.</string>
     <string name="settings_download_directory_migrate_confirm">Move Files</string>
     <string name="settings_download_directory_migrate_skip">Keep Old Files</string>
     <string name="settings_download_directory_preparing">Checking Download Directory</string>
     <string name="settings_download_directory_preparing_desc">Checking existing download files. Please wait.</string>
+    <string name="managed_library_processing_upgrade_title">Upgrading Download Database</string>
+    <string name="managed_library_processing_directory_title">Processing New Download Directory</string>
+    <string name="managed_library_processing_subtitle">Your download list will update automatically when processing is complete</string>
+    <string name="managed_library_processing_progress">Progress: %1$d / %2$d</string>
+    <string name="managed_library_processing_retry">Processing is not complete yet and will retry automatically in the background.</string>
     <string name="settings_download_directory_migrating">Moving download files</string>
     <string name="settings_download_directory_migrating_desc">Songs, lyrics, and covers are being moved to the new folder</string>
     <string name="settings_download_directory_migrating_stage_preparing">Preparing files to move</string>

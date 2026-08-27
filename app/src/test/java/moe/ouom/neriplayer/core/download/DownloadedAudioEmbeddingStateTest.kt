@@ -8,7 +8,7 @@ import org.junit.Test
 
 class DownloadedAudioEmbeddingStateTest {
     @Test
-    fun `only verified embedding and explicit user opt out are accepted`() {
+    fun `verified user opt out and shipped legacy completion are accepted`() {
         assertTrue(
             isAcceptedDownloadedAudioEmbeddingState(
                 DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
@@ -17,6 +17,11 @@ class DownloadedAudioEmbeddingStateTest {
         assertTrue(
             isAcceptedDownloadedAudioEmbeddingState(
                 DownloadedAudioEmbeddingState.USER_DISABLED
+            )
+        )
+        assertTrue(
+            isAcceptedDownloadedAudioEmbeddingState(
+                DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
             )
         )
         assertFalse(
@@ -41,6 +46,9 @@ class DownloadedAudioEmbeddingStateTest {
         val userDisabledMetadata = verifiedMetadata.copy(
             metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
         )
+        val legacyFinalizedMetadata = verifiedMetadata.copy(
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
+        )
 
         assertTrue(
             isFinalizedDownloadedAudioEntry(
@@ -54,6 +62,13 @@ class DownloadedAudioEmbeddingStateTest {
                 rootEntriesComplete = true,
                 isPendingAudioWrite = false,
                 metadata = userDisabledMetadata
+            )
+        )
+        assertTrue(
+            isFinalizedDownloadedAudioEntry(
+                rootEntriesComplete = true,
+                isPendingAudioWrite = false,
+                metadata = legacyFinalizedMetadata
             )
         )
         assertFalse(

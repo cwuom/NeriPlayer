@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
 import android.content.Context
-import java.io.IOException
 import java.io.InputStream
 import java.security.DigestInputStream
 import java.security.MessageDigest
@@ -89,7 +88,7 @@ private data class WrittenMigrationEntry(
 
 internal class ManagedDownloadMigrationCopyWorker(
     private val tag: String,
-    private val openInputStream: (Context, ManagedDownloadStorage.StoredEntry) -> InputStream?,
+    private val entryReader: ManagedMigrationEntryReader,
     private val mimeTypeFor: (ManagedMigrationEntry) -> String,
     private val writeRootStream: (
         Context,
@@ -113,7 +112,40 @@ internal class ManagedDownloadMigrationCopyWorker(
         Set<String>,
         ManagedDownloadStorage.StoredEntry?,
         ((Long) -> Unit)?
-    ) -> StoredWriteResult
+    ) -> StoredWriteResult,
+    private val writeReplacementRootStream: (
+        Context,
+        ManagedDownloadRootHandle,
+        String,
+        String,
+        InputStream,
+        ManagedDownloadStorage.StoredEntry,
+        Set<String>,
+        ManagedDownloadStorage.StoredEntry?,
+        ManagedMigrationReplacementPlan,
+        ((Long) -> Unit)?
+    ) -> StoredWriteResult = { _, _, _, _, _, _, _, _, _, _ ->
+        throw ManagedDownloadMigrationException.transient(
+            "迁移替换写入器未配置"
+        )
+    },
+    private val writeReplacementSubdirectoryStream: (
+        Context,
+        ManagedDownloadRootHandle,
+        String,
+        String,
+        String,
+        InputStream,
+        ManagedDownloadStorage.StoredEntry,
+        Set<String>,
+        ManagedDownloadStorage.StoredEntry?,
+        ManagedMigrationReplacementPlan,
+        ((Long) -> Unit)?
+    ) -> StoredWriteResult = { _, _, _, _, _, _, _, _, _, _, _ ->
+        throw ManagedDownloadMigrationException.transient(
+            "迁移替换写入器未配置"
+        )
+    }
 ) {
     suspend fun copyEntry(
         context: Context,
@@ -154,12 +186,14 @@ internal class ManagedDownloadMigrationCopyWorker(
                 original = migrationEntry,
                 copiedEntry = copiedEntry.result.entry,
                 createdNew = copiedEntry.result.createdNew,
-                sourceDigest = copiedEntry.sourceDigest
+                sourceDigest = copiedEntry.sourceDigest,
+                replacementBackup = copiedEntry.result.replacementBackup,
+                sourceAuthoritative = copiedEntry.result.sourceAuthoritative
             )
         )
     }
 
-    private fun copyEntryOnce(
+    private suspend fun copyEntryOnce(
         context: Context,
         targetRoot: ManagedDownloadRootHandle,
         migrationEntry: ManagedMigrationEntry,
@@ -176,13 +210,18 @@ internal class ManagedDownloadMigrationCopyWorker(
                     "迁移目标冲突: ${migrationEntry.entry.name}, $detail"
                 )
             }
-            val reusedEntry = namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
+            val replacementPlan = namePlan.replacementFor(migrationEntry.toRef())
+            val reusedEntry = if (replacementPlan == null) {
+                namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
                 if (!ManagedDownloadTreeNaming.isMetadataName(migrationEntry.entry.name)) {
                     val logicalBytes = migrationEntry.entry.sizeBytes.coerceAtLeast(0L)
                     val sourceLogicalBytes = logicalBytes / 2L + logicalBytes % 2L
                     val targetLogicalBytes = logicalBytes - sourceLogicalBytes
-                    val sourceDigest = openInputStream(context, migrationEntry.entry)
-                        ?.use { input ->
+                    val sourceDigest = entryReader.readOrThrow(
+                        context = context,
+                        entry = migrationEntry.entry,
+                        operation = "无法读取源文件以验证迁移复用"
+                    ) { input ->
                             sha256MigrationContent(input) { hashedBytes ->
                                 coroutineContext.ensureActive()
                                 progressTracker?.onCopyProgress(
@@ -196,15 +235,15 @@ internal class ManagedDownloadMigrationCopyWorker(
                                 )
                             }
                         }
-                        ?: throw ManagedDownloadMigrationException.transient(
-                            "无法读取源文件以验证迁移复用: ${migrationEntry.entry.name}"
-                        )
                     progressTracker?.onCopyProgress(migrationEntry, sourceLogicalBytes)
                     val targetExpectedBytes = existingEntry.sizeBytes
                         .takeIf { sizeBytes -> sizeBytes > 0L }
                         ?: migrationEntry.entry.sizeBytes
-                    val targetDigest = openInputStream(context, existingEntry)
-                        ?.use { input ->
+                    val targetDigest = entryReader.readOrThrow(
+                        context = context,
+                        entry = existingEntry,
+                        operation = "无法读取目标文件以验证迁移复用"
+                    ) { input ->
                             sha256MigrationContent(input) { hashedBytes ->
                                 coroutineContext.ensureActive()
                                 progressTracker?.onCopyProgress(
@@ -218,9 +257,6 @@ internal class ManagedDownloadMigrationCopyWorker(
                                 )
                             }
                         }
-                        ?: throw ManagedDownloadMigrationException.transient(
-                            "无法读取目标文件以验证迁移复用: ${existingEntry.name}"
-                        )
                     progressTracker?.onCopyProgress(migrationEntry, logicalBytes)
                     if (sourceDigest != targetDigest) {
                         throw ManagedDownloadMigrationException.permanent(
@@ -243,8 +279,15 @@ internal class ManagedDownloadMigrationCopyWorker(
                     ),
                     sourceDigest = null
                 )
+                }
+            } else {
+                null
             }
-            reusedEntry ?: openInputStream(context, migrationEntry.entry)?.use { input ->
+            reusedEntry ?: entryReader.readOrThrow(
+                context = context,
+                entry = migrationEntry.entry,
+                operation = "无法读取源下载文件"
+            ) { input ->
                 val sourceDigest = MessageDigest.getInstance("SHA-256")
                 val digestingInput = DigestInputStream(input, sourceDigest)
                 val writeResult = if (migrationEntry.subdirectory == null) {
@@ -254,6 +297,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                         migrationEntry = migrationEntry,
                         targetIndex = targetIndex,
                         namePlan = namePlan,
+                        replacementPlan = replacementPlan,
                         input = digestingInput,
                         onProgress = { copiedBytes ->
                             coroutineContext.ensureActive()
@@ -267,6 +311,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                         migrationEntry = migrationEntry,
                         targetIndex = targetIndex,
                         namePlan = namePlan,
+                        replacementPlan = replacementPlan,
                         input = digestingInput,
                         onProgress = { copiedBytes ->
                             coroutineContext.ensureActive()
@@ -282,7 +327,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                     result = writeResult,
                     sourceDigest = digestHex(sourceDigest)
                 )
-            } ?: throw IOException("无法读取源下载文件: ${migrationEntry.entry.name}")
+            }
         } catch (error: Throwable) {
             progressTracker?.failCopy(migrationEntry)
             throw error
@@ -297,20 +342,35 @@ internal class ManagedDownloadMigrationCopyWorker(
         migrationEntry: ManagedMigrationEntry,
         targetIndex: ManagedMigrationTargetIndex,
         namePlan: ManagedMigrationNamePlan,
+        replacementPlan: ManagedMigrationReplacementPlan?,
         input: InputStream,
         onProgress: (Long) -> Unit
     ): StoredWriteResult {
         val targetName = namePlan.targetNameFor(migrationEntry.toRef())
-        return writeRootStream(
-            context,
-            targetRoot,
-            targetName,
-            mimeTypeFor(migrationEntry),
-            input,
-            migrationEntry.entry,
-            targetIndex.namesFor(migrationEntry.subdirectory),
-            targetIndex.entryFor(migrationEntry.subdirectory, targetName)
-        ) { copiedBytes -> onProgress(copiedBytes) }
+        return if (replacementPlan == null) {
+            writeRootStream(
+                context,
+                targetRoot,
+                targetName,
+                mimeTypeFor(migrationEntry),
+                input,
+                migrationEntry.entry,
+                targetIndex.namesFor(migrationEntry.subdirectory),
+                targetIndex.entryFor(migrationEntry.subdirectory, targetName)
+            ) { copiedBytes -> onProgress(copiedBytes) }
+        } else {
+            writeReplacementRootStream(
+                context,
+                targetRoot,
+                targetName,
+                mimeTypeFor(migrationEntry),
+                input,
+                migrationEntry.entry,
+                targetIndex.namesFor(migrationEntry.subdirectory),
+                targetIndex.entryFor(migrationEntry.subdirectory, targetName),
+                replacementPlan
+            ) { copiedBytes -> onProgress(copiedBytes) }
+        }
     }
 
     private fun writeSubdirectory(
@@ -319,32 +379,50 @@ internal class ManagedDownloadMigrationCopyWorker(
         migrationEntry: ManagedMigrationEntry,
         targetIndex: ManagedMigrationTargetIndex,
         namePlan: ManagedMigrationNamePlan,
+        replacementPlan: ManagedMigrationReplacementPlan?,
         input: InputStream,
         onProgress: (Long) -> Unit
     ): StoredWriteResult {
         val subdirectory = migrationEntry.subdirectory ?: error("缺少迁移子目录")
         val targetName = namePlan.targetNameFor(migrationEntry.toRef())
-        return writeSubdirectoryStream(
-            context,
-            targetRoot,
-            subdirectory,
-            targetName,
-            mimeTypeFor(migrationEntry),
-            input,
-            migrationEntry.entry,
-            targetIndex.namesFor(subdirectory),
-            targetIndex.entryFor(subdirectory, targetName)
-        ) { copiedBytes -> onProgress(copiedBytes) }
+        return if (replacementPlan == null) {
+            writeSubdirectoryStream(
+                context,
+                targetRoot,
+                subdirectory,
+                targetName,
+                mimeTypeFor(migrationEntry),
+                input,
+                migrationEntry.entry,
+                targetIndex.namesFor(subdirectory),
+                targetIndex.entryFor(subdirectory, targetName)
+            ) { copiedBytes -> onProgress(copiedBytes) }
+        } else {
+            writeReplacementSubdirectoryStream(
+                context,
+                targetRoot,
+                subdirectory,
+                targetName,
+                mimeTypeFor(migrationEntry),
+                input,
+                migrationEntry.entry,
+                targetIndex.namesFor(subdirectory),
+                targetIndex.entryFor(subdirectory, targetName),
+                replacementPlan
+            ) { copiedBytes -> onProgress(copiedBytes) }
+        }
     }
 
-    private suspend fun <T> retryWrite(reference: String, block: () -> T): T {
+    private suspend fun <T> retryWrite(reference: String, block: suspend () -> T): T {
         var lastError: Throwable? = null
         repeat(MIGRATION_IO_MAX_ATTEMPTS) { attempt ->
-            val result = runCatching(block).onFailure { error ->
+            try {
+                return block()
+            } catch (error: Throwable) {
                 if (error is CancellationException) {
                     throw error
                 }
-                if (error is ManagedDownloadMigrationException && !error.retryable) {
+                if (error is ManagedDownloadMigrationException && !error.retryWithinEntry) {
                     throw error
                 }
                 lastError = error
@@ -355,9 +433,6 @@ internal class ManagedDownloadMigrationCopyWorker(
                         "${error::class.java.name}: ${error.message}",
                     error
                 )
-            }.getOrNull()
-            if (result != null) {
-                return result
             }
             if (attempt < MIGRATION_IO_MAX_ATTEMPTS - 1) {
                 delay(MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1))

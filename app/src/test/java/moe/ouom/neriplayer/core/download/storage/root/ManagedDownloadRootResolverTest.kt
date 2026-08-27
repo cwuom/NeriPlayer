@@ -51,6 +51,20 @@ class ManagedDownloadRootResolverTest {
     }
 
     @Test
+    fun `null cursor failure remains a provider failure`() {
+        val providerError = IllegalStateException("provider returned null document cursor")
+
+        val failure = assertThrows(ManagedDownloadRootProviderException::class.java) {
+            requireAccessibleManagedDownloadRoot(
+                reference = "content://provider/tree/root",
+                result = ManagedDownloadReferenceIo.AccessResult.ProviderFailure(providerError)
+            )
+        }
+
+        assertSame(providerError, failure.cause)
+    }
+
+    @Test
     fun `missing and permission lost roots remain unavailable`() {
         assertTrue(
             requireAccessibleManagedDownloadRoot(

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
@@ -19,7 +20,12 @@ import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTargetChangedException
+import moe.ouom.neriplayer.core.download.storage.backend.StorageRenameResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
+import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementPlan
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
@@ -30,6 +36,65 @@ internal class ManagedDownloadStorageCommitWriter(
         treeChildRegistry = treeChildRegistry,
         tag = tag
     )
+
+    /**
+     * Restores a preserved target when verification fails. A missing backup is
+     * treated as already restored so retries stay idempotent.
+     */
+    fun restoreMigrationReplacement(
+        context: Context,
+        root: ManagedDownloadRootHandle,
+        copied: CopiedMigrationEntry
+    ): Boolean {
+        val backup = copied.replacementBackup ?: return true
+        return when (root) {
+            is ManagedDownloadRootHandle.FileRoot -> {
+                val backupFile = backup.localFilePath?.let(::File)
+                    ?: File(backup.reference)
+                val targetFile = File(root.dir, copied.copiedEntry.name)
+                if (!backupFile.exists()) return targetFile.exists()
+                if (targetFile.exists() && !targetFile.delete()) return false
+                runCatching {
+                    java.nio.file.Files.move(backupFile.toPath(), targetFile.toPath())
+                    targetFile.exists()
+                }.getOrDefault(false)
+            }
+
+            is ManagedDownloadRootHandle.TreeRoot -> {
+                val backupUri = runCatching { backup.mediaUri.toUri() }.getOrNull()
+                    ?: return false
+                val backupRef = StorageReference.SafRef(backupUri)
+                val backend = SafStorageBackend(context)
+                val target = root.tree.findFile(copied.copiedEntry.name)
+                if (target != null) {
+                    val targetRef = StorageReference.SafRef(target.uri)
+                    val deleted = runBlocking(Dispatchers.IO) {
+                        backend.delete(
+                            moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                                reference = targetRef,
+                                externalReference = target.uri.toString()
+                            )
+                        )
+                    }
+                    if (deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
+                        deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
+                    ) {
+                        return false
+                    }
+                }
+                val renamed = runBlocking(Dispatchers.IO) {
+                    backend.rename(
+                        moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                            reference = backupRef,
+                            externalReference = backupUri.toString()
+                        ),
+                        copied.copiedEntry.name
+                    )
+                }
+                renamed is StorageRenameResult.Renamed
+            }
+        }
+    }
     fun writeMigrationRootStream(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -39,7 +104,8 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry? = null,
-        onProgress: ((Long) -> Unit)? = null
+        onProgress: ((Long) -> Unit)? = null,
+        replacementPlan: ManagedMigrationReplacementPlan? = null
     ): StoredWriteResult {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> writeMigrationFileRootStream(
@@ -49,7 +115,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 sourceEntry = sourceEntry,
                 targetNames = targetNames,
                 targetEntry = targetEntry,
-                onProgress = onProgress
+                onProgress = onProgress,
+                replacementPlan = replacementPlan
             )
 
             is ManagedDownloadRootHandle.TreeRoot -> writeMigrationTreeRootStream(
@@ -61,7 +128,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 sourceEntry = sourceEntry,
                 targetNames = targetNames,
                 targetEntry = targetEntry,
-                onProgress = onProgress
+                onProgress = onProgress,
+                replacementPlan = replacementPlan
             )
         }
     }
@@ -116,7 +184,8 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry? = null,
-        onProgress: ((Long) -> Unit)? = null
+        onProgress: ((Long) -> Unit)? = null,
+        replacementPlan: ManagedMigrationReplacementPlan? = null
     ): StoredWriteResult {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> writeMigrationFileSubdirectoryStream(
@@ -127,7 +196,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 sourceEntry = sourceEntry,
                 targetNames = targetNames,
                 targetEntry = targetEntry,
-                onProgress = onProgress
+                onProgress = onProgress,
+                replacementPlan = replacementPlan
             )
 
             is ManagedDownloadRootHandle.TreeRoot -> writeMigrationTreeSubdirectoryStream(
@@ -140,7 +210,8 @@ internal class ManagedDownloadStorageCommitWriter(
                 sourceEntry = sourceEntry,
                 targetNames = targetNames,
                 targetEntry = targetEntry,
-                onProgress = onProgress
+                onProgress = onProgress,
+                replacementPlan = replacementPlan
             )
         }
     }
@@ -149,7 +220,9 @@ internal class ManagedDownloadStorageCommitWriter(
         context: Context,
         root: ManagedDownloadRootHandle,
         displayName: String,
-        content: String
+        content: String,
+        expectedAbsent: Boolean = false,
+        knownTargetEntry: ManagedDownloadStorage.StoredEntry? = null
     ): ManagedDownloadStorage.StoredEntry? {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
@@ -173,7 +246,9 @@ internal class ManagedDownloadStorageCommitWriter(
                     parent = root.tree,
                     displayName = displayName,
                     mimeType = "application/json",
-                    expectedSizeBytes = encoded.size.toLong()
+                    expectedSizeBytes = encoded.size.toLong(),
+                    expectedAbsent = expectedAbsent,
+                    knownExistingReference = knownTargetEntry?.reference
                 ) { output -> output.write(encoded) }
             }
         }
@@ -207,6 +282,179 @@ internal class ManagedDownloadStorageCommitWriter(
         }
     }
 
+    private fun writeFileReplacementStream(
+        root: File,
+        displayName: String,
+        input: InputStream,
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        plan: ManagedMigrationReplacementPlan,
+        onProgress: ((Long) -> Unit)?
+    ): StoredWriteResult {
+        if (plan.targetName != displayName) {
+            throw ManagedDownloadMigrationException.targetChanged(
+                "迁移替换计划目标名发生变化: $displayName"
+            )
+        }
+        val replacement = ManagedDownloadCommitIo.copyFileReplacementAtomically(
+            parent = root,
+            targetName = displayName,
+            backupName = plan.backupName,
+            input = input,
+            bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+            onProgress = onProgress
+        )
+        val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L }
+            ?: replacement.copiedBytes.takeIf { it >= 0L }
+            ?: replacement.target.length()
+        val verifiedSize = ManagedDownloadCommitIo.verifyFileCommittedLength(
+            target = replacement.target,
+            expectedSizeBytes = expectedSize,
+            description = displayName
+        )
+        sourceEntry.lastModifiedMs.takeIf { it > 0L }?.let {
+            replacement.target.setLastModified(it)
+        }
+        val backupEntry = replacement.backup
+            ?.takeIf(File::isFile)
+            ?.let(ManagedDownloadStoredEntryMapper::fromFile)
+        return StoredWriteResult(
+            entry = ManagedDownloadStoredEntryMapper.fromFile(replacement.target)
+                .copy(sizeBytes = verifiedSize),
+            createdNew = backupEntry == null,
+            replacementBackup = backupEntry,
+            sourceAuthoritative = true
+        )
+    }
+
+    private fun writeTreeReplacementStream(
+        context: Context,
+        parent: DocumentFile,
+        displayName: String,
+        mimeType: String,
+        input: InputStream,
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        plan: ManagedMigrationReplacementPlan,
+        onProgress: ((Long) -> Unit)?
+    ): StoredWriteResult {
+        if (plan.targetName != displayName) {
+            throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移替换计划目标名发生变化: $displayName"
+            )
+        }
+        val backend = SafStorageBackend(context)
+        val existingTarget = parent.findFile(displayName)
+        val existingBackup = parent.findFile(plan.backupName)
+        var backupEntry = existingBackup?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
+        var target = existingTarget
+        if (target != null && backupEntry == null) {
+            val trustedTarget = StorageReference.SafRef(target.uri).let { reference ->
+                moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                    reference = reference,
+                    externalReference = target.uri.toString()
+                )
+            }
+            val renameResult = runBlocking(Dispatchers.IO) {
+                backend.rename(trustedTarget, plan.backupName)
+            }
+            when (renameResult) {
+                is StorageRenameResult.Renamed -> {
+                    backupEntry = renameResult.stat.toStoredEntry()
+                    target = null
+                }
+                StorageRenameResult.Missing -> target = null
+                StorageRenameResult.PermissionLost ->
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF 迁移替换目标权限丢失: $displayName"
+                    )
+                StorageRenameResult.OutOfScope ->
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF 迁移替换目标越界: $displayName"
+                    )
+                is StorageRenameResult.Unsupported ->
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF Provider 不支持保留替换备份: ${renameResult.operation}"
+                    )
+                is StorageRenameResult.ProviderFailure ->
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF 迁移替换备份失败: $displayName",
+                        renameResult.error
+                    )
+            }
+        }
+        if (target != null && backupEntry != null) {
+            val targetEntry = ManagedDownloadStoredEntryMapper.fromDocumentFile(target)
+                ?: throw ManagedDownloadMigrationException.transient(
+                    "SAF 迁移替换目标无法读取: $displayName"
+                )
+            return StoredWriteResult(
+                entry = targetEntry,
+                createdNew = false,
+                replacementBackup = backupEntry,
+                sourceAuthoritative = true
+            )
+        }
+        val result = runBlocking(Dispatchers.IO) {
+            backend.writeCreateOnlyRecoverable(
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(parent.uri),
+                    displayName = displayName,
+                    mimeType = mimeType
+                )
+            ) { output ->
+                ManagedDownloadCommitIo.copyStreamWithProgress(
+                    input = input,
+                    output = output,
+                    bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
+                    onProgress = onProgress
+                )
+            }
+        }
+        val stat = when (result) {
+            is StorageWriteResult.Written -> result.stat
+            StorageWriteResult.Missing -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移替换目录不存在: $displayName"
+            )
+            StorageWriteResult.OutOfScope -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移替换目录越界: $displayName"
+            )
+            StorageWriteResult.PermissionLost -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移替换目录权限丢失: $displayName"
+            )
+            is StorageWriteResult.ProviderFailure -> {
+                if (result.error is StorageTargetChangedException) {
+                    throw ManagedDownloadMigrationException.targetChanged(
+                        "SAF 迁移替换目标已发生变化: $displayName",
+                        result.error
+                    )
+                }
+                throw ManagedDownloadMigrationException.transient(
+                    "SAF 迁移替换写入失败: $displayName",
+                    result.error
+                )
+            }
+            is StorageWriteResult.Unsupported -> throw ManagedDownloadMigrationException.transient(
+                "SAF Provider 不支持迁移替换写入: ${result.operation}"
+            )
+        }
+        val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L }
+            ?: stat.sizeBytes
+            ?: 0L
+        val actualSize = stat.sizeBytes ?: expectedSize
+        if (actualSize != expectedSize) {
+            throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移替换大小不匹配: $displayName, expected=$expectedSize, actual=$actualSize"
+            )
+        }
+        val entry = stat.toStoredEntry().copy(sizeBytes = actualSize)
+        treeChildRegistry.rememberTreeChild(parent, entry)
+        return StoredWriteResult(
+            entry = entry,
+            createdNew = backupEntry == null,
+            replacementBackup = backupEntry,
+            sourceAuthoritative = true
+        )
+    }
+
     private fun writeMigrationFileRootStream(
         root: ManagedDownloadRootHandle.FileRoot,
         displayName: String,
@@ -214,8 +462,19 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry?,
-        onProgress: ((Long) -> Unit)?
+        onProgress: ((Long) -> Unit)?,
+        replacementPlan: ManagedMigrationReplacementPlan?
     ): StoredWriteResult {
+        replacementPlan?.let { plan ->
+            return writeFileReplacementStream(
+                root = root.dir,
+                displayName = displayName,
+                input = input,
+                sourceEntry = sourceEntry,
+                plan = plan,
+                onProgress = onProgress
+            )
+        }
         val target = migrationTargetResolver.resolveFileTarget(
             parent = root.dir,
             displayName = displayName,
@@ -254,18 +513,30 @@ internal class ManagedDownloadStorageCommitWriter(
         displayName: String,
         mimeType: String,
         expectedSizeBytes: Long?,
+        expectedAbsent: Boolean = false,
+        knownExistingReference: String? = null,
         writer: suspend (java.io.OutputStream) -> Unit
     ): ManagedDownloadStorage.StoredEntry {
         val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
         val result = runBlocking(Dispatchers.IO) {
-            backend.writeRecoverable(
-                target = StorageTarget.SafTarget(
-                    parent = StorageReference.SafRef(parent.uri),
-                    displayName = displayName,
-                    mimeType = mimeType
-                ),
-                writer = writer
+            val target = StorageTarget.SafTarget(
+                parent = StorageReference.SafRef(parent.uri),
+                displayName = displayName,
+                mimeType = mimeType
             )
+            if (expectedAbsent) {
+                backend.writeCreateOnlyRecoverable(target = target, writer = writer)
+            } else if (!knownExistingReference.isNullOrBlank()) {
+                backend.replaceKnownRecoverable(
+                    target = target,
+                    existingReference = StorageReference.SafRef(
+                        knownExistingReference.toUri()
+                    ),
+                    writer = writer
+                )
+            } else {
+                backend.writeRecoverable(target = target, writer = writer)
+            }
         }
         val stat = when (result) {
             is StorageWriteResult.Written -> result.stat
@@ -333,8 +604,21 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry?,
-        onProgress: ((Long) -> Unit)?
+        onProgress: ((Long) -> Unit)?,
+        replacementPlan: ManagedMigrationReplacementPlan?
     ): StoredWriteResult {
+        replacementPlan?.let { plan ->
+            return writeTreeReplacementStream(
+                context = context,
+                parent = root.tree,
+                displayName = displayName,
+                mimeType = mimeType,
+                input = input,
+                sourceEntry = sourceEntry,
+                plan = plan,
+                onProgress = onProgress
+            )
+        }
         val targetPlan = migrationTargetResolver.resolveTreeTarget(
             context = context,
             parent = root.tree,
@@ -366,8 +650,21 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry?,
-        onProgress: ((Long) -> Unit)?
+        onProgress: ((Long) -> Unit)?,
+        replacementPlan: ManagedMigrationReplacementPlan?
     ): StoredWriteResult {
+        replacementPlan?.let { plan ->
+            val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
+            treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
+            return writeFileReplacementStream(
+                root = dir,
+                displayName = displayName,
+                input = input,
+                sourceEntry = sourceEntry,
+                plan = plan,
+                onProgress = onProgress
+            )
+        }
         val dir = resolveManagedFileSubdirectory(root.dir, subdirectory)
         treeDirectories.ensureManagedMediaScanIsolation(subdirectory, dir)
         val target = migrationTargetResolver.resolveFileTarget(
@@ -412,11 +709,24 @@ internal class ManagedDownloadStorageCommitWriter(
         sourceEntry: ManagedDownloadStorage.StoredEntry,
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry?,
-        onProgress: ((Long) -> Unit)?
+        onProgress: ((Long) -> Unit)?,
+        replacementPlan: ManagedMigrationReplacementPlan?
     ): StoredWriteResult {
         val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
             ?: throw IOException("无法创建目录: $subdirectory")
         treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
+        replacementPlan?.let { plan ->
+            return writeTreeReplacementStream(
+                context = context,
+                parent = directory,
+                displayName = displayName,
+                mimeType = mimeType,
+                input = input,
+                sourceEntry = sourceEntry,
+                plan = plan,
+                onProgress = onProgress
+            )
+        }
         val targetPlan = migrationTargetResolver.resolveTreeTarget(
             context = context,
             parent = directory,
@@ -453,7 +763,7 @@ internal class ManagedDownloadStorageCommitWriter(
         var copiedBytes = 0L
         val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
         val result = runBlocking(Dispatchers.IO) {
-            backend.writeRecoverable(
+            backend.writeCreateOnlyRecoverable(
                 target = StorageTarget.SafTarget(
                     parent = StorageReference.SafRef(parent.uri),
                     displayName = finalName,
@@ -473,10 +783,15 @@ internal class ManagedDownloadStorageCommitWriter(
             StorageWriteResult.Missing -> throw IOException("迁移目标不存在: $finalName")
             StorageWriteResult.OutOfScope -> throw IOException("迁移目标越界: $finalName")
             StorageWriteResult.PermissionLost -> throw SecurityException("迁移目标权限丢失: $finalName")
-            is StorageWriteResult.ProviderFailure -> throw IOException(
-                "SAF 迁移写入失败: $description",
-                result.error
-            )
+            is StorageWriteResult.ProviderFailure -> {
+                if (result.error is StorageTargetChangedException) {
+                    throw ManagedDownloadMigrationException.targetChanged(
+                        "迁移目标目录已发生变化: $finalName",
+                        result.error
+                    )
+                }
+                throw IOException("SAF 迁移写入失败: $description", result.error)
+            }
             is StorageWriteResult.Unsupported -> throw IOException(
                 "SAF 不支持迁移写入: $finalName (${result.operation})"
             )

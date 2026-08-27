@@ -105,7 +105,22 @@ internal object LegacyDownloadUpgradeMetadataMerger {
                 result.has("metadataEmbeddingState") && !result.isNull("metadataEmbeddingState")
             }
         )
-        if (embeddingState == null) {
+        val declaredDownloadFinalized = result.optBoolean("downloadFinalized").takeIf {
+            result.has("downloadFinalized") && !result.isNull("downloadFinalized")
+        }
+        val hasLegacyCompletionEvidence = declaredDownloadFinalized == true ||
+            downloadTimeMs != null
+        if (
+            hasLegacyCompletionEvidence &&
+            (embeddingState == null ||
+                embeddingState == DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED)
+        ) {
+            result.put(
+                "metadataEmbeddingState",
+                DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED.name
+            )
+            result.put("downloadFinalized", true)
+        } else if (embeddingState == null) {
             result.put(
                 "metadataEmbeddingState",
                 DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name

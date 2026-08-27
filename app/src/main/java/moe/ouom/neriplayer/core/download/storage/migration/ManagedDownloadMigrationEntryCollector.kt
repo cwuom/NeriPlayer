@@ -10,6 +10,61 @@ import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNa
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
 internal object ManagedDownloadMigrationEntryCollector {
+    fun requiresSidecarEvidence(
+        rootEntries: List<ManagedDownloadStorage.StoredEntry>,
+        allowMetadataLessAudio: Boolean
+    ): Boolean {
+        if (allowMetadataLessAudio) {
+            return false
+        }
+        var hasAudio = false
+        for (entry in rootEntries) {
+            if (entry.isDirectory) {
+                continue
+            }
+            if (ManagedDownloadTreeNaming.metadataAudioName(entry.name) != null) {
+                return false
+            }
+            hasAudio = hasAudio || entry.extension in audioExtensions
+        }
+        return hasAudio
+    }
+
+    fun hasAnyManagedEntry(
+        rootEntries: List<ManagedDownloadStorage.StoredEntry>,
+        coverEntries: List<ManagedDownloadStorage.StoredEntry>,
+        lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
+        allowMetadataLessAudio: Boolean
+    ): Boolean {
+        val metadataAudioNames = rootEntries
+            .asSequence()
+            .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
+            .mapNotNull { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+            }
+            .toHashSet()
+        if (metadataAudioNames.isNotEmpty()) {
+            return true
+        }
+        val coverEntryNames = coverEntries
+            .asSequence()
+            .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        val lyricEntryNames = lyricEntries
+            .asSequence()
+            .mapTo(linkedSetOf(), ManagedDownloadStorage.StoredEntry::name)
+        return rootEntries.asSequence().any { entry ->
+            !entry.isDirectory &&
+                entry.extension in audioExtensions &&
+                ManagedDownloadManagedAudioPolicy.shouldTreatAudioAsManaged(
+                    audioName = entry.name,
+                    metadataAudioNames = metadataAudioNames,
+                    coverEntryNames = coverEntryNames,
+                    lyricEntryNames = lyricEntryNames,
+                    allowMetadataLessAudio = allowMetadataLessAudio
+                )
+        }
+    }
+
     fun collect(
         rootEntries: List<ManagedDownloadStorage.StoredEntry>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,

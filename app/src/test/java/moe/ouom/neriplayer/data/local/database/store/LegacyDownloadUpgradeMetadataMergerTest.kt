@@ -32,9 +32,9 @@ class LegacyDownloadUpgradeMetadataMergerTest {
         assertEquals("file:song.flac", merged.getString("stableKey"))
         assertEquals("song.flac", merged.getString("audioFileName"))
         assertEquals(1234L, merged.getLong("downloadTimeMs"))
-        assertFalse(merged.getBoolean("downloadFinalized"))
+        assertTrue(merged.getBoolean("downloadFinalized"))
         assertEquals(
-            DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED.name,
+            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED.name,
             merged.getString("metadataEmbeddingState")
         )
         val restorable = merged.getJSONObject("restorableMetadata")
@@ -175,13 +175,35 @@ class LegacyDownloadUpgradeMetadataMergerTest {
     }
 
     @Test
-    fun legacyFinalizedFlagWithoutEmbeddingProofIsDowngradedForRecovery() {
+    fun legacyFinalizedFlagWithoutEmbeddingFieldRemainsVisibleAfterUpgrade() {
         val merged = LegacyDownloadUpgradeMetadataMerger.merge(
             payload = JSONObject(
                 """
                 {
                   "stableKey": "file:song.flac",
                   "downloadFinalized": true
+                }
+                """.trimIndent()
+            ),
+            existing = null,
+            audioFileName = "song.flac"
+        )
+
+        assertTrue(merged.getBoolean("downloadFinalized"))
+        assertEquals(
+            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED.name,
+            merged.getString("metadataEmbeddingState")
+        )
+    }
+
+    @Test
+    fun explicitlyUnfinishedLegacyMetadataRemainsUnfinished() {
+        val merged = LegacyDownloadUpgradeMetadataMerger.merge(
+            payload = JSONObject(
+                """
+                {
+                  "stableKey": "file:song.flac",
+                  "downloadFinalized": false
                 }
                 """.trimIndent()
             ),

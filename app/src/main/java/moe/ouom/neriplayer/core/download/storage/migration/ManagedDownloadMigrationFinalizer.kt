@@ -11,11 +11,22 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageConfidence
+import moe.ouom.neriplayer.core.download.storage.backend.StorageDirectorySnapshot
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.backend.asTrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
+import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
@@ -28,13 +39,86 @@ import java.io.InputStream
 import java.math.BigDecimal
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Locale
+
+internal data class ManagedMigrationTargetLayoutEntry(
+    val subdirectory: String?,
+    val name: String,
+    val documentIdentity: String
+)
+
+internal fun validateMigrationTargetLayout(
+    expected: List<ManagedMigrationTargetLayoutEntry>,
+    observed: List<ManagedMigrationTargetLayoutEntry>
+): String? {
+    val expectedGroups = expected.groupBy(ManagedMigrationTargetLayoutEntry::layoutKey)
+    val observedGroups = observed.groupBy(ManagedMigrationTargetLayoutEntry::layoutKey)
+    for ((key, plannedEntries) in expectedGroups) {
+        val displayName = plannedEntries.first().name
+        val plannedIdentities = plannedEntries
+            .map(ManagedMigrationTargetLayoutEntry::documentIdentity)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (plannedIdentities.size != 1 || plannedEntries.any { it.documentIdentity.isBlank() }) {
+            return "迁移计划名称指向多个目标文档: $displayName"
+        }
+        val matchingEntries = observedGroups[key].orEmpty()
+        if (matchingEntries.size != 1) {
+            return "SAF 迁移目标名称不唯一: $displayName, count=${matchingEntries.size}"
+        }
+        if (matchingEntries.single().documentIdentity != plannedIdentities.single()) {
+            return "SAF 迁移目标文档已变化: $displayName"
+        }
+    }
+    return null
+}
+
+private data class ManagedMigrationTargetLayoutKey(
+    val subdirectory: String?,
+    val canonicalName: String
+)
+
+private fun ManagedMigrationTargetLayoutEntry.layoutKey(): ManagedMigrationTargetLayoutKey {
+    return ManagedMigrationTargetLayoutKey(
+        subdirectory = subdirectory,
+        canonicalName = ManagedDownloadStorageNaming.canonicalNameKey(name)
+    )
+}
+
+private data class SafMigrationTargetObservation(
+    val layoutEntry: ManagedMigrationTargetLayoutEntry,
+    val parent: StorageReference.SafRef
+)
+
+private fun ManagedDownloadStorage.StoredEntry.safDocumentIdentities(): Set<String> {
+    return sequenceOf(reference, mediaUri)
+        .mapNotNull { value ->
+            val uri = runCatching { value.toUri() }.getOrNull()
+                ?.takeIf { parsed ->
+                    parsed.scheme.equals("content", ignoreCase = true) &&
+                        !parsed.authority.isNullOrBlank()
+                }
+                ?: return@mapNotNull null
+            StorageReference.SafRef(uri).documentIdentity()
+        }
+        .toSet()
+}
+
+private fun StorageReference.SafRef.documentIdentity(): String? {
+    val authority = uri.authority?.lowercase(Locale.ROOT)?.takeIf(String::isNotBlank)
+        ?: return null
+    val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+        ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+        ?: return null
+    return "$authority\u0000$documentId"
+}
 
 internal class ManagedDownloadMigrationFinalizer(
     private val tag: String,
     private val rewriteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val deleteParallelism: (ManagedDownloadRootHandle) -> Int,
     private val readText: (Context, String) -> String?,
-    private val openInputStream: (Context, ManagedDownloadStorage.StoredEntry) -> InputStream?,
+    private val entryReader: ManagedMigrationEntryReader,
     private val writeRootText: (Context, ManagedDownloadRootHandle, String, String) -> ManagedDownloadStorage.StoredEntry?,
     private val restoreLastModified: (
         Context,
@@ -67,7 +151,12 @@ internal class ManagedDownloadMigrationFinalizer(
                 onDeleteFinished(reference)
             }
         }
-    }
+    },
+    private val restoreReplacement: (
+        Context,
+        ManagedDownloadRootHandle,
+        CopiedMigrationEntry
+    ) -> Boolean = { _, _, copied -> copied.replacementBackup == null }
 ) {
     suspend fun rewriteMigratedMetadataReferences(
         context: Context,
@@ -188,11 +277,189 @@ internal class ManagedDownloadMigrationFinalizer(
                 }
             }
         }.awaitAll()
+        val contentError = outcomes.mapNotNull(VerificationOutcome::error)
+            .firstOrNull { error -> !error.retryable }
+            ?: outcomes.mapNotNull(VerificationOutcome::error).firstOrNull()
+        val contentFailedFiles = outcomes.count(VerificationOutcome::failed)
+        if (contentFailedFiles > 0) {
+            return@coroutineScope ManagedMigrationVerificationResult(
+                failedFiles = contentFailedFiles,
+                error = contentError
+            )
+        }
+        val layoutError = if (targetRoot is ManagedDownloadRootHandle.TreeRoot) {
+            try {
+                verifySafTargetLayoutAndCleanupTemporaryWrites(
+                    context = context,
+                    targetRoot = targetRoot,
+                    copiedEntries = copiedEntries
+                )
+                null
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: ManagedDownloadMigrationException) {
+                error
+            } catch (error: Throwable) {
+                ManagedDownloadMigrationException.transient(
+                    "SAF 迁移目标批量校验暂时失败",
+                    error
+                )
+            }
+        } else {
+            null
+        }
         ManagedMigrationVerificationResult(
-            failedFiles = outcomes.count(VerificationOutcome::failed),
-            error = outcomes.mapNotNull(VerificationOutcome::error)
-                .firstOrNull { error -> !error.retryable }
-                ?: outcomes.mapNotNull(VerificationOutcome::error).firstOrNull()
+            failedFiles = if (layoutError == null) 0 else copiedEntries.size,
+            error = layoutError
+        )
+    }
+
+    private suspend fun verifySafTargetLayoutAndCleanupTemporaryWrites(
+        context: Context,
+        targetRoot: ManagedDownloadRootHandle.TreeRoot,
+        copiedEntries: List<CopiedMigrationEntry>
+    ) {
+        val backend = SafStorageBackend(context)
+        val rootParent = StorageReference.SafRef(targetRoot.tree.uri)
+        val snapshotsByParent = linkedMapOf<StorageReference.SafRef, StorageDirectorySnapshot>()
+        val observations = mutableListOf<SafMigrationTargetObservation>()
+        val rootSnapshot = backend.list(rootParent)
+        requireCompleteSafMigrationSnapshot(rootSnapshot, "下载目录")
+        snapshotsByParent[rootParent] = rootSnapshot
+        rootSnapshot.entries.asSequence()
+            .filterNot(StorageStat::isDirectory)
+            .mapTo(observations) { stat -> stat.toSafMigrationObservation(null, rootParent) }
+
+        copiedEntries.asSequence()
+            .mapNotNull { copied -> copied.original.subdirectory }
+            .filter { subdirectory ->
+                subdirectory == COVER_SUBDIRECTORY || subdirectory == LYRIC_SUBDIRECTORY
+            }
+            .distinct()
+            .forEach { subdirectory ->
+                rootSnapshot.entries.asSequence()
+                    .filter(StorageStat::isDirectory)
+                    .filter { directory ->
+                        ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                            directory.displayName,
+                            subdirectory
+                        )
+                    }
+                    .forEach { directory ->
+                        val parent = directory.reference as? StorageReference.SafRef
+                            ?: throw ManagedDownloadMigrationException.targetChanged(
+                                "SAF 迁移子目录缺少可信文档引用: $subdirectory"
+                            )
+                        val snapshot = backend.list(parent)
+                        requireCompleteSafMigrationSnapshot(snapshot, subdirectory)
+                        snapshotsByParent[parent] = snapshot
+                        snapshot.entries.asSequence()
+                            .filterNot(StorageStat::isDirectory)
+                            .mapTo(observations) { stat ->
+                                stat.toSafMigrationObservation(subdirectory, parent)
+                            }
+                    }
+            }
+
+        val expectedLayout = copiedEntries.map { copied ->
+            ManagedMigrationTargetLayoutEntry(
+                subdirectory = copied.original.subdirectory,
+                name = copied.copiedEntry.name,
+                documentIdentity = copied.copiedEntry.safDocumentIdentities().singleOrNull().orEmpty()
+            )
+        }
+        validateMigrationTargetLayout(
+            expected = expectedLayout,
+            observed = observations.map(SafMigrationTargetObservation::layoutEntry)
+        )?.let { detail ->
+            throw ManagedDownloadMigrationException.targetChanged(detail)
+        }
+
+        val expectedTargets = expectedLayout.map { expected ->
+            val observed = observations.single { observation ->
+                observation.layoutEntry.layoutKey() == expected.layoutKey() &&
+                    observation.layoutEntry.documentIdentity == expected.documentIdentity
+            }
+            observed.parent to StorageTarget.SafTarget(
+                parent = observed.parent,
+                displayName = expected.name,
+                mimeType = "application/octet-stream"
+            )
+        }.distinct()
+        val cleanupCandidates = expectedTargets.groupBy(
+            keySelector = { (parent, _) -> parent },
+            valueTransform = { (_, target) -> target }
+        ).flatMap { (parent, targets) ->
+            val snapshot = requireNotNull(snapshotsByParent[parent]) {
+                "missing verified SAF parent snapshot"
+            }
+            val plan = ManagedTemporaryWriteArtifacts.planTerminalCleanup(
+                parent = parent,
+                targets = targets,
+                snapshot = snapshot
+            )
+            plan.skipReason?.let { reason ->
+                throw ManagedDownloadMigrationException.transient(
+                    "SAF 迁移临时文件清理无法确认: $reason"
+                )
+            }
+            plan.candidates
+        }.distinctBy(StorageStat::reference)
+        cleanupCandidates.forEach { candidate ->
+            when (val result = backend.delete(candidate.asTrustedManagedRef())) {
+                StorageMutationResult.Deleted,
+                StorageMutationResult.Missing -> Unit
+                StorageMutationResult.OutOfScope,
+                StorageMutationResult.PermissionLost,
+                is StorageMutationResult.ProviderFailure,
+                is StorageMutationResult.Unsupported -> {
+                    throw ManagedDownloadMigrationException.transient(
+                        "SAF 迁移临时文件清理未确认: ${candidate.displayName}, result=$result"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun requireCompleteSafMigrationSnapshot(
+        snapshot: StorageDirectorySnapshot,
+        description: String
+    ) {
+        when (val confidence = snapshot.confidence) {
+            StorageConfidence.Complete -> Unit
+            StorageConfidence.Missing,
+            StorageConfidence.OutOfScope -> throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标目录已变化: $description"
+            )
+            StorageConfidence.PermissionLost -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移目标目录权限暂时不可用: $description"
+            )
+            is StorageConfidence.ProviderFailure -> throw ManagedDownloadMigrationException.transient(
+                "SAF 迁移目标目录枚举失败: $description",
+                confidence.error
+            )
+        }
+    }
+
+    private fun StorageStat.toSafMigrationObservation(
+        subdirectory: String?,
+        parent: StorageReference.SafRef
+    ): SafMigrationTargetObservation {
+        val safReference = reference as? StorageReference.SafRef
+            ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标缺少文档引用: $displayName"
+            )
+        val identity = safReference.documentIdentity()
+            ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标文档身份不可解析: $displayName"
+            )
+        return SafMigrationTargetObservation(
+            layoutEntry = ManagedMigrationTargetLayoutEntry(
+                subdirectory = subdirectory,
+                name = displayName,
+                documentIdentity = identity
+            ),
+            parent = parent
         )
     }
 
@@ -231,7 +498,8 @@ internal class ManagedDownloadMigrationFinalizer(
         } else {
             copiedEntries.migrationReferenceMap()
         }
-        val verifiedIndices = copiedEntries.indices.filterTo(mutableSetOf()) { index ->
+        val verifiedIndices = mutableSetOf<Int>()
+        for (index in copiedEntries.indices) {
             val migrationEntry = copiedEntries[index]
             val verified = targetsAlreadyVerified || isMigrationTargetVerified(
                 context = context,
@@ -244,7 +512,9 @@ internal class ManagedDownloadMigrationFinalizer(
                     "迁移后目标校验失败，跳过删除源文件: ${migrationEntry.original.entry.name}"
                 )
             }
-            verified
+            if (verified) {
+                verifiedIndices += index
+            }
         }
         val deletionReferencesByIndex = verifiedIndices.mapNotNull { index ->
             copiedEntries[index].original.entry.toTrustedManagedRef()?.let { reference ->
@@ -394,7 +664,11 @@ internal class ManagedDownloadMigrationFinalizer(
             if (rewriteInput.rewrittenMetadata == rewriteInput.targetMetadata) {
                 return MetadataRewriteOutcome(copied = copied, failed = false)
             }
-            if (!copied.createdNew && rewriteInput.targetMetadata != rewriteInput.sourceMetadata) {
+            if (
+                !copied.createdNew &&
+                !copied.sourceAuthoritative &&
+                rewriteInput.targetMetadata != rewriteInput.sourceMetadata
+            ) {
                 NPLogger.w(
                     tag,
                     "拒绝覆盖无法确认来源的迁移 metadata: ${copied.copiedEntry.reference}"
@@ -472,7 +746,7 @@ internal class ManagedDownloadMigrationFinalizer(
         val error: ManagedDownloadMigrationException? = null
     )
 
-    private fun isMigrationTargetVerified(
+    private suspend fun isMigrationTargetVerified(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
@@ -564,15 +838,25 @@ internal class ManagedDownloadMigrationFinalizer(
         return value == null || value === JSONObject.NULL
     }
 
-    private fun sha256ForEntry(
+    private suspend fun sha256ForEntry(
         context: Context,
         entry: ManagedDownloadStorage.StoredEntry,
         onProgress: (Long) -> Unit = {}
     ): String? {
         return try {
-            openInputStream(context, entry)?.use { input ->
+            when (val result = entryReader.read(context, entry) { input ->
                 sha256Hex(input, onProgress)
-            } ?: return null
+            }) {
+                is StorageLookupResult.Found -> result.value.getOrThrow()
+                is StorageLookupResult.ProviderFailure -> throw ManagedDownloadRootProviderException(
+                    entry.reference,
+                    result.error
+                )
+                StorageLookupResult.Missing,
+                StorageLookupResult.PermissionLost,
+                StorageLookupResult.OutOfScope,
+                is StorageLookupResult.Unsupported -> null
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -704,8 +988,11 @@ internal class ManagedDownloadMigrationFinalizer(
         migrationEntry: CopiedMigrationEntry,
         targetRoot: ManagedDownloadRootHandle
     ): Int {
-        if (!migrationEntry.createdNew) {
+        if (!migrationEntry.createdNew && migrationEntry.replacementBackup == null) {
             return 0
+        }
+        if (migrationEntry.replacementBackup != null) {
+            return if (restoreReplacement(context, targetRoot, migrationEntry)) 0 else 1
         }
         val targetReference = migrationEntry.copiedEntry.toTrustedManagedRef()
         val result = targetReference?.let { reference ->

@@ -248,7 +248,8 @@ internal class ManagedDownloadTreeDirectories(
 
     fun refreshManagedMigrationEntries(
         context: Context,
-        root: ManagedDownloadRootHandle
+        root: ManagedDownloadRootHandle,
+        requiresSidecarEntries: (List<ManagedDownloadStorage.StoredEntry>) -> Boolean = { true }
     ): ManagedMigrationEntriesRefresh {
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
@@ -259,6 +260,15 @@ internal class ManagedDownloadTreeDirectories(
                         lyricEntries = emptyList(),
                         isComplete = false
                     )
+                val rootEntries = rootChildren.map(ManagedDownloadStoredEntryMapper::fromFile)
+                if (!requiresSidecarEntries(rootEntries)) {
+                    return ManagedMigrationEntriesRefresh(
+                        rootEntries = rootEntries,
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        isComplete = true
+                    )
+                }
                 var isComplete = true
                 fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
                     return buildList {
@@ -286,7 +296,7 @@ internal class ManagedDownloadTreeDirectories(
                     }
                 }
                 ManagedMigrationEntriesRefresh(
-                    rootEntries = rootChildren.map(ManagedDownloadStoredEntryMapper::fromFile),
+                    rootEntries = rootEntries,
                     coverEntries = entriesFor(COVER_SUBDIRECTORY),
                     lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
                     isComplete = isComplete
@@ -298,6 +308,16 @@ internal class ManagedDownloadTreeDirectories(
                     context = context,
                     parent = root.tree
                 )
+                val rootEntries = rootRefresh.children
+                    .map(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                if (!requiresSidecarEntries(rootEntries)) {
+                    return ManagedMigrationEntriesRefresh(
+                        rootEntries = rootEntries,
+                        coverEntries = emptyList(),
+                        lyricEntries = emptyList(),
+                        isComplete = rootRefresh.isComplete
+                    )
+                }
                 var isComplete = rootRefresh.isComplete
                 fun entriesFor(subdirectory: String): List<ManagedDownloadStorage.StoredEntry> {
                     return buildList {
@@ -334,7 +354,7 @@ internal class ManagedDownloadTreeDirectories(
                     }
                 }
                 ManagedMigrationEntriesRefresh(
-                    rootEntries = rootRefresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild),
+                    rootEntries = rootEntries,
                     coverEntries = entriesFor(COVER_SUBDIRECTORY),
                     lyricEntries = entriesFor(LYRIC_SUBDIRECTORY),
                     isComplete = isComplete

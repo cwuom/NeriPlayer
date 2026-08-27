@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -83,5 +84,22 @@ class LegacyDownloadUpgradePlanTest {
 
         assertEquals(listOf("content://managed/audio/42"), hints.references)
         assertEquals(listOf("song.mp3"), hints.names)
+    }
+
+    @Test
+    fun `stale SAF audio references contribute decoded audio file names only`() {
+        val payload = JSONObject().apply {
+            put(
+                "mediaUri",
+                "content://com.android.externalstorage.documents/tree/primary%3AOld/" +
+                    "document/primary%3AOld%2Fnetease%20-%20artist%20-%20song.mp3"
+            )
+            put("audioReference", "content://managed/audio/42")
+        }
+
+        val hints = legacyAudioLookupHints(payload)
+
+        assertTrue("netease - artist - song.mp3" in hints.names)
+        assertFalse("42" in hints.names)
     }
 }

@@ -692,6 +692,29 @@ internal object DownloadExecutionRoomStore {
         ) > 0
     }
 
+    suspend fun markWaitingForStorageMutation(
+        context: Context,
+        operationId: String,
+        errorCode: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        return database.downloadOperationDao().transitionState(
+            operationId = operationId,
+            expectedStates = listOf(
+                "PENDING_QUEUE",
+                "QUEUED",
+                "RUNNING",
+                "RETRYABLE",
+                "COMMITTING",
+                "CORE_COMMITTED",
+                "ASSETS_ENRICHING"
+            ),
+            state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
+            updatedAtMs = System.currentTimeMillis(),
+            errorCode = errorCode
+        ) > 0
+    }
+
     /**
      * promotes a user intent only after the caller has observed that storage mutation
      * and the clear fence are both settled
@@ -708,8 +731,7 @@ internal object DownloadExecutionRoomStore {
             val dao = database.downloadOperationDao()
             val entity = dao.find(operationId) ?: return@withTransaction false
             if (
-                entity.libraryId != libraryId ||
-                    entity.stableKey != normalizedKey ||
+                entity.stableKey != normalizedKey ||
                     entity.state != WAITING_STORAGE_MUTATION_OPERATION_STATE ||
                     entity.stopRequestedByUser
             ) {

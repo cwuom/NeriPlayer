@@ -1,11 +1,17 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
+import android.content.Context
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.verifyNoInteractions
 
 class ManagedDownloadStorageCommitWriterTest {
 
@@ -46,5 +52,35 @@ class ManagedDownloadStorageCommitWriterTest {
 
         assertTrue(resolved.isDirectory)
         assertEquals(File(root, "Covers").canonicalFile, resolved.canonicalFile)
+    }
+
+    @Test
+    fun `planned absent SAF migration target does not enumerate the directory again`() {
+        val registry = mock(ManagedDownloadTreeChildRegistry::class.java)
+        val resolver = ManagedDownloadCommitMigrationTargetResolver(
+            treeChildRegistry = registry,
+            tag = "ManagedDownloadStorageCommitWriterTest"
+        )
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "song.mp3",
+            reference = "/source/song.mp3",
+            mediaUri = "file:///source/song.mp3",
+            localFilePath = "/source/song.mp3",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+
+        val resolved = resolver.resolveTreeTarget(
+            context = mock(Context::class.java),
+            parent = mock(DocumentFile::class.java),
+            displayName = source.name,
+            sourceEntry = source,
+            targetNames = emptySet(),
+            targetEntry = null
+        )
+
+        assertTrue(resolved.createdNew)
+        assertEquals(source.name, resolved.entry.name)
+        verifyNoInteractions(registry)
     }
 }

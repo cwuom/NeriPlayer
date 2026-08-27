@@ -362,18 +362,41 @@ private val NowPlayingFeedbackExtraBottomPadding = 24.dp
 private val EditSongInfoFeedbackControlClearance = 72.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
-internal fun resolveDisplayedNowPlayingCoverUrl(
-    requestedCoverUrl: String?,
-    displayedCoverUrl: String?,
-    requestSucceeded: Boolean
-): String? {
-    val requested = requestedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    val displayed = displayedCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    return when {
-        requested == null -> null
-        requested == displayed || requestSucceeded -> requested
-        else -> displayed
-    }
+internal data class NowPlayingCoverFrame(
+    val coverUrl: String,
+    val cacheKey: String?
+)
+
+internal data class NowPlayingCoverRequest(
+    val frame: NowPlayingCoverFrame,
+    val songKey: String?
+)
+
+internal fun buildNowPlayingCoverRequest(
+    coverUrl: String?,
+    songKey: String?,
+    coverCacheKey: String?
+): NowPlayingCoverRequest? {
+    val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    return NowPlayingCoverRequest(
+        frame = NowPlayingCoverFrame(
+            coverUrl = normalizedCoverUrl,
+            cacheKey = coverCacheKey?.let { "$it|data=$normalizedCoverUrl" }
+        ),
+        songKey = songKey
+    )
+}
+
+internal fun shouldCommitNowPlayingCoverRequest(
+    completedRequest: NowPlayingCoverRequest,
+    latestRequest: NowPlayingCoverRequest?
+): Boolean = completedRequest == latestRequest
+
+internal fun retainNowPlayingCoverFrame(
+    displayedFrame: NowPlayingCoverFrame?,
+    hasCurrentSong: Boolean
+): NowPlayingCoverFrame? {
+    return displayedFrame.takeIf { hasCurrentSong }
 }
 
 @Composable
@@ -387,52 +410,65 @@ private fun StableNowPlayingCoverImage(
     contentDescription: String?,
     modifier: Modifier = Modifier
 ) {
-    val requestedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    var displayedCoverUrl by remember(songKey) { mutableStateOf(requestedCoverUrl) }
-    val latestRequestedCoverUrl by rememberUpdatedState(requestedCoverUrl)
+    val requestedCover = remember(coverUrl, songKey, coverCacheKey) {
+        buildNowPlayingCoverRequest(
+            coverUrl = coverUrl,
+            songKey = songKey,
+            coverCacheKey = coverCacheKey
+        )
+    }
+    var displayedFrame by remember { mutableStateOf<NowPlayingCoverFrame?>(null) }
+    val latestRequestedCover by rememberUpdatedState(requestedCover)
+    val currentDisplayedFrame = retainNowPlayingCoverFrame(
+        displayedFrame = displayedFrame,
+        hasCurrentSong = songKey != null
+    )
 
-    LaunchedEffect(requestedCoverUrl) {
-        if (requestedCoverUrl == null) {
-            displayedCoverUrl = null
-        } else if (displayedCoverUrl == requestedCoverUrl) {
-            displayedCoverUrl = requestedCoverUrl
+    LaunchedEffect(songKey) {
+        if (songKey == null) {
+            displayedFrame = null
         }
     }
 
     Box(modifier = modifier) {
-        val targetDisplayedCoverUrl = when {
-            requestedCoverUrl == null -> null
-            displayedCoverUrl == null -> requestedCoverUrl
-            else -> displayedCoverUrl
-        }
         Crossfade(
-            targetState = targetDisplayedCoverUrl,
-            animationSpec = if (targetDisplayedCoverUrl == null) {
+            targetState = currentDisplayedFrame,
+            animationSpec = if (currentDisplayedFrame == null) {
                 snap()
             } else {
                 tween(durationMillis = NowPlayingCoverImageCrossfadeMs)
             },
             label = "NowPlayingCoverImage"
-        ) { displayedCover ->
-            if (displayedCover.isNullOrBlank()) {
-                Box(modifier = Modifier.fillMaxSize())
+        ) { frame ->
+            if (frame == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             } else {
                 AsyncImage(
                     model = remember(
                         context,
-                        displayedCover,
+                        frame,
                         coverRequestSizePx,
-                        offlineMode,
-                        coverCacheKey?.let { "$it|data=$displayedCover" }
+                        offlineMode
                     ) {
                         offlineCachedImageRequest(
                             context = context,
-                            data = displayedCover,
+                            data = frame.coverUrl,
                             sizePx = coverRequestSizePx,
                             allowHardware = false,
                             crossfade = false,
                             offlineMode = offlineMode,
-                            cacheKey = coverCacheKey?.let { "$it|data=$displayedCover" }
+                            cacheKey = frame.cacheKey
                         )
                     },
                     contentDescription = contentDescription,
@@ -442,23 +478,22 @@ private fun StableNowPlayingCoverImage(
             }
         }
 
-        if (requestedCoverUrl != null && requestedCoverUrl != displayedCoverUrl) {
+        if (requestedCover != null && requestedCover.frame != currentDisplayedFrame) {
             AsyncImage(
                 model = remember(
                     context,
-                    requestedCoverUrl,
+                    requestedCover.frame,
                     coverRequestSizePx,
-                    offlineMode,
-                    coverCacheKey?.let { "$it|data=$requestedCoverUrl" }
+                    offlineMode
                 ) {
                     offlineCachedImageRequest(
                         context = context,
-                        data = requestedCoverUrl,
+                        data = requestedCover.frame.coverUrl,
                         sizePx = coverRequestSizePx,
                         allowHardware = false,
                         crossfade = false,
                         offlineMode = offlineMode,
-                        cacheKey = coverCacheKey?.let { "$it|data=$requestedCoverUrl" }
+                        cacheKey = requestedCover.frame.cacheKey
                     )
                 },
                 contentDescription = null,
@@ -467,12 +502,13 @@ private fun StableNowPlayingCoverImage(
                     .fillMaxSize()
                     .graphicsLayer { alpha = 0f },
                 onSuccess = {
-                    if (latestRequestedCoverUrl == requestedCoverUrl) {
-                        displayedCoverUrl = resolveDisplayedNowPlayingCoverUrl(
-                            requestedCoverUrl = requestedCoverUrl,
-                            displayedCoverUrl = displayedCoverUrl,
-                            requestSucceeded = true
+                    if (
+                        shouldCommitNowPlayingCoverRequest(
+                            completedRequest = requestedCover,
+                            latestRequest = latestRequestedCover
                         )
+                    ) {
+                        displayedFrame = requestedCover.frame
                     }
                 }
             )

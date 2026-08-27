@@ -1,8 +1,12 @@
 package moe.ouom.neriplayer.ui
 
 import moe.ouom.neriplayer.ui.component.playback.resolveMiniPlayerDisplayedCoverUrl
-import moe.ouom.neriplayer.ui.screen.resolveDisplayedNowPlayingCoverUrl
+import moe.ouom.neriplayer.ui.screen.NowPlayingCoverFrame
+import moe.ouom.neriplayer.ui.screen.buildNowPlayingCoverRequest
+import moe.ouom.neriplayer.ui.screen.retainNowPlayingCoverFrame
+import moe.ouom.neriplayer.ui.screen.shouldCommitNowPlayingCoverRequest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -59,8 +63,7 @@ class NeriAppPlaybackTransitionPolicyTest {
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = null,
                 previousVisualCoverUrl = "old-cover",
-                hasCurrentSong = true,
-                clearDelayElapsed = false
+                hasCurrentSong = true
             )
         )
     }
@@ -72,34 +75,31 @@ class NeriAppPlaybackTransitionPolicyTest {
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = null,
                 previousVisualCoverUrl = "remote-cover",
-                hasCurrentSong = true,
-                clearDelayElapsed = false
+                hasCurrentSong = true
             )
         )
     }
 
     @Test
-    fun `visual cover clears previous image when a new song cover is unresolved`() {
-        assertNull(
+    fun `visual cover keeps the last successful frame across a song switch`() {
+        assertEquals(
+            "previous-song-cover",
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = null,
                 previousVisualCoverUrl = "previous-song-cover",
-                hasCurrentSong = true,
-                clearDelayElapsed = false,
-                preservePreviousVisualCover = false
+                hasCurrentSong = true
             )
         )
     }
 
     @Test
-    fun `visual cover clears after grace period or when playback stops`() {
+    fun `visual cover clears only when playback stops`() {
         assertEquals(
-            null,
+            "old-cover",
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = null,
                 previousVisualCoverUrl = "old-cover",
-                hasCurrentSong = true,
-                clearDelayElapsed = true
+                hasCurrentSong = true
             )
         )
         assertEquals(
@@ -107,8 +107,7 @@ class NeriAppPlaybackTransitionPolicyTest {
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = null,
                 previousVisualCoverUrl = "old-cover",
-                hasCurrentSong = false,
-                clearDelayElapsed = false
+                hasCurrentSong = false
             )
         )
     }
@@ -120,41 +119,98 @@ class NeriAppPlaybackTransitionPolicyTest {
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = "  new-cover  ",
                 previousVisualCoverUrl = "old-cover",
-                hasCurrentSong = true,
-                clearDelayElapsed = false
+                hasCurrentSong = true
             )
         )
     }
 
     @Test
-    fun `cover image keeps the displayed cover until the new request succeeds`() {
-        assertEquals(
-            "old-cover",
-            resolveDisplayedNowPlayingCoverUrl(
-                requestedCoverUrl = "new-cover",
-                displayedCoverUrl = "old-cover",
-                requestSucceeded = false
-            )
+    fun `now playing retains a decoded frame while the next song cover loads`() {
+        val displayedFrame = NowPlayingCoverFrame(
+            coverUrl = "content://downloads/Covers/song-a.jpg",
+            cacheKey = "song-a-cache"
         )
+
         assertEquals(
-            "new-cover",
-            resolveDisplayedNowPlayingCoverUrl(
-                requestedCoverUrl = "new-cover",
-                displayedCoverUrl = "old-cover",
-                requestSucceeded = true
-            )
+            displayedFrame,
+            retainNowPlayingCoverFrame(displayedFrame, hasCurrentSong = true)
+        )
+        assertNull(retainNowPlayingCoverFrame(displayedFrame, hasCurrentSong = false))
+    }
+
+    @Test
+    fun `downloaded file cover uses the same atomic frame contract`() {
+        val displayedFrame = NowPlayingCoverFrame(
+            coverUrl = "file:///downloads/Covers/song-a.jpg",
+            cacheKey = "song-a-cache"
+        )
+        val pendingRequest = buildNowPlayingCoverRequest(
+            coverUrl = "file:///downloads/Covers/song-b.jpg",
+            songKey = "song-b",
+            coverCacheKey = "song-b-cache"
+        )!!
+
+        assertEquals(
+            displayedFrame,
+            retainNowPlayingCoverFrame(displayedFrame, hasCurrentSong = true)
+        )
+        assertNotEquals(displayedFrame, pendingRequest.frame)
+    }
+
+    @Test
+    fun `stale hidden load cannot overwrite a rapid SAF cover switch`() {
+        val displayedRequest = buildNowPlayingCoverRequest(
+            coverUrl = "content://tree-a/Covers/song-a.jpg",
+            songKey = "song-a",
+            coverCacheKey = "generation-1"
+        )!!
+        val staleRequest = buildNowPlayingCoverRequest(
+            coverUrl = "content://tree-a/Covers/song-b.jpg",
+            songKey = "song-b",
+            coverCacheKey = "generation-1"
+        )!!
+        val latestRequest = buildNowPlayingCoverRequest(
+            coverUrl = "content://tree-b/Covers/song-c.jpg",
+            songKey = "song-c",
+            coverCacheKey = "generation-2"
+        )!!
+
+        var displayedFrame = displayedRequest.frame
+        val publishedUrls = mutableListOf(displayedFrame.coverUrl)
+        if (shouldCommitNowPlayingCoverRequest(staleRequest, latestRequest)) {
+            displayedFrame = staleRequest.frame
+        }
+        publishedUrls += displayedFrame.coverUrl
+        if (shouldCommitNowPlayingCoverRequest(latestRequest, latestRequest)) {
+            displayedFrame = latestRequest.frame
+        }
+        publishedUrls += displayedFrame.coverUrl
+
+        assertEquals(
+            listOf(
+                "content://tree-a/Covers/song-a.jpg",
+                "content://tree-a/Covers/song-a.jpg",
+                "content://tree-b/Covers/song-c.jpg"
+            ),
+            publishedUrls
         )
     }
 
     @Test
-    fun `cover image clears when the requested cover is absent`() {
-        assertNull(
-            resolveDisplayedNowPlayingCoverUrl(
-                requestedCoverUrl = "  ",
-                displayedCoverUrl = "old-cover",
-                requestSucceeded = false
-            )
-        )
+    fun `same SAF uri with a new generation preloads before atomic replacement`() {
+        val oldRequest = buildNowPlayingCoverRequest(
+            coverUrl = "content://downloads/Covers/song.jpg",
+            songKey = "song",
+            coverCacheKey = "generation-1"
+        )!!
+        val refreshedRequest = buildNowPlayingCoverRequest(
+            coverUrl = "content://downloads/Covers/song.jpg",
+            songKey = "song",
+            coverCacheKey = "generation-2"
+        )!!
+
+        assertEquals(oldRequest.frame.coverUrl, refreshedRequest.frame.coverUrl)
+        assertNotEquals(oldRequest.frame, refreshedRequest.frame)
     }
 
     @Test
@@ -220,6 +276,30 @@ class NeriAppPlaybackTransitionPolicyTest {
                 visualCoverUrl = "https://p1.music.126.net/cover.jpg?param=140y140",
                 sampledCoverUrl = "https://p2.music.126.net/cover.jpg?param=500y500",
                 sampledSeedHex = "778899"
+            )
+        )
+    }
+
+    @Test
+    fun `cover seed stays stable until the rebound cover sample is ready`() {
+        assertEquals(
+            "778899",
+            resolveActiveCoverSeedHex(
+                visualCoverUrl = "content://current/Covers/cover.jpg",
+                sampledCoverUrl = "content://old/Covers/cover.jpg",
+                sampledSeedHex = "778899",
+                currentSongKey = "song-key",
+                sampledSongKey = "song-key"
+            )
+        )
+        assertEquals(
+            "778899",
+            resolveActiveCoverSeedHex(
+                visualCoverUrl = "content://current/Covers/cover.jpg",
+                sampledCoverUrl = "content://old/Covers/cover.jpg",
+                sampledSeedHex = "778899",
+                currentSongKey = "new-song",
+                sampledSongKey = "old-song"
             )
         )
     }

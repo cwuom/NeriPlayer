@@ -171,7 +171,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     @Test
-    fun manifestOnlySafRootIsRecognizedAsAnExistingManagedDirectory() = runBlocking {
+    fun manifestOnlySafRootDoesNotRequireMigration() = runBlocking {
         val rootId = ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
         val treeRoot = treeRoot(rootId)
         writeDocument(
@@ -184,7 +184,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
                 .encodeToByteArray()
         )
 
-        assertTrue(
+        assertFalse(
             ManagedDownloadStorage.hasMigratableDownloads(
                 context = appContext,
                 directoryUri = treeUri(rootId).toString()

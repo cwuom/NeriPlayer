@@ -416,6 +416,28 @@ internal object ManagedDownloadStorageJsonCodec {
         )
         val baseline = restorable?.baseline
         val overrides = restorable?.overrides
+        val declaredDownloadFinalized = optOptionalBoolean("downloadFinalized")
+        val declaredEmbeddingState = DownloadedAudioEmbeddingState.fromPersisted(
+            optString("metadataEmbeddingState").takeIf {
+                has("metadataEmbeddingState") && !isNull("metadataEmbeddingState")
+            }
+        )
+        val isShippedV15Completion = declaredDownloadFinalized == true &&
+            declaredEmbeddingState == null
+        val isPreviouslyDowngradedV15Completion =
+            declaredDownloadFinalized == false &&
+                declaredEmbeddingState == DownloadedAudioEmbeddingState.LEGACY_UNVERIFIED &&
+                optString("createdAtSource").equals("LEGACY_V15", ignoreCase = true) &&
+                optString("stableKey").isNotBlank() &&
+                optString("audioFileName").isNotBlank() &&
+                optLong("downloadTimeMs") > 0L &&
+                optString("operationId").isBlank() &&
+                optString("artifactState").let { state ->
+                    state.isBlank() || state.equals("FINALIZED", ignoreCase = true) ||
+                        state.equals("COMPLETE", ignoreCase = true)
+                }
+        val acceptsLegacyV15Completion =
+            isShippedV15Completion || isPreviouslyDowngradedV15Completion
         return ManagedDownloadStorage.DownloadedAudioMetadata(
             stableKey = optString("stableKey").takeIf(String::isNotBlank)
                 ?: restorable?.sourceStableKey,
@@ -466,12 +488,16 @@ internal object ManagedDownloadStorageJsonCodec {
             durationMs = optLong("durationMs"),
             downloadTimeMs = optLong("downloadTimeMs")
                 .takeIf { has("downloadTimeMs") && it > 0L },
-            downloadFinalized = optOptionalBoolean("downloadFinalized"),
-            metadataEmbeddingState = DownloadedAudioEmbeddingState.fromPersisted(
-                optString("metadataEmbeddingState").takeIf {
-                    has("metadataEmbeddingState") && !isNull("metadataEmbeddingState")
-                }
-            ),
+            downloadFinalized = if (acceptsLegacyV15Completion) {
+                true
+            } else {
+                declaredDownloadFinalized
+            },
+            metadataEmbeddingState = if (acceptsLegacyV15Completion) {
+                DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
+            } else {
+                declaredEmbeddingState
+            },
             createdAtMs = optLong("createdAtMs")
                 .takeIf { has("createdAtMs") && it > 0L }
                 ?: restorable?.createdAtMs,

@@ -50,6 +50,21 @@ class ManagedLibraryRebuilderTest {
     }
 
     @Test
+    fun `shipped legacy finalized metadata remains in library rebuild plan`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
+        )
+
+        assertEquals(
+            listOf(audio),
+            ManagedLibraryRebuilder.plan(snapshot(audio, metadata)).map { it.audio }
+        )
+    }
+
+    @Test
     fun `pending audio never enters library rebuild plan even with finalized metadata`() {
         val audio = audio(lastModifiedMs = 77L).copy(
             name = "song.mp3.npdl_pending.recovery.pending"
@@ -63,6 +78,46 @@ class ManagedLibraryRebuilderTest {
         assertEquals(
             emptyList<ManagedLibraryRebuildItem>(),
             ManagedLibraryRebuilder.plan(snapshot(audio, metadata))
+        )
+    }
+
+    @Test
+    fun `fast index preview accepts finalized entries without claiming a complete root`() {
+        val audio = audio(lastModifiedMs = 77L)
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+        val previewSnapshot = snapshot(audio, metadata).copy(rootEntriesComplete = false)
+
+        assertEquals(emptyList<ManagedLibraryRebuildItem>(), ManagedLibraryRebuilder.plan(previewSnapshot))
+        assertEquals(
+            listOf(audio),
+            ManagedLibraryRebuilder.plan(
+                snapshot = previewSnapshot,
+                allowIncompleteRootPreview = true
+            ).map { it.audio }
+        )
+    }
+
+    @Test
+    fun `fast index preview still rejects pending audio`() {
+        val audio = audio(lastModifiedMs = 77L).copy(
+            name = "song.mp3.npdl_pending.recovery.pending"
+        )
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "stable-song",
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+        )
+
+        assertEquals(
+            emptyList<ManagedLibraryRebuildItem>(),
+            ManagedLibraryRebuilder.plan(
+                snapshot = snapshot(audio, metadata).copy(rootEntriesComplete = false),
+                allowIncompleteRootPreview = true
+            )
         )
     }
 

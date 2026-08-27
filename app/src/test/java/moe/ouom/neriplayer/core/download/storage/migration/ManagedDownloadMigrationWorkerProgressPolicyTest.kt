@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.core.download.storage.migration
 import androidx.work.workDataOf
 import java.io.IOException
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,6 +51,30 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 error = ManagedDownloadMigrationException.permanent("permission revoked"),
                 runAttemptCount = 0,
                 maxRetryAttempts = 2
+            )
+        )
+    }
+
+    @Test
+    fun `final scan must publish before migration can complete`() {
+        assertFalse(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Published(
+                    rootKey = "content://provider/tree/target",
+                    songCount = 1_000
+                )
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Preserved(
+                    ManagedLibraryRefreshPreserveReason.INCOMPLETE_ROOT_ENUMERATION
+                )
+            )
+        )
+        assertTrue(
+            shouldRetryAfterMigrationFinalScan(
+                ManagedLibraryRefreshOutcome.Failed("provider unavailable")
             )
         )
     }

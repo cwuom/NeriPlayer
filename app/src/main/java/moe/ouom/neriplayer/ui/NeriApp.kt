@@ -58,11 +58,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
@@ -72,6 +75,7 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -153,6 +157,9 @@ import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.core.api.youtube.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.effects.AudioReactive
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -348,13 +355,11 @@ internal const val DRAWER_DETAIL_CLOSE_DURATION_MS = 280
 internal const val MAIN_TAB_LAYER_Z_INDEX = 0f
 internal const val NAV_HOST_LAYER_Z_INDEX = 1f
 internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
+private const val MANAGED_LIBRARY_PROCESSING_Z_INDEX = 3f
 private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
 internal const val APP_CONTENT_FRAME_TIMEOUT_MS = 2_000L
-internal const val STARTUP_GLASS_GATE_TIMEOUT_MS = 2_000L
-internal const val STARTUP_GLASS_GATE_OVERLAY_TAG = "startup_glass_gate_overlay"
-internal const val STARTUP_GLASS_GATE_PROGRESS_TAG = "startup_glass_gate_progress"
 
 internal enum class MainTabDetailHandoff {
     OPEN_DETAIL,
@@ -506,30 +511,6 @@ internal fun resolveMainTabBackgroundMotionDurationMillis(
 }
 
 internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
-
-internal fun shouldReleaseStartupGlassGate(
-    baseBlurEnabled: Boolean,
-    backgroundEffectReady: Boolean,
-    contentEffectReady: Boolean,
-    timeoutElapsed: Boolean = false
-): Boolean {
-    return !baseBlurEnabled ||
-        backgroundEffectReady ||
-        contentEffectReady ||
-        timeoutElapsed
-}
-
-internal fun shouldShowStartupGlassGate(
-    baseBlurEnabled: Boolean,
-    gateReleased: Boolean,
-    backgroundEffectReady: Boolean,
-    contentEffectReady: Boolean
-): Boolean {
-    return baseBlurEnabled &&
-        !gateReleased &&
-        !backgroundEffectReady &&
-        !contentEffectReady
-}
 
 internal fun AnimatedContentTransitionScope<NavBackStackEntry>.mainTabEnterTransition(
     coherentFeedbackEnabled: Boolean = true
@@ -828,7 +809,6 @@ private fun SongItem?.resolveUiCoverSource(context: Context): String? {
 
 private const val NOW_PLAYING_REMOTE_BLUR_IMAGE_SIZE_PX = 640
 private const val NOW_PLAYING_LOCAL_BLUR_IMAGE_SIZE_PX = 384
-private const val PLAYBACK_VISUAL_COVER_CLEAR_DELAY_MS = 900L
 private const val NOW_PLAYING_BACKGROUND_CROSSFADE_MS = 520
 
 private tailrec fun Context.findActivity(): Activity? {
@@ -858,15 +838,12 @@ private fun resolvedNowPlayingBlurStrength(coverUrl: String?, configuredBlurAmou
 internal fun resolvePlaybackVisualCoverUrl(
     currentCoverUrl: String?,
     previousVisualCoverUrl: String?,
-    hasCurrentSong: Boolean,
-    clearDelayElapsed: Boolean,
-    preservePreviousVisualCover: Boolean = true
+    hasCurrentSong: Boolean
 ): String? {
     val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf { it.isNotEmpty() }
     return when {
         normalizedCoverUrl != null -> normalizedCoverUrl
-        !hasCurrentSong || clearDelayElapsed -> null
-        !preservePreviousVisualCover -> null
+        !hasCurrentSong -> null
         else -> previousVisualCoverUrl
     }
 }
@@ -881,43 +858,21 @@ private fun rememberPlaybackVisualCoverUrl(
             resolvePlaybackVisualCoverUrl(
                 currentCoverUrl = coverUrl,
                 previousVisualCoverUrl = null,
-                hasCurrentSong = currentSongKey != null,
-                clearDelayElapsed = false
+                hasCurrentSong = currentSongKey != null
             )
         )
     }
-    var lastObservedSongKey by remember { mutableStateOf(currentSongKey) }
-    val songChangedSinceLastObservation = currentSongKey != lastObservedSongKey
-
-    LaunchedEffect(coverUrl, currentSongKey) {
-        val preservePreviousVisualCover = currentSongKey == lastObservedSongKey
-        visualCoverUrl = resolvePlaybackVisualCoverUrl(
-            currentCoverUrl = coverUrl,
-            previousVisualCoverUrl = visualCoverUrl,
-            hasCurrentSong = currentSongKey != null,
-            clearDelayElapsed = false,
-            preservePreviousVisualCover = preservePreviousVisualCover
-        )
-        lastObservedSongKey = currentSongKey
-
-        if (coverUrl.isNullOrBlank() && currentSongKey != null && visualCoverUrl != null) {
-            delay(PLAYBACK_VISUAL_COVER_CLEAR_DELAY_MS)
-            visualCoverUrl = resolvePlaybackVisualCoverUrl(
-                currentCoverUrl = coverUrl,
-                previousVisualCoverUrl = visualCoverUrl,
-                hasCurrentSong = true,
-                clearDelayElapsed = true
-            )
+    val resolvedVisualCoverUrl = resolvePlaybackVisualCoverUrl(
+        currentCoverUrl = coverUrl,
+        previousVisualCoverUrl = visualCoverUrl,
+        hasCurrentSong = currentSongKey != null
+    )
+    SideEffect {
+        if (visualCoverUrl != resolvedVisualCoverUrl) {
+            visualCoverUrl = resolvedVisualCoverUrl
         }
     }
-
-    val normalizedCoverUrl = coverUrl?.trim()?.takeIf { it.isNotEmpty() }
-    return when {
-        normalizedCoverUrl != null -> normalizedCoverUrl
-        currentSongKey == null -> null
-        songChangedSinceLastObservation -> null
-        else -> visualCoverUrl
-    }
+    return resolvedVisualCoverUrl
 }
 
 @Composable
@@ -1243,17 +1198,25 @@ private const val COVER_SEED_WARMUP_DELAY_MS = 180L
 
 private data class PlaybackCoverSeed(
     val coverUrl: String,
-    val seedHex: String
+    val seedHex: String,
+    val songKey: String?
 )
 
 internal fun resolveActiveCoverSeedHex(
     visualCoverUrl: String?,
     sampledCoverUrl: String?,
-    sampledSeedHex: String?
+    sampledSeedHex: String?,
+    currentSongKey: String? = null,
+    sampledSongKey: String? = null
 ): String? {
     val visualCacheKey = normalizeCoverArtColorCacheKey(visualCoverUrl) ?: return null
     val sampledCacheKey = normalizeCoverArtColorCacheKey(sampledCoverUrl) ?: return null
-    return sampledSeedHex?.takeIf { visualCacheKey == sampledCacheKey }
+    val belongsToVisual = visualCacheKey == sampledCacheKey
+    val belongsToSameSong = currentSongKey != null && currentSongKey == sampledSongKey
+    val canRetainPreviousSeed = currentSongKey != null && sampledSongKey != null
+    return sampledSeedHex?.takeIf {
+        belongsToVisual || belongsToSameSong || canRetainPreviousSeed
+    }
 }
 
 internal fun resolveCoverSeedWarmupDelayMillis(
@@ -1298,9 +1261,6 @@ private fun NowPlayingAccentBackdrop(
         if (sample != null) {
             target = Color(adjustedAccentColorArgb(sample.baseColorArgb, isDark))
             onAccentChanged(sample.seedHex)
-        } else if (cached == null) {
-            target = null
-            onAccentChanged(null)
         }
     }
 
@@ -1359,6 +1319,79 @@ private fun OfflineModeBottomBanner() {
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
         )
+    }
+}
+
+@Composable
+private fun ManagedLibraryProcessingBanner(
+    state: ManagedLibraryProcessingState,
+    modifier: Modifier = Modifier
+) {
+    val title = when (state.reason) {
+        ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE ->
+            stringResource(R.string.managed_library_processing_upgrade_title)
+        ManagedLibraryProcessingReason.DIRECTORY_CHANGE ->
+            stringResource(R.string.managed_library_processing_directory_title)
+        null -> return
+    }
+    val waitingForRetry = state is ManagedLibraryProcessingState.WaitingForRetry
+    val processed = state.processed?.coerceAtLeast(0)
+    val total = state.total?.takeIf { it > 0 }
+    val progressFraction = if (processed != null && total != null) {
+        (processed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+    } else {
+        null
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 6.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                text = stringResource(
+                    if (waitingForRetry) {
+                        R.string.managed_library_processing_retry
+                    } else {
+                        R.string.managed_library_processing_subtitle
+                    }
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (processed != null && total != null) {
+                Text(
+                    text = stringResource(
+                        R.string.managed_library_processing_progress,
+                        processed,
+                        total
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!waitingForRetry) {
+                if (progressFraction == null) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1430,111 +1463,6 @@ internal fun AppContentMountGate(
         modifier = modifier
     ) {
         content()
-    }
-}
-
-@Composable
-internal fun StartupGlassGate(
-    isDark: Boolean,
-    baseBlurEnabled: Boolean,
-    backgroundEffectReady: Boolean,
-    contentEffectReady: Boolean,
-    modifier: Modifier = Modifier,
-    timeoutMillis: Long = STARTUP_GLASS_GATE_TIMEOUT_MS
-) {
-    var gateReleased by rememberSaveable {
-        mutableStateOf(!baseBlurEnabled)
-    }
-
-    LaunchedEffect(
-        baseBlurEnabled,
-        backgroundEffectReady,
-        contentEffectReady,
-        gateReleased,
-        timeoutMillis
-    ) {
-        if (gateReleased) return@LaunchedEffect
-        if (
-            shouldReleaseStartupGlassGate(
-                baseBlurEnabled = baseBlurEnabled,
-                backgroundEffectReady = backgroundEffectReady,
-                contentEffectReady = contentEffectReady
-            )
-        ) {
-            gateReleased = true
-            return@LaunchedEffect
-        }
-
-        delay(timeoutMillis.coerceAtLeast(0L))
-        if (
-            shouldReleaseStartupGlassGate(
-                baseBlurEnabled = baseBlurEnabled,
-                backgroundEffectReady = backgroundEffectReady,
-                contentEffectReady = contentEffectReady,
-                timeoutElapsed = true
-            )
-        ) {
-            NPLogger.w(
-                "NERI-App",
-                "Advanced Glass 启动门超时后降级: " +
-                    "backgroundReady=$backgroundEffectReady, " +
-                    "contentReady=$contentEffectReady"
-            )
-            gateReleased = true
-        }
-    }
-
-    if (
-        shouldShowStartupGlassGate(
-            baseBlurEnabled = baseBlurEnabled,
-            gateReleased = gateReleased,
-            backgroundEffectReady = backgroundEffectReady,
-            contentEffectReady = contentEffectReady
-        )
-    ) {
-        StartupGlassGateOverlay(
-            isDark = isDark,
-            modifier = modifier
-        )
-    }
-}
-
-@Composable
-private fun StartupGlassGateOverlay(
-    isDark: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val baseColor = if (isDark) {
-        Color(0xFF101010)
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val scrimColor = if (isDark) {
-        Color.Black.copy(alpha = 0.20f)
-    } else {
-        MaterialTheme.colorScheme.background.copy(alpha = 0.72f)
-    }
-    Box(
-        modifier = modifier
-            .background(baseColor)
-            .background(scrimColor)
-            .testTag(STARTUP_GLASS_GATE_OVERLAY_TAG)
-            .blockUnderlyingTouches()
-    ) {
-        Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            CircularProgressIndicator(
-                modifier = Modifier.testTag(STARTUP_GLASS_GATE_PROGRESS_TAG)
-            )
-        }
     }
 }
 
@@ -1969,10 +1897,11 @@ private fun NeriAppContent(
             return@LaunchedEffect
         }
         val cachedSample = CoverArtColorCache.peek(playbackVisualCoverUrl)
-        coverSeed = cachedSample?.let { sample ->
-            PlaybackCoverSeed(
+        if (cachedSample != null) {
+            coverSeed = PlaybackCoverSeed(
                 coverUrl = playbackVisualCoverUrl,
-                seedHex = sample.seedHex
+                seedHex = cachedSample.seedHex,
+                songKey = currentSongKey
             )
         }
 
@@ -2000,7 +1929,8 @@ private fun NeriAppContent(
         CoverArtColorCache.preload(context, playbackVisualCoverUrl, offlineMode)?.let { sample ->
             coverSeed = PlaybackCoverSeed(
                 coverUrl = playbackVisualCoverUrl,
-                seedHex = sample.seedHex
+                seedHex = sample.seedHex,
+                songKey = currentSongKey
             )
         }
     }
@@ -2040,8 +1970,6 @@ private fun NeriAppContent(
             advancedBlurQuality = advancedBlurQuality
         )
     }
-    val startupBackgroundGlassReady = backgroundGlassBackdrop.hasActiveBlur
-    val startupContentGlassReady = contentGlassBackdrop.hasActiveBlur
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
@@ -2363,7 +2291,9 @@ private fun NeriAppContent(
     val activeCoverSeedHex = resolveActiveCoverSeedHex(
         visualCoverUrl = playbackVisualCoverUrl,
         sampledCoverUrl = coverSeed?.coverUrl,
-        sampledSeedHex = coverSeed?.seedHex
+        sampledSeedHex = coverSeed?.seedHex,
+        currentSongKey = currentSongKey,
+        sampledSongKey = coverSeed?.songKey
     )
         val effectiveSeedHex = if (dynamicColorEnabled) {
             activeCoverSeedHex ?: themeSeedColor
@@ -2771,6 +2701,8 @@ private fun NeriAppContent(
             }
 
             val snackbarHostState = remember { SnackbarHostState() }
+            val managedLibraryProcessingState by
+                ManagedLibraryProcessingCoordinator.state.collectAsStateWithLifecycle()
             val homeHostRuntimeState = rememberHomeHostRuntimeState()
 
             @Composable
@@ -3610,6 +3542,26 @@ private fun NeriAppContent(
                                     )
                                     .clipToBounds()
                             ) {
+                                AnimatedVisibility(
+                                    visible = managedLibraryProcessingState !=
+                                        ManagedLibraryProcessingState.Idle,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .windowInsetsPadding(WindowInsets.statusBars)
+                                        .zIndex(MANAGED_LIBRARY_PROCESSING_Z_INDEX),
+                                    enter = slideInVertically(
+                                        animationSpec = tween(durationMillis = 220),
+                                        initialOffsetY = { -it / 2 }
+                                    ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                                    exit = slideOutVertically(
+                                        animationSpec = tween(durationMillis = 180),
+                                        targetOffsetY = { -it / 2 }
+                                    ) + fadeOut(animationSpec = tween(durationMillis = 160))
+                                ) {
+                                    ManagedLibraryProcessingBanner(
+                                        state = managedLibraryProcessingState
+                                    )
+                                }
                                 // Keep the effect on a stable layer outside NavHost transitions
                                 Box(
                                     modifier = Modifier
@@ -4775,13 +4727,6 @@ private fun NeriAppContent(
                     )
                 }
 
-                StartupGlassGate(
-                    isDark = isDark,
-                    baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
-                    backgroundEffectReady = startupBackgroundGlassReady,
-                    contentEffectReady = startupContentGlassReady,
-                    modifier = Modifier.fillMaxSize()
-                )
             }
         }
     }

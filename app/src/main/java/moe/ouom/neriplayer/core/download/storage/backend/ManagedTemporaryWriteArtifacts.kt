@@ -66,13 +66,22 @@ internal object ManagedTemporaryWriteArtifacts {
     private val activeWrites = ConcurrentHashMap.newKeySet<TemporaryWriteIdentity>()
 
     fun acquire(target: StorageTarget): ManagedTemporaryWriteLease {
-        val parentIdentity = parentIdentity(target)
         while (true) {
-            val displayName = displayNameFor(target, randomNonce())
-            val identity = TemporaryWriteIdentity(parentIdentity, displayName)
-            if (activeWrites.add(identity)) {
-                return ManagedTemporaryWriteLease(parentIdentity, displayName)
-            }
+            acquire(target, randomNonce())?.let { return it }
+        }
+    }
+
+    internal fun acquire(
+        target: StorageTarget,
+        nonce: String
+    ): ManagedTemporaryWriteLease? {
+        val parentIdentity = parentIdentity(target)
+        val displayName = displayNameFor(target, nonce)
+        val identity = TemporaryWriteIdentity(parentIdentity, displayName)
+        return if (activeWrites.add(identity)) {
+            ManagedTemporaryWriteLease(parentIdentity, displayName)
+        } else {
+            null
         }
     }
 
@@ -117,8 +126,28 @@ internal object ManagedTemporaryWriteArtifacts {
         parent: StorageReference,
         target: StorageTarget,
         snapshot: StorageDirectorySnapshot
+    ): ManagedTemporaryWriteCleanupPlan = planTerminalCleanup(
+        parent = parent,
+        targets = listOf(target),
+        snapshot = snapshot
+    )
+
+    fun planTerminalCleanup(
+        parent: StorageReference,
+        targets: Collection<StorageTarget>,
+        snapshot: StorageDirectorySnapshot
     ): ManagedTemporaryWriteCleanupPlan {
-        if (referenceIdentity(parent) != parentIdentity(target)) {
+        val uniqueTargets = targets.distinct()
+        if (uniqueTargets.isEmpty()) {
+            return ManagedTemporaryWriteCleanupPlan(
+                candidates = emptyList(),
+                retainedActiveCount = 0
+            )
+        }
+        if (uniqueTargets.any { target ->
+                referenceIdentity(parent) != parentIdentity(target)
+            }
+        ) {
             return ManagedTemporaryWriteCleanupPlan(
                 candidates = emptyList(),
                 retainedActiveCount = 0,
@@ -134,10 +163,10 @@ internal object ManagedTemporaryWriteArtifacts {
                 )
             )
         }
-        val parentIdentity = parentIdentity(target)
-        val targetPrefix = targetNamePrefix(target)
+        val parentIdentity = referenceIdentity(parent)
+        val targetPrefixes = uniqueTargets.mapTo(hashSetOf(), ::targetNamePrefix)
         val matchingEntries = snapshot.entries.filter { entry ->
-            !entry.isDirectory && isManagedNameForTarget(entry.displayName, targetPrefix)
+            !entry.isDirectory && managedTargetPrefix(entry.displayName) in targetPrefixes
         }
         val activeEntries = matchingEntries.filter { entry ->
             isActive(parentIdentity, entry.displayName)
@@ -157,19 +186,32 @@ internal object ManagedTemporaryWriteArtifacts {
     }
 
     private fun isManagedNameForTarget(displayName: String, targetPrefix: String): Boolean {
-        if (!displayName.startsWith(targetPrefix) ||
+        return managedTargetPrefix(displayName) == targetPrefix
+    }
+
+    private fun managedTargetPrefix(displayName: String): String? {
+        val targetPrefixLength = TEMPORARY_WRITE_NAME_PREFIX.length +
+            TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH + 1
+        val expectedLength = targetPrefixLength +
+            TEMPORARY_WRITE_NONCE_LENGTH + TEMPORARY_WRITE_NAME_SUFFIX.length
+        if (displayName.length != expectedLength ||
+            !displayName.startsWith(TEMPORARY_WRITE_NAME_PREFIX) ||
             !displayName.endsWith(TEMPORARY_WRITE_NAME_SUFFIX)
         ) {
-            return false
+            return null
         }
-        val nonceStart = targetPrefix.length
-        val nonceEnd = displayName.length - TEMPORARY_WRITE_NAME_SUFFIX.length
-        if (nonceEnd - nonceStart != TEMPORARY_WRITE_NONCE_LENGTH) {
-            return false
-        }
-        return displayName.substring(nonceStart, nonceEnd).all { character ->
+        val fingerprintStart = TEMPORARY_WRITE_NAME_PREFIX.length
+        val fingerprintEnd = fingerprintStart + TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH
+        if (displayName[fingerprintEnd] != '_') return null
+        val nonceEnd = targetPrefixLength + TEMPORARY_WRITE_NONCE_LENGTH
+        val fingerprint = displayName.substring(fingerprintStart, fingerprintEnd)
+        val nonce = displayName.substring(targetPrefixLength, nonceEnd)
+        if (!(fingerprint + nonce).all { character ->
             character in '0'..'9' || character in 'a'..'f'
+        }) {
+            return null
         }
+        return displayName.substring(0, targetPrefixLength)
     }
 
     private fun isActive(parentIdentity: String, displayName: String): Boolean {
@@ -279,22 +321,16 @@ internal suspend fun StorageBackend.cleanupTerminalTemporaryWrites(
         )
     }
     val snapshot = list(parent)
-    val plans = uniqueTargets.map { target ->
-        ManagedTemporaryWriteArtifacts.planTerminalCleanup(
-            parent = parent,
-            target = target,
-            snapshot = snapshot
-        )
-    }
-    val skipReason = plans
-        .mapNotNull(ManagedTemporaryWriteCleanupPlan::skipReason)
-        .firstOrNull()
+    val plan = ManagedTemporaryWriteArtifacts.planTerminalCleanup(
+        parent = parent,
+        targets = uniqueTargets,
+        snapshot = snapshot
+    )
+    val skipReason = plan.skipReason
     if (skipReason != null) {
         return ManagedTemporaryWriteCleanupResult.Skipped(skipReason)
     }
-    val candidates = plans
-        .flatMap(ManagedTemporaryWriteCleanupPlan::candidates)
-        .distinctBy(StorageStat::reference)
+    val candidates = plan.candidates
     var deletedCount = 0
     var missingCount = 0
     val failures = mutableListOf<StorageMutationResult>()
@@ -311,7 +347,7 @@ internal suspend fun StorageBackend.cleanupTerminalTemporaryWrites(
     return ManagedTemporaryWriteCleanupResult.Completed(
         deletedCount = deletedCount,
         missingCount = missingCount,
-        retainedActiveCount = plans.sumOf(ManagedTemporaryWriteCleanupPlan::retainedActiveCount),
+        retainedActiveCount = plan.retainedActiveCount,
         failures = failures
     )
 }

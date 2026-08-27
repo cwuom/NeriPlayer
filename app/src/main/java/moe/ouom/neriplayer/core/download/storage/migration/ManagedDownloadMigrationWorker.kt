@@ -28,6 +28,11 @@ import kotlinx.coroutines.flow.collectLatest
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshOutcome
+import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import kotlin.math.roundToInt
 
@@ -216,6 +221,10 @@ internal fun shouldRetryMigrationFailure(
     }
 }
 
+internal fun shouldRetryAfterMigrationFinalScan(
+    outcome: ManagedLibraryRefreshOutcome
+): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published
+
 class ManagedDownloadMigrationWorker(
     context: Context,
     params: WorkerParameters
@@ -268,15 +277,61 @@ class ManagedDownloadMigrationWorker(
     private suspend fun runMigration(): Result {
         val migrationWorkId = id.toString()
         val checkpointStore = ManagedDownloadMigrationCheckpointStore(applicationContext)
+        var processingOperationId: String? = null
+        var directoryMutationLease: AutoCloseable? = null
         try {
+            ManagedLibraryProcessingCoordinator.restore(applicationContext)
+            val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
+                context = applicationContext,
+                reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+                phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+                resumeWaitingOperation = true
+            ) ?: return Result.retry()
+            processingOperationId = operationId
+            directoryMutationLease =
+                ManagedDownloadDirectoryMutationFence.closeAndDrain()
             val fromDirectoryUri = inputData.getString(KEY_FROM_DIRECTORY_URI)
             val toDirectoryUri = inputData.getString(KEY_TO_DIRECTORY_URI)
+            val activeReplacementJournal = checkpointStore.readReplacementJournal()
+            if (
+                activeReplacementJournal != null &&
+                (!ManagedDownloadStorage.areEquivalentDirectoryUris(
+                    fromDirectoryUri,
+                    activeReplacementJournal.fromDirectoryUri
+                ) || !ManagedDownloadStorage.areEquivalentDirectoryUris(
+                    toDirectoryUri,
+                    activeReplacementJournal.toDirectoryUri
+                ))
+            ) {
+                throw ManagedDownloadMigrationException.transient(
+                    "已有迁移替换事务等待恢复"
+                )
+            }
             val targetLabel = inputData.getString(KEY_TARGET_LABEL)
             val releasePreviousPermission = inputData.getBoolean(KEY_RELEASE_PREVIOUS_PERMISSION, false)
+            val checkpointWorkId = activeReplacementJournal?.workId
+                ?.takeIf(String::isNotBlank)
+                ?: migrationWorkId
             val minimumSourceEntryCount = maxOf(
                 inputData.getInt(KEY_MINIMUM_SOURCE_ENTRY_COUNT, 0),
-                checkpointStore.readMinimumAudioCount(migrationWorkId)
+                checkpointStore.readMinimumAudioCount(migrationWorkId),
+                if (checkpointWorkId == migrationWorkId) {
+                    0
+                } else {
+                    checkpointStore.readMinimumAudioCount(checkpointWorkId)
+                }
             ).coerceAtLeast(0)
+            val persistedTargetNames = mergePersistedMigrationTargetNames(
+                buildList {
+                    add(checkpointStore.readTargetNames(migrationWorkId))
+                    if (checkpointWorkId != migrationWorkId) {
+                        add(checkpointStore.readTargetNames(checkpointWorkId))
+                    }
+                    activeReplacementJournal?.let { journal ->
+                        add(persistedMigrationJournalTargetNames(journal))
+                    }
+                }
+            )
             val settingsRepository = SettingsRepository(applicationContext)
             val targetPreviouslyCommitted = ManagedDownloadStorage.areEquivalentDirectoryUris(
                 settingsRepository.downloadDirectoryUriFlow.first(),
@@ -288,10 +343,17 @@ class ManagedDownloadMigrationWorker(
                 toDirectoryUri = toDirectoryUri,
                 minimumSourceEntryCount = minimumSourceEntryCount,
                 targetPreviouslyCommitted = targetPreviouslyCommitted,
+                persistedTargetNames = persistedTargetNames,
                 onSourceAudioCountResolved = { resolvedMinimumAudioCount ->
                     checkpointStore.recordMinimumAudioCount(
                         workId = migrationWorkId,
                         minimumAudioCount = resolvedMinimumAudioCount
+                    )
+                },
+                onTargetNamePlanResolved = { targetNames ->
+                    checkpointStore.recordTargetNames(
+                        workId = migrationWorkId,
+                        targetNames = targetNames
                     )
                 },
                 onTargetVerified = {
@@ -301,9 +363,21 @@ class ManagedDownloadMigrationWorker(
                     )
                     ManagedDownloadStorage.updateConfiguredTreeUri(toDirectoryUri)
                     ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
-                }
+                },
+                persistedReplacementJournal = activeReplacementJournal,
+                replacementJournalWorkId = activeReplacementJournal?.workId
+                    ?.takeIf(String::isNotBlank)
+                    ?: migrationWorkId,
+                onReplacementJournalUpdated = checkpointStore::recordReplacementJournal
             )
             if (!migrationResult.canSwitchDirectory) {
+                ManagedLibraryProcessingCoordinator.waitingForRetry(
+                    applicationContext,
+                    operationId
+                )
+                if (migrationResult.hasOnlyRetryableCleanupFailures) {
+                    return Result.retry()
+                }
                 return Result.failure(
                     workDataOf(
                         KEY_SKIPPED_FILES to migrationResult.skippedFiles,
@@ -312,13 +386,30 @@ class ManagedDownloadMigrationWorker(
                 )
             }
             // 目录切换只有在最终扫描发布后才算完成, 否则 UI 可能短暂显示空列表
-            GlobalDownloadManager.scanLocalFilesAwait(
+            val finalScanOutcome = GlobalDownloadManager.scanLocalFilesAwait(
                 applicationContext,
                 forceRefresh = true
             )
+            if (shouldRetryAfterMigrationFinalScan(finalScanOutcome)) {
+                ManagedLibraryProcessingCoordinator.waitingForRetry(
+                    applicationContext,
+                    operationId
+                )
+                return Result.retry()
+            }
             when (migrationCleanupWorkDecision(migrationResult)) {
-                MigrationCleanupWorkDecision.RETRY -> return Result.retry()
+                MigrationCleanupWorkDecision.RETRY -> {
+                    ManagedLibraryProcessingCoordinator.waitingForRetry(
+                        applicationContext,
+                        operationId
+                    )
+                    return Result.retry()
+                }
                 MigrationCleanupWorkDecision.FAILURE -> {
+                    ManagedLibraryProcessingCoordinator.waitingForRetry(
+                        applicationContext,
+                        operationId
+                    )
                     return Result.failure(
                         workDataOf(
                             KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles,
@@ -329,14 +420,22 @@ class ManagedDownloadMigrationWorker(
                 }
                 MigrationCleanupWorkDecision.COMPLETE -> Unit
             }
+            val verifiedMinimumAudioCount = checkpointStore.readMinimumAudioCount(migrationWorkId)
+            ManagedLibraryProcessingCoordinator.complete(
+                applicationContext,
+                operationId
+            )
             if (releasePreviousPermission && migrationResult.canReleasePreviousPermission) {
                 ManagedDownloadStorage.releasePersistedDirectoryPermission(
                     applicationContext,
                     fromDirectoryUri
                 )
             }
-            val verifiedMinimumAudioCount = checkpointStore.readMinimumAudioCount(migrationWorkId)
             checkpointStore.clear(migrationWorkId)
+            if (checkpointWorkId != migrationWorkId) {
+                checkpointStore.clear(checkpointWorkId)
+            }
+            checkpointStore.clearReplacementJournal()
             return Result.success(
                 workDataOf(
                     KEY_MOVED_FILES to migrationResult.movedFiles,
@@ -345,8 +444,28 @@ class ManagedDownloadMigrationWorker(
                 )
             )
         } catch (error: CancellationException) {
+            processingOperationId?.let { operationId ->
+                try {
+                    ManagedLibraryProcessingCoordinator.waitingForRetry(
+                        applicationContext,
+                        operationId
+                    )
+                } catch (stateError: Exception) {
+                    error.addSuppressed(stateError)
+                }
+            }
             throw error
         } catch (error: Exception) {
+            processingOperationId?.let { operationId ->
+                try {
+                    ManagedLibraryProcessingCoordinator.waitingForRetry(
+                        applicationContext,
+                        operationId
+                    )
+                } catch (stateError: Exception) {
+                    error.addSuppressed(stateError)
+                }
+            }
             return if (
                 shouldRetryMigrationFailure(
                     error = error,
@@ -357,6 +476,13 @@ class ManagedDownloadMigrationWorker(
                 Result.retry()
             } else {
                 Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+            }
+        } finally {
+            directoryMutationLease?.let { lease ->
+                lease.close()
+                GlobalDownloadManager.recoverPendingDownloadsAfterStorageMutation(
+                    applicationContext
+                )
             }
         }
     }

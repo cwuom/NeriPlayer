@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.download
 import moe.ouom.neriplayer.core.api.youtube.YouTubePlayableStreamType
 import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.player.resolver.youtube.ChunkRequestIOException
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
@@ -136,6 +137,240 @@ class AudioDownloadManagerTest {
                 rawLocalReference = "content://downloads/unfinalized.mp3",
                 isManagedDownload = true,
                 verifiedManagedReference = null
+            )
+        )
+    }
+
+    @Test
+    fun `readable file and SAF references stay on local playback`() {
+        assertEquals(
+            LocalPlaybackReferenceResolution.Playable("file:///Music/local.flac"),
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = "file:///Music/local.flac",
+                isManagedDownload = false,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Present
+            )
+        )
+        assertEquals(
+            LocalPlaybackReferenceResolution.Playable(
+                "content://provider/current-root/Song.flac"
+            ),
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = "content://provider/old-root/Song.flac",
+                isManagedDownload = true,
+                verifiedManagedReference = "content://provider/current-root/Song.flac",
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Missing
+            )
+        )
+    }
+
+    @Test
+    fun `readable managed SAF reference bypasses an incomplete snapshot`() {
+        val rawReference = "content://provider/old-root/Song.flac"
+        val incompleteSnapshot = ManagedDownloadStorage
+            .emptyDownloadLibrarySnapshot()
+            .copy(rootEntriesComplete = false)
+        assertFalse(incompleteSnapshot.rootEntriesComplete)
+
+        assertEquals(
+            LocalPlaybackReferenceResolution.Playable(rawReference),
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = rawReference,
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Present
+            )
+        )
+        assertTrue(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = incompleteSnapshot.metadataByAudioName["Song.flac"]
+            )
+        )
+        assertTrue(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = rawReference,
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Present,
+                managedReferenceIsExplicitlyIncomplete = false
+            ) is LocalPlaybackReferenceResolution.Playable
+        )
+    }
+
+    @Test
+    fun `managed raw reference remains blocked for an active replacement`() {
+        val rawReference = "content://provider/downloads/Song.flac"
+        assertTrue(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = rawReference,
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Present,
+                managedReferenceIsExplicitlyIncomplete = true
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    operationId = "op-1",
+                    artifactState = "COMMITTING"
+                )
+            )
+        )
+        assertTrue(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "CORE_COMMITTED"
+                )
+            )
+        )
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = true,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = null
+            )
+        )
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    artifactState = "STAGING"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `explicit unfinished metadata without artifact state remains blocked`() {
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `only typed missing permits a downloaded song to use remote fallback`() {
+        assertEquals(
+            LocalPlaybackReferenceResolution.Missing,
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.Missing
+            )
+        )
+        assertTrue(
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.PermissionLost(
+                    SecurityException("grant revoked")
+                )
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+        assertTrue(
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.ProviderFailure(
+                    IllegalStateException("provider busy")
+                )
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+        assertTrue(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.PermissionLost(
+                    SecurityException("grant revoked")
+                )
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+        assertTrue(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.ProviderFailure(
+                    IllegalStateException("provider busy")
+                )
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+    }
+
+    @Test
+    fun `stale downloaded URI uses rebound current root reference`() {
+        assertEquals(
+            LocalPlaybackReferenceResolution.Playable(
+                "content://provider/current-root/Rebound.flac"
+            ),
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = "content://provider/current-root/Rebound.flac",
+                indexedReference = "content://provider/old-root/Rebound.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.Missing
+            )
+        )
+    }
+
+    @Test
+    fun `stale SAF document URI rebinds by file name only after finalization`() {
+        val reboundAudio = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Rebound.flac",
+            reference = "content://provider/current-root/Artist%20-%20Rebound.flac",
+            mediaUri = "content://provider/current-root/Artist%20-%20Rebound.flac",
+            localFilePath = null,
+            sizeBytes = 1024L,
+            lastModifiedMs = 2L
+        )
+        val finalizedSnapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(reboundAudio),
+            metadataByAudioName = mapOf(
+                reboundAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
+                )
+            )
+        )
+        val staleReference =
+            "content://provider/tree/old/document/old%2FArtist%20-%20Rebound.flac"
+
+        assertEquals(
+            reboundAudio,
+            findReboundFinalizedManagedAudio(finalizedSnapshot, staleReference)
+        )
+        assertNull(
+            findReboundFinalizedManagedAudio(
+                finalizedSnapshot.copy(
+                    metadataByAudioName = mapOf(
+                        reboundAudio.name to ManagedDownloadStorage.DownloadedAudioMetadata(
+                            downloadFinalized = false
+                        )
+                    )
+                ),
+                staleReference
             )
         )
     }

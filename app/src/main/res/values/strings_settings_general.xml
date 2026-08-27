@@ -318,10 +318,16 @@
     <string name="settings_download_directory_switch_warning_confirm">继续选择</string>
     <string name="settings_download_directory_migrate_title">迁移旧下载文件</string>
     <string name="settings_download_directory_migrate_message">要把当前目录里的已下载歌曲、歌词和封面迁移到“%1$s”吗？</string>
+    <string name="settings_download_directory_migrate_conflict_warning">目标目录已有下载文件，可能存在同曲冲突。确认迁移后，同曲以本次迁移的源数据为准；无法确认同曲的不同文件会同时保留。</string>
     <string name="settings_download_directory_migrate_confirm">迁移</string>
     <string name="settings_download_directory_migrate_skip">不迁移</string>
     <string name="settings_download_directory_preparing">正在检查下载目录</string>
     <string name="settings_download_directory_preparing_desc">正在确认现有下载文件，请稍候</string>
+    <string name="managed_library_processing_upgrade_title">正在升级下载数据库</string>
+    <string name="managed_library_processing_directory_title">正在处理新下载目录</string>
+    <string name="managed_library_processing_subtitle">下载列表将在处理完成后自动更新</string>
+    <string name="managed_library_processing_progress">已处理 %1$d / %2$d 项</string>
+    <string name="managed_library_processing_retry">处理尚未完成，将在后台自动重试</string>
     <string name="settings_download_directory_migrating">正在迁移下载文件</string>
     <string name="settings_download_directory_migrating_desc">歌曲、歌词和封面正在搬到新目录，请稍候</string>
     <string name="settings_download_directory_migrating_stage_preparing">正在分析要迁移的文件</string>

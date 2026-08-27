@@ -75,13 +75,45 @@ class ManagedDownloadStorageRestorableCodecTest {
     }
 
     @Test
-    fun `downloaded metadata codec preserves missing embedding state for legacy recovery`() {
+    fun `downloaded metadata codec recognizes shipped finalized legacy metadata`() {
         val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
             JSONObject().put("downloadFinalized", true)
         )
 
         assertEquals(true, parsed.downloadFinalized)
+        assertEquals(
+            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
+            parsed.metadataEmbeddingState
+        )
+    }
+
+    @Test
+    fun `downloaded metadata codec keeps explicit unfinished legacy metadata unverified`() {
+        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
+            JSONObject().put("downloadFinalized", false)
+        )
+
+        assertEquals(false, parsed.downloadFinalized)
         assertNull(parsed.metadataEmbeddingState)
+    }
+
+    @Test
+    fun `downloaded metadata codec repairs metadata downgraded by the v15 upgrader`() {
+        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(
+            JSONObject()
+                .put("stableKey", "file:song.flac")
+                .put("audioFileName", "song.flac")
+                .put("downloadTimeMs", 1234L)
+                .put("downloadFinalized", false)
+                .put("metadataEmbeddingState", "LEGACY_UNVERIFIED")
+                .put("createdAtSource", "LEGACY_V15")
+        )
+
+        assertEquals(true, parsed.downloadFinalized)
+        assertEquals(
+            DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED,
+            parsed.metadataEmbeddingState
+        )
     }
 
     @Test

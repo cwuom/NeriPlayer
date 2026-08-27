@@ -25,7 +25,7 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     fun `migration entry reader uses typed backend instead of raw resolver stream`() {
         val source = readSource()
         val reader = source
-            .substringAfter("private fun openStoredEntryInputStream")
+            .substringAfter("internal suspend fun <T> readStoredEntryForMigration")
             .substringBefore("private fun restoreStoredEntryLastModified")
 
         assertFalse(
@@ -35,6 +35,10 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
         assertTrue(
             "migration reads must classify the typed backend result",
             reader.contains("StorageLookupResult")
+        )
+        assertFalse(
+            "migration reads must not stage the whole file in cache",
+            reader.contains("File.createTempFile") || reader.contains("runBlocking")
         )
     }
 
@@ -95,7 +99,7 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
     }
 
     @Test
-    fun `typed migration reader removes its temporary stream file on close`() {
+    fun `typed migration reader streams without creating a cache file`() {
         val sourceDirectory = Files.createTempDirectory("neriplayer-typed-reader").toFile()
         val cacheDirectory = File(sourceDirectory, "cache").apply { mkdirs() }
         val sourceFile = File(sourceDirectory, "song.mp3").apply {
@@ -112,9 +116,14 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
             lastModifiedMs = sourceFile.lastModified()
         )
         try {
-            val stream = invokeReader(context, entry)
-            assertArrayEquals(byteArrayOf(1, 2, 3, 4), stream.readBytes())
-            stream.close()
+            val lookup: StorageLookupResult<Result<ByteArray>> = runBlocking {
+                ManagedDownloadStorage.readStoredEntryForMigration(context, entry) { input ->
+                    assertTrue(cacheDirectory.listFiles().orEmpty().isEmpty())
+                    input.readBytes()
+                }
+            }
+            val result = lookup as StorageLookupResult.Found<Result<ByteArray>>
+            assertArrayEquals(byteArrayOf(1, 2, 3, 4), result.value.getOrThrow())
             assertTrue(cacheDirectory.listFiles().orEmpty().isEmpty())
         } finally {
             sourceDirectory.deleteRecursively()
@@ -141,22 +150,6 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
         } finally {
             cacheDirectory.deleteRecursively()
         }
-    }
-
-    private fun invokeReader(
-        context: Context,
-        entry: ManagedDownloadStorage.StoredEntry
-    ): java.io.InputStream {
-        val method = ManagedDownloadStorage::class.java
-            .getDeclaredMethod(
-                "openStoredEntryInputStream",
-                Context::class.java,
-                ManagedDownloadStorage.StoredEntry::class.java
-            )
-            .apply { isAccessible = true }
-        return method.invoke(ManagedDownloadStorage, context, entry)
-            as? java.io.InputStream
-            ?: throw AssertionError("typed reader returned no stream")
     }
 
     private fun readSource(): String {

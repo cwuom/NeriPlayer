@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_MAX_ATTEMPTS
@@ -22,6 +23,52 @@ import org.mockito.Mockito.mock
 class ManagedDownloadMigrationCopyWorkerTest {
     private val context: Context = mock(Context::class.java)
     private val targetRoot = ManagedDownloadRootHandle.FileRoot(File("."))
+
+    @Test
+    fun `migration reader preserves cancellation when stream close also fails`() = runTest {
+        val cancellation = CancellationException("cancel migration")
+        val closeFailure = IOException("close failed")
+        val reader = failingCloseReader(closeFailure)
+
+        val thrown = try {
+            reader.readOrThrow(
+                context = context,
+                entry = entry("audio.mp3", "source-audio", 4L),
+                operation = "read source"
+            ) {
+                throw cancellation
+            }
+            null
+        } catch (error: CancellationException) {
+            error
+        }
+
+        assertSame(cancellation, thrown)
+        assertTrue(cancellation.suppressed.contains(closeFailure))
+    }
+
+    @Test
+    fun `migration reader preserves permanent failure when stream close also fails`() = runTest {
+        val permanent = ManagedDownloadMigrationException.permanent("target conflict")
+        val closeFailure = IOException("close failed")
+        val reader = failingCloseReader(closeFailure)
+
+        val thrown = try {
+            reader.readOrThrow(
+                context = context,
+                entry = entry("audio.mp3", "source-audio", 4L),
+                operation = "write target"
+            ) {
+                throw permanent
+            }
+            null
+        } catch (error: ManagedDownloadMigrationException) {
+            error
+        }
+
+        assertSame(permanent, thrown)
+        assertTrue(permanent.suppressed.contains(closeFailure))
+    }
 
     @Test
     fun `double hash maps both passes to monotonic logical bytes`() {
@@ -255,13 +302,59 @@ class ManagedDownloadMigrationCopyWorkerTest {
         assertEquals(0.97f, updates.last().fraction)
     }
 
+    @Test
+    fun `SAF target layout rejects duplicate canonical names before source cleanup`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target"),
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000external")
+        )
+
+        val detail = validateMigrationTargetLayout(expected, observed)
+
+        assertTrue(requireNotNull(detail).contains("名称不唯一"))
+    }
+
+    @Test
+    fun `SAF target layout rejects a planned name pointing at different documents`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000first"),
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000second")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000first")
+        )
+
+        val detail = validateMigrationTargetLayout(expected, observed)
+
+        assertTrue(requireNotNull(detail).contains("多个目标文档"))
+    }
+
+    @Test
+    fun `SAF target layout accepts one exact document per canonical planned name`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000audio"),
+            ManagedMigrationTargetLayoutEntry("Covers", "cover.jpg", "provider\u0000cover")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000audio"),
+            ManagedMigrationTargetLayoutEntry("Covers", "cover.jpg", "provider\u0000cover")
+        )
+
+        assertNull(validateMigrationTargetLayout(expected, observed))
+    }
+
     private fun copyWorker(
         openInput: (ManagedDownloadStorage.StoredEntry) -> InputStream?,
         writeRoot: ((InputStream, ((Long) -> Unit)?) -> StoredWriteResult)? = null
     ): ManagedDownloadMigrationCopyWorker {
         return ManagedDownloadMigrationCopyWorker(
             tag = "MigrationCopyWorkerTest",
-            openInputStream = { _, entry -> openInput(entry) },
+            entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                openInput(entry)
+            },
             mimeTypeFor = { "audio/mpeg" },
             writeRootStream = { _, _, _, _, input, _, _, _, onProgress ->
                 requireNotNull(writeRoot) { "writeRootStream must not be called" }(
@@ -286,11 +379,26 @@ class ManagedDownloadMigrationCopyWorkerTest {
             rewriteParallelism = { 1 },
             deleteParallelism = { 1 },
             readText = { _, reference -> readText(reference) },
-            openInputStream = { _, entry -> openInput(entry) },
+            entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                openInput(entry)
+            },
             writeRootText = { _, _, _, _ -> error("writeRootText must not be called") },
             deleteReference = { _, _, _ -> StorageMutationResult.Deleted },
             rewriteMetadataReferences = { content, _ -> content }
         )
+    }
+
+    private fun failingCloseReader(
+        closeFailure: IOException
+    ): InputStreamManagedMigrationEntryReader {
+        return InputStreamManagedMigrationEntryReader { _, _ ->
+            object : ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)) {
+                override fun close() {
+                    super.close()
+                    throw closeFailure
+                }
+            }
+        }
     }
 
     private fun targetIndex(

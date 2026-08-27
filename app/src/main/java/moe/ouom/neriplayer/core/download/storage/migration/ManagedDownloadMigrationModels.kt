@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 internal class ManagedDownloadMigrationException(
     message: String,
     val retryable: Boolean,
+    val retryWithinEntry: Boolean = retryable,
     cause: Throwable? = null
 ) : IOException(message, cause) {
     companion object {
@@ -15,6 +16,15 @@ internal class ManagedDownloadMigrationException(
 
         fun transient(message: String, cause: Throwable? = null): ManagedDownloadMigrationException {
             return ManagedDownloadMigrationException(message, retryable = true, cause = cause)
+        }
+
+        fun targetChanged(message: String, cause: Throwable? = null): ManagedDownloadMigrationException {
+            return ManagedDownloadMigrationException(
+                message = message,
+                retryable = true,
+                retryWithinEntry = false,
+                cause = cause
+            )
         }
     }
 }
@@ -40,11 +50,41 @@ internal data class ManagedMigrationEntry(
     }
 }
 
+internal data class ManagedMigrationReplacementPlan(
+    val sourceReference: String,
+    val groupIdentity: String,
+    val subdirectory: String?,
+    val targetName: String,
+    val targetEntry: ManagedDownloadStorage.StoredEntry,
+    val backupName: String
+)
+
+internal enum class ManagedMigrationReplacementJournalPhase {
+    PLANNED,
+    TARGETS_VERIFIED,
+    DIRECTORY_COMMITTED
+}
+
+internal data class ManagedMigrationReplacementJournal(
+    val version: Int = CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION,
+    val workId: String,
+    val fromDirectoryUri: String?,
+    val toDirectoryUri: String?,
+    val backupNamespace: String,
+    val phase: ManagedMigrationReplacementJournalPhase,
+    val replacements: List<ManagedMigrationReplacementPlan>,
+    val targetNamesByReference: Map<String, String> = emptyMap()
+)
+
+internal const val CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 1
+
 internal data class CopiedMigrationEntry(
     val original: ManagedMigrationEntry,
     val copiedEntry: ManagedDownloadStorage.StoredEntry,
     val createdNew: Boolean,
-    val sourceDigest: String? = null
+    val sourceDigest: String? = null,
+    val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
+    val sourceAuthoritative: Boolean = false
 ) {
     fun toVerificationProgressEntry(): ManagedMigrationProgressEntry {
         val sourceBytes = if (sourceDigest.isNullOrBlank()) {
@@ -91,7 +131,13 @@ internal fun resolveMinimumMigrationAudioCount(
 
 internal data class StoredWriteResult(
     val entry: ManagedDownloadStorage.StoredEntry,
-    val createdNew: Boolean
+    val createdNew: Boolean,
+    /**
+     * deterministic backup retained while a source-authoritative replacement is
+     * being verified. The migration journal owns its eventual deletion.
+     */
+    val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
+    val sourceAuthoritative: Boolean = false
 )
 
 internal class ManagedMigrationProgressReporter(

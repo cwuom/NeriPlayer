@@ -6,6 +6,7 @@ import java.util.Locale
 internal enum class DownloadedAudioEmbeddingState {
     EMBEDDED_VERIFIED,
     USER_DISABLED,
+    LEGACY_V15_FINALIZED,
     UNSUPPORTED_CONTAINER,
     LEGACY_UNVERIFIED;
 
@@ -23,7 +24,8 @@ internal fun isAcceptedDownloadedAudioEmbeddingState(
     state: DownloadedAudioEmbeddingState?
 ): Boolean {
     return state == DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED ||
-        state == DownloadedAudioEmbeddingState.USER_DISABLED
+        state == DownloadedAudioEmbeddingState.USER_DISABLED ||
+        state == DownloadedAudioEmbeddingState.LEGACY_V15_FINALIZED
 }
 
 internal fun isFinalizedDownloadedAudioEntry(

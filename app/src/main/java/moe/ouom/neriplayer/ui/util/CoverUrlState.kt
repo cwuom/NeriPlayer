@@ -92,6 +92,26 @@ internal fun shouldProbeFastLocalCoverCandidate(
     immediateCover: String?
 ): Boolean = isLocalSong || immediateCover.isNullOrBlank()
 
+internal fun resolvePrevalidatedCoverCandidate(
+    primaryCoverUrl: String?,
+    fallbackCoverUrl: String?
+): String? {
+    fun remoteCandidate(reference: String?): String? {
+        val candidate = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
+        return candidate.takeIf {
+            it.startsWith("https://", ignoreCase = true) ||
+                it.startsWith("http://", ignoreCase = true)
+        }
+    }
+
+    val primary = primaryCoverUrl?.trim()?.takeIf(String::isNotBlank)
+    return if (primary != null) {
+        remoteCandidate(primary)
+    } else {
+        remoteCandidate(fallbackCoverUrl)
+    }
+}
+
 internal fun retainCoverDuringResolution(
     currentCover: String?,
     resolvedCover: String?
@@ -148,10 +168,23 @@ internal fun rememberSongDisplayCoverUrl(
     val effectiveGeneration = localAssetGeneration ?: "global=$downloadPresenceVersion"
     val probeGeneration = effectiveGeneration.hashCode()
     val resolvedCacheKey = versionedCoverCacheKey(songDisplayKey, effectiveGeneration)
-    var coverUrl by remember(songDisplayKey) {
+    var coverUrl by remember(songDisplayKey, resolvedCacheKey) {
+        val cachedCover = cachedResolvedCover(resolvedCacheKey)
+        val explicitSongCover = song?.displayCoverUrl()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
         mutableStateOf(
-            cachedResolvedCover(resolvedCacheKey)
-                ?: song?.displayCoverUrl()
+            if (explicitSongCover != null) {
+                resolvePrevalidatedCoverCandidate(
+                    primaryCoverUrl = explicitSongCover,
+                    fallbackCoverUrl = null
+                )
+            } else {
+                resolvePrevalidatedCoverCandidate(
+                    primaryCoverUrl = cachedCover,
+                    fallbackCoverUrl = song?.originalCoverUrl
+                )
+            }
         )
     }
 
@@ -170,19 +203,27 @@ internal fun rememberSongDisplayCoverUrl(
             return@LaunchedEffect
         }
 
-        // 这里只读取歌曲对象中的已知封面, 避免重组时触发存储探测
         val rawImmediateCover = song.displayCoverUrl()
-        if (!rawImmediateCover.isNullOrBlank()) {
+        val prevalidatedCover = resolvePrevalidatedCoverCandidate(
+            primaryCoverUrl = rawImmediateCover,
+            fallbackCoverUrl = song.originalCoverUrl
+        )
+        if (!prevalidatedCover.isNullOrBlank()) {
             resolutionStage = "song-pending"
-            rememberResolvedCover(resolvedCacheKey, rawImmediateCover)
-            coverUrl = rawImmediateCover
+            rememberResolvedCover(resolvedCacheKey, prevalidatedCover)
+            coverUrl = prevalidatedCover
         }
         val immediateCover = withContext(coverProbeDispatcher) {
             rawImmediateCover?.takeIf { isUsableCoverReference(appContext, it) }
         }
         val memoryCover = cachedResolvedCover(resolvedCacheKey)
-        if (!memoryCover.isNullOrBlank()) {
-            coverUrl = memoryCover
+        val prevalidatedMemoryCover = immediateCover
+            ?: resolvePrevalidatedCoverCandidate(
+                primaryCoverUrl = rawImmediateCover,
+                fallbackCoverUrl = memoryCover
+            )
+        if (!prevalidatedMemoryCover.isNullOrBlank()) {
+            coverUrl = prevalidatedMemoryCover
         }
         val cachedCover = withContext(coverProbeDispatcher) {
             if (
@@ -257,12 +298,18 @@ private fun logCoverResolution(
     ) {
         return
     }
+    val sourceKind = when {
+        song.mediaUri?.startsWith("content://", ignoreCase = true) == true -> "content"
+        !song.localFilePath.isNullOrBlank() -> "file"
+        else -> "metadata"
+    }
     NPLogger.d(
         "LocalCoverPerf",
-        "song=${song.name}, stage=$stage, elapsed=${elapsedMs}ms, " +
+        "songKeyHash=${Integer.toHexString(song.stableKey().hashCode())}, " +
+            "stage=$stage, elapsed=${elapsedMs}ms, " +
             "hasImmediate=${!immediateCover.isNullOrBlank()}, " +
             "hasResolved=${!resolvedCover.isNullOrBlank()}, " +
-            "source=${song.mediaUri ?: song.localFilePath}"
+            "sourceKind=$sourceKind"
     )
 }
 
@@ -325,7 +372,8 @@ private fun resolveCachedSongDisplayCoverUrlUncached(
         usable(LocalMediaSupport.peekMediaStoreAlbumArtUri(context, song))?.let { return it }
         usable(LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song))?.let { return it }
     }
-    return usable(song.displayCoverUrl())
+    usable(song.displayCoverUrl())?.let { return it }
+    return usable(song.originalCoverUrl)
 }
 
 private fun fastCoverProbeCacheKey(song: SongItem, probeGeneration: Int): String {

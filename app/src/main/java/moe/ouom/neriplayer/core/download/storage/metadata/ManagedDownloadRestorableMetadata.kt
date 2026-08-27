@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage.metadata
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 internal data class ManagedDownloadRestorableMetadata(
@@ -10,6 +11,7 @@ internal data class ManagedDownloadRestorableMetadata(
     val currentCoverAssetHash: String? = null,
     val baselineCoverAssetFileName: String? = null,
     val currentCoverAssetFileName: String? = null,
+    val legacyCoverRecoveryReferences: List<String> = emptyList(),
     val createdAtMs: Long? = null,
     val updatedAtMs: Long? = null
 ) {
@@ -45,6 +47,12 @@ internal data class ManagedDownloadRestorableMetadata(
                 put("currentCoverHash", currentCoverAssetHash)
                 put("baselineCoverFileName", baselineCoverAssetFileName)
                 put("currentCoverFileName", currentCoverAssetFileName)
+                put(
+                    "legacyCoverRecoveryReferences",
+                    JSONArray().apply {
+                        legacyCoverRecoveryReferences.forEach(::put)
+                    }
+                )
             })
             put("times", JSONObject().apply {
                 put("createdAtMs", createdAtMs)
@@ -71,11 +79,23 @@ internal data class ManagedDownloadRestorableMetadata(
                 currentCoverAssetHash = assets?.optionalString("currentCoverHash"),
                 baselineCoverAssetFileName = assets?.optionalString("baselineCoverFileName"),
                 currentCoverAssetFileName = assets?.optionalString("currentCoverFileName"),
+                legacyCoverRecoveryReferences = assets
+                    ?.optJSONArray("legacyCoverRecoveryReferences")
+                    ?.toStringList()
+                    .orEmpty(),
                 createdAtMs = times?.optionalLong("createdAtMs"),
                 updatedAtMs = times?.optionalLong("updatedAtMs")
             )
         }
     }
+}
+
+private fun JSONArray.toStringList(): List<String> {
+    return buildList {
+        for (index in 0 until length()) {
+            optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+    }.distinct()
 }
 
 private fun ManagedDownloadRestorableMetadata.Baseline.toJson(): JSONObject {

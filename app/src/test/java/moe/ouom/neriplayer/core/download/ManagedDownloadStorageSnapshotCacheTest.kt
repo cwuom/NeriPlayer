@@ -107,6 +107,67 @@ class ManagedDownloadStorageSnapshotCacheTest {
     }
 
     @Test
+    fun `legacy upgrade snapshot reuses only unchanged cached metadata`() {
+        val unchangedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+        val changedEntry = unchangedEntry.copy(
+            name = "Artist - Changed.mp3.npmeta.json",
+            reference = "/music/Artist - Changed.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Changed.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Changed.mp3.npmeta.json",
+            lastModifiedMs = 101L
+        )
+        val cachedChangedEntry = changedEntry.copy(lastModifiedMs = 100L)
+        val unchangedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 42L)
+        val changedMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(songId = 43L)
+        val cachedSnapshot = emptySnapshot().copy(
+            metadataEntriesByAudioName = mapOf(
+                "Artist - Song.mp3" to unchangedEntry,
+                "Artist - Changed.mp3" to cachedChangedEntry
+            ),
+            metadataByAudioName = mapOf(
+                "Artist - Song.mp3" to unchangedMetadata,
+                "Artist - Changed.mp3" to changedMetadata
+            )
+        )
+
+        val reused = ManagedDownloadStorage.selectReusableCachedDownloadedMetadata(
+            currentEntries = mapOf(
+                "Artist - Song.mp3" to unchangedEntry,
+                "Artist - Changed.mp3" to changedEntry
+            ),
+            cachedSnapshot = cachedSnapshot
+        )
+
+        assertEquals(mapOf("Artist - Song.mp3" to unchangedMetadata), reused)
+    }
+
+    @Test
+    fun `legacy upgrade snapshot does not trust a missing cache`() {
+        val entry = ManagedDownloadStorage.StoredEntry(
+            name = "Artist - Song.mp3.npmeta.json",
+            reference = "/music/Artist - Song.mp3.npmeta.json",
+            mediaUri = "file:///music/Artist%20-%20Song.mp3.npmeta.json",
+            localFilePath = "/music/Artist - Song.mp3.npmeta.json",
+            sizeBytes = 1_024L,
+            lastModifiedMs = 100L
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.selectReusableCachedDownloadedMetadata(
+                currentEntries = mapOf("Artist - Song.mp3" to entry),
+                cachedSnapshot = null
+            ).isEmpty()
+        )
+    }
+
+    @Test
     fun `forced sidecar refresh skips the snapshot that was just published`() {
         val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot()
 

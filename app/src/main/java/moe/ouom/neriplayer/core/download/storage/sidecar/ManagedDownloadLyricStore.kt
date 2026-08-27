@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.sidecar
 import android.content.Context
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.candidateManagedDownloadBaseNames
+import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadArtifactPlanner
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.data.model.SongItem
@@ -62,7 +63,10 @@ internal object ManagedDownloadLyricStore {
             songId = song.id,
             candidateBaseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
         )?.takeIf { exists(context, it) }?.let { return it }
-        return resolvedMetadata?.romanizedLyricPath
+        return ManagedDownloadArtifactPlanner.trustedMetadataReference(
+            resolvedMetadata?.romanizedLyricPath,
+            snapshot
+        )
             ?.takeIf { exists(context, it) }
     }
 
@@ -76,11 +80,14 @@ internal object ManagedDownloadLyricStore {
         fileNameTemplate: String?,
         exists: (Context, String?) -> Boolean
     ): String? {
-        val metadataReference = if (translated) {
-            resolvedMetadata?.translatedLyricPath
-        } else {
-            resolvedMetadata?.lyricPath
-        }
+        val metadataReference = ManagedDownloadArtifactPlanner.trustedMetadataReference(
+            if (translated) {
+                resolvedMetadata?.translatedLyricPath
+            } else {
+                resolvedMetadata?.lyricPath
+            },
+            snapshot
+        )
         resolvedAudio?.let { audio ->
             findIndexedLyricReference(
                 snapshot = snapshot,

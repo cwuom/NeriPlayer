@@ -50,6 +50,21 @@ internal class ManagedDownloadCommitMigrationTargetResolver(
         targetNames: Set<String>,
         targetEntry: ManagedDownloadStorage.StoredEntry? = null
     ): StoredWriteResult {
+        if (
+            targetEntry == null &&
+                displayName !in targetNames
+        ) {
+            return ManagedDownloadMigrationTargetResolver.resolveTreeTarget(
+                displayName = displayName,
+                sourceEntry = sourceEntry,
+                targetNames = targetNames,
+                targetEntry = null,
+                existingChildEntry = null,
+                reserveName = { plannedName -> plannedName },
+                onReuseMetadata = {},
+                onReuseFile = {}
+            )
+        }
         val metadataAudioName = ManagedDownloadTreeNaming.metadataAudioName(displayName)
         val existingChildEntry = treeChildRegistry.treeChildrenForWrite(context, parent)
             .children

@@ -22,7 +22,16 @@ class ManagedLocalPlaybackGateTest {
                 "PlayerManagerGenericUrlPrefetch.kt"
         ).readText()
 
-        assertTrue(localPlayback.contains("resolvePermittedLocalPlaybackUri("))
+        assertTrue(localPlayback.contains("resolvePermittedLocalPlayback("))
+        assertTrue(
+            localPlayback.contains("localResolution is LocalPlaybackReferenceResolution.Missing")
+        )
+        assertTrue(urlSource.contains("resolveIndexedLocalPlaybackReference(context, song)"))
+        assertTrue(urlSource.contains("remote fallback is blocked"))
+        assertTrue(
+            urlSource.indexOf("val localResult = checkLocalCache(song, sideEffects)") <
+                urlSource.indexOf("shouldUseDirectStreamShortcut(")
+        )
         assertTrue(fallbackSource.contains("internal suspend fun PlayerManager.tryResolveNeteaseMatchedLocalSource"))
         assertTrue(fallbackSource.contains("resolvePermittedLocalPlaybackUri("))
         assertTrue(urlSource.contains("consumeGenericUrlPrefetch(cacheKey, song)"))

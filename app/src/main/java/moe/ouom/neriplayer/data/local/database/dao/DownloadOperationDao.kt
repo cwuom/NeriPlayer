@@ -207,10 +207,10 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
-        "UPDATE download_operation SET state = 'QUEUED', " +
+        "UPDATE download_operation SET library_id = :libraryId, state = 'QUEUED', " +
             "updated_at_ms = :updatedAtMs, last_error_code = NULL " +
-            "WHERE operation_id = :operationId AND library_id = :libraryId " +
-            "AND stable_key = :stableKey AND state = 'WAITING_STORAGE_MUTATION' " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state = 'WAITING_STORAGE_MUTATION' " +
             "AND stop_requested_by_user = 0"
     )
     suspend fun promoteWaitingStorageMutation(

@@ -10,12 +10,16 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.InputStreamManagedMigrationEntryReader
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressReporter
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PROGRESS_EMIT_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
+import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
@@ -221,6 +225,114 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `migration plan reserves deterministic names for colliding sidecars`() {
+        fun cover(reference: String) = ManagedDownloadStorage.StoredEntry(
+            name = "cover.jpg",
+            reference = reference,
+            mediaUri = reference,
+            localFilePath = reference,
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        val first = ManagedMigrationEntryRef(COVER_SUBDIRECTORY, cover("/source-a/cover.jpg"))
+        val second = ManagedMigrationEntryRef(COVER_SUBDIRECTORY, cover("/source-b/cover.jpg"))
+
+        val plan = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(second, first),
+            targetIndex = ManagedMigrationTargetIndex(
+                rootEntriesByName = emptyMap(),
+                coverEntriesByName = emptyMap(),
+                lyricEntriesByName = emptyMap()
+            )
+        )
+
+        assertEquals("cover.jpg", plan.targetNameFor(first))
+        assertNotEquals(plan.targetNameFor(first), plan.targetNameFor(second))
+        assertEquals(
+            setOf("cover.jpg", "cover (1).jpg"),
+            setOf(plan.targetNameFor(first), plan.targetNameFor(second))
+        )
+    }
+
+    @Test
+    fun `migration plan treats case variants as the same SAF target name`() {
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "cover.jpg",
+            reference = "/source/cover.jpg",
+            mediaUri = "file:///source/cover.jpg",
+            localFilePath = "/source/cover.jpg",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        val existing = source.copy(
+            name = "Cover.JPG",
+            reference = "content://target/cover",
+            mediaUri = "content://target/cover",
+            localFilePath = null
+        )
+        val sourceRef = ManagedMigrationEntryRef(COVER_SUBDIRECTORY, source)
+
+        val plan = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(sourceRef),
+            targetIndex = ManagedMigrationTargetIndex(
+                rootEntriesByName = emptyMap(),
+                coverEntriesByName = mapOf(existing.name to existing),
+                lyricEntriesByName = emptyMap()
+            )
+        )
+
+        assertEquals("cover (1).jpg", plan.targetNameFor(sourceRef))
+    }
+
+    @Test
+    fun `persisted migration name restores the exact target as a hash candidate`() {
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "cover.jpg",
+            reference = "/source/cover.jpg",
+            mediaUri = "file:///source/cover.jpg",
+            localFilePath = "/source/cover.jpg",
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        val target = source.copy(
+            reference = "content://target/cover",
+            mediaUri = "content://target/cover",
+            localFilePath = null
+        )
+        val sourceRef = ManagedMigrationEntryRef(COVER_SUBDIRECTORY, source)
+        val emptyTarget = ManagedMigrationTargetIndex(
+            rootEntriesByName = emptyMap(),
+            coverEntriesByName = emptyMap(),
+            lyricEntriesByName = emptyMap()
+        )
+        val generated = ManagedDownloadMigrationNamePlanner.buildNamePlan(
+            entries = listOf(sourceRef),
+            targetIndex = emptyTarget
+        )
+
+        val restored = ManagedDownloadMigrationNamePlanner.restorePersistedNamePlan(
+            entries = listOf(sourceRef),
+            targetIndex = emptyTarget.copy(
+                coverEntriesByName = mapOf(target.name to target)
+            ),
+            generatedPlan = generated,
+            persistedTargetNames = mapOf(source.reference to target.name)
+        )
+
+        assertEquals(target.name, restored?.targetNameFor(sourceRef))
+        assertEquals(target, restored?.reusedTargetFor(sourceRef))
+        assertEquals(
+            null,
+            ManagedDownloadMigrationNamePlanner.restorePersistedNamePlan(
+                entries = listOf(sourceRef),
+                targetIndex = emptyTarget,
+                generatedPlan = generated,
+                persistedTargetNames = mapOf(source.reference to "../escape.jpg")
+            )
+        )
+    }
+
+    @Test
     fun `tree migration target resolver reuses numbered metadata`() {
         val audioName = "言って。 - Neri - 言って。 - netease.mp3"
         val source = ManagedDownloadStorage.StoredEntry(
@@ -254,7 +366,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
-    fun `migration marks same stable key with different audio size as conflict`() {
+    fun `migration marks same stable key with different audio size for replacement`() {
         val sourceAudio = ManagedDownloadStorage.StoredEntry(
             name = "track.mp3",
             reference = "/source/track.mp3",
@@ -287,8 +399,9 @@ class ManagedDownloadStorageMigrationCompatTest {
             sourceMetadataByAudioName = mapOf(sourceAudio.name to sourceMetadata)
         )
 
-        assertTrue(plan.conflictFor(sourceRef)?.contains("different audio sizes") == true)
-        assertTrue(plan.reusedTargetFor(sourceRef) == null)
+        assertEquals(targetAudio.name, plan.targetNameFor(sourceRef))
+        assertTrue(plan.replacementFor(sourceRef) != null)
+        assertTrue(plan.conflictFor(sourceRef) == null)
     }
 
     @Test
@@ -1032,7 +1145,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
-    fun `directory changes always require explicit migration confirmation`() {
+    fun `directory changes only have URI level confirmation eligibility`() {
         assertTrue(
             ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(
                 fromDirectoryUri = null,
@@ -1189,7 +1302,7 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
-    fun `migration reuses target audio when metadata identifies the same song`() {
+    fun `migration makes source authoritative when metadata identifies the same song`() {
         val sourceAudio = ManagedDownloadStorage.StoredEntry(
             name = "source.mp3",
             reference = "/old/source.mp3",
@@ -1225,10 +1338,9 @@ class ManagedDownloadStorageMigrationCompatTest {
         )
 
         assertEquals(targetAudio.name, plan.targetNameFor(ManagedMigrationEntryRef(null, sourceAudio)))
-        assertEquals(
-            targetAudio,
-            plan.reusedTargetFor(ManagedMigrationEntryRef(null, sourceAudio))
-        )
+        val sourceRef = ManagedMigrationEntryRef(null, sourceAudio)
+        assertEquals(null, plan.reusedTargetFor(sourceRef))
+        assertEquals(targetAudio.name, plan.replacementFor(sourceRef)?.targetName)
     }
 
     @Test
@@ -1262,7 +1374,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, _ -> null },
-                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, _ -> null },
                 deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = { raw, _ -> raw }
@@ -1307,7 +1421,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, _ -> null },
-                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, _ -> null },
                 deleteReference = { _, _, _ ->
                     deleteCalls.incrementAndGet()
@@ -1359,7 +1475,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                     rewriteParallelism = { 1 },
                     deleteParallelism = { 1 },
                     readText = { _, _ -> null },
-                    openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                    entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                        File(entry.reference).inputStream()
+                    },
                     writeRootText = { _, _, _, _ -> null },
                     deleteReference = { _, _, _ -> deleteResult },
                     rewriteMetadataReferences = { raw, _ -> raw }
@@ -1408,7 +1526,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, _ -> null },
-                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, _ -> null },
                 deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = { raw, _ -> raw }
@@ -1461,7 +1581,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, _ -> null },
-                openInputStream = { _, storedEntry -> File(storedEntry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, storedEntry ->
+                    File(storedEntry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, _ -> null },
                 deleteReference = { _, _, _ -> StorageMutationResult.Deleted },
                 deleteReferences = {
@@ -1565,7 +1687,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, reference -> File(reference).readText() },
-                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, _ -> null },
                 deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
@@ -1642,7 +1766,9 @@ class ManagedDownloadStorageMigrationCompatTest {
                 rewriteParallelism = { 1 },
                 deleteParallelism = { 1 },
                 readText = { _, reference -> File(reference).readText() },
-                openInputStream = { _, entry -> File(entry.reference).inputStream() },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
                 writeRootText = { _, _, _, content ->
                     providerRewrittenMetadata.apply { writeText(content) }.let(::entry)
                 },
@@ -1728,7 +1854,69 @@ class ManagedDownloadStorageMigrationCompatTest {
                 )
             }
             assertFalse(File(directory, "song.mp3").exists())
-            assertTrue(directory.listFiles().orEmpty().none { it.name.endsWith(".partial") })
+            assertTrue(directory.listFiles().orEmpty().none { it.name.endsWith(".pending") })
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `private migration commit never replaces a concurrently created target`() {
+        val directory = Files.createTempDirectory("neriplayer-migration-target-race").toFile()
+        val target = File(directory, "song.mp3")
+        val input = object : ByteArrayInputStream("migration".toByteArray()) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (!target.exists()) {
+                    target.writeText("external")
+                }
+                return super.read(buffer, offset, length)
+            }
+        }
+        try {
+            val thrown = runCatching {
+                ManagedDownloadCommitIo.copyFileAtomically(
+                    parent = directory,
+                    targetName = target.name,
+                    input = input,
+                    bufferSizeBytes = 8
+                )
+            }.exceptionOrNull()
+
+            val migrationError = requireNotNull(thrown as? ManagedDownloadMigrationException)
+            assertTrue(migrationError.retryable)
+            assertFalse(migrationError.retryWithinEntry)
+            assertEquals("external", target.readText())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `private migration resumes by removing only its target bound stale partial`() {
+        val directory = Files.createTempDirectory("neriplayer-migration-resume").toFile()
+        val target = File(directory, "song.mp3")
+        val storageTarget = StorageTarget.FileTarget(target.absolutePath)
+        val stalePartial = File(
+            directory,
+            ManagedTemporaryWriteArtifacts.displayNameFor(
+                target = storageTarget,
+                nonce = ManagedDownloadCommitIo.MIGRATION_TEMPORARY_WRITE_NONCE
+            )
+        ).apply { writeText("interrupted") }
+        val unrelated = File(directory, ".np-migration-user.partial").apply {
+            writeText("keep")
+        }
+        try {
+            ManagedDownloadCommitIo.copyFileAtomically(
+                parent = directory,
+                targetName = target.name,
+                input = ByteArrayInputStream("complete".toByteArray()),
+                bufferSizeBytes = 8
+            )
+
+            assertEquals("complete", target.readText())
+            assertFalse(stalePartial.exists())
+            assertEquals("keep", unrelated.readText())
         } finally {
             directory.deleteRecursively()
         }

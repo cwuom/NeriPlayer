@@ -1111,6 +1111,18 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 )
                 """.trimIndent()
             )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `legacy_download_upgrade_quarantine` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `stable_key` TEXT NOT NULL,
+                    `payload_json` TEXT NOT NULL,
+                    `reason` TEXT NOT NULL,
+                    `quarantined_at_ms` INTEGER NOT NULL,
+                    UNIQUE(`stable_key`, `payload_json`)
+                )
+                """.trimIndent()
+            )
         }
 
         private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
@@ -1159,6 +1171,10 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             catalogLookup: LegacyCatalogLookup
         ) {
             if (!hasTable(db, tableName)) return
+            val payloadUpsert = db.compileStatement(
+                "INSERT OR REPLACE INTO `legacy_download_upgrade_payload` " +
+                    "(`stable_key`, `payload_json`) VALUES (?, ?)"
+            )
             db.query("SELECT * FROM `$tableName`").use { cursor ->
                 val columnNames = cursor.columnNames
                 while (cursor.moveToNext()) {
@@ -1188,20 +1204,10 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     )
                     existing.put("stableKey", stableKey)
                     val payloadJson = existing.toString()
-                    val updateCount = db.compileStatement(
-                        "UPDATE `legacy_download_upgrade_payload` SET `payload_json` = ? " +
-                            "WHERE `stable_key` = ?"
-                    ).apply {
-                        bindString(1, payloadJson)
-                        bindString(2, stableKey)
-                    }.executeUpdateDelete()
-                    if (updateCount == 0) {
-                        db.execSQL(
-                            "INSERT INTO `legacy_download_upgrade_payload` " +
-                                "(`stable_key`, `payload_json`) VALUES (?, ?)",
-                            arrayOf(stableKey, payloadJson)
-                        )
-                    }
+                    payloadUpsert.clearBindings()
+                    payloadUpsert.bindString(1, stableKey)
+                    payloadUpsert.bindString(2, payloadJson)
+                    payloadUpsert.executeInsert()
                 }
             }
         }

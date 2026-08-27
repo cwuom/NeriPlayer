@@ -1364,6 +1364,13 @@ class DownloadRecoveryRoomStoreTest {
                 "QUEUED",
                 database.downloadOperationDao().find(competingOperationId)?.state
             )
+            val previousLibraryId = "previous-download-root"
+            val waitingEntity = requireNotNull(
+                database.downloadOperationDao().find(firstOperationId)
+            )
+            database.downloadOperationDao().upsert(
+                waitingEntity.copy(libraryId = previousLibraryId)
+            )
             assertFalse(
                 store.promoteWaitingStorageMutation(
                     operationId = firstOperationId,
@@ -1380,7 +1387,66 @@ class DownloadRecoveryRoomStoreTest {
                 "QUEUED",
                 database.downloadOperationDao().find(firstOperationId)?.state
             )
+            assertEquals(
+                currentLibraryId(context),
+                database.downloadOperationDao().find(firstOperationId)?.libraryId
+            )
             assertTrue(store.listWaitingStorageMutations().isEmpty())
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun runningOperationDefersDurablyUntilStorageMutationPromotion() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(78L, "storage-mutation-running")
+            val operationId = "running-storage-mutation-operation"
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = DownloadExecutionRequest(
+                    operationId = operationId,
+                    song = song,
+                    userInitiated = true
+                ),
+                state = "RUNNING",
+                database = database
+            )
+
+            assertTrue(
+                DownloadExecutionRoomStore.markWaitingForStorageMutation(
+                    context = context,
+                    operationId = operationId,
+                    errorCode = "DIRECTORY_CHANGE_IN_PROGRESS",
+                    database = database
+                )
+            )
+            assertEquals(
+                WAITING_STORAGE_MUTATION_OPERATION_STATE,
+                database.downloadOperationDao().find(operationId)?.state
+            )
+            assertEquals(
+                "DIRECTORY_CHANGE_IN_PROGRESS",
+                database.downloadOperationDao().find(operationId)?.lastErrorCode
+            )
+
+            assertTrue(
+                DownloadExecutionRoomStore.promoteWaitingStorageMutation(
+                    context = context,
+                    operationId = operationId,
+                    stableKey = song.stableKey(),
+                    database = database
+                )
+            )
+            assertEquals(
+                "QUEUED",
+                database.downloadOperationDao().find(operationId)?.state
+            )
         } finally {
             database.close()
         }

@@ -102,14 +102,21 @@ internal object ManagedDownloadStorageNaming {
     }
 
     fun createUniqueName(existingNames: Set<String>, desiredName: String): String {
-        val canonicalExistingNames = existingNames.mapTo(HashSet()) { canonicalName(it) }
-        if (canonicalName(desiredName) !in canonicalExistingNames) return desiredName
+        val canonicalExistingNames = existingNames.mapTo(HashSet(), ::canonicalNameKey)
+        return reserveUniqueName(canonicalExistingNames, desiredName)
+    }
+
+    internal fun reserveUniqueName(
+        reservedCanonicalNames: MutableSet<String>,
+        desiredName: String
+    ): String {
+        if (reservedCanonicalNames.add(canonicalNameKey(desiredName))) return desiredName
         val base = desiredName.substringBeforeLast('.', desiredName)
         val ext = desiredName.substringAfterLast('.', "")
         var index = 1
         while (index < 10_000) {
             val candidate = if (ext.isBlank()) "$base ($index)" else "$base ($index).$ext"
-            if (canonicalName(candidate) !in canonicalExistingNames) {
+            if (reservedCanonicalNames.add(canonicalNameKey(candidate))) {
                 return candidate
             }
             index++
@@ -132,7 +139,7 @@ internal object ManagedDownloadStorageNaming {
         return name.substring(0, markerIndex).takeIf(String::isNotBlank)
     }
 
-    private fun canonicalName(value: String): String {
+    internal fun canonicalNameKey(value: String): String {
         return Normalizer.normalize(value, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
