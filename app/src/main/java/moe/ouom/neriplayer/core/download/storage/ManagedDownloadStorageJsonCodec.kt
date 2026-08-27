@@ -219,6 +219,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("createdAtSource", createdAtSource)
             put("artifactId", artifactId)
             put("operationId", operationId)
+            put("terminalTemporaryWriteCleanupToken", terminalTemporaryWriteCleanupToken)
             put("artifactState", artifactState)
             put("audioFileName", audioFileName)
             put("libraryId", libraryId)
@@ -478,6 +479,9 @@ internal object ManagedDownloadStorageJsonCodec {
                 .takeIf(String::isNotBlank),
             artifactId = optString("artifactId").takeIf(String::isNotBlank),
             operationId = optString("operationId").takeIf(String::isNotBlank),
+            terminalTemporaryWriteCleanupToken = optString(
+                "terminalTemporaryWriteCleanupToken"
+            ).takeIf(String::isNotBlank),
             artifactState = optString("artifactState").takeIf(String::isNotBlank),
             audioFileName = optString("audioFileName").takeIf(String::isNotBlank),
             libraryId = optString("libraryId").takeIf(String::isNotBlank),

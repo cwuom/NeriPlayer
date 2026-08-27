@@ -83,6 +83,35 @@ class NowPlayingScreenTest {
     }
 
     @Test
+    fun `restore cover falls back to the durable baseline when fetched cover is blank`() {
+        assertEquals(
+            "content://covers/original",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = "   ",
+                baselineCoverUrl = "content://covers/original"
+            )
+        )
+        assertEquals(
+            "https://example.com/original.jpg",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = " https://example.com/original.jpg ",
+                baselineCoverUrl = "content://covers/original"
+            )
+        )
+    }
+
+    @Test
+    fun `restore cover clears the edited preview when no original cover exists`() {
+        assertEquals(
+            "",
+            resolveEditSongRestoredCoverUrl(
+                sourceCoverUrl = null,
+                baselineCoverUrl = ""
+            )
+        )
+    }
+
+    @Test
     fun `resolved edit song cover never replaces manual input`() {
         assertFalse(
             shouldApplyResolvedEditSongCover(
@@ -143,6 +172,43 @@ class NowPlayingScreenTest {
             shouldPersistEditedSongLyricsLocally(
                 isLocalSong = false,
                 writeLocalMetadata = false
+            )
+        )
+    }
+
+    @Test
+    fun `local lyric restore requests an explicit metadata writeback choice`() {
+        val localSong = SongItem(
+            id = 43L,
+            name = "Local song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 5_000L,
+            coverUrl = "content://covers/43",
+            mediaUri = "content://media/external/audio/media/43"
+        )
+
+        assertTrue(
+            shouldConfirmLocalMetadataWriteBack(
+                song = localSong,
+                title = localSong.name,
+                artist = localSong.artist,
+                coverUrl = localSong.coverUrl.orEmpty(),
+                hasPendingLyricsChange = true
+            )
+        )
+        assertFalse(
+            shouldConfirmLocalMetadataWriteBack(
+                song = localSong.copy(
+                    album = "Netease",
+                    albumId = 1L,
+                    mediaUri = null
+                ),
+                title = localSong.name,
+                artist = localSong.artist,
+                coverUrl = localSong.coverUrl.orEmpty(),
+                hasPendingLyricsChange = true
             )
         )
     }

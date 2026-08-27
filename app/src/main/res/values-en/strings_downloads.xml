@@ -10,6 +10,8 @@
     <string name="download_failed">Download Failed</string>
     <string name="download_cancelled">Download Cancelled</string>
     <string name="download_no_tasks">No Download Tasks</string>
+    <string name="download_loading_tasks">Reading download tasks…</string>
+    <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>
     <string name="download_clearing_tasks">Stopping and clearing download tasks…</string>
     <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>

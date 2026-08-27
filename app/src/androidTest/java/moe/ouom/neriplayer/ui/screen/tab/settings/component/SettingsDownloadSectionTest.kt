@@ -3,7 +3,11 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -16,7 +20,7 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
-import moe.ouom.neriplayer.data.settings.setAutoSetting
+import moe.ouom.neriplayer.data.settings.setDownloadFollowPlaybackAudioQuality
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import org.junit.Before
@@ -47,7 +51,12 @@ class SettingsDownloadSectionTest {
         val originalValue = runBlocking { context.autoSettingFlow(setting).first() }
 
         try {
-            runBlocking { context.setAutoSetting(setting, true) }
+            runBlocking {
+                setDownloadFollowPlaybackAudioQuality(
+                    context = context,
+                    followsPlaybackQuality = true
+                )
+            }
             composeRule.setContent {
                 MaterialTheme {
                     Column {
@@ -56,7 +65,9 @@ class SettingsDownloadSectionTest {
                             highlightPulse = 0,
                             onHighlightFinished = null
                         )
-                        MiuixSettingsSectionCard(modifier = Modifier) {
+                        MiuixSettingsSectionCard(
+                            modifier = Modifier.testTag(DOWNLOAD_MANAGEMENT_CARD_TEST_TAG)
+                        ) {
                             SettingsDownloadSection(
                                 expanded = true,
                                 arrowRotation = 0f,
@@ -84,8 +95,64 @@ class SettingsDownloadSectionTest {
             composeRule.onNodeWithText(neteaseTitle).assertExists()
             composeRule.onNodeWithText(youtubeTitle).assertExists()
             composeRule.onNodeWithText(biliTitle).assertExists()
+            composeRule.onNodeWithTag(
+                DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG,
+                useUnmergedTree = true
+            ).assert(
+                hasAnyDescendant(hasTestTag(DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG))
+            )
+            composeRule.onNodeWithTag(
+                DOWNLOAD_MANAGEMENT_CARD_TEST_TAG,
+                useUnmergedTree = true
+            ).assert(
+                !hasAnyDescendant(hasTestTag(DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG))
+            )
         } finally {
-            runBlocking { context.setAutoSetting(setting, originalValue) }
+            runBlocking {
+                setDownloadFollowPlaybackAudioQuality(
+                    context = context,
+                    followsPlaybackQuality = originalValue
+                )
+            }
+        }
+    }
+
+    @Test
+    fun independentDownloadQualityOptionsUsePersistedStartupSelection() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val setting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
+        val originalValue = runBlocking { context.autoSettingFlow(setting).first() }
+
+        try {
+            runBlocking {
+                setDownloadFollowPlaybackAudioQuality(
+                    context = context,
+                    followsPlaybackQuality = false
+                )
+            }
+            composeRule.setContent {
+                MaterialTheme {
+                    SettingsDownloadQualityFollowPlaybackCard(
+                        highlightTargetId = null,
+                        highlightPulse = 0,
+                        onHighlightFinished = null
+                    )
+                }
+            }
+
+            composeRule.onNodeWithTag(
+                DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG,
+                useUnmergedTree = true
+            ).assertExists()
+        } finally {
+            runBlocking {
+                setDownloadFollowPlaybackAudioQuality(
+                    context = context,
+                    followsPlaybackQuality = originalValue
+                )
+            }
         }
     }
 }
+
+private const val DOWNLOAD_MANAGEMENT_CARD_TEST_TAG = "download-management-card"

@@ -2380,7 +2380,8 @@ object AudioDownloadManager {
         if (!ManagedDownloadStorage.writePendingAudioMetadata(
                 context = context,
                 audioName = fileName,
-                json = pendingMetadata
+                json = pendingMetadata,
+                operationId = effectiveOperationId
             )
         ) {
             throw IOException("无法写入下载 pending metadata: $fileName")

@@ -130,3 +130,30 @@ internal suspend fun resolveDownloadAudioQualitySelection(
         )
     }
 }
+
+internal fun readDownloadFollowPlaybackAudioQualityStartupValue(context: Context): Boolean {
+    return readBootstrapSettingsSnapshotSync(context)
+        .downloadFollowPlaybackAudioQuality
+}
+
+internal suspend fun setDownloadFollowPlaybackAudioQuality(
+    context: Context,
+    followsPlaybackQuality: Boolean
+) {
+    val appContext = context.applicationContext
+    appContext.setAutoSetting(
+        AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality,
+        followsPlaybackQuality
+    )
+    updateDownloadFollowPlaybackAudioQualityStartupValue(appContext, followsPlaybackQuality)
+}
+
+internal fun updateDownloadFollowPlaybackAudioQualityStartupValue(
+    context: Context,
+    followsPlaybackQuality: Boolean
+) {
+    updateBootstrapDownloadFollowPlaybackAudioQuality(
+        context = context,
+        followsPlaybackQuality = followsPlaybackQuality
+    )
+}

@@ -88,6 +88,7 @@ import moe.ouom.neriplayer.core.download.reconcile.ManagedLibraryReconciler
 import moe.ouom.neriplayer.core.download.reconcile.ScanConfidence
 import moe.ouom.neriplayer.core.download.bootstrap.ManagedLibraryRebuilder
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
@@ -160,13 +161,22 @@ internal fun resolveRecoveredDownloadProgress(
     )
 }
 
-internal fun finalizedTemporaryWriteTargetNames(audioName: String): List<String> {
+internal fun finalizedTemporaryWriteTargetNames(
+    audioName: String,
+    pendingAudioName: String? = null
+): List<String> {
     val normalizedAudioName = audioName.trim().takeIf(String::isNotBlank) ?: return emptyList()
-    return listOf(
+    val normalizedPendingAudioName = pendingAudioName
+        ?.trim()
+        ?.takeIf { candidate ->
+            candidate.substringBefore(PENDING_AUDIO_WRITE_MARKER, candidate) == normalizedAudioName
+        }
+    return listOfNotNull(
+        normalizedPendingAudioName,
         normalizedAudioName,
         "$normalizedAudioName$METADATA_SUFFIX",
         "$normalizedAudioName$PENDING_METADATA_SUFFIX"
-    )
+    ).distinct()
 }
 
 internal class TerminalTemporaryWriteCleanupBatch {
@@ -181,6 +191,20 @@ internal class TerminalTemporaryWriteCleanupBatch {
     fun takeAll(): List<String> = targetNames.toList().also { targetNames.clear() }
 
     fun isEmpty(): Boolean = targetNames.isEmpty()
+}
+
+internal object TerminalTemporaryWriteCleanupRetryPolicy {
+    const val MAX_FAILED_ATTEMPTS = 4
+
+    fun delayMsForFailedAttempt(failedAttempt: Int): Long? {
+        if (failedAttempt !in 1..MAX_FAILED_ATTEMPTS) {
+            return null
+        }
+        return TERMINAL_TEMPORARY_WRITE_CLEANUP_RETRY_INITIAL_DELAY_MS *
+            (1L shl (failedAttempt - 1))
+    }
+
+    private const val TERMINAL_TEMPORARY_WRITE_CLEANUP_RETRY_INITIAL_DELAY_MS = 1_000L
 }
 
 internal suspend fun awaitBatchDownloadJobsSettled(
@@ -453,6 +477,7 @@ object GlobalDownloadManager {
     private val downloadedSongDeleteMutex = Mutex()
     private val terminalTemporaryWriteCleanupMutex = Mutex()
     private val terminalTemporaryWriteCleanupBatch = TerminalTemporaryWriteCleanupBatch()
+    private var terminalTemporaryWriteCleanupWakeRequested = false
     private val downloadedSongDeletionCounts = ConcurrentHashMap<String, AtomicInteger>()
     private val downloadedSongDeleteVisibility = DownloadedSongDeleteVisibility()
     private val downloadedSongCatalogPersistenceRevision = AtomicLong(0L)
@@ -748,6 +773,14 @@ object GlobalDownloadManager {
                 return@launch
             }
             val startupRecovery = ManagedDownloadStorage.consumeStartupRecoveryResult()
+            if (startupRecovery.failedCount > 0) {
+                NPLogger.w(
+                    TAG,
+                    "启动存储恢复存在未确认项，安排持久临时写入清理复查: " +
+                        "failed=${startupRecovery.failedCount}"
+                )
+                schedulePersistedTerminalTemporaryWriteCleanup(appContext)
+            }
             val restoredCatalog = restorePersistedDownloadedSongs(appContext)
             DownloadExecutionOperationStore().pruneTerminalOperations(
                 context = appContext,
@@ -1043,6 +1076,14 @@ object GlobalDownloadManager {
             ManagedDownloadStorage.startupRecoveryResults.collect { result ->
                 if (!result.hasRecoveredEntries) {
                     return@collect
+                }
+                if (result.failedCount > 0) {
+                    NPLogger.w(
+                        TAG,
+                        "后台下载启动清理存在未确认项，安排持久临时写入清理复查: " +
+                            "failed=${result.failedCount}"
+                    )
+                    schedulePersistedTerminalTemporaryWriteCleanup(appContext)
                 }
                 NPLogger.d(
                     TAG,
@@ -2768,10 +2809,16 @@ object GlobalDownloadManager {
             )
             return false
         }
-        val finalizedAudio = ManagedDownloadStorage.promoteFinalizedPendingAudio(
+        val terminalTemporaryWriteTargets =
+            finalizedTemporaryWriteTargetNames(
+                audioName = storedAudio.logicalName,
+                pendingAudioName = storedAudio.name
+            )
+        val promotion = ManagedDownloadStorage.promoteFinalizedPendingAudio(
             context = context,
             audio = storedAudio
         ) ?: return false
+        val finalizedAudio = promotion.audio
         managedDownloadArtifactCoordinator.markFinalized(
             context = context,
             song = song,
@@ -2802,7 +2849,10 @@ object GlobalDownloadManager {
             context = context,
             pendingAudio = storedAudio,
             finalizedAudio = finalizedAudio,
-            operationId = operationId
+            operationId = operationId,
+            terminalTemporaryWriteTargets = terminalTemporaryWriteTargets,
+            terminalTemporaryWriteCleanupRecorded =
+                promotion.terminalTemporaryWriteCleanupRecorded
         )
         if (refreshCatalog) {
             scheduleCatalogReconcile(context, forceRefresh = false)
@@ -2814,7 +2864,9 @@ object GlobalDownloadManager {
         context: Context,
         pendingAudio: ManagedDownloadStorage.StoredEntry,
         finalizedAudio: ManagedDownloadStorage.StoredEntry,
-        operationId: String?
+        operationId: String?,
+        terminalTemporaryWriteTargets: Collection<String>,
+        terminalTemporaryWriteCleanupRecorded: Boolean
     ) {
         try {
             val pendingMetadataDeleted = ManagedDownloadStorage.deletePendingAudioMetadata(
@@ -2872,9 +2924,16 @@ object GlobalDownloadManager {
                 error
             )
         }
+        if (!terminalTemporaryWriteCleanupRecorded) {
+            NPLogger.w(
+                TAG,
+                "最终发布后临时写入清理记录仍处于准备态，立即安排恢复重试: " +
+                    "targets=${terminalTemporaryWriteTargets.size}"
+            )
+        }
         scheduleFinalizedTemporaryWriteCleanup(
             context = context,
-            targetNames = finalizedTemporaryWriteTargetNames(finalizedAudio.logicalName)
+            targetNames = terminalTemporaryWriteTargets
         )
     }
 
@@ -2884,44 +2943,95 @@ object GlobalDownloadManager {
     ) {
         if (targetNames.isEmpty()) return
 
+        schedulePersistedTerminalTemporaryWriteCleanup(
+            context = context,
+            targetNames = targetNames
+        )
+    }
+
+    private fun schedulePersistedTerminalTemporaryWriteCleanup(
+        context: Context,
+        targetNames: Collection<String> = emptyList()
+    ) {
         val appContext = context.applicationContext
         scope.launch {
             terminalTemporaryWriteCleanupMutex.withLock {
                 terminalTemporaryWriteCleanupBatch.addAll(targetNames)
-                if (terminalTemporaryWriteCleanupBatch.isEmpty()) {
-                    return@withLock
-                }
+                terminalTemporaryWriteCleanupWakeRequested = true
                 if (terminalTemporaryWriteCleanupJob?.isActive == true) {
                     return@withLock
                 }
                 terminalTemporaryWriteCleanupJob = scope.launch cleanupLoop@{
                     delay(TERMINAL_TEMPORARY_WRITE_CLEANUP_COALESCE_MS)
+                    var failedAttempt = 0
+                    var retryPending = false
                     while (true) {
-                        val targets = terminalTemporaryWriteCleanupMutex.withLock {
-                            terminalTemporaryWriteCleanupBatch.takeAll()
-                        }
-                        if (targets.isNotEmpty()) {
-                            val result = ManagedDownloadStorage.cleanupTerminalTemporaryWriteArtifacts(
-                                context = appContext,
-                                targetNames = targets
-                            )
-                            if (result.failedCount > 0) {
+                        val (targets, cleanupRequested) =
+                            terminalTemporaryWriteCleanupMutex.withLock {
+                                val targets = terminalTemporaryWriteCleanupBatch.takeAll()
+                                val requested = terminalTemporaryWriteCleanupWakeRequested
+                                terminalTemporaryWriteCleanupWakeRequested = false
+                                targets to requested
+                            }
+                        if (cleanupRequested || retryPending) {
+                            val failedCount = try {
+                                ManagedDownloadStorage
+                                    .cleanupPersistedTerminalTemporaryWriteArtifacts(appContext)
+                                    .failedCount
+                            } catch (cancellation: CancellationException) {
+                                throw cancellation
+                            } catch (error: Exception) {
                                 NPLogger.w(
                                     TAG,
-                                    "最终发布后临时写入清理未完全确认，保留下次恢复重试: " +
-                                        "targets=${targets.size}, failed=${result.failedCount}"
+                                    "最终发布后临时写入清理执行失败，保留下次恢复重试: " +
+                                        "targets=${targets.size}, error=${error.message}",
+                                    error
                                 )
+                                targets.size.coerceAtLeast(1)
                             }
-                        }
-                        val hasMoreTargets = terminalTemporaryWriteCleanupMutex.withLock {
-                            if (terminalTemporaryWriteCleanupBatch.isEmpty()) {
-                                terminalTemporaryWriteCleanupJob = null
-                                false
+                            if (failedCount > 0) {
+                                failedAttempt += 1
+                                val retryDelayMs =
+                                    TerminalTemporaryWriteCleanupRetryPolicy
+                                        .delayMsForFailedAttempt(failedAttempt)
+                                if (retryDelayMs != null) {
+                                    NPLogger.w(
+                                        TAG,
+                                        "最终发布后临时写入清理未完全确认，延后重试: " +
+                                            "targets=${targets.size}, failed=$failedCount, " +
+                                            "attempt=$failedAttempt/" +
+                                            "${TerminalTemporaryWriteCleanupRetryPolicy.MAX_FAILED_ATTEMPTS}, " +
+                                            "delayMs=$retryDelayMs"
+                                    )
+                                    retryPending = true
+                                    delay(retryDelayMs)
+                                    continue
+                                }
+                                NPLogger.w(
+                                    TAG,
+                                    "最终发布后临时写入清理重试次数已用尽，保留下次恢复: " +
+                                        "targets=${targets.size}, failed=$failedCount, " +
+                                        "attempts=$failedAttempt"
+                                )
+                                failedAttempt = 0
                             } else {
-                                true
+                                failedAttempt = 0
                             }
+                            retryPending = false
                         }
-                        if (!hasMoreTargets) return@cleanupLoop
+                        val hasMoreCleanupRequests =
+                            terminalTemporaryWriteCleanupMutex.withLock {
+                                if (
+                                    terminalTemporaryWriteCleanupBatch.isEmpty() &&
+                                        !terminalTemporaryWriteCleanupWakeRequested
+                                ) {
+                                    terminalTemporaryWriteCleanupJob = null
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
+                        if (!hasMoreCleanupRequests) return@cleanupLoop
                     }
                 }
             }
@@ -3206,6 +3316,7 @@ object GlobalDownloadManager {
                     "song=${song.name}, operationId=$normalizedOperationId, " +
                     "failed=${result.failedCount}"
             )
+            schedulePersistedTerminalTemporaryWriteCleanup(context)
         }
     }
 
@@ -3248,6 +3359,7 @@ object GlobalDownloadManager {
             "批量取消 pending 半成品未完全清理，保持清空栅栏并重试: " +
                 "operations=${operations.size}, failed=${result.failedCount}"
         )
+        schedulePersistedTerminalTemporaryWriteCleanup(context)
         return affectedSongKeys
     }
 

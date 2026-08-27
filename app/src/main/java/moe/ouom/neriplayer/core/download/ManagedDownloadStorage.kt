@@ -70,6 +70,14 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTarge
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
+import moe.ouom.neriplayer.core.download.storage.recovery.PersistentTerminalTemporaryWriteCleanupJournal
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupFinalizationPreparation
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupJournalEntry
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupJournalSnapshot
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupPreparationSnapshot
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRoot
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupRootType
+import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupTarget
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
@@ -294,13 +302,17 @@ internal object ManagedDownloadStorage {
                 val stagingRecovery = cleanupStagingFiles(appContext)
                 val pendingAudioRecovery = resolveStartupPendingAudioRecovery(appContext)
                 val metadataRecovery = resolveStartupMetadataRecovery(appContext)
+                val terminalTemporaryWriteRecovery =
+                    cleanupPersistedTerminalTemporaryWriteArtifacts(appContext)
                 StartupRecoveryResult(
                     cleanedCount = stagingRecovery.cleanedCount +
                         pendingAudioRecovery.cleanedCount +
-                        metadataRecovery.cleanedCount,
+                        metadataRecovery.cleanedCount +
+                        terminalTemporaryWriteRecovery.cleanedCount,
                     failedCount = stagingRecovery.failedCount +
                         pendingAudioRecovery.failedCount +
-                        metadataRecovery.failedCount
+                        metadataRecovery.failedCount +
+                        terminalTemporaryWriteRecovery.failedCount
                 )
             }.onFailure { error ->
                 NPLogger.w(TAG, "后台初始化下载存储失败: ${error.message}")
@@ -430,6 +442,11 @@ internal object ManagedDownloadStorage {
         val displayName: String
             get() = logicalName
     }
+
+    data class FinalizedPendingAudioPromotion(
+        val audio: StoredEntry,
+        val terminalTemporaryWriteCleanupRecorded: Boolean
+    )
 
     data class MigrationResult(
         val movedFiles: Int,
@@ -590,6 +607,7 @@ internal object ManagedDownloadStorage {
         val createdAtSource: String? = null,
         val artifactId: String? = null,
         val operationId: String? = null,
+        val terminalTemporaryWriteCleanupToken: String? = null,
         val artifactState: String? = null,
         val audioFileName: String? = null,
         val libraryId: String? = null,
@@ -2137,7 +2155,8 @@ internal object ManagedDownloadStorage {
     internal suspend fun writePendingAudioMetadata(
         context: Context,
         audioName: String,
-        json: String
+        json: String,
+        operationId: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         ensureManagedLibraryManifestBlocking(context)
         val root = resolveRootBlocking(context)
@@ -2145,7 +2164,11 @@ internal object ManagedDownloadStorage {
             context = context,
             root = root,
             displayName = "$audioName$PENDING_METADATA_SUFFIX",
-            content = json
+            content = json,
+            temporaryWriteOwnerName = temporaryWriteOwnerNameForOperation(
+                displayName = "$audioName$PENDING_METADATA_SUFFIX",
+                operationId = operationId
+            )
         )
         val written = when (backendResult) {
             is StorageWriteResult.Written -> backendResult.stat.toStoredEntryForBackend(
@@ -2166,10 +2189,12 @@ internal object ManagedDownloadStorage {
     internal suspend fun promoteFinalizedPendingAudio(
         context: Context,
         audio: StoredEntry
-    ): StoredEntry? = withContext(Dispatchers.IO) {
+    ): FinalizedPendingAudioPromotion? = withContext(Dispatchers.IO) {
         val metadataEntry = findMetadataForAudioBlocking(context, audio) ?: return@withContext null
-        val metadata = readTextInternal(context, metadataEntry.reference)
-            ?.let(::parseDownloadedAudioMetadataJson)
+        val rawMetadata = readTextInternal(context, metadataEntry.reference)
+            ?: return@withContext null
+        val metadata = rawMetadata
+            .let(::parseDownloadedAudioMetadataJson)
             ?: return@withContext null
         if (!isFinalizedDownloadedMetadata(metadata)) {
             NPLogger.w(
@@ -2178,9 +2203,67 @@ internal object ManagedDownloadStorage {
             )
             return@withContext null
         }
+        val root = resolveRootBlocking(context)
+        if (!audio.isPendingAudioWrite) {
+            val terminalTemporaryWriteTargets =
+                terminalTemporaryWriteCleanupTargetsForFinalization(
+                    pendingAudio = audio,
+                    metadata = metadata
+                )
+            val recordedTerminalCleanup = recordTerminalTemporaryWriteCleanup(
+                context = context,
+                root = root,
+                targets = terminalTemporaryWriteTargets
+            )
+            if (!recordedTerminalCleanup) {
+                NPLogger.w(
+                    TAG,
+                    "已发布音频未能持久化临时写入清理记录，拒绝重复最终发布: " +
+                        "audio=${audio.logicalName}"
+                )
+                return@withContext null
+            }
+            return@withContext FinalizedPendingAudioPromotion(
+                audio = audio,
+                terminalTemporaryWriteCleanupRecorded = true
+            )
+        }
+        val preparedMetadata = ensureTerminalTemporaryWriteFinalizationIdentity(
+            context = context,
+            root = root,
+            metadataEntry = metadataEntry,
+            metadata = metadata,
+            rawMetadata = rawMetadata
+        ) ?: run {
+            NPLogger.w(
+                TAG,
+                "下载最终发布前未能持久化可验证身份，保留 pending 证据: " +
+                    "audio=${audio.logicalName}"
+            )
+            return@withContext null
+        }
+        val terminalTemporaryWriteTargets =
+            terminalTemporaryWriteCleanupTargetsForFinalization(
+                pendingAudio = audio,
+                metadata = preparedMetadata
+            )
+        val preparation = prepareTerminalTemporaryWriteFinalization(
+            context = context,
+            root = root,
+            pendingAudio = audio,
+            metadata = preparedMetadata,
+            targets = terminalTemporaryWriteTargets
+        ) ?: run {
+            NPLogger.w(
+                TAG,
+                "下载最终发布前未能持久化临时写入准备记录，保留 pending 证据: " +
+                    "audio=${audio.logicalName}"
+            )
+            return@withContext null
+        }
         val promoted = promotePendingAudio(
             context = context,
-            root = resolveRootBlocking(context),
+            root = root,
             audio = audio
         )
         if (promoted != null && !updateSnapshotCacheAfterStoredEntryWrite(
@@ -2191,7 +2274,23 @@ internal object ManagedDownloadStorage {
         ) {
             invalidateSnapshotCache(context)
         }
-        promoted
+        promoted?.let { finalizedAudio ->
+            val recordedTerminalCleanup = completeTerminalTemporaryWriteFinalization(
+                context = context,
+                preparation = preparation
+            )
+            if (!recordedTerminalCleanup) {
+                NPLogger.w(
+                    TAG,
+                    "下载音频已发布但临时写入清理仍处于准备态，等待恢复重试: " +
+                        "audio=${audio.logicalName}"
+                )
+            }
+            FinalizedPendingAudioPromotion(
+                audio = finalizedAudio,
+                terminalTemporaryWriteCleanupRecorded = recordedTerminalCleanup
+            )
+        }
     }
 
     /**
@@ -2322,6 +2421,32 @@ internal object ManagedDownloadStorage {
             val entriesToDelete = rootEntries.filter { entry ->
                 entry.reference in referencesToDelete
             }
+            val terminalTemporaryWriteTargets =
+                terminalTemporaryWriteCleanupTargets(
+                    entries = entriesToDelete,
+                    temporaryWriteIdentityByMetadataReference =
+                        parsedPendingMetadataEntries.associate { parsed ->
+                            parsed.entry.reference to terminalTemporaryWriteIdentity(
+                                parsed.metadata
+                            )
+                        }
+                )
+            val recordedTerminalCleanup = terminalTemporaryWriteTargets.isEmpty() ||
+                recordTerminalTemporaryWriteCleanup(
+                    context = context,
+                    root = root,
+                    targets = terminalTemporaryWriteTargets
+                )
+            if (!recordedTerminalCleanup) {
+                NPLogger.w(
+                    TAG,
+                    "取消下载未能持久化临时写入清理记录，保留 pending 证据: " +
+                        "targets=${terminalTemporaryWriteTargets.size}"
+                )
+                return@withContext StartupRecoveryResult(
+                    failedCount = terminalTemporaryWriteTargets.size
+                )
+            }
             val deletedReferences = deleteReferencesInternal(
                 context = context,
                 references = referencesToDelete,
@@ -2329,13 +2454,10 @@ internal object ManagedDownloadStorage {
                 trustedReferences = referencesToDelete,
                 invalidateSnapshot = true
             )
-            val temporaryCleanup = cleanupTerminalTemporaryWriteArtifactsBlocking(
-                context = context,
-                root = root,
-                targetNames = entriesToDelete.map { entry ->
-                    if (entry.isPendingAudioWrite) entry.logicalName else entry.name
-                }
-            )
+            val temporaryCleanup = when {
+                terminalTemporaryWriteTargets.isEmpty() -> StartupRecoveryResult()
+                else -> cleanupPersistedTerminalTemporaryWriteArtifacts(context)
+            }
             val failedCount =
                 referencesToDelete.size - deletedReferences.size + temporaryCleanup.failedCount
             NPLogger.d(
@@ -2376,68 +2498,403 @@ internal object ManagedDownloadStorage {
     }
 
     /**
-     * clears only v2 temporary writes whose target is known to have reached a terminal state
+     * replays every persisted terminal cleanup against the root captured at enqueue time
      */
-    internal suspend fun cleanupTerminalTemporaryWriteArtifacts(
-        context: Context,
-        targetNames: Collection<String>
+    internal suspend fun cleanupPersistedTerminalTemporaryWriteArtifacts(
+        context: Context
     ): StartupRecoveryResult = withContext(Dispatchers.IO) {
-        try {
-            cleanupTerminalTemporaryWriteArtifactsBlocking(
-                context = context,
-                root = resolveRootBlocking(context),
-                targetNames = targetNames
+        val preparationRecovery = recoverPreparedTerminalTemporaryWriteFinalizations(context)
+        val terminalRecovery = when (
+            val snapshot = PersistentTerminalTemporaryWriteCleanupJournal.snapshot(context)
+        ) {
+            is TerminalTemporaryWriteCleanupJournalSnapshot.Unavailable -> {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理记录不可读取，保留等待恢复: ${snapshot.reason}"
+                )
+                StartupRecoveryResult(failedCount = 1)
+            }
+
+            is TerminalTemporaryWriteCleanupJournalSnapshot.Available -> {
+                var cleanedCount = 0
+                var failedCount = 0
+                snapshot.entries.forEach { entry ->
+                    val root = resolveTerminalTemporaryWriteCleanupRoot(context, entry)
+                    if (root == null) {
+                        failedCount += entry.targetNames.size
+                        NPLogger.w(
+                            TAG,
+                            "终态临时写入清理目录不可恢复，保留等待恢复: " +
+                                "root=${entry.root.identity}, targets=${entry.targetNames.size}"
+                        )
+                        return@forEach
+                    }
+                    val recovery = try {
+                        cleanupTerminalTemporaryWriteArtifactsBlocking(
+                            context = context,
+                            root = root,
+                            targets = entry.targets
+                        )
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: SecurityException) {
+                        NPLogger.w(
+                            TAG,
+                            "终态临时写入清理缺少权限，保留等待恢复: ${error.message}"
+                        )
+                        StartupRecoveryResult(failedCount = entry.targetNames.size)
+                    } catch (error: Exception) {
+                        NPLogger.w(
+                            TAG,
+                            "终态临时写入清理失败，保留等待恢复: ${error.message}",
+                            error
+                        )
+                        StartupRecoveryResult(failedCount = entry.targetNames.size)
+                    }
+                    cleanedCount += recovery.cleanedCount
+                    failedCount += recovery.failedCount
+                    if (recovery.failedCount == 0 &&
+                        !PersistentTerminalTemporaryWriteCleanupJournal.consume(context, entry)
+                    ) {
+                        failedCount += entry.targetNames.size
+                        NPLogger.w(
+                            TAG,
+                            "终态临时写入清理已完成但记录未确认消费，保留等待恢复: " +
+                                "targets=${entry.targetNames.size}"
+                        )
+                    }
+                }
+                StartupRecoveryResult(
+                    cleanedCount = cleanedCount,
+                    failedCount = failedCount
+                )
+            }
+        }
+        StartupRecoveryResult(
+            cleanedCount = preparationRecovery.cleanedCount + terminalRecovery.cleanedCount,
+            failedCount = preparationRecovery.failedCount + terminalRecovery.failedCount
+        )
+    }
+
+    private fun recordTerminalTemporaryWriteCleanup(
+        context: Context,
+        root: RootHandle,
+        targets: Collection<TerminalTemporaryWriteCleanupTarget>
+    ): Boolean {
+        return PersistentTerminalTemporaryWriteCleanupJournal.enqueueTargets(
+            context = context,
+            root = terminalTemporaryWriteCleanupJournalRoot(root),
+            targets = targets
+        )
+    }
+
+    private fun prepareTerminalTemporaryWriteFinalization(
+        context: Context,
+        root: RootHandle,
+        pendingAudio: StoredEntry,
+        metadata: DownloadedAudioMetadata,
+        targets: Collection<TerminalTemporaryWriteCleanupTarget>
+    ): TerminalTemporaryWriteCleanupFinalizationPreparation? {
+        return PersistentTerminalTemporaryWriteCleanupJournal.prepareFinalizationTargets(
+            context = context,
+            root = terminalTemporaryWriteCleanupJournalRoot(root),
+            pendingAudioName = pendingAudio.name,
+            finalAudioName = pendingAudio.logicalName,
+            expectedOperationId = metadata.operationId,
+            targets = targets,
+            expectedFinalizationToken = metadata.terminalTemporaryWriteCleanupToken
+        )
+    }
+
+    private suspend fun ensureTerminalTemporaryWriteFinalizationIdentity(
+        context: Context,
+        root: RootHandle,
+        metadataEntry: StoredEntry,
+        metadata: DownloadedAudioMetadata,
+        rawMetadata: String
+    ): DownloadedAudioMetadata? {
+        if (
+            metadata.operationId?.trim()?.isNotEmpty() == true ||
+                metadata.terminalTemporaryWriteCleanupToken?.trim()?.isNotEmpty() == true
+        ) {
+            return metadata
+        }
+        val token = UUID.randomUUID().toString()
+        val json = runCatching {
+            JSONObject(rawMetadata)
+                .put("terminalTemporaryWriteCleanupToken", token)
+                .toString()
+        }.getOrNull() ?: return null
+        val updatedMetadata = parseDownloadedAudioMetadataJson(json) ?: return null
+        val backendResult = writeTextThroughBackend(
+            context = context,
+            root = root,
+            displayName = metadataEntry.name,
+            content = json,
+            temporaryWriteOwnerName = temporaryWriteOwnerNameForIdentity(
+                displayName = metadataEntry.name,
+                identity = updatedMetadata.terminalTemporaryWriteCleanupToken
             )
+        )
+        val writtenMetadata = when (backendResult) {
+            is StorageWriteResult.Written -> backendResult.stat.toStoredEntryForBackend(
+                fileRoot = (root as? RootHandle.FileRoot)?.dir
+            )
+
+            else -> null
+        }
+        if (writtenMetadata == null) {
+            invalidateSnapshotCache(context)
+            return null
+        }
+        val storedMetadata = readTextInternal(context, writtenMetadata.reference)
+            ?.let(::parseDownloadedAudioMetadataJson)
+        if (!isMetadataWriteVerified(expected = updatedMetadata, actual = storedMetadata)) {
+            invalidateSnapshotCache(context)
+            NPLogger.w(
+                TAG,
+                "最终发布身份写入读回校验失败，保留 pending 证据: ${metadataEntry.name}"
+            )
+            return null
+        }
+        invalidateSnapshotCache(context)
+        return updatedMetadata
+    }
+
+    private fun completeTerminalTemporaryWriteFinalization(
+        context: Context,
+        preparation: TerminalTemporaryWriteCleanupFinalizationPreparation
+    ): Boolean {
+        return PersistentTerminalTemporaryWriteCleanupJournal.completeFinalization(
+            context = context,
+            preparation = preparation
+        )
+    }
+
+    private fun recoverPreparedTerminalTemporaryWriteFinalizations(
+        context: Context
+    ): StartupRecoveryResult {
+        return try {
+            when (
+                val snapshot = PersistentTerminalTemporaryWriteCleanupJournal.preparationSnapshot(
+                    context
+                )
+            ) {
+                is TerminalTemporaryWriteCleanupPreparationSnapshot.Unavailable -> {
+                    NPLogger.w(
+                        TAG,
+                        "最终发布准备记录不可读取，保留等待恢复: ${snapshot.reason}"
+                    )
+                    StartupRecoveryResult(failedCount = 1)
+                }
+
+                is TerminalTemporaryWriteCleanupPreparationSnapshot.Available -> {
+                    var failedCount = 0
+                    snapshot.entries.forEach { preparation ->
+                        val root = resolveTerminalTemporaryWriteCleanupRoot(context, preparation)
+                        if (root == null) {
+                            failedCount += preparation.targetNames.size
+                            NPLogger.w(
+                                TAG,
+                                "最终发布准备目录不可恢复，保留等待恢复: " +
+                                    "root=${preparation.root.identity}, " +
+                                    "targets=${preparation.targetNames.size}"
+                            )
+                            return@forEach
+                        }
+                        val refresh = treeDirectories.refreshRootEntries(context, root)
+                        if (!refresh.isComplete) {
+                            failedCount += preparation.targetNames.size
+                            NPLogger.w(
+                                TAG,
+                                "最终发布准备恢复跳过不完整目录枚举: " +
+                                    "targets=${preparation.targetNames.size}"
+                            )
+                            return@forEach
+                        }
+                        val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
+                        if (!isPreparedTerminalTemporaryWriteFinalizationReady(
+                                context = context,
+                                preparation = preparation,
+                                rootEntries = rootEntries
+                            )
+                        ) {
+                            return@forEach
+                        }
+                        if (!completeTerminalTemporaryWriteFinalization(context, preparation)) {
+                            failedCount += preparation.targetNames.size
+                            NPLogger.w(
+                                TAG,
+                                "最终发布准备未能转换为终态清理记录，保留等待恢复: " +
+                                    "audio=${preparation.finalAudioName}"
+                            )
+                        }
+                    }
+                    StartupRecoveryResult(failedCount = failedCount)
+                }
+            }
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: SecurityException) {
-            NPLogger.w(
-                TAG,
-                "终态临时写入清理缺少权限，保留等待恢复: ${error.message}"
-            )
-            StartupRecoveryResult()
-        } catch (error: ManagedDownloadRootUnavailableException) {
-            NPLogger.w(
-                TAG,
-                "终态临时写入清理缺少目录，保留等待恢复: ${error.message}"
-            )
-            StartupRecoveryResult()
+            NPLogger.w(TAG, "最终发布准备恢复缺少权限，保留等待恢复: ${error.message}")
+            StartupRecoveryResult(failedCount = 1)
         } catch (error: Exception) {
             NPLogger.w(
                 TAG,
-                "终态临时写入清理失败，保留等待恢复: ${error.message}",
+                "最终发布准备恢复失败，保留等待恢复: ${error.message}",
                 error
             )
-            StartupRecoveryResult()
+            StartupRecoveryResult(failedCount = 1)
+        }
+    }
+
+    private fun isPreparedTerminalTemporaryWriteFinalizationReady(
+        context: Context,
+        preparation: TerminalTemporaryWriteCleanupFinalizationPreparation,
+        rootEntries: List<StoredEntry>
+    ): Boolean {
+        val finalAudioExists = rootEntries.any { entry ->
+            !entry.isPendingAudioWrite && entry.name == preparation.finalAudioName
+        }
+        if (!finalAudioExists) {
+            return false
+        }
+        if (rootEntries.any { entry ->
+                entry.isPendingAudioWrite && entry.logicalName == preparation.finalAudioName
+            }
+        ) {
+            return false
+        }
+        return rootEntries.asSequence()
+            .filter { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name) ==
+                    preparation.finalAudioName
+            }
+            .mapNotNull { entry -> parseDownloadedAudioMetadata(context, entry) }
+            .any { metadata ->
+                isFinalizedDownloadedMetadata(metadata) &&
+                    matchesTerminalTemporaryWriteFinalizationIdentity(
+                        metadata = metadata,
+                        preparation = preparation
+                    ) &&
+                    metadata.audioFileName == preparation.finalAudioName
+            }
+    }
+
+    internal fun matchesTerminalTemporaryWriteFinalizationIdentity(
+        metadata: DownloadedAudioMetadata,
+        preparation: TerminalTemporaryWriteCleanupFinalizationPreparation
+    ): Boolean {
+        val expectedOperationId = preparation.expectedOperationId
+        val expectedFinalizationToken = preparation.expectedFinalizationToken
+        return (
+            expectedOperationId != null && metadata.operationId == expectedOperationId
+        ) || (
+            expectedFinalizationToken != null &&
+                metadata.terminalTemporaryWriteCleanupToken == expectedFinalizationToken
+        )
+    }
+
+    private fun terminalTemporaryWriteCleanupJournalRoot(
+        root: RootHandle
+    ): TerminalTemporaryWriteCleanupRoot {
+        return when (root) {
+            is RootHandle.FileRoot -> TerminalTemporaryWriteCleanupRoot(
+                type = TerminalTemporaryWriteCleanupRootType.FILE,
+                identity = root.dir.absolutePath
+            )
+
+            is RootHandle.TreeRoot -> TerminalTemporaryWriteCleanupRoot(
+                type = TerminalTemporaryWriteCleanupRootType.TREE,
+                identity = root.tree.uri.toString()
+            )
+        }
+    }
+
+    private fun resolveTerminalTemporaryWriteCleanupRoot(
+        context: Context,
+        entry: TerminalTemporaryWriteCleanupJournalEntry
+    ): RootHandle? {
+        return when (entry.root.type) {
+            TerminalTemporaryWriteCleanupRootType.FILE -> {
+                File(entry.root.identity)
+                    .takeIf(File::isAbsolute)
+                    ?.let(RootHandle::FileRoot)
+            }
+
+            TerminalTemporaryWriteCleanupRootType.TREE -> {
+                val treeUri = entry.root.identity.toUri()
+                if (treeUri.scheme != "content") {
+                    return null
+                }
+                DocumentFile.fromTreeUri(context, treeUri)?.let(RootHandle::TreeRoot)
+            }
+        }
+    }
+
+    private fun resolveTerminalTemporaryWriteCleanupRoot(
+        context: Context,
+        preparation: TerminalTemporaryWriteCleanupFinalizationPreparation
+    ): RootHandle? {
+        return resolveTerminalTemporaryWriteCleanupRoot(
+            context = context,
+            root = preparation.root
+        )
+    }
+
+    private fun resolveTerminalTemporaryWriteCleanupRoot(
+        context: Context,
+        root: TerminalTemporaryWriteCleanupRoot
+    ): RootHandle? {
+        return when (root.type) {
+            TerminalTemporaryWriteCleanupRootType.FILE -> {
+                File(root.identity)
+                    .takeIf(File::isAbsolute)
+                    ?.let(RootHandle::FileRoot)
+            }
+
+            TerminalTemporaryWriteCleanupRootType.TREE -> {
+                val treeUri = root.identity.toUri()
+                if (treeUri.scheme != "content") {
+                    return null
+                }
+                DocumentFile.fromTreeUri(context, treeUri)?.let(RootHandle::TreeRoot)
+            }
         }
     }
 
     private suspend fun cleanupTerminalTemporaryWriteArtifactsBlocking(
         context: Context,
         root: RootHandle,
-        targetNames: Collection<String>
+        targets: Collection<TerminalTemporaryWriteCleanupTarget>
     ): StartupRecoveryResult {
-        val normalizedTargetNames = targetNames
-            .mapNotNull(::normalizeTerminalTemporaryWriteTargetName)
+        val normalizedTargets = targets
+            .mapNotNull(::normalizeTerminalTemporaryWriteCleanupTarget)
             .distinct()
-        if (normalizedTargetNames.isEmpty()) {
+        if (normalizedTargets.isEmpty()) {
             return StartupRecoveryResult()
         }
         val backend: StorageBackend
-        val targetForName: (String) -> StorageTarget
+        val targetForCleanupTarget: (TerminalTemporaryWriteCleanupTarget) -> StorageTarget
         when (root) {
             is RootHandle.FileRoot -> {
                 backend = FileStorageBackend(root.dir)
-                targetForName = StorageTarget::FileTarget
+                targetForCleanupTarget = { target ->
+                    StorageTarget.FileTarget(
+                        logicalPath = target.displayName,
+                        temporaryWriteOwnerName = target.temporaryWriteOwnerName
+                    )
+                }
             }
 
             is RootHandle.TreeRoot -> {
                 backend = SafStorageBackend(context)
-                targetForName = { displayName ->
+                targetForCleanupTarget = { target ->
                     StorageTarget.SafTarget(
                         parent = StorageReference.SafRef(root.tree.uri),
-                        displayName = displayName,
-                        mimeType = "application/octet-stream"
+                        displayName = target.displayName,
+                        mimeType = "application/octet-stream",
+                        temporaryWriteOwnerName = target.temporaryWriteOwnerName
                     )
                 }
             }
@@ -2446,33 +2903,40 @@ internal object ManagedDownloadStorage {
         var failedCount = 0
         when (
             val result = backend.cleanupTerminalTemporaryWrites(
-                normalizedTargetNames.map(targetForName)
+                normalizedTargets.map(targetForCleanupTarget)
             )
         ) {
             is ManagedTemporaryWriteCleanupResult.Completed -> {
                 cleanedCount += result.deletedCount
-                failedCount += result.failures.size
+                failedCount += terminalTemporaryWriteCleanupFailureCount(
+                    result = result,
+                    targetCount = normalizedTargets.size
+                )
                 if (result.retainedActiveCount > 0) {
                     NPLogger.d(
                         TAG,
-                        "终态临时写入清理跳过活跃写入: targets=${normalizedTargetNames.size}, " +
+                        "终态临时写入清理跳过活跃写入: targets=${normalizedTargets.size}, " +
                             "count=${result.retainedActiveCount}"
                     )
                 }
                 if (result.failures.isNotEmpty()) {
                     NPLogger.w(
                         TAG,
-                        "终态临时写入未完全清理: targets=${normalizedTargetNames.size}, " +
+                        "终态临时写入未完全清理: targets=${normalizedTargets.size}, " +
                             "failed=${result.failures.size}"
                     )
                 }
             }
 
             is ManagedTemporaryWriteCleanupResult.Skipped -> {
+                failedCount += terminalTemporaryWriteCleanupFailureCount(
+                    result = result,
+                    targetCount = normalizedTargets.size
+                )
                 NPLogger.w(
                     TAG,
                     "终态临时写入清理跳过非完整目录枚举: " +
-                        "targets=${normalizedTargetNames.size}, reason=${result.reason}"
+                        "targets=${normalizedTargets.size}, reason=${result.reason}"
                 )
             }
         }
@@ -2483,6 +2947,134 @@ internal object ManagedDownloadStorage {
             cleanedCount = cleanedCount,
             failedCount = failedCount
         )
+    }
+
+    internal fun terminalTemporaryWriteCleanupTargets(
+        entries: Collection<StoredEntry>,
+        temporaryWriteIdentityByMetadataReference: Map<String, String?> = emptyMap()
+    ): List<TerminalTemporaryWriteCleanupTarget> {
+        return entries.flatMap { entry ->
+            when {
+                entry.isPendingAudioWrite -> {
+                    listOf(
+                        TerminalTemporaryWriteCleanupTarget(displayName = entry.name),
+                        TerminalTemporaryWriteCleanupTarget(displayName = entry.logicalName)
+                    )
+                }
+
+                else -> {
+                    val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                    if (
+                        audioName != null &&
+                        ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, audioName)
+                    ) {
+                        listOfNotNull(
+                            TerminalTemporaryWriteCleanupTarget(displayName = audioName),
+                            TerminalTemporaryWriteCleanupTarget(displayName = entry.name),
+                            temporaryWriteOwnerNameForIdentity(
+                                displayName = entry.name,
+                                identity = temporaryWriteIdentityByMetadataReference[entry.reference]
+                            )?.let { temporaryWriteOwnerName ->
+                                TerminalTemporaryWriteCleanupTarget(
+                                    displayName = entry.name,
+                                    temporaryWriteOwnerName = temporaryWriteOwnerName
+                                )
+                            }
+                        )
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
+        }.mapNotNull(::normalizeTerminalTemporaryWriteCleanupTarget)
+            .distinct()
+    }
+
+    private fun terminalTemporaryWriteCleanupTargetsForFinalization(
+        pendingAudio: StoredEntry,
+        metadata: DownloadedAudioMetadata
+    ): List<TerminalTemporaryWriteCleanupTarget> {
+        val audioName = pendingAudio.logicalName
+        val pendingMetadataName = "$audioName$PENDING_METADATA_SUFFIX"
+        return buildList {
+            if (pendingAudio.isPendingAudioWrite) {
+                add(TerminalTemporaryWriteCleanupTarget(displayName = pendingAudio.name))
+            }
+            add(TerminalTemporaryWriteCleanupTarget(displayName = audioName))
+            add(TerminalTemporaryWriteCleanupTarget(displayName = "$audioName$METADATA_SUFFIX"))
+            add(TerminalTemporaryWriteCleanupTarget(displayName = pendingMetadataName))
+            temporaryWriteOwnerNameForIdentity(
+                displayName = pendingMetadataName,
+                identity = terminalTemporaryWriteIdentity(metadata)
+            )?.let { temporaryWriteOwnerName ->
+                add(
+                    TerminalTemporaryWriteCleanupTarget(
+                        displayName = pendingMetadataName,
+                        temporaryWriteOwnerName = temporaryWriteOwnerName
+                    )
+                )
+            }
+        }.mapNotNull(::normalizeTerminalTemporaryWriteCleanupTarget)
+            .distinct()
+    }
+
+    internal fun temporaryWriteOwnerNameForOperation(
+        displayName: String,
+        operationId: String?
+    ): String? = temporaryWriteOwnerNameForIdentity(
+        displayName = displayName,
+        identity = operationId
+    )
+
+    private fun temporaryWriteOwnerNameForIdentity(
+        displayName: String,
+        identity: String?
+    ): String? {
+        val normalizedDisplayName = normalizeTerminalTemporaryWriteTargetName(displayName)
+            ?: return null
+        val normalizedIdentity = identity?.trim()?.takeIf(String::isNotBlank) ?: return null
+        return "$normalizedDisplayName\u0000$normalizedIdentity"
+    }
+
+    private fun terminalTemporaryWriteIdentity(metadata: DownloadedAudioMetadata): String? {
+        return metadata.operationId?.trim()?.takeIf(String::isNotBlank)
+            ?: metadata.terminalTemporaryWriteCleanupToken
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+    }
+
+    private fun normalizeTerminalTemporaryWriteCleanupTarget(
+        target: TerminalTemporaryWriteCleanupTarget
+    ): TerminalTemporaryWriteCleanupTarget? {
+        val displayName = normalizeTerminalTemporaryWriteTargetName(target.displayName) ?: return null
+        return target.copy(
+            displayName = displayName,
+            temporaryWriteOwnerName = target.temporaryWriteOwnerName
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+        )
+    }
+
+    internal fun terminalTemporaryWriteTargetNames(
+        entries: Collection<StoredEntry>
+    ): List<String> {
+        return terminalTemporaryWriteCleanupTargets(entries)
+            .map(TerminalTemporaryWriteCleanupTarget::displayName)
+            .distinct()
+    }
+
+    internal fun terminalTemporaryWriteCleanupFailureCount(
+        result: ManagedTemporaryWriteCleanupResult,
+        targetCount: Int
+    ): Int {
+        val normalizedTargetCount = targetCount.coerceAtLeast(1)
+        return when (result) {
+            is ManagedTemporaryWriteCleanupResult.Completed -> {
+                result.failures.size + result.retainedActiveCount
+            }
+
+            is ManagedTemporaryWriteCleanupResult.Skipped -> normalizedTargetCount
+        }
     }
 
     private fun normalizeTerminalTemporaryWriteTargetName(rawName: String): String? {
@@ -5471,21 +6063,26 @@ internal object ManagedDownloadStorage {
         context: Context,
         root: RootHandle,
         displayName: String,
-        content: String
+        content: String,
+        temporaryWriteOwnerName: String? = null
     ): StorageWriteResult {
         val backend: StorageBackend
         val target: StorageTarget
         when (root) {
             is RootHandle.FileRoot -> {
                 backend = FileStorageBackend(root.dir)
-                target = StorageTarget.FileTarget(displayName)
+                target = StorageTarget.FileTarget(
+                    logicalPath = displayName,
+                    temporaryWriteOwnerName = temporaryWriteOwnerName
+                )
             }
             is RootHandle.TreeRoot -> {
                 backend = SafStorageBackend(context)
                 target = StorageTarget.SafTarget(
                     parent = StorageReference.SafRef(root.tree.uri),
                     displayName = displayName,
-                    mimeType = "application/octet-stream"
+                    mimeType = "application/octet-stream",
+                    temporaryWriteOwnerName = temporaryWriteOwnerName
                 )
             }
         }

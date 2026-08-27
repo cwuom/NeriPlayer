@@ -49,17 +49,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
 import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.formatDownloadTransferProgress
 import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
+import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
+import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.download.execution.loadExplicitDownloadResumeCandidates
 import moe.ouom.neriplayer.core.download.execution.resumeExplicitDownload
@@ -71,8 +77,131 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 
-private const val EXPLICIT_RESUME_REFRESH_ATTEMPTS = 3
-private const val EXPLICIT_RESUME_REFRESH_DELAY_MS = 250L
+private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS = 3
+private const val INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS = 250L
+private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS = 750L
+private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS = 5_000L
+
+internal data class DownloadProgressBootstrapState(
+    val durablePendingSongKeys: Set<String> = emptySet(),
+    val explicitResumeCandidates: List<ExplicitDownloadResumeCandidate> = emptyList(),
+    val clearFenceActive: Boolean = false
+)
+
+internal enum class DownloadProgressPagePresentation {
+    LOADING,
+    UNAVAILABLE,
+    EMPTY,
+    CLEARING,
+    CONTENT
+}
+
+internal enum class DownloadProgressInitialProbeState {
+    LOADING,
+    RESOLVED,
+    UNAVAILABLE
+}
+
+internal fun resolveDownloadProgressPagePresentation(
+    initialProbeState: DownloadProgressInitialProbeState,
+    hasVisibleContent: Boolean,
+    hasKnownPendingTasks: Boolean,
+    isClearing: Boolean,
+    isClearPresentationCleared: Boolean
+): DownloadProgressPagePresentation {
+    if (isClearPresentationCleared) {
+        return DownloadProgressPagePresentation.EMPTY
+    }
+    if (isClearing) {
+        return DownloadProgressPagePresentation.CLEARING
+    }
+    if (hasVisibleContent || hasKnownPendingTasks) {
+        return DownloadProgressPagePresentation.CONTENT
+    }
+    return when (initialProbeState) {
+        DownloadProgressInitialProbeState.LOADING -> DownloadProgressPagePresentation.LOADING
+        DownloadProgressInitialProbeState.RESOLVED -> DownloadProgressPagePresentation.EMPTY
+        DownloadProgressInitialProbeState.UNAVAILABLE -> DownloadProgressPagePresentation.UNAVAILABLE
+    }
+}
+
+internal fun shouldRecheckDownloadProgressBootstrap(
+    initialProbeState: DownloadProgressInitialProbeState,
+    clearFenceActive: Boolean,
+    isClearing: Boolean,
+    isClearPresentationCleared: Boolean
+): Boolean {
+    return !isClearing &&
+        !isClearPresentationCleared &&
+        (
+            initialProbeState == DownloadProgressInitialProbeState.UNAVAILABLE ||
+                clearFenceActive
+            )
+}
+
+private sealed interface DownloadProgressBootstrapProbeResult {
+    data class Resolved(val state: DownloadProgressBootstrapState) :
+        DownloadProgressBootstrapProbeResult
+
+    data object Unavailable : DownloadProgressBootstrapProbeResult
+}
+
+private suspend fun loadDownloadProgressBootstrapState(
+    context: android.content.Context
+): DownloadProgressBootstrapProbeResult {
+    var lastSuccessfulState: DownloadProgressBootstrapState? = null
+    repeat(INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS) { attempt ->
+        val state = runCatching {
+            readDownloadProgressBootstrapState(context)
+        }.getOrNull()
+        if (state != null) {
+            lastSuccessfulState = state
+            if (
+                state.clearFenceActive ||
+                    state.durablePendingSongKeys.isNotEmpty() ||
+                    state.explicitResumeCandidates.isNotEmpty()
+            ) {
+                return DownloadProgressBootstrapProbeResult.Resolved(state)
+            }
+        }
+        if (attempt < INITIAL_DOWNLOAD_PROGRESS_PROBE_ATTEMPTS - 1) {
+            kotlinx.coroutines.delay(INITIAL_DOWNLOAD_PROGRESS_PROBE_DELAY_MS)
+        }
+    }
+    return lastSuccessfulState?.let(DownloadProgressBootstrapProbeResult::Resolved)
+        ?: DownloadProgressBootstrapProbeResult.Unavailable
+}
+
+private suspend fun readDownloadProgressBootstrapState(
+    context: android.content.Context
+): DownloadProgressBootstrapState = withContext(Dispatchers.IO) {
+    val appContext = context.applicationContext
+    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+        return@withContext DownloadProgressBootstrapState(clearFenceActive = true)
+    }
+
+    val durablePendingSongKeys = linkedSetOf<String>()
+    durablePendingSongKeys += ManagedDownloadStorage.listPendingQueuedDownloads(appContext)
+        .map { entry -> entry.song.stableKey() }
+    durablePendingSongKeys += ManagedDownloadStorage.listPendingResumableDownloads(appContext)
+        .map { entry -> entry.song.stableKey() }
+    durablePendingSongKeys += DownloadExecutionRoomStore.listByStates(
+        context = appContext,
+        states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES +
+            DownloadExecutionRoomStore.IN_FLIGHT_OPERATION_STATES +
+            WAITING_STORAGE_MUTATION_OPERATION_STATE,
+        excludeUserStoppedOperations = true
+    ).map { entry -> entry.request.song.stableKey() }
+
+    if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+        return@withContext DownloadProgressBootstrapState(clearFenceActive = true)
+    }
+
+    DownloadProgressBootstrapState(
+        durablePendingSongKeys = durablePendingSongKeys,
+        explicitResumeCandidates = loadExplicitDownloadResumeCandidates(appContext)
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,6 +220,9 @@ fun DownloadProgressScreen(
     val isDownloadTaskClearPresentationCleared by
         GlobalDownloadManager.isDownloadTaskClearPresentationCleared
             .collectAsStateWithLifecycle()
+    var bootstrapProbeResult by remember(context) {
+        mutableStateOf<DownloadProgressBootstrapProbeResult?>(null)
+    }
     var explicitResumeCandidates by remember {
         mutableStateOf<List<ExplicitDownloadResumeCandidate>>(emptyList())
     }
@@ -104,34 +236,98 @@ fun DownloadProgressScreen(
             .map { task -> task.song.stableKey() }
             .toSet()
     }
-    LaunchedEffect(context, taskPresenceKey, isClearingDownloadTasks) {
-        if (isClearingDownloadTasks) {
+    LaunchedEffect(
+        context,
+        taskPresenceKey,
+        isClearingDownloadTasks,
+        isDownloadTaskClearPresentationCleared
+    ) {
+        if (isClearingDownloadTasks || isDownloadTaskClearPresentationCleared) {
+            bootstrapProbeResult = DownloadProgressBootstrapProbeResult.Resolved(
+                DownloadProgressBootstrapState()
+            )
             explicitResumeCandidates = emptyList()
             return@LaunchedEffect
         }
-        repeat(EXPLICIT_RESUME_REFRESH_ATTEMPTS) { attempt ->
-            val candidates = runCatching {
-                loadExplicitDownloadResumeCandidates(context)
-            }.getOrDefault(emptyList())
+        val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(context)
+        bootstrapProbeResult = nextBootstrapProbeResult
+        val nextBootstrapState = (nextBootstrapProbeResult as?
+            DownloadProgressBootstrapProbeResult.Resolved)?.state
+        explicitResumeCandidates = visibleExplicitResumeCandidates(
+            candidates = nextBootstrapState?.explicitResumeCandidates.orEmpty(),
+            activeSongKeys = taskPresenceKey
+        )
+    }
+    val bootstrapState = (bootstrapProbeResult as?
+        DownloadProgressBootstrapProbeResult.Resolved)?.state
+    val initialProbeState = when (bootstrapProbeResult) {
+        null -> DownloadProgressInitialProbeState.LOADING
+        is DownloadProgressBootstrapProbeResult.Resolved ->
+            DownloadProgressInitialProbeState.RESOLVED
+
+        DownloadProgressBootstrapProbeResult.Unavailable ->
+            DownloadProgressInitialProbeState.UNAVAILABLE
+    }
+    val effectiveIsClearing = isClearingDownloadTasks ||
+        bootstrapState?.clearFenceActive == true
+    val shouldRecheckBootstrap = shouldRecheckDownloadProgressBootstrap(
+        initialProbeState = initialProbeState,
+        clearFenceActive = bootstrapState?.clearFenceActive == true,
+        isClearing = isClearingDownloadTasks,
+        isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+    )
+    LaunchedEffect(context, taskPresenceKey, shouldRecheckBootstrap) {
+        if (!shouldRecheckBootstrap) {
+            return@LaunchedEffect
+        }
+        var delayMs = DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_INITIAL_DELAY_MS
+        while (true) {
+            kotlinx.coroutines.delay(delayMs)
+            val nextBootstrapProbeResult = loadDownloadProgressBootstrapState(context)
+            bootstrapProbeResult = nextBootstrapProbeResult
+            val nextBootstrapState = (nextBootstrapProbeResult as?
+                DownloadProgressBootstrapProbeResult.Resolved)?.state
             explicitResumeCandidates = visibleExplicitResumeCandidates(
-                candidates = candidates,
+                candidates = nextBootstrapState?.explicitResumeCandidates.orEmpty(),
                 activeSongKeys = taskPresenceKey
             )
-            if (explicitResumeCandidates.isNotEmpty() || attempt == EXPLICIT_RESUME_REFRESH_ATTEMPTS - 1) {
+            if (!shouldRecheckDownloadProgressBootstrap(
+                    initialProbeState = when (nextBootstrapProbeResult) {
+                        is DownloadProgressBootstrapProbeResult.Resolved ->
+                            DownloadProgressInitialProbeState.RESOLVED
+
+                        DownloadProgressBootstrapProbeResult.Unavailable ->
+                            DownloadProgressInitialProbeState.UNAVAILABLE
+                    },
+                    clearFenceActive = nextBootstrapState?.clearFenceActive == true,
+                    isClearing = isClearingDownloadTasks,
+                    isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+                )
+            ) {
                 return@LaunchedEffect
             }
-            kotlinx.coroutines.delay(EXPLICIT_RESUME_REFRESH_DELAY_MS)
+            delayMs = (delayMs * 2).coerceAtMost(
+                DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS
+            )
         }
     }
-    val pendingTaskCount = remember(downloadTasks, isDownloadTaskClearPresentationCleared) {
+    val explicitResumeSongKeys = remember(explicitResumeCandidates) {
+        explicitResumeCandidates.mapTo(linkedSetOf()) { candidate ->
+            candidate.song.stableKey()
+        }
+    }
+    val pendingTaskCount = remember(
+        taskPresenceKey,
+        bootstrapProbeResult,
+        explicitResumeSongKeys,
+        isDownloadTaskClearPresentationCleared
+    ) {
         if (isDownloadTaskClearPresentationCleared) {
             0
         } else {
-            downloadTasks.count { task ->
-                task.status == DownloadStatus.QUEUED ||
-                    task.status == DownloadStatus.DOWNLOADING ||
-                    task.status == DownloadStatus.WAITING_NETWORK
-            }
+            (taskPresenceKey +
+                (bootstrapState?.durablePendingSongKeys.orEmpty() - explicitResumeSongKeys))
+                .size
         }
     }
     val visibleBatchProgress = batchDownloadProgress?.takeUnless {
@@ -143,6 +339,15 @@ fun DownloadProgressScreen(
         visibleDownloadProgressTasks(downloadTasks)
     }
     val displayedPendingTaskCount = pendingTaskCount + explicitResumeCandidates.size
+    val pagePresentation = resolveDownloadProgressPagePresentation(
+        initialProbeState = initialProbeState,
+        hasVisibleContent = visibleBatchProgress != null ||
+            visibleTasks.isNotEmpty() ||
+            explicitResumeCandidates.isNotEmpty(),
+        hasKnownPendingTasks = pendingTaskCount > 0,
+        isClearing = effectiveIsClearing,
+        isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+    )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -155,6 +360,9 @@ fun DownloadProgressScreen(
                 TextButton(
                     onClick = {
                         context.performHapticFeedback()
+                        bootstrapProbeResult = DownloadProgressBootstrapProbeResult.Resolved(
+                            DownloadProgressBootstrapState()
+                        )
                         explicitResumeCandidates = emptyList()
                         GlobalDownloadManager.clearAllDownloadTasks()
                         showClearDialog = false
@@ -186,7 +394,13 @@ fun DownloadProgressScreen(
                     )
                     Text(
                         text = when {
-                            isClearingDownloadTasks ->
+                            pagePresentation == DownloadProgressPagePresentation.LOADING ->
+                                stringResource(R.string.download_loading_tasks)
+
+                            pagePresentation == DownloadProgressPagePresentation.UNAVAILABLE ->
+                                stringResource(R.string.download_loading_tasks_recovering)
+
+                            effectiveIsClearing ->
                                 stringResource(R.string.download_clearing_tasks)
 
                             visibleBatchProgress != null -> stringResource(
@@ -222,7 +436,7 @@ fun DownloadProgressScreen(
             ),
             actions = {
                 IconButton(
-                    enabled = !isClearingDownloadTasks,
+                    enabled = !effectiveIsClearing,
                     onClick = {
                         context.performHapticFeedback()
                         showClearDialog = true
@@ -233,115 +447,161 @@ fun DownloadProgressScreen(
             }
         )
 
-        if (
-            visibleBatchProgress == null &&
-                visibleTasks.isEmpty() &&
-                explicitResumeCandidates.isEmpty() &&
-                pendingTaskCount == 0
-        ) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(32.dp)
-                ) {
-                    Icon(
-                        Icons.Outlined.CloudDownload,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        stringResource(R.string.download_no_tasks),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (isClearingDownloadTasks) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            stringResource(R.string.download_clearing_tasks),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+        when (pagePresentation) {
+            DownloadProgressPagePresentation.LOADING -> {
+                DownloadProgressInitialLoadingContent()
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 16.dp,
-                    bottom = 16.dp + miniPlayerHeight
+
+            DownloadProgressPagePresentation.UNAVAILABLE -> {
+                DownloadProgressBootstrapUnavailableContent()
+            }
+
+            DownloadProgressPagePresentation.EMPTY,
+            DownloadProgressPagePresentation.CLEARING -> {
+                DownloadProgressEmptyContent(
+                    isClearing = pagePresentation == DownloadProgressPagePresentation.CLEARING
                 )
-            ) {
-                visibleBatchProgress?.let { progress ->
-                    item(key = "batch-overall-progress") {
-                        BatchDownloadOverallProgressCard(progress = progress)
+            }
+
+            DownloadProgressPagePresentation.CONTENT -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 16.dp,
+                        bottom = 16.dp + miniPlayerHeight
+                    )
+                ) {
+                    visibleBatchProgress?.let { progress ->
+                        item(key = "batch-overall-progress") {
+                            BatchDownloadOverallProgressCard(progress = progress)
+                        }
                     }
-                }
-                if (visibleBatchProgress == null && pendingTaskCount > 0 && visibleTasks.isEmpty()) {
-                    item(key = "pending-download-summary") {
-                        PendingDownloadSummaryCard(count = pendingTaskCount)
+                    if (visibleBatchProgress == null && pendingTaskCount > 0 && visibleTasks.isEmpty()) {
+                        item(key = "pending-download-summary") {
+                            PendingDownloadSummaryCard(count = pendingTaskCount)
+                        }
                     }
-                }
-                if (explicitResumeCandidates.isNotEmpty()) {
-                    item(key = "explicit-resume-summary") {
-                        ExplicitResumeSummaryCard(
-                            count = explicitResumeCandidates.size
-                        )
-                    }
-                    items(
-                        items = explicitResumeCandidates,
-                        key = { candidate -> candidate.operationId },
-                        contentType = { "explicit-resume" }
-                    ) { candidate ->
-                        ExplicitResumeTaskItem(
-                            candidate = candidate,
-                            onResume = {
-                                if (!isClearingDownloadTasks) {
-                                    context.performHapticFeedback()
-                                    coroutineScope.launch {
-                                        val schedule = runCatching {
-                                            resumeExplicitDownload(context, candidate)
-                                        }.getOrNull()
-                                        if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
-                                            explicitResumeCandidates = explicitResumeCandidates
-                                                .filterNot { item -> item.operationId == candidate.operationId }
+                    if (explicitResumeCandidates.isNotEmpty()) {
+                        item(key = "explicit-resume-summary") {
+                            ExplicitResumeSummaryCard(
+                                count = explicitResumeCandidates.size
+                            )
+                        }
+                        items(
+                            items = explicitResumeCandidates,
+                            key = { candidate -> candidate.operationId },
+                            contentType = { "explicit-resume" }
+                        ) { candidate ->
+                            ExplicitResumeTaskItem(
+                                candidate = candidate,
+                                onResume = {
+                                    if (!effectiveIsClearing) {
+                                        context.performHapticFeedback()
+                                        coroutineScope.launch {
+                                            val schedule = runCatching {
+                                                resumeExplicitDownload(context, candidate)
+                                            }.getOrNull()
+                                            if (schedule is moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule.Scheduled) {
+                                                explicitResumeCandidates = explicitResumeCandidates
+                                                    .filterNot { item ->
+                                                        item.operationId == candidate.operationId
+                                                    }
+                                            }
                                         }
                                     }
                                 }
-                            }
+                            )
+                        }
+                    }
+                    items(
+                        items = visibleTasks,
+                        key = { it.song.stableKey() },
+                        contentType = { task -> task.status }
+                    ) { task ->
+                        val songKey = task.song.stableKey()
+                        DownloadTaskItem(
+                            task = task,
+                            onCancel = {
+                                context.performHapticFeedback()
+                                GlobalDownloadManager.cancelDownloadTask(songKey)
+                            },
+                            actionsEnabled = !effectiveIsClearing,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(durationMillis = 250),
+                                fadeOutSpec = tween(durationMillis = 250),
+                                placementSpec = tween(durationMillis = 250)
+                            )
                         )
                     }
                 }
-                items(
-                    items = visibleTasks,
-                    key = { it.song.stableKey() },
-                    contentType = { task -> task.status }
-                ) { task ->
-                    val songKey = task.song.stableKey()
-                    DownloadTaskItem(
-                        task = task,
-                        onCancel = {
-                            context.performHapticFeedback()
-                            GlobalDownloadManager.cancelDownloadTask(songKey)
-                        },
-                        actionsEnabled = !isClearingDownloadTasks,
-                        modifier = Modifier.animateItem(
-                            fadeInSpec = tween(durationMillis = 250),
-                            fadeOutSpec = tween(durationMillis = 250),
-                            placementSpec = tween(durationMillis = 250)
-                        )
-                    )
-                }
             }
+        }
+    }
+}
+
+@Composable
+private fun DownloadProgressInitialLoadingContent() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun DownloadProgressBootstrapUnavailableContent() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(R.string.download_loading_tasks_recovering),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadProgressEmptyContent(isClearing: Boolean) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                Icons.Outlined.CloudDownload,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = stringResource(
+                    if (isClearing) {
+                        R.string.download_clearing_tasks
+                    } else {
+                        R.string.download_no_tasks
+                    }
+                ),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

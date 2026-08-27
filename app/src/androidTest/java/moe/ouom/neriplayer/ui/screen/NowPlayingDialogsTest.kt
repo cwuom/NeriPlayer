@@ -101,6 +101,38 @@ class NowPlayingDialogsTest {
     }
 
     @Test
+    fun editSongMetadataWriteBackDialog_offersWriteAppOnlyAndCancel() {
+        val context = targetContext
+        var wroteToLocal = false
+        var savedInAppOnly = false
+        var cancelled = false
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    EditSongLocalMetadataWriteBackConfirmDialog(
+                        isSaving = false,
+                        onWriteToLocal = { wroteToLocal = true },
+                        onSaveInAppOnly = { savedInAppOnly = true },
+                        onCancel = { cancelled = true }
+                    )
+                }
+            }
+        }
+
+        waitForText(context.getString(R.string.local_song_metadata_write_confirm_write))
+        waitForText(context.getString(R.string.local_song_metadata_write_confirm_app_only))
+        waitForText(context.getString(R.string.action_cancel))
+        composeRule.onNodeWithText(context.getString(R.string.action_cancel)).performClick()
+
+        composeRule.runOnIdle {
+            assertTrue(cancelled)
+            assertFalse(wroteToLocal)
+            assertFalse(savedInAppOnly)
+        }
+    }
+
+    @Test
     fun lyricsEditorSheet_switchesTabsAndClearOnlyAffectsCurrentTab() {
         val context = targetContext
 

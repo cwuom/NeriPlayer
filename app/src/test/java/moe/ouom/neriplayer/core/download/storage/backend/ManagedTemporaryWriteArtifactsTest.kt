@@ -182,21 +182,84 @@ class ManagedTemporaryWriteArtifactsTest {
     }
 
     @Test
-    fun `pending audio temporary write remains addressable through its final song target`() {
-        val pendingTarget = StorageTarget.FileTarget(
+    fun `old pending operation cleanup does not select new operation temporary write`() {
+        runBlocking {
+            val root = Files.createTempDirectory("neriplayer-temporary-write").toFile()
+            try {
+                val oldOperationTarget = StorageTarget.FileTarget(
+                    logicalPath = "album/song.mp3",
+                    temporaryWriteOwnerName = "song.mp3.npdl_pending."
+                        + "c5da641b-aebd-420f-9a82-ab800ed7c02d.pending"
+                )
+                val newOperationTarget = StorageTarget.FileTarget(
+                    logicalPath = "album/song.mp3",
+                    temporaryWriteOwnerName = "song.mp3.npdl_pending."
+                        + "493e2c83-40cc-4f4e-9d50-6794d61cd81a.pending"
+                )
+                val newLease = ManagedTemporaryWriteArtifacts.acquire(newOperationTarget)
+                val newTemporaryFile = root.resolve("album").apply { mkdirs() }
+                    .resolve(newLease.displayName)
+                newTemporaryFile.writeText("new")
+                newLease.close()
+
+                assertTrue(
+                    ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                        displayName = newLease.displayName,
+                        target = newOperationTarget
+                    )
+                )
+                assertFalse(
+                    ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                        displayName = newLease.displayName,
+                        target = oldOperationTarget
+                    )
+                )
+
+                val result = FileStorageBackend(root)
+                    .cleanupTerminalTemporaryWrites(oldOperationTarget)
+
+                assertEquals(
+                    ManagedTemporaryWriteCleanupResult.Completed(
+                        deletedCount = 0,
+                        missingCount = 0,
+                        retainedActiveCount = 0,
+                        failures = emptyList()
+                    ),
+                    result
+                )
+                assertTrue(newTemporaryFile.exists())
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `pending audio target keeps its operation UUID when no owner is supplied`() {
+        val oldOperationTarget = StorageTarget.FileTarget(
             "album/song.mp3.npdl_pending."
                 + "c5da641b-aebd-420f-9a82-ab800ed7c02d.pending"
         )
-        val lease = ManagedTemporaryWriteArtifacts.acquire(pendingTarget)
+        val newOperationTarget = StorageTarget.FileTarget(
+            "album/song.mp3.npdl_pending."
+                + "493e2c83-40cc-4f4e-9d50-6794d61cd81a.pending"
+        )
+        val newLease = ManagedTemporaryWriteArtifacts.acquire(newOperationTarget)
         try {
             assertTrue(
                 ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
-                    displayName = lease.displayName,
-                    target = StorageTarget.FileTarget("album/song.mp3")
+                    displayName = newLease.displayName,
+                    target = newOperationTarget
+                )
+            )
+            assertFalse(
+                ManagedTemporaryWriteArtifacts.isManagedNameForTarget(
+                    displayName = newLease.displayName,
+                    target = oldOperationTarget
                 )
             )
         } finally {
-            lease.close()
+            newLease.close()
         }
     }
 

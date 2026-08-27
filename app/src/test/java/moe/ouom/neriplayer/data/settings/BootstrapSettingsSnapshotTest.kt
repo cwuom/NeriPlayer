@@ -35,4 +35,20 @@ class BootstrapSettingsSnapshotTest {
 
         assertEquals(true, snapshot.preferHighRefreshRate)
     }
+
+    @Test
+    fun `download quality startup state defaults to following playback`() {
+        val snapshot = BootstrapSettingsSnapshot().sanitized()
+
+        assertEquals(true, snapshot.downloadFollowPlaybackAudioQuality)
+    }
+
+    @Test
+    fun `download quality startup state preserves independent selection`() {
+        val snapshot = BootstrapSettingsSnapshot(
+            downloadFollowPlaybackAudioQuality = false
+        ).sanitized()
+
+        assertEquals(false, snapshot.downloadFollowPlaybackAudioQuality)
+    }
 }

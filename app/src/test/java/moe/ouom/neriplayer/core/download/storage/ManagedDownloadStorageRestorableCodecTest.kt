@@ -83,4 +83,16 @@ class ManagedDownloadStorageRestorableCodecTest {
         assertEquals(true, parsed.downloadFinalized)
         assertNull(parsed.metadataEmbeddingState)
     }
+
+    @Test
+    fun `downloaded metadata codec preserves terminal finalization token`() {
+        val metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            terminalTemporaryWriteCleanupToken = "finalization-token"
+        )
+
+        val json = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata)
+        val parsed = ManagedDownloadStorageJsonCodec.downloadedAudioMetadataFromJsonObject(json)
+
+        assertEquals("finalization-token", parsed.terminalTemporaryWriteCleanupToken)
+    }
 }

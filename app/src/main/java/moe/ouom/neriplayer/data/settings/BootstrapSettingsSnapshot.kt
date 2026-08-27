@@ -43,6 +43,8 @@ private const val BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY = "prefer_high_refresh_
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY = "download_directory_uri"
 private const val BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY = "download_directory_label"
 private const val BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY = "download_file_name_template"
+private const val BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY =
+    "download_follow_playback_audio_quality"
 private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 data class BootstrapSettingsSnapshot(
@@ -51,7 +53,8 @@ data class BootstrapSettingsSnapshot(
     val preferHighRefreshRate: Boolean = false,
     val downloadDirectoryUri: String? = null,
     val downloadDirectoryLabel: String? = null,
-    val downloadFileNameTemplate: String? = null
+    val downloadFileNameTemplate: String? = null,
+    val downloadFollowPlaybackAudioQuality: Boolean = true
 ) {
     fun sanitized(): BootstrapSettingsSnapshot {
         return copy(
@@ -63,7 +66,16 @@ data class BootstrapSettingsSnapshot(
 }
 
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
-    readCachedBootstrapSettingsSnapshot(context)?.let { return it }
+    readCachedBootstrapSettingsSnapshot(context)?.let { snapshot ->
+        val preferences = context.getSharedPreferences(
+            BOOTSTRAP_SNAPSHOT_PREFS,
+            Context.MODE_PRIVATE
+        )
+        if (!preferences.contains(BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY)) {
+            warmBootstrapSettingsSnapshot(context)
+        }
+        return snapshot
+    }
 
     if (Looper.myLooper() == Looper.getMainLooper()) {
         warmBootstrapSettingsSnapshot(context)
@@ -127,7 +139,30 @@ internal fun persistBootstrapSettingsSnapshot(
                     BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY,
                     normalizedSnapshot.downloadFileNameTemplate
                 )
+                .putBoolean(
+                    BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+                    normalizedSnapshot.downloadFollowPlaybackAudioQuality
+                )
         }
+}
+
+internal fun updateBootstrapDownloadFollowPlaybackAudioQuality(
+    context: Context,
+    followsPlaybackQuality: Boolean
+) {
+    val preferences = context.applicationContext.getSharedPreferences(
+        BOOTSTRAP_SNAPSHOT_PREFS,
+        Context.MODE_PRIVATE
+    )
+    if (!preferences.getBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, false)) {
+        return
+    }
+    preferences.edit {
+        putBoolean(
+            BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+            followsPlaybackQuality
+        )
+    }
 }
 
 internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
@@ -137,7 +172,10 @@ internal fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapsho
         preferHighRefreshRate = this[SettingsKeys.PREFER_HIGH_REFRESH_RATE] ?: false,
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
         downloadDirectoryLabel = this[SettingsKeys.DOWNLOAD_DIRECTORY_LABEL],
-        downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE]
+        downloadFileNameTemplate = this[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE],
+        downloadFollowPlaybackAudioQuality = valueOf(
+            AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
+        )
     ).sanitized()
 }
 
@@ -155,6 +193,10 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         ),
         downloadDirectoryUri = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_URI_KEY, null),
         downloadDirectoryLabel = prefs.getString(BOOTSTRAP_DOWNLOAD_DIRECTORY_LABEL_KEY, null),
-        downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null)
+        downloadFileNameTemplate = prefs.getString(BOOTSTRAP_DOWNLOAD_FILE_NAME_TEMPLATE_KEY, null),
+        downloadFollowPlaybackAudioQuality = prefs.getBoolean(
+            BOOTSTRAP_DOWNLOAD_FOLLOW_PLAYBACK_AUDIO_QUALITY_KEY,
+            true
+        )
     ).sanitized()
 }

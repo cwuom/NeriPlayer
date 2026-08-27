@@ -63,11 +63,18 @@ private fun StorageReference.externalReference(): String {
 }
 
 sealed interface StorageTarget {
-    data class FileTarget(val logicalPath: String) : StorageTarget
+    val temporaryWriteOwnerName: String?
+
+    data class FileTarget(
+        val logicalPath: String,
+        override val temporaryWriteOwnerName: String? = null
+    ) : StorageTarget
+
     data class SafTarget(
         val parent: StorageReference.SafRef,
         val displayName: String,
-        val mimeType: String
+        val mimeType: String,
+        override val temporaryWriteOwnerName: String? = null
     ) : StorageTarget
 }
 

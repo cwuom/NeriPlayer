@@ -52,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -63,9 +64,13 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.player.download.normalizeDownloadParallelism
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.settings.normalizeDownloadBiliAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeDownloadNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.normalizeDownloadYouTubeAudioQuality
+import moe.ouom.neriplayer.data.settings.readDownloadFollowPlaybackAudioQualityStartupValue
+import moe.ouom.neriplayer.data.settings.setDownloadFollowPlaybackAudioQuality
+import moe.ouom.neriplayer.data.settings.updateDownloadFollowPlaybackAudioQualityStartupValue
 import moe.ouom.neriplayer.ksp.annotations.AutoSettingSpec
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
@@ -142,14 +147,6 @@ private fun SettingsDownloadExpandedContent(
 
         AutoSettingSpecSwitchItem(
             setting = AutoSettingsSchema.download.standardizedLyricEmbeddingEnabled,
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        DownloadAudioQualitySettings(
             highlightTargetId = highlightTargetId,
             highlightPulse = highlightPulse,
             onHighlightFinished = onHighlightFinished
@@ -250,6 +247,8 @@ private enum class DownloadAudioQualityPlatform {
 
 internal const val DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG =
     "download-quality-follow-playback-card"
+internal const val DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG =
+    "download-quality-platform-options"
 
 @Composable
 internal fun SettingsDownloadQualityFollowPlaybackCard(
@@ -258,11 +257,49 @@ internal fun SettingsDownloadQualityFollowPlaybackCard(
     onHighlightFinished: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val followPlaybackSetting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
+    val initialFollowPlaybackQuality = remember(context) {
+        readDownloadFollowPlaybackAudioQualityStartupValue(context)
+    }
+    val followPlaybackQualityFlow = remember(context, followPlaybackSetting) {
+        context.autoSettingFlow(followPlaybackSetting)
+    }
+    val followPlaybackQuality by followPlaybackQualityFlow.collectAsState(
+        initial = initialFollowPlaybackQuality
+    )
+
+    LaunchedEffect(followPlaybackQualityFlow, context) {
+        followPlaybackQualityFlow.collect { followsPlaybackQuality ->
+            updateDownloadFollowPlaybackAudioQualityStartupValue(
+                context = context,
+                followsPlaybackQuality = followsPlaybackQuality
+            )
+        }
+    }
+
     MiuixSettingsSectionCard(
         modifier = modifier.testTag(DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG)
     ) {
         AutoSettingSpecSwitchItem(
-            setting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality,
+            setting = followPlaybackSetting,
+            checked = followPlaybackQuality,
+            onCheckedChange = { followsPlaybackQuality ->
+                scope.launch {
+                    setDownloadFollowPlaybackAudioQuality(
+                        context = context,
+                        followsPlaybackQuality = followsPlaybackQuality
+                    )
+                }
+            },
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
+
+        DownloadAudioQualitySettings(
+            followsPlaybackQuality = followPlaybackQuality,
             highlightTargetId = highlightTargetId,
             highlightPulse = highlightPulse,
             onHighlightFinished = onHighlightFinished
@@ -272,16 +309,13 @@ internal fun SettingsDownloadQualityFollowPlaybackCard(
 
 @Composable
 private fun DownloadAudioQualitySettings(
+    followsPlaybackQuality: Boolean,
     highlightTargetId: String?,
     highlightPulse: Int,
     onHighlightFinished: (() -> Unit)?
 ) {
     val repository = rememberAutoSettingSpecRepository()
     val scope = rememberCoroutineScope()
-    val followPlaybackSetting = AutoSettingsSchema.download.downloadFollowPlaybackAudioQuality
-    val followPlaybackQuality by remember(repository, followPlaybackSetting) {
-        repository.flow(followPlaybackSetting)
-    }.collectAsState(initial = followPlaybackSetting.defaultValue)
     val neteaseSetting = AutoSettingsSchema.download.downloadNeteaseAudioQuality
     val youtubeSetting = AutoSettingsSchema.download.downloadYouTubeAudioQuality
     val biliSetting = AutoSettingsSchema.download.downloadBiliAudioQuality
@@ -296,70 +330,72 @@ private fun DownloadAudioQualitySettings(
     }.collectAsState(initial = biliSetting.defaultValue)
     var dialogPlatform by remember { mutableStateOf<DownloadAudioQualityPlatform?>(null) }
 
-    if (!followPlaybackQuality) {
-        Text(
-            text = stringResource(R.string.settings_download_quality_group),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-        )
+    if (!followsPlaybackQuality) {
+        Column(modifier = Modifier.testTag(DOWNLOAD_QUALITY_PLATFORM_OPTIONS_TEST_TAG)) {
+            Text(
+                text = stringResource(R.string.settings_download_quality_group),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
+            )
 
-        DownloadAudioQualityListItem(
-            setting = neteaseSetting,
-            value = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
-            valueLabel = stringResource(
-                when (normalizeDownloadNeteaseAudioQuality(neteaseQuality)) {
-                    "standard" -> R.string.quality_standard
-                    "higher" -> R.string.quality_high
-                    "exhigh" -> R.string.quality_very_high
-                    "lossless" -> R.string.quality_lossless
-                    "hires" -> R.string.quality_hires
-                    "jyeffect" -> R.string.quality_hd_surround
-                    "sky" -> R.string.quality_surround
-                    else -> R.string.settings_audio_quality_jymaster
-                }
-            ),
-            onClick = { dialogPlatform = DownloadAudioQualityPlatform.NETEASE },
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
+            DownloadAudioQualityListItem(
+                setting = neteaseSetting,
+                value = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
+                valueLabel = stringResource(
+                    when (normalizeDownloadNeteaseAudioQuality(neteaseQuality)) {
+                        "standard" -> R.string.quality_standard
+                        "higher" -> R.string.quality_high
+                        "exhigh" -> R.string.quality_very_high
+                        "lossless" -> R.string.quality_lossless
+                        "hires" -> R.string.quality_hires
+                        "jyeffect" -> R.string.quality_hd_surround
+                        "sky" -> R.string.quality_surround
+                        else -> R.string.settings_audio_quality_jymaster
+                    }
+                ),
+                onClick = { dialogPlatform = DownloadAudioQualityPlatform.NETEASE },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
 
-        DownloadAudioQualityListItem(
-            setting = youtubeSetting,
-            value = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
-            valueLabel = stringResource(
-                when (normalizeDownloadYouTubeAudioQuality(youtubeQuality)) {
-                    "low" -> R.string.settings_audio_quality_low
-                    "medium" -> R.string.settings_audio_quality_medium
-                    "high" -> R.string.settings_audio_quality_high
-                    else -> R.string.quality_very_high
-                }
-            ),
-            onClick = { dialogPlatform = DownloadAudioQualityPlatform.YOUTUBE },
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
+            DownloadAudioQualityListItem(
+                setting = youtubeSetting,
+                value = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
+                valueLabel = stringResource(
+                    when (normalizeDownloadYouTubeAudioQuality(youtubeQuality)) {
+                        "low" -> R.string.settings_audio_quality_low
+                        "medium" -> R.string.settings_audio_quality_medium
+                        "high" -> R.string.settings_audio_quality_high
+                        else -> R.string.quality_very_high
+                    }
+                ),
+                onClick = { dialogPlatform = DownloadAudioQualityPlatform.YOUTUBE },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
 
-        DownloadAudioQualityListItem(
-            setting = biliSetting,
-            value = normalizeDownloadBiliAudioQuality(biliQuality),
-            valueLabel = stringResource(
-                when (normalizeDownloadBiliAudioQuality(biliQuality)) {
-                    "dolby" -> R.string.settings_dolby
-                    "hires" -> R.string.quality_hires
-                    "lossless" -> R.string.quality_lossless
-                    "high" -> R.string.settings_audio_quality_high
-                    "medium" -> R.string.settings_audio_quality_medium
-                    else -> R.string.settings_audio_quality_low
-                }
-            ),
-            onClick = { dialogPlatform = DownloadAudioQualityPlatform.BILI },
-            highlightTargetId = highlightTargetId,
-            highlightPulse = highlightPulse,
-            onHighlightFinished = onHighlightFinished
-        )
+            DownloadAudioQualityListItem(
+                setting = biliSetting,
+                value = normalizeDownloadBiliAudioQuality(biliQuality),
+                valueLabel = stringResource(
+                    when (normalizeDownloadBiliAudioQuality(biliQuality)) {
+                        "dolby" -> R.string.settings_dolby
+                        "hires" -> R.string.quality_hires
+                        "lossless" -> R.string.quality_lossless
+                        "high" -> R.string.settings_audio_quality_high
+                        "medium" -> R.string.settings_audio_quality_medium
+                        else -> R.string.settings_audio_quality_low
+                    }
+                ),
+                onClick = { dialogPlatform = DownloadAudioQualityPlatform.BILI },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
+        }
     }
 
     dialogPlatform?.let { platform ->

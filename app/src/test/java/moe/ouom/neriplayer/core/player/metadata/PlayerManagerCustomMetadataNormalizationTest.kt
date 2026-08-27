@@ -92,9 +92,44 @@ class PlayerManagerCustomMetadataNormalizationTest {
         )
         assertTrue(
             shouldWriteLocalCoverMetadata(
+                restoreBaseCover = true,
+                nextCustomCover = null,
+                previousCustomCover = null
+            )
+        )
+        assertTrue(
+            shouldWriteLocalCoverMetadata(
                 restoreBaseCover = false,
                 nextCustomCover = "file:///cache/new-cover.jpg",
                 previousCustomCover = "file:///cache/old-cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `local restore materializes an explicit remote cover before write-back`() {
+        assertTrue(
+            shouldMaterializeRemoteLocalCover(
+                isLocalSong = true,
+                requestedCoverReference = "https://example.com/original-cover.jpg",
+                restoreBaseCover = true,
+                persistManualRemoteCover = false
+            )
+        )
+        assertFalse(
+            shouldMaterializeRemoteLocalCover(
+                isLocalSong = true,
+                requestedCoverReference = "https://example.com/original-cover.jpg",
+                restoreBaseCover = false,
+                persistManualRemoteCover = false
+            )
+        )
+        assertFalse(
+            shouldMaterializeRemoteLocalCover(
+                isLocalSong = false,
+                requestedCoverReference = "https://example.com/original-cover.jpg",
+                restoreBaseCover = true,
+                persistManualRemoteCover = false
             )
         )
     }
@@ -205,6 +240,21 @@ class PlayerManagerCustomMetadataNormalizationTest {
                 currentCustomCoverUrl = "https://example.com/custom-cover.jpg",
                 preferredLocalCoverUrl =
                     "file:///storage/emulated/0/neriplayer-download/Covers/Song.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `restoring a local cover prefers the explicit restored reference over an old sidecar`() {
+        assertEquals(
+            "file:///cache/restored-from-provider.jpg",
+            resolveRestoredBaseCoverUrl(
+                originalCoverUrl = "file:///cache/original-cover.jpg",
+                baseCoverUrl = "file:///cache/current-base.jpg",
+                currentCustomCoverUrl = "file:///cache/custom-cover.jpg",
+                preferredLocalCoverUrl = "file:///cache/old-sidecar.jpg",
+                requestedRestoreCoverUrl = "file:///cache/restored-from-provider.jpg",
+                localOnly = true
             )
         )
     }

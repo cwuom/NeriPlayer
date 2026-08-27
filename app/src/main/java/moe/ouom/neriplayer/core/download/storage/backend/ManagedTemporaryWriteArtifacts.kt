@@ -12,7 +12,6 @@ private const val TEMPORARY_WRITE_NAME_PREFIX = ".npdl_tmp_v2_"
 private const val TEMPORARY_WRITE_NAME_SUFFIX = ".pending"
 private const val TEMPORARY_WRITE_TARGET_FINGERPRINT_LENGTH = 16
 private const val TEMPORARY_WRITE_NONCE_LENGTH = 16
-private const val PENDING_AUDIO_WRITE_MARKER = ".npdl_pending."
 
 /**
  * tracks an in-process recoverable write until its temporary document is either
@@ -58,10 +57,10 @@ internal sealed interface ManagedTemporaryWriteCleanupResult {
 }
 
 /**
- * new temporary names include a compact digest of their root-relative target.
- * It lets terminal cleanup select only files from that target after process
- * death, while the in-memory lease prevents a concurrent writer from being
- * selected.
+ * new temporary names include a compact digest of their root-relative target
+ * or durable owner. It lets terminal cleanup select only files from that
+ * target after process death, while the in-memory lease prevents a concurrent
+ * writer from being selected.
  */
 internal object ManagedTemporaryWriteArtifacts {
     private val activeWrites = ConcurrentHashMap.newKeySet<TemporaryWriteIdentity>()
@@ -193,26 +192,18 @@ internal object ManagedTemporaryWriteArtifacts {
         is StorageReference.SafRef -> "saf:${reference.uri}"
     }
 
-    private fun targetName(target: StorageTarget): String = when (target) {
-        is StorageTarget.FileTarget -> temporaryOwnerName(normalizedFilePath(target.logicalPath))
-        is StorageTarget.SafTarget -> temporaryOwnerName(target.displayName)
-    }
-
-    private fun temporaryOwnerName(targetName: String): String {
-        if (!targetName.endsWith(TEMPORARY_WRITE_NAME_SUFFIX)) {
-            return targetName
+    private fun targetName(target: StorageTarget): String {
+        val ownerName = target.temporaryWriteOwnerName
+        if (!ownerName.isNullOrEmpty()) {
+            return when (target) {
+                is StorageTarget.FileTarget -> normalizedFilePath(ownerName)
+                is StorageTarget.SafTarget -> ownerName
+            }
         }
-        val markerIndex = targetName.lastIndexOf(PENDING_AUDIO_WRITE_MARKER)
-        if (markerIndex <= 0) {
-            return targetName
+        return when (target) {
+            is StorageTarget.FileTarget -> normalizedFilePath(target.logicalPath)
+            is StorageTarget.SafTarget -> target.displayName
         }
-        val operationId = targetName.substring(
-            startIndex = markerIndex + PENDING_AUDIO_WRITE_MARKER.length,
-            endIndex = targetName.length - TEMPORARY_WRITE_NAME_SUFFIX.length
-        )
-        return targetName.substring(0, markerIndex)
-            .takeIf { runCatching { UUID.fromString(operationId) }.isSuccess }
-            ?: targetName
     }
 
     private fun normalizedFileParent(logicalPath: String): String {

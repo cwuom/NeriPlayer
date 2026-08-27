@@ -5006,6 +5006,21 @@ internal fun resolveEditSongInitialCoverUrl(
     }
 }
 
+internal fun resolveEditSongRestoredCoverUrl(
+    sourceCoverUrl: String?,
+    baselineCoverUrl: String
+): String {
+    val restoredSourceCover = sourceCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+    val restoredBaselineCover = baselineCoverUrl
+        .trim()
+        .takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        .orEmpty()
+    return restoredSourceCover ?: restoredBaselineCover
+}
+
 internal fun shouldApplyResolvedEditSongCover(
     userHasEdited: Boolean,
     currentCoverUrl: String,
@@ -5528,12 +5543,12 @@ fun EditSongInfoSheet(
                     shouldRestoreArtistBase = true
                 }
                 if (restoreCover) {
-                    val restoredCover = sourceInfo?.coverUrl ?: restoreBaseline.coverUrl
-                    if (sourceInfo == null || !restoredCover.isNullOrBlank()) {
-                        coverUrl = restoredCover.orEmpty()
-                        coverWasManuallyChanged = false
-                        shouldRestoreCoverBase = true
-                    }
+                    coverUrl = resolveEditSongRestoredCoverUrl(
+                        sourceCoverUrl = sourceInfo?.coverUrl,
+                        baselineCoverUrl = restoreBaseline.coverUrl
+                    )
+                    coverWasManuallyChanged = false
+                    shouldRestoreCoverBase = true
                 }
                 if (restoreLyrics) {
                     pendingLyricsDraft = null
@@ -6431,7 +6446,8 @@ fun EditSongInfoSheet(
                             song = actualSong,
                             title = songName,
                             artist = artistName,
-                            coverUrl = coverUrl
+                            coverUrl = coverUrl,
+                            hasPendingLyricsChange = shouldClearLyrics || shouldRestoreLyrics
                         )
                     ) {
                         clearEditSongInfoFocus()
@@ -6484,32 +6500,17 @@ fun EditSongInfoSheet(
     }
 
     if (showLocalMetadataWriteBackConfirm) {
-        AlertDialog(
-            onDismissRequest = { showLocalMetadataWriteBackConfirm = false },
-            title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
-            text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
-            confirmButton = {
-                HapticTextButton(
-                    enabled = !isSaving,
-                    onClick = {
-                        showLocalMetadataWriteBackConfirm = false
-                        saveEditedSongInfo(writeLocalMetadata = true)
-                    }
-                ) {
-                    Text(stringResource(R.string.local_song_metadata_write_confirm_write))
-                }
+        EditSongLocalMetadataWriteBackConfirmDialog(
+            isSaving = isSaving,
+            onWriteToLocal = {
+                showLocalMetadataWriteBackConfirm = false
+                saveEditedSongInfo(writeLocalMetadata = true)
             },
-            dismissButton = {
-                HapticTextButton(
-                    enabled = !isSaving,
-                    onClick = {
-                        showLocalMetadataWriteBackConfirm = false
-                        saveEditedSongInfo(writeLocalMetadata = false)
-                    }
-                ) {
-                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
-                }
-            }
+            onSaveInAppOnly = {
+                showLocalMetadataWriteBackConfirm = false
+                saveEditedSongInfo(writeLocalMetadata = false)
+            },
+            onCancel = { showLocalMetadataWriteBackConfirm = false }
         )
     }
 
@@ -6869,11 +6870,50 @@ fun EditSongInfoSheet(
     }
 }
 
+@Composable
+internal fun EditSongLocalMetadataWriteBackConfirmDialog(
+    isSaving: Boolean,
+    onWriteToLocal: () -> Unit,
+    onSaveInAppOnly: () -> Unit,
+    onCancel: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.local_song_metadata_write_confirm_title)) },
+        text = { Text(stringResource(R.string.local_song_metadata_write_confirm_message)) },
+        confirmButton = {
+            HapticTextButton(
+                enabled = !isSaving,
+                onClick = onWriteToLocal
+            ) {
+                Text(stringResource(R.string.local_song_metadata_write_confirm_write))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                HapticTextButton(
+                    enabled = !isSaving,
+                    onClick = onSaveInAppOnly
+                ) {
+                    Text(stringResource(R.string.local_song_metadata_write_confirm_app_only))
+                }
+                HapticTextButton(
+                    enabled = !isSaving,
+                    onClick = onCancel
+                ) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        }
+    )
+}
+
 internal fun shouldConfirmLocalMetadataWriteBack(
     song: SongItem,
     title: String,
     artist: String,
-    coverUrl: String
+    coverUrl: String,
+    hasPendingLyricsChange: Boolean = false
 ): Boolean {
     if (!song.isLocalSong()) {
         return false
@@ -6882,7 +6922,8 @@ internal fun shouldConfirmLocalMetadataWriteBack(
     val resolvedArtist = artist.trim().ifBlank { song.artist }
     val resolvedCoverUrl = coverUrl.trim().ifBlank { null }
     val currentCoverUrl = song.customCoverUrl ?: song.coverUrl
-    return !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
+    return hasPendingLyricsChange ||
+        !song.displayName().trim().equals(resolvedTitle, ignoreCase = false) ||
         !song.displayArtist().trim().equals(resolvedArtist, ignoreCase = false) ||
         currentCoverUrl?.trim() != resolvedCoverUrl
 }

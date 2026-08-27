@@ -336,7 +336,7 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
             )
         )
 
-        assertEquals(finalName, requireNotNull(promoted).name)
+        assertEquals(finalName, requireNotNull(promoted).audio.name)
         assertArrayEquals(payload, readDocument(requireTreeFile(treeRoot, finalName)))
         assertNull(treeRoot.findFile(pendingName))
     }

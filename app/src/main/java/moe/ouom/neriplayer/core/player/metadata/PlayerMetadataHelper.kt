@@ -73,13 +73,28 @@ internal fun resolveLocalCoverWriteReference(
     return reference?.trim()?.takeIf(String::isNotBlank)
 }
 
+internal fun shouldMaterializeRemoteLocalCover(
+    isLocalSong: Boolean,
+    requestedCoverReference: String?,
+    restoreBaseCover: Boolean,
+    persistManualRemoteCover: Boolean
+): Boolean {
+    return isLocalSong &&
+        (restoreBaseCover || persistManualRemoteCover) &&
+        requestedCoverReference?.trim()?.isRemoteCoverReference() == true
+}
+
 internal fun resolveRestoredBaseCoverUrl(
     originalCoverUrl: String?,
     baseCoverUrl: String?,
     currentCustomCoverUrl: String?,
     preferredLocalCoverUrl: String? = null,
+    requestedRestoreCoverUrl: String? = null,
     localOnly: Boolean = false
 ): String? {
+    val requestedRestoreCover = requestedRestoreCoverUrl
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
     val preferredLocalCover = preferredLocalCoverUrl
         ?.trim()
         ?.takeIf { it.isNotBlank() && !it.isRemoteCoverReference() }
@@ -91,11 +106,13 @@ internal fun resolveRestoredBaseCoverUrl(
         ?.trim()
         ?.takeIf { it.isNotBlank() && it != customCover }
     if (localOnly) {
-        return preferredLocalCover ?: originalCover
+        return requestedRestoreCover
+            ?.takeUnless(String::isRemoteCoverReference)
+            ?: preferredLocalCover ?: originalCover
             ?.takeUnless(String::isRemoteCoverReference)
             ?: baseCover?.takeUnless(String::isRemoteCoverReference)
     }
-    return preferredLocalCover ?: originalCover ?: baseCover ?: customCover.takeIf {
+    return requestedRestoreCover ?: preferredLocalCover ?: originalCover ?: baseCover ?: customCover.takeIf {
         originalCover == null && baseCover == null
     }
 }
