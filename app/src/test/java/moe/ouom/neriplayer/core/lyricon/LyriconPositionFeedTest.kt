@@ -165,13 +165,13 @@ class LyriconPositionFeedTest {
 
     @Test
     fun `display lead compensates status bar lag without stacking into anchor`() {
-        assertEquals(750L, LYRICON_DISPLAY_LEAD_MS)
+        assertEquals(400L, LYRICON_DISPLAY_LEAD_MS)
         assertEquals(
-            1_750L,
+            1_400L,
             displayLyriconPositionMs(mediaPositionMs = 1_000L, durationMs = 10_000L)
         )
         assertEquals(
-            10_000L,
+            9_900L,
             displayLyriconPositionMs(mediaPositionMs = 9_500L, durationMs = 10_000L)
         )
         // lead 不进媒体锚点: 同一 media 多次 display 结果稳定
@@ -185,7 +185,7 @@ class LyriconPositionFeedTest {
     @Test
     fun `display position applies lyric offset before display lead`() {
         assertEquals(
-            2_750L,
+            2_400L,
             displayLyriconPositionMs(
                 mediaPositionMs = 1_000L,
                 durationMs = 10_000L,
@@ -193,7 +193,7 @@ class LyriconPositionFeedTest {
             )
         )
         assertEquals(
-            1_250L,
+            900L,
             displayLyriconPositionMs(
                 mediaPositionMs = 1_000L,
                 durationMs = 10_000L,
@@ -205,7 +205,7 @@ class LyriconPositionFeedTest {
     @Test
     fun `negative lyric offset clamps before lead and output remains bounded`() {
         assertEquals(
-            750L,
+            400L,
             displayLyriconPositionMs(
                 mediaPositionMs = 100L,
                 durationMs = 10_000L,
