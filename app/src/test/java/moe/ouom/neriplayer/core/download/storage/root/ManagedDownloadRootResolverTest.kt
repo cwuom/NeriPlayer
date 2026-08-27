@@ -2,10 +2,15 @@ package moe.ouom.neriplayer.core.download.storage.root
 
 import android.content.ContentResolver
 import android.content.Context
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
@@ -29,5 +34,41 @@ class ManagedDownloadRootResolverTest {
 
         assertEquals(configuredUri, unavailableUri)
         assertNull(resolver.resolveRoot(context, configuredUri))
+    }
+
+    @Test
+    fun `provider failure remains typed instead of looking like a missing directory`() {
+        val providerError = IOException("provider unavailable")
+
+        val failure = assertThrows(ManagedDownloadRootProviderException::class.java) {
+            requireAccessibleManagedDownloadRoot(
+                reference = "content://provider/tree/root",
+                result = ManagedDownloadReferenceIo.AccessResult.ProviderFailure(providerError)
+            )
+        }
+
+        assertSame(providerError, failure.cause)
+    }
+
+    @Test
+    fun `missing and permission lost roots remain unavailable`() {
+        assertTrue(
+            requireAccessibleManagedDownloadRoot(
+                reference = "content://provider/tree/root",
+                result = ManagedDownloadReferenceIo.AccessResult.Accessible
+            )
+        )
+        assertFalse(
+            requireAccessibleManagedDownloadRoot(
+                reference = "content://provider/tree/root",
+                result = ManagedDownloadReferenceIo.AccessResult.Missing
+            )
+        )
+        assertFalse(
+            requireAccessibleManagedDownloadRoot(
+                reference = "content://provider/tree/root",
+                result = ManagedDownloadReferenceIo.AccessResult.PermissionLost
+            )
+        )
     }
 }

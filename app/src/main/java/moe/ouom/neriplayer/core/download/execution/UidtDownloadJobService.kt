@@ -14,6 +14,7 @@ import android.os.PersistableBundle
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
 class UidtDownloadJobService : JobService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runningJobs = ConcurrentHashMap<Int, Job>()
+    private val completionGates = ConcurrentHashMap<Int, UidtJobCompletionGate>()
 
     override fun onStartJob(params: JobParameters): Boolean {
         val operationId = params.extras
@@ -46,7 +48,7 @@ class UidtDownloadJobService : JobService() {
         try {
             setNotification(
                 params,
-                NOTIFICATION_ID,
+                DownloadExecutionNotificationIds.uidt(operationId),
                 buildNotification(operationId),
                 JOB_END_NOTIFICATION_POLICY_REMOVE
             )
@@ -56,7 +58,9 @@ class UidtDownloadJobService : JobService() {
                 "UIDT 前台通知初始化失败: operationId=$operationId, error=${error.message}",
                 error
             )
-            val failureJob = serviceScope.launch {
+            val completionGate = UidtJobCompletionGate()
+            lateinit var failureJob: Job
+            failureJob = serviceScope.launch(start = CoroutineStart.LAZY) {
                 try {
                     DownloadExecutionHosts.releaseHandoffAdmissionIfIdle(
                         context = applicationContext,
@@ -64,15 +68,22 @@ class UidtDownloadJobService : JobService() {
                     )
                 } finally {
                     withContext(NonCancellable + Dispatchers.Main) {
-                        runningJobs.remove(params.jobId)
-                        jobFinished(params, true)
+                        runningJobs.remove(params.jobId, failureJob)
+                        completionGates.remove(params.jobId, completionGate)
+                        if (completionGate.shouldReportCompletion()) {
+                            jobFinished(params, true)
+                        }
                     }
                 }
             }
+            completionGates[params.jobId] = completionGate
             runningJobs[params.jobId] = failureJob
+            failureJob.start()
             return true
         }
-        val job = serviceScope.launch {
+        val completionGate = UidtJobCompletionGate()
+        lateinit var job: Job
+        job = serviceScope.launch(start = CoroutineStart.LAZY) {
             var wantsReschedule = false
             try {
                 val result = DownloadExecutionHosts.default.execute(applicationContext, operationId)
@@ -90,12 +101,17 @@ class UidtDownloadJobService : JobService() {
                 )
             } finally {
                 withContext(NonCancellable + Dispatchers.Main) {
-                    runningJobs.remove(params.jobId)
-                    jobFinished(params, wantsReschedule)
+                    runningJobs.remove(params.jobId, job)
+                    completionGates.remove(params.jobId, completionGate)
+                    if (completionGate.shouldReportCompletion()) {
+                        jobFinished(params, wantsReschedule)
+                    }
                 }
             }
         }
+        completionGates[params.jobId] = completionGate
         runningJobs[params.jobId] = job
+        job.start()
         return true
     }
 
@@ -108,34 +124,38 @@ class UidtDownloadJobService : JobService() {
             stopReason = params.stopReason,
             sdkInt = Build.VERSION.SDK_INT
         )
-        params.extras
+        val operationId = params.extras
             .getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
-            ?.let { operationId ->
-                when (stopAction) {
-                    UidtStopAction.RETRY_WITHOUT_CANCELLING_BACKENDS -> {
-                        DownloadExecutionHosts.stopForSystemRetry(
-                            context = applicationContext,
-                            operationId = operationId
-                        )
-                    }
-
-                    UidtStopAction.STOP_AND_CANCEL_BACKENDS -> {
-                        DownloadExecutionHosts.default.stop(
-                            context = applicationContext,
-                            operationId = operationId,
-                            preventReschedule = userStopped
-                        )
-                    }
-                }
-            }
+        operationId?.let { normalizedId ->
+            DownloadExecutionHosts.prepareSchedulerStop(
+                operationId = normalizedId,
+                preventReschedule = userStopped
+            )
+        }
+        completionGates[params.jobId]?.markSchedulerStopped()
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
+        if (operationId != null) {
+            val accepted = UidtStopCoordinators.default.enqueue(
+                UidtStopRequest(
+                    context = applicationContext,
+                    operationId = operationId,
+                    action = stopAction,
+                    preventReschedule = userStopped
+                )
+            )
+            if (!accepted) {
+                NPLogger.e(TAG, "UIDT 停止收敛队列不可用: operationId=$operationId")
+            }
+        }
         return stopAction == UidtStopAction.RETRY_WITHOUT_CANCELLING_BACKENDS
     }
 
     override fun onDestroy() {
+        sealUidtCompletionGates(completionGates.values)
         serviceScope.cancel()
         runningJobs.clear()
+        completionGates.clear()
         super.onDestroy()
     }
 
@@ -166,7 +186,6 @@ class UidtDownloadJobService : JobService() {
         private const val TAG = "NERI-DownloadUidt"
         internal const val OPERATION_ID_KEY = "operation_id"
         private const val CHANNEL_ID = "download_execution"
-        private const val NOTIFICATION_ID = 0x4e50_0002
         internal const val UIDT_JOB_ID_MIN = 100_000
         internal const val UIDT_JOB_ID_MAX = 900_099_999
         private val scheduleLock = Any()
@@ -178,38 +197,46 @@ class UidtDownloadJobService : JobService() {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            return synchronized(scheduleLock) {
-                val pendingJobs = scheduler.allPendingJobs
-                val existingJob = pendingJobs.firstOrNull { job ->
-                    job.service == component &&
-                        job.extras.getString(OPERATION_ID_KEY) == normalizedId
-                }
-                if (existingJob != null) {
+            return scheduleUidtKeepingFallback(
+                scheduleFallback = {
+                    ForegroundDownloadWorker.scheduleFallback(context, normalizedId)
+                },
+                scheduleUidt = {
+                    synchronized(scheduleLock) {
+                        val pendingJobs = scheduler.allPendingJobs
+                        val existingJob = pendingJobs.firstOrNull { job ->
+                            job.service == component &&
+                                job.extras.getString(OPERATION_ID_KEY) == normalizedId
+                        }
+                        if (existingJob != null) {
+                            return@synchronized true
+                        }
+                        val occupiedJobIds = pendingJobs
+                            .asSequence()
+                            .filter { job -> job.service == component }
+                            .mapTo(linkedSetOf()) { job -> job.id }
+                        val selectedJobId = selectAvailableUidtJobId(
+                            normalizedId,
+                            occupiedJobIds
+                        ) ?: return@synchronized false
+                        val jobInfo = buildJobInfo(
+                            jobId = selectedJobId,
+                            component = component,
+                            operationId = normalizedId
+                        )
+                        val scheduled = runCatching {
+                            scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
+                        }.getOrDefault(false)
+                        if (!scheduled) {
+                            scheduler.cancel(selectedJobId)
+                        }
+                        scheduled
+                    }
+                },
+                cancelFallback = {
                     ForegroundDownloadWorker.cancelFallback(context, normalizedId)
-                    return@synchronized true
                 }
-                val occupiedJobIds = pendingJobs
-                    .asSequence()
-                    .filter { job -> job.service == component }
-                    .mapTo(linkedSetOf()) { job -> job.id }
-                val selectedJobId = selectAvailableUidtJobId(normalizedId, occupiedJobIds)
-                    ?: return@synchronized false
-                val jobInfo = buildJobInfo(
-                    jobId = selectedJobId,
-                    component = component,
-                    operationId = normalizedId
-                )
-                val scheduled = runCatching {
-                    scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
-                }.getOrDefault(false)
-                if (!scheduled) {
-                    scheduler.cancel(selectedJobId)
-                    ForegroundDownloadWorker.cancelFallback(context, normalizedId)
-                    return@synchronized false
-                }
-                ForegroundDownloadWorker.cancelFallback(context, normalizedId)
-                true
-            }
+            )
         }
 
         internal fun buildJobInfo(
@@ -318,6 +345,19 @@ class UidtDownloadJobService : JobService() {
             return null
         }
     }
+}
+
+internal fun scheduleUidtKeepingFallback(
+    scheduleFallback: () -> Unit,
+    scheduleUidt: () -> Boolean,
+    cancelFallback: () -> Unit
+): Boolean {
+    scheduleFallback()
+    val scheduled = scheduleUidt()
+    if (!scheduled) {
+        cancelFallback()
+    }
+    return scheduled
 }
 
 internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boolean {

@@ -93,6 +93,87 @@ class LocalScanPreviewHydrationStateTest {
     }
 
     @Test
+    fun `metadata only drops selection when hydration finds no meaningful metadata`() {
+        val quickSong = localSong(
+            id = 13L,
+            name = "track.mp3",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY
+        )
+        val hydratedSong = quickSong.copy(artist = "", album = "")
+        val state = LocalScanPreviewState(
+            visible = true,
+            songs = listOf(quickSong),
+            metadataOnly = true,
+            metadataPendingKeys = setOf(quickSong.stableKey()),
+            selectedKeys = setOf(quickSong.stableKey())
+        )
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(hydratedSong),
+            progress = state.scanProgress,
+            hasMeaningfulMetadata = { false }
+        )
+
+        assertEquals(emptySet<String>(), updated.selectedKeys)
+        assertEquals(emptySet<String>(), updated.metadataPendingKeys)
+    }
+
+    @Test
+    fun `hydration reapplies active existing and duplicate filters`() {
+        val existingSong = localSong(id = 14L, name = "Existing")
+        val duplicateSong = localSong(id = 15L, name = "Duplicate")
+        val state = LocalScanPreviewState(
+            visible = true,
+            songs = listOf(existingSong, duplicateSong),
+            hideExistingLocalPlaylistSongs = true,
+            existingLocalPlaylistKeys = setOf(existingSong.stableKey()),
+            hideDuplicateMetadataSongs = true,
+            duplicateMetadataKeys = setOf(duplicateSong.stableKey()),
+            metadataPendingKeys = setOf(existingSong.stableKey(), duplicateSong.stableKey()),
+            selectedKeys = setOf(existingSong.stableKey(), duplicateSong.stableKey())
+        )
+        val hydratedExisting = existingSong.copy(album = "Existing album")
+        val hydratedDuplicate = duplicateSong.copy(album = "Duplicate album")
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(hydratedExisting, hydratedDuplicate),
+            progress = state.scanProgress
+        )
+
+        assertEquals(emptySet<String>(), updated.selectedKeys)
+        assertEquals(setOf(hydratedExisting.stableKey()), updated.existingLocalPlaylistKeys)
+        assertEquals(setOf(hydratedDuplicate.stableKey()), updated.duplicateMetadataKeys)
+    }
+
+    @Test
+    fun `metadata only keeps selection when hydration finds meaningful metadata`() {
+        val quickSong = localSong(
+            id = 16L,
+            name = "Artist - Track",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY
+        )
+        val hydratedSong = quickSong.copy(album = "Album")
+        val state = LocalScanPreviewState(
+            visible = true,
+            songs = listOf(quickSong),
+            metadataOnly = true,
+            metadataPendingKeys = setOf(quickSong.stableKey()),
+            selectedKeys = setOf(quickSong.stableKey())
+        )
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(hydratedSong),
+            progress = state.scanProgress,
+            hasMeaningfulMetadata = { true }
+        )
+
+        assertEquals(setOf(hydratedSong.stableKey()), updated.selectedKeys)
+    }
+
+    @Test
     fun `metadata refresh candidates keep the newest song for each stable key`() {
         val firstSong = localSong(id = 4L, name = "First")
         val replacement = firstSong.copy(name = "First updated")

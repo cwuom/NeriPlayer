@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.ForegroundInfo
 import androidx.work.OneTimeWorkRequestBuilder
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
@@ -27,6 +29,192 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.data.settings.SettingsRepository
+import kotlin.math.roundToInt
+
+internal fun migrationProgressToWorkData(
+    progress: ManagedDownloadStorage.MigrationProgress
+): Data {
+    return workDataOf(
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_STAGE to progress.stage.name,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_FRACTION to progress.fraction,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_PROCESSED_FILES to progress.processedFiles,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_TOTAL_FILES to progress.totalFiles,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_COPIED_FILES to progress.copiedFiles,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_COPIED_BYTES to progress.copiedBytes,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_TOTAL_BYTES to progress.totalBytes,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_METADATA_FILES_PROCESSED to
+            progress.metadataFilesProcessed,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_METADATA_FILES_TOTAL to
+            progress.metadataFilesTotal,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_FILES_PROCESSED to
+            progress.verificationFilesProcessed,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_FILES_TOTAL to
+            progress.verificationFilesTotal,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFIED_BYTES to progress.verifiedBytes,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_BYTES_TOTAL to
+            progress.verificationBytesTotal,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_CLEANUP_FILES_PROCESSED to
+            progress.cleanupFilesProcessed,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_CLEANUP_FILES_TOTAL to
+            progress.cleanupFilesTotal,
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_HAS_CURRENT_FILE to
+            (progress.currentFileName != null),
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_CURRENT_FILE to
+            (progress.currentFileName ?: "")
+    )
+}
+
+internal fun migrationProgressFromWorkData(
+    data: Data
+): ManagedDownloadStorage.MigrationProgress? {
+    val stage = data.getString(ManagedDownloadMigrationWorker.KEY_PROGRESS_STAGE)
+        ?.let { name ->
+            ManagedDownloadStorage.MigrationStage.entries.firstOrNull { stage ->
+                stage.name == name
+            }
+        }
+        ?: return null
+    val totalFiles = data.getInt(
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_TOTAL_FILES,
+        0
+    ).coerceAtLeast(0)
+    val processedFiles = data.getInt(
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_PROCESSED_FILES,
+        0
+    ).coerceAtLeast(0)
+    val legacyStageProcessed = inferLegacyStageProcessed(data, stage, totalFiles)
+    val legacyCopiedFiles = when (stage) {
+        ManagedDownloadStorage.MigrationStage.PREPARING -> 0
+        ManagedDownloadStorage.MigrationStage.COPYING -> processedFiles.coerceAtMost(totalFiles)
+        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA,
+        ManagedDownloadStorage.MigrationStage.VERIFYING,
+        ManagedDownloadStorage.MigrationStage.CLEANING_UP,
+        ManagedDownloadStorage.MigrationStage.FINALIZING -> totalFiles
+    }
+    return ManagedDownloadStorage.MigrationProgress(
+        stage = stage,
+        totalFiles = totalFiles,
+        processedFiles = processedFiles,
+        copiedFiles = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_COPIED_FILES,
+            legacyCopiedFiles
+        ),
+        copiedBytes = data.getLong(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_COPIED_BYTES,
+            0L
+        ),
+        totalBytes = data.getLong(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_TOTAL_BYTES,
+            0L
+        ),
+        metadataFilesProcessed = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_METADATA_FILES_PROCESSED,
+            if (stage == ManagedDownloadStorage.MigrationStage.REWRITING_METADATA) {
+                legacyStageProcessed
+            } else {
+                0
+            }
+        ),
+        metadataFilesTotal = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_METADATA_FILES_TOTAL,
+            if (stage == ManagedDownloadStorage.MigrationStage.REWRITING_METADATA) {
+                totalFiles
+            } else {
+                0
+            }
+        ),
+        cleanupFilesProcessed = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_CLEANUP_FILES_PROCESSED,
+            if (stage == ManagedDownloadStorage.MigrationStage.CLEANING_UP) {
+                legacyStageProcessed
+            } else {
+                0
+            }
+        ),
+        cleanupFilesTotal = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_CLEANUP_FILES_TOTAL,
+            if (stage == ManagedDownloadStorage.MigrationStage.CLEANING_UP) {
+                totalFiles
+            } else {
+                0
+            }
+        ),
+        currentFileName = if (
+            data.keyValueMap.containsKey(
+                ManagedDownloadMigrationWorker.KEY_PROGRESS_HAS_CURRENT_FILE
+            )
+        ) {
+            data.getString(ManagedDownloadMigrationWorker.KEY_PROGRESS_CURRENT_FILE)
+                .takeIf {
+                    data.getBoolean(
+                        ManagedDownloadMigrationWorker.KEY_PROGRESS_HAS_CURRENT_FILE,
+                        false
+                    )
+                }
+        } else {
+            data.getString(ManagedDownloadMigrationWorker.KEY_PROGRESS_CURRENT_FILE)
+                ?.takeIf(String::isNotBlank)
+        },
+        verificationFilesProcessed = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_FILES_PROCESSED,
+            if (stage == ManagedDownloadStorage.MigrationStage.VERIFYING) {
+                legacyStageProcessed
+            } else {
+                0
+            }
+        ),
+        verificationFilesTotal = data.getInt(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_FILES_TOTAL,
+            if (stage == ManagedDownloadStorage.MigrationStage.VERIFYING) {
+                totalFiles
+            } else {
+                0
+            }
+        ),
+        verifiedBytes = data.getLong(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFIED_BYTES,
+            0L
+        ).coerceAtLeast(0L),
+        verificationBytesTotal = data.getLong(
+            ManagedDownloadMigrationWorker.KEY_PROGRESS_VERIFICATION_BYTES_TOTAL,
+            0L
+        ).coerceAtLeast(0L)
+    )
+}
+
+private fun inferLegacyStageProcessed(
+    data: Data,
+    stage: ManagedDownloadStorage.MigrationStage,
+    totalFiles: Int
+): Int {
+    if (totalFiles <= 0) return 0
+    val fraction = data.getFloat(
+        ManagedDownloadMigrationWorker.KEY_PROGRESS_FRACTION,
+        0f
+    ).coerceIn(0f, 1f)
+    val stageFraction = when (stage) {
+        ManagedDownloadStorage.MigrationStage.PREPARING -> 0f
+        ManagedDownloadStorage.MigrationStage.COPYING -> (fraction - 0.02f) / 0.83f
+        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA -> (fraction - 0.85f) / 0.10f
+        ManagedDownloadStorage.MigrationStage.VERIFYING -> (fraction - 0.92f) / 0.05f
+        ManagedDownloadStorage.MigrationStage.CLEANING_UP -> (fraction - 0.95f) / 0.04f
+        ManagedDownloadStorage.MigrationStage.FINALIZING -> 1f
+    }.coerceIn(0f, 1f)
+    return (stageFraction * totalFiles).roundToInt().coerceIn(0, totalFiles)
+}
+
+internal fun shouldRetryMigrationFailure(
+    error: Throwable,
+    runAttemptCount: Int,
+    maxRetryAttempts: Int
+): Boolean {
+    if (runAttemptCount >= maxRetryAttempts) return false
+    return when (error) {
+        is ManagedDownloadMigrationException -> error.retryable
+        is IOException -> true
+        else -> false
+    }
+}
 
 class ManagedDownloadMigrationWorker(
     context: Context,
@@ -51,15 +239,7 @@ class ManagedDownloadMigrationWorker(
                             percentDelta = WORK_PROGRESS_PERCENT_DELTA
                         )
                     ) {
-                        setProgress(
-                            workDataOf(
-                                KEY_PROGRESS_STAGE to progress.stage.name,
-                                KEY_PROGRESS_FRACTION to progress.fraction,
-                                KEY_PROGRESS_PROCESSED_FILES to progress.processedFiles,
-                                KEY_PROGRESS_TOTAL_FILES to progress.totalFiles,
-                                KEY_PROGRESS_CURRENT_FILE to (progress.currentFileName ?: "")
-                            )
-                        )
+                        setProgress(migrationProgressToWorkData(progress))
                         workProgressState = updateMigrationProgressThrottleState(progress, nowMs)
                     }
                     if (
@@ -86,21 +266,36 @@ class ManagedDownloadMigrationWorker(
     }
 
     private suspend fun runMigration(): Result {
+        val migrationWorkId = id.toString()
+        val checkpointStore = ManagedDownloadMigrationCheckpointStore(applicationContext)
         try {
             val fromDirectoryUri = inputData.getString(KEY_FROM_DIRECTORY_URI)
             val toDirectoryUri = inputData.getString(KEY_TO_DIRECTORY_URI)
             val targetLabel = inputData.getString(KEY_TARGET_LABEL)
             val releasePreviousPermission = inputData.getBoolean(KEY_RELEASE_PREVIOUS_PERMISSION, false)
-            val minimumSourceEntryCount = inputData
-                .getInt(KEY_MINIMUM_SOURCE_ENTRY_COUNT, 0)
-                .coerceAtLeast(0)
+            val minimumSourceEntryCount = maxOf(
+                inputData.getInt(KEY_MINIMUM_SOURCE_ENTRY_COUNT, 0),
+                checkpointStore.readMinimumAudioCount(migrationWorkId)
+            ).coerceAtLeast(0)
+            val settingsRepository = SettingsRepository(applicationContext)
+            val targetPreviouslyCommitted = ManagedDownloadStorage.areEquivalentDirectoryUris(
+                settingsRepository.downloadDirectoryUriFlow.first(),
+                toDirectoryUri
+            )
             val migrationResult = ManagedDownloadStorage.migrateManagedDownloads(
                 context = applicationContext,
                 fromDirectoryUri = fromDirectoryUri,
                 toDirectoryUri = toDirectoryUri,
                 minimumSourceEntryCount = minimumSourceEntryCount,
+                targetPreviouslyCommitted = targetPreviouslyCommitted,
+                onSourceAudioCountResolved = { resolvedMinimumAudioCount ->
+                    checkpointStore.recordMinimumAudioCount(
+                        workId = migrationWorkId,
+                        minimumAudioCount = resolvedMinimumAudioCount
+                    )
+                },
                 onTargetVerified = {
-                    SettingsRepository(applicationContext).setDownloadDirectory(
+                    settingsRepository.setDownloadDirectory(
                         uri = toDirectoryUri,
                         label = targetLabel
                     )
@@ -121,30 +316,48 @@ class ManagedDownloadMigrationWorker(
                 applicationContext,
                 forceRefresh = true
             )
+            when (migrationCleanupWorkDecision(migrationResult)) {
+                MigrationCleanupWorkDecision.RETRY -> return Result.retry()
+                MigrationCleanupWorkDecision.FAILURE -> {
+                    return Result.failure(
+                        workDataOf(
+                            KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles,
+                            KEY_VERIFIED_MINIMUM_AUDIO_COUNT to
+                                checkpointStore.readMinimumAudioCount(migrationWorkId)
+                        )
+                    )
+                }
+                MigrationCleanupWorkDecision.COMPLETE -> Unit
+            }
             if (releasePreviousPermission && migrationResult.canReleasePreviousPermission) {
                 ManagedDownloadStorage.releasePersistedDirectoryPermission(
                     applicationContext,
                     fromDirectoryUri
                 )
             }
+            val verifiedMinimumAudioCount = checkpointStore.readMinimumAudioCount(migrationWorkId)
+            checkpointStore.clear(migrationWorkId)
             return Result.success(
                 workDataOf(
                     KEY_MOVED_FILES to migrationResult.movedFiles,
-                    KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles
+                    KEY_CLEANUP_FAILED_FILES to migrationResult.cleanupFailedFiles,
+                    KEY_VERIFIED_MINIMUM_AUDIO_COUNT to verifiedMinimumAudioCount
                 )
             )
         } catch (error: CancellationException) {
             throw error
-        } catch (error: ManagedDownloadMigrationException) {
-            if (error.retryable && runAttemptCount < MAX_RETRY_ATTEMPTS) {
-                return Result.retry()
-            } else {
-                return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
-            }
-        } catch (error: IOException) {
-            return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
         } catch (error: Exception) {
-            return Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+            return if (
+                shouldRetryMigrationFailure(
+                    error = error,
+                    runAttemptCount = runAttemptCount,
+                    maxRetryAttempts = MAX_RETRY_ATTEMPTS
+                )
+            ) {
+                Result.retry()
+            } else {
+                Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
+            }
         }
     }
 
@@ -202,11 +415,29 @@ class ManagedDownloadMigrationWorker(
         const val KEY_MOVED_FILES = "moved_files"
         const val KEY_SKIPPED_FILES = "skipped_files"
         const val KEY_CLEANUP_FAILED_FILES = "cleanup_failed_files"
+        const val KEY_VERIFIED_MINIMUM_AUDIO_COUNT = "verified_minimum_audio_count"
         const val KEY_ERROR_MESSAGE = "error_message"
         const val KEY_PROGRESS_STAGE = "progress_stage"
         const val KEY_PROGRESS_FRACTION = "progress_fraction"
         const val KEY_PROGRESS_PROCESSED_FILES = "progress_processed_files"
         const val KEY_PROGRESS_TOTAL_FILES = "progress_total_files"
+        const val KEY_PROGRESS_COPIED_FILES = "progress_copied_files"
+        const val KEY_PROGRESS_COPIED_BYTES = "progress_copied_bytes"
+        const val KEY_PROGRESS_TOTAL_BYTES = "progress_total_bytes"
+        const val KEY_PROGRESS_METADATA_FILES_PROCESSED =
+            "progress_metadata_files_processed"
+        const val KEY_PROGRESS_METADATA_FILES_TOTAL = "progress_metadata_files_total"
+        const val KEY_PROGRESS_VERIFICATION_FILES_PROCESSED =
+            "progress_verification_files_processed"
+        const val KEY_PROGRESS_VERIFICATION_FILES_TOTAL =
+            "progress_verification_files_total"
+        const val KEY_PROGRESS_VERIFIED_BYTES = "progress_verified_bytes"
+        const val KEY_PROGRESS_VERIFICATION_BYTES_TOTAL =
+            "progress_verification_bytes_total"
+        const val KEY_PROGRESS_CLEANUP_FILES_PROCESSED =
+            "progress_cleanup_files_processed"
+        const val KEY_PROGRESS_CLEANUP_FILES_TOTAL = "progress_cleanup_files_total"
+        const val KEY_PROGRESS_HAS_CURRENT_FILE = "progress_has_current_file"
         const val KEY_PROGRESS_CURRENT_FILE = "progress_current_file"
 
         private const val NOTIFICATION_CHANNEL_ID = "managed_download_migration"

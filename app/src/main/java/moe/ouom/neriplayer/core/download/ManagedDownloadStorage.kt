@@ -9,6 +9,7 @@ import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -36,6 +37,7 @@ import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_INDEX_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.download.storage.SAF_COMMITTED_SIZE_TOLERANCE_BYTES
 import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
@@ -64,10 +66,15 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationNamePlanner
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationPolicy
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationTargetIndexBuilder
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationCleanupResult
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationMetadataRewriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressReporter
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationVerificationResult
 import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
+import moe.ouom.neriplayer.core.download.storage.migration.requireSuccessfulMigrationCopies
+import moe.ouom.neriplayer.core.download.storage.migration.resolveMinimumMigrationAudioCount
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.recovery.PersistentTerminalTemporaryWriteCleanupJournal
@@ -80,6 +87,7 @@ import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWrite
 import moe.ouom.neriplayer.core.download.storage.recovery.TerminalTemporaryWriteCleanupTarget
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootUnavailableException
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootResolver
 import moe.ouom.neriplayer.core.download.storage.sidecar.ManagedDownloadLyricStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
@@ -103,6 +111,16 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutatio
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndex
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexEntryFactory
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationCoordinator
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationResult
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutationLocks
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexMutator
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildResult
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexRebuildToken
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardReadResult
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardStorage
+import moe.ouom.neriplayer.core.download.index.ManagedLibraryFastIndexShardWriteResult
 import moe.ouom.neriplayer.core.download.index.ManagedLibraryIndexEntry
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
@@ -132,6 +150,7 @@ internal object ManagedDownloadStorage {
     private const val LOG_HOT_AUDIO_HITS = false
     private const val SIDECAR_REFRESH_THROTTLE_MS = 400L
     private const val FAST_LYRICS_SLOW_LOG_MS = 120L
+    private const val FAST_INDEX_MANIFEST_LOCK_SHARD = "__manifest__"
 
     private val snapshotBuildLock = Any()
     private val sidecarRefreshLock = Any()
@@ -187,6 +206,9 @@ internal object ManagedDownloadStorage {
         treeDirectories = treeDirectories,
         tag = TAG
     )
+    private val fastIndexManifestLocks = ManagedLibraryFastIndexMutationLocks()
+    private val fastIndexMutationCoordinator = ManagedLibraryFastIndexMutationCoordinator()
+    private val fastIndexMutator = ManagedLibraryFastIndexMutator()
     private val migrationCopyWorker = ManagedDownloadMigrationCopyWorker(
         tag = TAG,
         openInputStream = { context, entry -> openStoredEntryInputStream(context, entry) },
@@ -257,11 +279,18 @@ internal object ManagedDownloadStorage {
                 root = root
             )
         },
-        deleteReferences = { context, references, root ->
+        deleteReferences = {
+                context,
+                references,
+                root,
+                onDeleteStarted,
+                onDeleteFinished ->
             deleteEnumeratedMigrationReferences(
                 context = context,
                 references = references,
-                root = root
+                root = root,
+                onDeleteStarted = onDeleteStarted,
+                onDeleteFinished = onDeleteFinished
             )
         },
         rewriteMetadataReferences = ::rewriteManagedMetadataReferences
@@ -451,19 +480,25 @@ internal object ManagedDownloadStorage {
     data class MigrationResult(
         val movedFiles: Int,
         val skippedFiles: Int,
-        val cleanupFailedFiles: Int = 0
+        val cleanupFailedFiles: Int = 0,
+        val cleanupRetryableFailedFiles: Int = 0
     ) {
         val canSwitchDirectory: Boolean
             get() = skippedFiles == 0
 
         val canReleasePreviousPermission: Boolean
             get() = canSwitchDirectory && cleanupFailedFiles == 0
+
+        val hasOnlyRetryableCleanupFailures: Boolean
+            get() = cleanupFailedFiles > 0 &&
+                cleanupRetryableFailedFiles == cleanupFailedFiles
     }
 
     enum class MigrationStage {
         PREPARING,
         COPYING,
         REWRITING_METADATA,
+        VERIFYING,
         CLEANING_UP,
         FINALIZING
     }
@@ -479,13 +514,18 @@ internal object ManagedDownloadStorage {
         val metadataFilesTotal: Int,
         val cleanupFilesProcessed: Int,
         val cleanupFilesTotal: Int,
-        val currentFileName: String? = null
+        val currentFileName: String? = null,
+        val verificationFilesProcessed: Int = 0,
+        val verificationFilesTotal: Int = 0,
+        val verifiedBytes: Long = 0L,
+        val verificationBytesTotal: Long = 0L
     ) {
         val stageProcessed: Int
             get() = when (stage) {
                 MigrationStage.PREPARING -> 0
                 MigrationStage.COPYING -> copiedFiles
                 MigrationStage.REWRITING_METADATA -> metadataFilesProcessed
+                MigrationStage.VERIFYING -> verificationFilesProcessed
                 MigrationStage.CLEANING_UP -> cleanupFilesProcessed
                 MigrationStage.FINALIZING -> totalFiles
             }
@@ -495,6 +535,7 @@ internal object ManagedDownloadStorage {
                 MigrationStage.PREPARING -> totalFiles
                 MigrationStage.COPYING -> totalFiles
                 MigrationStage.REWRITING_METADATA -> metadataFilesTotal
+                MigrationStage.VERIFYING -> verificationFilesTotal
                 MigrationStage.CLEANING_UP -> cleanupFilesTotal
                 MigrationStage.FINALIZING -> totalFiles
             }
@@ -510,6 +551,18 @@ internal object ManagedDownloadStorage {
                     metadataFilesTotal <= 0 -> 1f
                     else -> (metadataFilesProcessed.toFloat() / metadataFilesTotal.toFloat()).coerceIn(0f, 1f)
                 }
+                val verificationProgress = when {
+                    verificationBytesTotal > 0L -> {
+                        (verifiedBytes.toDouble() / verificationBytesTotal.toDouble())
+                            .toFloat()
+                            .coerceIn(0f, 1f)
+                    }
+                    verificationFilesTotal <= 0 -> 1f
+                    else -> {
+                        (verificationFilesProcessed.toFloat() / verificationFilesTotal.toFloat())
+                            .coerceIn(0f, 1f)
+                    }
+                }
                 val cleanupProgress = when {
                     cleanupFilesTotal <= 0 -> 1f
                     else -> (cleanupFilesProcessed.toFloat() / cleanupFilesTotal.toFloat()).coerceIn(0f, 1f)
@@ -517,8 +570,9 @@ internal object ManagedDownloadStorage {
                 return when (stage) {
                     MigrationStage.PREPARING -> 0.02f
                     MigrationStage.COPYING -> 0.02f + copyProgress * 0.83f
-                    MigrationStage.REWRITING_METADATA -> 0.85f + rewriteProgress * 0.10f
-                    MigrationStage.CLEANING_UP -> 0.95f + cleanupProgress * 0.04f
+                    MigrationStage.REWRITING_METADATA -> 0.85f + rewriteProgress * 0.07f
+                    MigrationStage.VERIFYING -> 0.92f + verificationProgress * 0.05f
+                    MigrationStage.CLEANING_UP -> 0.97f + cleanupProgress * 0.02f
                     MigrationStage.FINALIZING -> 1f
                 }.coerceIn(0f, 1f)
             }
@@ -689,6 +743,9 @@ internal object ManagedDownloadStorage {
 
     suspend fun hasMigratableDownloads(context: Context, directoryUri: String?): Boolean = withContext(Dispatchers.IO) {
         val root = resolveRoot(context, directoryUri) ?: return@withContext false
+        if (readManagedLibraryIdBlocking(context, root) != null) {
+            return@withContext true
+        }
         collectManagedMigrationEntries(
             context = context,
             root = root,
@@ -701,6 +758,8 @@ internal object ManagedDownloadStorage {
         fromDirectoryUri: String?,
         toDirectoryUri: String?,
         minimumSourceEntryCount: Int = 0,
+        targetPreviouslyCommitted: Boolean = false,
+        onSourceAudioCountResolved: suspend (Int) -> Unit = {},
         onTargetVerified: suspend () -> Unit = {}
     ): MigrationResult = withContext(Dispatchers.IO) {
         try {
@@ -709,20 +768,57 @@ internal object ManagedDownloadStorage {
                 return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
             }
 
-            val sourceRoot = resolveRoot(context, fromDirectoryUri)
-                ?: throw ManagedDownloadMigrationException.permanent("源下载目录不可用")
             val targetRoot = resolveRoot(context, toDirectoryUri)
                 ?: throw ManagedDownloadMigrationException.permanent("目标下载目录不可用")
+            val sourceRoot = resolveRoot(context, fromDirectoryUri)
+            if (sourceRoot == null) {
+                if (!targetPreviouslyCommitted) {
+                    throw ManagedDownloadMigrationException.permanent("源下载目录不可用")
+                }
+                verifyPreviouslyCommittedMigrationTarget(
+                    context = context,
+                    targetRoot = targetRoot,
+                    toDirectoryUri = toDirectoryUri,
+                    minimumAudioCount = minimumSourceEntryCount
+                )
+                onTargetVerified()
+                return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
+            }
 
             val entries = collectManagedMigrationEntries(
                 context = context,
                 root = sourceRoot,
                 allowMetadataLessAudio = shouldIndexMetadataLessAudio(fromDirectoryUri)
             )
+            val minimumAudioCount = resolveMinimumMigrationAudioCount(
+                requestedMinimum = minimumSourceEntryCount,
+                discoveredSourceAudioCount = entries.count { migrationEntry ->
+                    migrationEntry.subdirectory == null &&
+                        migrationEntry.entry.extension in audioExtensions
+                }
+            )
+            onSourceAudioCountResolved(minimumAudioCount)
+            fun verifyCommittedTargetBeforeReturningFailure() {
+                if (!targetPreviouslyCommitted) return
+                verifyPreviouslyCommittedMigrationTarget(
+                    context = context,
+                    targetRoot = targetRoot,
+                    toDirectoryUri = toDirectoryUri,
+                    minimumAudioCount = minimumAudioCount
+                )
+            }
             if (entries.isEmpty()) {
-                if (minimumSourceEntryCount > 0) {
-                    throw ManagedDownloadMigrationException.permanent(
-                        "源下载目录未返回已缓存的下载文件"
+                if (minimumAudioCount > 0) {
+                    if (!targetPreviouslyCommitted) {
+                        throw ManagedDownloadMigrationException.permanent(
+                            "源下载目录未返回已缓存的下载文件"
+                        )
+                    }
+                    verifyPreviouslyCommittedMigrationTarget(
+                        context = context,
+                        targetRoot = targetRoot,
+                        toDirectoryUri = toDirectoryUri,
+                        minimumAudioCount = minimumAudioCount
                     )
                 }
                 onTargetVerified()
@@ -776,41 +872,54 @@ internal object ManagedDownloadStorage {
                 entriesChannel.close()
                 workers.awaitAll().flatten()
             }
-            val copiedEntries = copyResults.mapNotNull { it.copiedEntry }
-            val skippedFiles = copyResults.count { it.copiedEntry == null }
-
-            if (skippedFiles > 0) {
-                rollbackMigratedEntries(context, copiedEntries, targetRoot)
-                return@withContext MigrationResult(
-                    movedFiles = 0,
-                    skippedFiles = skippedFiles
-                )
+            var copiedEntries = try {
+                requireSuccessfulMigrationCopies(copyResults) { completedEntries ->
+                    rollbackMigratedEntries(context, completedEntries, targetRoot)
+                }
+            } catch (error: ManagedDownloadMigrationException) {
+                verifyCommittedTargetBeforeReturningFailure()
+                throw error
             }
 
-            val rewriteFailedFiles = rewriteMigratedMetadataReferences(
+            val rewriteResult = rewriteMigratedMetadataReferences(
                 context = context,
                 targetRoot = targetRoot,
                 copiedEntries = copiedEntries,
                 progressTracker = progressTracker
             )
-            if (rewriteFailedFiles > 0) {
+            copiedEntries = rewriteResult.copiedEntries
+            if (rewriteResult.failedFiles > 0) {
                 rollbackMigratedEntries(context, copiedEntries, targetRoot)
+                verifyCommittedTargetBeforeReturningFailure()
+                rewriteResult.error?.let { error -> throw error }
                 return@withContext MigrationResult(
                     movedFiles = 0,
-                    skippedFiles = rewriteFailedFiles
+                    skippedFiles = rewriteResult.failedFiles
                 )
             }
 
-            val verificationFailedFiles = verifyMigratedEntries(
+            val verificationResult = verifyMigratedEntries(
                 context = context,
                 targetRoot = targetRoot,
-                copiedEntries = copiedEntries
+                copiedEntries = copiedEntries,
+                progressTracker = progressTracker
             )
-            if (verificationFailedFiles > 0) {
+            if (verificationResult.failedFiles > 0) {
                 rollbackMigratedEntries(context, copiedEntries, targetRoot)
+                verifyCommittedTargetBeforeReturningFailure()
+                verificationResult.error?.let { error -> throw error }
                 return@withContext MigrationResult(
                     movedFiles = 0,
-                    skippedFiles = verificationFailedFiles
+                    skippedFiles = verificationResult.failedFiles
+                )
+            }
+
+            if (targetPreviouslyCommitted) {
+                verifyPreviouslyCommittedMigrationTarget(
+                    context = context,
+                    targetRoot = targetRoot,
+                    toDirectoryUri = toDirectoryUri,
+                    minimumAudioCount = minimumAudioCount
                 )
             }
 
@@ -821,7 +930,7 @@ internal object ManagedDownloadStorage {
                 throw error
             }
 
-            val cleanupFailedFiles = cleanupMigratedEntries(
+            val cleanupResult = cleanupMigratedEntriesDetailed(
                 context = context,
                 copiedEntries = copiedEntries,
                 sourceRoot = sourceRoot,
@@ -835,10 +944,40 @@ internal object ManagedDownloadStorage {
             MigrationResult(
                 movedFiles = copiedEntries.size,
                 skippedFiles = 0,
-                cleanupFailedFiles = cleanupFailedFiles
+                cleanupFailedFiles = cleanupResult.failedFiles,
+                cleanupRetryableFailedFiles = cleanupResult.retryableFailedFiles
+            )
+        } catch (error: ManagedDownloadRootProviderException) {
+            throw ManagedDownloadMigrationException.transient(
+                "DocumentsProvider 暂时无法访问迁移目录",
+                error
             )
         } finally {
             _migrationProgressFlow.value = null
+        }
+    }
+
+    private fun verifyPreviouslyCommittedMigrationTarget(
+        context: Context,
+        targetRoot: RootHandle,
+        toDirectoryUri: String?,
+        minimumAudioCount: Int
+    ) {
+        if (minimumAudioCount <= 0) return
+        val targetEntries = collectManagedMigrationEntries(
+            context = context,
+            root = targetRoot,
+            allowMetadataLessAudio = shouldIndexMetadataLessAudio(toDirectoryUri)
+        )
+        val targetAudioCount = targetEntries.count { migrationEntry ->
+            migrationEntry.subdirectory == null &&
+                migrationEntry.entry.extension in audioExtensions
+        }
+        if (targetAudioCount < minimumAudioCount) {
+            throw ManagedDownloadMigrationException.transient(
+                "已提交的目标下载目录文件不足: " +
+                    "expected=$minimumAudioCount, actual=$targetAudioCount"
+            )
         }
     }
 
@@ -1524,17 +1663,342 @@ internal object ManagedDownloadStorage {
 
     suspend fun buildDownloadLibrarySnapshot(
         context: Context,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        includeMetadataLessAudioForLegacyUpgrade: Boolean = false
     ): DownloadLibrarySnapshot = withContext(Dispatchers.IO) {
-        buildDownloadLibrarySnapshotBlocking(context, forceRefresh)
+        buildDownloadLibrarySnapshotBlocking(
+            context = context,
+            forceRefresh = forceRefresh,
+            includeMetadataLessAudioForLegacyUpgrade =
+                includeMetadataLessAudioForLegacyUpgrade
+        )
+    }
+
+    internal suspend fun upsertCompleteFastIndexEntry(
+        context: Context,
+        entry: ManagedLibraryIndexEntry
+    ): ManagedLibraryFastIndexMutationResult = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = ensureManagedLibraryManifestForRoot(
+            context = appContext,
+            root = root,
+            rootIdentity = rootIdentity
+        )
+        fastIndexMutationCoordinator.mutate(rootIdentity) {
+            fastIndexMutator.upsertCompleteEntry(
+                rootIdentity = rootIdentity,
+                libraryId = libraryId,
+                entry = entry,
+                storage = fastIndexShardStorage(appContext, root, rootIdentity)
+            )
+        }
+    }
+
+    internal suspend fun upsertCompleteFastIndexEntry(
+        context: Context,
+        song: SongItem,
+        audio: StoredEntry,
+        state: String,
+        coverPath: String?
+    ): ManagedLibraryFastIndexMutationResult = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = ensureManagedLibraryManifestForRoot(
+            context = appContext,
+            root = root,
+            rootIdentity = rootIdentity
+        )
+        fastIndexMutationCoordinator.mutate(rootIdentity) {
+            fastIndexMutator.upsertCompleteEntry(
+                rootIdentity = rootIdentity,
+                libraryId = libraryId,
+                entry = ManagedLibraryFastIndexEntryFactory.fromCompletedDownload(
+                    libraryId = libraryId,
+                    song = song,
+                    audio = audio,
+                    state = state,
+                    coverPath = coverPath
+                ),
+                storage = fastIndexShardStorage(appContext, root, rootIdentity)
+            )
+        }
+    }
+
+    internal suspend fun updateExistingFastIndexEntry(
+        context: Context,
+        stableKey: String,
+        transform: (ManagedLibraryIndexEntry) -> ManagedLibraryIndexEntry
+    ): ManagedLibraryFastIndexMutationResult = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = readManagedLibraryIdForRoot(appContext, root, rootIdentity)
+            ?: return@withContext missingFastIndexManifestResult(stableKey)
+        fastIndexMutationCoordinator.mutate(rootIdentity) {
+            fastIndexMutator.updateExistingEntry(
+                rootIdentity = rootIdentity,
+                libraryId = libraryId,
+                stableKey = stableKey,
+                storage = fastIndexShardStorage(appContext, root, rootIdentity),
+                transform = transform
+            )
+        }
+    }
+
+    internal suspend fun removeFastIndexEntry(
+        context: Context,
+        stableKey: String
+    ): ManagedLibraryFastIndexMutationResult = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = readManagedLibraryIdForRoot(appContext, root, rootIdentity)
+            ?: return@withContext missingFastIndexManifestResult(stableKey)
+        fastIndexMutationCoordinator.mutate(rootIdentity) {
+            fastIndexMutator.remove(
+                rootIdentity = rootIdentity,
+                libraryId = libraryId,
+                stableKey = stableKey,
+                storage = fastIndexShardStorage(appContext, root, rootIdentity)
+            )
+        }
+    }
+
+    private fun missingFastIndexManifestResult(
+        stableKey: String
+    ): ManagedLibraryFastIndexMutationResult.Failed {
+        val shard = stableKey.takeIf(String::isNotBlank)
+            ?.let(ManagedLibraryFastIndex::shardFor)
+            .orEmpty()
+        return ManagedLibraryFastIndexMutationResult.Failed(
+            shard = shard,
+            error = IOException("managed library manifest is unavailable")
+        )
+    }
+
+    private fun fastIndexRootIdentity(root: RootHandle): String {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val path = runCatching { root.dir.canonicalPath }
+                    .getOrElse { root.dir.absolutePath }
+                "file:$path"
+            }
+            is RootHandle.TreeRoot -> {
+                val rawUri = root.tree.uri.toString()
+                val identity = ManagedDownloadDirectoryIdentity.directoryIdentity(rawUri)
+                    ?: rawUri
+                "tree:$identity"
+            }
+        }
+    }
+
+    private suspend fun ensureManagedLibraryManifestForRoot(
+        context: Context,
+        root: RootHandle,
+        rootIdentity: String = fastIndexRootIdentity(root)
+    ): String {
+        return fastIndexManifestLocks.withLock(
+            rootIdentity = rootIdentity,
+            shard = FAST_INDEX_MANIFEST_LOCK_SHARD
+        ) {
+            ensureManagedLibraryManifestBlocking(context, root)
+        }
+    }
+
+    private suspend fun readManagedLibraryIdForRoot(
+        context: Context,
+        root: RootHandle,
+        rootIdentity: String = fastIndexRootIdentity(root)
+    ): String? {
+        return fastIndexManifestLocks.withLock(
+            rootIdentity = rootIdentity,
+            shard = FAST_INDEX_MANIFEST_LOCK_SHARD
+        ) {
+            readManagedLibraryIdBlocking(context, root)
+        }
+    }
+
+    private fun fastIndexShardStorage(
+        context: Context,
+        root: RootHandle,
+        expectedRootIdentity: String
+    ): ManagedLibraryFastIndexShardStorage {
+        return object : ManagedLibraryFastIndexShardStorage {
+            override suspend fun readShard(
+                rootIdentity: String,
+                shard: String
+            ): ManagedLibraryFastIndexShardReadResult {
+                if (
+                    rootIdentity != expectedRootIdentity ||
+                        fastIndexRootIdentity(root) != expectedRootIdentity
+                ) {
+                    return ManagedLibraryFastIndexShardReadResult.Unavailable(
+                        IllegalStateException("fast index root changed during read")
+                    )
+                }
+                return readFastIndexShardBlocking(context, root, shard)
+            }
+
+            override suspend fun writeShard(
+                rootIdentity: String,
+                shard: String,
+                payload: String
+            ): ManagedLibraryFastIndexShardWriteResult {
+                if (
+                    rootIdentity != expectedRootIdentity ||
+                        fastIndexRootIdentity(root) != expectedRootIdentity
+                ) {
+                    return ManagedLibraryFastIndexShardWriteResult.Unavailable(
+                        IllegalStateException("fast index root changed during write")
+                    )
+                }
+                return writeFastIndexShardBlocking(
+                    context = context,
+                    root = root,
+                    shard = shard,
+                    payload = payload
+                )
+            }
+        }
+    }
+
+    private fun readFastIndexShardBlocking(
+        context: Context,
+        root: RootHandle,
+        shard: String
+    ): ManagedLibraryFastIndexShardReadResult {
+        val displayName = "shard-$shard.json"
+        return try {
+            val entries = when (root) {
+                is RootHandle.FileRoot -> {
+                    val indexDirectory = File(root.dir, MANAGED_LIBRARY_INDEX_DIR_NAME)
+                    if (!indexDirectory.exists()) {
+                        return ManagedLibraryFastIndexShardReadResult.Missing
+                    }
+                    if (!indexDirectory.isDirectory) {
+                        return ManagedLibraryFastIndexShardReadResult.Unavailable(
+                            IOException("fast index path is not a directory")
+                        )
+                    }
+                    val target = File(indexDirectory, displayName)
+                    if (!target.exists()) {
+                        return ManagedLibraryFastIndexShardReadResult.Missing
+                    }
+                    listOf(ManagedDownloadStoredEntryMapper.fromFile(target))
+                }
+                is RootHandle.TreeRoot -> {
+                    val refresh = treeDirectories.refreshSubdirectoryEntries(
+                        context = context,
+                        root = root,
+                        subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME
+                    )
+                    if (!refresh.isComplete) {
+                        return ManagedLibraryFastIndexShardReadResult.Unavailable(
+                            IOException("fast index SAF enumeration is incomplete")
+                        )
+                    }
+                    refresh.entries.filter { entry -> entry.name == displayName }
+                }
+            }
+            if (entries.isEmpty()) {
+                return ManagedLibraryFastIndexShardReadResult.Missing
+            }
+            if (entries.size != 1 || entries.single().isDirectory) {
+                return ManagedLibraryFastIndexShardReadResult.Unavailable(
+                    IOException("fast index target shard is ambiguous: $displayName")
+                )
+            }
+            val payload = when (root) {
+                is RootHandle.FileRoot -> File(entries.single().reference).readText(Charsets.UTF_8)
+                is RootHandle.TreeRoot -> readTextInternal(context, entries.single().reference)
+                    ?: return ManagedLibraryFastIndexShardReadResult.Unavailable(
+                        IOException("fast index target shard cannot be read: $displayName")
+                    )
+            }
+            ManagedLibraryFastIndexShardReadResult.Found(payload)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ManagedLibraryFastIndexShardReadResult.Unavailable(error)
+        }
+    }
+
+    private fun writeFastIndexShardBlocking(
+        context: Context,
+        root: RootHandle,
+        shard: String,
+        payload: String
+    ): ManagedLibraryFastIndexShardWriteResult {
+        val displayName = "shard-$shard.json"
+        return try {
+            val verifiedPayload = when (root) {
+                is RootHandle.FileRoot -> {
+                    val indexDirectory = File(root.dir, MANAGED_LIBRARY_INDEX_DIR_NAME)
+                    if (indexDirectory.exists() && !indexDirectory.isDirectory) {
+                        return ManagedLibraryFastIndexShardWriteResult.Unavailable(
+                            IOException("fast index path is not a directory")
+                        )
+                    }
+                    treeDirectories.ensureManagedMediaScanIsolation(
+                        MANAGED_LIBRARY_INDEX_DIR_NAME,
+                        indexDirectory
+                    )
+                    val target = File(indexDirectory, displayName)
+                    ManagedDownloadAtomicFile.writeTextAtomically(target, payload)
+                    target.readText(Charsets.UTF_8)
+                }
+                is RootHandle.TreeRoot -> {
+                    val entry = commitWriter.writeSubdirectoryBytes(
+                        context = context,
+                        root = root,
+                        subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME,
+                        displayName = displayName,
+                        bytes = payload.toByteArray(Charsets.UTF_8),
+                        mimeType = "application/json"
+                    ) ?: return ManagedLibraryFastIndexShardWriteResult.Unavailable(
+                        IOException("fast index target shard was not written: $displayName")
+                    )
+                    readTextInternal(context, entry.reference)
+                }
+            }
+            if (verifiedPayload != payload) {
+                return ManagedLibraryFastIndexShardWriteResult.Unavailable(
+                    IOException("fast index target shard verification failed: $displayName")
+                )
+            }
+            ManagedLibraryFastIndexShardWriteResult.Written
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ManagedLibraryFastIndexShardWriteResult.Unavailable(error)
+        }
+    }
+
+    internal suspend fun captureFastIndexRebuildToken(
+        context: Context
+    ): ManagedLibraryFastIndexRebuildToken = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        fastIndexMutationCoordinator.capture(fastIndexRootIdentity(root))
     }
 
     internal suspend fun persistFastIndex(
         context: Context,
-        snapshot: DownloadLibrarySnapshot
+        snapshot: DownloadLibrarySnapshot,
+        rebuildToken: ManagedLibraryFastIndexRebuildToken
     ) = withContext(Dispatchers.IO) {
-        if (!shouldPersistFastIndex(snapshot)) return@withContext
-        val libraryId = ensureManagedLibraryManifestBlocking(context)
+        if (!shouldPersistFastIndex(snapshot)) return@withContext false
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        val rootIdentity = fastIndexRootIdentity(root)
+        val libraryId = ensureManagedLibraryManifestForRoot(
+            context = appContext,
+            root = root,
+            rootIdentity = rootIdentity
+        )
         val entries = snapshot.audioEntries.mapNotNull { audio ->
             val metadata = snapshot.metadataByAudioName[audio.name]
             if (
@@ -1573,37 +2037,57 @@ internal object ManagedDownloadStorage {
             )
         }
         val entriesByShard = entries.groupBy { entry -> ManagedLibraryFastIndex.shardFor(entry.stableKey) }
-        val existingShards = listSubdirectoryEntries(
-            context = context,
-            root = resolveRootBlocking(context),
-            subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME
-        ).asSequence()
-            .filter { entry -> entry.name.startsWith("shard-") && entry.name.endsWith(".json") }
-            .mapNotNull { entry ->
-                readTextInternal(context, entry.reference)
-                    ?.let(ManagedLibraryFastIndex::decode)
+        val rebuildResult = fastIndexMutationCoordinator.rebuild(
+            token = rebuildToken,
+            currentRootIdentity = rootIdentity
+        ) {
+            val existingShards = listSubdirectoryEntries(
+                context = appContext,
+                root = root,
+                subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME
+            ).asSequence()
+                .filter { entry ->
+                    entry.name.startsWith("shard-") && entry.name.endsWith(".json")
+                }
+                .mapNotNull { entry ->
+                    readTextInternal(appContext, entry.reference)
+                        ?.let(ManagedLibraryFastIndex::decode)
+                }
+                .filter { shard -> shard.libraryId == libraryId }
+                .associate { shard -> shard.shard to shard.entries }
+            val allShards = (existingShards.keys + entriesByShard.keys).associateWith { shard ->
+                entriesByShard[shard].orEmpty()
             }
-            .filter { shard -> shard.libraryId == libraryId }
-            .associate { shard -> shard.shard to shard.entries }
-        val allShards = (existingShards.keys + entriesByShard.keys).associateWith { shard ->
-            entriesByShard[shard].orEmpty()
+            val changedShards = ManagedLibraryFastIndex.changedShards(existingShards, allShards)
+            val nowMs = System.currentTimeMillis()
+            changedShards.forEach { shard ->
+                val payload = ManagedLibraryFastIndex.encode(
+                    libraryId = libraryId,
+                    shard = shard,
+                    entries = allShards[shard].orEmpty(),
+                    generatedAtMs = nowMs
+                )
+                when (
+                    val writeResult = writeFastIndexShardBlocking(
+                        context = appContext,
+                        root = root,
+                        shard = shard,
+                        payload = payload
+                    )
+                ) {
+                    ManagedLibraryFastIndexShardWriteResult.Written -> Unit
+                    is ManagedLibraryFastIndexShardWriteResult.Unavailable -> {
+                        throw IOException(
+                            "fast index shard write failed: $shard",
+                            writeResult.error
+                        )
+                    }
+                }
+            }
         }
-        val changedShards = ManagedLibraryFastIndex.changedShards(existingShards, allShards)
-        val nowMs = System.currentTimeMillis()
-        changedShards.forEach { shard ->
-            val payload = ManagedLibraryFastIndex.encode(
-                libraryId = libraryId,
-                shard = shard,
-                entries = allShards[shard].orEmpty(),
-                generatedAtMs = nowMs
-            )
-            writeSubdirectoryBytesBlocking(
-                context = context,
-                subdirectory = MANAGED_LIBRARY_INDEX_DIR_NAME,
-                displayName = "shard-$shard.json",
-                bytes = payload.toByteArray(Charsets.UTF_8),
-                mimeType = "application/json"
-            )
+        when (rebuildResult) {
+            is ManagedLibraryFastIndexRebuildResult.Applied -> true
+            ManagedLibraryFastIndexRebuildResult.Stale -> false
         }
     }
 
@@ -1840,7 +2324,8 @@ internal object ManagedDownloadStorage {
 
     private fun buildDownloadLibrarySnapshotBlocking(
         context: Context,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        includeMetadataLessAudioForLegacyUpgrade: Boolean = false
     ): DownloadLibrarySnapshot = synchronized(snapshotBuildLock) {
         // 先确认配置目录仍可写, 避免权限失效时恢复旧索引并误认为目录正常
         val root = resolveRootBlocking(context)
@@ -1849,7 +2334,7 @@ internal object ManagedDownloadStorage {
             context = context,
             restorePersisted = true
         )
-        if (!forceRefresh) {
+        if (!forceRefresh && !includeMetadataLessAudioForLegacyUpgrade) {
             cachedSnapshot?.let { return@synchronized it }
         }
 
@@ -1904,7 +2389,8 @@ internal object ManagedDownloadStorage {
         val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
-        val allowMetadataLessAudio = shouldIndexMetadataLessAudio()
+        val allowMetadataLessAudio = includeMetadataLessAudioForLegacyUpgrade ||
+            shouldIndexMetadataLessAudio()
         val managedAudioEntries = audioEntries.filter { entry ->
             shouldTreatAudioAsManaged(
                 audioName = entry.name,
@@ -1925,16 +2411,18 @@ internal object ManagedDownloadStorage {
                 "跳过非托管音频扫描: total=${audioEntries.size}, managed=${managedAudioEntries.size}, skipped=$skippedForeignAudioCount"
             )
         }
-        return@synchronized composeSnapshot(
+        val snapshot = composeSnapshot(
             audioEntries = canonicalAudioEntries,
             metadataEntries = metadataEntriesByAudioName.values.toList(),
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             rootEntriesComplete = rootRefresh.isComplete
-        ).also { snapshot ->
+        )
+        if (!includeMetadataLessAudioForLegacyUpgrade) {
             snapshotCacheStore.putSnapshot(context, cacheKey, snapshot)
         }
+        return@synchronized snapshot
     }
 
     internal fun canReuseCachedDownloadedMetadata(
@@ -1991,7 +2479,7 @@ internal object ManagedDownloadStorage {
         targetRoot: RootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int {
+    ): ManagedMigrationMetadataRewriteResult {
         return migrationFinalizer.rewriteMigratedMetadataReferences(
             context = context,
             targetRoot = targetRoot,
@@ -2000,14 +2488,14 @@ internal object ManagedDownloadStorage {
         )
     }
 
-    private suspend fun cleanupMigratedEntries(
+    private suspend fun cleanupMigratedEntriesDetailed(
         context: Context,
         copiedEntries: List<CopiedMigrationEntry>,
         sourceRoot: RootHandle,
         targetsAlreadyVerified: Boolean = false,
         progressTracker: ManagedMigrationProgressReporter? = null
-    ): Int {
-        return migrationFinalizer.cleanupMigratedEntries(
+    ): ManagedMigrationCleanupResult {
+        return migrationFinalizer.cleanupMigratedEntriesDetailed(
             context = context,
             copiedEntries = copiedEntries,
             sourceRoot = sourceRoot,
@@ -2019,12 +2507,14 @@ internal object ManagedDownloadStorage {
     private suspend fun verifyMigratedEntries(
         context: Context,
         targetRoot: RootHandle,
-        copiedEntries: List<CopiedMigrationEntry>
-    ): Int {
-        return migrationFinalizer.verifyMigratedEntries(
+        copiedEntries: List<CopiedMigrationEntry>,
+        progressTracker: ManagedMigrationProgressReporter? = null
+    ): ManagedMigrationVerificationResult {
+        return migrationFinalizer.verifyMigratedEntriesDetailed(
             context = context,
             targetRoot = targetRoot,
-            copiedEntries = copiedEntries
+            copiedEntries = copiedEntries,
+            progressTracker = progressTracker
         )
     }
 
@@ -2149,7 +2639,9 @@ internal object ManagedDownloadStorage {
 
     internal suspend fun ensureManagedLibraryManifest(context: Context): String =
         withContext(Dispatchers.IO) {
-            ensureManagedLibraryManifestBlocking(context)
+            val appContext = context.applicationContext
+            val root = resolveRootBlocking(appContext)
+            ensureManagedLibraryManifestForRoot(appContext, root)
         }
 
     internal suspend fun writePendingAudioMetadata(
@@ -2158,10 +2650,11 @@ internal object ManagedDownloadStorage {
         json: String,
         operationId: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        ensureManagedLibraryManifestBlocking(context)
-        val root = resolveRootBlocking(context)
+        val appContext = context.applicationContext
+        val root = resolveRootBlocking(appContext)
+        ensureManagedLibraryManifestForRoot(appContext, root)
         val backendResult = writeTextThroughBackend(
-            context = context,
+            context = appContext,
             root = root,
             displayName = "$audioName$PENDING_METADATA_SUFFIX",
             content = json,
@@ -3124,17 +3617,11 @@ internal object ManagedDownloadStorage {
         return true
     }
 
-    private fun ensureManagedLibraryManifestBlocking(context: Context): String {
-        val root = resolveRootBlocking(context)
-        val existing = findManagedLibraryManifestEntry(
-            context = context,
-            root = root
-        )
-            ?.let { entry -> readTextInternal(context, entry.reference) }
-            ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
-            ?.optString("libraryId")
-            ?.takeIf(String::isNotBlank)
-        if (existing != null) {
+    private fun ensureManagedLibraryManifestBlocking(
+        context: Context,
+        root: RootHandle
+    ): String {
+        readManagedLibraryIdBlocking(context, root)?.let { existing ->
             return existing
         }
         val libraryId = UUID.randomUUID().toString()
@@ -3155,6 +3642,20 @@ internal object ManagedDownloadStorage {
             throw IOException("无法写入 Managed SAF root manifest")
         }
         return libraryId
+    }
+
+    private fun readManagedLibraryIdBlocking(
+        context: Context,
+        root: RootHandle
+    ): String? {
+        return findManagedLibraryManifestEntry(
+            context = context,
+            root = root
+        )
+            ?.let { entry -> readTextInternal(context, entry.reference) }
+            ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+            ?.optString("libraryId")
+            ?.takeIf(String::isNotBlank)
     }
 
     private fun findManagedLibraryManifestEntry(
@@ -6163,7 +6664,7 @@ internal object ManagedDownloadStorage {
             }
             is StorageLookupResult.ProviderFailure -> {
                 runCatching { temporaryFile.delete() }
-                throw result.error
+                throw ManagedDownloadRootProviderException(entry.reference, result.error)
             }
             StorageLookupResult.OutOfScope,
             is StorageLookupResult.Unsupported -> {
@@ -6270,7 +6771,7 @@ internal object ManagedDownloadStorage {
                     throw SecurityException("storage permission lost: $reference")
                 }
                 is StorageLookupResult.ProviderFailure -> {
-                    throw result.error
+                    throw ManagedDownloadRootProviderException(reference, result.error)
                 }
                 StorageLookupResult.OutOfScope,
                 is StorageLookupResult.Unsupported -> null
@@ -6467,7 +6968,9 @@ internal object ManagedDownloadStorage {
     private fun deleteEnumeratedMigrationReferences(
         context: Context,
         references: Collection<TrustedManagedRef>,
-        root: RootHandle
+        root: RootHandle,
+        onDeleteStarted: (TrustedManagedRef) -> Unit = {},
+        onDeleteFinished: (TrustedManagedRef) -> Unit = {}
     ): Map<TrustedManagedRef, StorageMutationResult> {
         if (references.isEmpty()) return emptyMap()
         return synchronized(migrationCleanupTrustLock) {
@@ -6498,6 +7001,9 @@ internal object ManagedDownloadStorage {
                     null
                 }
             }
+            val eligibleReferencesByExternalReference = eligibleReferences.associateBy(
+                TrustedManagedRef::externalReference
+            )
             val eligibleResults = if (eligibleReferences.isEmpty()) {
                 emptyMap()
             } else {
@@ -6509,13 +7015,27 @@ internal object ManagedDownloadStorage {
                         trustedReferences = trustedReferences.mapTo(linkedSetOf()) {
                             it.externalReference
                         },
-                        invalidateSnapshot = false
+                        invalidateSnapshot = false,
+                        onDeleteStarted = { externalReference ->
+                            eligibleReferencesByExternalReference[externalReference]
+                                ?.let(onDeleteStarted)
+                        },
+                        onDeleteAttemptFinished = { externalReference, deleted ->
+                            if (deleted) {
+                                eligibleReferencesByExternalReference[externalReference]
+                                    ?.let(onDeleteFinished)
+                            }
+                        }
                     )
                     eligibleReferences.associate { reference ->
                         reference to if (reference.externalReference in deletedReferences) {
                             StorageMutationResult.Deleted
                         } else {
-                            classifyMigrationDeleteFailure(context, reference)
+                            try {
+                                classifyMigrationDeleteFailure(context, reference)
+                            } finally {
+                                onDeleteFinished(reference)
+                            }
                         }
                     }
                 }.getOrElse { error ->
@@ -6654,7 +7174,9 @@ internal object ManagedDownloadStorage {
         references: Collection<String?>,
         allowedRoot: RootHandle? = null,
         trustedReferences: Set<String>? = null,
-        invalidateSnapshot: Boolean
+        invalidateSnapshot: Boolean,
+        onDeleteStarted: (String) -> Unit = {},
+        onDeleteAttemptFinished: (String, Boolean) -> Unit = { _, _ -> }
     ): Set<String> {
         val deletePolicy = buildManagedDeletePolicy(
             context = context,
@@ -6664,7 +7186,13 @@ internal object ManagedDownloadStorage {
         val deleteResult = referenceDeleteExecutor.deleteReferences(
             context = context,
             references = resolveTrustedManagedReferences(references, deletePolicy),
-            deletePolicy = deletePolicy
+            deletePolicy = deletePolicy,
+            onDeleteStarted = { reference ->
+                onDeleteStarted(reference.externalReference)
+            },
+            onDeleteAttemptFinished = { reference, deleted ->
+                onDeleteAttemptFinished(reference.externalReference, deleted)
+            }
         )
         applyDeleteResultToSnapshot(context, deleteResult, invalidateSnapshot)
         return deleteResult.deletedReferences

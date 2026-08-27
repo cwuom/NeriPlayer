@@ -18,8 +18,28 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal data class ManagedMigrationCopyResult(
-    val copiedEntry: CopiedMigrationEntry?
-)
+    val copiedEntry: CopiedMigrationEntry? = null,
+    val error: ManagedDownloadMigrationException? = null
+) {
+    init {
+        require((copiedEntry == null) != (error == null)) {
+            "迁移复制结果必须且只能包含 copiedEntry 或 error"
+        }
+    }
+}
+
+internal suspend fun requireSuccessfulMigrationCopies(
+    results: List<ManagedMigrationCopyResult>,
+    rollback: suspend (List<CopiedMigrationEntry>) -> Unit
+): List<CopiedMigrationEntry> {
+    val copiedEntries = results.mapNotNull(ManagedMigrationCopyResult::copiedEntry)
+    val errors = results.mapNotNull(ManagedMigrationCopyResult::error)
+    if (errors.isNotEmpty()) {
+        rollback(copiedEntries)
+        throw errors.firstOrNull { error -> !error.retryable } ?: errors.first()
+    }
+    return copiedEntries
+}
 
 internal fun migrationContentMatches(
     source: InputStream,
@@ -28,18 +48,38 @@ internal fun migrationContentMatches(
     return sha256MigrationContent(source) == sha256MigrationContent(target)
 }
 
-private fun sha256MigrationContent(input: InputStream): String {
+internal fun sha256MigrationContent(
+    input: InputStream,
+    onProgress: (Long) -> Unit = {}
+): String {
     val digest = MessageDigest.getInstance("SHA-256")
     val buffer = ByteArray(64 * 1024)
+    var processedBytes = 0L
     while (true) {
         val count = input.read(buffer)
         if (count < 0) break
         if (count == 0) continue
         digest.update(buffer, 0, count)
+        processedBytes += count
+        onProgress(processedBytes)
     }
     return digest.digest().joinToString(separator = "") { byte ->
         (byte.toInt() and 0xff).toString(16).padStart(2, '0')
     }
+}
+
+internal fun scaledMigrationHashProgress(
+    hashedBytes: Long,
+    expectedBytes: Long,
+    logicalOffset: Long,
+    logicalSpan: Long
+): Long {
+    if (expectedBytes <= 0L || logicalSpan <= 0L) return logicalOffset
+    val boundedBytes = hashedBytes.coerceIn(0L, expectedBytes)
+    val scaledBytes = (
+        boundedBytes.toDouble() / expectedBytes.toDouble() * logicalSpan.toDouble()
+        ).toLong()
+    return logicalOffset + scaledBytes.coerceIn(0L, logicalSpan)
 }
 
 private data class WrittenMigrationEntry(
@@ -84,17 +124,30 @@ internal class ManagedDownloadMigrationCopyWorker(
         progressTracker: ManagedMigrationProgressReporter? = null
     ): ManagedMigrationCopyResult {
         val coroutineContext = currentCoroutineContext()
-        val copiedEntry = retryWrite(migrationEntry.entry.reference) {
-            copyEntryOnce(
-                context = context,
-                targetRoot = targetRoot,
-                migrationEntry = migrationEntry,
-                targetIndex = targetIndex,
-                namePlan = namePlan,
-                progressTracker = progressTracker,
-                coroutineContext = coroutineContext
+        val copiedEntry = try {
+            retryWrite(migrationEntry.entry.reference) {
+                copyEntryOnce(
+                    context = context,
+                    targetRoot = targetRoot,
+                    migrationEntry = migrationEntry,
+                    targetIndex = targetIndex,
+                    namePlan = namePlan,
+                    progressTracker = progressTracker,
+                    coroutineContext = coroutineContext
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: ManagedDownloadMigrationException) {
+            return ManagedMigrationCopyResult(error = error)
+        } catch (error: Throwable) {
+            return ManagedMigrationCopyResult(
+                error = ManagedDownloadMigrationException.permanent(
+                    "迁移下载文件发生不可恢复错误: ${migrationEntry.entry.reference}",
+                    error
+                )
             )
-        } ?: return ManagedMigrationCopyResult(copiedEntry = null)
+        }
 
         return ManagedMigrationCopyResult(
             copiedEntry = CopiedMigrationEntry(
@@ -123,25 +176,59 @@ internal class ManagedDownloadMigrationCopyWorker(
                     "迁移目标冲突: ${migrationEntry.entry.name}, $detail"
                 )
             }
-            namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
+            val reusedEntry = namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
                 if (!ManagedDownloadTreeNaming.isMetadataName(migrationEntry.entry.name)) {
+                    val logicalBytes = migrationEntry.entry.sizeBytes.coerceAtLeast(0L)
+                    val sourceLogicalBytes = logicalBytes / 2L + logicalBytes % 2L
+                    val targetLogicalBytes = logicalBytes - sourceLogicalBytes
                     val sourceDigest = openInputStream(context, migrationEntry.entry)
-                        ?.use(::sha256MigrationContent)
+                        ?.use { input ->
+                            sha256MigrationContent(input) { hashedBytes ->
+                                coroutineContext.ensureActive()
+                                progressTracker?.onCopyProgress(
+                                    migrationEntry,
+                                    scaledMigrationHashProgress(
+                                        hashedBytes = hashedBytes,
+                                        expectedBytes = migrationEntry.entry.sizeBytes,
+                                        logicalOffset = 0L,
+                                        logicalSpan = sourceLogicalBytes
+                                    )
+                                )
+                            }
+                        }
                         ?: throw ManagedDownloadMigrationException.transient(
                             "无法读取源文件以验证迁移复用: ${migrationEntry.entry.name}"
                         )
+                    progressTracker?.onCopyProgress(migrationEntry, sourceLogicalBytes)
+                    val targetExpectedBytes = existingEntry.sizeBytes
+                        .takeIf { sizeBytes -> sizeBytes > 0L }
+                        ?: migrationEntry.entry.sizeBytes
                     val targetDigest = openInputStream(context, existingEntry)
-                        ?.use(::sha256MigrationContent)
+                        ?.use { input ->
+                            sha256MigrationContent(input) { hashedBytes ->
+                                coroutineContext.ensureActive()
+                                progressTracker?.onCopyProgress(
+                                    migrationEntry,
+                                    scaledMigrationHashProgress(
+                                        hashedBytes = hashedBytes,
+                                        expectedBytes = targetExpectedBytes,
+                                        logicalOffset = sourceLogicalBytes,
+                                        logicalSpan = targetLogicalBytes
+                                    )
+                                )
+                            }
+                        }
                         ?: throw ManagedDownloadMigrationException.transient(
                             "无法读取目标文件以验证迁移复用: ${existingEntry.name}"
                         )
+                    progressTracker?.onCopyProgress(migrationEntry, logicalBytes)
                     if (sourceDigest != targetDigest) {
                         throw ManagedDownloadMigrationException.permanent(
                             "same stableKey has different audio bytes: " +
                                 "source=${migrationEntry.entry.name} target=${existingEntry.name}"
                         )
                     }
-                    return WrittenMigrationEntry(
+                    return@let WrittenMigrationEntry(
                         result = StoredWriteResult(
                             entry = existingEntry,
                             createdNew = false
@@ -149,7 +236,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                         sourceDigest = sourceDigest
                     )
                 }
-                return WrittenMigrationEntry(
+                WrittenMigrationEntry(
                     result = StoredWriteResult(
                         entry = existingEntry,
                         createdNew = false
@@ -157,7 +244,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                     sourceDigest = null
                 )
             }
-            openInputStream(context, migrationEntry.entry)?.use { input ->
+            reusedEntry ?: openInputStream(context, migrationEntry.entry)?.use { input ->
                 val sourceDigest = MessageDigest.getInstance("SHA-256")
                 val digestingInput = DigestInputStream(input, sourceDigest)
                 val writeResult = if (migrationEntry.subdirectory == null) {
@@ -250,7 +337,8 @@ internal class ManagedDownloadMigrationCopyWorker(
         ) { copiedBytes -> onProgress(copiedBytes) }
     }
 
-    private suspend fun <T> retryWrite(reference: String, block: () -> T): T? {
+    private suspend fun <T> retryWrite(reference: String, block: () -> T): T {
+        var lastError: Throwable? = null
         repeat(MIGRATION_IO_MAX_ATTEMPTS) { attempt ->
             val result = runCatching(block).onFailure { error ->
                 if (error is CancellationException) {
@@ -259,6 +347,7 @@ internal class ManagedDownloadMigrationCopyWorker(
                 if (error is ManagedDownloadMigrationException && !error.retryable) {
                     throw error
                 }
+                lastError = error
                 NPLogger.w(
                     tag,
                     "迁移下载文件失败: $reference, " +
@@ -274,7 +363,16 @@ internal class ManagedDownloadMigrationCopyWorker(
                 delay(MIGRATION_IO_RETRY_DELAY_MS * (attempt + 1))
             }
         }
-        return null
+        val cause = checkNotNull(lastError) {
+            "迁移复制重试结束时缺少失败原因"
+        }
+        throw when (cause) {
+            is ManagedDownloadMigrationException -> cause
+            else -> ManagedDownloadMigrationException.transient(
+                "迁移下载文件多次失败: $reference",
+                cause
+            )
+        }
     }
 
     private fun drainInput(input: InputStream, coroutineContext: CoroutineContext) {

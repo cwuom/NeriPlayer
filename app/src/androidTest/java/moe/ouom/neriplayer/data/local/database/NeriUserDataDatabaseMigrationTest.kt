@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database
 
+import android.os.SystemClock
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -205,6 +206,22 @@ class NeriUserDataDatabaseMigrationTest {
                         "WHERE type = 'table' AND name = 'managed_library_item'"
                 )
             )
+            listOf("host_process_token", "host_admitted_at_ms").forEach { columnName ->
+                assertEquals(
+                    1L,
+                    migrated.longFor(
+                        "SELECT COUNT(*) FROM pragma_table_info('download_operation') " +
+                            "WHERE name = '$columnName'"
+                    )
+                )
+            }
+            assertEquals(
+                1L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' " +
+                        "AND name = 'index_download_operation_host_process_library'"
+                )
+            )
             listOf(
                 "download_pending_queue",
                 "download_cancelled_key",
@@ -388,9 +405,119 @@ class NeriUserDataDatabaseMigrationTest {
             )
             val conflicts = payload.getJSONArray("legacyConflicts")
             assertEquals(1, conflicts.length())
+            val conflict = conflicts.getJSONObject(0)
+            assertEquals("downloaded_song_catalog", conflict.getString("table"))
+            assertEquals("7|netease|", conflict.getString("stableKey"))
             assertEquals(
                 "SAME_STABLE_KEY_DIFFERENT_BYTES",
-                conflicts.getJSONObject(0).getString("reason")
+                conflict.getString("reason")
+            )
+            assertEquals(
+                setOf("hash:sha256:first", "hash:sha256:second"),
+                setOf(
+                    conflict.getString("firstFingerprint"),
+                    conflict.getString("duplicateFingerprint")
+                )
+            )
+            assertEquals(
+                setOf("/first.flac", "/second.flac"),
+                setOf(
+                    conflict.getString("firstReference"),
+                    conflict.getString("duplicateReference")
+                )
+            )
+            val candidates = listOf(
+                conflict.getJSONObject("previous"),
+                conflict.getJSONObject("duplicate")
+            ).associateBy { candidate -> candidate.getString("catalog_key") }
+            candidates.getValue("file:/first.flac").let { candidate ->
+                assertEquals("root-a", candidate.getString("root_key"))
+                assertEquals("7|netease|", candidate.getString("stable_key"))
+                assertEquals("/first.flac", candidate.getString("file_path"))
+                assertEquals(10L, candidate.getLong("file_size"))
+                assertEquals("sha256:first", candidate.getString("content_hash"))
+            }
+            candidates.getValue("file:/second.flac").let { candidate ->
+                assertEquals("root-b", candidate.getString("root_key"))
+                assertEquals("7|netease|", candidate.getString("stable_key"))
+                assertEquals("/second.flac", candidate.getString("file_path"))
+                assertEquals(20L, candidate.getLong("file_size"))
+                assertEquals("sha256:second", candidate.getString("content_hash"))
+            }
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromVersion15ToVersion16PrefersExactReferenceAndRejectsAmbiguousName() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_LOOKUP_NAME, 15).apply {
+            insertVersion15CatalogRow(
+                catalogKey = "file:/root-a/shared.flac",
+                rootKey = "root-a",
+                stableKey = "lookup-a",
+                filePath = "/root-a/shared.flac",
+                fileSize = 10L
+            )
+            insertVersion15CatalogRow(
+                catalogKey = "file:/root-b/shared.flac",
+                rootKey = "root-b",
+                stableKey = "lookup-b",
+                filePath = "/root-b/shared.flac",
+                fileSize = 20L
+            )
+            execSQL(
+                """
+                INSERT INTO download_snapshot_entry (
+                  root_key, bucket, entry_key, display_position, name, reference,
+                  media_uri, local_file_path, size_bytes, last_modified_ms, is_directory
+                ) VALUES (
+                  'root-b', 'audio', 'shared.flac', 0, 'shared.flac',
+                  '/root-b/shared.flac', 'file:///root-b/shared.flac',
+                  '/root-b/shared.flac', 20, 10, 0
+                )
+                """.trimIndent()
+            )
+            insertVersion15SnapshotMetadataRow(
+                rootKey = "root-b",
+                audioName = "SHARED.FLAC"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_LOOKUP_NAME,
+            16,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+
+        try {
+            val exactPayload = JSONObject(
+                migrated.stringFor(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                        "WHERE stable_key = 'lookup-b'"
+                )
+            )
+            assertEquals(
+                "/root-b/shared.flac",
+                exactPayload.getJSONArray("download_snapshot_entries")
+                    .getJSONObject(0)
+                    .getString("reference")
+            )
+            val ambiguousMetadataKey =
+                "legacy:download_snapshot_metadata:" +
+                    "root_key=root-b|audio_name=SHARED.FLAC"
+            val ambiguousPayload = JSONObject(
+                migrated.stringFor(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                        "WHERE stable_key = ${sqlText(ambiguousMetadataKey)}"
+                )
+            )
+            assertEquals(
+                "SHARED.FLAC",
+                ambiguousPayload.getJSONObject("download_snapshot_metadata")
+                    .getString("audio_name")
             )
         } finally {
             migrated.close()
@@ -528,30 +655,186 @@ class NeriUserDataDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateFromVersion16ToVersion17CreatesHostAdmissionTable() {
-        helper.createDatabase(TEST_DATABASE_VERSION_16_NAME, 16).close()
+    fun migrateFromVersion15ToVersion16MapsThousandRowsWithinLinearBudget() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_LARGE_NAME, 15).apply {
+            beginTransaction()
+            try {
+                repeat(LARGE_FIXTURE_ROW_COUNT) { index ->
+                    val catalogAudioName = "Track-$index.FLAC"
+                    insertVersion15CatalogRow(
+                        catalogKey = "file:/bulk/$catalogAudioName",
+                        rootKey = "bulk-root",
+                        stableKey = "bulk-$index",
+                        filePath = "/bulk/$catalogAudioName",
+                        fileSize = index.toLong() + 1L
+                    )
+                    insertVersion15SnapshotMetadataRow(
+                        rootKey = "bulk-root",
+                        audioName = "track-$index.flac"
+                    )
+                }
+                setTransactionSuccessful()
+            } finally {
+                endTransaction()
+            }
+            close()
+        }
+
+        val startedAtMs = SystemClock.elapsedRealtime()
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_LARGE_NAME,
+            16,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+
+        try {
+            assertTrue(
+                "v15 large migration took ${elapsedMs}ms",
+                elapsedMs <= LARGE_FIXTURE_MIGRATION_MAX_MS
+            )
+            assertEquals(
+                LARGE_FIXTURE_ROW_COUNT.toLong(),
+                migrated.longFor("SELECT COUNT(*) FROM legacy_download_upgrade_payload")
+            )
+            assertEquals(
+                0L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM legacy_download_upgrade_payload " +
+                        "WHERE stable_key LIKE 'legacy:download_snapshot_metadata:%'"
+                )
+            )
+            var verifiedPayloadCount = 0
+            migrated.query(
+                "SELECT stable_key, payload_json FROM legacy_download_upgrade_payload " +
+                    "ORDER BY stable_key"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val stableKey = cursor.getString(0)
+                    val index = stableKey.removePrefix("bulk-").toInt()
+                    val payload = JSONObject(cursor.getString(1))
+                    assertEquals(
+                        "/bulk/Track-$index.FLAC",
+                        payload.getJSONObject("downloaded_song_catalog")
+                            .getString("file_path")
+                    )
+                    assertEquals(
+                        "track-$index.flac",
+                        payload.getJSONObject("download_snapshot_metadata")
+                            .getString("audio_name")
+                    )
+                    verifiedPayloadCount += 1
+                }
+            }
+            assertEquals(LARGE_FIXTURE_ROW_COUNT, verifiedPayloadCount)
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun finalVersion16EmbedsHostAdmissionWithoutCreatingAThirdDownloadTable() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME, 15).close()
 
         val migrated = helper.runMigrationsAndValidate(
-            TEST_DATABASE_VERSION_16_NAME,
-            17,
-            true,
-            NeriUserDataDatabase.MIGRATION_16_17
+            TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME,
+            NeriUserDataDatabase.FINAL_DB_VERSION,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
         )
 
         try {
             assertEquals(
-                1L,
+                0L,
                 migrated.longFor(
                     "SELECT COUNT(*) FROM sqlite_master " +
                         "WHERE type = 'table' AND name = 'download_host_admission'"
                 )
             )
             assertEquals(
-                1L,
+                2L,
                 migrated.longFor(
                     "SELECT COUNT(*) FROM sqlite_master " +
-                        "WHERE type = 'index' " +
-                        "AND name = 'index_download_host_admission_process_library'"
+                        "WHERE type = 'table' AND name IN " +
+                        "('download_operation', 'managed_library_item')"
+                )
+            )
+            assertEquals(
+                2L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM pragma_table_info('download_operation') " +
+                        "WHERE name IN ('host_process_token', 'host_admitted_at_ms')"
+                )
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
+    fun migrateFromReleaseVersion15ToFinalVersionPreservesDownloadRecoveryPayload() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_TO_FINAL_NAME, 15).apply {
+            insertVersion15CatalogRow(
+                catalogKey = "file:/release/legacy.flac",
+                rootKey = "release-root",
+                stableKey = "17|netease|",
+                filePath = "/release/legacy.flac",
+                fileSize = 4_096L
+            )
+            execSQL(
+                """
+                INSERT INTO download_snapshot_entry (
+                  root_key, bucket, entry_key, display_position, name, reference,
+                  media_uri, local_file_path, size_bytes, last_modified_ms, is_directory
+                ) VALUES (
+                  'release-root', 'audio', 'legacy.flac', 0, 'legacy.flac',
+                  '/release/legacy.flac', 'file:///release/legacy.flac',
+                  '/release/legacy.flac', 4096, 10, 0
+                )
+                """.trimIndent()
+            )
+            insertVersion15SnapshotMetadataRow(
+                rootKey = "release-root",
+                audioName = "legacy.flac"
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_TO_FINAL_NAME,
+            NeriUserDataDatabase.FINAL_DB_VERSION,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+
+        try {
+            val payload = JSONObject(
+                migrated.stringFor(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                        "WHERE stable_key = '17|netease|'"
+                )
+            )
+            assertEquals(
+                "/release/legacy.flac",
+                payload.getJSONObject("downloaded_song_catalog").getString("file_path")
+            )
+            assertEquals(
+                "legacy.flac",
+                payload.getJSONArray("download_snapshot_entries")
+                    .getJSONObject(0)
+                    .getString("name")
+            )
+            assertEquals(
+                "legacy.flac",
+                payload.getJSONObject("download_snapshot_metadata")
+                    .getString("audio_name")
+            )
+            assertEquals(
+                0L,
+                migrated.longFor(
+                    "SELECT COUNT(*) FROM sqlite_master " +
+                        "WHERE type = 'table' AND name = 'download_host_admission'"
                 )
             )
         } finally {
@@ -656,6 +939,19 @@ class NeriUserDataDatabaseMigrationTest {
         )
     }
 
+    private fun SupportSQLiteDatabase.insertVersion15SnapshotMetadataRow(
+        rootKey: String,
+        audioName: String
+    ) {
+        execSQL(
+            """
+            INSERT INTO download_snapshot_metadata (
+              root_key, audio_name, user_lyric_offset_ms, duration_ms
+            ) VALUES (${sqlText(rootKey)}, ${sqlText(audioName)}, 0, 1000)
+            """.trimIndent()
+        )
+    }
+
     private fun SupportSQLiteDatabase.longFor(query: String): Long {
         return this.query(query).use { cursor ->
             check(cursor.moveToFirst())
@@ -690,6 +986,15 @@ class NeriUserDataDatabaseMigrationTest {
             "neri-user-data-migration-v15-unverified-test"
         const val TEST_DATABASE_VERSION_15_ORPHAN_METADATA_NAME =
             "neri-user-data-migration-v15-orphan-metadata-test"
-        const val TEST_DATABASE_VERSION_16_NAME = "neri-user-data-migration-v16-test"
+        const val TEST_DATABASE_VERSION_15_LOOKUP_NAME =
+            "neri-user-data-migration-v15-lookup-test"
+        const val TEST_DATABASE_VERSION_15_LARGE_NAME =
+            "neri-user-data-migration-v15-large-test"
+        const val TEST_DATABASE_VERSION_15_TO_FINAL_NAME =
+            "neri-user-data-migration-v15-to-final-test"
+        const val TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME =
+            "neri-user-data-migration-v15-host-admission-test"
+        const val LARGE_FIXTURE_ROW_COUNT = 1_000
+        const val LARGE_FIXTURE_MIGRATION_MAX_MS = 4_000L
     }
 }

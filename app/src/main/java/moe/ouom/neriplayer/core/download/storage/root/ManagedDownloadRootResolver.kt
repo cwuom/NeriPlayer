@@ -5,6 +5,7 @@ import android.os.Environment
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.TREE_ROOT_CACHE_VALIDATE_INTERVAL_MS
@@ -116,14 +117,10 @@ internal class ManagedDownloadRootResolver(
     }
 
     private fun isAccessibleDirectory(context: Context, directory: DocumentFile): Boolean {
-        return when (
-            val result = ManagedDownloadReferenceIo.inspectDirectory(context, directory.uri)
-        ) {
-            ManagedDownloadReferenceIo.AccessResult.Accessible -> true
-            ManagedDownloadReferenceIo.AccessResult.Missing,
-            ManagedDownloadReferenceIo.AccessResult.PermissionLost -> false
-            is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> throw result.error
-        }
+        return requireAccessibleManagedDownloadRoot(
+            reference = directory.uri.toString(),
+            result = ManagedDownloadReferenceIo.inspectDirectory(context, directory.uri)
+        )
     }
 
     private fun invalidateCachedTreeRoot(normalizedUri: String, identity: String) {
@@ -167,4 +164,23 @@ internal class ManagedDownloadRootResolver(
         val root: ManagedDownloadRootHandle.TreeRoot,
         val validatedAtMs: Long
     )
+}
+
+internal class ManagedDownloadRootProviderException(
+    reference: String,
+    cause: Throwable
+) : IOException("DocumentsProvider 暂时无法检查下载目录: $reference", cause)
+
+internal fun requireAccessibleManagedDownloadRoot(
+    reference: String,
+    result: ManagedDownloadReferenceIo.AccessResult
+): Boolean {
+    return when (result) {
+        ManagedDownloadReferenceIo.AccessResult.Accessible -> true
+        ManagedDownloadReferenceIo.AccessResult.Missing,
+        ManagedDownloadReferenceIo.AccessResult.PermissionLost -> false
+        is ManagedDownloadReferenceIo.AccessResult.ProviderFailure -> {
+            throw ManagedDownloadRootProviderException(reference, result.error)
+        }
+    }
 }

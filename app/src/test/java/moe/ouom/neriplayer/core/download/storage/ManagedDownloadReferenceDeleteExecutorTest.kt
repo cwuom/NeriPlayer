@@ -24,6 +24,69 @@ import org.mockito.Mockito.mockingDetails
 class ManagedDownloadReferenceDeleteExecutorTest {
 
     @Test
+    fun `synchronous delete callbacks surround successful and failed attempts`() {
+        val successfulReference = "content://documents.test/document/success"
+        val failedReference = "content://documents.test/document/failure"
+        val references = listOf(successfulReference, failedReference).map { externalReference ->
+            val uri = mock(Uri::class.java)
+            `when`(uri.scheme).thenReturn("content")
+            `when`(uri.authority).thenReturn("documents.test")
+            `when`(uri.pathSegments).thenReturn(emptyList())
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(uri),
+                externalReference = externalReference
+            )
+        }
+        val events = mutableListOf<String>()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, reference, _, _ ->
+                if (reference.externalReference == successfulReference) {
+                    StorageMutationResult.Deleted
+                } else {
+                    StorageMutationResult.PermissionLost
+                }
+            },
+            contentReferenceGoneOperation = { _, reference ->
+                if (reference.externalReference == successfulReference) {
+                    ManagedDownloadReferenceIo.AccessResult.Missing
+                } else {
+                    ManagedDownloadReferenceIo.AccessResult.PermissionLost
+                }
+            }
+        )
+
+        val result = executor.deleteReferences(
+            context = mock(Context::class.java),
+            references = references,
+            deletePolicy = ManagedDownloadDeletePolicy(
+                managedFileRoots = emptyList(),
+                managedTreeRoots = emptyList(),
+                trustedReferences = references.toSet()
+            ),
+            onDeleteStarted = { reference ->
+                events += "start:${reference.externalReference}"
+            },
+            onDeleteAttemptFinished = { reference, deleted ->
+                events += "finish:${reference.externalReference}:$deleted"
+            }
+        )
+
+        assertEquals(setOf(successfulReference), result.deletedReferences)
+        assertTrue(result.hasUnconfirmedDeletes)
+        assertEquals(
+            listOf(
+                "start:$successfulReference",
+                "finish:$successfulReference:true",
+                "start:$failedReference",
+                "finish:$failedReference:false"
+            ),
+            events
+        )
+    }
+
+    @Test
     fun `delete boundary accepts trusted managed references`() = runBlocking {
         val references = listOf(
             TrustedManagedRef(

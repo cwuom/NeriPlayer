@@ -33,6 +33,27 @@ internal object ManagedDownloadMigrationPolicy {
             targetHasManagedEntries == true
     }
 
+    suspend fun shouldReattachExistingManagedDirectoryAfterProbes(
+        fromDirectoryUri: String?,
+        toDirectoryUri: String?,
+        probeSourceHasManagedEntries: suspend () -> Boolean,
+        probeTargetHasManagedEntries: suspend () -> Boolean
+    ): Boolean {
+        if (!fromDirectoryUri.isNullOrBlank() || toDirectoryUri.isNullOrBlank()) {
+            return false
+        }
+        val sourceHasManagedEntries = probeSourceHasManagedEntries()
+        if (sourceHasManagedEntries) {
+            return false
+        }
+        return shouldReattachExistingManagedDirectory(
+            fromDirectoryUri = fromDirectoryUri,
+            toDirectoryUri = toDirectoryUri,
+            sourceHasManagedEntries = false,
+            targetHasManagedEntries = probeTargetHasManagedEntries()
+        )
+    }
+
     fun mimeTypeFor(entry: ManagedMigrationEntryRef): String {
         return if (entry.subdirectory == null && ManagedDownloadTreeNaming.isMetadataName(entry.entry.name)) {
             "application/json"

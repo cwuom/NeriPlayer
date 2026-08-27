@@ -18,7 +18,7 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         val committingIndex = indexOfOperationCall(body, "markCommitting")
         val metadataWriteIndex = body.indexOf("persistDownloadedMetadata")
         val coreCommittedIndex = indexOfOperationCall(body, "markCoreCommitted")
-        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueueAndAwait")
+        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(")
         val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
         val finalizedBody = methodBody(source, "publishFinalizedDownload")
         val completedIndex = finalizedBody.indexOf("DownloadStatus.COMPLETED")
@@ -42,10 +42,51 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
                 enrichmentBody.contains("publishFinalizedDownload(") &&
                 completedIndex >= 0
         )
+        assertFalse(
+            "core commit must not keep the network host waiting for asset enrichment",
+            body.contains("enqueueAndAwait") || body.contains(".join()")
+        )
         assertTrue(
             "a failed core journal commit must stop final completion",
             journalFailureIndex > coreCommittedIndex &&
                 journalFailureReturnIndex > journalFailureIndex
+        )
+    }
+
+    @Test
+    fun `detached enrichment keeps process death recovery entry points`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val coreCommitBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val initializeBody = methodBody(source, "initialize")
+
+        assertTrue(coreCommitBody.contains("ManagedDownloadArtifactState.CORE_COMMITTED.name"))
+        assertTrue(coreCommitBody.contains("markCoreCommitted"))
+        assertTrue(initializeBody.contains("recoverPendingAudioWritesFromRoot(appContext)"))
+        assertTrue(initializeBody.contains("recoverUnfinalizedPublishedAudioFromRoot(appContext)"))
+    }
+
+    @Test
+    fun `detached enrichment settles its network host without completing the operation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val resultBody = methodBody(source, "executionResultForOperation")
+
+        assertTrue(
+            Regex(
+                "\"CORE_COMMITTED\"\\s*,\\s*" +
+                    "\"ASSETS_ENRICHING\"\\s*->\\s*" +
+                    "return\\s+DownloadExecutionResult\\.AlreadyHandled"
+            ).containsMatchIn(resultBody)
+        )
+        assertFalse(
+            Regex(
+                "\"CORE_COMMITTED\"\\s*,\\s*" +
+                    "\"ASSETS_ENRICHING\"\\s*->\\s*" +
+                    "return\\s+DownloadExecutionResult\\.Retry"
+            ).containsMatchIn(resultBody)
         )
     }
 
@@ -105,6 +146,38 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
             "persistent or correctness ownership must not use String.hashCode",
             body.contains("hashCode")
         )
+    }
+
+    @Test
+    fun `download completion and metadata edits update the fast index incrementally`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val publishBody = methodBody(source, "publishCompletedDownloadOptimistically")
+        val metadataSyncBody = methodBody(source, "syncDownloadedSongMetadataNow")
+        val metadataEditBody = methodBody(source, "updateFastIndexAfterMetadataEdit")
+        val fastIndexBody = methodBody(source, "upsertCompletedFastIndexEntry")
+
+        assertTrue(publishBody.contains("upsertCompletedFastIndexEntry("))
+        assertTrue(metadataSyncBody.contains("updateFastIndexAfterMetadataEdit("))
+        assertTrue(metadataEditBody.contains("updateExistingFastIndexEntry("))
+        assertTrue(metadataEditBody.contains("upsertCompletedFastIndexEntry("))
+        assertTrue(fastIndexBody.contains("upsertCompleteFastIndexEntry("))
+        assertFalse(fastIndexBody.contains("persistFastIndex("))
+    }
+
+    @Test
+    fun `confirmed physical deletion removes only the matching fast index entry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val deleteBody = methodBody(source, "deleteDownloadedSongsOnIo")
+        val resolvedDeletionIndex = deleteBody.indexOf("resolveDownloadedSongDeleteResult(")
+        val fastIndexRemovalIndex = deleteBody.indexOf("removeFastIndexEntry(")
+
+        assertTrue(resolvedDeletionIndex >= 0)
+        assertTrue(fastIndexRemovalIndex > resolvedDeletionIndex)
+        assertFalse(deleteBody.contains("persistFastIndex("))
     }
 
     private fun indexOfOperationCall(source: String, methodName: String): Int {

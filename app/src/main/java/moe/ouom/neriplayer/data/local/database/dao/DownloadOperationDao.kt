@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationIdentityRow
 
@@ -435,39 +434,47 @@ internal interface DownloadOperationDao {
     ): List<String>
 
     @Query(
-        "SELECT COUNT(*) FROM download_host_admission " +
-            "WHERE process_token = :processToken"
+        "SELECT COUNT(*) FROM download_operation " +
+            "WHERE host_process_token = :processToken"
     )
     suspend fun countHostAdmissions(processToken: String): Int
 
     @Query(
-        "SELECT * FROM download_host_admission " +
-            "WHERE operation_id = :operationId LIMIT 1"
+        "UPDATE download_operation SET host_process_token = :processToken, " +
+            "host_admitted_at_ms = :admittedAtMs WHERE operation_id = :operationId " +
+            "AND host_process_token IS NULL"
     )
-    suspend fun findHostAdmission(operationId: String): DownloadHostAdmissionEntity?
+    suspend fun setHostAdmission(
+        operationId: String,
+        processToken: String,
+        admittedAtMs: Long
+    ): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertHostAdmission(admission: DownloadHostAdmissionEntity)
-
-    @Query("DELETE FROM download_host_admission WHERE operation_id = :operationId")
+    @Query(
+        "UPDATE download_operation SET host_process_token = NULL, " +
+            "host_admitted_at_ms = NULL WHERE operation_id = :operationId " +
+            "AND host_process_token IS NOT NULL"
+    )
     suspend fun deleteHostAdmission(operationId: String): Int
 
-    @Query("DELETE FROM download_host_admission WHERE operation_id IN (:operationIds)")
+    @Query(
+        "UPDATE download_operation SET host_process_token = NULL, " +
+            "host_admitted_at_ms = NULL WHERE operation_id IN (:operationIds) " +
+            "AND host_process_token IS NOT NULL"
+    )
     suspend fun deleteHostAdmissions(operationIds: List<String>): Int
 
     @Query(
-        "DELETE FROM download_host_admission WHERE operation_id NOT IN (" +
-            "SELECT operation_id FROM download_operation)"
+        "UPDATE download_operation SET host_process_token = NULL, " +
+            "host_admitted_at_ms = NULL WHERE host_process_token IS NOT NULL " +
+            "AND host_process_token != :processToken"
     )
-    suspend fun deleteOrphanHostAdmissions(): Int
-
-    @Query("DELETE FROM download_host_admission WHERE process_token != :processToken")
     suspend fun deleteHostAdmissionsFromOtherProcesses(processToken: String): Int
 
     @Query(
-        "DELETE FROM download_host_admission WHERE process_token = :processToken " +
-            "AND admitted_at_ms < :cutoffMs AND operation_id IN (" +
-            "SELECT operation_id FROM download_operation WHERE state IN (:states))"
+        "UPDATE download_operation SET host_process_token = NULL, " +
+            "host_admitted_at_ms = NULL WHERE host_process_token = :processToken " +
+            "AND host_admitted_at_ms < :cutoffMs AND state IN (:states)"
     )
     suspend fun deleteExpiredHostAdmissions(
         processToken: String,

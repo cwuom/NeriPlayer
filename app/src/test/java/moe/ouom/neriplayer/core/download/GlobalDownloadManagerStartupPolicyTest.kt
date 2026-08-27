@@ -492,13 +492,22 @@ class GlobalDownloadManagerStartupPolicyTest {
                 clearAllBody.indexOf("taskStore.clearAllTasks()")
         )
         assertTrue(managerSource.contains("downloadClearVisibility.finish(clearToken)"))
+        val bootstrapEffect = screenSource.substringAfter(
+            "LaunchedEffect(\n        context,\n        taskPresenceKey"
+        ).substringBefore("val bootstrapState")
         assertTrue(
-            screenSource.contains(
-                "LaunchedEffect(context, taskPresenceKey, isClearingDownloadTasks)"
+            bootstrapEffect.contains("isClearingDownloadTasks")
+        )
+        assertTrue(bootstrapEffect.contains("isDownloadTaskClearPresentationCleared"))
+        assertTrue(
+            bootstrapEffect.contains(
+                "if (isClearingDownloadTasks || isDownloadTaskClearPresentationCleared)"
             )
         )
-        assertTrue(screenSource.contains("if (isClearingDownloadTasks)"))
-        assertTrue(screenSource.contains("isDownloadTaskClearPresentationCleared"))
+        assertTrue(
+            bootstrapEffect.indexOf("explicitResumeCandidates = emptyList()") <
+                bootstrapEffect.indexOf("loadDownloadProgressBootstrapState(context)")
+        )
         assertTrue(
             screenSource.contains(
                 "val visibleTasks = if (isDownloadTaskClearPresentationCleared)"
@@ -509,6 +518,33 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(screenSource.contains("visibleDownloadProgressTasks(downloadTasks)"))
         assertFalse(screenSource.contains("item(key = \"queued-summary\")"))
         assertTrue(screenSource.contains("R.string.download_progress_with_percentage"))
+    }
+
+    @Test
+    fun `legacy download backfill precedes unfinalized startup recovery`() {
+        val managerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = managerSource.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+
+        assertTrue(
+            initializeBody.indexOf("runDownloadUpgradeOnce(appContext)") <
+                initializeBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(appContext)")
+        )
+        assertTrue(initializeBody.contains("startupRecoveryMutex.withLock"))
+        assertTrue(
+            managerSource.contains(
+                "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+            )
+        )
+        val reconcileBody = managerSource
+            .substringAfter(
+                "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+            )
+            .substringBefore("\n    private fun")
+        assertTrue(reconcileBody.contains("recoverPendingDownloadsForStartup(appContext)"))
+        assertTrue(reconcileBody.contains("repairFinalizedDownloadedCoversFromRoot(appContext)"))
     }
 
     @Test
@@ -575,14 +611,20 @@ class GlobalDownloadManagerStartupPolicyTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val entryBody = source.substringAfter("fun cancelDownloadTask(songKey: String)")
-            .substringBefore("private suspend fun cancelDownloadTaskDurably")
+            .substringBefore("private fun requestDownloadTaskCancellation")
+        val batchEntryBody = source.substringAfter("private fun requestDownloadTaskCancellation")
+            .substringBefore("private suspend fun cancelDownloadTasksDurably")
         val durableBody = source.substringAfter("private suspend fun cancelDownloadTaskDurably")
             .substringBefore("fun clearAllDownloadTasks()")
 
         assertFalse(entryBody.contains("operationIdForSong("))
         assertFalse(entryBody.contains("DownloadExecutionOperationStore().read("))
-        assertTrue(entryBody.contains("cancelDownloadTaskDurably("))
-        assertTrue(entryBody.indexOf("removeDownloadTask(") < entryBody.indexOf("scope.launch"))
+        assertTrue(entryBody.contains("requestDownloadTaskCancellation(setOf(songKey))"))
+        assertTrue(batchEntryBody.contains("cancelDownloadTasksDurably("))
+        assertTrue(
+            batchEntryBody.indexOf("removeDownloadTask(") <
+                batchEntryBody.indexOf("return scope.launch")
+        )
         assertTrue(durableBody.contains("operationIdForSong("))
         assertTrue(durableBody.contains("requestOperationCancellation(setOf(songKey))"))
     }

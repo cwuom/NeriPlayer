@@ -170,7 +170,8 @@ internal fun applyHydratedSongsToScanPreview(
     hydratedSongs: List<SongItem?>,
     progress: LocalAudioScanProgress,
     startIndex: Int = 0,
-    targetKeys: List<String>? = null
+    targetKeys: List<String>? = null,
+    hasMeaningfulMetadata: ((SongItem) -> Boolean)? = null
 ): LocalScanPreviewState {
     require(startIndex >= 0) { "startIndex must be non-negative" }
     val resolvedProgress = if (state.scanProgress.processed > progress.processed) {
@@ -211,10 +212,27 @@ internal fun applyHydratedSongsToScanPreview(
         )
         metadataPendingKeys = metadataPendingKeys - previousSong.stableKey() - hydratedSong.stableKey()
     }
+    val hiddenKeys = buildSet {
+        if (state.metadataOnly && hasMeaningfulMetadata != null) {
+            updatedSongs
+                .asSequence()
+                .filter { song ->
+                    song.stableKey() !in metadataPendingKeys &&
+                        !hasMeaningfulMetadata(song)
+                }
+                .forEach { song -> add(song.stableKey()) }
+        }
+        if (state.hideExistingLocalPlaylistSongs) {
+            addAll(existingLocalPlaylistKeys)
+        }
+        if (state.hideDuplicateMetadataSongs) {
+            addAll(duplicateMetadataKeys)
+        }
+    }
     return state.copy(
         scanProgress = resolvedProgress,
         songs = updatedSongs,
-        selectedKeys = selectedKeys,
+        selectedKeys = selectedKeys - hiddenKeys,
         existingLocalPlaylistKeys = existingLocalPlaylistKeys,
         duplicateMetadataKeys = duplicateMetadataKeys,
         metadataPendingKeys = metadataPendingKeys
@@ -627,7 +645,8 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                         state = _scanPreviewState.value,
                         hydratedSongs = hydrated,
                         progress = _scanPreviewState.value.scanProgress,
-                        targetKeys = batch.map(SongItem::stableKey)
+                        targetKeys = batch.map(SongItem::stableKey),
+                        hasMeaningfulMetadata = ::hasMeaningfulScanMetadata
                     )
                 }
             } finally {

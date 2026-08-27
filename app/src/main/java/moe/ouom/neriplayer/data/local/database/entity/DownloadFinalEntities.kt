@@ -11,6 +11,10 @@ import androidx.room.Index
         Index(
             value = ["state", "queue_order"],
             name = "index_download_operation_state_queue"
+        ),
+        Index(
+            value = ["host_process_token", "library_id"],
+            name = "index_download_operation_host_process_library"
         )
     ]
 )
@@ -31,36 +35,14 @@ internal data class DownloadOperationEntity(
     @ColumnInfo(name = "stop_requested_by_user", defaultValue = "0")
     val stopRequestedByUser: Boolean = false,
     @ColumnInfo(name = "created_at_ms") val createdAtMs: Long,
-    @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long
+    @ColumnInfo(name = "updated_at_ms") val updatedAtMs: Long,
+    @ColumnInfo(name = "host_process_token") val hostProcessToken: String? = null,
+    @ColumnInfo(name = "host_admitted_at_ms") val hostAdmittedAtMs: Long? = null
 )
 
 internal data class DownloadOperationIdentityRow(
     @ColumnInfo(name = "operation_id") val operationId: String,
     @ColumnInfo(name = "stable_key") val stableKey: String
-)
-
-/**
- * represents the bounded OS-host handoff for one operation in the current app process
- *
- * Queued operations are deliberately not represented here.  A row is created only
- * immediately before handing an operation to WorkManager or UIDT, so a large batch
- * cannot make every durable QUEUED row consume a host slot.
- */
-@Entity(
-    tableName = "download_host_admission",
-    primaryKeys = ["operation_id"],
-    indices = [
-        Index(
-            value = ["process_token", "library_id"],
-            name = "index_download_host_admission_process_library"
-        )
-    ]
-)
-internal data class DownloadHostAdmissionEntity(
-    @ColumnInfo(name = "operation_id") val operationId: String,
-    @ColumnInfo(name = "library_id") val libraryId: String,
-    @ColumnInfo(name = "process_token") val processToken: String,
-    @ColumnInfo(name = "admitted_at_ms") val admittedAtMs: Long
 )
 
 @Entity(

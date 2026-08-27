@@ -3,8 +3,12 @@ package moe.ouom.neriplayer.core.startup
 import android.content.Context
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.local.database.store.LegacyDownloadUpgradeCoordinator
@@ -17,6 +21,7 @@ internal object LegacyJsonCleanupScheduler {
     private const val TAG = "NERI-LegacyJsonCleanup"
     private val running = AtomicBoolean(false)
     private val pendingReason = AtomicReference<String?>(null)
+    private val downloadUpgradeMutex = Mutex()
     private val retryDelaysMs = longArrayOf(
         0L,
         1_500L,
@@ -43,14 +48,29 @@ internal object LegacyJsonCleanupScheduler {
                         delay(retryDelaysMs[attemptIndex])
                     }
 
-                    lastUpgradeResult = runCatching {
-                        LegacyDownloadUpgradeCoordinator(appContext).execute()
-                    }.onFailure { error ->
+                    lastUpgradeResult = try {
+                        runDownloadUpgradeOnce(appContext)
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
                         NPLogger.w(
                             TAG,
                             "Legacy download upgrade pending: ${error.message}"
                         )
-                    }.getOrNull()
+                        null
+                    }
+                    if ((lastUpgradeResult?.rowsCompleted ?: 0) > 0) {
+                        try {
+                            GlobalDownloadManager.reconcileMaterializedLegacyDownloads(appContext)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Throwable) {
+                            NPLogger.w(
+                                TAG,
+                                "Legacy download finalization pending: ${error.message}"
+                            )
+                        }
+                    }
                     runCatching {
                         DownloadRecoveryRoomStore(appContext).bootstrapLegacyFilesOnce()
                     }.onFailure { error ->
@@ -104,6 +124,12 @@ internal object LegacyJsonCleanupScheduler {
                     schedule(appContext, nextReason)
                 }
             }
+        }
+    }
+
+    suspend fun runDownloadUpgradeOnce(context: Context): LegacyDownloadUpgradeResult {
+        return downloadUpgradeMutex.withLock {
+            LegacyDownloadUpgradeCoordinator(context.applicationContext).execute()
         }
     }
 }

@@ -123,7 +123,8 @@ internal class LegacyDownloadUpgradeCoordinator(
                     runCatching {
                         ManagedDownloadStorage.buildDownloadLibrarySnapshot(
                             context = context,
-                            forceRefresh = true
+                            forceRefresh = true,
+                            includeMetadataLessAudioForLegacyUpgrade = true
                         )
                     }.onSuccess { snapshot ->
                         managedSnapshot = snapshot

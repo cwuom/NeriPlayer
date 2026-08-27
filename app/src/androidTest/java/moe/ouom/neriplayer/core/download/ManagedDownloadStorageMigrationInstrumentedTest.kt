@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import android.content.Context
 import android.content.ContextWrapper
+import android.net.Uri
 import android.os.Environment
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -15,12 +16,14 @@ import java.io.File
 import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
 import moe.ouom.neriplayer.core.download.storage.ROOT_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import org.json.JSONObject
@@ -107,17 +110,28 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         assertArrayEquals(fixture.translatedLyricBytes, readDocument(targetTranslatedLyric))
         assertArrayEquals(fixture.romanizedLyricBytes, readDocument(targetRomanizedLyric))
         val safMetadata = JSONObject(readDocument(targetMetadata).decodeToString())
-        assertEquals(targetAudio.uri.toString(), safMetadata.getString("mediaUri"))
-        assertEquals(targetCover.uri.toString(), safMetadata.getString("coverPath"))
-        assertEquals(targetLyric.uri.toString(), safMetadata.getString("lyricPath"))
-        assertEquals(
-            targetTranslatedLyric.uri.toString(),
+        assertSameDocument(targetAudio.uri, safMetadata.getString("mediaUri"))
+        assertSameDocument(targetCover.uri, safMetadata.getString("coverPath"))
+        assertSameDocument(targetLyric.uri, safMetadata.getString("lyricPath"))
+        assertSameDocument(
+            targetTranslatedLyric.uri,
             safMetadata.getString("translatedLyricPath")
         )
-        assertEquals(
-            targetRomanizedLyric.uri.toString(),
+        assertSameDocument(
+            targetRomanizedLyric.uri,
             safMetadata.getString("romanizedLyricPath")
         )
+
+        val resumedAfterCommittedCleanup = ManagedDownloadStorage.migrateManagedDownloads(
+            context = context,
+            fromDirectoryUri = null,
+            toDirectoryUri = treeUri.toString(),
+            minimumSourceEntryCount = 1,
+            targetPreviouslyCommitted = true
+        )
+        assertTrue(resumedAfterCommittedCleanup.canSwitchDirectory)
+        assertEquals(0, resumedAfterCommittedCleanup.cleanupFailedFiles)
+        assertArrayEquals(fixture.audioBytes, readDocument(targetAudio))
 
         val toPrivate = ManagedDownloadStorage.migrateManagedDownloads(
             context = context,
@@ -157,6 +171,110 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
     }
 
     @Test
+    fun manifestOnlySafRootIsRecognizedAsAnExistingManagedDirectory() = runBlocking {
+        val rootId = ManagedDownloadMigrationTestDocumentProvider.ROOT_ID
+        val treeRoot = treeRoot(rootId)
+        writeDocument(
+            parent = treeRoot,
+            name = MANAGED_LIBRARY_MANIFEST_FILE_NAME,
+            mimeType = "application/json",
+            content = JSONObject()
+                .put("libraryId", "manifest-only-library")
+                .toString()
+                .encodeToByteArray()
+        )
+
+        assertTrue(
+            ManagedDownloadStorage.hasMigratableDownloads(
+                context = appContext,
+                directoryUri = treeUri(rootId).toString()
+            )
+        )
+    }
+
+    @Test
+    fun committedCleanupResumeRejectsAnIncompleteTarget() = runBlocking {
+        val context = isolatedPrivateContext()
+        val fixture = writePrivateFixture(context)
+        val treeUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+        var discoveredMinimumAudioCount = 0
+        val initialMigration = ManagedDownloadStorage.migrateManagedDownloads(
+            context = context,
+            fromDirectoryUri = null,
+            toDirectoryUri = treeUri.toString(),
+            minimumSourceEntryCount = 0,
+            onSourceAudioCountResolved = { count ->
+                discoveredMinimumAudioCount = count
+            }
+        )
+        assertTrue(initialMigration.canSwitchDirectory)
+        assertEquals(1, discoveredMinimumAudioCount)
+
+        val treeRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+        assertTrue(requireTreeFile(treeRoot, fixture.audio.name).delete())
+        var failure: ManagedDownloadMigrationException? = null
+        try {
+            ManagedDownloadStorage.migrateManagedDownloads(
+                context = context,
+                fromDirectoryUri = null,
+                toDirectoryUri = treeUri.toString(),
+                minimumSourceEntryCount = discoveredMinimumAudioCount,
+                targetPreviouslyCommitted = true
+            )
+        } catch (error: ManagedDownloadMigrationException) {
+            failure = error
+        }
+
+        assertNotNull(failure)
+        assertTrue(requireNotNull(failure).retryable)
+    }
+
+    @Test
+    fun committedCleanupResumeWithRemainingSidecarRejectsAnIncompleteTarget() = runBlocking {
+        val context = isolatedPrivateContext()
+        val fixture = writePrivateFixture(context)
+        val metadataBytes = fixture.metadata.readBytes()
+        val treeUri = treeUri(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+        val initialMigration = ManagedDownloadStorage.migrateManagedDownloads(
+            context = context,
+            fromDirectoryUri = null,
+            toDirectoryUri = treeUri.toString()
+        )
+        assertTrue(initialMigration.canSwitchDirectory)
+
+        val treeRoot = treeRoot(ManagedDownloadMigrationTestDocumentProvider.ROOT_ID)
+        assertTrue(requireTreeFile(treeRoot, fixture.audio.name).delete())
+        assertNull(treeRoot.findFile(fixture.audio.name))
+        val privateRoot = defaultRoot(context)
+        val remainingMetadata = File(privateRoot, fixture.metadata.name).apply {
+            parentFile?.mkdirs()
+            writeBytes(metadataBytes)
+        }
+
+        var failure: ManagedDownloadMigrationException? = null
+        var migrationResult: ManagedDownloadStorage.MigrationResult? = null
+        try {
+            migrationResult = ManagedDownloadStorage.migrateManagedDownloads(
+                context = context,
+                fromDirectoryUri = null,
+                toDirectoryUri = treeUri.toString(),
+                minimumSourceEntryCount = 1,
+                targetPreviouslyCommitted = true
+            )
+        } catch (error: ManagedDownloadMigrationException) {
+            failure = error
+        }
+
+        assertNotNull(
+            "expected incomplete target failure; result=$migrationResult, " +
+                "target=${treeRoot.listFiles().mapNotNull(DocumentFile::getName)}",
+            failure
+        )
+        assertTrue(requireNotNull(failure).retryable)
+        assertTrue(remainingMetadata.exists())
+    }
+
+    @Test
     fun privateAndSafSixteenMiBMigrationCompletesWithinTenSecondsPerDirection() {
         runBlocking {
         val context = isolatedPrivateContext()
@@ -193,8 +311,8 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
             val targetAudio = requireTreeFile(treeRoot, name)
             val targetMetadata = requireTreeFile(treeRoot, "$name.npmeta.json")
             assertArrayEquals(payload, readDocument(targetAudio))
-            assertEquals(
-                targetAudio.uri.toString(),
+            assertSameDocument(
+                targetAudio.uri,
                 JSONObject(readDocument(targetMetadata).decodeToString()).getString("mediaUri")
             )
             assertFalse(File(root, name).exists())
@@ -255,11 +373,11 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         val targetTranslated = requireTreeFile(targetLyrics, "RoundTrip_trans.lrc")
         val targetRomanized = requireTreeFile(targetLyrics, "RoundTrip_roma.lrc")
         val metadata = JSONObject(readDocument(targetMetadata).decodeToString())
-        assertEquals(targetAudio.uri.toString(), metadata.getString("mediaUri"))
-        assertEquals(targetCover.uri.toString(), metadata.getString("coverPath"))
-        assertEquals(targetLyric.uri.toString(), metadata.getString("lyricPath"))
-        assertEquals(targetTranslated.uri.toString(), metadata.getString("translatedLyricPath"))
-        assertEquals(targetRomanized.uri.toString(), metadata.getString("romanizedLyricPath"))
+        assertSameDocument(targetAudio.uri, metadata.getString("mediaUri"))
+        assertSameDocument(targetCover.uri, metadata.getString("coverPath"))
+        assertSameDocument(targetLyric.uri, metadata.getString("lyricPath"))
+        assertSameDocument(targetTranslated.uri, metadata.getString("translatedLyricPath"))
+        assertSameDocument(targetRomanized.uri, metadata.getString("romanizedLyricPath"))
         assertNull(sourceTree.findFile("RoundTrip.mp3"))
         assertNull(sourceTree.findFile("RoundTrip.mp3.npmeta.json"))
         assertEquals(targetUri.toString(), ManagedDownloadStorage.configuredDirectoryUri())
@@ -476,6 +594,15 @@ class ManagedDownloadStorageMigrationInstrumentedTest {
         return requireNotNull(appContext.contentResolver.openInputStream(document.uri)).use {
             it.readBytes()
         }
+    }
+
+    private fun assertSameDocument(expected: Uri, actual: String) {
+        val actualUri = Uri.parse(actual)
+        assertEquals(expected.authority, actualUri.authority)
+        assertEquals(
+            DocumentsContract.getDocumentId(expected),
+            DocumentsContract.getDocumentId(actualUri)
+        )
     }
 
     private fun requireTreeDirectory(parent: DocumentFile, name: String): DocumentFile {

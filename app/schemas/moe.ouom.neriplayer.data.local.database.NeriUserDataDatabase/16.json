@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 16,
-    "identityHash": "844ccd63e0b2081f83ffd8cf795e1614",
+    "identityHash": "c371e6df2965b94c363e89786209a828",
     "entities": [
       {
         "tableName": "local_playlist",
@@ -2373,7 +2373,7 @@
       },
       {
         "tableName": "download_operation",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, PRIMARY KEY(`operation_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`operation_id` TEXT NOT NULL, `stable_key` TEXT NOT NULL, `library_id` TEXT NOT NULL, `state` TEXT NOT NULL, `queue_order` INTEGER NOT NULL, `source_hint_json` TEXT NOT NULL, `staging_dir_name` TEXT NOT NULL, `bytes_written` INTEGER NOT NULL, `total_bytes` INTEGER, `resume_json` TEXT, `retry_count` INTEGER NOT NULL, `next_retry_at_ms` INTEGER, `last_error_code` TEXT, `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0, `created_at_ms` INTEGER NOT NULL, `updated_at_ms` INTEGER NOT NULL, `host_process_token` TEXT, `host_admitted_at_ms` INTEGER, PRIMARY KEY(`operation_id`))",
         "fields": [
           {
             "fieldPath": "operationId",
@@ -2467,6 +2467,16 @@
             "columnName": "updated_at_ms",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "hostProcessToken",
+            "columnName": "host_process_token",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "hostAdmittedAtMs",
+            "columnName": "host_admitted_at_ms",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -2485,6 +2495,16 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue` ON `${TABLE_NAME}` (`state`, `queue_order`)"
+          },
+          {
+            "name": "index_download_operation_host_process_library",
+            "unique": false,
+            "columnNames": [
+              "host_process_token",
+              "library_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_download_operation_host_process_library` ON `${TABLE_NAME}` (`host_process_token`, `library_id`)"
           }
         ]
       },
@@ -2974,7 +2994,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '844ccd63e0b2081f83ffd8cf795e1614')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c371e6df2965b94c363e89786209a828')"
     ]
   }
 }

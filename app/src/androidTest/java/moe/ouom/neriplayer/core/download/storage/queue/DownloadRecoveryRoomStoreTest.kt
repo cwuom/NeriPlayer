@@ -22,7 +22,6 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
-import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
@@ -256,6 +255,64 @@ class DownloadRecoveryRoomStoreTest {
     }
 
     @Test
+    fun operationUpsertPreservesItsEmbeddedHostAdmissionLease() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val request = DownloadExecutionRequest(
+                operationId = "embedded-host-admission",
+                song = song(899L, "embedded-host-admission"),
+                userInitiated = true
+            )
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "QUEUED",
+                database = database
+            )
+            assertTrue(
+                DownloadExecutionRoomStore.tryAcquireHostAdmission(
+                    context = context,
+                    operationId = request.operationId,
+                    capacity = 1,
+                    nowMs = 2_000L,
+                    database = database
+                )
+            )
+            val admissionBeforeUpsert = database.downloadOperationDao()
+                .find(request.operationId)
+
+            DownloadExecutionRoomStore.upsert(
+                context = context,
+                request = request,
+                state = "QUEUED",
+                database = database
+            )
+
+            val admissionAfterUpsert = database.downloadOperationDao()
+                .find(request.operationId)
+            assertEquals(
+                admissionBeforeUpsert?.hostProcessToken,
+                admissionAfterUpsert?.hostProcessToken
+            )
+            assertEquals(2_000L, admissionAfterUpsert?.hostAdmittedAtMs)
+            assertEquals(
+                1,
+                DownloadExecutionRoomStore.currentHostAdmissionCount(
+                    context = context,
+                    nowMs = 2_000L,
+                    database = database
+                )
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun staleQueuedHostAdmissionsAreReclaimedWithoutReclaimingRunningWork() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(
@@ -315,7 +372,8 @@ class DownloadRecoveryRoomStoreTest {
                 )
             )
             assertTrue(
-                database.downloadOperationDao().findHostAdmission(requests.first().operationId) != null
+                database.downloadOperationDao().find(requests.first().operationId)
+                    ?.hostProcessToken != null
             )
         } finally {
             database.close()
@@ -383,10 +441,10 @@ class DownloadRecoveryRoomStoreTest {
                     updatedAtMs = 1L
                 )
             )
-            database.downloadOperationDao().upsertHostAdmission(
-                DownloadHostAdmissionEntity(
+            assertEquals(
+                1,
+                database.downloadOperationDao().setHostAdmission(
                     operationId = invalidOperationId,
-                    libraryId = libraryId,
                     processToken = "legacy-payload",
                     admittedAtMs = 10L
                 )
@@ -414,7 +472,7 @@ class DownloadRecoveryRoomStoreTest {
             )
             assertEquals(
                 null,
-                database.downloadOperationDao().findHostAdmission(invalidOperationId)
+                database.downloadOperationDao().find(invalidOperationId)?.hostProcessToken
             )
         } finally {
             database.close()
@@ -840,10 +898,10 @@ class DownloadRecoveryRoomStoreTest {
                     updatedAtMs = 10L
                 )
             )
-            database.downloadOperationDao().upsertHostAdmission(
-                DownloadHostAdmissionEntity(
+            assertEquals(
+                1,
+                database.downloadOperationDao().setHostAdmission(
                     operationId = operationId,
-                    libraryId = libraryId,
                     processToken = "legacy-payload",
                     admittedAtMs = 10L
                 )
@@ -872,7 +930,7 @@ class DownloadRecoveryRoomStoreTest {
             assertEquals(null, rehydrated?.lastErrorCode)
             assertEquals(
                 null,
-                database.downloadOperationDao().findHostAdmission(operationId)
+                database.downloadOperationDao().find(operationId)?.hostProcessToken
             )
         } finally {
             database.close()
@@ -2308,10 +2366,10 @@ class DownloadRecoveryRoomStoreTest {
                         libraryId = libraryId
                     )
                 )
-                dao.upsertHostAdmission(
-                    DownloadHostAdmissionEntity(
+                assertEquals(
+                    1,
+                    dao.setHostAdmission(
                         operationId = operationId,
-                        libraryId = libraryId,
                         processToken = "test-process",
                         admittedAtMs = index.toLong()
                     )
@@ -2339,7 +2397,7 @@ class DownloadRecoveryRoomStoreTest {
             )
             assertTrue(dao.findAll().isEmpty())
             assertTrue(operationIds.none { operationId ->
-                dao.findHostAdmission(operationId) != null
+                dao.find(operationId)?.hostProcessToken != null
             })
         } finally {
             database.close()

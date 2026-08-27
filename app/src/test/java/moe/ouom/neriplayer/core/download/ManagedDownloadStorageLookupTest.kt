@@ -100,7 +100,8 @@ class ManagedDownloadStorageLookupTest {
         val metadata = mapOf(
             numbered.name to ManagedDownloadStorage.DownloadedAudioMetadata(
                 stableKey = "1|netease|",
-                downloadFinalized = true
+                downloadFinalized = true,
+                metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
             ),
             canonical.name to ManagedDownloadStorage.DownloadedAudioMetadata(
                 stableKey = "1|netease|",

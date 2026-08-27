@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -13,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class ManagedDownloadSnapshotRoomStoreTest {
@@ -88,6 +90,34 @@ class ManagedDownloadSnapshotRoomStoreTest {
         } finally {
             cacheFile.delete()
             database.close()
+        }
+    }
+
+    @Test
+    fun persistRecreatesAMissingFilesDirectory() = runTest {
+        val baseContext = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            baseContext,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val isolatedRoot = File(
+            baseContext.cacheDir,
+            "snapshot-room-store-${System.nanoTime()}"
+        )
+        val isolatedContext = object : ContextWrapper(baseContext) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getFilesDir(): File = File(isolatedRoot, "files")
+        }
+
+        try {
+            val store = ManagedDownloadSnapshotRoomStore(isolatedContext, database)
+
+            assertTrue(store.persist("root-a", snapshot()))
+            assertTrue(ManagedDownloadSnapshotDiskCache.cacheFile(isolatedContext).isFile)
+        } finally {
+            database.close()
+            isolatedRoot.deleteRecursively()
         }
     }
 

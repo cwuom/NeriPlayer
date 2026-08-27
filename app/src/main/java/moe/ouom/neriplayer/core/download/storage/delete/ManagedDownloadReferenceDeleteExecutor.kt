@@ -55,7 +55,9 @@ internal class ManagedDownloadReferenceDeleteExecutor(
     fun deleteReferences(
         context: Context,
         references: Collection<TrustedManagedRef>,
-        deletePolicy: ManagedDownloadDeletePolicy
+        deletePolicy: ManagedDownloadDeletePolicy,
+        onDeleteStarted: (TrustedManagedRef) -> Unit = {},
+        onDeleteAttemptFinished: (TrustedManagedRef, Boolean) -> Unit = { _, _ -> }
     ): ManagedDownloadReferenceDeleteResult {
         val normalizedReferences = normalizeReferences(references)
         if (normalizedReferences.isEmpty()) {
@@ -64,9 +66,15 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val allowedReferences = filterAllowedReferences(normalizedReferences, deletePolicy)
         val deletedReferences = linkedSetOf<String>()
         allowedReferences.forEach { reference ->
-            val deleted = deleteReference(context, reference)
-            if (deleted) {
-                deletedReferences += reference.externalReference
+            onDeleteStarted(reference)
+            var deleted = false
+            try {
+                deleted = deleteReference(context, reference)
+                if (deleted) {
+                    deletedReferences += reference.externalReference
+                }
+            } finally {
+                onDeleteAttemptFinished(reference, deleted)
             }
         }
         return ManagedDownloadReferenceDeleteResult(

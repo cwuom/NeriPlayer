@@ -45,7 +45,49 @@ internal data class CopiedMigrationEntry(
     val copiedEntry: ManagedDownloadStorage.StoredEntry,
     val createdNew: Boolean,
     val sourceDigest: String? = null
+) {
+    fun toVerificationProgressEntry(): ManagedMigrationProgressEntry {
+        val sourceBytes = if (sourceDigest.isNullOrBlank()) {
+            original.entry.sizeBytes.coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val targetBytes = copiedEntry.sizeBytes.coerceAtLeast(0L)
+        val logicalBytes = if (sourceBytes > Long.MAX_VALUE - targetBytes) {
+            Long.MAX_VALUE
+        } else {
+            sourceBytes + targetBytes
+        }
+        return ManagedMigrationProgressEntry(
+            reference = copiedEntry.reference,
+            name = copiedEntry.name,
+            sizeBytes = logicalBytes
+        )
+    }
+}
+
+internal data class ManagedMigrationMetadataRewriteResult(
+    val copiedEntries: List<CopiedMigrationEntry>,
+    val failedFiles: Int,
+    val error: ManagedDownloadMigrationException? = null
 )
+
+internal data class ManagedMigrationVerificationResult(
+    val failedFiles: Int,
+    val error: ManagedDownloadMigrationException? = null
+)
+
+internal data class ManagedMigrationCleanupResult(
+    val failedFiles: Int,
+    val retryableFailedFiles: Int
+)
+
+internal fun resolveMinimumMigrationAudioCount(
+    requestedMinimum: Int,
+    discoveredSourceAudioCount: Int
+): Int {
+    return maxOf(requestedMinimum, discoveredSourceAudioCount).coerceAtLeast(0)
+}
 
 internal data class StoredWriteResult(
     val entry: ManagedDownloadStorage.StoredEntry,
@@ -91,6 +133,25 @@ internal class ManagedMigrationProgressReporter(
 
     fun finishRewrite(fileName: String?) {
         delegate.finishRewrite(fileName)
+    }
+
+    fun startVerification(entries: List<CopiedMigrationEntry>) {
+        delegate.startVerification(entries.map(CopiedMigrationEntry::toVerificationProgressEntry))
+    }
+
+    fun startVerificationEntry(entry: CopiedMigrationEntry) {
+        delegate.startVerificationEntry(entry.toVerificationProgressEntry())
+    }
+
+    fun onVerificationProgress(entry: CopiedMigrationEntry, verifiedBytes: Long) {
+        delegate.onVerificationProgress(
+            entry = entry.toVerificationProgressEntry(),
+            verifiedBytes = verifiedBytes
+        )
+    }
+
+    fun finishVerification(entry: CopiedMigrationEntry) {
+        delegate.finishVerification(entry.toVerificationProgressEntry())
     }
 
     fun startCleanup(totalEntries: Int, fileName: String?) {

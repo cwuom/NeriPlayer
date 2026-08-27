@@ -86,6 +86,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -120,7 +121,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -132,6 +135,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationPolicy
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
+import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFromWorkData
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthState
 import moe.ouom.neriplayer.data.settings.AdvancedBlurQuality
@@ -249,6 +253,11 @@ private data class PendingDownloadDirectoryChange(
     val shouldReleasePreviousPermission: Boolean
         get() = !previousUri.isNullOrBlank() &&
             !ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)
+}
+
+private enum class DownloadDirectoryPreparationResult {
+    KEEP_PERSISTED_PERMISSION,
+    RELEASE_PERSISTED_PERMISSION
 }
 
 private data class PendingSettingsSearchNavigation(
@@ -594,7 +603,6 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
-    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val autoSettingsRepository = remember(context) { AutoSettingsRepository(context) }
     val listenTogetherPreferences = remember { AppContainer.listenTogetherPreferences }
@@ -701,13 +709,6 @@ fun SettingsScreen(
     val neteaseVm: NeteaseAuthViewModel = viewModel()
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     var loginSuccessTitle by remember { mutableStateOf<String?>(null) }
-    var showDownloadDirectorySwitchWarningDialog by remember { mutableStateOf(false) }
-    var pendingDownloadDirectoryChange by remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
-    var isMigratingDownloadDirectory by remember { mutableStateOf(false) }
-    var downloadDirectoryPermissionLost by remember { mutableStateOf(false) }
-    var activeMigrationWorkId by rememberSaveable { mutableStateOf<String?>(null) }
-    val migrationProgress by ManagedDownloadStorage.migrationProgressFlow.collectAsState()
-    val hasActiveDownloadOperations by GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
     var confirmPhoneMasked by remember { mutableStateOf<String?>(null) }
     var versionTapCount by remember { mutableIntStateOf(0) }
     val biliVm: BiliAuthViewModel = viewModel()
@@ -722,88 +723,6 @@ fun SettingsScreen(
     val configTransferVm: ConfigTransferViewModel = viewModel()
     val configTransferUiState by configTransferVm.uiState.collectAsStateWithLifecycleCompat()
     val localPlaylistCount = backupRestoreUiState.currentPlaylistCount
-    val defaultDownloadDirectorySummary = composeResources.getString(R.string.settings_download_directory_default_label)
-    val downloadDirectoryChangeEnabled = !hasActiveDownloadOperations && !isMigratingDownloadDirectory
-
-    LaunchedEffect(downloadDirectoryUri) {
-        downloadDirectoryPermissionLost = !downloadDirectoryUri.isNullOrBlank() &&
-            !ManagedDownloadStorage.isStorageRootResolvable(context)
-    }
-
-    LaunchedEffect(Unit) {
-        val runningWork = withContext(Dispatchers.IO) {
-            runCatching {
-                WorkManager.getInstance(context)
-                    .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
-                    .get()
-                    .firstOrNull { info -> !info.state.isFinished }
-            }.getOrNull()
-        }
-        if (runningWork != null) {
-            activeMigrationWorkId = runningWork.id.toString()
-            isMigratingDownloadDirectory = true
-        }
-    }
-
-    LaunchedEffect(activeMigrationWorkId) {
-        val workId = activeMigrationWorkId ?: return@LaunchedEffect
-        while (true) {
-            val workInfo = withContext(Dispatchers.IO) {
-                runCatching {
-                    WorkManager.getInstance(context)
-                        .getWorkInfoById(java.util.UUID.fromString(workId))
-                        .get()
-                }.getOrNull()
-            }
-            if (workInfo == null) {
-                isMigratingDownloadDirectory = false
-                activeMigrationWorkId = null
-                inlineMsg = resources.getQuantityString(
-                    R.plurals.settings_download_directory_migrate_failed,
-                    1,
-                    1
-                )
-                break
-            }
-            if (!workInfo.state.isFinished) {
-                isMigratingDownloadDirectory = true
-                delay(500L)
-                continue
-            }
-            isMigratingDownloadDirectory = false
-            if (workInfo.state == WorkInfo.State.SUCCEEDED) {
-                val movedFiles = workInfo.outputData
-                    .getInt(ManagedDownloadMigrationWorker.KEY_MOVED_FILES, 0)
-                val cleanupFailedFiles = workInfo.outputData
-                    .getInt(ManagedDownloadMigrationWorker.KEY_CLEANUP_FAILED_FILES, 0)
-                inlineMsg = if (cleanupFailedFiles > 0) {
-                    resources.getQuantityString(
-                        R.plurals.settings_download_directory_migrated_partial,
-                        movedFiles,
-                        movedFiles,
-                        cleanupFailedFiles
-                    )
-                } else {
-                    resources.getQuantityString(
-                        R.plurals.settings_download_directory_migrated,
-                        movedFiles,
-                        movedFiles
-                    )
-                }
-            } else {
-                val skippedFiles = workInfo.outputData
-                    .getInt(ManagedDownloadMigrationWorker.KEY_SKIPPED_FILES, 0)
-                    .coerceAtLeast(1)
-                inlineMsg = resources.getQuantityString(
-                    R.plurals.settings_download_directory_migrate_failed,
-                    skippedFiles,
-                    skippedFiles
-                )
-            }
-            activeMigrationWorkId = null
-            break
-        }
-    }
 
     fun showSettingsMessage(message: String) {
         AppFeedback.show(context = context, message = message)
@@ -813,154 +732,12 @@ fun SettingsScreen(
         AppFeedback.showToast(context = context, message = message)
     }
 
-    fun guardDownloadDirectoryChange(
-        targetUri: String? = null,
-        releaseTargetPermissionOnBlock: Boolean = false
-    ): Boolean {
-        if (!GlobalDownloadManager.hasActiveDownloadOperations()) {
-            return false
-        }
-        if (
-            releaseTargetPermissionOnBlock &&
-            !targetUri.isNullOrBlank() &&
-            !ManagedDownloadStorage.areEquivalentDirectoryUris(downloadDirectoryUri, targetUri)
-        ) {
-            ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
-        }
-        val message = composeResources.getString(
-            R.string.settings_download_directory_change_blocked_active_download
-        )
-        inlineMsg = message
-        showSettingsMessage(message)
-        return true
-    }
-
-    fun applyDownloadDirectoryChange(
-        targetUri: String?,
-        targetSummary: String,
-        previousUri: String?,
-        shouldReleasePreviousPermission: Boolean,
-        migrationResult: ManagedDownloadStorage.MigrationResult? = null
-    ) {
-        val targetLabel = targetSummary.takeIf { !targetUri.isNullOrBlank() }
-        ManagedDownloadStorage.updateConfiguredTreeUri(targetUri)
-        ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
-        onDownloadDirectoryUriChange(targetUri, targetLabel)
-        downloadDirectoryPermissionLost = false
-        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
-        if (shouldReleasePreviousPermission) {
-            ManagedDownloadStorage.releasePersistedDirectoryPermission(context, previousUri)
-        }
-        inlineMsg = when {
-            migrationResult != null && migrationResult.cleanupFailedFiles > 0 -> {
-                resources.getQuantityString(
-                    R.plurals.settings_download_directory_migrated_partial,
-                    migrationResult.movedFiles,
-                    migrationResult.movedFiles,
-                    migrationResult.cleanupFailedFiles
-                )
-            }
-
-            migrationResult != null -> {
-                resources.getQuantityString(
-                    R.plurals.settings_download_directory_migrated,
-                    migrationResult.movedFiles,
-                    migrationResult.movedFiles
-                )
-            }
-
-            targetUri.isNullOrBlank() -> composeResources.getString(R.string.settings_download_directory_reset_done)
-            else -> composeResources.getString(R.string.settings_download_directory_selected)
-        }
-    }
-
-    suspend fun prepareDownloadDirectoryChange(
-        targetUri: String?,
-        targetSummary: String,
-        releaseTargetPermissionOnCancel: Boolean
-    ) {
-        if (
-            guardDownloadDirectoryChange(
-                targetUri = targetUri,
-                releaseTargetPermissionOnBlock = releaseTargetPermissionOnCancel
-            )
-        ) {
-            return
-        }
-        val previousUri = downloadDirectoryUri?.takeIf { it.isNotBlank() }
-        if (previousUri == targetUri) {
-            inlineMsg = if (targetUri.isNullOrBlank()) {
-                composeResources.getString(R.string.settings_download_directory_reset_done)
-            } else {
-                composeResources.getString(R.string.settings_download_directory_selected)
-            }
-            return
-        }
-
-        if (ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)) {
-            runCatching {
-                applyDownloadDirectoryChange(
-                    targetUri = targetUri,
-                    targetSummary = targetSummary,
-                    previousUri = previousUri,
-                    shouldReleasePreviousPermission = false
-                )
-            }.onFailure {
-                if (releaseTargetPermissionOnCancel) {
-                    ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
-                }
-                inlineMsg = composeResources.getString(
-                    R.string.settings_download_directory_pick_failed,
-                    it.message ?: ""
-                )
-            }
-            return
-        }
-
-        val shouldReattachExistingDirectory = withContext(Dispatchers.IO) {
-            val sourceHasManagedEntries = runCatching {
-                ManagedDownloadStorage.hasMigratableDownloads(context, previousUri)
-            }.getOrNull()
-            val targetHasManagedEntries = runCatching {
-                ManagedDownloadStorage.hasMigratableDownloads(context, targetUri)
-            }.getOrNull()
-            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectory(
-                fromDirectoryUri = previousUri,
-                toDirectoryUri = targetUri,
-                sourceHasManagedEntries = sourceHasManagedEntries,
-                targetHasManagedEntries = targetHasManagedEntries
-            )
-        }
-        if (shouldReattachExistingDirectory) {
-            runCatching {
-                applyDownloadDirectoryChange(
-                    targetUri = targetUri,
-                    targetSummary = targetSummary,
-                    previousUri = previousUri,
-                    shouldReleasePreviousPermission = false
-                )
-            }.onFailure {
-                if (releaseTargetPermissionOnCancel) {
-                    ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
-                }
-                inlineMsg = composeResources.getString(
-                    R.string.settings_download_directory_pick_failed,
-                    it.message ?: ""
-                )
-            }
-            return
-        }
-
-        if (ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(previousUri, targetUri)) {
-            pendingDownloadDirectoryChange = PendingDownloadDirectoryChange(
-                previousUri = previousUri,
-                targetUri = targetUri,
-                targetSummary = targetSummary,
-                releaseTargetPermissionOnCancel = releaseTargetPermissionOnCancel
-            )
-            return
-        }
-    }
+    val downloadDirectorySettings = rememberDownloadDirectorySettingsController(
+        downloadDirectoryUri = downloadDirectoryUri,
+        onDownloadDirectoryUriChange = onDownloadDirectoryUriChange,
+        onInlineMessageChange = { inlineMsg = it },
+        onShowMessage = ::showSettingsMessage
+    )
 
     // 照片选择器
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -981,50 +758,6 @@ fun SettingsScreen(
         }
     )
 
-    val downloadDirectoryContract = remember {
-        object : ActivityResultContracts.OpenDocumentTree() {
-            override fun createIntent(context: Context, input: Uri?): Intent {
-                return super.createIntent(context, input).addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
-                )
-            }
-        }
-    }
-    val downloadDirectoryLauncher = rememberLauncherForActivityResult(
-        contract = downloadDirectoryContract
-    ) { uri ->
-        if (uri == null) {
-            return@rememberLauncherForActivityResult
-        }
-        if (guardDownloadDirectoryChange()) {
-            return@rememberLauncherForActivityResult
-        }
-        try {
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            context.contentResolver.takePersistableUriPermission(uri, flags)
-            downloadDirectoryPermissionLost = false
-            val targetUri = uri.toString()
-            scope.launch {
-                val targetSummary = withContext(Dispatchers.IO) {
-                    ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
-                }
-                prepareDownloadDirectoryChange(
-                    targetUri = targetUri,
-                    targetSummary = targetSummary,
-                    releaseTargetPermissionOnCancel = true
-                )
-            }
-        } catch (e: SecurityException) {
-            inlineMsg = composeResources.getString(
-                R.string.settings_download_directory_pick_failed,
-                e.message ?: ""
-            )
-        }
-    }
-
     LaunchedEffect(listenTogetherWorkerBaseUrlInput) {
         if (listenTogetherServerInput != listenTogetherWorkerBaseUrlInput) {
             listenTogetherServerInput = listenTogetherWorkerBaseUrlInput
@@ -1034,30 +767,6 @@ fun SettingsScreen(
         if (!showListenTogetherNicknameDialog) {
             listenTogetherNicknameInput = listenTogetherNickname
             listenTogetherNicknameError = null
-        }
-    }
-
-    var downloadDirectorySummary by remember(downloadDirectoryUri, defaultDownloadDirectorySummary) {
-        mutableStateOf(defaultDownloadDirectorySummary)
-    }
-    LaunchedEffect(downloadDirectoryUri, defaultDownloadDirectorySummary) {
-        downloadDirectorySummary = if (downloadDirectoryUri.isNullOrBlank()) {
-            defaultDownloadDirectorySummary
-        } else {
-            withContext(Dispatchers.IO) {
-                ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
-            }
-        }
-    }
-    val resetDownloadDirectory: () -> Unit = {
-        if (!guardDownloadDirectoryChange()) {
-            scope.launch {
-                prepareDownloadDirectoryChange(
-                    targetUri = null,
-                    targetSummary = defaultDownloadDirectorySummary,
-                    releaseTargetPermissionOnCancel = false
-                )
-            }
         }
     }
 
@@ -2096,16 +1805,12 @@ fun SettingsScreen(
                                 arrowRotation = 0f,
                                 onExpandedChange = {},
                                 showHeader = false,
-                                currentDownloadDirectorySummary = downloadDirectorySummary,
+                                currentDownloadDirectorySummary = downloadDirectorySettings.currentSummary,
                                 isCustomDownloadDirectory = !downloadDirectoryUri.isNullOrBlank(),
-                                downloadDirectoryPermissionLost = downloadDirectoryPermissionLost,
-                                downloadDirectoryChangeEnabled = downloadDirectoryChangeEnabled,
-                                onPickDownloadDirectory = {
-                                    if (!guardDownloadDirectoryChange()) {
-                                        showDownloadDirectorySwitchWarningDialog = true
-                                    }
-                                },
-                                onResetDownloadDirectory = resetDownloadDirectory,
+                                downloadDirectoryPermissionLost = downloadDirectorySettings.permissionLost,
+                                downloadDirectoryChangeEnabled = downloadDirectorySettings.changeEnabled,
+                                onPickDownloadDirectory = downloadDirectorySettings.onPickRequested,
+                                onResetDownloadDirectory = downloadDirectorySettings.onResetRequested,
                                 downloadFileNameTemplate = downloadFileNameTemplate,
                                 onDownloadFileNameTemplateChange = onDownloadFileNameTemplateChange,
                                 maxCacheSizeBytes = maxCacheSizeBytes,
@@ -2139,7 +1844,8 @@ fun SettingsScreen(
                                 onClearLogFilesChange = { clearLogFiles = it },
                                 clearCrashLogs = clearCrashLogs,
                                 onClearCrashLogsChange = { clearCrashLogs = it },
-                                downloadStagingClearEnabled = !hasActiveDownloadOperations,
+                                downloadStagingClearEnabled =
+                                    !downloadDirectorySettings.hasActiveDownloadOperations,
                                 onClearCacheClick = onClearCacheClick,
                                 cardIndex = cardIndex,
                                 highlightTargetId = settingsHighlightTargetId,
@@ -2847,9 +2553,482 @@ fun SettingsScreen(
         onShowClearWebDavConfigDialogChange = { showClearWebDavConfigDialog = it }
     )
 
-    if (showDownloadDirectorySwitchWarningDialog) {
+    DownloadDirectoryDialogs(controller = downloadDirectorySettings)
+
+}
+
+private class DownloadDirectorySettingsController(
+    private val currentSummaryState: State<String>,
+    private val permissionLostState: State<Boolean>,
+    private val hasActiveDownloadOperationsState: State<Boolean>,
+    private val showSwitchWarningState: State<Boolean>,
+    private val pendingChangeState: State<PendingDownloadDirectoryChange?>,
+    private val isPreparingState: State<Boolean>,
+    private val isMigratingState: State<Boolean>,
+    private val migrationProgressState: State<ManagedDownloadStorage.MigrationProgress?>,
+    private val persistedMigrationProgressState: State<ManagedDownloadStorage.MigrationProgress?>,
+    val onPickRequested: () -> Unit,
+    val onResetRequested: () -> Unit,
+    val onDismissSwitchWarning: () -> Unit,
+    val onConfirmSwitchWarning: () -> Unit,
+    val onDismissPendingChange: (PendingDownloadDirectoryChange) -> Unit,
+    val onConfirmPendingChange: (PendingDownloadDirectoryChange) -> Unit
+) {
+    val currentSummary: String
+        get() = currentSummaryState.value
+
+    val permissionLost: Boolean
+        get() = permissionLostState.value
+
+    val changeEnabled: Boolean
+        get() = !hasActiveDownloadOperationsState.value &&
+            !isPreparingState.value &&
+            !isMigratingState.value
+
+    val hasActiveDownloadOperations: Boolean
+        get() = hasActiveDownloadOperationsState.value
+
+    val showSwitchWarning: Boolean
+        get() = showSwitchWarningState.value
+
+    val pendingChange: PendingDownloadDirectoryChange?
+        get() = pendingChangeState.value
+
+    val isPreparing: Boolean
+        get() = isPreparingState.value
+
+    val isMigrating: Boolean
+        get() = isMigratingState.value
+
+    val migrationProgress: ManagedDownloadStorage.MigrationProgress?
+        get() = migrationProgressState.value ?: persistedMigrationProgressState.value
+}
+
+@Composable
+private fun rememberDownloadDirectorySettingsController(
+    downloadDirectoryUri: String?,
+    onDownloadDirectoryUriChange: (String?, String?) -> Unit,
+    onInlineMessageChange: (String?) -> Unit,
+    onShowMessage: (String) -> Unit
+): DownloadDirectorySettingsController {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val scope = rememberCoroutineScope()
+    val defaultDirectorySummary = resources.getString(
+        R.string.settings_download_directory_default_label
+    )
+    val showSwitchWarningState = remember { mutableStateOf(false) }
+    val pendingChangeState = remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
+    val isPreparingState = remember { mutableStateOf(false) }
+    val isMigratingState = remember { mutableStateOf(false) }
+    val permissionLostState = remember { mutableStateOf(false) }
+    val activeMigrationWorkIdState = rememberSaveable { mutableStateOf<String?>(null) }
+    val persistedMigrationProgressState = remember {
+        mutableStateOf<ManagedDownloadStorage.MigrationProgress?>(null)
+    }
+    val migrationProgressState = ManagedDownloadStorage.migrationProgressFlow.collectAsState()
+    val hasActiveDownloadOperationsState =
+        GlobalDownloadManager.activeDownloadOperationsFlow.collectAsState()
+    val currentSummaryState = remember(downloadDirectoryUri, defaultDirectorySummary) {
+        mutableStateOf(defaultDirectorySummary)
+    }
+
+    var showSwitchWarning by showSwitchWarningState
+    var pendingChange by pendingChangeState
+    var isPreparing by isPreparingState
+    var isMigrating by isMigratingState
+    var permissionLost by permissionLostState
+    var activeMigrationWorkId by activeMigrationWorkIdState
+    var persistedMigrationProgress by persistedMigrationProgressState
+    var currentSummary by currentSummaryState
+
+    LaunchedEffect(downloadDirectoryUri) {
+        permissionLost = !downloadDirectoryUri.isNullOrBlank() &&
+            !ManagedDownloadStorage.isStorageRootResolvable(context)
+    }
+
+    LaunchedEffect(Unit) {
+        val runningWork = withContext(Dispatchers.IO) {
+            runCatching {
+                WorkManager.getInstance(context)
+                    .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
+                    .get()
+                    .firstOrNull { info -> !info.state.isFinished }
+            }.getOrNull()
+        }
+        if (runningWork != null) {
+            persistedMigrationProgress = migrationProgressFromWorkData(runningWork.progress)
+            activeMigrationWorkId = runningWork.id.toString()
+            isMigrating = true
+        }
+    }
+
+    LaunchedEffect(activeMigrationWorkId) {
+        val workId = activeMigrationWorkId ?: return@LaunchedEffect
+        while (true) {
+            val workInfo = withContext(Dispatchers.IO) {
+                runCatching {
+                    WorkManager.getInstance(context)
+                        .getWorkInfoById(java.util.UUID.fromString(workId))
+                        .get()
+                }.getOrNull()
+            }
+            if (workInfo == null) {
+                persistedMigrationProgress = null
+                isMigrating = false
+                activeMigrationWorkId = null
+                onInlineMessageChange(
+                    resources.getQuantityString(
+                        R.plurals.settings_download_directory_migrate_failed,
+                        1,
+                        1
+                    )
+                )
+                break
+            }
+            persistedMigrationProgress = migrationProgressFromWorkData(workInfo.progress)
+            if (!workInfo.state.isFinished) {
+                isMigrating = true
+                delay(500L)
+                continue
+            }
+            isMigrating = false
+            if (workInfo.state == WorkInfo.State.SUCCEEDED) {
+                val movedFiles = workInfo.outputData
+                    .getInt(ManagedDownloadMigrationWorker.KEY_MOVED_FILES, 0)
+                val cleanupFailedFiles = workInfo.outputData
+                    .getInt(ManagedDownloadMigrationWorker.KEY_CLEANUP_FAILED_FILES, 0)
+                onInlineMessageChange(
+                    if (cleanupFailedFiles > 0) {
+                        resources.getQuantityString(
+                            R.plurals.settings_download_directory_migrated_partial,
+                            movedFiles,
+                            movedFiles,
+                            cleanupFailedFiles
+                        )
+                    } else {
+                        resources.getQuantityString(
+                            R.plurals.settings_download_directory_migrated,
+                            movedFiles,
+                            movedFiles
+                        )
+                    }
+                )
+            } else {
+                val skippedFiles = workInfo.outputData
+                    .getInt(ManagedDownloadMigrationWorker.KEY_SKIPPED_FILES, 0)
+                    .coerceAtLeast(1)
+                onInlineMessageChange(
+                    resources.getQuantityString(
+                        R.plurals.settings_download_directory_migrate_failed,
+                        skippedFiles,
+                        skippedFiles
+                    )
+                )
+            }
+            persistedMigrationProgress = null
+            activeMigrationWorkId = null
+            break
+        }
+    }
+
+    fun showPreparationError(error: Exception) {
+        val detail = error.message?.takeIf(String::isNotBlank)
+            ?: error::class.java.simpleName
+        val message = resources.getString(
+            R.string.settings_download_directory_pick_failed,
+            detail
+        )
+        onInlineMessageChange(message)
+        onShowMessage(message)
+    }
+
+    fun guardDirectoryChange(
+        targetUri: String? = null,
+        releaseTargetPermissionOnBlock: Boolean = false,
+        allowWhilePreparing: Boolean = false
+    ): Boolean {
+        val blockedByPreparation = isPreparing && !allowWhilePreparing
+        if (blockedByPreparation || isMigrating) {
+            if (
+                releaseTargetPermissionOnBlock &&
+                !targetUri.isNullOrBlank() &&
+                !ManagedDownloadStorage.areEquivalentDirectoryUris(downloadDirectoryUri, targetUri)
+            ) {
+                ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+            }
+            return true
+        }
+        if (!GlobalDownloadManager.hasActiveDownloadOperations()) {
+            return false
+        }
+        if (
+            releaseTargetPermissionOnBlock &&
+            !targetUri.isNullOrBlank() &&
+            !ManagedDownloadStorage.areEquivalentDirectoryUris(downloadDirectoryUri, targetUri)
+        ) {
+            ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+        }
+        val message = resources.getString(
+            R.string.settings_download_directory_change_blocked_active_download
+        )
+        onInlineMessageChange(message)
+        onShowMessage(message)
+        return true
+    }
+
+    fun applyDirectoryChange(
+        targetUri: String?,
+        targetSummary: String,
+        previousUri: String?,
+        shouldReleasePreviousPermission: Boolean
+    ) {
+        val targetLabel = targetSummary.takeIf { !targetUri.isNullOrBlank() }
+        ManagedDownloadStorage.updateConfiguredTreeUri(targetUri)
+        ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
+        onDownloadDirectoryUriChange(targetUri, targetLabel)
+        permissionLost = false
+        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
+        if (shouldReleasePreviousPermission) {
+            ManagedDownloadStorage.releasePersistedDirectoryPermission(context, previousUri)
+        }
+        onInlineMessageChange(
+            if (targetUri.isNullOrBlank()) {
+                resources.getString(R.string.settings_download_directory_reset_done)
+            } else {
+                resources.getString(R.string.settings_download_directory_selected)
+            }
+        )
+    }
+
+    suspend fun prepareDirectoryChange(
+        targetUri: String?,
+        targetSummary: String,
+        releaseTargetPermissionOnCancel: Boolean
+    ): DownloadDirectoryPreparationResult {
+        if (guardDirectoryChange(allowWhilePreparing = true)) {
+            return DownloadDirectoryPreparationResult.RELEASE_PERSISTED_PERMISSION
+        }
+        val previousUri = downloadDirectoryUri?.takeIf { it.isNotBlank() }
+        if (previousUri == targetUri) {
+            onInlineMessageChange(
+                if (targetUri.isNullOrBlank()) {
+                    resources.getString(R.string.settings_download_directory_reset_done)
+                } else {
+                    resources.getString(R.string.settings_download_directory_selected)
+                }
+            )
+            return DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+        }
+
+        if (ManagedDownloadStorage.areEquivalentDirectoryUris(previousUri, targetUri)) {
+            applyDirectoryChange(
+                targetUri = targetUri,
+                targetSummary = targetSummary,
+                previousUri = previousUri,
+                shouldReleasePreviousPermission = false
+            )
+            return DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+        }
+
+        val shouldReattachExistingDirectory = withContext(Dispatchers.IO) {
+            ManagedDownloadMigrationPolicy.shouldReattachExistingManagedDirectoryAfterProbes(
+                fromDirectoryUri = previousUri,
+                toDirectoryUri = targetUri,
+                probeSourceHasManagedEntries = {
+                    GlobalDownloadManager.downloadedSongs.value.isNotEmpty() ||
+                        ManagedDownloadStorage.hasMigratableDownloads(context, previousUri)
+                },
+                probeTargetHasManagedEntries = {
+                    ManagedDownloadStorage.hasMigratableDownloads(context, targetUri)
+                }
+            )
+        }
+        if (shouldReattachExistingDirectory) {
+            applyDirectoryChange(
+                targetUri = targetUri,
+                targetSummary = targetSummary,
+                previousUri = previousUri,
+                shouldReleasePreviousPermission = false
+            )
+            return DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+        }
+
+        if (ManagedDownloadMigrationPolicy.requiresExplicitConfirmation(previousUri, targetUri)) {
+            pendingChange = PendingDownloadDirectoryChange(
+                previousUri = previousUri,
+                targetUri = targetUri,
+                targetSummary = targetSummary,
+                releaseTargetPermissionOnCancel = releaseTargetPermissionOnCancel
+            )
+        }
+        return DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+    }
+
+    val directoryContract = remember {
+        object : ActivityResultContracts.OpenDocumentTree() {
+            override fun createIntent(context: Context, input: Uri?): Intent {
+                return super.createIntent(context, input).addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                )
+            }
+        }
+    }
+    val directoryLauncher = rememberLauncherForActivityResult(
+        contract = directoryContract
+    ) { uri ->
+        if (uri == null || guardDirectoryChange()) {
+            return@rememberLauncherForActivityResult
+        }
+        isPreparing = true
+        val targetUri = uri.toString()
+        scope.launch {
+            var permissionWasPersisted = false
+            var keepPersistedPermission = false
+            try {
+                withContext(Dispatchers.IO) {
+                    val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    context.contentResolver.takePersistableUriPermission(uri, flags)
+                    permissionWasPersisted = true
+                }
+                permissionLost = false
+                val targetSummary = withContext(Dispatchers.IO) {
+                    ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
+                }
+                keepPersistedPermission = prepareDirectoryChange(
+                    targetUri = targetUri,
+                    targetSummary = targetSummary,
+                    releaseTargetPermissionOnCancel = true
+                ) == DownloadDirectoryPreparationResult.KEEP_PERSISTED_PERMISSION
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                showPreparationError(error)
+            } finally {
+                if (permissionWasPersisted && !keepPersistedPermission) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        ManagedDownloadStorage.releasePersistedDirectoryPermission(context, targetUri)
+                    }
+                }
+                isPreparing = false
+            }
+        }
+    }
+
+    LaunchedEffect(downloadDirectoryUri, defaultDirectorySummary) {
+        currentSummary = if (downloadDirectoryUri.isNullOrBlank()) {
+            defaultDirectorySummary
+        } else {
+            withContext(Dispatchers.IO) {
+                ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
+            }
+        }
+    }
+
+    return DownloadDirectorySettingsController(
+        currentSummaryState = currentSummaryState,
+        permissionLostState = permissionLostState,
+        hasActiveDownloadOperationsState = hasActiveDownloadOperationsState,
+        showSwitchWarningState = showSwitchWarningState,
+        pendingChangeState = pendingChangeState,
+        isPreparingState = isPreparingState,
+        isMigratingState = isMigratingState,
+        migrationProgressState = migrationProgressState,
+        persistedMigrationProgressState = persistedMigrationProgressState,
+        onPickRequested = {
+            if (!guardDirectoryChange()) {
+                showSwitchWarning = true
+            }
+        },
+        onResetRequested = {
+            if (!guardDirectoryChange()) {
+                isPreparing = true
+                scope.launch {
+                    try {
+                        prepareDirectoryChange(
+                            targetUri = null,
+                            targetSummary = defaultDirectorySummary,
+                            releaseTargetPermissionOnCancel = false
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        showPreparationError(error)
+                    } finally {
+                        isPreparing = false
+                    }
+                }
+            }
+        },
+        onDismissSwitchWarning = { showSwitchWarning = false },
+        onConfirmSwitchWarning = {
+            if (guardDirectoryChange()) {
+                showSwitchWarning = false
+            } else {
+                showSwitchWarning = false
+                directoryLauncher.launch(null)
+            }
+        },
+        onDismissPendingChange = { change ->
+            pendingChange = null
+            if (change.releaseTargetPermissionOnCancel) {
+                ManagedDownloadStorage.releasePersistedDirectoryPermission(
+                    context,
+                    change.targetUri
+                )
+            }
+        },
+        onConfirmPendingChange = { change ->
+            if (
+                guardDirectoryChange(
+                    targetUri = change.targetUri,
+                    releaseTargetPermissionOnBlock = change.releaseTargetPermissionOnCancel
+                )
+            ) {
+                pendingChange = null
+            } else {
+                pendingChange = null
+                isMigrating = true
+                scope.launch {
+                    runCatching {
+                        ManagedDownloadMigrationWorker.enqueueOrGetActiveWorkId(
+                            context = context,
+                            fromDirectoryUri = change.previousUri,
+                            toDirectoryUri = change.targetUri,
+                            targetLabel = change.targetSummary,
+                            releasePreviousPermission = change.shouldReleasePreviousPermission
+                        )
+                    }.onSuccess { workId ->
+                        activeMigrationWorkId = workId
+                    }.onFailure { error ->
+                        isMigrating = false
+                        onInlineMessageChange(
+                            resources.getString(
+                                R.string.settings_download_directory_pick_failed,
+                                error.message ?: ""
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun DownloadDirectoryDialogs(
+    controller: DownloadDirectorySettingsController
+) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
+
+    if (controller.showSwitchWarning) {
         MiuixSettingsDialog(
-            onDismissRequest = { showDownloadDirectorySwitchWarningDialog = false },
+            onDismissRequest = controller.onDismissSwitchWarning,
             title = {
                 Text(stringResource(R.string.settings_download_directory_switch_warning_title))
             },
@@ -2858,108 +3037,67 @@ fun SettingsScreen(
             },
             confirmButton = {
                 MiuixSettingsTextButton(
-                    enabled = downloadDirectoryChangeEnabled,
-                    onClick = {
-                        if (guardDownloadDirectoryChange()) {
-                            showDownloadDirectorySwitchWarningDialog = false
-                            return@MiuixSettingsTextButton
-                        }
-                        showDownloadDirectorySwitchWarningDialog = false
-                        downloadDirectoryLauncher.launch(null)
-                    }
+                    enabled = controller.changeEnabled,
+                    onClick = controller.onConfirmSwitchWarning
                 ) {
                     Text(stringResource(R.string.settings_download_directory_switch_warning_confirm))
                 }
             },
             dismissButton = {
-                MiuixSettingsTextButton(
-                    onClick = { showDownloadDirectorySwitchWarningDialog = false }
-                ) {
+                MiuixSettingsTextButton(onClick = controller.onDismissSwitchWarning) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
         )
     }
 
-    pendingDownloadDirectoryChange?.let { pendingChange ->
+    controller.pendingChange?.let { change ->
         MiuixSettingsDialog(
-            onDismissRequest = {
-                pendingDownloadDirectoryChange = null
-                if (pendingChange.releaseTargetPermissionOnCancel) {
-                    ManagedDownloadStorage.releasePersistedDirectoryPermission(
-                        context,
-                        pendingChange.targetUri
-                    )
-                }
-            },
+            onDismissRequest = { controller.onDismissPendingChange(change) },
             title = { Text(stringResource(R.string.settings_download_directory_migrate_title)) },
             text = {
                 Text(
                     stringResource(
                         R.string.settings_download_directory_migrate_message,
-                        pendingChange.targetSummary
+                        change.targetSummary
                     )
                 )
             },
             confirmButton = {
                 MiuixSettingsTextButton(
-                    enabled = downloadDirectoryChangeEnabled,
-                    onClick = {
-                        if (
-                            guardDownloadDirectoryChange(
-                                targetUri = pendingChange.targetUri,
-                                releaseTargetPermissionOnBlock = pendingChange.releaseTargetPermissionOnCancel
-                            )
-                        ) {
-                            pendingDownloadDirectoryChange = null
-                            return@MiuixSettingsTextButton
-                        }
-                        pendingDownloadDirectoryChange = null
-                        isMigratingDownloadDirectory = true
-                        scope.launch {
-                            runCatching {
-                                ManagedDownloadMigrationWorker.enqueueOrGetActiveWorkId(
-                                    context = context,
-                                    fromDirectoryUri = pendingChange.previousUri,
-                                    toDirectoryUri = pendingChange.targetUri,
-                                    targetLabel = pendingChange.targetSummary,
-                                    releasePreviousPermission = pendingChange.shouldReleasePreviousPermission
-                                )
-                            }.onSuccess { workId ->
-                                activeMigrationWorkId = workId
-                            }.onFailure { error ->
-                                isMigratingDownloadDirectory = false
-                                inlineMsg = composeResources.getString(
-                                    R.string.settings_download_directory_pick_failed,
-                                    error.message ?: ""
-                                )
-                            }
-                        }
-                    }
+                    enabled = controller.changeEnabled,
+                    onClick = { controller.onConfirmPendingChange(change) }
                 ) {
                     Text(stringResource(R.string.settings_download_directory_migrate_confirm))
                 }
             },
             dismissButton = {
-                MiuixSettingsTextButton(
-                    onClick = {
-                        pendingDownloadDirectoryChange = null
-                        if (pendingChange.releaseTargetPermissionOnCancel) {
-                            ManagedDownloadStorage.releasePersistedDirectoryPermission(
-                                context,
-                                pendingChange.targetUri
-                            )
-                        }
-                    }
-                ) {
+                MiuixSettingsTextButton(onClick = { controller.onDismissPendingChange(change) }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
         )
     }
 
-    if (isMigratingDownloadDirectory) {
-        val activeMigrationProgress = migrationProgress
+    if (controller.isPreparing) {
+        MiuixSettingsDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.settings_download_directory_preparing)) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text(stringResource(R.string.settings_download_directory_preparing_desc))
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (controller.isMigrating) {
+        val activeMigrationProgress = controller.migrationProgress
         val stageText = when (activeMigrationProgress?.stage) {
             ManagedDownloadStorage.MigrationStage.PREPARING ->
                 stringResource(R.string.settings_download_directory_migrating_stage_preparing)
@@ -2967,6 +3105,8 @@ fun SettingsScreen(
                 stringResource(R.string.settings_download_directory_migrating_stage_copying)
             ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
                 stringResource(R.string.settings_download_directory_migrating_stage_rewriting)
+            ManagedDownloadStorage.MigrationStage.VERIFYING ->
+                stringResource(R.string.settings_download_directory_migrating_stage_verifying)
             ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
                 stringResource(R.string.settings_download_directory_migrating_stage_cleanup)
             ManagedDownloadStorage.MigrationStage.FINALIZING ->
@@ -2982,27 +3122,44 @@ fun SettingsScreen(
                 progress.stageTotal.coerceAtLeast(0)
             )
         }
-        val copiedBytesSummary = activeMigrationProgress
-            ?.takeIf { it.totalBytes > 0L }
-            ?.let { progress ->
-                composeResources.getString(
-                    R.string.settings_download_directory_migrating_progress_bytes,
-                    Formatter.formatShortFileSize(context, progress.copiedBytes.coerceAtLeast(0L)),
-                    Formatter.formatShortFileSize(context, progress.totalBytes)
-                )
+        val processedBytesSummary = activeMigrationProgress?.let { progress ->
+            if (progress.stage == ManagedDownloadStorage.MigrationStage.VERIFYING) {
+                progress.takeIf { it.verificationBytesTotal > 0L }?.let { verificationProgress ->
+                    resources.getString(
+                        R.string.settings_download_directory_migrating_verification_progress_bytes,
+                        Formatter.formatShortFileSize(
+                            context,
+                            verificationProgress.verifiedBytes.coerceAtLeast(0L)
+                        ),
+                        Formatter.formatShortFileSize(
+                            context,
+                            verificationProgress.verificationBytesTotal
+                        )
+                    )
+                }
+            } else {
+                progress.takeIf { it.totalBytes > 0L }?.let { copyProgress ->
+                    resources.getString(
+                        R.string.settings_download_directory_migrating_progress_bytes,
+                        Formatter.formatShortFileSize(
+                            context,
+                            copyProgress.copiedBytes.coerceAtLeast(0L)
+                        ),
+                        Formatter.formatShortFileSize(context, copyProgress.totalBytes)
+                    )
+                }
             }
+        }
         val currentFileSummary = activeMigrationProgress?.currentFileName
             ?.takeIf(String::isNotBlank)
             ?.let { fileName ->
-                composeResources.getString(R.string.settings_download_directory_migrating_current, fileName)
+                resources.getString(R.string.settings_download_directory_migrating_current, fileName)
             }
         MiuixSettingsDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.settings_download_directory_migrating)) },
             text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -3015,7 +3172,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     processedSummary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                    copiedBytesSummary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                    processedBytesSummary?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     currentFileSummary?.let {
                         Text(
                             text = it,
@@ -3028,7 +3185,6 @@ fun SettingsScreen(
             confirmButton = {}
         )
     }
-
 }
 
 private data class ThemeOption(

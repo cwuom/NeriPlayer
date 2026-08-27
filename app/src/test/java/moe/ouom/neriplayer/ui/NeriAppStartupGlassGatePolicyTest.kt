@@ -70,4 +70,16 @@ class NeriAppStartupGlassGatePolicyTest {
             )
         )
     }
+
+    @Test
+    fun enabledGlassReleasesStartupGateAfterTheDeadline() {
+        assertTrue(
+            shouldReleaseStartupGlassGate(
+                baseBlurEnabled = true,
+                backgroundEffectReady = false,
+                contentEffectReady = false,
+                timeoutElapsed = true
+            )
+        )
+    }
 }

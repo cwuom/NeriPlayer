@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.enrichment
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -22,48 +23,38 @@ internal class AssetEnrichmentCoordinator(
 ) {
     private val semaphore = Semaphore(parallelism.coerceAtLeast(1))
     private val jobsByOperationId = ConcurrentHashMap<String, Job>()
+    private val jobRegistrationLock = Any()
 
     fun enqueue(
         operationId: String,
         onTimeout: suspend (Throwable) -> Unit = {},
+        onCompletion: (Throwable?) -> Unit = {},
         block: suspend () -> Unit
     ): Job {
         val normalizedId = operationId.trim().takeIf(String::isNotBlank)
             ?: error("asset enrichment requires operationId")
-        jobsByOperationId[normalizedId]?.let { existing ->
-            if (existing.isActive) return existing
-        }
-        val job = scope.launch {
-            semaphore.withPermit {
-                try {
-                    withTimeout(timeoutMs) { block() }
-                } catch (error: TimeoutCancellationException) {
-                    runCatching { onTimeout(error) }
-                } catch (error: CancellationException) {
-                    throw error
+        return synchronized(jobRegistrationLock) {
+            jobsByOperationId[normalizedId]?.let { existing ->
+                if (existing.isActive) return@synchronized existing
+            }
+            val job = scope.launch(start = CoroutineStart.LAZY) {
+                semaphore.withPermit {
+                    try {
+                        withTimeout(timeoutMs) { block() }
+                    } catch (error: TimeoutCancellationException) {
+                        runCatching { onTimeout(error) }
+                    } catch (error: CancellationException) {
+                        throw error
+                    }
                 }
             }
-        }
-        jobsByOperationId[normalizedId] = job
-        job.invokeOnCompletion { jobsByOperationId.remove(normalizedId, job) }
-        return job
-    }
-
-    suspend fun enqueueAndAwait(
-        operationId: String,
-        onTimeout: suspend (Throwable) -> Unit = {},
-        block: suspend () -> Unit
-    ) {
-        val job = enqueue(
-            operationId = operationId,
-            onTimeout = onTimeout,
-            block = block
-        )
-        try {
-            job.join()
-        } catch (cancellation: CancellationException) {
-            cancel(operationId)
-            throw cancellation
+            jobsByOperationId[normalizedId] = job
+            job.invokeOnCompletion { error ->
+                jobsByOperationId.remove(normalizedId, job)
+                runCatching { onCompletion(error) }
+            }
+            job.start()
+            job
         }
     }
 

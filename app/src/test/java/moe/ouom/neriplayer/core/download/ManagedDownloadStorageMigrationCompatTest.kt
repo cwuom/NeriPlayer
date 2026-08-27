@@ -10,7 +10,9 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntryRef
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressReporter
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
+import moe.ouom.neriplayer.core.download.storage.MIGRATION_PROGRESS_EMIT_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitIo
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
@@ -680,6 +682,19 @@ class ManagedDownloadStorageMigrationCompatTest {
     }
 
     @Test
+    fun `legacy upgrade may explicitly index metadata less audio`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldTreatAudioAsManaged(
+                audioName = "Artist - Legacy Song.mp3",
+                metadataAudioNames = emptySet(),
+                coverEntryNames = emptySet(),
+                lyricEntryNames = emptySet(),
+                allowMetadataLessAudio = true
+            )
+        )
+    }
+
+    @Test
     fun `buildLyricCandidateNames keeps lrc txt compatibility after buggy migration`() {
         assertEquals(
             listOf(
@@ -1164,11 +1179,13 @@ class ManagedDownloadStorageMigrationCompatTest {
         val result = ManagedDownloadStorage.MigrationResult(
             movedFiles = 2,
             skippedFiles = 0,
-            cleanupFailedFiles = 1
+            cleanupFailedFiles = 1,
+            cleanupRetryableFailedFiles = 1
         )
 
         assertTrue(result.canSwitchDirectory)
         assertFalse(result.canReleasePreviousPermission)
+        assertTrue(result.hasOnlyRetryableCleanupFailures)
     }
 
     @Test
@@ -1348,7 +1365,7 @@ class ManagedDownloadStorageMigrationCompatTest {
                     rewriteMetadataReferences = { raw, _ -> raw }
                 )
 
-                val cleanupFailures = finalizer.cleanupMigratedEntries(
+                val cleanupResult = finalizer.cleanupMigratedEntriesDetailed(
                     context = mock(Context::class.java),
                     copiedEntries = listOf(
                         CopiedMigrationEntry(
@@ -1360,7 +1377,11 @@ class ManagedDownloadStorageMigrationCompatTest {
                     sourceRoot = ManagedDownloadRootHandle.FileRoot(directory)
                 )
 
-                assertEquals(1, cleanupFailures)
+                assertEquals(1, cleanupResult.failedFiles)
+                assertEquals(
+                    if (deleteResult is StorageMutationResult.ProviderFailure) 1 else 0,
+                    cleanupResult.retryableFailedFiles
+                )
                 assertTrue(sourceFile.exists())
             } finally {
                 directory.deleteRecursively()
@@ -1407,6 +1428,87 @@ class ManagedDownloadStorageMigrationCompatTest {
 
             assertEquals(0, cleanupFailures)
             assertFalse(sourceFile.exists())
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration reports cleanup before deletion and advances failed attempts once`() = runBlocking {
+        val directory = Files.createTempDirectory("neriplayer-migration-cleanup-progress").toFile()
+        try {
+            val sourceFiles = listOf(
+                File(directory, "source-a.mp3").apply { writeText("a") },
+                File(directory, "source-b.mp3").apply { writeText("b") }
+            )
+            fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
+                name = file.name,
+                reference = file.absolutePath,
+                mediaUri = file.toURI().toString(),
+                localFilePath = file.absolutePath,
+                sizeBytes = file.length(),
+                lastModifiedMs = file.lastModified()
+            )
+            val progressUpdates = mutableListOf<ManagedDownloadStorage.MigrationProgress>()
+            val reporter = ManagedMigrationProgressReporter(
+                totalFiles = sourceFiles.size,
+                totalBytes = sourceFiles.sumOf(File::length),
+                metadataFilesTotal = 0,
+                onProgress = progressUpdates::add
+            )
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                openInputStream = { _, storedEntry -> File(storedEntry.reference).inputStream() },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, _, _ -> StorageMutationResult.Deleted },
+                deleteReferences = {
+                        _,
+                        references,
+                        _,
+                        onDeleteStarted,
+                        onDeleteFinished ->
+                    assertEquals(
+                        ManagedDownloadStorage.MigrationStage.CLEANING_UP,
+                        progressUpdates.last().stage
+                    )
+                    assertEquals(0, progressUpdates.last().cleanupFilesProcessed)
+                    references.mapIndexed { index, reference ->
+                        onDeleteStarted(reference)
+                        Thread.sleep(MIGRATION_PROGRESS_EMIT_INTERVAL_MS + 20L)
+                        onDeleteFinished(reference)
+                        onDeleteFinished(reference)
+                        reference to if (index == 0) {
+                            StorageMutationResult.Deleted
+                        } else {
+                            StorageMutationResult.PermissionLost
+                        }
+                    }.toMap()
+                },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+            val copiedEntries = sourceFiles.map { sourceFile ->
+                CopiedMigrationEntry(
+                    original = ManagedMigrationEntry(null, entry(sourceFile)),
+                    copiedEntry = entry(sourceFile),
+                    createdNew = true
+                )
+            }
+
+            val cleanupFailures = finalizer.cleanupMigratedEntries(
+                context = mock(Context::class.java),
+                copiedEntries = copiedEntries,
+                sourceRoot = ManagedDownloadRootHandle.FileRoot(directory),
+                targetsAlreadyVerified = true,
+                progressTracker = reporter
+            )
+
+            assertEquals(1, cleanupFailures)
+            assertTrue(progressUpdates.any { it.cleanupFilesProcessed == 1 })
+            assertEquals(2, progressUpdates.last().cleanupFilesProcessed)
+            assertEquals(2, progressUpdates.last().cleanupFilesTotal)
         } finally {
             directory.deleteRecursively()
         }
@@ -1511,6 +1613,10 @@ class ManagedDownloadStorageMigrationCompatTest {
             }.toString()
             sourceMetadata.writeText(sourceMetadataText)
             targetMetadata.writeText(sourceMetadataText)
+            val providerRewrittenMetadata = File(
+                targetDirectory,
+                "track.provider-rewritten.mp3.npmeta.json"
+            )
             fun entry(file: File) = ManagedDownloadStorage.StoredEntry(
                 name = file.name,
                 reference = file.absolutePath,
@@ -1537,25 +1643,33 @@ class ManagedDownloadStorageMigrationCompatTest {
                 deleteParallelism = { 1 },
                 readText = { _, reference -> File(reference).readText() },
                 openInputStream = { _, entry -> File(entry.reference).inputStream() },
-                writeRootText = { _, _, name, content ->
-                    File(targetDirectory, name).apply { writeText(content) }.let(::entry)
+                writeRootText = { _, _, _, content ->
+                    providerRewrittenMetadata.apply { writeText(content) }.let(::entry)
                 },
                 deleteReference = { _, reference, _ -> deleteFile(reference) },
                 rewriteMetadataReferences = ManagedDownloadStorage::rewriteManagedMetadataReferences
             )
 
-            assertEquals(
-                0,
-                finalizer.rewriteMigratedMetadataReferences(
-                    context = mock(Context::class.java),
-                    targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
-                    copiedEntries = copiedEntries
-                )
+            val rewriteResult = finalizer.rewriteMigratedMetadataReferences(
+                context = mock(Context::class.java),
+                targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
+                copiedEntries = copiedEntries
             )
-            val rewritten = JSONObject(targetMetadata.readText())
+            assertEquals(0, rewriteResult.failedFiles)
+            val rewrittenMetadata = rewriteResult.copiedEntries.last().copiedEntry
+            assertEquals(providerRewrittenMetadata.absolutePath, rewrittenMetadata.reference)
+            val rewritten = JSONObject(File(rewrittenMetadata.reference).readText())
             assertEquals(targetAudio.toURI().toString(), rewritten.getString("mediaUri"))
             assertEquals(targetAudio.absolutePath, rewritten.getString("localFilePath"))
             assertEquals("1|local|${targetAudio.toURI()}", rewritten.getString("stableKey"))
+            assertEquals(
+                0,
+                finalizer.verifyMigratedEntries(
+                    context = mock(Context::class.java),
+                    targetRoot = ManagedDownloadRootHandle.FileRoot(targetDirectory),
+                    copiedEntries = rewriteResult.copiedEntries
+                )
+            )
         } finally {
             sourceDirectory.deleteRecursively()
             targetDirectory.deleteRecursively()

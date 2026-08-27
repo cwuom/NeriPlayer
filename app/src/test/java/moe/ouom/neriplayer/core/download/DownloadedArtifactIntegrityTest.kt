@@ -181,7 +181,8 @@ class DownloadedArtifactIntegrityTest {
             translatedLyricPath = "content://lyrics/song_trans.lrc",
             romanizedLyricPath = "content://lyrics/song_roma.lrc",
             durationMs = song.durationMs,
-            downloadFinalized = true
+            downloadFinalized = true,
+            metadataEmbeddingState = DownloadedAudioEmbeddingState.EMBEDDED_VERIFIED
         )
     }
 

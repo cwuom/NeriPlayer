@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /** translates WorkManager events to the shared download host */
@@ -67,7 +68,7 @@ class ForegroundDownloadWorker(
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
         private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
         private const val CHANNEL_ID = "download_execution"
-        private const val NOTIFICATION_ID = 0x4e50_0001
+        internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
 
         fun schedule(
             context: Context,
@@ -95,7 +96,7 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
                         fallbackWorkName(normalizedId),
-                        ExistingWorkPolicy.KEEP,
+                        fallbackExistingWorkPolicy,
                         buildFallbackRequest(normalizedId)
                     )
                 true
@@ -178,7 +179,7 @@ class ForegroundDownloadWorker(
             return WORK_NAME_PREFIX + operationId
         }
 
-        private fun fallbackWorkName(operationId: String): String {
+        internal fun fallbackWorkName(operationId: String): String {
             return WORK_NAME_PREFIX + "fallback_" + operationId
         }
 
@@ -211,18 +212,43 @@ private fun createForegroundInfo(
         .setOngoing(true)
         .setPriority(NotificationCompat.PRIORITY_LOW)
         .build()
+    val notificationId = DownloadExecutionNotificationIds.foreground(operationId)
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         ForegroundInfo(
-            FOREGROUND_NOTIFICATION_ID,
+            notificationId,
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
     } else {
-        ForegroundInfo(FOREGROUND_NOTIFICATION_ID, notification)
+        ForegroundInfo(notificationId, notification)
     }
 }
 
-private const val FOREGROUND_NOTIFICATION_ID = 0x4e50_0001
+internal object DownloadExecutionNotificationIds {
+    internal const val FOREGROUND_MIN = 0x4000_0000
+    internal const val FOREGROUND_MAX = 0x4fff_ffff
+    internal const val UIDT_MIN = 0x5000_0000
+    internal const val UIDT_MAX = 0x5fff_ffff
+    private const val PARTITION_MASK = 0x0fff_ffff
+
+    fun foreground(operationId: String): Int {
+        return inPartition(operationId, FOREGROUND_MIN)
+    }
+
+    fun uidt(operationId: String): Int {
+        return inPartition(operationId, UIDT_MIN)
+    }
+
+    private fun inPartition(operationId: String, partitionStart: Int): Int {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(operationId.toByteArray(Charsets.UTF_8))
+        var value = 0
+        repeat(4) { index ->
+            value = (value shl 8) or (digest[index].toInt() and 0xff)
+        }
+        return partitionStart + (value and PARTITION_MASK)
+    }
+}
 
 internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
     return when (this) {

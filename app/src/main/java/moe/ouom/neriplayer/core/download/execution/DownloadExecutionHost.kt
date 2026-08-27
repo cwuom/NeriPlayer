@@ -163,6 +163,7 @@ class DefaultDownloadExecutionHost(
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val systemRetryStopOperationIds = ConcurrentHashMap.newKeySet<String>()
+    private val explicitSchedulerStopOperationIds = ConcurrentHashMap.newKeySet<String>()
     private val executionAdmissionLock = Any()
     private val deferredRequests = DeferredDownloadScheduleQueue()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -380,15 +381,29 @@ class DefaultDownloadExecutionHost(
         operationId: String
     ) {
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
-        if (executingOperationIds.contains(normalizedId)) {
-            systemRetryStopOperationIds.add(normalizedId)
-        }
+        prepareSchedulerStop(normalizedId, preventReschedule = false)
         stopInternal(
             context = context,
             operationId = normalizedId,
             preventReschedule = false,
             cancelExecutionBackends = false
         )
+    }
+
+    internal fun prepareSchedulerStop(
+        operationId: String,
+        preventReschedule: Boolean
+    ) {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+        synchronized(executionAdmissionLock) {
+            if (!executingOperationIds.contains(normalizedId)) return
+            if (preventReschedule) {
+                explicitSchedulerStopOperationIds.add(normalizedId)
+                systemRetryStopOperationIds.remove(normalizedId)
+            } else if (!explicitSchedulerStopOperationIds.contains(normalizedId)) {
+                systemRetryStopOperationIds.add(normalizedId)
+            }
+        }
     }
 
     private fun stopInternal(
@@ -711,10 +726,12 @@ class DefaultDownloadExecutionHost(
                 normalizedId
             )
             if (shouldHandleHostStop(latestState)) {
-                val explicitlyStopped = operationStore.isStopped(
-                    context.applicationContext,
-                    normalizedId
-                )
+                val explicitlyStopped =
+                    explicitSchedulerStopOperationIds.contains(normalizedId) ||
+                        operationStore.isStopped(
+                            context.applicationContext,
+                            normalizedId
+                        )
                 val retryPrepared = if (!explicitlyStopped) {
                     operationStore.updateState(
                         context = context.applicationContext,
@@ -741,8 +758,11 @@ class DefaultDownloadExecutionHost(
             )
             DownloadExecutionResult.Failed(error)
         } finally {
-            executingOperationIds.remove(normalizedId)
-            systemRetryStopOperationIds.remove(normalizedId)
+            synchronized(executionAdmissionLock) {
+                executingOperationIds.remove(normalizedId)
+                systemRetryStopOperationIds.remove(normalizedId)
+                explicitSchedulerStopOperationIds.remove(normalizedId)
+            }
             releaseHostAdmissionIfIdle(appContext, normalizedId)
         }
     }
@@ -927,6 +947,16 @@ object DownloadExecutionHosts {
             )
         }
     }
+
+    internal fun prepareSchedulerStop(
+        operationId: String,
+        preventReschedule: Boolean
+    ) {
+        (default as? DefaultDownloadExecutionHost)?.prepareSchedulerStop(
+            operationId = operationId,
+            preventReschedule = preventReschedule
+        )
+    }
 }
 
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -943,8 +973,7 @@ internal fun selectDownloadExecutionBackend(
 ): DownloadExecutionSchedule.Backend {
     return if (
         userInitiated &&
-            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            sdkInt < Build.VERSION_CODES.BAKLAVA
+            sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
     ) {
         DownloadExecutionSchedule.Backend.UIDT_JOB
     } else {

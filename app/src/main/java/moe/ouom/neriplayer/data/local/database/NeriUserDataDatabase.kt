@@ -8,6 +8,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.util.Locale
 import org.json.JSONObject
 import moe.ouom.neriplayer.data.local.database.dao.LocalPlaylistDao
 import moe.ouom.neriplayer.data.local.database.dao.PlayHistoryDao
@@ -50,12 +51,13 @@ import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipDraftEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipIntervalEntity
 import moe.ouom.neriplayer.data.local.database.entity.BiliVideoSkipRuleEntity
 import moe.ouom.neriplayer.data.local.database.entity.CoverUrlMappingEntity
-import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.local.database.entity.ManagedLibraryItemEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackArtistEntity
 import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrackEntity
+
+private const val NERI_USER_DATA_FINAL_VERSION = 16
 
 @Database(
     entities = [
@@ -86,13 +88,12 @@ import moe.ouom.neriplayer.data.local.database.entity.PlatformPlaylistCacheTrack
         BiliVideoSkipDraftEntity::class,
         CoverUrlMappingEntity::class,
         DownloadOperationEntity::class,
-        DownloadHostAdmissionEntity::class,
         ManagedLibraryItemEntity::class,
         PlatformPlaylistCacheEntity::class,
         PlatformPlaylistCacheTrackEntity::class,
         PlatformPlaylistCacheTrackArtistEntity::class
     ],
-    version = 17,
+    version = NERI_USER_DATA_FINAL_VERSION,
     exportSchema = true
 )
 internal abstract class NeriUserDataDatabase : RoomDatabase() {
@@ -161,8 +162,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 MIGRATION_12_13,
                 MIGRATION_13_14,
                 MIGRATION_14_15,
-                MIGRATION_15_FINAL,
-                MIGRATION_16_17
+                MIGRATION_15_FINAL
             ).build()
         }
 
@@ -1006,7 +1006,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             }
         }
 
-        const val FINAL_DB_VERSION = 16
+        const val FINAL_DB_VERSION = NERI_USER_DATA_FINAL_VERSION
 
         val MIGRATION_15_FINAL: Migration = object : Migration(15, FINAL_DB_VERSION) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -1014,28 +1014,6 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 createFinalDownloadTables(db)
                 copyV15DownloadPayload(db)
                 dropLegacyDownloadProjectionTables(db)
-            }
-        }
-
-        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `download_host_admission` (
-                        `operation_id` TEXT NOT NULL,
-                        `library_id` TEXT NOT NULL,
-                        `process_token` TEXT NOT NULL,
-                        `admitted_at_ms` INTEGER NOT NULL,
-                        PRIMARY KEY(`operation_id`)
-                    )
-                    """.trimIndent()
-                )
-                db.execSQL(
-                    """
-                    CREATE INDEX IF NOT EXISTS `index_download_host_admission_process_library`
-                    ON `download_host_admission` (`process_token`, `library_id`)
-                    """.trimIndent()
-                )
             }
         }
 
@@ -1070,7 +1048,9 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     `last_error_code` TEXT,
                     `stop_requested_by_user` INTEGER NOT NULL DEFAULT 0,
                     `created_at_ms` INTEGER NOT NULL,
-                    `updated_at_ms` INTEGER NOT NULL
+                    `updated_at_ms` INTEGER NOT NULL,
+                    `host_process_token` TEXT,
+                    `host_admitted_at_ms` INTEGER
                 )
                 """.trimIndent()
             )
@@ -1078,6 +1058,12 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 """
                 CREATE INDEX IF NOT EXISTS `index_download_operation_state_queue`
                 ON `download_operation` (`state`, `queue_order`)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_download_operation_host_process_library`
+                ON `download_operation` (`host_process_token`, `library_id`)
                 """.trimIndent()
             )
             db.execSQL(
@@ -1128,29 +1114,36 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
         }
 
         private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
+            val catalogLookup = buildLegacyCatalogLookup(db)
             copyLegacyTableRows(
                 db = db,
-                tableName = "download_pending_queue"
+                tableName = "download_pending_queue",
+                catalogLookup = catalogLookup
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "download_cancelled_key"
+                tableName = "download_cancelled_key",
+                catalogLookup = catalogLookup
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "downloaded_song_catalog"
+                tableName = "downloaded_song_catalog",
+                catalogLookup = catalogLookup
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "download_snapshot_entry"
+                tableName = "download_snapshot_entry",
+                catalogLookup = catalogLookup
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "download_snapshot_metadata"
+                tableName = "download_snapshot_metadata",
+                catalogLookup = catalogLookup
             )
             copyLegacyTableRows(
                 db = db,
-                tableName = "managed_download_artifact"
+                tableName = "managed_download_artifact",
+                catalogLookup = catalogLookup
             )
         }
 
@@ -1162,7 +1155,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
 
         private fun copyLegacyTableRows(
             db: SupportSQLiteDatabase,
-            tableName: String
+            tableName: String,
+            catalogLookup: LegacyCatalogLookup
         ) {
             if (!hasTable(db, tableName)) return
             db.query("SELECT * FROM `$tableName`").use { cursor ->
@@ -1170,9 +1164,9 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 while (cursor.moveToNext()) {
                     val row = rowToJson(cursor, columnNames)
                     val stableKey = resolveLegacyStableKey(
-                        db = db,
                         tableName = tableName,
-                        cursor = cursor
+                        cursor = cursor,
+                        catalogLookup = catalogLookup
                     ) ?: fallbackLegacyStableKey(tableName, cursor)
                     val existing = db.query(
                         "SELECT payload_json FROM `legacy_download_upgrade_payload` " +
@@ -1213,9 +1207,9 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
         }
 
         private fun resolveLegacyStableKey(
-            db: SupportSQLiteDatabase,
             tableName: String,
-            cursor: Cursor
+            cursor: Cursor,
+            catalogLookup: LegacyCatalogLookup
         ): String? {
             val directStableKey = cursorString(cursor, "stable_key")
             if (directStableKey != null) return directStableKey
@@ -1223,11 +1217,11 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             return when (tableName) {
                 "downloaded_song_catalog" -> deriveCatalogStableKey(cursor)
                 "download_snapshot_metadata" -> findCatalogStableKeyForAudioName(
-                    db = db,
+                    catalogLookup = catalogLookup,
                     audioName = cursorString(cursor, "audio_name")
                 )
                 "download_snapshot_entry" -> findCatalogStableKeyForSnapshotEntry(
-                    db = db,
+                    catalogLookup = catalogLookup,
                     reference = cursorString(cursor, "reference"),
                     mediaUri = cursorString(cursor, "media_uri"),
                     name = cursorString(cursor, "name")
@@ -1371,6 +1365,8 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     put("duplicateFingerprint", legacyByteFingerprint(duplicate))
                     put("firstReference", legacyReference(previous))
                     put("duplicateReference", legacyReference(duplicate))
+                    put("previous", JSONObject(previous.toString()))
+                    put("duplicate", JSONObject(duplicate.toString()))
                 }
             )
             payload.put("legacyConflicts", conflicts)
@@ -1386,8 +1382,14 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                 "audioReference"
             )
                 .asSequence()
-                .map { key -> row.optString(key) }
-                .firstOrNull(String::isNotBlank)
+                .mapNotNull { key ->
+                    row.opt(key)
+                        ?.takeUnless { value -> value == JSONObject.NULL }
+                        ?.toString()
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                }
+                .firstOrNull()
         }
 
         private fun cursorString(cursor: Cursor, columnName: String): String? {
@@ -1473,83 +1475,92 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             }
         }
 
-        private fun findCatalogStableKeyForAudioName(
-            db: SupportSQLiteDatabase,
-            audioName: String?
-        ): String? {
-            val normalizedName = audioName?.trim()?.takeIf(String::isNotBlank) ?: return null
-            val matches = linkedSetOf<String>()
-            db.query("SELECT * FROM `downloaded_song_catalog`").use { cursor ->
-                val catalogKeyIndex = cursor.getColumnIndex("catalog_key")
-                val filePathIndex = cursor.getColumnIndex("file_path")
-                while (cursor.moveToNext()) {
-                    val catalogKey = catalogKeyIndex
-                        .takeIf { it >= 0 && !cursor.isNull(it) }
-                        ?.let(cursor::getString)
-                        .orEmpty()
-                    val filePath = filePathIndex
-                        .takeIf { it >= 0 && !cursor.isNull(it) }
-                        ?.let(cursor::getString)
-                        .orEmpty()
-                    if (
-                        catalogKey.endsWith(normalizedName) ||
-                        filePath.substringAfterLast('/').equals(normalizedName, ignoreCase = true)
-                    ) {
-                        cursorString(cursor, "stable_key")
-                            ?.let(matches::add)
-                            ?: deriveCatalogStableKey(cursor)?.let(matches::add)
-                    }
-                }
-            }
-            return matches.singleOrNull()
-        }
+        private data class LegacyCatalogLookup(
+            val stableKeysByReference: Map<String, Set<String>>,
+            val stableKeysByNormalizedName: Map<String, Set<String>>
+        )
 
-        private fun findCatalogStableKeyForSnapshotEntry(
-            db: SupportSQLiteDatabase,
-            reference: String?,
-            mediaUri: String?,
-            name: String?
-        ): String? {
-            if (!hasTable(db, "downloaded_song_catalog")) return null
-            val candidates = listOfNotNull(reference, mediaUri)
-                .map(String::trim)
-                .filter(String::isNotBlank)
-            val exactMatches = linkedSetOf<String>()
-            val nameMatches = linkedSetOf<String>()
+        private fun buildLegacyCatalogLookup(
+            db: SupportSQLiteDatabase
+        ): LegacyCatalogLookup {
+            if (!hasTable(db, "downloaded_song_catalog")) {
+                return LegacyCatalogLookup(emptyMap(), emptyMap())
+            }
+            val stableKeysByReference = linkedMapOf<String, MutableSet<String>>()
+            val stableKeysByNormalizedName = linkedMapOf<String, MutableSet<String>>()
             db.query("SELECT * FROM `downloaded_song_catalog`").use { cursor ->
                 while (cursor.moveToNext()) {
                     val stableKey = cursorString(cursor, "stable_key")
                         ?: deriveCatalogStableKey(cursor)
                         ?: continue
-                    val catalogReferences = listOfNotNull(
+                    listOfNotNull(
                         cursorString(cursor, "file_path"),
                         cursorString(cursor, "media_uri"),
                         cursorString(cursor, "catalog_key")
-                    )
-                    if (candidates.any { candidate ->
-                            catalogReferences.any { value -> value == candidate }
+                    ).forEach { rawReference ->
+                        val reference = rawReference.trim().takeIf(String::isNotBlank)
+                            ?: return@forEach
+                        stableKeysByReference.getOrPut(reference) { linkedSetOf() }
+                            .add(stableKey)
+                        normalizeLegacyBasename(reference)?.let { normalizedName ->
+                            stableKeysByNormalizedName.getOrPut(
+                                normalizedName
+                            ) {
+                                linkedSetOf()
+                            }.add(stableKey)
                         }
-                    ) {
-                        exactMatches += stableKey
-                        continue
-                    }
-                    val normalizedName = name?.trim()?.takeIf(String::isNotBlank)
-                    if (normalizedName != null && catalogReferences.any { value ->
-                            value.substringAfterLast('/').equals(
-                                normalizedName,
-                                ignoreCase = true
-                            )
-                        }
-                    ) {
-                        nameMatches += stableKey
                     }
                 }
             }
+            return LegacyCatalogLookup(
+                stableKeysByReference = stableKeysByReference.mapValues { (_, keys) ->
+                    keys.toSet()
+                },
+                stableKeysByNormalizedName = stableKeysByNormalizedName
+                    .mapValues { (_, keys) -> keys.toSet() }
+            )
+        }
+
+        private fun findCatalogStableKeyForAudioName(
+            catalogLookup: LegacyCatalogLookup,
+            audioName: String?
+        ): String? {
+            val normalizedName = normalizeLegacyBasename(audioName) ?: return null
+            return catalogLookup.stableKeysByNormalizedName[normalizedName]?.singleOrNull()
+        }
+
+        private fun findCatalogStableKeyForSnapshotEntry(
+            catalogLookup: LegacyCatalogLookup,
+            reference: String?,
+            mediaUri: String?,
+            name: String?
+        ): String? {
+            val exactMatches = listOfNotNull(reference, mediaUri)
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .flatMap { candidate ->
+                    catalogLookup.stableKeysByReference[candidate].orEmpty()
+                }
+                .toSet()
             return when {
                 exactMatches.size == 1 -> exactMatches.first()
                 exactMatches.isNotEmpty() -> null
-                else -> nameMatches.singleOrNull()
+                else -> normalizeLegacyBasename(name)
+                    ?.let(catalogLookup.stableKeysByNormalizedName::get)
+                    ?.singleOrNull()
             }
+        }
+
+        private fun normalizeLegacyBasename(value: String?): String? {
+            val normalized = value?.trim()?.trimEnd('/', '\\')
+                ?.takeIf(String::isNotBlank)
+                ?: return null
+            return normalized
+                .substringAfterLast('/')
+                .substringAfterLast('\\')
+                .substringAfterLast(':')
+                .takeIf(String::isNotBlank)
+                ?.lowercase(Locale.ROOT)
         }
 
         private val LEGACY_DOWNLOAD_PROJECTION_TABLES = listOf(

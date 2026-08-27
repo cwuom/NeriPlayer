@@ -35,3 +35,19 @@ internal fun updateMigrationProgressThrottleState(
         lastPercent = (progress.fraction * 100f).toInt().coerceIn(0, 100)
     )
 }
+
+internal enum class MigrationCleanupWorkDecision {
+    COMPLETE,
+    RETRY,
+    FAILURE
+}
+
+internal fun migrationCleanupWorkDecision(
+    result: ManagedDownloadStorage.MigrationResult
+): MigrationCleanupWorkDecision {
+    return when {
+        result.cleanupFailedFiles == 0 -> MigrationCleanupWorkDecision.COMPLETE
+        result.hasOnlyRetryableCleanupFailures -> MigrationCleanupWorkDecision.RETRY
+        else -> MigrationCleanupWorkDecision.FAILURE
+    }
+}

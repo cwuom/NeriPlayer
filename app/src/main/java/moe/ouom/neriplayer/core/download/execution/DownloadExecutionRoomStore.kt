@@ -95,7 +95,9 @@ internal object DownloadExecutionRoomStore {
                         existing?.stopRequestedByUser ?: false
                     },
                     createdAtMs = existing?.createdAtMs ?: now,
-                    updatedAtMs = now
+                    updatedAtMs = now,
+                    hostProcessToken = existing?.hostProcessToken,
+                    hostAdmittedAtMs = existing?.hostAdmittedAtMs
                 )
             )
         }
@@ -995,17 +997,15 @@ internal object DownloadExecutionRoomStore {
             // Room is restricted to the main app process, so entries from another
             // token are leftovers from a process that can no longer own an OS host
             dao.deleteHostAdmissionsFromOtherProcesses(HOST_ADMISSION_PROCESS_TOKEN)
-            dao.deleteOrphanHostAdmissions()
             dao.deleteExpiredHostAdmissions(
                 processToken = HOST_ADMISSION_PROCESS_TOKEN,
                 cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),
                 states = HOST_ADMISSION_HANDOFF_STATES
             )
-            val existing = dao.findHostAdmission(operationId)
-            if (existing?.processToken == HOST_ADMISSION_PROCESS_TOKEN) {
+            val operation = dao.find(operationId) ?: return@withTransaction false
+            if (operation.hostProcessToken == HOST_ADMISSION_PROCESS_TOKEN) {
                 return@withTransaction true
             }
-            val operation = dao.find(operationId) ?: return@withTransaction false
             if (
                 operation.stopRequestedByUser ||
                     operation.state !in HOST_ADMISSION_HANDOFF_STATES
@@ -1018,15 +1018,11 @@ internal object DownloadExecutionRoomStore {
             if (dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN) >= capacity) {
                 return@withTransaction false
             }
-            dao.upsertHostAdmission(
-                moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntity(
-                    operationId = operationId,
-                    libraryId = operation.libraryId,
-                    processToken = HOST_ADMISSION_PROCESS_TOKEN,
-                    admittedAtMs = nowMs
-                )
-            )
-            true
+            dao.setHostAdmission(
+                operationId = operationId,
+                processToken = HOST_ADMISSION_PROCESS_TOKEN,
+                admittedAtMs = nowMs
+            ) > 0
         }
     }
 
@@ -1059,7 +1055,6 @@ internal object DownloadExecutionRoomStore {
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             dao.deleteHostAdmissionsFromOtherProcesses(HOST_ADMISSION_PROCESS_TOKEN)
-            dao.deleteOrphanHostAdmissions()
             dao.deleteExpiredHostAdmissions(
                 processToken = HOST_ADMISSION_PROCESS_TOKEN,
                 cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),

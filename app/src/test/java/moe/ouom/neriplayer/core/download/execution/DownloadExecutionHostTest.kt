@@ -127,7 +127,14 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `execution backend keeps recovery and API 36 downloads on foreground work`() {
+    fun `execution backend supports UIDT from API 34 through API 36`() {
+        assertEquals(
+            DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
+            selectDownloadExecutionBackend(
+                sdkInt = Build.VERSION_CODES.TIRAMISU,
+                userInitiated = true
+            )
+        )
         assertEquals(
             DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
             selectDownloadExecutionBackend(
@@ -143,7 +150,14 @@ class DownloadExecutionHostTest {
             )
         )
         assertEquals(
-            DownloadExecutionSchedule.Backend.FOREGROUND_WORK,
+            DownloadExecutionSchedule.Backend.UIDT_JOB,
+            selectDownloadExecutionBackend(
+                sdkInt = Build.VERSION_CODES.VANILLA_ICE_CREAM,
+                userInitiated = true
+            )
+        )
+        assertEquals(
+            DownloadExecutionSchedule.Backend.UIDT_JOB,
             selectDownloadExecutionBackend(
                 sdkInt = Build.VERSION_CODES.BAKLAVA,
                 userInitiated = true
@@ -160,6 +174,33 @@ class DownloadExecutionHostTest {
             request.workSpec.constraints.requiredNetworkType
         )
         assertTrue(request.tags.contains("download_execution_all"))
+    }
+
+    @Test
+    fun `download notification ids are stable and partitioned per backend`() {
+        val firstOperation = "operation-notification-01"
+        val secondOperation = "operation-notification-02"
+        val firstForegroundId = DownloadExecutionNotificationIds.foreground(firstOperation)
+        val secondForegroundId = DownloadExecutionNotificationIds.foreground(secondOperation)
+        val firstUidtId = DownloadExecutionNotificationIds.uidt(firstOperation)
+        val secondUidtId = DownloadExecutionNotificationIds.uidt(secondOperation)
+
+        assertEquals(
+            firstForegroundId,
+            DownloadExecutionNotificationIds.foreground(firstOperation)
+        )
+        assertEquals(firstUidtId, DownloadExecutionNotificationIds.uidt(firstOperation))
+        assertTrue(
+            firstForegroundId in DownloadExecutionNotificationIds.FOREGROUND_MIN..
+                DownloadExecutionNotificationIds.FOREGROUND_MAX
+        )
+        assertTrue(
+            firstUidtId in DownloadExecutionNotificationIds.UIDT_MIN..
+                DownloadExecutionNotificationIds.UIDT_MAX
+        )
+        assertTrue(firstForegroundId != secondForegroundId)
+        assertTrue(firstUidtId != secondUidtId)
+        assertTrue(firstForegroundId != firstUidtId)
     }
 
     @Test
@@ -228,6 +269,40 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `detached enrichment settles hosts without overwriting durable core state`() = runTest {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                DownloadExecutionResult.AlreadyHandled
+            },
+            sdkInt = 28
+        )
+
+        listOf("CORE_COMMITTED", "ASSETS_ENRICHING").forEachIndexed { index, state ->
+            val request = DownloadExecutionRequest(
+                operationId = "detached-enrichment-$index",
+                song = sampleSong().copy(id = 10_000L + index)
+            )
+            store.save(context, request)
+            testJournal.forceState(request.operationId, state, updatedAtMs = 1L)
+
+            assertEquals(
+                DownloadExecutionResult.AlreadyHandled,
+                host.execute(context, request.operationId)
+            )
+            assertEquals(state, store.currentState(context, request.operationId))
+        }
+
+        assertEquals(
+            ListenableWorker.Result.success()::class,
+            DownloadExecutionResult.AlreadyHandled.toWorkerResult()::class
+        )
+        assertFalse(shouldRescheduleUidtExecution(DownloadExecutionResult.AlreadyHandled))
+    }
+
+    @Test
     fun `UIDT fallback work waits briefly before claiming the operation`() {
         val request = ForegroundDownloadWorker.buildFallbackRequest("operation-fallback")
 
@@ -237,6 +312,52 @@ class DownloadExecutionHostTest {
             request.workSpec.constraints.requiredNetworkType
         )
         assertTrue(request.tags.contains("download_execution_all"))
+        assertEquals(
+            ExistingWorkPolicy.KEEP,
+            ForegroundDownloadWorker.fallbackExistingWorkPolicy
+        )
+        assertEquals(
+            "download_execution_fallback_operation-fallback",
+            ForegroundDownloadWorker.fallbackWorkName("operation-fallback")
+        )
+        assertTrue(
+            ForegroundDownloadWorker.fallbackWorkName("operation-fallback") !=
+                ForegroundDownloadWorker.fallbackWorkName("operation-other")
+        )
+    }
+
+    @Test
+    fun `successful UIDT keeps its unique fallback until the job starts`() {
+        val actions = mutableListOf<String>()
+
+        val scheduled = scheduleUidtKeepingFallback(
+            scheduleFallback = { actions += "fallback" },
+            scheduleUidt = {
+                actions += "uidt"
+                true
+            },
+            cancelFallback = { actions += "cancel" }
+        )
+
+        assertTrue(scheduled)
+        assertEquals(listOf("fallback", "uidt"), actions)
+    }
+
+    @Test
+    fun `rejected UIDT removes its armed fallback`() {
+        val actions = mutableListOf<String>()
+
+        val scheduled = scheduleUidtKeepingFallback(
+            scheduleFallback = { actions += "fallback" },
+            scheduleUidt = {
+                actions += "uidt"
+                false
+            },
+            cancelFallback = { actions += "cancel" }
+        )
+
+        assertFalse(scheduled)
+        assertEquals(listOf("fallback", "uidt", "cancel"), actions)
     }
 
     @Test
@@ -733,6 +854,42 @@ class DownloadExecutionHostTest {
             DownloadExecutionResult.AlreadyHandled,
             resolveConcurrentExecutionResult(systemRetryStopPending = false)
         )
+    }
+
+    @Test
+    fun `fallback already running remains owner when UIDT starts`() = runTest {
+        val context = mockContext()
+        val store = DownloadExecutionOperationStore { testJournal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-fallback-first",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                started.complete(Unit)
+                release.await()
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        val fallbackExecution = async { host.execute(context, request.operationId) }
+        started.await()
+
+        assertEquals(
+            DownloadExecutionResult.AlreadyHandled,
+            host.execute(context, request.operationId)
+        )
+        assertFalse(fallbackExecution.isCompleted)
+        assertEquals("RUNNING", store.currentState(context, request.operationId))
+
+        release.complete(Unit)
+        assertEquals(DownloadExecutionResult.Accepted, fallbackExecution.await())
+        assertEquals("COMPLETED", store.currentState(context, request.operationId))
     }
 
     @Test

@@ -50,6 +50,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +64,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Text
@@ -87,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -563,12 +566,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                     when (current) {
                         StartupStage.Loading -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .statusBarsPadding()
-                                    .navigationBarsPadding()
-                            )
+                            StartupLoadingContent()
                         }
                         StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
@@ -1427,6 +1425,32 @@ fun NeriTheme(
         typography = Typography(),
         content = content
     )
+}
+
+@Composable
+internal fun StartupLoadingContent() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            CircularProgressIndicator(
+                modifier = Modifier.testTag("startup_loading_progress")
+            )
+        }
+    }
 }
 
 @Composable

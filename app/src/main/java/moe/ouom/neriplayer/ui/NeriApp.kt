@@ -71,6 +71,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -109,6 +110,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -349,6 +351,10 @@ internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
 private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
+internal const val APP_CONTENT_FRAME_TIMEOUT_MS = 2_000L
+internal const val STARTUP_GLASS_GATE_TIMEOUT_MS = 2_000L
+internal const val STARTUP_GLASS_GATE_OVERLAY_TAG = "startup_glass_gate_overlay"
+internal const val STARTUP_GLASS_GATE_PROGRESS_TAG = "startup_glass_gate_progress"
 
 internal enum class MainTabDetailHandoff {
     OPEN_DETAIL,
@@ -504,9 +510,13 @@ internal fun mainTabDetailContentOffsetEasing(): Easing = FastOutSlowInEasing
 internal fun shouldReleaseStartupGlassGate(
     baseBlurEnabled: Boolean,
     backgroundEffectReady: Boolean,
-    contentEffectReady: Boolean
+    contentEffectReady: Boolean,
+    timeoutElapsed: Boolean = false
 ): Boolean {
-    return !baseBlurEnabled || backgroundEffectReady || contentEffectReady
+    return !baseBlurEnabled ||
+        backgroundEffectReady ||
+        contentEffectReady ||
+        timeoutElapsed
 }
 
 internal fun shouldShowStartupGlassGate(
@@ -789,8 +799,8 @@ internal fun resolveMainStartDestination(
     preferredRoute: String?,
     showHomeTab: Boolean,
     devModeEnabled: Boolean
-): String? {
-    return when (preferredRoute ?: return null) {
+): String {
+    return when (preferredRoute) {
         Destinations.Home.route -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
         Destinations.Explore.route -> Destinations.Explore.route
         Destinations.Library.route -> Destinations.Library.route
@@ -798,6 +808,18 @@ internal fun resolveMainStartDestination(
         Destinations.Debug.route -> if (devModeEnabled) Destinations.Debug.route else if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
         else -> if (showHomeTab) Destinations.Home.route else Destinations.Explore.route
     }
+}
+
+internal fun shouldApplyPersistedStartupDestination(
+    awaitingPersistedRoute: Boolean,
+    currentRoute: String?,
+    initialFallbackRoute: String,
+    resolvedPersistedRoute: String?
+): Boolean {
+    return awaitingPersistedRoute &&
+        currentRoute == initialFallbackRoute &&
+        resolvedPersistedRoute != null &&
+        resolvedPersistedRoute != currentRoute
 }
 
 private fun SongItem?.resolveUiCoverSource(context: Context): String? {
@@ -1350,25 +1372,12 @@ fun NeriApp(
     onNowPlayingVisibilityChanged: (Boolean) -> Unit = {},
     onLanguageChanged: (LanguageManager.Language) -> Unit = {}
 ) {
-    var appContentReady by rememberSaveable { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        // 先交一个极轻的背景首帧, 下一帧再挂整棵导航和状态订阅树
-        withFrameNanos { }
-        appContentReady = true
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        AnimatedVisibility(
-            visible = appContentReady,
-            enter = fadeIn(
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
-            ),
-            exit = ExitTransition.None,
+        AppContentMountGate(
             modifier = Modifier.fillMaxSize()
         ) {
             NeriAppContent(
@@ -1380,6 +1389,113 @@ fun NeriApp(
                 onLanguageChanged = onLanguageChanged
             )
         }
+    }
+}
+
+@Composable
+internal fun AppContentMountGate(
+    modifier: Modifier = Modifier,
+    timeoutMillis: Long = APP_CONTENT_FRAME_TIMEOUT_MS,
+    awaitFirstFrame: suspend () -> Unit = { withFrameNanos { } },
+    content: @Composable () -> Unit
+) {
+    var contentReady by rememberSaveable { mutableStateOf(false) }
+    var mountWithFade by rememberSaveable { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val frameObserved = withTimeoutOrNull(timeoutMillis.coerceAtLeast(0L)) {
+            awaitFirstFrame()
+            true
+        } == true
+        if (!frameObserved) {
+            NPLogger.w(
+                "NERI-App",
+                "应用内容首帧回调超时，降级为直接挂载"
+            )
+            mountWithFade = false
+        }
+        contentReady = true
+    }
+
+    AnimatedVisibility(
+        visible = contentReady,
+        enter = if (mountWithFade) {
+            fadeIn(
+                animationSpec = tween(280, easing = FastOutSlowInEasing)
+            )
+        } else {
+            EnterTransition.None
+        },
+        exit = ExitTransition.None,
+        modifier = modifier
+    ) {
+        content()
+    }
+}
+
+@Composable
+internal fun StartupGlassGate(
+    isDark: Boolean,
+    baseBlurEnabled: Boolean,
+    backgroundEffectReady: Boolean,
+    contentEffectReady: Boolean,
+    modifier: Modifier = Modifier,
+    timeoutMillis: Long = STARTUP_GLASS_GATE_TIMEOUT_MS
+) {
+    var gateReleased by rememberSaveable {
+        mutableStateOf(!baseBlurEnabled)
+    }
+
+    LaunchedEffect(
+        baseBlurEnabled,
+        backgroundEffectReady,
+        contentEffectReady,
+        gateReleased,
+        timeoutMillis
+    ) {
+        if (gateReleased) return@LaunchedEffect
+        if (
+            shouldReleaseStartupGlassGate(
+                baseBlurEnabled = baseBlurEnabled,
+                backgroundEffectReady = backgroundEffectReady,
+                contentEffectReady = contentEffectReady
+            )
+        ) {
+            gateReleased = true
+            return@LaunchedEffect
+        }
+
+        delay(timeoutMillis.coerceAtLeast(0L))
+        if (
+            shouldReleaseStartupGlassGate(
+                baseBlurEnabled = baseBlurEnabled,
+                backgroundEffectReady = backgroundEffectReady,
+                contentEffectReady = contentEffectReady,
+                timeoutElapsed = true
+            )
+        ) {
+            NPLogger.w(
+                "NERI-App",
+                "Advanced Glass 启动门超时后降级: " +
+                    "backgroundReady=$backgroundEffectReady, " +
+                    "contentReady=$contentEffectReady"
+            )
+            gateReleased = true
+        }
+    }
+
+    if (
+        shouldShowStartupGlassGate(
+            baseBlurEnabled = baseBlurEnabled,
+            gateReleased = gateReleased,
+            backgroundEffectReady = backgroundEffectReady,
+            contentEffectReady = contentEffectReady
+        )
+    ) {
+        StartupGlassGateOverlay(
+            isDark = isDark,
+            modifier = modifier
+        )
     }
 }
 
@@ -1402,8 +1518,24 @@ private fun StartupGlassGateOverlay(
         modifier = modifier
             .background(baseColor)
             .background(scrimColor)
+            .testTag(STARTUP_GLASS_GATE_OVERLAY_TAG)
             .blockUnderlyingTouches()
-    )
+    ) {
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            CircularProgressIndicator(
+                modifier = Modifier.testTag(STARTUP_GLASS_GATE_PROGRESS_TAG)
+            )
+        }
+    }
 }
 
 @Composable
@@ -1888,14 +2020,7 @@ private fun NeriAppContent(
         preferredRoute = defaultStartDestination,
         showHomeTab = showHomeTab,
         devModeEnabled = devModeEnabled
-    ) ?: run {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(if (isDark) Color(0xFF101010) else Color(0xFFF4EFE7))
-        )
-        return
-    }
+    )
     val currentDefaultStartDestination =
         defaultStartDestination ?: initialMainStartDestination
     val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
@@ -1915,26 +2040,8 @@ private fun NeriAppContent(
             advancedBlurQuality = advancedBlurQuality
         )
     }
-    var startupGlassGateReleased by rememberSaveable {
-        mutableStateOf(!advancedGlassController.isBaseBlurEnabled)
-    }
     val startupBackgroundGlassReady = backgroundGlassBackdrop.hasActiveBlur
     val startupContentGlassReady = contentGlassBackdrop.hasActiveBlur
-    LaunchedEffect(
-        advancedGlassController.isBaseBlurEnabled,
-        startupBackgroundGlassReady,
-        startupContentGlassReady
-    ) {
-        if (
-            shouldReleaseStartupGlassGate(
-                baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
-                backgroundEffectReady = startupBackgroundGlassReady,
-                contentEffectReady = startupContentGlassReady
-            )
-        ) {
-            startupGlassGateReleased = true
-        }
-    }
     val preferredQuality by repo.audioQualityFlow.collectAsStateWithLifecycle(initialValue = "exhigh")
     val youtubePreferredQuality by repo.youtubeAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
     val biliPreferredQuality by repo.biliAudioQualityFlow.collectAsStateWithLifecycle(initialValue = "high")
@@ -2277,6 +2384,9 @@ private fun NeriAppContent(
     ) {
             // changing NavHost's start destination rebuilds its graph and clears the live stack
             val navHostStartDestination = remember { initialMainStartDestination }
+            var awaitingPersistedStartDestination by rememberSaveable {
+                mutableStateOf(defaultStartDestination == null)
+            }
             val navController = rememberNavController()
             val backEntry by navController.currentBackStackEntryAsState()
             // Keep every NavHost entry that is still participating in the transition active
@@ -2370,7 +2480,7 @@ private fun NeriAppContent(
                     preferredRoute = currentDefaultStartDestination,
                     showHomeTab = showHomeTab,
                     devModeEnabled = devModeEnabled
-                ) ?: navHostStartDestination
+                )
             }
             var selectedMainTabRoute by rememberSaveable(navHostStartDestination) {
                 mutableStateOf(navHostStartDestination)
@@ -3387,9 +3497,34 @@ private fun NeriAppContent(
                     0.dp
                 }
 
-                LaunchedEffect(currentRoute, showHomeTab, effectiveStartDestination) {
-                    if (!showHomeTab && currentRoute == Destinations.Home.route) {
-                        navController.navigate(effectiveStartDestination) {
+                LaunchedEffect(
+                    currentRoute,
+                    showHomeTab,
+                    effectiveStartDestination,
+                    defaultStartDestination,
+                    awaitingPersistedStartDestination
+                ) {
+                    val resolvedPersistedRoute = effectiveStartDestination.takeIf {
+                        defaultStartDestination != null
+                    }
+                    val shouldApplyPersistedRoute =
+                        shouldApplyPersistedStartupDestination(
+                            awaitingPersistedRoute = awaitingPersistedStartDestination,
+                            currentRoute = currentRoute,
+                            initialFallbackRoute = navHostStartDestination,
+                            resolvedPersistedRoute = resolvedPersistedRoute
+                        )
+                    if (defaultStartDestination != null && currentRoute != null) {
+                        awaitingPersistedStartDestination = false
+                    }
+                    val requiredRoute = when {
+                        shouldApplyPersistedRoute -> resolvedPersistedRoute
+                        !showHomeTab && currentRoute == Destinations.Home.route ->
+                            effectiveStartDestination
+                        else -> null
+                    }
+                    requiredRoute?.let { route ->
+                        navController.navigate(route) {
                             popUpTo(navController.graph.startDestinationId) {
                                 saveState = true
                             }
@@ -4640,19 +4775,13 @@ private fun NeriAppContent(
                     )
                 }
 
-                if (
-                    shouldShowStartupGlassGate(
-                        baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
-                        gateReleased = startupGlassGateReleased,
-                        backgroundEffectReady = startupBackgroundGlassReady,
-                        contentEffectReady = startupContentGlassReady
-                    )
-                ) {
-                    StartupGlassGateOverlay(
-                        isDark = isDark,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                StartupGlassGate(
+                    isDark = isDark,
+                    baseBlurEnabled = advancedGlassController.isBaseBlurEnabled,
+                    backgroundEffectReady = startupBackgroundGlassReady,
+                    contentEffectReady = startupContentGlassReady,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }

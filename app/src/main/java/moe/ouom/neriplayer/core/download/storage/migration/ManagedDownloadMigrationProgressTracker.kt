@@ -13,15 +13,21 @@ internal class ManagedDownloadMigrationProgressTracker(
     private val totalFiles: Int,
     private val totalBytes: Long,
     private val metadataFilesTotal: Int,
-    private val onProgress: (ManagedDownloadStorage.MigrationProgress) -> Unit
+    private val onProgress: (ManagedDownloadStorage.MigrationProgress) -> Unit,
+    private val nowMs: () -> Long = System::currentTimeMillis
 ) {
     private val lock = Any()
     private val activeCopyBytes = mutableMapOf<String, Long>()
+    private val activeVerificationBytes = mutableMapOf<String, Long>()
     private var stage: ManagedDownloadStorage.MigrationStage = ManagedDownloadStorage.MigrationStage.PREPARING
     private var currentFileName: String? = null
     private var completedCopyBytes = 0L
     private var copiedFiles = 0
     private var metadataFilesProcessed = 0
+    private var verificationFilesProcessed = 0
+    private var verificationFilesTotal = 0
+    private var completedVerificationBytes = 0L
+    private var verificationBytesTotal = 0L
     private var cleanupFilesProcessed = 0
     private var cleanupFilesTotal = 0
     private var lastEmitAtMs = 0L
@@ -48,7 +54,10 @@ internal class ManagedDownloadMigrationProgressTracker(
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.COPYING
             currentFileName = entry.name
-            activeCopyBytes[entry.reference] = copiedBytes.coerceAtLeast(0L)
+            activeCopyBytes[entry.reference] = maxOf(
+                activeCopyBytes[entry.reference] ?: 0L,
+                copiedBytes.coerceAtLeast(0L)
+            )
             emitLocked(force = false)
         }
     }
@@ -57,9 +66,9 @@ internal class ManagedDownloadMigrationProgressTracker(
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.COPYING
             currentFileName = entry.name
-            val finishedBytes = activeCopyBytes.remove(entry.reference)
-                ?: entry.sizeBytes.coerceAtLeast(0L)
-            completedCopyBytes += finishedBytes.coerceAtLeast(0L)
+            val observedBytes = activeCopyBytes.remove(entry.reference)?.coerceAtLeast(0L) ?: 0L
+            val finishedBytes = maxOf(observedBytes, entry.sizeBytes.coerceAtLeast(0L))
+            completedCopyBytes += finishedBytes
             copiedFiles++
             emitLocked(force = false)
         }
@@ -67,7 +76,6 @@ internal class ManagedDownloadMigrationProgressTracker(
 
     fun failCopy(entry: ManagedMigrationProgressEntry) {
         synchronized(lock) {
-            activeCopyBytes.remove(entry.reference)
             currentFileName = entry.name
             emitLocked(force = false)
         }
@@ -90,6 +98,62 @@ internal class ManagedDownloadMigrationProgressTracker(
         }
     }
 
+    fun startVerification(entries: List<ManagedMigrationProgressEntry>) {
+        synchronized(lock) {
+            stage = ManagedDownloadStorage.MigrationStage.VERIFYING
+            verificationFilesProcessed = 0
+            verificationFilesTotal = entries.size
+            completedVerificationBytes = 0L
+            verificationBytesTotal = entries.sumOf { entry ->
+                entry.sizeBytes.coerceAtLeast(0L)
+            }
+            activeVerificationBytes.clear()
+            currentFileName = entries.firstOrNull()?.name
+            emitLocked(force = true)
+        }
+    }
+
+    fun startVerificationEntry(entry: ManagedMigrationProgressEntry) {
+        synchronized(lock) {
+            stage = ManagedDownloadStorage.MigrationStage.VERIFYING
+            currentFileName = entry.name
+            activeVerificationBytes.putIfAbsent(entry.reference, 0L)
+            emitLocked(force = false)
+        }
+    }
+
+    fun onVerificationProgress(entry: ManagedMigrationProgressEntry, verifiedBytes: Long) {
+        synchronized(lock) {
+            stage = ManagedDownloadStorage.MigrationStage.VERIFYING
+            currentFileName = entry.name
+            val boundedBytes = verifiedBytes.coerceAtLeast(0L).let { observed ->
+                if (entry.sizeBytes > 0L) observed.coerceAtMost(entry.sizeBytes) else observed
+            }
+            activeVerificationBytes[entry.reference] = maxOf(
+                activeVerificationBytes[entry.reference] ?: 0L,
+                boundedBytes
+            )
+            emitLocked(force = false)
+        }
+    }
+
+    fun finishVerification(entry: ManagedMigrationProgressEntry) {
+        synchronized(lock) {
+            stage = ManagedDownloadStorage.MigrationStage.VERIFYING
+            currentFileName = entry.name
+            val observedBytes = activeVerificationBytes.remove(entry.reference)
+                ?.coerceAtLeast(0L)
+                ?: 0L
+            completedVerificationBytes += maxOf(
+                observedBytes,
+                entry.sizeBytes.coerceAtLeast(0L)
+            )
+            verificationFilesProcessed = (verificationFilesProcessed + 1)
+                .coerceAtMost(verificationFilesTotal)
+            emitLocked(force = verificationFilesProcessed >= verificationFilesTotal)
+        }
+    }
+
     fun startCleanup(totalEntries: Int, fileName: String?) {
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP
@@ -103,8 +167,12 @@ internal class ManagedDownloadMigrationProgressTracker(
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP
             currentFileName = fileName
-            cleanupFilesProcessed++
-            emitLocked(force = false)
+            cleanupFilesProcessed = if (cleanupFilesTotal > 0) {
+                (cleanupFilesProcessed + 1).coerceAtMost(cleanupFilesTotal)
+            } else {
+                0
+            }
+            emitLocked(force = cleanupFilesProcessed >= cleanupFilesTotal)
         }
     }
 
@@ -117,7 +185,7 @@ internal class ManagedDownloadMigrationProgressTracker(
     }
 
     private fun emitLocked(force: Boolean) {
-        val now = System.currentTimeMillis()
+        val now = nowMs()
         val stageChanged = stage != lastEmittedStage
         if (!force && !stageChanged && now - lastEmitAtMs < MIGRATION_PROGRESS_EMIT_INTERVAL_MS) {
             return
@@ -125,6 +193,7 @@ internal class ManagedDownloadMigrationProgressTracker(
         lastEmitAtMs = now
         lastEmittedStage = stage
         val inFlightBytes = activeCopyBytes.values.sum()
+        val inFlightVerificationBytes = activeVerificationBytes.values.sum()
         onProgress(
             ManagedDownloadStorage.MigrationProgress(
                 stage = stage,
@@ -133,6 +202,9 @@ internal class ManagedDownloadMigrationProgressTracker(
                     ManagedDownloadStorage.MigrationStage.PREPARING -> 0
                     ManagedDownloadStorage.MigrationStage.COPYING -> copiedFiles
                     ManagedDownloadStorage.MigrationStage.REWRITING_METADATA -> copiedFiles + metadataFilesProcessed
+                    ManagedDownloadStorage.MigrationStage.VERIFYING -> {
+                        copiedFiles + metadataFilesTotal + verificationFilesProcessed
+                    }
                     ManagedDownloadStorage.MigrationStage.CLEANING_UP -> copiedFiles + metadataFilesTotal + cleanupFilesProcessed
                     ManagedDownloadStorage.MigrationStage.FINALIZING -> totalFiles
                 }.coerceAtMost(totalFiles),
@@ -143,7 +215,11 @@ internal class ManagedDownloadMigrationProgressTracker(
                 metadataFilesTotal = metadataFilesTotal,
                 cleanupFilesProcessed = cleanupFilesProcessed,
                 cleanupFilesTotal = cleanupFilesTotal,
-                currentFileName = currentFileName
+                currentFileName = currentFileName,
+                verificationFilesProcessed = verificationFilesProcessed,
+                verificationFilesTotal = verificationFilesTotal,
+                verifiedBytes = completedVerificationBytes + inFlightVerificationBytes,
+                verificationBytesTotal = verificationBytesTotal
             )
         )
     }
