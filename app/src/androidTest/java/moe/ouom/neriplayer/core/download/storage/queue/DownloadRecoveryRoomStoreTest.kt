@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.data.local.database.entity.DownloadHostAdmissionEntit
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -129,6 +130,59 @@ class DownloadRecoveryRoomStoreTest {
                 ).requiresWifiNetwork
             )
             assertFalse(store.listPendingQueuedDownloads().single().requiresWifiNetwork)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun queueRefreshPreservesItsInitialDownloadQualitySnapshot() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            NeriUserDataDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            val song = song(73L, "quality-snapshot")
+            val initialQuality = DownloadAudioQualitySelection(
+                neteaseQuality = "lossless",
+                youtubeQuality = "very_high",
+                biliQuality = "dolby"
+            )
+            val store = DownloadRecoveryRoomStore(context, database)
+            val operationId = store.upsertPendingDownloadQueue(
+                songs = listOf(song),
+                userInitiated = true,
+                downloadAudioQuality = initialQuality
+            ).single()
+
+            assertEquals(
+                initialQuality,
+                DownloadExecutionRoomStore.read(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )?.downloadAudioQuality
+            )
+
+            store.upsertPendingDownloadQueue(
+                songs = listOf(song),
+                userInitiated = true,
+                downloadAudioQuality = DownloadAudioQualitySelection(
+                    neteaseQuality = "standard",
+                    youtubeQuality = "low",
+                    biliQuality = "low"
+                )
+            )
+
+            assertEquals(
+                initialQuality,
+                DownloadExecutionRoomStore.read(
+                    context = context,
+                    operationId = operationId,
+                    database = database
+                )?.downloadAudioQuality
+            )
         } finally {
             database.close()
         }

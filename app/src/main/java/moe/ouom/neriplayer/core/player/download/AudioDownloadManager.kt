@@ -93,7 +93,9 @@ import moe.ouom.neriplayer.data.platform.youtube.isTrustedYouTubeHost
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeMusicSong
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeWebRemixDirectMissingPoToken
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
+import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
@@ -373,6 +375,12 @@ object AudioDownloadManager {
         networkType: TrafficNetworkType,
         reason: String
     ) {
+        if (networkType == TrafficNetworkType.WIFI) {
+            GlobalDownloadManager.onWifiBoundDownloadNetworkRestored(
+                context = context,
+                reason = reason
+            )
+        }
         if (downloadNetworkPolicyTracker.onDefaultNetworkObserved(network, networkType)) {
             interruptDownloadsForWifiLoss(
                 networkType = networkType,
@@ -1778,7 +1786,8 @@ object AudioDownloadManager {
         song: SongItem,
         batchSessionId: Long? = null,
         attemptId: Long? = null,
-        operationId: String? = null
+        operationId: String? = null,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ) {
         withConfiguredDownloadPermit(context) {
             downloadSongOnIo(
@@ -1786,7 +1795,8 @@ object AudioDownloadManager {
                 song = song,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                operationId = operationId
+                operationId = operationId,
+                downloadAudioQuality = downloadAudioQuality
             )
         }
     }
@@ -1796,7 +1806,8 @@ object AudioDownloadManager {
         song: SongItem,
         batchSessionId: Long?,
         attemptId: Long?,
-        operationId: String?
+        operationId: String?,
+        downloadAudioQuality: DownloadAudioQualitySelection?
     ) {
         withContext(Dispatchers.IO) {
             executeDownloadSong(
@@ -1804,7 +1815,8 @@ object AudioDownloadManager {
                 song = song,
                 batchSessionId = batchSessionId,
                 attemptId = attemptId,
-                operationId = operationId
+                operationId = operationId,
+                downloadAudioQuality = downloadAudioQuality
             )
         }
     }
@@ -1814,7 +1826,8 @@ object AudioDownloadManager {
         song: SongItem,
         batchSessionId: Long?,
         attemptId: Long?,
-        operationId: String?
+        operationId: String?,
+        downloadAudioQuality: DownloadAudioQualitySelection?
     ) {
                 val songKey = song.stableKey()
                 val effectiveOperationId = operationId?.trim()
@@ -1843,6 +1856,15 @@ object AudioDownloadManager {
                         return
                     }
 
+                    val resolvedDownloadAudioQuality = downloadAudioQuality
+                        ?.let { quality ->
+                            DownloadAudioQualitySelection.normalized(
+                                neteaseQuality = quality.neteaseQuality,
+                                youtubeQuality = quality.youtubeQuality,
+                                biliQuality = quality.biliQuality
+                            )
+                        }
+                        ?: resolveDownloadAudioQualitySelection(context)
                     val isYouTubeMusic = isYouTubeMusicSong(song)
                     val isBili = song.album.startsWith(PlayerManager.BILI_SOURCE_TAG)
                     var attemptNumber = 1
@@ -1857,11 +1879,18 @@ object AudioDownloadManager {
                             val resolved = when {
                                 isYouTubeMusic -> resolveYouTubeMusic(
                                     song = song,
+                                    preferredQuality = resolvedDownloadAudioQuality.youtubeQuality,
                                     forceRefresh = forceRefreshYouTubeSource,
                                     avoidDirect = avoidYouTubeDirectSource
                                 )
-                                isBili -> resolveBili(song)
-                                else -> resolveNetease(song.id)
+                                isBili -> resolveBili(
+                                    song = song,
+                                    preferredQuality = resolvedDownloadAudioQuality.biliQuality
+                                )
+                                else -> resolveNetease(
+                                    songId = song.id,
+                                    preferredQuality = resolvedDownloadAudioQuality.neteaseQuality
+                                )
                             }
                             ensureSongDownloadNotCancelled(
                                 songKey = songKey,
@@ -4143,14 +4172,16 @@ object AudioDownloadManager {
     }
 
     // 解析网易云直链
-    private suspend fun resolveNetease(songId: Long): ResolvedDownloadSource? {
-        val quality = try { AppContainer.settingsRepo.audioQualityFlow.first() } catch (_: Exception) { "exhigh" }
-        val raw = AppContainer.neteaseClient.getSongDownloadUrl(songId, level = quality)
+    private suspend fun resolveNetease(
+        songId: Long,
+        preferredQuality: String
+    ): ResolvedDownloadSource? {
+        val raw = AppContainer.neteaseClient.getSongDownloadUrl(songId, level = preferredQuality)
         return try {
             val root = JSONObject(raw)
-            if (root.optInt("code") != 200) return tryWeapiFallback(songId, quality)
+            if (root.optInt("code") != 200) return tryWeapiFallback(songId, preferredQuality)
             val data = NeteasePlaybackResponseParser.parseDownloadInfo(raw)
-                ?: return tryWeapiFallback(songId, quality)
+                ?: return tryWeapiFallback(songId, preferredQuality)
             val url = data.url
             val type = data.type.orEmpty() // e.g., mp3/flac
             val mime = guessMimeFromUrl(url)
@@ -4161,12 +4192,13 @@ object AudioDownloadManager {
                 contentLength = data.contentLength
             )
         } catch (_: Exception) {
-            tryWeapiFallback(songId, quality)
+            tryWeapiFallback(songId, preferredQuality)
         }
     }
 
     private fun bitrateForQuality(level: String): Int = when (level.lowercase()) {
         "standard" -> 128000
+        "higher" -> 192000
         "exhigh" -> 320000
         "lossless", "hires", "jyeffect", "sky", "jymaster" -> 1411200
         else -> 320000
@@ -4192,6 +4224,7 @@ object AudioDownloadManager {
 
     private suspend fun resolveYouTubeMusic(
         song: SongItem,
+        preferredQuality: String,
         forceRefresh: Boolean = false,
         avoidDirect: Boolean = false
     ): ResolvedDownloadSource? {
@@ -4206,6 +4239,7 @@ object AudioDownloadManager {
             val candidate = resolveYouTubeMusicDownloadAudio(
                 videoId = videoId,
                 attempt = attempt,
+                preferredQuality = preferredQuality,
                 avoidDirect = avoidDirect
             ) ?: continue
             if (candidate.streamType == YouTubePlayableStreamType.DIRECT) {
@@ -4263,6 +4297,7 @@ object AudioDownloadManager {
     private suspend fun resolveYouTubeMusicDownloadAudio(
         videoId: String,
         attempt: YouTubeDownloadResolveAttempt,
+        preferredQuality: String,
         avoidDirect: Boolean = false
     ): YouTubePlayableAudio? {
         val startedAtMs = System.currentTimeMillis()
@@ -4275,6 +4310,7 @@ object AudioDownloadManager {
                 }
                 playbackRepository.getBestPlayableAudio(
                     videoId = videoId,
+                    preferredQualityOverride = preferredQuality,
                     forceRefresh = attempt.forceRefresh,
                     requireDirect = attempt.requireDirect,
                     preferM4a = true,
@@ -4308,10 +4344,17 @@ object AudioDownloadManager {
     }
 
     // Resolve Bili audio direct url.
-    private suspend fun resolveBili(song: SongItem): ResolvedDownloadSource? {
+    private suspend fun resolveBili(
+        song: SongItem,
+        preferredQuality: String
+    ): ResolvedDownloadSource? {
         val resolved = resolveBiliSong(song, AppContainer.biliClient) ?: return null
         val chosen: BiliAudioStreamInfo? = AppContainer.biliPlaybackRepository
-            .getBestPlayableAudio(resolved.videoInfo.bvid, resolved.cid)
+            .getBestPlayableAudio(
+                bvid = resolved.videoInfo.bvid,
+                cid = resolved.cid,
+                preferredKeyOverride = preferredQuality
+            )
         val url = chosen?.url ?: return null
         val mime = chosen.mimeType
         val ext = mimeToExt(mime)

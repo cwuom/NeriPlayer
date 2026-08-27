@@ -289,6 +289,12 @@
     <string name="settings_download_metadata_post_processing_desc">Write tags, lyrics, and covers; management still works when off</string>
     <string name="settings_standardized_lyric_embedding">Standardized lyric embedding</string>
     <string name="settings_standardized_lyric_embedding_desc">Convert embedded audio tag lyrics to common LRC; word-level lyrics remain available in some in-app contexts</string>
+    <string name="settings_download_follow_playback_audio_quality">Follow playback quality settings</string>
+    <string name="settings_download_follow_playback_audio_quality_desc">When enabled, downloads use playback quality; turn it off to choose a quality for each platform</string>
+    <string name="settings_download_quality_group">Download quality</string>
+    <string name="settings_download_netease_audio_quality">NetEase download quality</string>
+    <string name="settings_download_youtube_audio_quality">YouTube download quality</string>
+    <string name="settings_download_bili_audio_quality">Bilibili download quality</string>
     <string name="settings_download_parallelism">Download thread count</string>
     <string name="settings_download_parallelism_desc">Controls how many song download tasks can run at the same time, up to 8</string>
     <string name="settings_download_parallelism_current">Current: %1$d, max %2$d</string>

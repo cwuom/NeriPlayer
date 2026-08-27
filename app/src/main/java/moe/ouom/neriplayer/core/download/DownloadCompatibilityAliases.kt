@@ -234,6 +234,14 @@ internal fun isMobileDataDownloadInterruptionSnapshotCurrent(
     currentEpoch: Long
 ): Boolean = snapshotEpoch == null || snapshotEpoch == currentEpoch
 
+internal fun isWifiBoundNetworkPolicyObservationCurrent(
+    snapshotEpoch: Long,
+    currentEpoch: Long,
+    currentNetworkType: TrafficNetworkType
+): Boolean {
+    return snapshotEpoch == currentEpoch && currentNetworkType != TrafficNetworkType.WIFI
+}
+
 internal fun shouldRevokeMobileDataDownloadOverrideForWifiDisconnect(
     callbackNetworkType: TrafficNetworkType,
     currentNetworkType: TrafficNetworkType

@@ -105,7 +105,9 @@ import moe.ouom.neriplayer.data.model.remoteSourceIdentityOrNull
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
+import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
 import java.io.File
@@ -455,6 +457,8 @@ object GlobalDownloadManager {
     private val trafficRiskRequestIdGenerator = AtomicLong(0L)
     private val mobileDataInterruptionRequestIdGenerator = AtomicLong(0L)
     private val mobileDataDownloadInterruptionEpoch = AtomicLong(0L)
+    private val wifiBoundNetworkPolicyEpoch = AtomicLong(0L)
+    private val wifiBoundNetworkPolicyMutationLock = Any()
     private val mobileDataDownloadInterruptionRequestMutex = Mutex()
     private val songExecutionLocks = Array(SONG_EXECUTION_LOCK_STRIPES) { Mutex() }
     private val pendingDownloadRecoveryMutex = Mutex()
@@ -479,6 +483,63 @@ object GlobalDownloadManager {
     private fun dismissMobileDataDownloadInterruptionRequest() {
         mobileDataDownloadInterruptionEpoch.incrementAndGet()
         _mobileDataDownloadInterruptionRequest.value = null
+    }
+
+    internal fun onWifiBoundDownloadNetworkRestored(
+        context: Context,
+        reason: String
+    ): Boolean {
+        val appContext = context.applicationContext
+        synchronized(wifiBoundNetworkPolicyMutationLock) {
+            if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
+                return false
+            }
+            wifiBoundNetworkPolicyEpoch.incrementAndGet()
+            mobileDataDownloadOverrideAllowed = false
+            dismissMobileDataDownloadInterruptionRequest()
+        }
+        NPLogger.d(TAG, "WIFI 下载网络已恢复，已撤销移动网络确认提示: reason=$reason")
+        return true
+    }
+
+    private fun isWifiBoundNetworkPolicyStillRequired(
+        context: Context,
+        snapshotEpoch: Long
+    ): Boolean {
+        return !isDownloadClearFenceActive(context) &&
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = snapshotEpoch,
+                currentEpoch = wifiBoundNetworkPolicyEpoch.get(),
+                currentNetworkType = context.applicationContext.currentTrafficNetworkType()
+            )
+    }
+
+    private inline fun mutateWifiBoundNetworkPolicyIfStillRequired(
+        context: Context,
+        snapshotEpoch: Long,
+        mutation: () -> Unit
+    ): Boolean {
+        return synchronized(wifiBoundNetworkPolicyMutationLock) {
+            if (!isWifiBoundNetworkPolicyStillRequired(context, snapshotEpoch)) {
+                false
+            } else {
+                mutation()
+                true
+            }
+        }
+    }
+
+    private fun recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+        context: Context,
+        snapshotEpoch: Long,
+        reason: String
+    ) {
+        if (
+            !isWifiBoundNetworkPolicyStillRequired(context, snapshotEpoch) &&
+                context.applicationContext.currentTrafficNetworkType() == TrafficNetworkType.WIFI
+        ) {
+            recoverPendingDownloadsForNetworkRestored(context, reason)
+        }
     }
 
     /**
@@ -547,11 +608,13 @@ object GlobalDownloadManager {
         }
         val requiresWifiNetwork = !userInitiated ||
             context.currentTrafficNetworkType() == TrafficNetworkType.WIFI
+        val downloadAudioQuality = resolveDownloadAudioQualitySelection(context)
         val recoveryStore = DownloadRecoveryRoomStore(context.applicationContext)
         val waitingOperationIds = recoveryStore.upsertWaitingStorageMutation(
             songs = distinctSongs,
             userInitiated = userInitiated,
-            requiresWifiNetwork = requiresWifiNetwork
+            requiresWifiNetwork = requiresWifiNetwork,
+            downloadAudioQuality = downloadAudioQuality
         )
         val waitingOperationSnapshots = DownloadExecutionRoomStore.readOperationSnapshots(
             context = context,
@@ -601,7 +664,8 @@ object GlobalDownloadManager {
                 context = context,
                 songs = queueableSongs,
                 userInitiated = userInitiated,
-                requiresWifiNetwork = requiresWifiNetwork
+                requiresWifiNetwork = requiresWifiNetwork,
+                downloadAudioQuality = downloadAudioQuality
             ),
             skippedSongKeys = skippedSongKeys
         )
@@ -1203,6 +1267,7 @@ object GlobalDownloadManager {
         ) {
             return emptySet()
         }
+        val networkPolicyEpoch = wifiBoundNetworkPolicyEpoch.get()
 
         val recoveryPlan = resolvePendingDownloadRecoveryPlan(context)
         val waitingTaskSongs = currentWaitingNetworkTaskSongs()
@@ -1240,13 +1305,22 @@ object GlobalDownloadManager {
         }
 
         val waitingSongKeys = waitingSongs.mapTo(linkedSetOf()) { song -> song.stableKey() }
-        AudioDownloadManager.pauseDownloadsForNetworkPolicy(waitingSongKeys)
-        taskStore.prepareDownloadTasks(
-            songs = waitingSongs,
-            status = DownloadStatus.WAITING_NETWORK,
-            replaceExistingActiveTasks = true
-        )
-        mobileDataDownloadOverrideAllowed = false
+        val waitingStateCommitted = mutateWifiBoundNetworkPolicyIfStillRequired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch
+        ) {
+            AudioDownloadManager.pauseDownloadsForNetworkPolicy(waitingSongKeys)
+            taskStore.prepareDownloadTasks(
+                songs = waitingSongs,
+                status = DownloadStatus.WAITING_NETWORK,
+                replaceExistingActiveTasks = true
+            )
+            mobileDataDownloadOverrideAllowed = false
+        }
+        if (!waitingStateCommitted) {
+            NPLogger.d(TAG, "启动恢复网络策略已过期，保留 WIFI 恢复路径: reason=$reason")
+            return emptySet()
+        }
         scheduleWifiBoundDownloadWakeups(context, waitingSongKeys)
         NPLogger.w(
             TAG,
@@ -1258,6 +1332,11 @@ object GlobalDownloadManager {
             fallbackTaskCount = waitingSongs.size,
             reason = reason,
             forceAuthoritativeRecount = true
+        )
+        recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch,
+            reason = "startup_network_policy_stale_$reason"
         )
         return waitingSongKeys
     }
@@ -1428,6 +1507,7 @@ object GlobalDownloadManager {
             return false
         }
         val interruptionSnapshotEpoch = mobileDataDownloadInterruptionEpoch.get()
+        val networkPolicyEpoch = wifiBoundNetworkPolicyEpoch.get()
         val activeTasks = wifiBoundTasksForNetworkPolicy(
             context = context,
             tasks = currentActiveNetworkPolicyTasks()
@@ -1444,7 +1524,10 @@ object GlobalDownloadManager {
         ) {
             return false
         }
-        mobileDataDownloadOverrideAllowed = false
+        if (!isWifiBoundNetworkPolicyStillRequired(context, networkPolicyEpoch)) {
+            NPLogger.d(TAG, "活动下载网络策略已过期，保留 WIFI 恢复路径: reason=$reason")
+            return false
+        }
         val taskCount = wifiBoundDownloadTaskCount(
             activeSongKeys = activeTasks.map { task -> task.song.stableKey() } +
                 waitingSongs.map(SongItem::stableKey),
@@ -1462,8 +1545,19 @@ object GlobalDownloadManager {
             authoritativeTaskCount = taskCount,
             interruptionSnapshotEpoch = interruptionSnapshotEpoch
         )
-        pauseDownloadTasksForNetworkPolicy(context, activeTasks)
-        return true
+        val paused = pauseDownloadTasksForNetworkPolicy(
+            context = context,
+            activeTasks = activeTasks,
+            networkPolicyEpoch = networkPolicyEpoch
+        )
+        if (!paused) {
+            recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+                context = context,
+                snapshotEpoch = networkPolicyEpoch,
+                reason = "active_network_policy_stale_$reason"
+            )
+        }
+        return paused
     }
 
     private suspend fun deferQueuedDownloadStartForNetworkPolicyIfNeeded(
@@ -1484,6 +1578,7 @@ object GlobalDownloadManager {
         ) {
             return emptySet()
         }
+        val networkPolicyEpoch = wifiBoundNetworkPolicyEpoch.get()
 
         val eligibleSongs = songs
             .distinctBy { song -> song.stableKey() }
@@ -1501,16 +1596,25 @@ object GlobalDownloadManager {
         }
 
         val waitingKeys = waitingSongs.mapTo(linkedSetOf()) { song -> song.stableKey() }
-        AudioDownloadManager.pauseDownloadsForNetworkPolicy(waitingKeys)
-        waitingSongs.forEach { song ->
-            val songKey = song.stableKey()
-            updateTaskStatus(
-                songKey = songKey,
-                status = DownloadStatus.WAITING_NETWORK,
-                expectedAttemptId = attemptIdsBySongKey[songKey]
-            )
+        val waitingStateCommitted = mutateWifiBoundNetworkPolicyIfStillRequired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch
+        ) {
+            AudioDownloadManager.pauseDownloadsForNetworkPolicy(waitingKeys)
+            waitingSongs.forEach { song ->
+                val songKey = song.stableKey()
+                updateTaskStatus(
+                    songKey = songKey,
+                    status = DownloadStatus.WAITING_NETWORK,
+                    expectedAttemptId = attemptIdsBySongKey[songKey]
+                )
+            }
+            mobileDataDownloadOverrideAllowed = false
         }
-        mobileDataDownloadOverrideAllowed = false
+        if (!waitingStateCommitted) {
+            NPLogger.d(TAG, "排队启动网络策略已过期，保留 WIFI 恢复路径: reason=$reason")
+            return emptySet()
+        }
         NPLogger.w(
             TAG,
             "非 WIFI 网络下阻止恢复下载启动，等待用户选择: reason=$reason, networkType=$networkType, count=${waitingSongs.size}"
@@ -1523,6 +1627,11 @@ object GlobalDownloadManager {
             forceAuthoritativeRecount = true
         )
         scheduleWifiBoundDownloadWakeups(context, waitingKeys)
+        recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch,
+            reason = "queued_network_policy_stale_$reason"
+        )
         return waitingKeys
     }
 
@@ -1536,6 +1645,9 @@ object GlobalDownloadManager {
         interruptionSnapshotEpoch: Long? = null
     ) {
         mobileDataDownloadInterruptionRequestMutex.withLock {
+            if (onWifiBoundDownloadNetworkRestored(context, "dialog_$reason")) {
+                return@withLock
+            }
             val publicationEpoch = interruptionSnapshotEpoch
                 ?: mobileDataDownloadInterruptionEpoch.get()
             if (!isMobileDataDownloadInterruptionSnapshotCurrent(
@@ -1569,6 +1681,9 @@ object GlobalDownloadManager {
                 }
 
                 else -> null
+            }
+            if (onWifiBoundDownloadNetworkRestored(context, "dialog_recheck_$reason")) {
+                return@withLock
             }
             if (
                 !isMobileDataDownloadInterruptionSnapshotCurrent(
@@ -1686,6 +1801,9 @@ object GlobalDownloadManager {
             if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
                 return@launch
             }
+            if (!onWifiBoundDownloadNetworkRestored(appContext, "recovery_$reason")) {
+                return@launch
+            }
             promoteWaitingStorageMutationsForRecovery(appContext)
             // a core file can survive process death without an in-memory task or a
             // resumable transfer record, so repair finalization before testing the
@@ -1696,8 +1814,6 @@ object GlobalDownloadManager {
             if (!hasPendingRecoveryCandidates(appContext)) {
                 return@launch
             }
-            mobileDataDownloadOverrideAllowed = false
-            dismissMobileDataDownloadInterruptionRequest()
             if (!tryBeginPendingDownloadRecovery()) {
                 return@launch
             }
@@ -1765,6 +1881,7 @@ object GlobalDownloadManager {
                 "复查移动网络下载恢复: reason=$reason, networkType=$networkType, queued=$pendingQueuedCount, partial=$pendingResumableCount, waiting=$waitingTaskCount, active=$activeTaskCount, batchJobs=${activeBatchDownloadJobs.size}, single=${taskStore.isSingleDownloading}, pendingDialog=${_mobileDataDownloadInterruptionRequest.value != null}"
             )
             if (networkType == TrafficNetworkType.WIFI) {
+                onWifiBoundDownloadNetworkRestored(appContext, "decision_$reason")
                 NPLogger.d(TAG, "跳过移动网络下载恢复复查: 当前是 WIFI, reason=$reason")
                 return@launch
             }
@@ -4728,7 +4845,8 @@ object GlobalDownloadManager {
             deferForNetworkPolicy = false,
             operationId = operationId,
             preparedAttemptId = effectiveAttemptId,
-            artifactLeaseOwnerId = persistedRequest.artifactLeaseId
+            artifactLeaseOwnerId = persistedRequest.artifactLeaseId,
+            downloadAudioQuality = persistedRequest.downloadAudioQuality
         )
         return executionResultForOperation(
             context = appContext,
@@ -4800,23 +4918,47 @@ object GlobalDownloadManager {
         ) {
             return false
         }
+        val networkPolicyEpoch = wifiBoundNetworkPolicyEpoch.get()
 
         val songKey = request.song.stableKey()
         val durableAttemptIds = (preparedAttemptId ?: request.attemptId)
             ?.takeIf { attemptId -> attemptId > 0L }
             ?.let { attemptId -> mapOf(songKey to attemptId) }
             ?: emptyMap()
-        val effectiveAttemptId = taskStore.ensureDownloadTasks(
-            songs = listOf(request.song),
-            status = DownloadStatus.WAITING_NETWORK,
-            durableAttemptIds = durableAttemptIds
-        )[songKey]
-        if (effectiveAttemptId != null) {
-            taskStore.updateTaskStatus(
-                songKey = songKey,
-                status = DownloadStatus.WAITING_NETWORK,
-                expectedAttemptId = effectiveAttemptId
+        if (!isWifiBoundNetworkPolicyStillRequired(context, networkPolicyEpoch)) {
+            NPLogger.d(
+                TAG,
+                "执行宿主网络策略已过期，保留 WIFI 恢复路径: operationId=${request.operationId}"
             )
+            return false
+        }
+        var effectiveAttemptId: Long? = null
+        val waitingStateCommitted = mutateWifiBoundNetworkPolicyIfStillRequired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch
+        ) {
+            effectiveAttemptId = taskStore.ensureDownloadTasks(
+                songs = listOf(request.song),
+                status = DownloadStatus.WAITING_NETWORK,
+                durableAttemptIds = durableAttemptIds
+            )[songKey]
+            effectiveAttemptId?.let { attemptId ->
+                taskStore.updateTaskStatus(
+                    songKey = songKey,
+                    status = DownloadStatus.WAITING_NETWORK,
+                    expectedAttemptId = attemptId
+                )
+            }
+            mobileDataDownloadOverrideAllowed = false
+        }
+        if (!waitingStateCommitted) {
+            NPLogger.d(
+                TAG,
+                "执行宿主网络策略提交已过期，保留 WIFI 恢复路径: operationId=${request.operationId}"
+            )
+            return false
+        }
+        if (effectiveAttemptId != null) {
             runCatching {
                 DownloadExecutionRoomStore.upsert(
                     context = context,
@@ -4837,6 +4979,14 @@ object GlobalDownloadManager {
                 )
             }
         }
+        if (!isWifiBoundNetworkPolicyStillRequired(context, networkPolicyEpoch)) {
+            recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+                context = context,
+                snapshotEpoch = networkPolicyEpoch,
+                reason = "execution_network_policy_stale"
+            )
+            return true
+        }
         NPLogger.w(
             TAG,
             "下载执行宿主在非 WIFI 网络被阻止: operationId=${request.operationId}, " +
@@ -4847,6 +4997,11 @@ object GlobalDownloadManager {
             networkType = networkType,
             fallbackTaskCount = 1,
             reason = "execution_network_policy"
+        )
+        recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch,
+            reason = "execution_network_policy_publish_stale"
         )
         return true
     }
@@ -4914,7 +5069,8 @@ object GlobalDownloadManager {
         deferForNetworkPolicy: Boolean,
         preparedAttemptId: Long? = null,
         operationId: String? = null,
-        artifactLeaseOwnerId: String? = null
+        artifactLeaseOwnerId: String? = null,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ) {
         val appContext = context.applicationContext
         val songKey = song.stableKey()
@@ -5341,7 +5497,8 @@ object GlobalDownloadManager {
                                 context = appContext,
                                 song = song,
                                 attemptId = attemptId,
-                                operationId = operationId
+                                operationId = operationId,
+                                downloadAudioQuality = downloadAudioQuality
                             )
                         } finally {
                             progressCheckpointBinding?.let { binding ->
@@ -7263,7 +7420,8 @@ object GlobalDownloadManager {
         context: Context,
         songs: List<SongItem>,
         userInitiated: Boolean = false,
-        requiresWifiNetwork: Boolean = true
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ): List<String> {
         if (songs.isEmpty()) {
             return emptyList()
@@ -7272,7 +7430,8 @@ object GlobalDownloadManager {
             context = context,
             songs = songs,
             userInitiated = userInitiated,
-            requiresWifiNetwork = requiresWifiNetwork
+            requiresWifiNetwork = requiresWifiNetwork,
+            downloadAudioQuality = downloadAudioQuality
         )
     }
 
@@ -8045,6 +8204,7 @@ object GlobalDownloadManager {
                 return@launch
             }
             val interruptionSnapshotEpoch = mobileDataDownloadInterruptionEpoch.get()
+            val networkPolicyEpoch = wifiBoundNetworkPolicyEpoch.get()
             val activeTasks = wifiBoundTasksForNetworkPolicy(
                 context = appContext,
                 tasks = currentActiveNetworkPolicyTasks()
@@ -8066,6 +8226,14 @@ object GlobalDownloadManager {
                     waitingSongs.map(SongItem::stableKey),
                 persistedSongKeys = persistedSongKeys
             )
+            if (!isWifiBoundNetworkPolicyStillRequired(appContext, networkPolicyEpoch)) {
+                NPLogger.d(
+                    TAG,
+                    "WIFI 断开策略已过期，保留 WIFI 恢复路径: " +
+                        "callbackType=$callbackNetworkType"
+                )
+                return@launch
+            }
             NPLogger.w(
                 TAG,
                 "WIFI 已断开，等待用户确认下载策略: callbackType=$callbackNetworkType, " +
@@ -8080,7 +8248,18 @@ object GlobalDownloadManager {
                 authoritativeTaskCount = taskCount,
                 interruptionSnapshotEpoch = interruptionSnapshotEpoch
             )
-            pauseDownloadTasksForNetworkPolicy(appContext, activeTasks)
+            val paused = pauseDownloadTasksForNetworkPolicy(
+                context = appContext,
+                activeTasks = activeTasks,
+                networkPolicyEpoch = networkPolicyEpoch
+            )
+            if (!paused) {
+                recoverWifiBoundDownloadsIfNetworkPolicyExpired(
+                    context = appContext,
+                    snapshotEpoch = networkPolicyEpoch,
+                    reason = "wifi_disconnect_policy_stale"
+                )
+            }
         }
     }
 
@@ -8103,10 +8282,20 @@ object GlobalDownloadManager {
         dismissMobileDataDownloadInterruptionRequest()
         mobileDataDownloadOverrideAllowed = false
         scope.launch {
+            val appContext = AppContainer.applicationContext
             val activeTasks = taskStore.currentTasks().filter { task ->
                 task.status == DownloadStatus.QUEUED || task.status == DownloadStatus.DOWNLOADING
             }
-            pauseDownloadTasksForNetworkPolicy(AppContainer.applicationContext, activeTasks)
+            val paused = pauseDownloadTasksForNetworkPolicy(
+                context = appContext,
+                activeTasks = activeTasks
+            )
+            if (!paused && appContext.currentTrafficNetworkType() == TrafficNetworkType.WIFI) {
+                recoverPendingDownloadsForNetworkRestored(
+                    context = appContext,
+                    reason = "user_wait_wifi_network_already_restored"
+                )
+            }
         }
     }
 
@@ -8155,6 +8344,9 @@ object GlobalDownloadManager {
             return true
         }
         if (appContext.currentTrafficNetworkType() != TrafficNetworkType.WIFI) {
+            return false
+        }
+        if (!onWifiBoundDownloadNetworkRestored(appContext, "wifi_wake")) {
             return false
         }
         if (!tryBeginPendingDownloadRecovery()) {
@@ -8414,8 +8606,12 @@ object GlobalDownloadManager {
 
     private suspend fun pauseDownloadTasksForNetworkPolicy(
         context: Context,
-        activeTasks: List<DownloadTask>
-    ) {
+        activeTasks: List<DownloadTask>,
+        networkPolicyEpoch: Long = wifiBoundNetworkPolicyEpoch.get()
+    ): Boolean {
+        if (!isWifiBoundNetworkPolicyStillRequired(context, networkPolicyEpoch)) {
+            return false
+        }
         val wifiBoundActiveTasks = wifiBoundTasksForNetworkPolicy(
             context = context,
             tasks = activeTasks
@@ -8427,21 +8623,31 @@ object GlobalDownloadManager {
             songs = currentWaitingNetworkTaskSongs()
         ).mapTo(activeKeys) { song -> song.stableKey() }
         if (activeKeys.isEmpty()) {
-            return
+            return false
         }
-        AudioDownloadManager.pauseDownloadsForNetworkPolicy(activeKeys)
-        taskStore.applyWaitingNetworkStatus(wifiBoundActiveTasks)
-        wifiBoundActiveTasks.filter { task ->
-            task.status == DownloadStatus.DOWNLOADING ||
-                AudioDownloadManager.isSongDownloadActive(task.song.stableKey())
-        }.forEach { task ->
-            DownloadExecutionHosts.default.stopForSong(
-                context = context.applicationContext,
-                songKey = task.song.stableKey(),
-                preventReschedule = false
-            )
+        val paused = mutateWifiBoundNetworkPolicyIfStillRequired(
+            context = context,
+            snapshotEpoch = networkPolicyEpoch
+        ) {
+            AudioDownloadManager.pauseDownloadsForNetworkPolicy(activeKeys)
+            taskStore.applyWaitingNetworkStatus(wifiBoundActiveTasks)
+            wifiBoundActiveTasks.filter { task ->
+                task.status == DownloadStatus.DOWNLOADING ||
+                    AudioDownloadManager.isSongDownloadActive(task.song.stableKey())
+            }.forEach { task ->
+                DownloadExecutionHosts.default.stopForSong(
+                    context = context.applicationContext,
+                    songKey = task.song.stableKey(),
+                    preventReschedule = false
+                )
+            }
+            mobileDataDownloadOverrideAllowed = false
+        }
+        if (!paused) {
+            return false
         }
         scheduleWifiBoundDownloadWakeups(context, activeKeys)
+        return true
     }
 
     fun isSongCancelled(songKey: String): Boolean {

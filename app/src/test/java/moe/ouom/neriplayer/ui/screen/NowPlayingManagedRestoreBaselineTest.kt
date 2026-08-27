@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -314,26 +315,26 @@ class NowPlayingManagedRestoreBaselineTest {
     }
 
     @Test
-    fun `lyrics editor save is kept as a draft until outer song info save`() {
+    fun `committed lyrics do not become an outer song info draft`() {
         val draft = EditSongLyricsDraft(
-            lyric = "draft lyric",
-            translatedLyric = "draft translation",
-            romanizedLyric = "draft romanization",
+            lyric = "saved lyric",
+            translatedLyric = "saved translation",
+            romanizedLyric = "saved romanization",
             writeLocalMetadata = true
         )
 
-        val resolved = resolveEditSongLyricsForSave(
-            draft = draft,
+        val outerSaveLyrics = resolveEditSongLyricsForSave(
+            draft = null,
             shouldClearLyrics = false,
-            shouldRestoreLyrics = true,
-            originalLyric = "original lyric",
-            originalTranslatedLyric = "original translation",
-            originalRomanizedLyric = "original romanization"
+            shouldRestoreLyrics = false,
+            originalLyric = null,
+            originalTranslatedLyric = null,
+            originalRomanizedLyric = null
         )
 
-        assertEquals(draft, resolved)
+        assertNull(outerSaveLyrics)
         assertEquals(
-            "draft lyric",
+            "saved lyric",
             applyEditSongLyricsDraftPreview(
                 seed = LyricsEditorSeed(
                     lyrics = "old lyric",

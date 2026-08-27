@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,7 +89,8 @@ data class DownloadExecutionRequest(
     val requiresWifiNetwork: Boolean = true,
     val attemptId: Long? = null,
     val artifactLeaseId: String = UUID.randomUUID().toString(),
-    val userInitiated: Boolean = true
+    val userInitiated: Boolean = true,
+    val downloadAudioQuality: DownloadAudioQualitySelection? = null
 ) {
     init {
         require(normalizeDownloadOperationId(operationId) == operationId) {

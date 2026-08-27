@@ -14,6 +14,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 
 /** compatibility facade for v15 queue files; operation journal owns new work */
 internal class DownloadRecoveryRoomStore(
@@ -26,7 +27,8 @@ internal class DownloadRecoveryRoomStore(
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis(),
         userInitiated: Boolean = false,
-        requiresWifiNetwork: Boolean = true
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ): List<String> {
         return database.withTransaction {
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
@@ -47,6 +49,7 @@ internal class DownloadRecoveryRoomStore(
                 },
                 userInitiated = userInitiated,
                 requiresWifiNetwork = requiresWifiNetwork,
+                downloadAudioQuality = downloadAudioQuality,
                 updatedAtMs = nowMs,
                 database = database
             )
@@ -116,7 +119,9 @@ internal class DownloadRecoveryRoomStore(
                         attemptId = old?.request?.attemptId,
                         artifactLeaseId = old?.request?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
-                        userInitiated = old?.request?.userInitiated == true || userInitiated
+                        userInitiated = old?.request?.userInitiated == true || userInitiated,
+                        downloadAudioQuality = old?.request?.downloadAudioQuality
+                            ?: downloadAudioQuality
                     ),
                     state = PENDING_QUEUE_STATE,
                     queueOrder = old?.queueOrder ?: nextOrder++,
@@ -147,7 +152,8 @@ internal class DownloadRecoveryRoomStore(
         songs: List<SongItem>,
         nowMs: Long = System.currentTimeMillis(),
         userInitiated: Boolean = false,
-        requiresWifiNetwork: Boolean = true
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ): List<String> {
         if (songs.isEmpty()) return emptyList()
         return database.withTransaction {
@@ -287,7 +293,9 @@ internal class DownloadRecoveryRoomStore(
                         attemptId = existing?.request?.attemptId,
                         artifactLeaseId = existing?.request?.artifactLeaseId
                             ?: UUID.randomUUID().toString(),
-                        userInitiated = existing?.request?.userInitiated == true || userInitiated
+                        userInitiated = existing?.request?.userInitiated == true || userInitiated,
+                        downloadAudioQuality = existing?.request?.downloadAudioQuality
+                            ?: downloadAudioQuality
                     ),
                     state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
                     queueOrder = existing?.queueOrder ?: nextOrder++,

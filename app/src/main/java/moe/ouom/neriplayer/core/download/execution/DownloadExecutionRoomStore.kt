@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.entity.DownloadOperationEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import org.json.JSONObject
 
 internal const val WAITING_STORAGE_MUTATION_OPERATION_STATE = "WAITING_STORAGE_MUTATION"
@@ -554,6 +555,7 @@ internal object DownloadExecutionRoomStore {
         userInitiated: Boolean,
         requiresWifiNetwork: Boolean,
         updatedAtMs: Long,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Set<String> {
         val songsByStableKey = linkedMapOf<String, SongItem>()
@@ -591,7 +593,8 @@ internal object DownloadExecutionRoomStore {
                     song = song,
                     artifactLeaseId = UUID.randomUUID().toString(),
                     requiresWifiNetwork = requiresWifiNetwork,
-                    userInitiated = userInitiated
+                    userInitiated = userInitiated,
+                    downloadAudioQuality = downloadAudioQuality
                 )
                 val replaced = dao.replaceMalformedReusablePayload(
                     operationId = existing.operationId,
@@ -1212,6 +1215,16 @@ internal object DownloadExecutionRoomStore {
             put("userInitiated", request.userInitiated)
             request.attemptId?.let { attemptId -> put("attemptId", attemptId) }
             put("artifactLeaseId", request.artifactLeaseId)
+            request.downloadAudioQuality?.let { quality ->
+                put(
+                    "downloadAudioQuality",
+                    JSONObject().apply {
+                        put("neteaseQuality", quality.neteaseQuality)
+                        put("youtubeQuality", quality.youtubeQuality)
+                        put("biliQuality", quality.biliQuality)
+                    }
+                )
+            }
         }
     }
 
@@ -1271,6 +1284,13 @@ internal object DownloadExecutionRoomStore {
                     root.optBoolean("userInitiated", false)
                 } else {
                     false
+                },
+                downloadAudioQuality = root.optJSONObject("downloadAudioQuality")?.let { quality ->
+                    DownloadAudioQualitySelection.normalized(
+                        neteaseQuality = quality.optString("neteaseQuality"),
+                        youtubeQuality = quality.optString("youtubeQuality"),
+                        biliQuality = quality.optString("biliQuality")
+                    )
                 }
             )
         }.onFailure { error ->

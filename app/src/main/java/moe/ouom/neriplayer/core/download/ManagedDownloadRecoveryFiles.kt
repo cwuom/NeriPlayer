@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.core.download.storage.working.ManagedDownloadWorkingStore
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 import java.io.File
 import java.util.UUID
 
@@ -168,13 +169,15 @@ internal object ManagedDownloadRecoveryFiles {
         context: Context,
         songs: List<SongItem>,
         userInitiated: Boolean = false,
-        requiresWifiNetwork: Boolean = true
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
     ): List<String> {
         return runBlocking(Dispatchers.IO) {
             roomStore(context).upsertPendingDownloadQueue(
                 songs = songs,
                 userInitiated = userInitiated,
-                requiresWifiNetwork = requiresWifiNetwork
+                requiresWifiNetwork = requiresWifiNetwork,
+                downloadAudioQuality = downloadAudioQuality
             )
         }
     }

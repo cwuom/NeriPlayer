@@ -24,6 +24,38 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `wifi restoration invalidates stale wifi-bound pause work`() {
+        assertTrue(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+        assertTrue(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.ROAMING
+            )
+        )
+        assertFalse(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 8L,
+                currentNetworkType = TrafficNetworkType.WIFI
+            )
+        )
+        assertFalse(
+            isWifiBoundNetworkPolicyObservationCurrent(
+                snapshotEpoch = 8L,
+                currentEpoch = 9L,
+                currentNetworkType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
     fun `restorable cover reuses verified short name before legacy hash lookup`() = runBlocking {
         val shortReference = "content://downloads/Covers/Artist-Song-12345678.jpg"
         val assetHash = "a".repeat(64)

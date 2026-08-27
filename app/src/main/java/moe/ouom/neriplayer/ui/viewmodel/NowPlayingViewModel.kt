@@ -468,17 +468,30 @@ class NowPlayingViewModel : ViewModel() {
 
                 if (!songDetails.lyric.isNullOrBlank()) {
                     // 一次性更新歌词和翻译歌词, 避免数据竞争
-                    PlayerManager.updateSongLyricsAndTranslation(
+                    val lyricsSaved = PlayerManager.updateSongLyricsAndTranslation(
                         song,
                         songDetails.lyric,
                         songDetails.translatedLyric
                     )
+                    if (!lyricsSaved) {
+                        NPLogger.w(
+                            "NowPlayingViewModel",
+                            "歌词写入未完成: songId=${song.id}, album=${song.album}"
+                        )
+                        onComplete(
+                            false,
+                            context.getString(R.string.local_song_lyrics_write_failed)
+                        )
+                        return@launch
+                    }
                     NPLogger.d("NowPlayingViewModel", "歌词已保存: songId=${song.id}, album=${song.album}, lyrics length=${songDetails.lyric.length}, hasTranslation=${!songDetails.translatedLyric.isNullOrBlank()}")
                     onComplete(true, context.getString(R.string.music_lyrics_filled_success))
                 } else {
                     NPLogger.w("NowPlayingViewModel", "获取的歌词为空: searchSongId=${selectedSong.id}")
                     onComplete(false, context.getString(R.string.music_lyrics_empty))
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (e: Exception) {
                 NPLogger.e("NowPlayingViewModel", "获取歌词失败", e)
                 onComplete(false, context.getString(R.string.music_lyrics_fill_failed))

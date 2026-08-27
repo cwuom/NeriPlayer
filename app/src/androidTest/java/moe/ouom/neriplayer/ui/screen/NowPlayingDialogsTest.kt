@@ -22,6 +22,7 @@ import moe.ouom.neriplayer.ui.component.playback.NowPlayingCoverPreviewDialog
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -110,7 +111,7 @@ class NowPlayingDialogsTest {
                         originalSong = demoSongItem(),
                         initialLyrics = "原文A",
                         initialTranslatedLyrics = "译文B",
-                        onSaveDraft = { },
+                        onSaveLyrics = { true },
                         onDismiss = { }
                     )
                 }
@@ -150,7 +151,7 @@ class NowPlayingDialogsTest {
                             originalSong = demoSongItem(),
                             initialLyrics = "原文A",
                             initialTranslatedLyrics = "译文B",
-                            onSaveDraft = { },
+                            onSaveLyrics = { true },
                             onDismiss = {
                                 lyricsEditorDismissed = true
                                 lyricsEditorShown.value = false
@@ -172,6 +173,84 @@ class NowPlayingDialogsTest {
         composeRule.runOnIdle {
             assertTrue(lyricsEditorDismissed)
             assertTrue(!outerMenuBackHandled)
+        }
+    }
+
+    @Test
+    fun lyricsEditorSheet_dismissesOnlyAfterLyricsWriteSucceeds() {
+        val context = targetContext
+        val savedDrafts = mutableListOf<EditSongLyricsDraft>()
+        var dismissed = false
+
+        composeRule.setContent {
+            val lyricsEditorShown = remember { mutableStateOf(true) }
+            MaterialTheme {
+                Box {
+                    if (lyricsEditorShown.value) {
+                        LyricsEditorSheet(
+                            originalSong = demoSongItem(),
+                            initialLyrics = "原文A",
+                            initialTranslatedLyrics = "译文B",
+                            onSaveLyrics = { draft ->
+                                savedDrafts += draft
+                                true
+                            },
+                            onDismiss = {
+                                dismissed = true
+                                lyricsEditorShown.value = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        waitForText("原文A")
+        composeRule.onNodeWithText(context.getString(R.string.music_save_changes)).performClick()
+        composeRule.waitUntil(timeoutMillis = 3_000) { dismissed }
+
+        composeRule.runOnIdle {
+            assertEquals(
+                EditSongLyricsDraft(
+                    lyric = "原文A",
+                    translatedLyric = "译文B",
+                    romanizedLyric = "",
+                    writeLocalMetadata = false
+                ),
+                savedDrafts.single()
+            )
+        }
+    }
+
+    @Test
+    fun lyricsEditorSheet_keepsEditorOpenWhenLyricsWriteFails() {
+        val context = targetContext
+        var saveFailureCount = 0
+        var dismissed = false
+
+        composeRule.setContent {
+            MaterialTheme {
+                Box {
+                    LyricsEditorSheet(
+                        originalSong = demoSongItem(),
+                        initialLyrics = "原文A",
+                        initialTranslatedLyrics = "译文B",
+                        onSaveLyrics = { false },
+                        onSaveFailed = { saveFailureCount += 1 },
+                        onDismiss = { dismissed = true }
+                    )
+                }
+            }
+        }
+
+        waitForText("原文A")
+        composeRule.onNodeWithText(context.getString(R.string.music_save_changes)).performClick()
+        composeRule.waitUntil(timeoutMillis = 3_000) { saveFailureCount == 1 }
+        waitForText("原文A")
+
+        composeRule.runOnIdle {
+            assertFalse(dismissed)
+            assertEquals(1, saveFailureCount)
         }
     }
 

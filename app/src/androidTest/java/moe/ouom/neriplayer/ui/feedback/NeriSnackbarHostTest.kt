@@ -11,9 +11,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -85,6 +89,43 @@ class NeriSnackbarHostTest {
             "Action feedback was not compact: $snackbarBounds in $containerBounds",
             snackbarBounds.height < containerBounds.height * 0.14f
         )
+    }
+
+    @Test
+    fun overlaySnackbarDismissActionClosesDismissibleFeedback() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        composeRule.setContent {
+            MaterialTheme {
+                val hostState = remember { SnackbarHostState() }
+                Box(modifier = Modifier.size(TestContainerWidth, TestContainerHeight)) {
+                    NeriOverlaySnackbarHost(
+                        hostState = hostState,
+                        applyNavigationBarsPadding = false,
+                        applyImePadding = false
+                    )
+                    LaunchedEffect(Unit) {
+                        hostState.showNeriSnackbar(
+                            message = "可关闭反馈",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Indefinite
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            composeRule.onAllNodesWithTag(NeriSnackbarTestTag)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithContentDescription(
+            context.getString(R.string.cd_close)
+        ).performClick()
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            composeRule.onAllNodesWithTag(NeriSnackbarTestTag)
+                .fetchSemanticsNodes().isEmpty()
+        }
     }
 
     private companion object {

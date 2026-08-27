@@ -145,6 +145,7 @@ import androidx.compose.material3.MaterialTheme
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
@@ -357,6 +358,7 @@ private const val PlaybackActionToolbarItemCount = 5
 private val PlaybackActionToolbarMinimumTouchTarget = 48.dp
 private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val NowPlayingMainControlsMinimumSpacing = 4.dp
+private val NowPlayingFeedbackExtraBottomPadding = 24.dp
 private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal fun resolveDisplayedNowPlayingCoverUrl(
@@ -4566,7 +4568,7 @@ fun MoreOptionsSheet(
 
         NeriOverlaySnackbarHost(
             hostState = snackbarHostState,
-            bottomPadding = LocalMiniPlayerHeight.current
+            bottomPadding = LocalMiniPlayerHeight.current + NowPlayingFeedbackExtraBottomPadding
         )
         }
     }
@@ -6532,7 +6534,11 @@ fun EditSongInfoSheet(
                                 showFillLyricsMetadataWriteBackConfirm = true
                             }
                             coroutineScope.launch {
-                                snackbarHostState.showNeriSnackbar(message)
+                                snackbarHostState.showNeriSnackbar(
+                                    message = message,
+                                    withDismissAction = true,
+                                    duration = SnackbarDuration.Long
+                                )
                             }
                         }
                     }
@@ -6552,10 +6558,50 @@ fun EditSongInfoSheet(
             initialRomanizedLyrics = lyricsEditorSeed!!.romanizedLyrics,
             editingSource = lyricsEditorSeed!!.source,
             hasExistingSidecar = lyricsEditorSeed!!.hasSidecar,
-            onSaveDraft = { draft ->
-                pendingLyricsDraft = draft
-                lyricsEditorSeed = lyricsEditorSeed?.let { seed ->
-                    applyEditSongLyricsDraftPreview(seed = seed, draft = draft)
+            onSaveLyrics = { draft ->
+                try {
+                    val latestSong = PlayerManager.currentSongFlow.value
+                        ?.takeIf { it.sameIdentityAs(actualSong) }
+                        ?: actualSong
+                    val lyricsWriteSucceeded = PlayerManager.updateSongLyricsAndTranslation(
+                        songToUpdate = latestSong,
+                        newLyrics = draft.lyric,
+                        newTranslatedLyrics = draft.translatedLyric,
+                        newRomanizedLyrics = draft.romanizedLyric,
+                        writeLocalMetadata = draft.writeLocalMetadata,
+                        persistLocalSidecars = shouldPersistEditedSongLyricsLocally(
+                            isLocalSong = actualSong.isLocalSong(),
+                            writeLocalMetadata = draft.writeLocalMetadata
+                        ),
+                        syncDownloadedMetadata = false
+                    )
+                    if (lyricsWriteSucceeded) {
+                        pendingLyricsDraft = null
+                        shouldClearLyrics = false
+                        shouldRestoreLyrics = false
+                        originalLyric = null
+                        originalTranslatedLyric = null
+                        originalRomanizedLyric = null
+                        userHasEdited = true
+                        lyricsEditorSeed = lyricsEditorSeed?.let { seed ->
+                            applyEditSongLyricsDraftPreview(seed = seed, draft = draft)
+                        }
+                    }
+                    lyricsWriteSucceeded
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    NPLogger.e("NowPlayingScreen", "保存编辑歌词失败", error)
+                    false
+                }
+            },
+            onSaveFailed = {
+                coroutineScope.launch {
+                    snackbarHostState.showNeriSnackbar(
+                        message = composeResources.getString(R.string.local_song_lyrics_write_failed),
+                        withDismissAction = true,
+                        duration = SnackbarDuration.Long
+                    )
                 }
             },
             onDismiss = {
@@ -7052,7 +7098,8 @@ fun LyricsEditorSheet(
     initialRomanizedLyrics: String = "",
     editingSource: LyricsEditorSource = LyricsEditorSource.SIDECAR,
     hasExistingSidecar: Boolean = false,
-    onSaveDraft: (EditSongLyricsDraft) -> Unit,
+    onSaveLyrics: suspend (EditSongLyricsDraft) -> Boolean,
+    onSaveFailed: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -7123,16 +7170,28 @@ fun LyricsEditorSheet(
     fun saveLyrics(writeLocalMetadata: Boolean) {
         if (isSaving) return
         isSaving = true
-        onSaveDraft(
-            EditSongLyricsDraft(
-                lyric = lyricsText,
-                translatedLyric = translatedLyricsText,
-                romanizedLyric = romanizedLyricsText,
-                writeLocalMetadata = writeLocalMetadata
-            )
+        val draft = EditSongLyricsDraft(
+            lyric = lyricsText,
+            translatedLyric = translatedLyricsText,
+            romanizedLyric = romanizedLyricsText,
+            writeLocalMetadata = writeLocalMetadata
         )
-        isSaving = false
-        dismissLyricsEditor()
+        coroutineScope.launch {
+            try {
+                if (onSaveLyrics(draft)) {
+                    dismissLyricsEditor()
+                } else {
+                    onSaveFailed()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("NowPlayingScreen", "保存歌词编辑器内容失败", error)
+                onSaveFailed()
+            } finally {
+                isSaving = false
+            }
+        }
     }
 
     fun runLyricMatch(
