@@ -20,6 +20,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Format
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.Cache.CacheException
@@ -29,7 +30,9 @@ import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -446,6 +449,32 @@ internal fun PlayerManager.initializeImpl(
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(buildAudioLoadControl())
             .build()
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: DecoderReuseEvaluation?
+            ) {
+                NPLogger.i(
+                    "NERI-Player",
+                    "audio input format: sampleMimeType=${format.sampleMimeType}, " +
+                        "containerMimeType=${format.containerMimeType}, codecs=${format.codecs}, " +
+                        "sampleRate=${format.sampleRate}, channels=${format.channelCount}"
+                )
+            }
+
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long
+            ) {
+                NPLogger.i(
+                    "NERI-Player",
+                    "audio decoder initialized: name=$decoderName, durationMs=$initializationDurationMs"
+                )
+            }
+        })
         applyInitialPlaybackWakeMode()
         _playbackSoundState.value = playbackEffectsController.attachPlayer(player)
         applyPlaybackSoundConfig(playbackSoundConfig, persist = false)

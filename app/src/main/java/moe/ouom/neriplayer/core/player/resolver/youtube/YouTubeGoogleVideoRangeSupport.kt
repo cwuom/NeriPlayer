@@ -32,6 +32,8 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import moe.ouom.neriplayer.data.platform.youtube.isYouTubeGoogleVideoHost
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.resolver.netease.normalizeNeteaseFlacResponseContentType
+import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
 import okhttp3.Request
 import java.io.IOException
 import java.util.Locale
@@ -297,13 +299,23 @@ internal object YouTubeGoogleVideoRangeSupport {
 }
 
 @UnstableApi
+internal fun shouldUseResumableChunkedHttpRange(dataSpec: DataSpec): Boolean {
+    return dataSpec.httpMethod == DataSpec.HTTP_METHOD_GET &&
+        !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(dataSpec.httpRequestHeaders) &&
+        (
+            YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(dataSpec.uri) ||
+                shouldUseNeteaseFlacResumableRange(dataSpec.uri)
+            )
+}
+
+@UnstableApi
 internal class ConditionalChunkedHttpDataSource(
     private val upstreamFactory: HttpDataSource.Factory,
     private val transformDataSpec: (DataSpec) -> DataSpec
 ) : BaseDataSource(true), HttpDataSource {
 
     companion object {
-        private const val TAG = "YouTubeChunkedDs"
+        private const val TAG = "ResumableChunkedDs"
     }
 
     private val requestProperties = linkedMapOf<String, String>()
@@ -317,7 +329,11 @@ internal class ConditionalChunkedHttpDataSource(
     private var initialSpec: DataSpec? = null
     private var transformedSpec: DataSpec? = null
     private var chunkedMode = false
+    private var usesNeteaseFlacRange = false
+    private var neteaseFlacMimeOverrideLogged = false
     private var bytesReadFromRequest = 0L
+    private var bytesReadAtChunkStart = 0L
+    private var retriedZeroProgressChunk = false
     private var bytesRemainingInRequest = C.LENGTH_UNSET.toLong()
     private var bytesRemainingInChunk = 0L
     private var totalContentLength: Long? = null
@@ -331,12 +347,24 @@ internal class ConditionalChunkedHttpDataSource(
         initialSpec = dataSpec
         transformedSpec = preparedSpec
         bytesReadFromRequest = 0L
+        bytesReadAtChunkStart = 0L
+        retriedZeroProgressChunk = false
         bytesRemainingInChunk = 0L
         currentResponseHeaders = emptyMap()
         currentResponseCode = -1
         currentUri = preparedSpec.uri
         totalContentLength = null
         chunkedMode = shouldChunk(preparedSpec)
+        usesNeteaseFlacRange = chunkedMode &&
+            shouldUseNeteaseFlacResumableRange(preparedSpec.uri)
+        neteaseFlacMimeOverrideLogged = false
+        if (usesNeteaseFlacRange) {
+            NPLogger.d(
+                TAG,
+                "enable Netease FLAC resumable range: host=${preparedSpec.uri.host}, " +
+                    "position=${preparedSpec.position}, length=${preparedSpec.length}"
+            )
+        }
 
         if (chunkedMode) {
             bytesRemainingInRequest = if (preparedSpec.length != C.LENGTH_UNSET.toLong()) {
@@ -389,11 +417,39 @@ internal class ConditionalChunkedHttpDataSource(
                     bytesRemainingInRequest = 0L
                     return C.RESULT_END_OF_INPUT
                 }
+                val madeProgressInChunk = bytesReadFromRequest > bytesReadAtChunkStart
+                if (!madeProgressInChunk) {
+                    if (retriedZeroProgressChunk) {
+                        closeUpstreamQuietly()
+                        throw IOException(
+                            "Resumable range returned EOF twice without progress: " +
+                                "host=${currentUri?.host}, position=${transformedSpec?.position ?: 0L}"
+                        )
+                    }
+                    retriedZeroProgressChunk = true
+                    NPLogger.w(
+                        TAG,
+                        "retry resumable range after zero-byte EOF: " +
+                            "host=${currentUri?.host}, " +
+                            "position=${transformedSpec?.position ?: 0L}"
+                    )
+                } else {
+                    retriedZeroProgressChunk = false
+                }
+                if (usesNeteaseFlacRange && bytesRemainingInChunk > 0L) {
+                    NPLogger.w(
+                        TAG,
+                        "Netease FLAC range ended early: host=${currentUri?.host}, " +
+                            "position=${(transformedSpec?.position ?: 0L) + bytesReadFromRequest}, " +
+                            "remainingInRange=$bytesRemainingInChunk"
+                    )
+                }
                 bytesRemainingInChunk = 0L
                 continue
             }
 
             bytesReadFromRequest += read
+            retriedZeroProgressChunk = false
             if (bytesRemainingInRequest != C.LENGTH_UNSET.toLong()) {
                 bytesRemainingInRequest = (bytesRemainingInRequest - read).coerceAtLeast(0L)
             }
@@ -417,7 +473,11 @@ internal class ConditionalChunkedHttpDataSource(
         initialSpec = null
         transformedSpec = null
         chunkedMode = false
+        usesNeteaseFlacRange = false
+        neteaseFlacMimeOverrideLogged = false
         bytesReadFromRequest = 0L
+        bytesReadAtChunkStart = 0L
+        retriedZeroProgressChunk = false
         bytesRemainingInRequest = C.LENGTH_UNSET.toLong()
         bytesRemainingInChunk = 0L
         totalContentLength = null
@@ -447,9 +507,7 @@ internal class ConditionalChunkedHttpDataSource(
     }
 
     private fun shouldChunk(dataSpec: DataSpec): Boolean {
-        return dataSpec.httpMethod == DataSpec.HTTP_METHOD_GET &&
-            YouTubeGoogleVideoRangeSupport.shouldUseChunkedRange(dataSpec.uri) &&
-            !YouTubeGoogleVideoRangeSupport.hasExplicitRangeHeader(dataSpec.httpRequestHeaders)
+        return shouldUseResumableChunkedHttpRange(dataSpec)
     }
 
     private fun mergeRequestProperties(dataSpec: DataSpec): DataSpec {
@@ -470,6 +528,13 @@ internal class ConditionalChunkedHttpDataSource(
             return false
         }
         val nextStartPosition = baseSpec.position + bytesReadFromRequest
+        if (usesNeteaseFlacRange) {
+            NPLogger.d(
+                TAG,
+                "resume Netease FLAC range: host=${baseSpec.uri.host}, " +
+                    "position=$nextStartPosition, totalLength=$totalContentLength"
+            )
+        }
         return try {
             openChunk(startPosition = nextStartPosition)
             true
@@ -536,6 +601,7 @@ internal class ConditionalChunkedHttpDataSource(
             headers = currentResponseHeaders
         ) ?: totalContentLength
         bytesRemainingInChunk = resolvedChunkLength.coerceAtLeast(0L)
+        bytesReadAtChunkStart = bytesReadFromRequest
 
         if (requestedRemaining == C.LENGTH_UNSET.toLong()) {
             bytesRemainingInRequest = when {
@@ -563,12 +629,35 @@ internal class ConditionalChunkedHttpDataSource(
     private fun bindOpenResult(delegate: HttpDataSource) {
         upstream = delegate
         currentUri = delegate.uri ?: transformedSpec?.uri
-        currentResponseHeaders = delegate.responseHeaders
+        val upstreamResponseHeaders = delegate.responseHeaders
+        currentResponseHeaders = currentUri?.let { uri ->
+            normalizeNeteaseFlacResponseContentType(uri, upstreamResponseHeaders)
+        } ?: upstreamResponseHeaders
         currentResponseCode = delegate.responseCode
+
+        if (usesNeteaseFlacRange && !neteaseFlacMimeOverrideLogged) {
+            val upstreamContentType = upstreamResponseHeaders.firstHeaderValue("Content-Type")
+            val extractorContentType = currentResponseHeaders.firstHeaderValue("Content-Type")
+            if (upstreamContentType != extractorContentType) {
+                neteaseFlacMimeOverrideLogged = true
+                NPLogger.d(
+                    TAG,
+                    "normalize Netease FLAC MIME for extractor: host=${currentUri?.host}, " +
+                        "upstream=$upstreamContentType, extractor=$extractorContentType"
+                )
+            }
+        }
     }
 
     private fun closeUpstreamQuietly() {
         runCatching { upstream?.close() }
         upstream = null
     }
+}
+
+private fun Map<String, List<String>>.firstHeaderValue(name: String): String? {
+    return entries.firstOrNull { (headerName, _) -> headerName.equals(name, ignoreCase = true) }
+        ?.value
+        ?.firstOrNull()
+        ?.takeIf { it.isNotBlank() }
 }

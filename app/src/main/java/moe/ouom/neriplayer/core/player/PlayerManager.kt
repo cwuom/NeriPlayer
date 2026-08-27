@@ -2457,14 +2457,22 @@ object PlayerManager {
         allowCustomCacheKey: Boolean = true
     ): MediaItem {
         val mediaUrl = stripListenTogetherStreamQualityMetadata(url)
+        val mediaUri = mediaUrl.toUri()
         val isLocalFile =
             mediaUrl.startsWith("file://") ||
-                mediaUrl.startsWith("content://") ||
-                mediaUrl.startsWith("android.resource://") ||
-                mediaUrl.startsWith("/")
+            mediaUrl.startsWith("content://") ||
+            mediaUrl.startsWith("android.resource://") ||
+            mediaUrl.startsWith("/")
+        if (mediaUri.path?.endsWith(".flac", ignoreCase = true) == true) {
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "build FLAC media item: songId=${song.id}, host=${mediaUri.host ?: "local"}, " +
+                    "declaredMimeType=${mimeType ?: "missing"}, cacheKey=$cacheKey"
+            )
+        }
         return MediaItem.Builder()
             .setMediaId("${song.id}|${song.album}|${song.mediaUri.orEmpty()}")
-            .setUri(mediaUrl.toUri())
+            .setUri(mediaUri)
             .apply {
                 if (!mimeType.isNullOrBlank()) {
                     setMimeType(mimeType)

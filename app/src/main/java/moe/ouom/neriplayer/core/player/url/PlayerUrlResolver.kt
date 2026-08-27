@@ -327,6 +327,7 @@ internal fun buildNeteaseSuccessResult(
     }
     return SongUrlResult.Success(
         url = finalUrl,
+        mimeType = normalizeNeteaseMimeType(parsed.type),
         noticeMessage = noticeMessage,
         expectedContentLength = parsed.contentLength,
         audioInfo = buildNeteasePlaybackAudioInfo(
