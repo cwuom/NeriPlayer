@@ -132,6 +132,42 @@ class NeriSnackbarHostTest {
     }
 
     @Test
+    fun transitionDismissClearsVisibleFeedbackBeforeTheNextScreenIsShown() {
+        lateinit var hostState: SnackbarHostState
+
+        composeRule.setContent {
+            MaterialTheme {
+                hostState = remember { SnackbarHostState() }
+                Box(modifier = Modifier.size(TestContainerWidth, TestContainerHeight)) {
+                    NeriOverlaySnackbarHost(
+                        hostState = hostState,
+                        applyNavigationBarsPadding = false,
+                        applyImePadding = false
+                    )
+                    LaunchedEffect(Unit) {
+                        hostState.showNeriSnackbar(
+                            message = "已导出 125 首歌曲到 本地文件",
+                            actionLabel = "撤销",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Indefinite
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            composeRule.onAllNodesWithTag(NeriSnackbarTestTag)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.runOnIdle { hostState.dismissCurrentNeriSnackbar() }
+        composeRule.waitUntil(timeoutMillis = 3_000) {
+            composeRule.onAllNodesWithTag(NeriSnackbarTestTag)
+                .fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    @Test
     fun overlaySnackbarStaysAboveReservedOperationArea() {
         composeRule.setContent {
             MaterialTheme {

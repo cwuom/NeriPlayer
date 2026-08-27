@@ -57,6 +57,11 @@ fun BatchDownloadManagerSheet(
     }
     val pendingTaskCount = maxOf(taskSummary.pendingTaskCount, taskListPendingCount)
     val hasPendingBatchSongs = currentBatchDownloadProgress?.hasPendingSongs == true
+    val canCancelDownloads = canCancelBatchDownload(
+        hasPendingBatchSongs = hasPendingBatchSongs,
+        pendingTaskCount = pendingTaskCount,
+        hasActiveDownloadOperations = activeDownloadOperations
+    )
     val stableProgressSummaryText = if (currentBatchDownloadProgress != null) {
         stringResource(
             R.string.download_progress_with_percentage,
@@ -125,7 +130,7 @@ fun BatchDownloadManagerSheet(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (hasPendingBatchSongs || pendingTaskCount > 0) {
+                            if (canCancelDownloads) {
                                 HapticTextButton(
                                     onClick = { GlobalDownloadManager.cancelAllDownloadTasks() }
                                 ) {
@@ -192,4 +197,12 @@ fun BatchDownloadManagerSheet(
             }
         }
     }
+}
+
+internal fun canCancelBatchDownload(
+    hasPendingBatchSongs: Boolean,
+    pendingTaskCount: Int,
+    hasActiveDownloadOperations: Boolean
+): Boolean {
+    return hasPendingBatchSongs || pendingTaskCount > 0 || hasActiveDownloadOperations
 }

@@ -236,7 +236,7 @@ fun LocalArtistDetailScreen(
     var showExportSheet by remember(artistKey) { mutableStateOf(false) }
     var showDownloadManager by remember(artistKey) { mutableStateOf(false) }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-    val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
+    val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
     val selectedSongsForAction by remember(songs, selectedKeys) {
         derivedStateOf {

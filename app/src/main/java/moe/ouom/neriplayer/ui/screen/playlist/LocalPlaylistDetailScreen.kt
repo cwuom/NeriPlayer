@@ -205,6 +205,7 @@ import moe.ouom.neriplayer.ui.component.local.LocalSongDetailsDialog
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
+import moe.ouom.neriplayer.ui.feedback.dismissCurrentNeriSnackbar
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -615,7 +616,7 @@ fun LocalPlaylistDetailScreen(
             
             // 下载进度
             val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
-            val hasDownloadManagerEntry = downloadTaskSummary.hasPendingTasks
+            val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
 
             // Snackbar状态
             val snackbarHostState = remember { SnackbarHostState() }
@@ -763,11 +764,13 @@ fun LocalPlaylistDetailScreen(
             }
 
             fun startDeviceAudioScan() {
+                snackbarHostState.dismissCurrentNeriSnackbar()
                 detailSong = null
                 vm.scanDeviceSongs(::handleLocalAudioScanResult)
             }
 
             fun startFolderAudioScan(folderUri: Uri) {
+                snackbarHostState.dismissCurrentNeriSnackbar()
                 detailSong = null
                 vm.scanFolderSongs(folderUri, ::handleLocalAudioScanResult)
             }
@@ -1459,6 +1462,12 @@ fun LocalPlaylistDetailScreen(
                                 )
                         }
                     }
+                }
+            }
+
+            LaunchedEffect(scanPreviewState.visible) {
+                if (scanPreviewState.visible) {
+                    snackbarHostState.dismissCurrentNeriSnackbar()
                 }
             }
 

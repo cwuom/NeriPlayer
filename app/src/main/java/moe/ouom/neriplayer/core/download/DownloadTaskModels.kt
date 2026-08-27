@@ -351,6 +351,10 @@ data class DownloadTaskSummary(
 ) {
     val hasPendingTasks: Boolean
         get() = pendingTaskCount > 0
+
+    /** admission and recovery work must remain reachable before task rows are hydrated */
+    val hasDownloadManagerEntry: Boolean
+        get() = hasPendingTasks || hasActiveOperations
 }
 
 enum class DownloadStatus {

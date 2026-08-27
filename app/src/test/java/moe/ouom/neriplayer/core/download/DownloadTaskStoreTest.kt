@@ -15,6 +15,20 @@ import org.junit.Test
 class DownloadTaskStoreTest {
 
     @Test
+    fun `active batch admission remains visible before task rows are hydrated`() {
+        val summary = stabilizeDownloadTaskSummary(
+            taskSummary = DownloadTaskSummary(),
+            isSingleDownloading = false,
+            hasActiveBatchJobs = true
+        )
+
+        assertEquals(0, summary.pendingTaskCount)
+        assertFalse(summary.hasPendingTasks)
+        assertTrue(summary.hasActiveOperations)
+        assertTrue(summary.hasDownloadManagerEntry)
+    }
+
+    @Test
     fun `active transfer flag remains true until every concurrent transfer ends`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
