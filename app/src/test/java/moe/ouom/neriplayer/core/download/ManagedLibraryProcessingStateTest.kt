@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -115,8 +116,8 @@ class ManagedLibraryProcessingStateTest {
         assertEquals(null, blocked)
         assertEquals(null, resumed)
         assertEquals("upgrade", ownerRetry?.operationId)
-        assertEquals(null, ownerRetry?.processed)
-        assertEquals(null, ownerRetry?.total)
+        assertEquals(16, ownerRetry?.processed)
+        assertEquals(2_000, ownerRetry?.total)
     }
 
     @Test
@@ -124,11 +125,110 @@ class ManagedLibraryProcessingStateTest {
         val restored = restoreManagedLibraryProcessingState(
             operationId = "interrupted",
             reasonName = ManagedLibraryProcessingReason.DIRECTORY_CHANGE.name,
-            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name
+            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name,
+            processed = 128,
+            total = 2_000,
+            currentItem = "track-128.mp3"
         )
 
         assertTrue(restored is ManagedLibraryProcessingState.WaitingForRetry)
         assertEquals("interrupted", restored.operationId)
         assertEquals(ManagedLibraryProcessingReason.DIRECTORY_CHANGE, restored.reason)
+        assertEquals(ManagedLibraryProcessingPhase.REBUILDING_INDEX, restored.phase)
+        assertEquals(128, restored.processed)
+        assertEquals(2_000, restored.total)
+        assertEquals("track-128.mp3", restored.currentItem)
+    }
+
+    @Test
+    fun `resume keeps durable progress instead of returning to zero`() {
+        val waiting = ManagedLibraryProcessingState.WaitingForRetry(
+            operationId = "migration",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            processed = 640,
+            total = 2_000,
+            currentItem = "track-640.mp3"
+        )
+
+        val resumed = ManagedLibraryProcessingStateMachine.tryBeginExclusive(
+            current = waiting,
+            operationId = "new-work-id",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            resumeWaitingOperation = true
+        )
+
+        assertEquals("migration", resumed?.operationId)
+        assertEquals(640, resumed?.processed)
+        assertEquals(2_000, resumed?.total)
+        assertEquals("track-640.mp3", resumed?.currentItem)
+    }
+
+    @Test
+    fun `progress updates are bounded and monotonic for one operation`() {
+        val running = ManagedLibraryProcessingStateMachine.begin(
+            operationId = "migration",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            processed = 4,
+            total = 10
+        )
+
+        val regressed = ManagedLibraryProcessingStateMachine.updateProgress(
+            current = running,
+            operationId = "migration",
+            processed = -1,
+            total = 10,
+            currentItem = "  next.mp3  "
+        )
+        val completed = ManagedLibraryProcessingStateMachine.updateProgress(
+            current = regressed,
+            operationId = "migration",
+            processed = 99,
+            total = 10
+        )
+
+        assertEquals(4, regressed.processed)
+        assertEquals(10, regressed.total)
+        assertEquals("next.mp3", regressed.currentItem)
+        assertEquals(10, completed.processed)
+        assertEquals(10, completed.total)
+    }
+
+    @Test
+    fun `resumed batch progress keeps the original total`() {
+        val running = ManagedLibraryProcessingStateMachine.begin(
+            operationId = "upgrade",
+            reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+            phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE,
+            processed = 640,
+            total = 2_000
+        )
+
+        val resumed = ManagedLibraryProcessingStateMachine.updateProgress(
+            current = running,
+            operationId = "upgrade",
+            processed = 16,
+            total = 1_360,
+            currentItem = "track-656.mp3"
+        )
+
+        assertEquals(656, resumed.processed)
+        assertEquals(2_000, resumed.total)
+        assertEquals("track-656.mp3", resumed.currentItem)
+    }
+
+    @Test
+    fun `unknown persisted progress remains unknown`() {
+        val restored = restoreManagedLibraryProcessingState(
+            operationId = "interrupted",
+            reasonName = ManagedLibraryProcessingReason.DIRECTORY_CHANGE.name,
+            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name
+        )
+
+        assertNull(restored.processed)
+        assertNull(restored.total)
+        assertNull(restored.currentItem)
     }
 }

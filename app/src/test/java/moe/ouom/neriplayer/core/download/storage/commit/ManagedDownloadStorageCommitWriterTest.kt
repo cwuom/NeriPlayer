@@ -83,4 +83,36 @@ class ManagedDownloadStorageCommitWriterTest {
         assertEquals(source.name, resolved.entry.name)
         verifyNoInteractions(registry)
     }
+
+    @Test
+    fun `known SAF target entry avoids a second child enumeration`() {
+        val registry = mock(ManagedDownloadTreeChildRegistry::class.java)
+        val resolver = ManagedDownloadCommitMigrationTargetResolver(
+            treeChildRegistry = registry,
+            tag = "ManagedDownloadStorageCommitWriterTest"
+        )
+        val source = ManagedDownloadStorage.StoredEntry(
+            name = "song.mp3",
+            reference = "content://source/song.mp3",
+            mediaUri = "content://source/song.mp3",
+            localFilePath = null,
+            sizeBytes = 42L,
+            lastModifiedMs = 1L
+        )
+        // 迁移重试时目标索引可能复用同一受信引用, 不需要再次查询目录
+        val knownTarget = source.copy()
+
+        val resolved = resolver.resolveTreeTarget(
+            context = mock(Context::class.java),
+            parent = mock(DocumentFile::class.java),
+            displayName = source.name,
+            sourceEntry = source,
+            targetNames = setOf(source.name),
+            targetEntry = knownTarget
+        )
+
+        assertTrue(!resolved.createdNew)
+        assertEquals(source.name, resolved.entry.name)
+        verifyNoInteractions(registry)
+    }
 }

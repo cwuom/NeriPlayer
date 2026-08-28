@@ -17,10 +17,181 @@ import moe.ouom.neriplayer.listentogether.protocol.ListenTogetherTrack
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioPlayerServicePolicyTest {
+
+    @Test
+    fun `cover reference file name decodes SAF document ids safely`() {
+        assertEquals(
+            "netease - LIKPIA - 夏·烟火-cb470461.jpg",
+            coverReferenceFileName(
+                "content://com.android.externalstorage.documents/" +
+                    "document/primary%3ACovers%2Fnetease%20-%20LIKPIA%20-%20" +
+                    "%E5%A4%8F%C2%B7%E7%83%9F%E7%81%AB-cb470461.jpg"
+            )
+        )
+        assertEquals("cover.jpg", coverReferenceFileName("/tmp/Covers/cover.jpg"))
+        assertNull(coverReferenceFileName("content://covers/%2E%2E"))
+        assertNull(coverReferenceFileName(null))
+    }
+
+    @Test
+    fun `local cover reference classifier excludes network urls`() {
+        assertTrue(isLocalCoverReference("content://covers/cover.jpg"))
+        assertTrue(isLocalCoverReference("file:///tmp/cover.jpg"))
+        assertTrue(isLocalCoverReference("/tmp/cover.jpg"))
+        assertFalse(isLocalCoverReference("https://example.com/cover.jpg"))
+        assertFalse(isLocalCoverReference(null))
+    }
+
+    @Test
+    fun `cover recovery commits only for the expected song and source`() {
+        assertTrue(
+            shouldCommitCoverSourceRecovery(
+                currentSongKey = "song-1",
+                expectedSongKey = "song-1",
+                currentCoverSource = "content://old/cover.jpg",
+                expectedCoverSource = "content://old/cover.jpg"
+            )
+        )
+        assertFalse(
+            shouldCommitCoverSourceRecovery(
+                currentSongKey = "song-2",
+                expectedSongKey = "song-1",
+                currentCoverSource = "content://old/cover.jpg",
+                expectedCoverSource = "content://old/cover.jpg"
+            )
+        )
+        assertFalse(
+            shouldCommitCoverSourceRecovery(
+                currentSongKey = "song-1",
+                expectedSongKey = "song-1",
+                currentCoverSource = "content://new/cover.jpg",
+                expectedCoverSource = "content://old/cover.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `retained artwork never suppresses a new source request`() {
+        assertTrue(
+            isArtworkReadyForSource(
+                artworkPresent = true,
+                artworkOwnerSongKey = "song-1",
+                currentSongKey = "song-1",
+                artworkSource = "content://covers/one.jpg",
+                requestedSource = "content://covers/one.jpg"
+            )
+        )
+        assertFalse(
+            isArtworkReadyForSource(
+                artworkPresent = true,
+                artworkOwnerSongKey = "song-1",
+                currentSongKey = "song-2",
+                artworkSource = "content://covers/one.jpg",
+                requestedSource = "content://covers/two.jpg"
+            )
+        )
+        assertFalse(
+            isArtworkReadyForSource(
+                artworkPresent = true,
+                artworkOwnerSongKey = "song-1",
+                currentSongKey = "song-1",
+                artworkSource = "content://covers/one.jpg",
+                requestedSource = "content://covers/two.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `artwork callbacks require the active request generation`() {
+        assertTrue(
+            shouldAcceptArtworkLoadCallback(
+                requestGeneration = 4L,
+                currentGeneration = 4L,
+                inFlightGeneration = 4L,
+                requestSource = "content://covers/song.jpg",
+                inFlightSource = "content://covers/song.jpg",
+                requestSongKey = "song",
+                inFlightSongKey = "song"
+            )
+        )
+        assertFalse(
+            shouldAcceptArtworkLoadCallback(
+                requestGeneration = 3L,
+                currentGeneration = 4L,
+                inFlightGeneration = 4L,
+                requestSource = "content://covers/song.jpg",
+                inFlightSource = "content://covers/song.jpg",
+                requestSongKey = "song",
+                inFlightSongKey = "song"
+            )
+        )
+        assertFalse(
+            shouldAcceptArtworkLoadCallback(
+                requestGeneration = 4L,
+                currentGeneration = 4L,
+                inFlightGeneration = 4L,
+                requestSource = "content://covers/song.jpg",
+                inFlightSource = "content://covers/song.jpg",
+                requestSongKey = "song-a",
+                inFlightSongKey = "song-b"
+            )
+        )
+    }
+
+    @Test
+    fun `local songs do not use remote cover fallback without an explicit custom cover`() {
+        assertFalse(
+            shouldAllowServiceRemoteCoverFallback(
+                isLocalSong = true,
+                hasExplicitCustomCover = false
+            )
+        )
+        assertTrue(
+            shouldAllowServiceRemoteCoverFallback(
+                isLocalSong = true,
+                hasExplicitCustomCover = true
+            )
+        )
+        assertTrue(
+            shouldAllowServiceRemoteCoverFallback(
+                isLocalSong = false,
+                hasExplicitCustomCover = false
+            )
+        )
+    }
+
+    @Test
+    fun `cover recovery wins over a stale immediate source for the same song`() {
+        assertEquals(
+            "content://new-tree/Covers/song.jpg",
+            resolveMetadataCoverSourceWithRecovery(
+                songKey = "song",
+                immediateCoverSource = "content://old-tree/Covers/song.jpg",
+                retainedSongKey = "song",
+                retainedCoverSource = "content://old-tree/Covers/song.jpg",
+                recoverySongKey = "song",
+                recoveryCoverSource = "content://new-tree/Covers/song.jpg",
+                recoveryImmediateCoverSource = "content://old-tree/Covers/song.jpg"
+            )
+        )
+        assertEquals(
+            "content://newer-tree/Covers/song.jpg",
+            resolveMetadataCoverSourceWithRecovery(
+                songKey = "song",
+                immediateCoverSource = "content://newer-tree/Covers/song.jpg",
+                retainedSongKey = "song",
+                retainedCoverSource = "content://old-tree/Covers/song.jpg",
+                recoverySongKey = "song",
+                recoveryCoverSource = "content://new-tree/Covers/song.jpg",
+                recoveryImmediateCoverSource = "content://old-tree/Covers/song.jpg"
+            )
+        )
+    }
 
     @Test
     fun `active transport is persisted before service stops when task is removed`() {
@@ -775,6 +946,56 @@ class AudioPlayerServicePolicyTest {
                 lastFailedCoverSource = "https://example.com/cover.jpg",
                 lastFailureAtElapsedRealtime = 1_000L,
                 nowElapsedRealtime = 2_500L
+            )
+        )
+    }
+
+    @Test
+    fun `artwork failure cooldown is isolated per song`() {
+        assertTrue(
+            shouldRequestArtworkLoad(
+                coverSource = "https://example.com/shared.jpg",
+                artworkReady = false,
+                inFlightCoverSource = null,
+                lastFailedCoverSource = "https://example.com/shared.jpg",
+                lastFailureAtElapsedRealtime = 1_000L,
+                nowElapsedRealtime = 2_000L,
+                currentSongKey = "song-2",
+                lastFailedSongKey = "song-1",
+            )
+        )
+        assertFalse(
+            shouldRequestArtworkLoad(
+                coverSource = "https://example.com/shared.jpg",
+                artworkReady = false,
+                inFlightCoverSource = "https://example.com/shared.jpg",
+                lastFailedCoverSource = null,
+                lastFailureAtElapsedRealtime = -1L,
+                nowElapsedRealtime = 2_000L,
+                currentSongKey = "song-2",
+                inFlightSongKey = "song-2",
+            )
+        )
+    }
+
+    @Test
+    fun `local artwork retry waits for the SAF cover resolver`() {
+        assertTrue(
+            shouldDeferArtworkRetryToCoverResolver(
+                isLocalCover = true,
+                coverResolutionRequested = true
+            )
+        )
+        assertFalse(
+            shouldDeferArtworkRetryToCoverResolver(
+                isLocalCover = true,
+                coverResolutionRequested = false
+            )
+        )
+        assertFalse(
+            shouldDeferArtworkRetryToCoverResolver(
+                isLocalCover = false,
+                coverResolutionRequested = true
             )
         )
     }

@@ -27,7 +27,7 @@ internal class DownloadedSongCatalogStore(
         }.onFailure { error ->
             NPLogger.w(loggerTag, "读取 Room 下载歌曲目录失败，尝试旧 JSON: ${error.message}")
         }.getOrNull()
-        return roomRestored ?: restoreLegacyCatalog(context)
+        return roomRestored ?: restoreDurableOrLegacyCatalog(context)
     }
 
     fun persist(context: Context, songs: List<DownloadedSong>): Boolean {
@@ -59,7 +59,24 @@ internal class DownloadedSongCatalogStore(
         }
     }
 
-    private fun restoreLegacyCatalog(context: Context): List<DownloadedSong>? {
+    private fun restoreDurableOrLegacyCatalog(context: Context): List<DownloadedSong>? {
+        val appContext = context.applicationContext
+        val rootKey = snapshotCacheKeyProvider(appContext)
+        val backupFile = File(
+            appContext.filesDir,
+            "$cacheFileName$MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX"
+        )
+        if (backupFile.isFile) {
+            readManagedCatalogBackupFile(backupFile, rootKey)?.let { return it }
+            NPLogger.w(loggerTag, "完整下载目录备份无效，回退旧下载歌曲目录: ${backupFile.name}")
+        }
+        return restoreLegacyCatalog(appContext, rootKey)
+    }
+
+    private fun restoreLegacyCatalog(
+        context: Context,
+        rootKey: String = snapshotCacheKeyProvider(context.applicationContext)
+    ): List<DownloadedSong>? {
         val file = File(context.applicationContext.filesDir, cacheFileName)
         val rawPayload = runCatching {
             file.takeIf(File::exists)?.readText(Charsets.UTF_8)
@@ -70,7 +87,8 @@ internal class DownloadedSongCatalogStore(
         return runCatching {
             deserializeDownloadedSongsCatalog(
                 raw = rawPayload,
-                expectedCacheKey = snapshotCacheKeyProvider(context)
+                expectedCacheKey = rootKey,
+                includeOriginalLyrics = true
             )
         }.onFailure { error ->
             NPLogger.w(loggerTag, "解析旧下载歌曲目录失败: ${error.message}")
@@ -78,10 +96,21 @@ internal class DownloadedSongCatalogStore(
     }
 
     private fun writeLegacyCatalog(context: Context, songs: List<DownloadedSong>) {
-        val rootKey = snapshotCacheKeyProvider(context)
-        File(context.applicationContext.filesDir, cacheFileName).writeTextAtomically(
+        val appContext = context.applicationContext
+        val rootKey = snapshotCacheKeyProvider(appContext)
+        File(appContext.filesDir, cacheFileName).writeTextAtomically(
             serializeDownloadedSongsCatalog(rootKey, songs)
         )
+        val backupFile = File(
+            appContext.filesDir,
+            "$cacheFileName$MANAGED_LIBRARY_CATALOG_BACKUP_SUFFIX"
+        )
+        if (!writeManagedCatalogBackupFile(backupFile, rootKey, songs)) {
+            NPLogger.w(
+                loggerTag,
+                "写入完整下载目录备份失败，保留旧下载歌曲目录: ${backupFile.name}"
+            )
+        }
     }
 
     private fun roomStore(context: Context): DownloadedSongCatalogRoomStore {

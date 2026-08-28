@@ -1,12 +1,14 @@
 package moe.ouom.neriplayer.core.download
 
 import android.content.Context
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,12 +17,195 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotCacheStore
+import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotIndex
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotPersistenceStore
 import moe.ouom.neriplayer.core.download.storage.snapshot.ManagedDownloadSnapshotRoomMapper
 import moe.ouom.neriplayer.data.model.SongItem
 import org.mockito.Mockito
 
 class ManagedDownloadStorageSnapshotCacheTest {
+
+    @Test
+    fun `playback cover rebinding prefers the cached sidecar refresh`() {
+        assertTrue(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = true,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = true
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = true,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = false
+            )
+        )
+        assertFalse(
+            ManagedDownloadStorage.shouldUseSidecarRefreshForCoverLookup(
+                forceRefresh = false,
+                preferSidecarRefresh = true,
+                hasCachedSnapshot = true
+            )
+        )
+    }
+
+    @Test
+    fun `core metadata replaces pending credentials before immediate playback`() {
+        val audioName = "Artist - Song.mp3"
+        val pendingAudio = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npdl_pending.operation.pending",
+            reference = "content://provider/pending/audio",
+            mediaUri = "content://provider/pending/audio",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val pendingMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/pending/metadata",
+            mediaUri = "content://provider/pending/metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val canonicalMetadataEntry = pendingMetadataEntry.copy(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/metadata"
+        )
+        val pendingMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "pending|netease|",
+            downloadFinalized = false,
+            artifactState = "CORE_COMMITTED"
+        )
+        val coreMetadata = pendingMetadata.copy(
+            stableKey = "core|netease|",
+            downloadFinalized = true
+        )
+        val beforeCore = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = listOf(pendingMetadataEntry),
+            metadataByAudioName = mapOf(audioName to pendingMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            pendingAudioEntries = listOf(pendingAudio),
+            pendingMetadataByAudioName = mapOf(audioName to pendingMetadata)
+        )
+
+        val afterCore = ManagedDownloadSnapshotIndex.applyMetadataWrite(
+            snapshot = beforeCore,
+            metadataEntry = canonicalMetadataEntry,
+            metadata = coreMetadata
+        )
+
+        assertEquals(coreMetadata, ManagedDownloadStorage.metadataForAudioEntry(afterCore, pendingAudio))
+        assertEquals(coreMetadata, afterCore.metadataByAudioName[audioName])
+
+        val promotedAudio = pendingAudio.copy(
+            name = audioName,
+            reference = "content://provider/audio",
+            mediaUri = "content://provider/audio"
+        )
+        val afterPromotion = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
+            snapshot = afterCore,
+            storedEntry = promotedAudio,
+            bucket = ManagedDownloadStorage.SnapshotEntryBucket.AUDIO
+        )
+        assertTrue(afterPromotion.pendingMetadataByAudioName.isEmpty())
+    }
+
+    @Test
+    fun `pending metadata does not overwrite an existing formal song`() {
+        val audioName = "Artist - Song.mp3"
+        val formalMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/formal-metadata",
+            mediaUri = "content://provider/formal-metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val pendingMetadataEntry = formalMetadataEntry.copy(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/pending-metadata"
+        )
+        val pendingAudio = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npdl_pending.other.pending",
+            reference = "content://provider/pending-audio",
+            mediaUri = "content://provider/pending-audio",
+            localFilePath = null,
+            sizeBytes = 64L,
+            lastModifiedMs = 2L
+        )
+        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "formal|netease|",
+            downloadFinalized = true
+        )
+        val pendingMetadata = formalMetadata.copy(
+            stableKey = "new|netease|",
+            downloadFinalized = false,
+            artifactState = "CORE_COMMITTED"
+        )
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = listOf(formalMetadataEntry),
+            metadataByAudioName = mapOf(audioName to formalMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            pendingAudioEntries = listOf(pendingAudio)
+        )
+
+        val updated = ManagedDownloadSnapshotIndex.applyMetadataWrite(
+            snapshot = snapshot,
+            metadataEntry = pendingMetadataEntry,
+            metadata = pendingMetadata
+        )
+
+        assertEquals(formalMetadata, updated.metadataByAudioName[audioName])
+        assertEquals(pendingMetadata, updated.pendingMetadataByAudioName[audioName])
+        assertEquals(formalMetadataEntry, updated.metadataEntriesByAudioName[audioName])
+    }
+
+    @Test
+    fun `orphan pending metadata cannot hide formal metadata during compose`() {
+        val audioName = "Artist - Song.mp3"
+        val audioEntry = ManagedDownloadStorage.StoredEntry(
+            name = audioName,
+            reference = "content://provider/audio",
+            mediaUri = "content://provider/audio",
+            localFilePath = null,
+            sizeBytes = 128L,
+            lastModifiedMs = 1L
+        )
+        val formalMetadataEntry = ManagedDownloadStorage.StoredEntry(
+            name = "$audioName.npmeta.json",
+            reference = "content://provider/formal-metadata",
+            mediaUri = "content://provider/formal-metadata",
+            localFilePath = null,
+            sizeBytes = 32L,
+            lastModifiedMs = 1L
+        )
+        val orphanPendingMetadataEntry = formalMetadataEntry.copy(
+            name = "$audioName.npmeta.pending.json",
+            reference = "content://provider/orphan-pending-metadata"
+        )
+        val formalMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            stableKey = "formal|netease|",
+            downloadFinalized = true
+        )
+
+        val snapshot = ManagedDownloadSnapshotIndex.compose(
+            audioEntries = listOf(audioEntry),
+            metadataEntries = listOf(formalMetadataEntry, orphanPendingMetadataEntry),
+            metadataByAudioName = mapOf(audioName to formalMetadata),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList()
+        )
+
+        assertEquals(formalMetadata, snapshot.metadataByAudioName[audioName])
+        assertEquals(formalMetadataEntry, snapshot.metadataEntriesByAudioName[audioName])
+        assertTrue(snapshot.audioEntriesWithoutMetadata.isEmpty())
+    }
 
     @Test
     fun `managed MediaStore relative path recognizes configured and legacy download roots`() {
@@ -438,6 +623,41 @@ class ManagedDownloadStorageSnapshotCacheTest {
             invalidationExecutor.shutdownNow()
             persistenceStore.releaseRestore.countDown()
             persistenceStore.releaseClear.countDown()
+        }
+    }
+
+    @Test
+    fun `invalidation serializes an in flight persist before clear`() {
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
+        val persistenceStore = BlockingPersistAndClearStore()
+        val scope = CoroutineScope(Dispatchers.Default)
+        val cacheStore = ManagedDownloadSnapshotCacheStore(
+            scope = scope,
+            cacheKeyProvider = { "root" },
+            persistenceStoreProvider = { persistenceStore }
+        )
+
+        try {
+            cacheStore.putSnapshot(context, "root", emptySnapshot())
+            assertTrue(persistenceStore.persistStarted.await(5, TimeUnit.SECONDS))
+
+            cacheStore.invalidate(context)
+            assertFalse(persistenceStore.clearStarted.await(150, TimeUnit.MILLISECONDS))
+
+            persistenceStore.releasePersist.countDown()
+            assertTrue(persistenceStore.clearStarted.await(5, TimeUnit.SECONDS))
+            persistenceStore.releaseClear.countDown()
+            assertTrue(persistenceStore.clearFinished.await(5, TimeUnit.SECONDS))
+
+            assertEquals(
+                listOf("persist-start", "persist-end", "clear-start", "clear-end"),
+                persistenceStore.events
+            )
+        } finally {
+            persistenceStore.releasePersist.countDown()
+            persistenceStore.releaseClear.countDown()
+            scope.cancel()
         }
     }
 
@@ -1235,6 +1455,41 @@ class ManagedDownloadStorageSnapshotCacheTest {
             try {
                 assertTrue(releaseClear.await(5, TimeUnit.SECONDS))
             } finally {
+                clearFinished.countDown()
+            }
+        }
+    }
+
+    private class BlockingPersistAndClearStore : ManagedDownloadSnapshotPersistenceStore {
+        val persistStarted = CountDownLatch(1)
+        val releasePersist = CountDownLatch(1)
+        val clearStarted = CountDownLatch(1)
+        val releaseClear = CountDownLatch(1)
+        val clearFinished = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<String>())
+
+        override suspend fun restore(
+            expectedKey: String?
+        ): Pair<String, ManagedDownloadStorage.DownloadLibrarySnapshot>? = null
+
+        override suspend fun persist(
+            cacheKey: String,
+            snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+        ): Boolean {
+            events += "persist-start"
+            persistStarted.countDown()
+            assertTrue(releasePersist.await(5, TimeUnit.SECONDS))
+            events += "persist-end"
+            return true
+        }
+
+        override suspend fun clear() {
+            events += "clear-start"
+            clearStarted.countDown()
+            try {
+                assertTrue(releaseClear.await(5, TimeUnit.SECONDS))
+            } finally {
+                events += "clear-end"
                 clearFinished.countDown()
             }
         }

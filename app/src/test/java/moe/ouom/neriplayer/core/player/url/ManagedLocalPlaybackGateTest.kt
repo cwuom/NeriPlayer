@@ -22,7 +22,10 @@ class ManagedLocalPlaybackGateTest {
                 "PlayerManagerGenericUrlPrefetch.kt"
         ).readText()
 
-        assertTrue(localPlayback.contains("resolvePermittedLocalPlayback("))
+        assertTrue(urlSource.contains("resolvePermittedLocalPlayback("))
+        assertTrue(urlSource.contains("resolvePermittedLocalPlaybackWithRetry("))
+        assertTrue(urlSource.contains("resolveIndexedLocalPlaybackWithRetry(context, song)"))
+        assertTrue(urlSource.contains("shouldRetryLocalPlaybackResolution"))
         assertTrue(
             localPlayback.contains("localResolution is LocalPlaybackReferenceResolution.Missing")
         )
@@ -36,6 +39,58 @@ class ManagedLocalPlaybackGateTest {
         assertTrue(fallbackSource.contains("resolvePermittedLocalPlaybackUri("))
         assertTrue(urlSource.contains("consumeGenericUrlPrefetch(cacheKey, song)"))
         assertTrue(prefetchSource.contains("tryResolveNeteaseMatchedLocalSource(song)"))
+
+        val downloadSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        assertTrue(downloadSource.contains("peekPendingDownloadedAudio(song)"))
+        assertTrue(downloadSource.contains("metadataForAudioEntry(snapshot, entry)"))
+        val localUriBody = downloadSource.substringAfter("fun getLocalPlaybackUri")
+            .substringBefore("private fun resolveRecentlyCommittedAudioReference")
+        val indexedLookupBody = downloadSource.substringAfter("fun mayHaveIndexedLocalDownload")
+            .substringBefore("fun hasLocalDownload")
+        val clearCompletedReferenceBody = downloadSource
+            .substringAfter("private fun clearCompletedAudioReference")
+            .substringBefore("private fun clearPartialSidecarReferences")
+        assertTrue(localUriBody.contains("resolveRecentlyCommittedAudioReference(context, song)"))
+        assertTrue(indexedLookupBody.contains("peekCompletedAudioReference(song)"))
+        assertTrue(clearCompletedReferenceBody.contains("removeCompletedAudioReferenceAliases"))
+    }
+
+    @Test
+    fun `catalog ready miss still probes the durable snapshot before NotIndexed`() {
+        val downloadSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val indexedLookupBody = downloadSource.substringAfter(
+            "fun mayHaveIndexedLocalDownload"
+        ).substringBefore("fun hasLocalDownload")
+        val durableLookupBody = downloadSource.substringAfter(
+            "private fun findDurableCachedManagedAudio"
+        ).substringBefore("private fun canUseReadableManagedAudioForPlayback")
+        val durableProbeIndex = indexedLookupBody.indexOf(
+            "findDurableCachedManagedAudio("
+        )
+        val catalogReadyIndex = indexedLookupBody.indexOf(
+            "val catalogReady = GlobalDownloadManager.isDownloadedSongCatalogReady()"
+        )
+        assertTrue("durable snapshot lookup must be present", durableProbeIndex >= 0)
+        assertTrue(
+            "catalogReady state must gate one durable lookup",
+            catalogReadyIndex >= 0 && durableProbeIndex > catalogReadyIndex
+        )
+        assertTrue(indexedLookupBody.contains("restorePersisted = catalogReady"))
+        assertTrue(durableLookupBody.contains("restorePersisted = restorePersisted"))
+        assertTrue(durableLookupBody.contains("cachedDownloadLibrarySnapshot"))
+        assertTrue(!durableLookupBody.contains("scanLocalFiles"))
+
+        val indexedPlaybackBody = downloadSource.substringAfter(
+            "internal fun resolveIndexedLocalPlaybackReference"
+        ).substringBefore("private fun isRecentManagedPlaybackReference")
+        assertTrue(indexedPlaybackBody.contains("durableCachedAudio?.audio"))
+        assertTrue(indexedPlaybackBody.contains("restorePersisted = false"))
     }
 
     private fun locateProjectFile(path: String): File {

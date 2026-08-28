@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
+import java.util.Locale
+
 /**
  * tracks the point after which a cancellation no longer owns the committed media
  */
@@ -101,5 +103,33 @@ internal fun requiresFinalizedPublicationRecovery(
         "CORE_COMMITTED",
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE"
+    )
+}
+
+/**
+ * 只有带有当前操作凭据的活动替换才需要把正式文件退回 pending
+ * 旧版本或待修复元信息不能因为缺少完成标记而暂时失去可播放引用
+ */
+internal fun shouldDemotePublishedAudioForFinalization(
+    metadata: ManagedDownloadStorage.DownloadedAudioMetadata?
+): Boolean {
+    val operationId = metadata?.operationId
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return false
+    if (metadata.downloadFinalized == true) {
+        return false
+    }
+    val state = metadata.artifactState
+        ?.trim()
+        ?.uppercase(Locale.ROOT)
+        ?: return false
+    return operationId.isNotBlank() && state in setOf(
+        "QUEUED",
+        "DOWNLOADING",
+        "VERIFYING",
+        "COMMITTING",
+        "STAGING",
+        "REPLACING"
     )
 }

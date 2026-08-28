@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioTagWriter as MetadataDownloadedAudioTagWriter
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
@@ -155,6 +156,63 @@ class DownloadedAudioTagWriterTest {
         )
 
         assertFalse(DownloadedAudioTagWriter.hasRequiredEmbeddedMetadata(propertyMap, song))
+    }
+
+    @Test
+    fun `embedded picture parsing is only requested when a cover reference exists`() {
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = null
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                    coverReference = "   "
+                )
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = AudioDownloadManager.DownloadedSidecarReferences(
+                    coverReference = "content://covers/song.jpg"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `unchanged verified tags do not require a second TagLib parse`() {
+        val song = testSong(name = "Song", artist = "Artist")
+        val propertyMap: PropertyMap = hashMapOf(
+            "TITLE" to arrayOf("Song"),
+            "ARTIST" to arrayOf("Artist")
+        )
+
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = propertyMap,
+                propertyChanged = false,
+                coverChanged = false,
+                song = song
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = propertyMap,
+                propertyChanged = true,
+                coverChanged = false,
+                song = song
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.canSkipEmbeddedMetadataVerification(
+                existingPropertyMap = null,
+                propertyChanged = false,
+                coverChanged = false,
+                song = song
+            )
+        )
     }
 
     @Test

@@ -54,17 +54,86 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     }
 
     @Test
-    fun `detached enrichment keeps process death recovery entry points`() {
+    fun `core commit publishes a playable catalog entry before slow asset enrichment`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val coreCommittedIndex = body.indexOf("markCoreCommitted")
+        val optimisticPublishIndex = body.indexOf("publishOptimisticDownloadedSongs")
+        val enrichmentDispatchIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(")
+
+        assertTrue(
+            "a core-committed audio must be visible before lyrics/cover processing",
+            coreCommittedIndex >= 0 &&
+                optimisticPublishIndex > coreCommittedIndex &&
+                enrichmentDispatchIndex > optimisticPublishIndex
+        )
+    }
+
+    @Test
+    fun `core recovery registers the playback bridge before durable preview publication`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val bridgeIndex = body.indexOf("AudioDownloadManager.rememberCompletedAudioReference(")
+        val roomPreviewIndex = body.indexOf("ManagedLibraryItemRoomStore.upsert(")
+        val catalogIndex = body.indexOf("publishOptimisticDownloadedSongs(")
+
+        assertTrue(
+            "a recovered core audio must be reachable before Room or catalog publication",
+            bridgeIndex >= 0 &&
+                roomPreviewIndex > bridgeIndex &&
+                catalogIndex > bridgeIndex
+        )
+    }
+
+    @Test
+    fun `final promotion keeps a playable in memory bridge until catalog publication`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "publishFinalizedDownload")
+        val promotionIndex = body.indexOf("promoteFinalizedPendingAudio(")
+        val bridgeIndex = body.indexOf("rememberCompletedAudioReference(")
+        val markFinalizedIndex = body.indexOf("managedDownloadArtifactCoordinator.markFinalized(")
+        val publishIndex = body.indexOf("publishCompletedDownloadOptimistically(")
+        val releaseIndex = body.indexOf("releaseCompletedAudioReference(")
+
+        assertTrue(
+            "the final URI must replace the invalidated pending bridge immediately",
+            promotionIndex >= 0 && bridgeIndex > promotionIndex
+        )
+        assertTrue(
+            "artifact and catalog publication must happen before bridge cleanup",
+            markFinalizedIndex > bridgeIndex &&
+                publishIndex > markFinalizedIndex &&
+                releaseIndex > publishIndex
+        )
+    }
+
+    @Test
+    fun `detached enrichment keeps process death recovery entry points after initial scan`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val coreCommitBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
         val initializeBody = methodBody(source, "initialize")
+        val scanIndex = initializeBody.indexOf("scanLocalFilesAwait(")
+        val deferredRecoveryIndex = initializeBody.indexOf(
+            "scheduleStartupArtifactRecovery(appContext)",
+            startIndex = scanIndex
+        )
 
         assertTrue(coreCommitBody.contains("ManagedDownloadArtifactState.CORE_COMMITTED.name"))
         assertTrue(coreCommitBody.contains("markCoreCommitted"))
-        assertTrue(initializeBody.contains("recoverPendingAudioWritesFromRoot(appContext)"))
-        assertTrue(initializeBody.contains("recoverUnfinalizedPublishedAudioFromRoot(appContext)"))
+        assertTrue(
+            "artifact recovery must be dispatched after the initial scan publishes",
+            scanIndex >= 0 && deferredRecoveryIndex > scanIndex
+        )
+        assertFalse(initializeBody.contains("recoverPendingAudioWritesFromRoot(appContext)"))
+        assertFalse(initializeBody.contains("recoverUnfinalizedPublishedAudioFromRoot(appContext)"))
     }
 
     @Test

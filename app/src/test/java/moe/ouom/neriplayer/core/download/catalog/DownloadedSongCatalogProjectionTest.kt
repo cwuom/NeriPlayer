@@ -195,6 +195,68 @@ class DownloadedSongCatalogProjectionTest {
         )
     }
 
+    @Test
+    fun `playback reference probe skips stale private path and uses accessible media uri`() {
+        val stalePrivatePath = "/data/user/0/moe.ouom.neriplayer/files/old/Song.mp3"
+        val currentSafReference = "content://downloads-current/document/Song.mp3"
+        val downloaded = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = stalePrivatePath,
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = currentSafReference
+        )
+
+        assertEquals(
+            listOf(stalePrivatePath, currentSafReference),
+            downloadedSongPlaybackReferenceCandidates(downloaded)
+        )
+        assertEquals(
+            currentSafReference,
+            resolveDownloadedSongPlaybackReference(downloaded) { reference ->
+                reference == currentSafReference
+            }
+        )
+    }
+
+    @Test
+    fun `playback reference candidates do not treat a remote media uri as local`() {
+        val downloaded = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/data/user/0/moe.ouom.neriplayer/files/Song.mp3",
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = "https://cdn.example/Song.mp3"
+        )
+
+        assertEquals(
+            listOf(downloaded.filePath),
+            downloadedSongPlaybackReferenceCandidates(downloaded)
+        )
+    }
+
+    @Test
+    fun `playback reference candidates reject a remote legacy file path`() {
+        val downloaded = DownloadedSong(
+            id = 1L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "https://cdn.example/Song.mp3",
+            fileSize = 10L,
+            downloadTime = 10L,
+            mediaUri = null
+        )
+
+        assertTrue(downloadedSongPlaybackReferenceCandidates(downloaded).isEmpty())
+    }
+
     private fun downloadedSong(
         coverPath: String?,
         customCoverUrl: String?

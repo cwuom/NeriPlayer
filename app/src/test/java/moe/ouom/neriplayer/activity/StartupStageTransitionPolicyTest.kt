@@ -2,6 +2,9 @@ package moe.ouom.neriplayer.activity
 
 import java.io.File
 import moe.ouom.neriplayer.core.startup.StartupStage
+import moe.ouom.neriplayer.core.startup.STARTUP_LOADING_INDICATOR_DELAY_MILLIS
+import moe.ouom.neriplayer.core.startup.shouldKeepSystemSplash
+import moe.ouom.neriplayer.core.startup.shouldShowStartupLoadingIndicator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -54,7 +57,7 @@ class StartupStageTransitionPolicyTest {
     }
 
     @Test
-    fun startupStageMotionRemainsEnabledWithLightweightLoadingIndicator() {
+    fun startupStageMotionRemainsEnabledWithoutComposeLoadingPage() {
         val activitySource = source(
             "app/src/main/java/moe/ouom/neriplayer/activity/MainActivity.kt"
         )
@@ -66,12 +69,12 @@ class StartupStageTransitionPolicyTest {
         assertTrue(activitySource.contains("label = \"AppStageTransition\""))
         assertTrue(transitionSource.contains("AnimatedContent("))
         assertTrue(transitionSource.contains("label = \"startup_stage_content_gate\""))
-        val loadingContent = activitySource.substringAfter("internal fun StartupLoadingContent(")
-            .substringBefore("private fun StartupCrashReportDialog(")
-        assertTrue(loadingContent.contains("showProgress: Boolean? = null"))
-        assertTrue(loadingContent.contains("indicatorDelayMillis: Long"))
-        assertTrue(loadingContent.contains("if (progressVisible)"))
-        assertTrue(activitySource.contains("STARTUP_LOADING_INDICATOR_DELAY_MS = 1_000L"))
+        assertFalse(activitySource.contains("StartupLoadingContent("))
+        assertTrue(activitySource.contains("setKeepOnScreenCondition"))
+        assertTrue(shouldKeepSystemSplash(StartupStage.Loading))
+        assertFalse(shouldKeepSystemSplash(StartupStage.Disclaimer))
+        assertFalse(shouldKeepSystemSplash(StartupStage.Onboarding))
+        assertFalse(shouldKeepSystemSplash(StartupStage.Main))
     }
 
     @Test
@@ -79,6 +82,21 @@ class StartupStageTransitionPolicyTest {
         assertNull(resolveStartupSetting(value = null, readTimedOut = false))
         assertEquals(false, resolveStartupSetting(value = null, readTimedOut = true))
         assertEquals(true, resolveStartupSetting(value = true, readTimedOut = true))
+    }
+
+    @Test
+    fun startupLoadingIndicatorWaitsForOneSecond() {
+        assertFalse(shouldShowStartupLoadingIndicator(0L))
+        assertFalse(
+            shouldShowStartupLoadingIndicator(
+                STARTUP_LOADING_INDICATOR_DELAY_MILLIS - 1L
+            )
+        )
+        assertTrue(
+            shouldShowStartupLoadingIndicator(
+                STARTUP_LOADING_INDICATOR_DELAY_MILLIS
+            )
+        )
     }
 
     private fun source(path: String): String {

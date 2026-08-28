@@ -45,6 +45,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.kyant.taglib.Picture
 import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -3441,12 +3442,21 @@ object LocalMediaSupport {
     fun resolveNearbyCoverUri(context: Context, song: SongItem): String? {
         return try {
             resolveNearbyCoverUriInternal(context, song)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             invalidateSafReadCaches()
             NPLogger.w(
                 TAG,
                 "SAF 封面只读探测失败，降级为空: song=${song.songStableKey()}, " +
                     "message=${error.message}"
+            )
+            null
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "本地封面只读探测失败，降级为空: song=${song.songStableKey()}, " +
+                    "type=${error::class.simpleName}, message=${error.message}"
             )
             null
         }
@@ -3596,51 +3606,69 @@ object LocalMediaSupport {
     }
 
     fun resolveCoverUri(context: Context, uri: Uri): String? {
-        val resolved = runCatching {
-            resolveInspectableLocalMedia(
-                context = context,
-                uri = uri,
-                allowDescriptorFallback = true
-            )
-        }.getOrElse {
-            NPLogger.w(TAG, "resolve cover source failed for $uri: ${it.message}")
-            return null
-        }
-        val cacheKey = localCoverLookupKey(uri, resolved)
-        cachedLocalCoverLookup(context, cacheKey)?.let { cached ->
-            cached.coverUri?.let { return it }
-
-            // Do not retain an empty nearby-cover result. A user can add artwork
-            // beside an unchanged audio file without restarting the app.
-            findNearbyCoverReference(
-                context = context,
-                uri = uri,
-                file = resolved.file,
-                displayName = resolved.displayName
-            )?.takeIf { isUsableCoverReference(context, it) }?.let { nearbyCover ->
-                rememberLocalCoverLookup(cacheKey, nearbyCover)
-                return nearbyCover
+        return try {
+            val resolved = runCatching {
+                resolveInspectableLocalMedia(
+                    context = context,
+                    uri = uri,
+                    allowDescriptorFallback = true
+                )
+            }.getOrElse {
+                NPLogger.w(TAG, "resolve cover source failed for $uri: ${it.message}")
+                return null
             }
-            return null
-        }
+            val cacheKey = localCoverLookupKey(uri, resolved)
+            cachedLocalCoverLookup(context, cacheKey)?.let { cached ->
+                cached.coverUri?.let { return it }
 
-        val resolvedCover = sequence {
-            findNearbyCoverReference(
-                context = context,
-                uri = uri,
-                file = resolved.file,
-                displayName = resolved.displayName
-            )?.let { yield(it) }
-            peekMediaStoreAlbumArtUri(context, uri)?.let { yield(it) }
-            findCachedEmbeddedCover(context, resolved.resolvedPath ?: uri.toString())
-                ?.let { yield(it) }
-            findCachedEmbeddedCover(context, "${resolved.resolvedPath ?: uri}#taglib")
-                ?.let { yield(it) }
-            extractEmbeddedCoverWithRetriever(context, uri, resolved)?.let { yield(it) }
-            extractEmbeddedCoverWithTagLib(context, uri, resolved)?.let { yield(it) }
-        }.firstOrNull { isUsableCoverReference(context, it) }
-        rememberLocalCoverLookup(cacheKey, resolvedCover)
-        return resolvedCover
+                // Do not retain an empty nearby-cover result. A user can add artwork
+                // beside an unchanged audio file without restarting the app.
+                findNearbyCoverReference(
+                    context = context,
+                    uri = uri,
+                    file = resolved.file,
+                    displayName = resolved.displayName
+                )?.takeIf { isUsableCoverReference(context, it) }?.let { nearbyCover ->
+                    rememberLocalCoverLookup(cacheKey, nearbyCover)
+                    return nearbyCover
+                }
+                return null
+            }
+
+            val resolvedCover = sequence {
+                findNearbyCoverReference(
+                    context = context,
+                    uri = uri,
+                    file = resolved.file,
+                    displayName = resolved.displayName
+                )?.let { yield(it) }
+                peekMediaStoreAlbumArtUri(context, uri)?.let { yield(it) }
+                findCachedEmbeddedCover(context, resolved.resolvedPath ?: uri.toString())
+                    ?.let { yield(it) }
+                findCachedEmbeddedCover(context, "${resolved.resolvedPath ?: uri}#taglib")
+                    ?.let { yield(it) }
+                extractEmbeddedCoverWithRetriever(context, uri, resolved)?.let { yield(it) }
+                extractEmbeddedCoverWithTagLib(context, uri, resolved)?.let { yield(it) }
+            }.firstOrNull { isUsableCoverReference(context, it) }
+            rememberLocalCoverLookup(cacheKey, resolvedCover)
+            resolvedCover
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: SecurityException) {
+            invalidateSafReadCaches()
+            NPLogger.w(
+                TAG,
+                "SAF 封面解析权限不可用，降级为空: uri=$uri, message=${error.message}"
+            )
+            null
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "本地封面解析失败，降级为空: uri=$uri, " +
+                    "type=${error::class.simpleName}, message=${error.message}"
+            )
+            null
+        }
     }
 
     fun inspect(context: Context, uri: Uri): LocalMediaDetails {
@@ -4283,49 +4311,69 @@ object LocalMediaSupport {
         song: SongItem,
         metadataReference: String? = null
     ): LocalMetadataSidecar? {
-        val explicitReference = metadataReference
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-        if (explicitReference != null && !isMediaStoreSidecarReference(explicitReference)) {
-            readTextContent(context, explicitReference)
-                ?.let { raw -> parseLocalMetadataSidecar(explicitReference, raw) }
-                ?.let { return it }
-        }
-
-        val sourceUri = song.localMediaUri()
-        val file = song.localFilePath
-            ?.takeIf { it.isNotBlank() && !it.startsWith("content://", ignoreCase = true) }
-            ?.let(::File)
-            ?.takeIf(File::isFile)
-        if (file != null) {
-            val metadataFile = File(
-                file.parentFile ?: return null,
-                file.name + LOCAL_METADATA_SUFFIX
-            )
-            val reference = metadataFile
-                .takeIf { shouldProbeAbsoluteMetadataSidecar(sourceUri, it) }
-                ?.absolutePath
-            if (reference != null) {
-                readTextContent(context, reference)
-                    ?.let { raw -> parseLocalMetadataSidecar(reference, raw) }
+        return try {
+            val explicitReference = metadataReference
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+            if (explicitReference != null && !isMediaStoreSidecarReference(explicitReference)) {
+                readTextContent(context, explicitReference)
+                    ?.let { raw -> parseLocalMetadataSidecar(explicitReference, raw) }
                     ?.let { return it }
             }
-        }
 
-        val resolvedSourceUri = sourceUri ?: return null
-        val resolved = runCatching {
-            resolveInspectableLocalMedia(
+            val sourceUri = song.localMediaUri()
+            val file = song.localFilePath
+                ?.takeIf { it.isNotBlank() && !it.startsWith("content://", ignoreCase = true) }
+                ?.let(::File)
+                ?.takeIf(File::isFile)
+            if (file != null) {
+                val metadataFile = File(
+                    file.parentFile ?: return null,
+                    file.name + LOCAL_METADATA_SUFFIX
+                )
+                val reference = metadataFile
+                    .takeIf { shouldProbeAbsoluteMetadataSidecar(sourceUri, it) }
+                    ?.absolutePath
+                if (reference != null) {
+                    readTextContent(context, reference)
+                        ?.let { raw -> parseLocalMetadataSidecar(reference, raw) }
+                        ?.let { return it }
+                }
+            }
+
+            val resolvedSourceUri = sourceUri ?: return null
+            val resolved = runCatching {
+                resolveInspectableLocalMedia(
+                    context = context,
+                    uri = resolvedSourceUri,
+                    allowDescriptorFallback = false
+                )
+            }.getOrNull() ?: return null
+            readLocalMetadataSidecar(
                 context = context,
-                uri = resolvedSourceUri,
-                allowDescriptorFallback = false
+                sourceUri = resolvedSourceUri,
+                file = resolved.file,
+                displayName = resolved.displayName
             )
-        }.getOrNull() ?: return null
-        return readLocalMetadataSidecar(
-            context = context,
-            sourceUri = resolvedSourceUri,
-            file = resolved.file,
-            displayName = resolved.displayName
-        )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: SecurityException) {
+            invalidateSafReadCaches()
+            NPLogger.w(
+                TAG,
+                "SAF 本地 metadata sidecar 权限不可用，降级为空: " +
+                    "song=${song.songStableKey()}, message=${error.message}"
+            )
+            null
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "本地 metadata sidecar 读取失败，降级为空: " +
+                    "song=${song.songStableKey()}, " +
+                    "type=${error::class.simpleName}, message=${error.message}"
+            )
+            null
+        }
     }
 
     internal fun shouldProbeAbsoluteMetadataSidecar(

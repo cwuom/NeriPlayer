@@ -202,4 +202,56 @@ class DownloadCoreCommitPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `legacy and repair metadata keep a published audio reference`() {
+        assertFalse(shouldDemotePublishedAudioForFinalization(null))
+        assertFalse(
+            shouldDemotePublishedAudioForFinalization(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "REPAIR_REQUIRED"
+                )
+            )
+        )
+        assertFalse(
+            shouldDemotePublishedAudioForFinalization(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "CORE_COMMITTED",
+                    operationId = "op-core"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `only an explicitly active operation may demote a published audio`() {
+        assertTrue(
+            shouldDemotePublishedAudioForFinalization(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "COMMITTING",
+                    operationId = "op-1"
+                )
+            )
+        )
+        assertFalse(
+            shouldDemotePublishedAudioForFinalization(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "COMMITTING"
+                )
+            )
+        )
+        assertFalse(
+            shouldDemotePublishedAudioForFinalization(
+                ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = true,
+                    artifactState = "COMMITTING",
+                    operationId = "op-1"
+                )
+            )
+        )
+    }
 }

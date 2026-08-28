@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,7 @@ sealed interface ManagedLibraryProcessingState {
     val phase: ManagedLibraryProcessingPhase?
     val processed: Int?
     val total: Int?
+    val currentItem: String?
 
     data object Idle : ManagedLibraryProcessingState {
         override val operationId: String? = null
@@ -36,6 +38,7 @@ sealed interface ManagedLibraryProcessingState {
         override val phase: ManagedLibraryProcessingPhase? = null
         override val processed: Int? = null
         override val total: Int? = null
+        override val currentItem: String? = null
     }
 
     data class Running(
@@ -43,7 +46,8 @@ sealed interface ManagedLibraryProcessingState {
         override val reason: ManagedLibraryProcessingReason,
         override val phase: ManagedLibraryProcessingPhase,
         override val processed: Int? = null,
-        override val total: Int? = null
+        override val total: Int? = null,
+        override val currentItem: String? = null
     ) : ManagedLibraryProcessingState
 
     data class WaitingForRetry(
@@ -52,7 +56,8 @@ sealed interface ManagedLibraryProcessingState {
         override val phase: ManagedLibraryProcessingPhase =
             ManagedLibraryProcessingPhase.WAITING_FOR_RETRY,
         override val processed: Int? = null,
-        override val total: Int? = null
+        override val total: Int? = null,
+        override val currentItem: String? = null
     ) : ManagedLibraryProcessingState
 }
 
@@ -60,12 +65,23 @@ internal object ManagedLibraryProcessingStateMachine {
     fun begin(
         operationId: String,
         reason: ManagedLibraryProcessingReason,
-        phase: ManagedLibraryProcessingPhase
+        phase: ManagedLibraryProcessingPhase,
+        processed: Int? = null,
+        total: Int? = null,
+        currentItem: String? = null
     ): ManagedLibraryProcessingState.Running {
+        val normalized = normalizeProgress(
+            processed = processed,
+            total = total,
+            currentItem = currentItem
+        )
         return ManagedLibraryProcessingState.Running(
             operationId = operationId,
             reason = reason,
-            phase = phase
+            phase = phase,
+            processed = normalized.processed,
+            total = normalized.total,
+            currentItem = normalized.currentItem
         )
     }
 
@@ -83,8 +99,9 @@ internal object ManagedLibraryProcessingStateMachine {
                 operationId = current.operationId,
                 reason = current.reason,
                 phase = phase,
-                processed = null,
-                total = null
+                processed = current.processed,
+                total = current.total,
+                currentItem = current.currentItem
             )
         }
         return begin(
@@ -98,18 +115,27 @@ internal object ManagedLibraryProcessingStateMachine {
         current: ManagedLibraryProcessingState,
         operationId: String,
         processed: Int?,
-        total: Int?
+        total: Int?,
+        currentItem: String? = null
     ): ManagedLibraryProcessingState {
         if (current.operationId != operationId) return current
+        val normalized = normalizeProgress(
+            current = current,
+            processed = processed,
+            total = total,
+            currentItem = currentItem
+        )
         return when (current) {
             ManagedLibraryProcessingState.Idle -> current
             is ManagedLibraryProcessingState.Running -> current.copy(
-                processed = processed,
-                total = total
+                processed = normalized.processed,
+                total = normalized.total,
+                currentItem = normalized.currentItem
             )
             is ManagedLibraryProcessingState.WaitingForRetry -> current.copy(
-                processed = processed,
-                total = total
+                processed = normalized.processed,
+                total = normalized.total,
+                currentItem = normalized.currentItem
             )
         }
     }
@@ -123,8 +149,10 @@ internal object ManagedLibraryProcessingStateMachine {
         return ManagedLibraryProcessingState.WaitingForRetry(
             operationId = operationId,
             reason = reason,
+            phase = current.phase ?: ManagedLibraryProcessingPhase.WAITING_FOR_RETRY,
             processed = current.processed,
-            total = current.total
+            total = current.total,
+            currentItem = current.currentItem
         )
     }
 
@@ -138,26 +166,96 @@ internal object ManagedLibraryProcessingStateMachine {
             current
         }
     }
+
+    private data class NormalizedProgress(
+        val processed: Int?,
+        val total: Int?,
+        val currentItem: String?
+    )
+
+    private fun normalizeProgress(
+        processed: Int?,
+        total: Int?,
+        currentItem: String?
+    ): NormalizedProgress {
+        val normalizedTotal = total?.coerceAtLeast(0)
+        val normalizedProcessed = processed?.coerceAtLeast(0)?.let { value ->
+            normalizedTotal?.let(value::coerceAtMost) ?: value
+        }
+        return NormalizedProgress(
+            processed = normalizedProcessed,
+            total = normalizedTotal,
+            currentItem = currentItem?.trim()?.takeIf(String::isNotBlank)
+        )
+    }
+
+    private fun normalizeProgress(
+        current: ManagedLibraryProcessingState,
+        processed: Int?,
+        total: Int?,
+        currentItem: String?
+    ): NormalizedProgress {
+        val normalized = normalizeProgress(processed, total, currentItem)
+        val previousTotal = current.total
+        val previousProcessed = current.processed
+        val resumedBatch = previousTotal != null &&
+            normalized.total != null &&
+            normalized.total < previousTotal &&
+            previousProcessed != null
+        val effectiveTotal = when {
+            resumedBatch -> previousTotal
+            normalized.total == null -> previousTotal
+            else -> normalized.total
+        }
+        val monotonicProcessed = if (resumedBatch) {
+            (
+                requireNotNull(previousProcessed).toLong() +
+                    (normalized.processed ?: 0).toLong()
+                )
+                .coerceAtMost(requireNotNull(effectiveTotal).toLong())
+                .toInt()
+        } else if (effectiveTotal != null && effectiveTotal == previousTotal) {
+            maxOf(previousProcessed ?: 0, normalized.processed ?: previousProcessed ?: 0)
+                .coerceAtMost(effectiveTotal)
+        } else {
+            normalized.processed ?: previousProcessed
+        }
+        return normalized.copy(
+            processed = monotonicProcessed,
+            total = effectiveTotal,
+            currentItem = normalized.currentItem ?: current.currentItem
+        )
+    }
 }
 
 internal fun restoreManagedLibraryProcessingState(
     operationId: String?,
     reasonName: String?,
-    phaseName: String?
+    phaseName: String?,
+    processed: Int? = null,
+    total: Int? = null,
+    currentItem: String? = null
 ): ManagedLibraryProcessingState {
     val restoredOperationId = operationId?.takeIf(String::isNotBlank)
         ?: return ManagedLibraryProcessingState.Idle
     val restoredReason = reasonName?.let { value ->
         runCatching { ManagedLibraryProcessingReason.valueOf(value) }.getOrNull()
     } ?: return ManagedLibraryProcessingState.Idle
-    val phaseIsKnown = phaseName?.let { value ->
-        runCatching { ManagedLibraryProcessingPhase.valueOf(value) }.isSuccess
-    } == true
-    if (!phaseIsKnown) return ManagedLibraryProcessingState.Idle
+    val restoredPhase = phaseName?.let { value ->
+        runCatching { ManagedLibraryProcessingPhase.valueOf(value) }.getOrNull()
+    } ?: return ManagedLibraryProcessingState.Idle
+    val normalizedTotal = total?.coerceAtLeast(0)
+    val normalizedProcessed = processed?.coerceAtLeast(0)?.let { value ->
+        normalizedTotal?.let(value::coerceAtMost) ?: value
+    }
 
     return ManagedLibraryProcessingState.WaitingForRetry(
         operationId = restoredOperationId,
-        reason = restoredReason
+        reason = restoredReason,
+        phase = restoredPhase,
+        processed = normalizedProcessed,
+        total = normalizedTotal,
+        currentItem = currentItem?.trim()?.takeIf(String::isNotBlank)
     )
 }
 
@@ -170,15 +268,25 @@ object ManagedLibraryProcessingCoordinator {
     private const val KEY_OPERATION_ID = "operation_id"
     private const val KEY_REASON = "reason"
     private const val KEY_PHASE = "phase"
+    private const val KEY_PROCESSED = "processed"
+    private const val KEY_TOTAL = "total"
+    private const val KEY_CURRENT_ITEM = "current_item"
+    private const val PROGRESS_PERSIST_INTERVAL_MS = 250L
+    private const val PROGRESS_PERSIST_DELTA = 16
 
     private val mutex = Mutex()
     private val mutableState = MutableStateFlow<ManagedLibraryProcessingState>(
         ManagedLibraryProcessingState.Idle
     )
 
+    private var persistenceContext: Context? = null
+    private var lastProgressPersistedAtMs = 0L
+    private var lastProgressPersisted: ManagedLibraryProcessingState? = null
+
     val state: StateFlow<ManagedLibraryProcessingState> = mutableState.asStateFlow()
 
     suspend fun restore(context: Context): ManagedLibraryProcessingState = mutex.withLock {
+        persistenceContext = context.applicationContext
         if (mutableState.value != ManagedLibraryProcessingState.Idle) {
             return@withLock mutableState.value
         }
@@ -186,6 +294,7 @@ object ManagedLibraryProcessingCoordinator {
             readPersistedState(context.applicationContext)
         }
         mutableState.value = restored
+        resetProgressPersistence(restored)
         restored
     }
 
@@ -194,6 +303,7 @@ object ManagedLibraryProcessingCoordinator {
         reason: ManagedLibraryProcessingReason,
         phase: ManagedLibraryProcessingPhase
     ): String = mutex.withLock {
+        persistenceContext = context.applicationContext
         val next = ManagedLibraryProcessingStateMachine.begin(
             operationId = UUID.randomUUID().toString(),
             reason = reason,
@@ -201,6 +311,7 @@ object ManagedLibraryProcessingCoordinator {
         )
         persist(context.applicationContext, next)
         mutableState.value = next
+        resetProgressPersistence(next)
         next.operationId
     }
 
@@ -209,6 +320,7 @@ object ManagedLibraryProcessingCoordinator {
         reason: ManagedLibraryProcessingReason,
         phase: ManagedLibraryProcessingPhase
     ): String? = mutex.withLock {
+        persistenceContext = context.applicationContext
         val current = mutableState.value
         if (current != ManagedLibraryProcessingState.Idle) {
             return@withLock current.operationId.takeIf { current.reason == reason }
@@ -220,6 +332,7 @@ object ManagedLibraryProcessingCoordinator {
         )
         persist(context.applicationContext, next)
         mutableState.value = next
+        resetProgressPersistence(next)
         next.operationId
     }
 
@@ -229,6 +342,7 @@ object ManagedLibraryProcessingCoordinator {
         phase: ManagedLibraryProcessingPhase,
         resumeWaitingOperation: Boolean = false
     ): String? = mutex.withLock {
+        persistenceContext = context.applicationContext
         val next = ManagedLibraryProcessingStateMachine.tryBeginExclusive(
             current = mutableState.value,
             operationId = UUID.randomUUID().toString(),
@@ -238,20 +352,37 @@ object ManagedLibraryProcessingCoordinator {
         ) ?: return@withLock null
         persist(context.applicationContext, next)
         mutableState.value = next
+        resetProgressPersistence(next)
         next.operationId
     }
 
     suspend fun updateProgress(
         operationId: String,
         processed: Int?,
-        total: Int?
+        total: Int?,
+        currentItem: String? = null,
+        context: Context? = null
     ) = mutex.withLock {
-        mutableState.value = ManagedLibraryProcessingStateMachine.updateProgress(
-            current = mutableState.value,
+        context?.applicationContext?.let { appContext ->
+            persistenceContext = appContext
+        }
+        val current = mutableState.value
+        val next = ManagedLibraryProcessingStateMachine.updateProgress(
+            current = current,
             operationId = operationId,
             processed = processed,
-            total = total
+            total = total,
+            currentItem = currentItem
         )
+        if (next == current) return@withLock
+        if (shouldPersistProgress(next)) {
+            persistenceContext?.let { appContext ->
+                persist(appContext, next)
+                lastProgressPersistedAtMs = System.currentTimeMillis()
+                lastProgressPersisted = next
+            }
+        }
+        mutableState.value = next
     }
 
     suspend fun waitingForRetry(context: Context, operationId: String) = mutex.withLock {
@@ -263,6 +394,8 @@ object ManagedLibraryProcessingCoordinator {
         if (next != current) {
             persist(context.applicationContext, next)
             mutableState.value = next
+            lastProgressPersistedAtMs = System.currentTimeMillis()
+            lastProgressPersisted = next
         }
     }
 
@@ -272,6 +405,8 @@ object ManagedLibraryProcessingCoordinator {
         if (next != current) {
             persist(context.applicationContext, next)
             mutableState.value = next
+            lastProgressPersistedAtMs = 0L
+            lastProgressPersisted = null
         }
     }
 
@@ -284,10 +419,21 @@ object ManagedLibraryProcessingCoordinator {
         val committed = if (state == ManagedLibraryProcessingState.Idle) {
             preferences.edit().clear().commit()
         } else {
+            val processed = state.processed
+            val total = state.total
+            val currentItem = state.currentItem
             preferences.edit()
                 .putString(KEY_OPERATION_ID, state.operationId)
                 .putString(KEY_REASON, state.reason?.name)
                 .putString(KEY_PHASE, state.phase?.name)
+                .apply {
+                    if (processed == null) remove(KEY_PROCESSED)
+                    else putInt(KEY_PROCESSED, processed)
+                    if (total == null) remove(KEY_TOTAL)
+                    else putInt(KEY_TOTAL, total)
+                    if (currentItem == null) remove(KEY_CURRENT_ITEM)
+                    else putString(KEY_CURRENT_ITEM, currentItem)
+                }
                 .commit()
         }
         if (!committed) {
@@ -300,7 +446,46 @@ object ManagedLibraryProcessingCoordinator {
         return restoreManagedLibraryProcessingState(
             operationId = preferences.getString(KEY_OPERATION_ID, null),
             reasonName = preferences.getString(KEY_REASON, null),
-            phaseName = preferences.getString(KEY_PHASE, null)
+            phaseName = preferences.getString(KEY_PHASE, null),
+            processed = preferences.getIntOrNull(KEY_PROCESSED),
+            total = preferences.getIntOrNull(KEY_TOTAL),
+            currentItem = preferences.getString(KEY_CURRENT_ITEM, null)
         )
+    }
+
+    private fun shouldPersistProgress(state: ManagedLibraryProcessingState): Boolean {
+        val previous = lastProgressPersisted ?: return true
+        if (previous.operationId != state.operationId || previous.phase != state.phase) {
+            return true
+        }
+        val processed = state.processed
+        val total = state.total
+        if (processed != null && total != null && processed >= total) {
+            return true
+        }
+        val previousProcessed = previous.processed
+        val processedDelta = if (processed != null && previousProcessed != null) {
+            processed - previousProcessed
+        } else {
+            0
+        }
+        return processedDelta >= PROGRESS_PERSIST_DELTA ||
+            System.currentTimeMillis() - lastProgressPersistedAtMs >=
+            PROGRESS_PERSIST_INTERVAL_MS
+    }
+
+    private fun resetProgressPersistence(state: ManagedLibraryProcessingState) {
+        lastProgressPersisted = state.takeIf { current ->
+            current.processed != null || current.total != null || current.currentItem != null
+        }
+        lastProgressPersistedAtMs = if (lastProgressPersisted == null) {
+            0L
+        } else {
+            System.currentTimeMillis()
+        }
+    }
+
+    private fun SharedPreferences.getIntOrNull(key: String): Int? {
+        return if (contains(key)) getInt(key, 0) else null
     }
 }

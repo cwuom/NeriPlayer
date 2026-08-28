@@ -52,6 +52,7 @@ import moe.ouom.neriplayer.core.download.isFinalizedDownloadedAudioEntry
 import moe.ouom.neriplayer.core.download.parseManagedDownloadBaseName
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
@@ -260,6 +261,48 @@ internal fun selectMetadataSidecarReference(
             )
         )
         ?.value
+}
+
+/**
+ * 旧 metadata 可能保存了已经失效的 SAF 封面引用, 优先使用当前快照重绑定的引用
+ */
+internal fun selectHydratedLocalCoverReference(
+    sidecarCover: String?,
+    existingCover: String?,
+    reboundCover: String?,
+    metadataFallbackCover: String?
+): String? {
+    val sidecar = sidecarCover.normalizeImportedCoverReference()
+    val existing = existingCover.normalizeImportedCoverReference()
+    val rebound = reboundCover.normalizeImportedCoverReference()
+    val fallback = metadataFallbackCover.normalizeImportedCoverReference()
+
+    // 仍可直接使用的侧车封面保持原有权威性, 避免被远端候选替换
+    if (sidecar != null && !isPotentiallyStaleSafCoverReference(sidecar)) {
+        return sidecar
+    }
+    rebound?.let { return it }
+    if (existing != null && !sameImportedCoverReference(existing, sidecar)) {
+        // 扫描结果可能是新的 SAF URI, 不能因为它不是 MediaStore URI 就丢掉
+        return existing
+    }
+    if (fallback != null && !isPotentiallyStaleSafCoverReference(fallback)) {
+        return fallback
+    }
+    return fallback ?: existing ?: sidecar
+}
+
+private fun String?.normalizeImportedCoverReference(): String? {
+    return this?.trim()?.takeIf(String::isNotBlank)
+}
+
+private fun sameImportedCoverReference(first: String?, second: String?): Boolean {
+    return first != null && second != null && first == second
+}
+
+private fun isPotentiallyStaleSafCoverReference(reference: String): Boolean {
+    return reference.startsWith("content://", ignoreCase = true) &&
+        !isMediaStoreSidecarReference(reference)
 }
 
 private fun buildLocalSidecarMetadataIndex(
@@ -2354,12 +2397,42 @@ object LocalAudioImportManager {
             normalizeLocalAlbumIdentity(it, usesFallbackAlbum = false)
         }
         val sidecarCover = firstMeaningfulMetadataValue(metadata.coverPath)
-        val resolvedCover = firstMeaningfulMetadataValue(
+        val reboundCover = if (sidecarCover != null &&
+            isPotentiallyStaleSafCoverReference(sidecarCover)
+        ) {
+            resolveCachedManagedCoverReference(song, metadata)
+        } else {
+            null
+        }
+        val metadataFallbackCover = listOf(
             metadata.customCoverUrl,
-            sidecarCover,
             metadata.coverUrl,
             metadata.originalCoverUrl
         )
+            .mapNotNull(::normalizeQuickImportedMetadata)
+            .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
+        val resolvedCover = selectHydratedLocalCoverReference(
+            sidecarCover = sidecarCover,
+            existingCover = song.coverUrl,
+            reboundCover = reboundCover,
+            metadataFallbackCover = metadataFallbackCover
+        )
+        val resolvedOriginalCover = selectHydratedLocalCoverReference(
+            sidecarCover = sidecarCover,
+            existingCover = song.originalCoverUrl,
+            reboundCover = reboundCover,
+            metadataFallbackCover = firstMeaningfulMetadataValue(
+                metadata.originalCoverUrl,
+                metadata.coverUrl
+            )?.takeUnless { sameImportedCoverReference(it, sidecarCover) }
+        )
+        val metadataCoverForIdentity = listOf(
+            metadata.customCoverUrl,
+            metadata.coverUrl,
+            metadata.originalCoverUrl
+        )
+            .mapNotNull(::normalizeQuickImportedMetadata)
+            .firstOrNull { candidate -> !sameImportedCoverReference(candidate, sidecarCover) }
         val hasIdentity = resolvedName != null || resolvedArtist != null || resolvedAlbum != null ||
             firstMeaningfulMetadataValue(
                 metadata.channelId,
@@ -2376,10 +2449,10 @@ object LocalAudioImportManager {
                 usesFallbackAlbum = song.album == LocalSongSupport.LOCAL_ALBUM_IDENTITY
             ),
             durationMs = metadata.durationMs.takeIf { it > 0L } ?: song.durationMs,
-            coverUrl = sidecarCover ?: song.coverUrl ?: resolvedCover,
-            originalCoverUrl = sidecarCover
+            coverUrl = resolvedCover ?: metadataCoverForIdentity ?: song.coverUrl,
+            originalCoverUrl = resolvedOriginalCover
+                ?: metadataCoverForIdentity
                 ?: song.originalCoverUrl
-                ?: metadata.originalCoverUrl
                 ?: resolvedCover,
             customName = firstMeaningfulMetadataValue(metadata.customName)
                 ?: song.customName?.takeUnless(::isQuickMetadataPlaceholder),
@@ -2401,6 +2474,26 @@ object LocalAudioImportManager {
             sourceStableKey = metadata.stableKey?.takeIf(String::isNotBlank)
                 ?: song.sourceStableKey
         )
+    }
+
+    private fun resolveCachedManagedCoverReference(
+        song: SongItem,
+        metadata: LocalMetadataSidecar
+    ): String? {
+        val lookupSong = song.copy(
+            id = metadata.songId ?: song.id,
+            channelId = metadata.channelId ?: song.channelId,
+            audioId = metadata.audioId ?: song.audioId,
+            subAudioId = metadata.subAudioId ?: song.subAudioId,
+            sourceStableKey = metadata.stableKey ?: song.sourceStableKey
+        )
+        val audio = runCatching {
+            ManagedDownloadStorage.peekDownloadedAudio(lookupSong)
+        }.getOrNull() ?: return null
+        val reference = runCatching {
+            ManagedDownloadStorage.peekCoverReference(audio)
+        }.getOrNull()?.trim()?.takeIf(String::isNotBlank) ?: return null
+        return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
     }
 
     private fun firstMeaningfulMetadataValue(vararg values: String?): String? {

@@ -32,6 +32,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -50,7 +51,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalOverscrollFactory
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,8 +64,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
@@ -90,7 +90,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -127,6 +126,9 @@ import moe.ouom.neriplayer.core.player.service.canUseDirectPlaybackServiceStart
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
 import moe.ouom.neriplayer.core.startup.StartupStage
 import moe.ouom.neriplayer.core.startup.StartupStageResolver
+import moe.ouom.neriplayer.core.startup.STARTUP_LOADING_INDICATOR_DELAY_MILLIS
+import moe.ouom.neriplayer.core.startup.shouldKeepSystemSplash
+import moe.ouom.neriplayer.core.startup.shouldShowStartupLoadingIndicator
 import moe.ouom.neriplayer.core.startup.crash.StartupCrashReportManager
 import moe.ouom.neriplayer.core.startup.download.StartupDownloadRecoveryCoordinator
 import moe.ouom.neriplayer.core.startup.logging.StartupLogInitializer
@@ -169,9 +171,9 @@ import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
 import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
-internal const val STARTUP_LOADING_INDICATOR_DELAY_MS = 1_000L
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -311,6 +313,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
+        val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()
         val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
             context = this,
@@ -320,7 +323,11 @@ class MainActivity : ComponentActivity() {
             followSystemDark = startupThemeSnapshot.followSystemDark,
             forceDark = startupThemeSnapshot.forceDark
         )
-        installSplashScreen()
+        // 设置读取完成前继续使用系统启动页，避免再显示一个会阻塞首帧的中间页面
+        val startupContentReady = AtomicBoolean(safeModeActive)
+        installSplashScreen().setKeepOnScreenCondition {
+            !startupContentReady.get()
+        }
         super.onCreate(savedInstanceState)
         applyPreferredHighRefreshRate(startupSettingsSnapshot.preferHighRefreshRate)
         observePreferredHighRefreshRate()
@@ -525,13 +532,36 @@ class MainActivity : ComponentActivity() {
                 }
                 var hasDisplayedDisclaimer by rememberSaveable { mutableStateOf(false) }
                 var previousStartupStage by remember { mutableStateOf<StartupStage?>(null) }
+                var showStartupLoadingIndicator by rememberSaveable {
+                    mutableStateOf(false)
+                }
                 LaunchedEffect(stage) {
+                    if (stage == StartupStage.Loading) {
+                        val elapsedMs = SystemClock.elapsedRealtime() - startupLoadingStartedAtMs
+                        val remainingMs = (
+                            STARTUP_LOADING_INDICATOR_DELAY_MILLIS - elapsedMs
+                            ).coerceAtLeast(0L)
+                        if (remainingMs > 0L) {
+                            delay(remainingMs)
+                        }
+                        if (stage == StartupStage.Loading) {
+                            showStartupLoadingIndicator = shouldShowStartupLoadingIndicator(
+                                SystemClock.elapsedRealtime() - startupLoadingStartedAtMs
+                            )
+                            if (showStartupLoadingIndicator) {
+                                startupContentReady.set(true)
+                            }
+                        }
+                        return@LaunchedEffect
+                    }
+                    showStartupLoadingIndicator = false
                     if (stage == StartupStage.Disclaimer) {
                         hasDisplayedDisclaimer = true
                     }
                     previousStartupStage = stage
-                    if (stage != StartupStage.Loading) {
+                    if (!shouldKeepSystemSplash(stage)) {
                         withFrameNanos { }
+                        startupContentReady.set(true)
                         AppStartupWorkGate.markInteractiveContentReady()
                     }
                 }
@@ -608,7 +638,16 @@ class MainActivity : ComponentActivity() {
                     ) {
                     when (current) {
                         StartupStage.Loading -> {
-                            StartupLoadingContent()
+                            if (showStartupLoadingIndicator) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            } else {
+                                Box(modifier = Modifier.fillMaxSize())
+                            }
                         }
                         StartupStage.Disclaimer -> {
                             val scope = rememberCoroutineScope()
@@ -1467,49 +1506,6 @@ fun NeriTheme(
         typography = Typography(),
         content = content
     )
-}
-
-@Composable
-internal fun StartupLoadingContent(
-    showProgress: Boolean? = null,
-    indicatorDelayMillis: Long = STARTUP_LOADING_INDICATOR_DELAY_MS
-) {
-    var delayedProgressVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(showProgress, indicatorDelayMillis) {
-        if (showProgress != null) {
-            delayedProgressVisible = showProgress
-            return@LaunchedEffect
-        }
-        delayedProgressVisible = false
-        delay(indicatorDelayMillis.coerceAtLeast(0L))
-        delayedProgressVisible = true
-    }
-    val progressVisible = showProgress ?: delayedProgressVisible
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .testTag("startup_loading_surface"),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            if (progressVisible) {
-                CircularProgressIndicator(
-                    modifier = Modifier.testTag("startup_loading_progress")
-                )
-            }
-        }
-    }
 }
 
 internal fun resolveStartupSetting(value: Boolean?, readTimedOut: Boolean): Boolean? {

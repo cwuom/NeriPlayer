@@ -20,8 +20,11 @@ internal object ManagedDownloadArtifactPlanner {
         explicitReferences: List<String> = emptyList(),
         deletingAudioNames: Set<String> = emptySet()
     ): Set<String> {
-        val metadataReference = storedAudio?.let { snapshot.metadataEntriesByAudioName[it.name]?.reference }
-        val metadata = storedAudio?.let { snapshot.metadataByAudioName[it.name] }
+        val metadataReference = storedAudio?.let {
+            snapshot.metadataEntriesByAudioName[it.logicalName]?.reference
+                ?: snapshot.metadataEntriesByAudioName[it.name]?.reference
+        }
+        val metadata = storedAudio?.let { ManagedDownloadStorage.metadataForAudioEntry(snapshot, it) }
         val resolvedSongId = metadata?.songId ?: songId.takeIf { it > 0L }
         val currentAudioName = storedAudio?.name
         val lyricReferences = buildList {

@@ -742,12 +742,19 @@ internal class ManagedDownloadArtifactCoordinator {
             )
         }.getOrNull() ?: return null
         if (!snapshot.rootEntriesComplete) return null
-        return snapshot.audioEntriesByStableKey[stableKey]
-            .orEmpty()
-            .firstOrNull()
-            ?: current.audioName?.let { audioName ->
-                snapshot.audioEntries.firstOrNull { entry -> entry.name == audioName }
+        val candidates = (
+            snapshot.audioEntriesByStableKey[stableKey].orEmpty() +
+                artifactReconciliationAudioEntries(snapshot)
+        ).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        return candidates.firstOrNull { entry ->
+            ManagedDownloadStorage.metadataForAudioEntry(snapshot, entry)
+                ?.stableKey
+                ?.trim() == stableKey
+        } ?: current.audioName?.let { audioName ->
+            candidates.firstOrNull { entry ->
+                entry.name == audioName || entry.logicalName == audioName
             }
+        }
     }
 
     private suspend fun isMissingConfirmed(
@@ -762,10 +769,20 @@ internal class ManagedDownloadArtifactCoordinator {
             )
         }.getOrNull() ?: return false
         if (!snapshot.rootEntriesComplete) return false
-        val matchingByIdentity = snapshot.audioEntriesByStableKey[stableKey].orEmpty()
+        val candidates = (
+            snapshot.audioEntriesByStableKey[stableKey].orEmpty() +
+                artifactReconciliationAudioEntries(snapshot)
+        ).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        val matchingByIdentity = candidates.filter { entry ->
+            ManagedDownloadStorage.metadataForAudioEntry(snapshot, entry)
+                ?.stableKey
+                ?.trim() == stableKey
+        }
         if (matchingByIdentity.isNotEmpty()) return false
-        val matchingByReference = snapshot.audioEntries.any { entry ->
-            entry.reference == current.audioReference || entry.name == current.audioName
+        val matchingByReference = candidates.any { entry ->
+            entry.reference == current.audioReference ||
+                entry.name == current.audioName ||
+                entry.logicalName == current.audioName
         }
         if (matchingByReference) return false
         val evidence = ManagedDownloadReferenceLookup.inspect(
@@ -881,32 +898,45 @@ internal class ManagedDownloadArtifactCoordinator {
             artifact.audioReference?.trim()?.takeIf(String::isNotBlank),
             artifact.audioName?.trim()?.takeIf(String::isNotBlank)
         ).toSet()
-        return (
+        val candidates = (
             snapshot.audioEntriesByStableKey[stableKey].orEmpty() +
-                snapshot.audioEntries.filter { entry ->
-                    entry.reference in references ||
-                        entry.mediaUri in references ||
-                        entry.localFilePath in references ||
-                        entry.name in references ||
-                        entry.logicalName in references
-                }
-            ).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+                artifactReconciliationAudioEntries(snapshot)
+        ).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        return candidates.filter { entry ->
+            val metadataStableKey = ManagedDownloadStorage
+                .metadataForAudioEntry(snapshot, entry)
+                ?.stableKey
+                ?.trim()
+            entry in snapshot.audioEntriesByStableKey[stableKey].orEmpty() ||
+                metadataStableKey == stableKey ||
+                entry.reference in references ||
+                entry.mediaUri in references ||
+                entry.localFilePath in references ||
+                entry.name in references ||
+                entry.logicalName in references
+        }
     }
 
     private fun discoverExistingAudio(
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
         song: SongItem
     ): DiscoveredAudio? {
-        val audio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song) ?: return null
-        val metadata = snapshot.metadataByAudioName[audio.name]
+        val audio = ManagedDownloadStorage.findDownloadedAudio(snapshot, song)
+            ?: ManagedDownloadStorage.findPendingDownloadedAudio(snapshot, song)
+            ?: return null
+        val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
+        val finalized = isFinalizedDownloadedAudioEntry(
+            rootEntriesComplete = snapshot.rootEntriesComplete,
+            isPendingAudioWrite = audio.isPendingAudioWrite,
+            metadata = metadata
+        )
         return DiscoveredAudio(
             reference = audio.reference,
             name = audio.name,
             sizeBytes = audio.sizeBytes,
-            finalized = isFinalizedDownloadedAudioEntry(
-                rootEntriesComplete = snapshot.rootEntriesComplete,
-                isPendingAudioWrite = audio.isPendingAudioWrite,
-                metadata = metadata
+            artifactState = resolveDiscoveredManagedArtifactState(
+                finalized = finalized,
+                metadataArtifactState = metadata?.artifactState
             ),
             downloadedAtMs = metadata?.downloadTimeMs
                 ?: metadata?.createdAtMs
@@ -923,15 +953,12 @@ internal class ManagedDownloadArtifactCoordinator {
         discovered: DiscoveredAudio,
         nowMs: Long
     ): ManagedDownloadArtifactEntity {
+        val state = discovered.artifactState
         return ManagedDownloadArtifactEntity(
             rootKey = rootKey,
             stableKey = stableKey,
             artifactId = artifactId(rootKey, stableKey),
-            state = if (discovered.finalized) {
-                ManagedDownloadArtifactState.FINALIZED.name
-            } else {
-                ManagedDownloadArtifactState.REPAIR_REQUIRED.name
-            },
+            state = state.name,
             leaseId = null,
             audioReference = discovered.reference,
             audioName = discovered.name,
@@ -942,12 +969,12 @@ internal class ManagedDownloadArtifactCoordinator {
             sourceCreatedAtMs = discovered.sourceCreatedAtMs,
             sourceModifiedAtMs = discovered.sourceModifiedAtMs,
             downloadedAtMs = discovered.downloadedAtMs
-                ?: nowMs.takeIf { discovered.finalized },
+                ?: nowMs.takeIf { state == ManagedDownloadArtifactState.FINALIZED },
             migratedAtMs = null,
             finalizedAtMs = discovered.downloadedAtMs
-                ?.takeIf { discovered.finalized },
+                ?.takeIf { state == ManagedDownloadArtifactState.FINALIZED },
             updatedAtMs = nowMs,
-            needsReconcile = !discovered.finalized,
+            needsReconcile = state != ManagedDownloadArtifactState.FINALIZED,
             lastErrorCode = if (discovered.downloadedAtMs == null) {
                 "LEGACY_FALLBACK"
             } else {
@@ -978,11 +1005,10 @@ internal class ManagedDownloadArtifactCoordinator {
                 ManagedDownloadArtifactState.DEGRADED_COMPLETE
             )
         }
-        val nextState = preservedState ?: if (finalized) {
-            ManagedDownloadArtifactState.FINALIZED
-        } else {
-            ManagedDownloadArtifactState.MISSING_CONFIRMED
-        }
+        val nextState = resolveCatalogArtifactState(
+            currentState = currentState,
+            hasAudioReference = finalized
+        )
         val audioName = audioReference
             ?.substringAfterLast('/')
             ?.substringAfterLast('\\')
@@ -1231,10 +1257,63 @@ internal class ManagedDownloadArtifactCoordinator {
         val reference: String,
         val name: String,
         val sizeBytes: Long,
-        val finalized: Boolean,
+        val artifactState: ManagedDownloadArtifactState,
         val downloadedAtMs: Long?,
         val libraryAddedAtMs: Long?,
         val sourceCreatedAtMs: Long?,
         val sourceModifiedAtMs: Long?
     )
+}
+
+internal fun artifactReconciliationAudioEntries(
+    snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
+): List<ManagedDownloadStorage.StoredEntry> {
+    return (snapshot.audioEntries + snapshot.pendingAudioEntries)
+        .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+}
+
+internal fun resolveDiscoveredManagedArtifactState(
+    finalized: Boolean,
+    metadataArtifactState: String?
+): ManagedDownloadArtifactState {
+    if (finalized) {
+        return ManagedDownloadArtifactState.FINALIZED
+    }
+    val persistedState = metadataArtifactState
+        ?.trim()
+        ?.let { raw ->
+            ManagedDownloadArtifactState.entries.firstOrNull { state ->
+                state.name.equals(raw, ignoreCase = true)
+            }
+        }
+    return when (persistedState) {
+        ManagedDownloadArtifactState.CORE_COMMITTED ->
+            ManagedDownloadArtifactState.CORE_COMMITTED
+        ManagedDownloadArtifactState.ASSETS_ENRICHING ->
+            ManagedDownloadArtifactState.ASSETS_ENRICHING
+        ManagedDownloadArtifactState.DEGRADED_COMPLETE ->
+            ManagedDownloadArtifactState.DEGRADED_COMPLETE
+        else -> ManagedDownloadArtifactState.REPAIR_REQUIRED
+    }
+}
+
+internal fun resolveCatalogArtifactState(
+    currentState: ManagedDownloadArtifactState?,
+    hasAudioReference: Boolean
+): ManagedDownloadArtifactState {
+    if (currentState == null) {
+        return if (hasAudioReference) {
+            ManagedDownloadArtifactState.FINALIZED
+        } else {
+            ManagedDownloadArtifactState.MISSING_CONFIRMED
+        }
+    }
+    return if (
+        currentState == ManagedDownloadArtifactState.FINALIZED &&
+            !hasAudioReference
+    ) {
+        ManagedDownloadArtifactState.MISSING_CONFIRMED
+    } else {
+        currentState
+    }
 }

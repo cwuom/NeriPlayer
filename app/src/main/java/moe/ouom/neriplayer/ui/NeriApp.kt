@@ -74,7 +74,6 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -143,7 +142,9 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -169,6 +170,7 @@ import moe.ouom.neriplayer.core.player.lifecycle.updateUsbExclusiveForegroundSta
 import moe.ouom.neriplayer.core.player.policy.usb.shouldPromptForUsbExclusiveBackgroundPermission
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupBootstrapper
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupAudioFocusRefresher
 import moe.ouom.neriplayer.core.startup.player.PlayerStartupHistoryRecorder
@@ -177,6 +179,8 @@ import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.playbackVisualKey
+import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
@@ -848,31 +852,121 @@ internal fun resolvePlaybackVisualCoverUrl(
     }
 }
 
+internal fun shouldClearPlaybackVisualCover(
+    currentSongKey: String?,
+    requestedCoverUrl: String?,
+    clearDelayElapsed: Boolean
+): Boolean {
+    return currentSongKey == null && requestedCoverUrl == null && clearDelayElapsed
+}
+
+internal fun shouldClearRetainedPlaybackVisualCoverAfterGrace(
+    currentSongKey: String?,
+    retainedCoverUrl: String?,
+    requestedCoverUrl: String?,
+    clearDelayElapsed: Boolean
+): Boolean = currentSongKey.isNullOrBlank() &&
+    clearDelayElapsed &&
+    !retainedCoverUrl?.trim().isNullOrEmpty() &&
+    requestedCoverUrl?.trim().isNullOrEmpty()
+
+internal fun shouldClearNowPlayingBlurCover(
+    currentSongKey: String?,
+    requestedCoverUrl: String?,
+    clearDelayElapsed: Boolean
+): Boolean = currentSongKey == null &&
+    requestedCoverUrl?.trim().isNullOrEmpty() &&
+    clearDelayElapsed
+
+internal fun shouldRetainNowPlayingBlurCover(
+    stableCoverUrl: String?,
+    currentSongKey: String?,
+    requestedCoverUrl: String?
+): Boolean = !stableCoverUrl?.trim().isNullOrEmpty() &&
+    (currentSongKey != null || !requestedCoverUrl?.trim().isNullOrEmpty())
+
+internal data class PlaybackVisualCoverState(
+    val url: String?,
+    val ownerSongKey: String?
+)
+
+internal fun resolvePlaybackVisualCoverState(
+    currentCoverUrl: String?,
+    previousState: PlaybackVisualCoverState?,
+    currentSongKey: String?,
+    hasCurrentSong: Boolean
+): PlaybackVisualCoverState {
+    val normalizedCoverUrl = currentCoverUrl?.trim()?.takeIf(String::isNotEmpty)
+    return when {
+        normalizedCoverUrl != null -> PlaybackVisualCoverState(
+            url = normalizedCoverUrl,
+            ownerSongKey = currentSongKey
+        )
+        !hasCurrentSong -> PlaybackVisualCoverState(
+            url = null,
+            ownerSongKey = null
+        )
+        else -> previousState ?: PlaybackVisualCoverState(
+            url = null,
+            ownerSongKey = null
+        )
+    }
+}
+
 @Composable
-private fun rememberPlaybackVisualCoverUrl(
+private fun rememberPlaybackVisualCoverState(
     coverUrl: String?,
     currentSongKey: String?
-): String? {
-    var visualCoverUrl by remember {
+): PlaybackVisualCoverState {
+    val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty)
+    var visualCoverState by remember {
         mutableStateOf(
-            resolvePlaybackVisualCoverUrl(
-                currentCoverUrl = coverUrl,
-                previousVisualCoverUrl = null,
+            resolvePlaybackVisualCoverState(
+                currentCoverUrl = normalizedCoverUrl,
+                previousState = null,
+                currentSongKey = currentSongKey,
                 hasCurrentSong = currentSongKey != null
             )
         )
     }
-    val resolvedVisualCoverUrl = resolvePlaybackVisualCoverUrl(
-        currentCoverUrl = coverUrl,
-        previousVisualCoverUrl = visualCoverUrl,
-        hasCurrentSong = currentSongKey != null
+    val resolvedVisualCoverState = resolvePlaybackVisualCoverState(
+        currentCoverUrl = normalizedCoverUrl,
+        previousState = visualCoverState,
+        currentSongKey = currentSongKey,
+        hasCurrentSong = currentSongKey != null || visualCoverState.url != null
     )
+    val latestSongKey by rememberUpdatedState(currentSongKey)
+    val latestCoverUrl by rememberUpdatedState(normalizedCoverUrl)
+    val latestVisualCoverState by rememberUpdatedState(visualCoverState)
     SideEffect {
-        if (visualCoverUrl != resolvedVisualCoverUrl) {
-            visualCoverUrl = resolvedVisualCoverUrl
+        if (visualCoverState != resolvedVisualCoverState) {
+            visualCoverState = resolvedVisualCoverState
         }
     }
-    return resolvedVisualCoverUrl
+    LaunchedEffect(currentSongKey, normalizedCoverUrl, visualCoverState.ownerSongKey) {
+        val stateAtStart = visualCoverState
+        if (stateAtStart.url.isNullOrBlank() || !normalizedCoverUrl.isNullOrBlank()) {
+            return@LaunchedEffect
+        }
+        delay(PLAYBACK_VISUAL_COVER_GRACE_MS)
+        if (
+            latestSongKey == currentSongKey &&
+                latestCoverUrl.isNullOrEmpty() &&
+                latestVisualCoverState == stateAtStart &&
+                shouldClearRetainedPlaybackVisualCoverAfterGrace(
+                    currentSongKey = latestSongKey,
+                    retainedCoverUrl = latestVisualCoverState.url,
+                    requestedCoverUrl = latestCoverUrl,
+                    clearDelayElapsed = true
+                )
+        ) {
+            visualCoverState = PlaybackVisualCoverState(
+                url = null,
+                ownerSongKey = null
+            )
+        }
+    }
+    return resolvedVisualCoverState
 }
 
 @Composable
@@ -1195,6 +1289,8 @@ private suspend fun awaitStableDraw(view: View) {
 }
 
 private const val COVER_SEED_WARMUP_DELAY_MS = 180L
+private const val PLAYBACK_VISUAL_COVER_GRACE_MS = 1200L
+private const val PLAYBACK_COVER_SEED_GRACE_MS = 1200L
 
 private data class PlaybackCoverSeed(
     val coverUrl: String,
@@ -1213,9 +1309,8 @@ internal fun resolveActiveCoverSeedHex(
     val sampledCacheKey = normalizeCoverArtColorCacheKey(sampledCoverUrl) ?: return null
     val belongsToVisual = visualCacheKey == sampledCacheKey
     val belongsToSameSong = currentSongKey != null && currentSongKey == sampledSongKey
-    val canRetainPreviousSeed = currentSongKey != null && sampledSongKey != null
     return sampledSeedHex?.takeIf {
-        belongsToVisual || belongsToSameSong || canRetainPreviousSeed
+        belongsToVisual || belongsToSameSong
     }
 }
 
@@ -1237,6 +1332,7 @@ internal fun resolveCoverSeedWarmupDelayMillis(
 private fun NowPlayingAccentBackdrop(
     coverUrl: String?,
     isDark: Boolean,
+    songKey: String? = null,
     modifier: Modifier = Modifier,
     refreshKey: Int = 0,
     offlineMode: Boolean = false,
@@ -1245,19 +1341,36 @@ private fun NowPlayingAccentBackdrop(
     val context = LocalContext.current
     val fallback = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5)
     var target by remember { mutableStateOf<Color?>(null) }
+    val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty)
+    val latestCoverUrl by rememberUpdatedState(normalizedCoverUrl)
+    val latestSongKey by rememberUpdatedState(songKey)
 
-    LaunchedEffect(coverUrl, isDark, refreshKey, offlineMode) {
-        if (coverUrl.isNullOrEmpty()) {
-            target = null
-            onAccentChanged(null)
+    LaunchedEffect(normalizedCoverUrl, songKey, isDark, refreshKey, offlineMode) {
+        val requestCoverUrl = normalizedCoverUrl
+        val requestSongKey = songKey
+        if (requestCoverUrl == null) {
+            delay(PLAYBACK_COVER_SEED_GRACE_MS)
+            if (latestCoverUrl == null && latestSongKey == requestSongKey) {
+                target = null
+                onAccentChanged(null)
+            }
             return@LaunchedEffect
         }
-        val cached = CoverArtColorCache.peek(coverUrl)
-        if (cached != null) {
+        val cached = CoverArtColorCache.peek(requestCoverUrl)
+        currentCoroutineContext().ensureActive()
+        if (
+            cached != null &&
+                latestCoverUrl == requestCoverUrl &&
+                latestSongKey == requestSongKey
+        ) {
             target = Color(adjustedAccentColorArgb(cached.baseColorArgb, isDark))
             onAccentChanged(cached.seedHex)
         }
-        val sample = CoverArtColorCache.getOrLoad(context, coverUrl, offlineMode)
+        val sample = CoverArtColorCache.getOrLoad(context, requestCoverUrl, offlineMode)
+        currentCoroutineContext().ensureActive()
+        if (latestCoverUrl != requestCoverUrl || latestSongKey != requestSongKey) {
+            return@LaunchedEffect
+        }
         if (sample != null) {
             target = Color(adjustedAccentColorArgb(sample.baseColorArgb, isDark))
             onAccentChanged(sample.seedHex)
@@ -1772,10 +1885,30 @@ private fun NeriAppContent(
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val displayCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val currentSongKey = remember(currentSong) { currentSong?.stableKey() }
-    val playbackVisualCoverUrl = rememberPlaybackVisualCoverUrl(
+    val coverAssetRootGeneration by LocalAssetInvalidationBus.rootGenerationFlow
+        .collectAsStateWithLifecycle()
+    val coverAssetSongRevision by LocalAssetInvalidationBus
+        .revisionFlow(currentSongKey.orEmpty())
+        .collectAsStateWithLifecycle()
+    val currentSongVisualKey = remember(currentSong) { currentSong?.playbackVisualKey() }
+    val currentSongVisualKeyAliases = remember(currentSong) {
+        currentSong?.playbackVisualKeyAliases().orEmpty()
+    }
+    val playbackVisualCoverState = rememberPlaybackVisualCoverState(
         coverUrl = displayCoverUrl,
-        currentSongKey = currentSongKey
+        currentSongKey = currentSongVisualKey
     )
+    val playbackVisualCoverUrl = playbackVisualCoverState.url
+    val coverAssetRefreshKey = remember(
+        coverArtRefreshToken,
+        coverAssetRootGeneration,
+        coverAssetSongRevision
+    ) {
+        var result = coverArtRefreshToken
+        result = 31 * result + coverAssetRootGeneration.hashCode()
+        result = 31 * result + coverAssetSongRevision.hashCode()
+        result
+    }
     val scope = rememberCoroutineScope()
     var pendingTrafficRiskDownloadRequest by remember {
         mutableStateOf<GlobalDownloadManager.TrafficRiskDownloadRequest?>(null)
@@ -1891,25 +2024,51 @@ private fun NeriAppContent(
         }
     }
 
-    LaunchedEffect(playbackVisualCoverUrl, coverArtRefreshToken, showNowPlaying, dynamicColorEnabled, offlineMode) {
-        if (playbackVisualCoverUrl.isNullOrBlank() || !dynamicColorEnabled) {
+    val latestPlaybackVisualCoverUrl by rememberUpdatedState(playbackVisualCoverUrl)
+    val latestPlaybackSongKey by rememberUpdatedState(currentSongVisualKey)
+    LaunchedEffect(
+        playbackVisualCoverUrl,
+        currentSongVisualKey,
+        coverArtRefreshToken,
+        showNowPlaying,
+        dynamicColorEnabled,
+        offlineMode
+    ) {
+        val requestCoverUrl = playbackVisualCoverUrl
+        val requestSongKey = currentSongVisualKey
+        if (!dynamicColorEnabled) {
             coverSeed = null
             return@LaunchedEffect
         }
-        val cachedSample = CoverArtColorCache.peek(playbackVisualCoverUrl)
-        if (cachedSample != null) {
+        if (requestCoverUrl.isNullOrBlank()) {
+            delay(PLAYBACK_COVER_SEED_GRACE_MS)
+            if (
+                latestPlaybackVisualCoverUrl.isNullOrBlank() &&
+                    latestPlaybackSongKey == requestSongKey
+            ) {
+                coverSeed = null
+            }
+            return@LaunchedEffect
+        }
+        val cachedSample = CoverArtColorCache.peek(requestCoverUrl)
+        currentCoroutineContext().ensureActive()
+        if (
+            cachedSample != null &&
+                latestPlaybackVisualCoverUrl == requestCoverUrl &&
+                latestPlaybackSongKey == requestSongKey
+        ) {
             coverSeed = PlaybackCoverSeed(
-                coverUrl = playbackVisualCoverUrl,
+                coverUrl = requestCoverUrl,
                 seedHex = cachedSample.seedHex,
-                songKey = currentSongKey
+                songKey = requestSongKey
             )
         }
 
-        if (showNowPlaying && isRemoteImageSource(playbackVisualCoverUrl)) {
+        if (showNowPlaying && isRemoteImageSource(requestCoverUrl)) {
             coverArtImageLoader.enqueue(
                 offlineCachedImageRequest(
                     context = context,
-                    data = playbackVisualCoverUrl,
+                    data = requestCoverUrl,
                     sizePx = 256,
                     allowHardware = false,
                     offlineMode = offlineMode
@@ -1926,12 +2085,18 @@ private fun NeriAppContent(
             delay(warmupDelayMillis)
         }
 
-        CoverArtColorCache.preload(context, playbackVisualCoverUrl, offlineMode)?.let { sample ->
-            coverSeed = PlaybackCoverSeed(
-                coverUrl = playbackVisualCoverUrl,
-                seedHex = sample.seedHex,
-                songKey = currentSongKey
-            )
+        CoverArtColorCache.preload(context, requestCoverUrl, offlineMode)?.let { sample ->
+            currentCoroutineContext().ensureActive()
+            if (
+                latestPlaybackVisualCoverUrl == requestCoverUrl &&
+                    latestPlaybackSongKey == requestSongKey
+            ) {
+                coverSeed = PlaybackCoverSeed(
+                    coverUrl = requestCoverUrl,
+                    seedHex = sample.seedHex,
+                    songKey = requestSongKey
+                )
+            }
         }
     }
 
@@ -2292,7 +2457,7 @@ private fun NeriAppContent(
         visualCoverUrl = playbackVisualCoverUrl,
         sampledCoverUrl = coverSeed?.coverUrl,
         sampledSeedHex = coverSeed?.seedHex,
-        currentSongKey = currentSongKey,
+        currentSongKey = currentSongVisualKey,
         sampledSongKey = coverSeed?.songKey
     )
         val effectiveSeedHex = if (dynamicColorEnabled) {
@@ -4350,6 +4515,10 @@ private fun NeriAppContent(
                                         ?: composeResources.getString(R.string.nowplaying_no_playback),
                                     artist = currentSong?.displayArtist() ?: "",
                                     coverUrl = displayCoverUrl,
+                                    visualCoverUrl = playbackVisualCoverUrl,
+                                    coverIdentityKey = currentSongVisualKey,
+                                    visualCoverIdentityKey = playbackVisualCoverState.ownerSongKey,
+                                    hasCurrentSong = currentSong != null,
                                     isPlaying = isPlaybackControlPlaying,
                                     playPauseEnabled = !usbPlaybackPreparing,
                                     modifier = Modifier,
@@ -4413,11 +4582,15 @@ private fun NeriAppContent(
                                 .blockUnderlyingTouches()
                         ) {
                             val coverBlurAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                            val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
+                            var stableCoverUrl by remember { mutableStateOf<String?>(null) }
+                            var stableBlurStrength by remember { mutableStateOf<Float?>(null) }
+                            var coverBlurLoadFailed by remember { mutableStateOf(false) }
                             val hasCoverBlur =
                                 coverBlurAvailable &&
                                     nowPlayingCoverBlurBackgroundEnabled &&
-                                    !nowPlayingCoverUrl.isNullOrBlank()
-                            val blurStrength = nowPlayingCoverBlurAmount.coerceIn(0f, 500f)
+                                    (!nowPlayingCoverUrl.isNullOrBlank() ||
+                                        !stableCoverUrl.isNullOrBlank())
                             val effectiveBlurStrength = remember(nowPlayingCoverUrl, blurStrength) {
                                 resolvedNowPlayingBlurStrength(
                                     coverUrl = nowPlayingCoverUrl,
@@ -4431,14 +4604,24 @@ private fun NeriAppContent(
                                 isRemoteImageSource(nowPlayingCoverUrl)
                             }
                             val imageLoader = remember(context) { Coil.imageLoader(context) }
-                            var stableCoverUrl by remember { mutableStateOf<String?>(null) }
-                            var stableBlurStrength by remember { mutableStateOf<Float?>(null) }
-                            var coverBlurLoadFailed by remember { mutableStateOf(false) }
-                            val coverBlurRequestKey = remember(nowPlayingCoverUrl, effectiveBlurStrength) {
+                            val coverBlurAssetVersion = remember(
+                                coverAssetRefreshKey,
+                                currentSongVisualKey,
+                                nowPlayingCoverUrl
+                            ) {
+                                "$coverAssetRefreshKey:$currentSongVisualKey:$nowPlayingCoverUrl"
+                            }
+                            val coverBlurRequestKey = remember(
+                                nowPlayingCoverUrl,
+                                currentSongVisualKey,
+                                effectiveBlurStrength,
+                                coverBlurAssetVersion
+                            ) {
                                 if (nowPlayingCoverUrl.isNullOrBlank()) {
                                     null
                                 } else {
-                                    "nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength"
+                                    "nowplaying-blur:$currentSongVisualKey:$nowPlayingCoverUrl:" +
+                                        "$effectiveBlurStrength:$coverBlurAssetVersion"
                                 }
                             }
                             val latestCoverBlurRequestKey by rememberUpdatedState(coverBlurRequestKey)
@@ -4468,6 +4651,7 @@ private fun NeriAppContent(
                                 effectiveBlurStrength,
                                 blurImageSizePx,
                                 preloadCoverUrls,
+                                coverBlurAssetVersion,
                                 offlineMode
                             ) {
                                 if (!hasCoverBlur || preloadCoverUrls.isEmpty()) return@LaunchedEffect
@@ -4479,8 +4663,14 @@ private fun NeriAppContent(
                                             .bitmapConfig(Bitmap.Config.RGB_565)
                                             .size(blurImageSizePx)
                                             .precision(Precision.INEXACT)
-                                            .memoryCacheKey("nowplaying-blur:$url:$effectiveBlurStrength")
-                                            .diskCacheKey("nowplaying-blur:$url:$effectiveBlurStrength")
+                                            .memoryCacheKey(
+                                                "nowplaying-blur:$url:$effectiveBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
+                                            .diskCacheKey(
+                                                "nowplaying-blur:$url:$effectiveBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
                                             .memoryCachePolicy(CachePolicy.ENABLED)
                                             .diskCachePolicy(CachePolicy.ENABLED)
                                             .networkCachePolicy(
@@ -4502,12 +4692,35 @@ private fun NeriAppContent(
                                 }
                             }
 
-                            LaunchedEffect(hasCoverBlur, nowPlayingCoverUrl, effectiveBlurStrength) {
-                                if (!hasCoverBlur) {
+                            val latestBlurSongKey by rememberUpdatedState(currentSongVisualKey)
+                            val latestBlurCoverUrl by rememberUpdatedState(nowPlayingCoverUrl)
+                            LaunchedEffect(
+                                coverBlurAvailable,
+                                nowPlayingCoverBlurBackgroundEnabled,
+                                currentSongVisualKey,
+                                nowPlayingCoverUrl
+                            ) {
+                                if (!coverBlurAvailable || !nowPlayingCoverBlurBackgroundEnabled) {
                                     stableCoverUrl = null
                                     stableBlurStrength = null
                                     coverBlurLoadFailed = false
-                                } else {
+                                    return@LaunchedEffect
+                                }
+                                coverBlurLoadFailed = false
+                                if (currentSongVisualKey != null ||
+                                    !nowPlayingCoverUrl.isNullOrBlank()
+                                ) {
+                                    return@LaunchedEffect
+                                }
+                                delay(PLAYBACK_VISUAL_COVER_GRACE_MS)
+                                if (shouldClearNowPlayingBlurCover(
+                                        currentSongKey = latestBlurSongKey,
+                                        requestedCoverUrl = latestBlurCoverUrl,
+                                        clearDelayElapsed = true
+                                    )
+                                ) {
+                                    stableCoverUrl = null
+                                    stableBlurStrength = null
                                     coverBlurLoadFailed = false
                                 }
                             }
@@ -4520,7 +4733,8 @@ private fun NeriAppContent(
                                 NowPlayingAccentBackdrop(
                                     coverUrl = nowPlayingCoverUrl,
                                     isDark = true,
-                                    refreshKey = coverArtRefreshToken,
+                                    songKey = currentSongVisualKey,
+                                    refreshKey = coverAssetRefreshKey,
                                     modifier = Modifier.fillMaxSize(),
                                     offlineMode = offlineMode
                                 )
@@ -4531,7 +4745,8 @@ private fun NeriAppContent(
                                 NowPlayingAccentBackdrop(
                                     coverUrl = blurBackdropCoverUrl,
                                     isDark = true,
-                                    refreshKey = coverArtRefreshToken,
+                                    songKey = currentSongVisualKey,
+                                    refreshKey = coverAssetRefreshKey,
                                     modifier = Modifier.fillMaxSize(),
                                     offlineMode = offlineMode
                                 )
@@ -4549,8 +4764,14 @@ private fun NeriAppContent(
                                             .bitmapConfig(Bitmap.Config.RGB_565)
                                             .size(blurImageSizePx)
                                             .precision(Precision.INEXACT)
-                                            .memoryCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
-                                            .diskCacheKey("nowplaying-blur:$stableCoverUrl:$stableBlurStrength")
+                                            .memoryCacheKey(
+                                                "nowplaying-blur:$stableCoverUrl:$stableBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
+                                            .diskCacheKey(
+                                                "nowplaying-blur:$stableCoverUrl:$stableBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
                                             .networkCachePolicy(
                                                 if (offlineMode && isRemoteImageSource(stableCoverUrl)) {
                                                     CachePolicy.DISABLED
@@ -4571,47 +4792,55 @@ private fun NeriAppContent(
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(nowPlayingCoverUrl)
-                                        .crossfade(NOW_PLAYING_BACKGROUND_CROSSFADE_MS)
-                                        .allowHardware(false)
-                                        .bitmapConfig(Bitmap.Config.RGB_565)
-                                        .size(blurImageSizePx)
-                                        .precision(Precision.INEXACT)
-                                        .memoryCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength")
-                                        .diskCacheKey("nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength")
-                                        .networkCachePolicy(
-                                            if (offlineMode && isRemoteImageSource(nowPlayingCoverUrl)) {
-                                                CachePolicy.DISABLED
-                                            } else {
-                                                CachePolicy.ENABLED
+                                if (!nowPlayingCoverUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(nowPlayingCoverUrl)
+                                            .crossfade(NOW_PLAYING_BACKGROUND_CROSSFADE_MS)
+                                            .allowHardware(false)
+                                            .bitmapConfig(Bitmap.Config.RGB_565)
+                                            .size(blurImageSizePx)
+                                            .precision(Precision.INEXACT)
+                                            .memoryCacheKey(
+                                                "nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
+                                            .diskCacheKey(
+                                                "nowplaying-blur:$nowPlayingCoverUrl:$effectiveBlurStrength:" +
+                                                    coverBlurAssetVersion
+                                            )
+                                            .networkCachePolicy(
+                                                if (offlineMode && isRemoteImageSource(nowPlayingCoverUrl)) {
+                                                    CachePolicy.DISABLED
+                                                } else {
+                                                    CachePolicy.ENABLED
+                                                }
+                                            )
+                                            .transformations(
+                                                if (effectiveBlurStrength > 0f) {
+                                                    listOf(BlurTransformation(context, effectiveBlurStrength))
+                                                } else {
+                                                    emptyList()
+                                                }
+                                            )
+                                            .build(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onSuccess = {
+                                            if (latestCoverBlurRequestKey == coverBlurRequestKey) {
+                                                stableCoverUrl = nowPlayingCoverUrl
+                                                stableBlurStrength = effectiveBlurStrength
+                                                coverBlurLoadFailed = false
                                             }
-                                        )
-                                        .transformations(
-                                            if (effectiveBlurStrength > 0f) {
-                                                listOf(BlurTransformation(context, effectiveBlurStrength))
-                                            } else {
-                                                emptyList()
+                                        },
+                                        onError = {
+                                            if (latestCoverBlurRequestKey == coverBlurRequestKey) {
+                                                coverBlurLoadFailed = stableCoverUrl.isNullOrBlank()
                                             }
-                                        )
-                                        .build(),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onSuccess = {
-                                        if (latestCoverBlurRequestKey == coverBlurRequestKey) {
-                                            stableCoverUrl = nowPlayingCoverUrl
-                                            stableBlurStrength = effectiveBlurStrength
-                                            coverBlurLoadFailed = false
                                         }
-                                    },
-                                    onError = {
-                                        if (latestCoverBlurRequestKey == coverBlurRequestKey) {
-                                            coverBlurLoadFailed = stableCoverUrl.isNullOrBlank()
-                                        }
-                                    }
-                                )
+                                    )
+                                }
                                 if (nowPlayingCoverBlurDarken > 0f) {
                                     Box(
                                         modifier = Modifier
@@ -4626,8 +4855,9 @@ private fun NeriAppContent(
                                         .graphicsLayer { alpha = 0.80f },
                                     isDark = true,
                                     coverUrl = nowPlayingCoverUrl,
-                                    refreshKey = coverArtRefreshToken,
-                                    offlineMode = offlineMode
+                                    refreshKey = coverAssetRefreshKey,
+                                    offlineMode = offlineMode,
+                                    coverIdentityKey = currentSongVisualKey
                                 )
                             }
 
@@ -4666,7 +4896,9 @@ private fun NeriAppContent(
                                     offlineMode = offlineMode,
                                     resolvedCoverUrl = displayCoverUrl,
                                     visualCoverUrl = playbackVisualCoverUrl,
-                                    playbackSongKey = currentSongKey
+                                    playbackSongKey = currentSongVisualKey,
+                                    playbackSongKeyAliases = currentSongVisualKeyAliases,
+                                    visualCoverSongKey = playbackVisualCoverState.ownerSongKey
                                 )
                             }
                         }

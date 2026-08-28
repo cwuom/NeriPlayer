@@ -45,6 +45,7 @@ import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaMetadata
+import android.net.Uri
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
@@ -73,19 +74,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.net.URLDecoder
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.activity.MainActivity
 import moe.ouom.neriplayer.activity.shouldProcessUsbDeviceAttachedAction
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.core.player.PlayerManager.externalBluetoothLyricLineFlow
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.lifecycle.recoverUsbExclusivePlaybackIfUnhealthy
@@ -110,12 +116,16 @@ import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemVolumeBridge
 import moe.ouom.neriplayer.core.player.usb.system.UsbExclusiveSystemSoundGuard
 import moe.ouom.neriplayer.core.player.usb.transport.usbRuntimeMetrics
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
+import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
+import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.playbackVisualKey
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
 import moe.ouom.neriplayer.data.settings.PlaybackServiceIdleShutdownPreference
@@ -129,6 +139,7 @@ import moe.ouom.neriplayer.util.media.IsLandHelp
 import moe.ouom.neriplayer.util.media.buildRemoteSongShareUrl
 import moe.ouom.neriplayer.util.media.isShareablePublicHttpUrl
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.widget.playbackWidgetPresentationChanged
 import moe.ouom.neriplayer.widget.playbackWidgetProgressRefreshBucket
 import moe.ouom.neriplayer.widget.PlaybackWidgetState
@@ -219,6 +230,53 @@ private const val USB_EXCLUSIVE_KEEPALIVE_STALL_WARN_MS = 25_000L
 private const val USB_EXCLUSIVE_KEEPALIVE_STALL_RECOVERY_TICKS = 1
 private const val USB_EXCLUSIVE_KEEPALIVE_LOG_INTERVAL_TICKS = 3L
 private const val TASK_REMOVED_STATE_PERSIST_TIMEOUT_MS = 3_000L
+
+internal fun isLocalCoverReference(reference: String?): Boolean {
+    val normalized = reference?.trim().orEmpty()
+    return normalized.startsWith("content://", ignoreCase = true) ||
+        normalized.startsWith("file:", ignoreCase = true) ||
+        normalized.startsWith("/")
+}
+
+internal fun coverReferenceFileName(reference: String?): String? {
+    val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
+    val parsedSegment = runCatching { Uri.parse(normalized).lastPathSegment }
+        .getOrNull()
+    val rawSegment = parsedSegment
+        ?.takeIf(String::isNotBlank)
+        ?: normalized.substringAfterLast('/').takeIf(String::isNotBlank)
+        ?: return null
+    val decodedSegment = runCatching {
+        URLDecoder.decode(rawSegment.replace("+", "%2B"), "UTF-8")
+    }.getOrElse { Uri.decode(rawSegment) }
+    return decodedSegment
+        .substringAfterLast('/')
+        .trim()
+        .takeIf { it.isNotBlank() && it != "." && it != ".." }
+}
+
+internal fun shouldCommitCoverSourceRecovery(
+    currentSongKey: String?,
+    expectedSongKey: String,
+    currentCoverSource: String?,
+    expectedCoverSource: String?
+): Boolean {
+    return currentSongKey == expectedSongKey && currentCoverSource == expectedCoverSource
+}
+
+internal fun isArtworkReadyForSource(
+    artworkPresent: Boolean,
+    artworkOwnerSongKey: String?,
+    currentSongKey: String?,
+    artworkSource: String?,
+    requestedSource: String?
+): Boolean {
+    val normalizedRequestedSource = requestedSource?.trim()?.takeIf(String::isNotBlank)
+        ?: return false
+    return artworkPresent &&
+        artworkOwnerSongKey == currentSongKey &&
+        artworkSource == normalizedRequestedSource
+}
 
 internal fun isLocalPlaybackCommandSyncSource(
     source: String,
@@ -482,6 +540,39 @@ internal fun resolveMetadataCoverSource(
     }
 }
 
+internal fun resolveMetadataCoverSourceWithRecovery(
+    songKey: String?,
+    immediateCoverSource: String?,
+    retainedSongKey: String?,
+    retainedCoverSource: String?,
+    recoverySongKey: String?,
+    recoveryCoverSource: String?,
+    recoveryImmediateCoverSource: String?
+): String? {
+    val immediate = immediateCoverSource
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    val recoveryImmediate = recoveryImmediateCoverSource
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    val recovery = recoveryCoverSource
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+    if (
+        recoverySongKey == songKey &&
+            recovery != null &&
+            (immediate == null || immediate == recoveryImmediate)
+    ) {
+        return recovery
+    }
+    return resolveMetadataCoverSource(
+        songKey = songKey,
+        immediateCoverSource = immediate,
+        retainedSongKey = retainedSongKey,
+        retainedCoverSource = retainedCoverSource
+    )
+}
+
 internal fun shouldRequestArtworkLoad(
     coverSource: String?,
     artworkReady: Boolean,
@@ -489,20 +580,55 @@ internal fun shouldRequestArtworkLoad(
     lastFailedCoverSource: String?,
     lastFailureAtElapsedRealtime: Long,
     nowElapsedRealtime: Long,
-    retryCooldownMs: Long = MEDIA_ARTWORK_RETRY_COOLDOWN_MS
+    retryCooldownMs: Long = MEDIA_ARTWORK_RETRY_COOLDOWN_MS,
+    currentSongKey: String? = null,
+    inFlightSongKey: String? = null,
+    lastFailedSongKey: String? = null,
 ): Boolean {
     val normalizedSource = coverSource?.trim()?.takeIf { it.isNotEmpty() } ?: return false
     if (artworkReady) {
         return false
     }
-    if (inFlightCoverSource == normalizedSource) {
+    if (
+        inFlightCoverSource == normalizedSource &&
+        (inFlightSongKey == null || inFlightSongKey == currentSongKey)
+    ) {
         return false
     }
-    if (lastFailedCoverSource != normalizedSource || lastFailureAtElapsedRealtime <= 0L) {
+    if (
+        lastFailedCoverSource != normalizedSource ||
+        (lastFailedSongKey != null && lastFailedSongKey != currentSongKey) ||
+        lastFailureAtElapsedRealtime <= 0L
+    ) {
         return true
     }
     val elapsed = nowElapsedRealtime - lastFailureAtElapsedRealtime
     return elapsed !in 0L..<retryCooldownMs
+}
+
+internal fun shouldDeferArtworkRetryToCoverResolver(
+    isLocalCover: Boolean,
+    coverResolutionRequested: Boolean
+): Boolean = isLocalCover && coverResolutionRequested
+
+internal fun shouldAllowServiceRemoteCoverFallback(
+    isLocalSong: Boolean,
+    hasExplicitCustomCover: Boolean
+): Boolean = !isLocalSong || hasExplicitCustomCover
+
+internal fun shouldAcceptArtworkLoadCallback(
+    requestGeneration: Long,
+    currentGeneration: Long,
+    inFlightGeneration: Long,
+    requestSource: String?,
+    inFlightSource: String?,
+    requestSongKey: String?,
+    inFlightSongKey: String?
+): Boolean {
+    return requestGeneration == currentGeneration &&
+        requestGeneration == inFlightGeneration &&
+        requestSource == inFlightSource &&
+        requestSongKey == inFlightSongKey
 }
 
 internal fun resolveRemoteMetadataArtworkUri(coverSource: String?): String? {
@@ -718,14 +844,27 @@ class AudioPlayerService : Service() {
     private var currentCoverSongKey: String? = null
     private var currentCoverSource: String? = null
     private var currentMediaArtwork: Bitmap? = null
+    private var currentMediaArtworkOwnerSongKey: String? = null
+    private var currentMediaArtworkSource: String? = null
     private var currentNotificationLargeIcon: Bitmap? = null
+    private var currentNotificationLargeIconOwnerSongKey: String? = null
+    private var currentNotificationLargeIconSource: String? = null
     private var artworkLoadInFlightSource: String? = null
+    private var artworkLoadInFlightSongKey: String? = null
+    private var artworkLoadInFlightGeneration: Long = 0L
+    private var artworkLoadGeneration: Long = 0L
     private var artworkLoadJob: Job? = null
     private var lastArtworkLoadFailedSource: String? = null
+    private var lastArtworkLoadFailedSongKey: String? = null
     private var lastArtworkLoadFailedAtElapsedRealtime: Long = -1L
     private var artworkRetryJob: Job? = null
     private var artworkRetryAttemptCount: Int = 0
     private var coverResolutionInFlightSongKey: String? = null
+    private var coverResolutionJob: Job? = null
+    private var coverResolutionGeneration: Long = 0L
+    private var recoveredCoverSongKey: String? = null
+    private var recoveredCoverSource: String? = null
+    private var recoveredCoverImmediateSource: String? = null
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, throwable ->
             NPLogger.e("NERI-AudioService", "Uncaught coroutine exception in serviceScope", throwable)
@@ -2253,7 +2392,13 @@ class AudioPlayerService : Service() {
             isAudioRouteMuted = PlayerManager.audioRouteMuteSuppressedFlow.value,
             isFavorite = isFavoriteSong(song),
             requiresInteractiveFavoriteConfirmation = requiresInteractiveFavoriteConfirmation(song),
-            largeIconReady = currentNotificationLargeIcon != null,
+            largeIconReady = isArtworkReadyForSource(
+                artworkPresent = currentNotificationLargeIcon != null,
+                artworkOwnerSongKey = currentNotificationLargeIconOwnerSongKey,
+                currentSongKey = song?.playbackVisualKey(),
+                artworkSource = currentNotificationLargeIconSource,
+                requestedSource = currentCoverSource,
+            ),
             coverSource = currentCoverSource,
             statusBarLyricState = currentStatusBarLyricState,
             floatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
@@ -2324,27 +2469,48 @@ class AudioPlayerService : Service() {
             isFavorite = isFavoriteSong(song),
             canToggleFavorite = canToggleFavoriteFromExternalSurface(song),
             isFloatingLyricsEnabled = isFloatingLyricsCurrentlyEnabled(),
-            artworkReady = currentNotificationLargeIcon != null,
+            artworkReady = isArtworkReadyForSource(
+                artworkPresent = currentNotificationLargeIcon != null,
+                artworkOwnerSongKey = currentNotificationLargeIconOwnerSongKey,
+                currentSongKey = song?.playbackVisualKey(),
+                artworkSource = currentNotificationLargeIconSource,
+                requestedSource = currentCoverSource,
+            ),
             contentId = song?.stableKey().orEmpty(),
             coverId = currentCoverSource.orEmpty(),
             artworkPending = song != null && (
                 !currentCoverSource.isNullOrBlank() ||
-                    coverResolutionInFlightSongKey == song.stableKey()
+                    coverResolutionInFlightSongKey == song.playbackVisualKey()
                 ),
         )
     }
 
     private fun updateMetadata() {
         val song = playbackSurfaceSong()
-        val songKey = song?.stableKey()
+        val songKey = song?.playbackVisualKey()
         val duration = song?.durationMs ?: 0L
         val immediateCoverSource = song.effectiveCoverSource()
-        val coverSource = resolveMetadataCoverSource(
+        val coverSource = resolveMetadataCoverSourceWithRecovery(
             songKey = songKey,
             immediateCoverSource = immediateCoverSource,
             retainedSongKey = currentCoverSongKey,
             retainedCoverSource = currentCoverSource,
+            recoverySongKey = recoveredCoverSongKey,
+            recoveryCoverSource = recoveredCoverSource,
+            recoveryImmediateCoverSource = recoveredCoverImmediateSource,
         )
+
+        if (
+            recoveredCoverSongKey != songKey ||
+                (
+                    recoveredCoverSongKey == songKey &&
+                        immediateCoverSource?.trim() != recoveredCoverImmediateSource
+                    )
+        ) {
+            recoveredCoverSongKey = null
+            recoveredCoverSource = null
+            recoveredCoverImmediateSource = null
+        }
 
         if (songKey != currentCoverSongKey || coverSource != currentCoverSource) {
             val songChanged = songKey != currentCoverSongKey
@@ -2352,20 +2518,44 @@ class AudioPlayerService : Service() {
             currentCoverSongKey = songKey
             currentCoverSource = coverSource
             if (songChanged || sourceChanged) {
-                currentMediaArtwork = null
-                currentNotificationLargeIcon = null
+                coverResolutionGeneration += 1L
+                coverResolutionJob?.cancel()
+                coverResolutionJob = null
+                coverResolutionInFlightSongKey = null
                 artworkLoadInFlightSource = null
+                artworkLoadInFlightSongKey = null
+                artworkLoadInFlightGeneration = 0L
+                artworkLoadGeneration += 1L
                 artworkLoadJob?.cancel()
                 artworkLoadJob = null
                 artworkRetryJob?.cancel()
                 artworkRetryJob = null
                 artworkRetryAttemptCount = 0
+                lastArtworkLoadFailedSource = null
+                lastArtworkLoadFailedSongKey = null
+                lastArtworkLoadFailedAtElapsedRealtime = -1L
             }
         }
         if (song == null) {
+            coverResolutionJob?.cancel()
+            coverResolutionJob = null
             coverResolutionInFlightSongKey = null
+            currentMediaArtwork = null
+            currentMediaArtworkOwnerSongKey = null
+            currentMediaArtworkSource = null
+            currentNotificationLargeIcon = null
+            currentNotificationLargeIconOwnerSongKey = null
+            currentNotificationLargeIconSource = null
+            lastArtworkLoadFailedSource = null
+            lastArtworkLoadFailedSongKey = null
+            lastArtworkLoadFailedAtElapsedRealtime = -1L
+            recoveredCoverSongKey = null
+            recoveredCoverSource = null
+            recoveredCoverImmediateSource = null
+            artworkLoadGeneration += 1L
+            coverResolutionGeneration += 1L
         } else {
-            resolveCoverSourceAsyncIfNeeded(song, song.stableKey(), immediateCoverSource)
+            resolveCoverSourceAsyncIfNeeded(song, song.playbackVisualKey(), immediateCoverSource)
         }
         requestLargeIconIfNeeded(currentCoverSource)
 
@@ -2393,7 +2583,13 @@ class AudioPlayerService : Service() {
             displayDescription = metadataText.displayDescription,
             durationMs = duration,
             coverSource = currentCoverSource,
-            largeIconReady = currentMediaArtwork != null,
+            largeIconReady = isArtworkReadyForSource(
+                artworkPresent = currentMediaArtwork != null,
+                artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
+                currentSongKey = songKey,
+                artworkSource = currentMediaArtworkSource,
+                requestedSource = currentCoverSource,
+            ),
         )
         if (snapshot == lastMetadataSnapshot) {
             return
@@ -2409,7 +2605,18 @@ class AudioPlayerService : Service() {
                 metadataText.displaySubtitle
             )
             .putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
-            .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, currentMediaArtwork)
+            .putBitmap(
+                MediaMetadata.METADATA_KEY_ALBUM_ART,
+                currentMediaArtwork?.takeIf {
+                    isArtworkReadyForSource(
+                        artworkPresent = true,
+                        artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
+                        currentSongKey = songKey,
+                        artworkSource = currentMediaArtworkSource,
+                        requestedSource = currentCoverSource,
+                    )
+                }
+            )
 
         metadataText.album?.let { album ->
             metadataBuilder.putString(MediaMetadata.METADATA_KEY_ALBUM, album)
@@ -2435,52 +2642,255 @@ class AudioPlayerService : Service() {
     private fun resolveCoverSourceAsyncIfNeeded(
         song: SongItem,
         songKey: String,
-        immediateCoverSource: String?
+        immediateCoverSource: String?,
+        forceRefresh: Boolean = false,
+        expectedCoverSource: String? = currentCoverSource,
     ) {
-        if (!immediateCoverSource.isNullOrBlank()) {
+        if (!forceRefresh && !immediateCoverSource.isNullOrBlank()) {
             return
         }
-        if (coverResolutionInFlightSongKey == songKey) {
+        if (forceRefresh && !LocalSongSupport.isLocalSong(song, this)) {
             return
         }
-        if (currentCoverSongKey == songKey && !currentCoverSource.isNullOrBlank()) {
+        if (coverResolutionInFlightSongKey == songKey && coverResolutionJob?.isActive == true) {
+            if (!forceRefresh) {
+                return
+            }
+            coverResolutionJob?.cancel()
+        }
+        if (!forceRefresh && currentCoverSongKey == songKey && !currentCoverSource.isNullOrBlank()) {
             return
         }
 
+        val requestGeneration = ++coverResolutionGeneration
         coverResolutionInFlightSongKey = songKey
         val appCtx = applicationContext
-        serviceScope.launch(Dispatchers.IO) {
-            val resolvedCoverSource = runCatching {
-                song.displayCoverUrl(appCtx)?.takeIf { it.isNotBlank() }
-            }.getOrElse {
-                NPLogger.d("NERI-APS", "Deferred cover resolve failed: ${it.message}")
-                null
-            }
-            withContext(Dispatchers.Main) {
-                if (coverResolutionInFlightSongKey == songKey) {
-                    coverResolutionInFlightSongKey = null
+        val job = serviceScope.launch {
+            try {
+                val resolvedCoverSource = try {
+                    withContext(Dispatchers.IO) {
+                        resolveServiceCoverSource(
+                            context = appCtx,
+                            song = song,
+                            failedSource = immediateCoverSource,
+                        )
+                    }
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) {
+                        throw error
+                    }
+                    NPLogger.d(
+                        "NERI-APS",
+                        "Deferred cover resolve failed: ${error.message}"
+                    )
+                    null
+                }
+                if (requestGeneration != coverResolutionGeneration) {
+                    return@launch
                 }
                 val currentSurfaceSong = playbackSurfaceSong()
-                if (currentSurfaceSong?.stableKey() != songKey || resolvedCoverSource.isNullOrBlank()) {
+                if (
+                    !shouldCommitCoverSourceRecovery(
+                        currentSongKey = currentSurfaceSong?.playbackVisualKey(),
+                        expectedSongKey = songKey,
+                        currentCoverSource = currentCoverSource,
+                        expectedCoverSource = expectedCoverSource,
+                    ) || resolvedCoverSource.isNullOrBlank()
+                ) {
                     if (
-                        currentSurfaceSong?.stableKey() == songKey &&
+                        currentSurfaceSong?.playbackVisualKey() == songKey &&
                         resolvedCoverSource.isNullOrBlank()
                     ) {
                         updatePlaybackWidget(force = true)
+                        if (
+                            !immediateCoverSource.isNullOrBlank() &&
+                            currentCoverSource == expectedCoverSource
+                        ) {
+                            // 等解析任务结束后再重试旧引用, 避免与 SAF 扫描并发
+                            scheduleArtworkRetry(immediateCoverSource, songKey)
+                        }
                     }
-                    return@withContext
+                    return@launch
                 }
                 if (currentCoverSongKey == songKey && currentCoverSource == resolvedCoverSource) {
                     requestLargeIconIfNeeded(resolvedCoverSource)
-                    return@withContext
+                    return@launch
                 }
+                recoveredCoverSongKey = songKey
+                recoveredCoverSource = resolvedCoverSource.trim()
+                recoveredCoverImmediateSource = immediateCoverSource
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
                 currentCoverSongKey = songKey
-                currentCoverSource = resolvedCoverSource
-                currentMediaArtwork = null
-                currentNotificationLargeIcon = null
+                currentCoverSource = resolvedCoverSource.trim()
                 lastMetadataSnapshot = null
                 updateMetadata()
                 updateNotification()
+            } finally {
+                if (requestGeneration == coverResolutionGeneration) {
+                    coverResolutionInFlightSongKey = null
+                    coverResolutionJob = null
+                }
+            }
+        }
+        coverResolutionJob = job
+    }
+
+    private suspend fun resolveServiceCoverSource(
+        context: Context,
+        song: SongItem,
+        failedSource: String?
+    ): String? {
+        val isLocalSong = LocalSongSupport.isLocalSong(song, context)
+        fun readLocalCandidate(read: () -> String?): String? {
+            return try {
+                read()
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        }
+        fun usable(candidate: String?): String? {
+            val normalized = candidate
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return null
+            return normalized.takeIf {
+                isUsableServiceCoverCandidate(
+                    context = context,
+                    candidate = it,
+                    failedSource = failedSource
+                )
+            }
+        }
+
+        if (isLocalSong) {
+            val fastLocalCandidate = sequenceOf(
+                readLocalCandidate { AudioDownloadManager.peekLocalCoverUri(song) },
+                readLocalCandidate {
+                    LocalMediaSupport.resolveNearbyCoverUri(context, song)
+                }
+            ).firstNotNullOfOrNull(::usable)
+            if (fastLocalCandidate != null) {
+                return fastLocalCandidate
+            }
+        }
+
+        currentCoroutineContext().ensureActive()
+        val localResolved = try {
+            LocalMediaSupport.resolveCoverUri(context, song)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+        if (isUsableServiceCoverCandidate(context, localResolved, failedSource)) {
+            return localResolved?.trim()
+        }
+
+        currentCoroutineContext().ensureActive()
+        val cachedDownloadedSong = GlobalDownloadManager.findDownloadedSongCached(song)
+        val indexedReferences = listOfNotNull(
+            cachedDownloadedSong?.coverPath,
+            song.customCoverUrl,
+            song.coverUrl
+        ).mapNotNull { reference ->
+            reference.trim().takeIf(::isLocalCoverReference)
+        }.distinct()
+        var reboundReference: String? = null
+        for (indexedReference in indexedReferences) {
+            currentCoroutineContext().ensureActive()
+            val fileName = coverReferenceFileName(indexedReference) ?: continue
+            val cachedReference = try {
+                ManagedDownloadStorage.findCoverReferenceByFileName(
+                    context = context,
+                    fileName = fileName,
+                    forceRefresh = false
+                )
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.d(
+                    "NERI-APS",
+                    "Cached managed cover lookup failed: file=$fileName, " +
+                        "message=${error.message}"
+                )
+                null
+            }
+            reboundReference = usable(cachedReference)
+            if (reboundReference == null) {
+                currentCoroutineContext().ensureActive()
+                reboundReference = try {
+                    val refreshedReference = ManagedDownloadStorage.findCoverReferenceByFileName(
+                        context = context,
+                        fileName = fileName,
+                        forceRefresh = true,
+                        preferSidecarRefresh = true
+                    )
+                    currentCoroutineContext().ensureActive()
+                    usable(refreshedReference)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    NPLogger.d(
+                        "NERI-APS",
+                        "Rebinding managed cover failed: file=$fileName, " +
+                            "message=${error.message}"
+                    )
+                    null
+                }
+            }
+            if (reboundReference != null) break
+        }
+        if (isUsableServiceCoverCandidate(context, reboundReference, failedSource)) {
+            return reboundReference?.trim()
+        }
+
+        val hasExplicitCustomCover = resolveRemoteMetadataArtworkUri(song.customCoverUrl) != null
+        if (!shouldAllowServiceRemoteCoverFallback(isLocalSong, hasExplicitCustomCover)) {
+            NPLogger.d(
+                "NERI-APS",
+                "Skip remote cover fallback for local song: key=${song.playbackVisualKey()}"
+            )
+            return null
+        }
+        val remoteCandidates = if (isLocalSong) {
+            listOfNotNull(song.customCoverUrl)
+        } else {
+            listOfNotNull(
+                song.customCoverUrl,
+                cachedDownloadedSong?.coverUrl,
+                song.coverUrl,
+                song.originalCoverUrl,
+            )
+        }
+        val remoteFallback = remoteCandidates.firstOrNull { candidate ->
+            val normalized = candidate.trim().takeIf(String::isNotBlank) ?: return@firstOrNull false
+            resolveRemoteMetadataArtworkUri(normalized) != null &&
+                !normalized.equals(failedSource?.trim(), ignoreCase = false)
+        }
+        return remoteFallback
+    }
+
+    private fun isUsableServiceCoverCandidate(
+        context: Context,
+        candidate: String?,
+        failedSource: String?
+    ): Boolean {
+        val normalized = candidate?.trim()?.takeIf(String::isNotBlank) ?: return false
+        if (normalized == failedSource?.trim()) {
+            return false
+        }
+        return if (resolveRemoteMetadataArtworkUri(normalized) != null) {
+            true
+        } else {
+            try {
+                isUsableCoverReference(context, normalized)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                false
             }
         }
     }
@@ -2578,24 +2988,39 @@ class AudioPlayerService : Service() {
     }
 
     private fun requestLargeIconIfNeeded(url: String?) {
+        val normalizedUrl = url?.trim()?.takeIf(String::isNotBlank) ?: return
         if (
             !shouldRequestArtworkLoad(
-                coverSource = url,
-                artworkReady = currentMediaArtwork != null,
+                coverSource = normalizedUrl,
+                artworkReady = isArtworkReadyForSource(
+                    artworkPresent = currentMediaArtwork != null,
+                    artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
+                    currentSongKey = currentCoverSongKey,
+                    artworkSource = currentMediaArtworkSource,
+                    requestedSource = normalizedUrl,
+                ),
                 inFlightCoverSource = artworkLoadInFlightSource,
                 lastFailedCoverSource = lastArtworkLoadFailedSource,
                 lastFailureAtElapsedRealtime = lastArtworkLoadFailedAtElapsedRealtime,
                 nowElapsedRealtime = SystemClock.elapsedRealtime(),
+                currentSongKey = currentCoverSongKey,
+                inFlightSongKey = artworkLoadInFlightSongKey,
+                lastFailedSongKey = lastArtworkLoadFailedSongKey,
             )
         ) {
             return
         }
-        requestLargeIconAsync(url ?: return)
+        requestLargeIconAsync(normalizedUrl, currentCoverSongKey)
     }
 
-    private fun requestLargeIconAsync(url: String) {
+    private fun requestLargeIconAsync(url: String, songKey: String?) {
         val appCtx = applicationContext
+        val requestSongKey = songKey
+        val requestGeneration = artworkLoadGeneration + 1L
+        artworkLoadGeneration = requestGeneration
         artworkLoadInFlightSource = url
+        artworkLoadInFlightSongKey = requestSongKey
+        artworkLoadInFlightGeneration = requestGeneration
         artworkLoadJob?.cancel()
         artworkLoadJob = serviceScope.launch(Dispatchers.IO) {
             try {
@@ -2610,27 +3035,53 @@ class AudioPlayerService : Service() {
                 val result = loader.execute(request)
                 val drawable = result.drawable ?: run {
                     withContext(Dispatchers.Main) {
-                        markArtworkLoadFailed(url, "drawable was null")
+                        markArtworkLoadFailed(
+                            url = url,
+                            reason = "drawable was null",
+                            requestSongKey = requestSongKey,
+                            requestGeneration = requestGeneration,
+                        )
                     }
                     return@launch
                 }
-                val bmp = drawable.toBitmap()
+                val bmp = checkNotNull(copyBitmapForRetainedDisplay(drawable.toBitmap())) {
+                    "Coil returned a recycled artwork bitmap"
+                }
                 val notificationBmp = bmp.scaledToMaxDimension(NOTIFICATION_ARTWORK_SIZE_PX)
                 withContext(Dispatchers.Main) {
-                    if (artworkLoadInFlightSource == url) {
+                    if (!shouldAcceptArtworkLoadCallback(
+                            requestGeneration = requestGeneration,
+                            currentGeneration = artworkLoadGeneration,
+                            inFlightGeneration = artworkLoadInFlightGeneration,
+                            requestSource = url,
+                            inFlightSource = artworkLoadInFlightSource,
+                            requestSongKey = requestSongKey,
+                            inFlightSongKey = artworkLoadInFlightSongKey
+                        )
+                    ) {
+                        return@withContext
+                    }
+                    if (artworkLoadInFlightGeneration == requestGeneration) {
                         artworkLoadInFlightSource = null
+                        artworkLoadInFlightSongKey = null
+                        artworkLoadInFlightGeneration = 0L
                     }
                     if (artworkLoadJob === coroutineContext[Job]) {
                         artworkLoadJob = null
                     }
-                    if (url == currentCoverSource) {
+                    if (url == currentCoverSource && requestSongKey == currentCoverSongKey) {
                         lastArtworkLoadFailedSource = null
+                        lastArtworkLoadFailedSongKey = null
                         lastArtworkLoadFailedAtElapsedRealtime = -1L
                         artworkRetryJob?.cancel()
                         artworkRetryJob = null
                         artworkRetryAttemptCount = 0
                         currentMediaArtwork = bmp
+                        currentMediaArtworkOwnerSongKey = requestSongKey
+                        currentMediaArtworkSource = url
                         currentNotificationLargeIcon = notificationBmp
+                        currentNotificationLargeIconOwnerSongKey = requestSongKey
+                        currentNotificationLargeIconSource = url
                         updateMetadata()
                         updateNotification()
                     }
@@ -2640,30 +3091,86 @@ class AudioPlayerService : Service() {
                     "NERI-APS",
                     "cover bitmap=${bmp.width}x${bmp.height}, bytes=${bmp.byteCount / 1024 / 1024}MB"
                 )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     if (artworkLoadJob === coroutineContext[Job]) {
                         artworkLoadJob = null
                     }
-                    markArtworkLoadFailed(url, e.message)
+                    markArtworkLoadFailed(
+                        url = url,
+                        reason = e.message,
+                        requestSongKey = requestSongKey,
+                        requestGeneration = requestGeneration,
+                    )
                 }
             }
         }
     }
 
-    private fun markArtworkLoadFailed(url: String, reason: String?) {
-        if (artworkLoadInFlightSource == url) {
-            artworkLoadInFlightSource = null
+    private fun markArtworkLoadFailed(
+        url: String,
+        reason: String?,
+        requestSongKey: String?,
+        requestGeneration: Long
+    ) {
+        if (!shouldAcceptArtworkLoadCallback(
+                requestGeneration = requestGeneration,
+                currentGeneration = artworkLoadGeneration,
+                inFlightGeneration = artworkLoadInFlightGeneration,
+                requestSource = url,
+                inFlightSource = artworkLoadInFlightSource,
+                requestSongKey = requestSongKey,
+                inFlightSongKey = artworkLoadInFlightSongKey
+            )
+        ) {
+            return
         }
-        if (url == currentCoverSource) {
+        if (artworkLoadInFlightGeneration == requestGeneration) {
+            artworkLoadInFlightSource = null
+            artworkLoadInFlightSongKey = null
+            artworkLoadInFlightGeneration = 0L
+        }
+        if (url == currentCoverSource && requestSongKey == currentCoverSongKey) {
             lastArtworkLoadFailedSource = url
+            lastArtworkLoadFailedSongKey = requestSongKey
             lastArtworkLoadFailedAtElapsedRealtime = SystemClock.elapsedRealtime()
-            scheduleArtworkRetry(url)
+            val currentSong = playbackSurfaceSong()
+            val localSong = currentSong != null &&
+                LocalSongSupport.isLocalSong(currentSong, this)
+            val explicitCustomRemoteCover = currentSong?.customCoverUrl
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.let { custom ->
+                    custom == url && resolveRemoteMetadataArtworkUri(custom) != null
+                } == true
+            val coverResolutionRequested =
+                currentSong != null &&
+                localSong &&
+                    !explicitCustomRemoteCover &&
+                    currentSong.playbackVisualKey() == requestSongKey
+            if (coverResolutionRequested) {
+                resolveCoverSourceAsyncIfNeeded(
+                    song = currentSong,
+                    songKey = requestSongKey,
+                    immediateCoverSource = url,
+                    forceRefresh = true,
+                    expectedCoverSource = url,
+                )
+            }
+            if (!shouldDeferArtworkRetryToCoverResolver(
+                    isLocalCover = localSong && !explicitCustomRemoteCover,
+                    coverResolutionRequested = coverResolutionRequested
+                )
+            ) {
+                scheduleArtworkRetry(url, requestSongKey)
+            }
         }
         NPLogger.d("NERI-APS", "Cover load failed: ${reason ?: "unknown"}")
     }
 
-    private fun scheduleArtworkRetry(url: String) {
+    private fun scheduleArtworkRetry(url: String, songKey: String?) {
         if (artworkRetryAttemptCount >= MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS) {
             return
         }
@@ -2671,7 +3178,15 @@ class AudioPlayerService : Service() {
         artworkRetryJob?.cancel()
         artworkRetryJob = serviceScope.launch {
             delay(MEDIA_ARTWORK_RETRY_COOLDOWN_MS)
-            if (url != currentCoverSource || currentMediaArtwork != null) {
+            if (url != currentCoverSource || songKey != currentCoverSongKey) return@launch
+            if (isArtworkReadyForSource(
+                    artworkPresent = currentMediaArtwork != null,
+                    artworkOwnerSongKey = currentMediaArtworkOwnerSongKey,
+                    currentSongKey = currentCoverSongKey,
+                    artworkSource = currentMediaArtworkSource,
+                    requestedSource = url,
+                )
+            ) {
                 return@launch
             }
             requestLargeIconIfNeeded(url)
@@ -2692,6 +3207,24 @@ class AudioPlayerService : Service() {
 
     private fun SongItem?.effectiveCoverSource(): String? {
         val song = this ?: return null
+        val customCover = song.customCoverUrl
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.takeUnless { CustomSongCoverStorage.isDirectoryReference(it) }
+        val localSong = LocalSongSupport.isLocalSong(song, this@AudioPlayerService)
+        if (localSong) {
+            // 本地歌曲的远端平台封面可能已经失效, 播放时先使用可验证的本地资产
+            customCover?.let { return it }
+            runCatching { AudioDownloadManager.peekLocalCoverUri(song) }
+                .getOrNull()
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.let { return it }
+            return song.displayCoverUrl(this@AudioPlayerService)
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?.takeUnless { resolveRemoteMetadataArtworkUri(it) != null }
+        }
         return song.displayCoverUrl(this@AudioPlayerService)?.takeIf { it.isNotBlank() }
     }
 
@@ -2817,6 +3350,8 @@ class AudioPlayerService : Service() {
             usbExclusiveKeepAliveJob?.cancel()
             usbExclusiveKeepAliveJob = null
             UsbExclusiveBackgroundAudioAnchor.stop("service_destroy")
+            coverResolutionJob?.cancel()
+            coverResolutionJob = null
             artworkLoadJob?.cancel()
             artworkLoadJob = null
             serviceScope.cancel()
@@ -2848,7 +3383,14 @@ class AudioPlayerService : Service() {
             playerRuntimeReady = false
             favoriteSongKeys = emptySet()
             currentMediaArtwork = null
+            currentMediaArtworkOwnerSongKey = null
+            currentMediaArtworkSource = null
             currentNotificationLargeIcon = null
+            currentNotificationLargeIconOwnerSongKey = null
+            currentNotificationLargeIconSource = null
+            lastArtworkLoadFailedSource = null
+            lastArtworkLoadFailedSongKey = null
+            lastArtworkLoadFailedAtElapsedRealtime = -1L
             shutdownUsbRuntime("service_destroy")
             super.onDestroy()
         }

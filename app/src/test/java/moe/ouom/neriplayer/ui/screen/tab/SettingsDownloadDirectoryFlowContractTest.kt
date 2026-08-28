@@ -1,6 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import java.io.File
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,8 +29,9 @@ class SettingsDownloadDirectoryFlowContractTest {
             resetFlow.indexOf("isPreparing = true") <
                 resetFlow.indexOf("scope.launch")
         )
-        assertTrue(source.contains("if (controller.isPreparing)"))
+        assertTrue(source.contains("processingPresentation.showPreparation"))
         assertTrue(source.contains("R.string.settings_download_directory_preparing_desc"))
+        assertTrue(source.contains("onCancelPreparation"))
     }
 
     @Test
@@ -81,6 +85,9 @@ class SettingsDownloadDirectoryFlowContractTest {
         )
         assertTrue(source.contains("val activeMigrationProgress = controller.migrationProgress"))
         assertTrue(source.contains("persistedMigrationProgress = null"))
+        assertTrue(source.contains("ManagedLibraryProcessingDetailsCard("))
+        assertTrue(source.contains("val stageText = when (migrationProgress?.stage)"))
+        assertTrue(source.contains("val currentFileSummary = migrationProgress?.currentFileName"))
     }
 
     @Test
@@ -213,6 +220,68 @@ class SettingsDownloadDirectoryFlowContractTest {
                     retryCopy.contains("retry automatically", ignoreCase = true)
             )
         }
+    }
+
+    @Test
+    fun `shared processing state suppresses duplicate local dialogs`() {
+        val state = ManagedLibraryProcessingState.Running(
+            operationId = "operation",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+        )
+
+        val presentation = resolveDownloadDirectoryProcessingPresentation(
+            isPreparing = true,
+            isMigrating = true,
+            processingState = state,
+            migrationProgress = null
+        )
+
+        assertFalse(presentation.showPreparation)
+        assertFalse(presentation.showMigration)
+        assertTrue(presentation.usesSharedProcessing)
+    }
+
+    @Test
+    fun `local migration dialog is visible only before shared worker starts`() {
+        val presentation = resolveDownloadDirectoryProcessingPresentation(
+            isPreparing = false,
+            isMigrating = true,
+            processingState = ManagedLibraryProcessingState.Idle,
+            migrationProgress = null
+        )
+
+        assertFalse(presentation.showPreparation)
+        assertTrue(presentation.showMigration)
+        assertFalse(presentation.usesSharedProcessing)
+    }
+
+    @Test
+    fun `preparation dialog remains available while probes are running`() {
+        val presentation = resolveDownloadDirectoryProcessingPresentation(
+            isPreparing = true,
+            isMigrating = false,
+            processingState = ManagedLibraryProcessingState.Idle,
+            migrationProgress = null
+        )
+
+        assertTrue(presentation.showPreparation)
+        assertFalse(presentation.showMigration)
+    }
+
+    @Test
+    fun `directory summary probe is bounded and migration progress feeds shared counts`() {
+        val source = settingsSource()
+
+        assertTrue(
+            source.contains(
+                "ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)"
+            )
+        )
+        assertTrue(source.contains("directoryProbeTimeoutFailure("))
+        assertTrue(source.contains("ManagedLibraryProcessingCoordinator.updateProgress("))
+        assertTrue(source.contains("progress.processedFiles.coerceAtLeast(0)"))
+        assertTrue(source.contains("progress.totalFiles.coerceAtLeast(0)"))
     }
 
     private fun pickerFlow(source: String): String {

@@ -8,6 +8,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -224,6 +225,57 @@ class AudioDownloadManagerSidecarReferenceTest {
 
         assertEquals(storedEntry, AudioDownloadManager.consumeCompletedAudioReference(songKey))
         assertNull(AudioDownloadManager.consumeCompletedAudioReference(songKey))
+    }
+
+    @Test
+    fun `completed audio reference stays available for the completion callback race`() {
+        val songKey = "race-song-key"
+        AudioDownloadManager.releaseCompletedAudioReference(songKey)
+        val storedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Race - Song.mp3",
+            reference = "/downloads/Race - Song.mp3",
+            mediaUri = "file:///downloads/Race%20-%20Song.mp3",
+            localFilePath = "/downloads/Race - Song.mp3",
+            sizeBytes = 1024L,
+            lastModifiedMs = 43L
+        )
+
+        AudioDownloadManager.rememberCompletedAudioReference(songKey, storedEntry)
+
+        assertEquals(storedEntry, AudioDownloadManager.peekCompletedAudioReference(songKey))
+        AudioDownloadManager.releaseCompletedAudioReference(songKey, storedEntry)
+        assertNull(AudioDownloadManager.peekCompletedAudioReference(songKey))
+    }
+
+    @Test
+    fun `completed audio reference is found by local URI when queue identity changes`() {
+        val songKey = "download-origin-key"
+        AudioDownloadManager.releaseCompletedAudioReference(songKey)
+        val storedEntry = ManagedDownloadStorage.StoredEntry(
+            name = "Race - Song.mp3",
+            reference = "/downloads/Race - Song.mp3",
+            mediaUri = "file:///downloads/Race%20-%20Song.mp3",
+            localFilePath = "/downloads/Race - Song.mp3",
+            sizeBytes = 1024L,
+            lastModifiedMs = 44L
+        )
+        val queuedSong = SongItem(
+            id = 999L,
+            name = "Race - Song",
+            artist = "Race",
+            album = "New queue identity",
+            albumId = 999L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = storedEntry.mediaUri,
+            localFilePath = storedEntry.localFilePath
+        )
+
+        AudioDownloadManager.rememberCompletedAudioReference(songKey, storedEntry)
+
+        assertEquals(storedEntry, AudioDownloadManager.peekCompletedAudioReference(queuedSong))
+        AudioDownloadManager.releaseCompletedAudioReference(songKey, storedEntry)
+        assertNull(AudioDownloadManager.peekCompletedAudioReference(queuedSong))
     }
 
 }

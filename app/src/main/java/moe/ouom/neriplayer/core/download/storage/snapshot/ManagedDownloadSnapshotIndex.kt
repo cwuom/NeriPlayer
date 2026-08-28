@@ -12,13 +12,31 @@ internal object ManagedDownloadSnapshotIndex {
         metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
-        rootEntriesComplete: Boolean = true
+        rootEntriesComplete: Boolean = true,
+        pendingAudioEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
+        pendingMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> =
+            emptyMap()
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
-        val metadataEntriesByAudioName = metadataEntries
+        val normalizedPendingAudioEntries = (pendingAudioEntries + audioEntries.filter {
+            it.isPendingAudioWrite
+        }).distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        val pendingAudioNames = normalizedPendingAudioEntries
+            .mapTo(hashSetOf(), ManagedDownloadStorage.StoredEntry::logicalName)
+        val normalizedAudioEntries = audioEntries
+            .filterNot(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+            .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+        val metadataEntriesWithAudioNames = metadataEntries
             .mapNotNull { entry ->
                 ManagedDownloadTreeNaming.metadataAudioName(entry.name)?.let { audioName ->
                     audioName to entry
                 }
+            }
+        val metadataEntriesByAudioName = metadataEntriesWithAudioNames
+            .filter { (audioName, entry) ->
+                !ManagedDownloadTreeNaming.isPendingMetadataName(
+                    actualName = entry.name,
+                    audioName = audioName
+                ) || audioName in pendingAudioNames
             }
             .groupBy { it.first }
             .mapValues { (audioName, entries) ->
@@ -29,6 +47,35 @@ internal object ManagedDownloadSnapshotIndex {
                     )
                 )!!.second
             }
+        // 只有和 pending 音频同时存在的 pending metadata 才能遮蔽正式 metadata。
+        // 孤儿凭据可能来自进程中断，不能让它把可播放的旧歌曲从索引中移除
+        // 这里仍需记录未进入 metadataEntriesByAudioName 的孤儿 pending 名称，
+        // 否则调用方传入的旧 metadataByAudioName 会把孤儿凭据重新当成正式数据
+        val metadataGroupsByAudioName = metadataEntriesWithAudioNames.groupBy { it.first }
+        val pendingMetadataNamesFromEntries = metadataGroupsByAudioName
+            .filter { (audioName, entries) ->
+                val hasPending = entries.any { (_, entry) ->
+                    ManagedDownloadTreeNaming.isPendingMetadataName(
+                        actualName = entry.name,
+                        audioName = audioName
+                    )
+                }
+                val hasCanonical = entries.any { (_, entry) ->
+                    !ManagedDownloadTreeNaming.isPendingMetadataName(
+                        actualName = entry.name,
+                        audioName = audioName
+                    )
+                }
+                hasPending && (!hasCanonical || audioName in pendingAudioNames)
+            }
+            .keys
+        val normalizedPendingMetadataByAudioName = pendingMetadataByAudioName
+            .filterKeys { audioName -> audioName in pendingAudioNames }
+        val pendingMetadataNames = pendingMetadataNamesFromEntries +
+            normalizedPendingMetadataByAudioName.keys
+        val normalizedMetadataByAudioName = metadataByAudioName.filterKeys { audioName ->
+            audioName !in pendingMetadataNames || audioName in pendingAudioNames
+        }
         val coverEntriesByName = coverEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(ManagedDownloadStorage.StoredEntry::name)
         val audioEntriesByStableKey = mutableMapOf<String, MutableList<ManagedDownloadStorage.StoredEntry>>()
@@ -37,8 +84,10 @@ internal object ManagedDownloadSnapshotIndex {
         val audioEntriesByRemoteTrackKey = mutableMapOf<String, MutableList<ManagedDownloadStorage.StoredEntry>>()
         val audioEntriesWithoutMetadata = mutableListOf<ManagedDownloadStorage.StoredEntry>()
 
-        audioEntries.forEach { entry ->
-            val metadata = metadataByAudioName[entry.name]
+        normalizedAudioEntries.forEach { entry ->
+            // metadata 可能按逻辑文件名保存，索引时要同时接受两种命名
+            val metadata = normalizedMetadataByAudioName[entry.name]
+                ?: normalizedMetadataByAudioName[entry.logicalName]
             if (metadata == null) {
                 audioEntriesWithoutMetadata += entry
                 return@forEach
@@ -63,16 +112,16 @@ internal object ManagedDownloadSnapshotIndex {
         }
 
         return ManagedDownloadStorage.DownloadLibrarySnapshot(
-            audioEntries = audioEntries,
+            audioEntries = normalizedAudioEntries,
             audioEntriesByLookupKey = buildMap {
-                audioEntries.forEach { entry ->
+                normalizedAudioEntries.forEach { entry ->
                     put(entry.reference, entry)
                     put(entry.mediaUri, entry)
                     entry.localFilePath?.let { put(it, entry) }
                 }
             },
             metadataEntriesByAudioName = metadataEntriesByAudioName,
-            metadataByAudioName = metadataByAudioName,
+            metadataByAudioName = normalizedMetadataByAudioName,
             audioEntriesWithoutMetadata = audioEntriesWithoutMetadata,
             audioEntriesByStableKey = audioEntriesByStableKey,
             audioEntriesBySongId = audioEntriesBySongId,
@@ -81,12 +130,15 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntriesByName = coverEntriesByName,
             lyricEntriesByName = lyricEntriesByName,
             knownReferences = buildSet {
-                audioEntries.forEach { add(it.reference) }
+                normalizedAudioEntries.forEach { add(it.reference) }
+                normalizedPendingAudioEntries.forEach { add(it.reference) }
                 metadataEntries.forEach { add(it.reference) }
                 coverEntries.forEach { add(it.reference) }
                 lyricEntries.forEach { add(it.reference) }
             },
-            rootEntriesComplete = rootEntriesComplete
+            rootEntriesComplete = rootEntriesComplete,
+            pendingAudioEntries = normalizedPendingAudioEntries,
+            pendingMetadataByAudioName = normalizedPendingMetadataByAudioName
         )
     }
 
@@ -98,6 +150,10 @@ internal object ManagedDownloadSnapshotIndex {
             put("cacheKey", cacheKey)
             put("audioEntries", ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.audioEntries))
             put(
+                "pendingAudioEntries",
+                ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.pendingAudioEntries)
+            )
+            put(
                 "metadataEntries",
                 ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(
                     snapshot.metadataEntriesByAudioName.values.toList()
@@ -105,6 +161,11 @@ internal object ManagedDownloadSnapshotIndex {
             )
             put("metadataByAudioName", JSONObject().apply {
                 snapshot.metadataByAudioName.forEach { (audioName, metadata) ->
+                    put(audioName, ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata))
+                }
+            })
+            put("pendingMetadataByAudioName", JSONObject().apply {
+                snapshot.pendingMetadataByAudioName.forEach { (audioName, metadata) ->
                     put(audioName, ManagedDownloadStorageJsonCodec.downloadedAudioMetadataToJson(metadata))
                 }
             })
@@ -131,6 +192,9 @@ internal object ManagedDownloadSnapshotIndex {
         }
 
         val audioEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(root.optJSONArray("audioEntries"))
+        val pendingAudioEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(
+            root.optJSONArray("pendingAudioEntries")
+        )
         val metadataEntries = ManagedDownloadStorageJsonCodec.storedEntriesFromJsonArray(
             root.optJSONArray("metadataEntries")
         )
@@ -138,6 +202,14 @@ internal object ManagedDownloadSnapshotIndex {
         val metadataByAudioName = buildMap {
             metadataRoot.keys().forEach { audioName ->
                 metadataRoot.optJSONObject(audioName)
+                    ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataFromJsonObject)
+                    ?.let { put(audioName, it) }
+                }
+        }
+        val pendingMetadataRoot = root.optJSONObject("pendingMetadataByAudioName") ?: JSONObject()
+        val pendingMetadataByAudioName = buildMap {
+            pendingMetadataRoot.keys().forEach { audioName ->
+                pendingMetadataRoot.optJSONObject(audioName)
                     ?.let(ManagedDownloadStorageJsonCodec::downloadedAudioMetadataFromJsonObject)
                     ?.let { put(audioName, it) }
             }
@@ -150,7 +222,9 @@ internal object ManagedDownloadSnapshotIndex {
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
-            rootEntriesComplete = root.optBoolean("rootEntriesComplete", true)
+            rootEntriesComplete = root.optBoolean("rootEntriesComplete", true),
+            pendingAudioEntries = pendingAudioEntries,
+            pendingMetadataByAudioName = pendingMetadataByAudioName
         )
     }
 
@@ -161,19 +235,49 @@ internal object ManagedDownloadSnapshotIndex {
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         val targetAudioName = ManagedDownloadTreeNaming.metadataAudioName(metadataEntry.name)
             ?: return snapshot
-        return compose(
-            audioEntries = snapshot.audioEntries,
-            metadataEntries = snapshot.metadataEntriesByAudioName.values
+        val isPendingMetadataWrite = ManagedDownloadTreeNaming.isPendingMetadataName(
+            actualName = metadataEntry.name,
+            audioName = targetAudioName
+        )
+        val existingMetadataEntry = snapshot.metadataEntriesByAudioName[targetAudioName]
+        val hasCanonicalMetadata = existingMetadataEntry != null &&
+            !ManagedDownloadTreeNaming.isPendingMetadataName(
+                actualName = existingMetadataEntry.name,
+                audioName = targetAudioName
+            )
+        val metadataEntries = if (isPendingMetadataWrite && hasCanonicalMetadata) {
+            snapshot.metadataEntriesByAudioName.values.toList()
+        } else {
+            snapshot.metadataEntriesByAudioName.values
                 .filterNot {
                     ManagedDownloadTreeNaming.metadataAudioName(it.name) == targetAudioName
-                } +
-                metadataEntry,
+                } + metadataEntry
+        }
+        val pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
+            .toMutableMap()
+            .apply {
+                if (isPendingMetadataWrite) {
+                    put(targetAudioName, metadata)
+                } else if (snapshot.pendingAudioEntries.any { it.logicalName == targetAudioName }) {
+                    // pending 音频已通过 core 提交后，必须立即改用同一份持久化凭据
+                    put(targetAudioName, metadata)
+                } else {
+                    remove(targetAudioName)
+                }
+            }
+        return compose(
+            audioEntries = snapshot.audioEntries,
+            metadataEntries = metadataEntries,
             metadataByAudioName = snapshot.metadataByAudioName.toMutableMap().apply {
-                put(targetAudioName, metadata)
+                if (!isPendingMetadataWrite || !hasCanonicalMetadata) {
+                    put(targetAudioName, metadata)
+                }
             },
             coverEntries = snapshot.coverEntriesByName.values.toList(),
             lyricEntries = snapshot.lyricEntriesByName.values.toList(),
-            rootEntriesComplete = snapshot.rootEntriesComplete
+            rootEntriesComplete = snapshot.rootEntriesComplete,
+            pendingAudioEntries = snapshot.pendingAudioEntries,
+            pendingMetadataByAudioName = pendingMetadataByAudioName
         )
     }
 
@@ -184,12 +288,25 @@ internal object ManagedDownloadSnapshotIndex {
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         return when (bucket) {
             ManagedDownloadStorage.SnapshotEntryBucket.AUDIO -> compose(
-                audioEntries = replaceStoredEntry(snapshot.audioEntries, storedEntry),
+                audioEntries = if (storedEntry.isPendingAudioWrite) {
+                    snapshot.audioEntries
+                } else {
+                    replaceStoredEntry(snapshot.audioEntries, storedEntry)
+                },
                 metadataEntries = snapshot.metadataEntriesByAudioName.values.toList(),
                 metadataByAudioName = snapshot.metadataByAudioName,
                 coverEntries = snapshot.coverEntriesByName.values.toList(),
                 lyricEntries = snapshot.lyricEntriesByName.values.toList(),
-                rootEntriesComplete = snapshot.rootEntriesComplete
+                rootEntriesComplete = snapshot.rootEntriesComplete,
+                pendingAudioEntries = if (storedEntry.isPendingAudioWrite) {
+                    replaceStoredEntry(snapshot.pendingAudioEntries, storedEntry)
+                } else {
+                    snapshot.pendingAudioEntries.filterNot { pending ->
+                        pending.logicalName == storedEntry.name ||
+                        pending.reference == storedEntry.reference
+                    }
+                },
+                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
             )
 
             ManagedDownloadStorage.SnapshotEntryBucket.COVER -> compose(
@@ -198,7 +315,9 @@ internal object ManagedDownloadSnapshotIndex {
                 metadataByAudioName = snapshot.metadataByAudioName,
                 coverEntries = replaceStoredEntry(snapshot.coverEntriesByName.values, storedEntry),
                 lyricEntries = snapshot.lyricEntriesByName.values.toList(),
-                rootEntriesComplete = snapshot.rootEntriesComplete
+                rootEntriesComplete = snapshot.rootEntriesComplete,
+                pendingAudioEntries = snapshot.pendingAudioEntries,
+                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
             )
 
             ManagedDownloadStorage.SnapshotEntryBucket.LYRIC -> compose(
@@ -207,7 +326,9 @@ internal object ManagedDownloadSnapshotIndex {
                 metadataByAudioName = snapshot.metadataByAudioName,
                 coverEntries = snapshot.coverEntriesByName.values.toList(),
                 lyricEntries = replaceStoredEntry(snapshot.lyricEntriesByName.values, storedEntry),
-                rootEntriesComplete = snapshot.rootEntriesComplete
+                rootEntriesComplete = snapshot.rootEntriesComplete,
+                pendingAudioEntries = snapshot.pendingAudioEntries,
+                pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
             )
         }
     }
@@ -229,7 +350,9 @@ internal object ManagedDownloadSnapshotIndex {
             metadataByAudioName = snapshot.metadataByAudioName,
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
-            rootEntriesComplete = snapshot.rootEntriesComplete
+            rootEntriesComplete = snapshot.rootEntriesComplete,
+            pendingAudioEntries = snapshot.pendingAudioEntries,
+            pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
         )
     }
 
@@ -256,7 +379,10 @@ internal object ManagedDownloadSnapshotIndex {
                 .filterNot { entry -> entry.reference in references },
             lyricEntries = snapshot.lyricEntriesByName.values
                 .filterNot { entry -> entry.reference in references },
-            rootEntriesComplete = snapshot.rootEntriesComplete
+            rootEntriesComplete = snapshot.rootEntriesComplete,
+            pendingAudioEntries = snapshot.pendingAudioEntries
+                .filterNot { entry -> entry.reference in references },
+            pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
         )
     }
 

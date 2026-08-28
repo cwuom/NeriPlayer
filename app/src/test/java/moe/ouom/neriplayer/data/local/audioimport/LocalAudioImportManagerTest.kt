@@ -59,6 +59,71 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `stale SAF cover prefers rebound managed reference`() {
+        assertEquals(
+            "content://new-root/Covers/demo.jpg",
+            selectHydratedLocalCoverReference(
+                sidecarCover = "content://old-root/Covers/demo.jpg",
+                existingCover = "content://old-root/Covers/demo.jpg",
+                reboundCover = "content://new-root/Covers/demo.jpg",
+                metadataFallbackCover = "https://image.example/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `stale SAF cover keeps a newly scanned sibling cover`() {
+        assertEquals(
+            "content://new-root/Covers/demo.jpg",
+            selectHydratedLocalCoverReference(
+                sidecarCover = "content://old-root/Covers/demo.jpg",
+                existingCover = "content://new-root/Covers/demo.jpg",
+                reboundCover = null,
+                metadataFallbackCover = "https://image.example/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `stale SAF cover falls back to metadata URL when no local reference exists`() {
+        assertEquals(
+            "https://image.example/demo.jpg",
+            selectHydratedLocalCoverReference(
+                sidecarCover = "content://old-root/Covers/demo.jpg",
+                existingCover = "content://old-root/Covers/demo.jpg",
+                reboundCover = null,
+                metadataFallbackCover = "https://image.example/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `non SAF sidecar cover remains authoritative`() {
+        assertEquals(
+            "/music/Covers/demo.jpg",
+            selectHydratedLocalCoverReference(
+                sidecarCover = "/music/Covers/demo.jpg",
+                existingCover = null,
+                reboundCover = null,
+                metadataFallbackCover = "https://image.example/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `valid sidecar cover is not replaced by remote existing cover`() {
+        assertEquals(
+            "/music/Covers/demo.jpg",
+            selectHydratedLocalCoverReference(
+                sidecarCover = "/music/Covers/demo.jpg",
+                existingCover = "https://image.example/old-demo.jpg",
+                reboundCover = null,
+                metadataFallbackCover = "https://image.example/demo.jpg"
+            )
+        )
+    }
+
+    @Test
     fun `empty media store result falls back to SAF traversal`() {
         val indexedSong = SongItem(
             id = 1L,

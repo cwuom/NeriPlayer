@@ -3,10 +3,13 @@ package moe.ouom.neriplayer.core.download.storage.snapshot
 import android.content.Context
 import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -52,6 +55,8 @@ internal class ManagedDownloadSnapshotCacheStore(
 
     private val snapshotMutationLock = Any()
     private val snapshotPersistenceLock = Any()
+    // Room 和磁盘清理必须与延迟写入串行，避免旧快照在 invalidate 后复活
+    private val snapshotPersistenceIoMutex = Mutex()
 
     fun currentKey(context: Context): String {
         return cacheKeyProvider(context.applicationContext)
@@ -166,7 +171,7 @@ internal class ManagedDownloadSnapshotCacheStore(
             val currentSnapshot = snapshotCache
                 ?.takeIf { it.key == cacheKey }
                 ?.snapshot
-                ?: return@synchronized true
+                ?: partialSnapshot()
             val updatedSnapshot = ManagedDownloadSnapshotIndex.applyMetadataWrite(
                 snapshot = currentSnapshot,
                 metadataEntry = metadataEntry,
@@ -191,7 +196,7 @@ internal class ManagedDownloadSnapshotCacheStore(
             val currentSnapshot = snapshotCache
                 ?.takeIf { it.key == cacheKey }
                 ?.snapshot
-                ?: return@synchronized false
+                ?: partialSnapshot()
             val updatedSnapshot = ManagedDownloadSnapshotIndex.applyStoredEntryWrite(
                 snapshot = currentSnapshot,
                 storedEntry = storedEntry,
@@ -200,6 +205,21 @@ internal class ManagedDownloadSnapshotCacheStore(
             putSnapshotLocked(appContext, cacheKey, updatedSnapshot)
             true
         }
+    }
+
+    /**
+     * core 提交发生在首次完整目录扫描之前时，先保留已知条目供播放和收尾使用
+     * 目录完整性标记保持为 false，避免把局部快照误当成全量扫描结果
+     */
+    private fun partialSnapshot(): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        return ManagedDownloadSnapshotIndex.compose(
+            audioEntries = emptyList(),
+            metadataEntries = emptyList(),
+            metadataByAudioName = emptyMap(),
+            coverEntries = emptyList(),
+            lyricEntries = emptyList(),
+            rootEntriesComplete = false
+        )
     }
 
     fun updateAfterDelete(
@@ -230,40 +250,46 @@ internal class ManagedDownloadSnapshotCacheStore(
 
     fun invalidate(context: Context? = null) {
         val appContext = context?.applicationContext
+        var clearJobToStart: Job? = null
         synchronized(snapshotMutationLock) {
             snapshotCache = null
             synchronized(snapshotPersistenceLock) {
                 snapshotGeneration += 1L
                 snapshotPersistJob?.cancel()
                 snapshotPersistJob = null
-                snapshotClearJob?.cancel()
-                snapshotClearJob = null
-                if (appContext == null) {
-                    snapshotClearInFlight = false
-                } else {
+                if (appContext != null) {
                     snapshotClearInFlight = true
-                }
-            }
-        }
-        appContext ?: return
-        val clearJob = scope.launch {
-            persistenceStoreProvider(appContext).clear()
-        }
-        synchronized(snapshotPersistenceLock) {
-            snapshotClearJob = clearJob
-            if (clearJob.isCompleted) {
-                snapshotClearJob = null
-                snapshotClearInFlight = false
-            }
-        }
-        clearJob.invokeOnCompletion {
-            synchronized(snapshotPersistenceLock) {
-                if (snapshotClearJob === clearJob) {
+                    if (snapshotClearJob?.isCompleted != false) {
+                        val clearJob = scope.launch(start = CoroutineStart.LAZY) {
+                            snapshotPersistenceIoMutex.withLock {
+                                persistenceStoreProvider(appContext).clear()
+                            }
+                        }
+                        snapshotClearJob = clearJob
+                        clearJobToStart = clearJob
+                    }
+                } else if (snapshotClearJob?.isCompleted != false) {
                     snapshotClearJob = null
                     snapshotClearInFlight = false
                 }
             }
         }
+        val clearJob = clearJobToStart ?: return
+        clearJob.invokeOnCompletion {
+            var shouldReschedulePersist = false
+            synchronized(snapshotPersistenceLock) {
+                if (snapshotClearJob === clearJob) {
+                    snapshotClearJob = null
+                    snapshotClearInFlight = false
+                    shouldReschedulePersist = true
+                }
+            }
+            if (shouldReschedulePersist && appContext != null) {
+                val currentCache = synchronized(snapshotMutationLock) { snapshotCache }
+                currentCache?.let { schedulePersist(appContext, it.key) }
+            }
+        }
+        clearJob.start()
     }
 
     private fun schedulePersist(
@@ -275,13 +301,38 @@ internal class ManagedDownloadSnapshotCacheStore(
             snapshotPersistJob?.cancel()
             snapshotPersistJob = scope.launch {
                 delay(SNAPSHOT_CACHE_PERSIST_DEBOUNCE_MS)
-                val currentCache = snapshotCache
-                    ?.takeIf { it.key == expectedKey }
-                    ?: return@launch
-                if (persistenceStoreProvider(appContext).persist(
-                    cacheKey = currentCache.key,
-                    snapshot = currentCache.snapshot
-                )) {
+                val clearJob = synchronized(snapshotPersistenceLock) {
+                    snapshotClearJob?.takeUnless(Job::isCompleted)
+                }
+                clearJob?.join()
+                val persisted = snapshotPersistenceIoMutex.withLock {
+                    val currentCache = synchronized(snapshotMutationLock) {
+                        synchronized(snapshotPersistenceLock) {
+                            snapshotCache
+                                ?.takeIf { it.key == expectedKey }
+                                ?.takeUnless { snapshotClearInFlight }
+                        }
+                    } ?: return@withLock false
+                    val generation = synchronized(snapshotPersistenceLock) {
+                        snapshotGeneration
+                    }
+                    if (!persistenceStoreProvider(appContext).persist(
+                            cacheKey = currentCache.key,
+                            snapshot = currentCache.snapshot
+                        )
+                    ) {
+                        return@withLock false
+                    }
+                    synchronized(snapshotMutationLock) {
+                        synchronized(snapshotPersistenceLock) {
+                            generation == snapshotGeneration &&
+                                !snapshotClearInFlight &&
+                                snapshotCache?.key == expectedKey &&
+                                snapshotCache?.snapshot == currentCache.snapshot
+                        }
+                    }
+                }
+                if (persisted) {
                     ManagedDownloadSnapshotDiskCache.delete(appContext)
                 }
             }

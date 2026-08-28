@@ -129,6 +129,94 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
         assertFalse(references.contains(translatedLyricReference))
     }
 
+    @Test
+    fun `collision orphan pending metadata is removed only after matching final audio`() {
+        val orphanMetadataReference = "content://downloads/audio/song.mp3.npmeta.pending.json"
+        val existingAudioReference = "content://downloads/audio/song.mp3"
+        val finalizedMetadataReference =
+            "content://downloads/audio/song (1).mp3.npmeta.json"
+        val finalizedAudioReference = "content://downloads/audio/song (1).mp3"
+        val stableKey = "netease:42"
+        val operationId = "operation-42"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
+                entry("song.mp3", existingAudioReference),
+                entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
+                entry("song (1).mp3", finalizedAudioReference)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = stableKey,
+                        operationId = operationId,
+                        audioFileName = "song.mp3",
+                        downloadFinalized = false
+                    )
+                ),
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = stableKey,
+                        operationId = operationId,
+                        audioFileName = "song (1).mp3",
+                        downloadFinalized = true,
+                        metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                    )
+                )
+            ),
+            managedSidecarReferences = emptySet()
+        )
+
+        assertTrue(references.contains(orphanMetadataReference))
+        assertFalse(references.contains(existingAudioReference))
+        assertFalse(references.contains(finalizedMetadataReference))
+        assertFalse(references.contains(finalizedAudioReference))
+    }
+
+    @Test
+    fun `collision orphan pending metadata is retained without matching operation identity`() {
+        val orphanMetadataReference = "content://downloads/audio/song.mp3.npmeta.pending.json"
+        val finalizedMetadataReference =
+            "content://downloads/audio/song (1).mp3.npmeta.json"
+        val finalizedAudioReference = "content://downloads/audio/song (1).mp3"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
+                entry("song.mp3", "content://downloads/audio/song.mp3"),
+                entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
+                entry("song (1).mp3", finalizedAudioReference)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song.mp3.npmeta.pending.json", orphanMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = "netease:42",
+                        operationId = "operation-old",
+                        audioFileName = "song.mp3",
+                        downloadFinalized = false
+                    )
+                ),
+                ManagedDownloadParsedMetadataEntry(
+                    entry("song (1).mp3.npmeta.json", finalizedMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = "netease:42",
+                        operationId = "operation-new",
+                        audioFileName = "song (1).mp3",
+                        downloadFinalized = true,
+                        metadataEmbeddingState = DownloadedAudioEmbeddingState.USER_DISABLED
+                    )
+                )
+            ),
+            managedSidecarReferences = emptySet()
+        )
+
+        assertFalse(references.contains(orphanMetadataReference))
+    }
+
     private fun entry(
         name: String,
         reference: String,

@@ -1,7 +1,9 @@
 package moe.ouom.neriplayer.data.local.media
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import java.io.File
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
@@ -15,7 +17,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.mockito.Answers.CALLS_REAL_METHODS
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockStatic
 import org.mockito.Mockito.`when`
 
 class LocalMediaSupportTest {
@@ -1356,6 +1362,80 @@ class LocalMediaSupportTest {
 
         assertEquals(adjacent.absolutePath, metadata?.reference)
         assertEquals("华晨宇", metadata?.artist)
+    }
+
+    @Test
+    fun `fast local metadata lookup degrades when SAF permission is revoked`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val sourceUri = mock(Uri::class.java)
+        val permissionError = SecurityException("tree permission revoked")
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(sourceUri.scheme).thenReturn("content")
+        `when`(sourceUri.authority).thenReturn("com.android.externalstorage.documents")
+        `when`(sourceUri.lastPathSegment).thenReturn("song.mp3")
+        `when`(sourceUri.toString()).thenReturn(
+            "content://com.android.externalstorage.documents/document/song.mp3"
+        )
+        doReturn(null).`when`(resolver).query(any(), any(), any(), any(), any())
+        `when`(resolver.getType(any())).thenReturn(null)
+        `when`(resolver.openFileDescriptor(any(), any())).thenReturn(null)
+        val song = SongItem(
+            id = 1L,
+            name = "song",
+            artist = "artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 0L,
+            coverUrl = null,
+            mediaUri = sourceUri.toString(),
+            localFileName = "song.mp3"
+        )
+
+        LocalMediaSupport.clearCoverLookupCache()
+        mockStatic(Uri::class.java, CALLS_REAL_METHODS).use { uriMock ->
+            uriMock.`when`<Uri> { Uri.parse(sourceUri.toString()) }.thenReturn(sourceUri)
+            mockStatic(DocumentsContract::class.java, CALLS_REAL_METHODS).use {
+                // revoked tree permission must only degrade the optional sidecar read
+                it.`when`<String> {
+                    DocumentsContract.getTreeDocumentId(sourceUri)
+                }.thenThrow(permissionError)
+
+                val metadata = LocalMediaSupport.readLocalMetadataSidecarFast(
+                    context = context,
+                    song = song
+                )
+
+                assertNull(metadata)
+            }
+        }
+    }
+
+    @Test
+    fun `cover lookup degrades when SAF permission is revoked during nearby search`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val sourceUri = mock(Uri::class.java)
+        val permissionError = SecurityException("tree permission revoked")
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(sourceUri.scheme).thenReturn("content")
+        `when`(sourceUri.authority).thenReturn("com.android.externalstorage.documents")
+        `when`(sourceUri.lastPathSegment).thenReturn("song.mp3")
+        `when`(sourceUri.toString()).thenReturn(
+            "content://com.android.externalstorage.documents/document/song.mp3"
+        )
+        doReturn(null).`when`(resolver).query(any(), any(), any(), any(), any())
+        `when`(resolver.getType(any())).thenReturn(null)
+        `when`(resolver.openFileDescriptor(any(), any())).thenReturn(null)
+
+        LocalMediaSupport.clearCoverLookupCache()
+        mockStatic(DocumentsContract::class.java, CALLS_REAL_METHODS).use {
+            it.`when`<String> {
+                DocumentsContract.getTreeDocumentId(sourceUri)
+            }.thenThrow(permissionError)
+
+            assertNull(LocalMediaSupport.resolveCoverUri(context, sourceUri))
+        }
     }
 
     @Test

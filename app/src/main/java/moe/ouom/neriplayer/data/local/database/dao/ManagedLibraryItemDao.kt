@@ -20,10 +20,17 @@ internal interface ManagedLibraryItemDao {
             "audio_name = COALESCE(audio_name, :audioName), " +
             "file_size = COALESCE(file_size, :fileSize), " +
             "downloaded_at_ms = COALESCE(downloaded_at_ms, :downloadedAtMs), " +
-            "metadata_name = COALESCE(:metadataName, metadata_name), " +
-            "locator_hint = COALESCE(:locatorHint, locator_hint), " +
-            "title_preview = :titlePreview, artist_preview = :artistPreview, " +
-            "cover_key_preview = COALESCE(:coverKeyPreview, cover_key_preview), " +
+            "metadata_name = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:metadataName, metadata_name) ELSE metadata_name END, " +
+            "locator_hint = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:locatorHint, locator_hint) ELSE locator_hint END, " +
+            "title_preview = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN :titlePreview ELSE title_preview END, " +
+            "artist_preview = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN :artistPreview ELSE artist_preview END, " +
+            "cover_key_preview = CASE WHEN metadata_revision <= :metadataRevision " +
+            "THEN COALESCE(:coverKeyPreview, cover_key_preview) " +
+            "ELSE cover_key_preview END, " +
             "metadata_revision = CASE " +
             "WHEN metadata_revision < :metadataRevision THEN :metadataRevision " +
             "ELSE metadata_revision END " +

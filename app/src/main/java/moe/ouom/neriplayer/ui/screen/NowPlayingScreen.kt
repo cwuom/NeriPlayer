@@ -57,6 +57,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -157,11 +158,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -172,6 +176,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -197,10 +203,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -208,6 +216,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.min
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.bili.resolveBiliVideoSkipTargetOptions
 import moe.ouom.neriplayer.core.api.lyrics.EditableLyricMatchRequest
@@ -239,6 +248,7 @@ import moe.ouom.neriplayer.core.player.model.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.local.media.LocalLyricsScanMetadata
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
+import moe.ouom.neriplayer.data.local.storage.LocalAssetInvalidationBus
 import moe.ouom.neriplayer.data.model.isSyncableRemoteSong
 import moe.ouom.neriplayer.data.local.media.CustomSongCoverStorage
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -248,6 +258,8 @@ import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.displayArtist
 import moe.ouom.neriplayer.data.model.displayCoverUrl
 import moe.ouom.neriplayer.data.model.displayName
+import moe.ouom.neriplayer.data.model.playbackVisualKey
+import moe.ouom.neriplayer.data.model.playbackVisualKeyAliases
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.BiliUploaderSummary
@@ -330,7 +342,9 @@ import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.format.formatDuration
+import moe.ouom.neriplayer.util.media.copyBitmapForRetainedDisplay
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
+import moe.ouom.neriplayer.util.media.RetainedPlaybackCoverBitmapCache
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.util.media.saveCoverToPictures
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
@@ -348,6 +362,9 @@ private const val CoverSourceBadgeRevealBufferMs = 120
 private const val CoverSourceBadgeRevealDelayMs =
     LyricsPageTransitionDurationMs + CoverSourceBadgeRevealBufferMs
 private const val NowPlayingCoverImageCrossfadeMs = 220
+private const val NowPlayingCoverFrameCacheLimit = 3
+private const val NowPlayingCoverBitmapMaxDimensionPx = 512
+private const val NowPlayingCoverNullGraceMs = 500L
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
 private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
@@ -364,33 +381,168 @@ private val LyricOffsetStepMsFloat = LYRIC_DEFAULT_OFFSET_STEP_MS.toFloat()
 
 internal data class NowPlayingCoverFrame(
     val coverUrl: String,
-    val cacheKey: String?
+    val cacheKey: String?,
+    val decodedBitmap: ImageBitmap? = null,
+    val ownerSongKey: String? = null,
+    /**
+     * 令牌让同一首歌重新进入时的异步图片请求彼此隔离
+     */
+    val requestToken: Any = Unit
 )
 
 internal data class NowPlayingCoverRequest(
     val frame: NowPlayingCoverFrame,
-    val songKey: String?
+    val songKey: String?,
+    /**
+     * 每次重新进入同一封面时使用新的令牌, 防止旧的 Coil 回调污染新请求
+     */
+    val requestToken: Any = Unit
 )
 
 internal fun buildNowPlayingCoverRequest(
     coverUrl: String?,
     songKey: String?,
-    coverCacheKey: String?
+    coverCacheKey: String?,
+    requestToken: Any = Unit
 ): NowPlayingCoverRequest? {
     val normalizedCoverUrl = coverUrl?.trim()?.takeIf(String::isNotEmpty) ?: return null
     return NowPlayingCoverRequest(
         frame = NowPlayingCoverFrame(
             coverUrl = normalizedCoverUrl,
-            cacheKey = coverCacheKey?.let { "$it|data=$normalizedCoverUrl" }
+            cacheKey = coverCacheKey?.let { "$it|data=$normalizedCoverUrl" },
+            ownerSongKey = songKey,
+            requestToken = requestToken
         ),
-        songKey = songKey
+        songKey = songKey,
+        requestToken = requestToken
     )
+}
+
+internal fun buildNowPlayingCoverCacheKey(
+    coverUrl: String?,
+    downloadPresenceVersion: Int,
+    assetRootGeneration: Long,
+    assetSongRevision: Long
+): String {
+    return listOf(
+        "nowplaying-cover",
+        coverUrl.orEmpty(),
+        downloadPresenceVersion,
+        assetRootGeneration,
+        assetSongRevision
+    ).joinToString("|")
+}
+
+internal fun resolveNowPlayingCoverOwnerKey(
+    currentSongKey: String?,
+    parentSongKey: String?
+): String? = currentSongKey ?: parentSongKey
+
+internal fun resolveNowPlayingCoverCacheKeys(
+    requestSongKey: String?,
+    latestRequestSongKey: String?,
+    latestSongKeyAliases: List<String>
+): List<String> {
+    val normalizedRequestKey = requestSongKey
+        ?.trim()
+        ?.takeIf(String::isNotEmpty)
+        ?: return emptyList()
+    if (normalizedRequestKey != latestRequestSongKey) {
+        return listOf(normalizedRequestKey)
+    }
+    return buildList {
+        add(normalizedRequestKey)
+        latestSongKeyAliases.forEach { alias ->
+            alias.trim().takeIf(String::isNotEmpty)?.let(::add)
+        }
+    }.distinct()
 }
 
 internal fun shouldCommitNowPlayingCoverRequest(
     completedRequest: NowPlayingCoverRequest,
     latestRequest: NowPlayingCoverRequest?
 ): Boolean = completedRequest == latestRequest
+
+internal fun shouldHandleNowPlayingCoverError(
+    failedRequest: NowPlayingCoverRequest?,
+    latestRequest: NowPlayingCoverRequest?
+): Boolean {
+    return failedRequest != null && latestRequest != null &&
+        shouldCommitNowPlayingCoverRequest(failedRequest, latestRequest)
+}
+
+internal fun sameNowPlayingCoverFrame(
+    first: NowPlayingCoverFrame?,
+    second: NowPlayingCoverFrame?
+): Boolean {
+    if (first == null || second == null) return first == second
+    return first.coverUrl == second.coverUrl
+}
+
+private fun sameNowPlayingCoverSource(
+    first: NowPlayingCoverFrame?,
+    second: NowPlayingCoverFrame?
+): Boolean {
+    if (first == null || second == null) return first == second
+    return first.coverUrl == second.coverUrl &&
+        first.cacheKey == second.cacheKey &&
+        first.ownerSongKey == second.ownerSongKey
+}
+
+internal fun shouldKeepNowPlayingCoverVisible(
+    currentSongKey: String?,
+    displayedFrame: NowPlayingCoverFrame?,
+    requestedFrame: NowPlayingCoverFrame?
+): Boolean {
+    return currentSongKey != null || displayedFrame != null || requestedFrame != null
+}
+
+private fun sameNowPlayingCoverRequestFrame(
+    first: NowPlayingCoverFrame?,
+    second: NowPlayingCoverFrame?
+): Boolean {
+    if (first == null || second == null) return first == second
+    return first.coverUrl == second.coverUrl &&
+        first.cacheKey == second.cacheKey &&
+        first.ownerSongKey == second.ownerSongKey &&
+        first.requestToken == second.requestToken
+}
+
+private fun resolveNowPlayingCoverBitmap(
+    state: AsyncImagePainter.State.Success,
+    sizePx: Int
+): ImageBitmap? {
+    return runCatching {
+        val maxDimension = min(
+            sizePx.coerceAtLeast(1),
+            NowPlayingCoverBitmapMaxDimensionPx
+        )
+        val drawable = state.result.drawable
+        if (drawable is android.graphics.drawable.BitmapDrawable) {
+            val sourceBitmap = drawable.bitmap
+            val scale = min(
+                maxDimension.toFloat() / sourceBitmap.width.coerceAtLeast(1),
+                maxDimension.toFloat() / sourceBitmap.height.coerceAtLeast(1)
+            ).coerceAtMost(1f)
+            if (scale < 1f) {
+                android.graphics.Bitmap.createScaledBitmap(
+                    sourceBitmap,
+                    (sourceBitmap.width * scale).roundToInt().coerceAtLeast(1),
+                    (sourceBitmap.height * scale).roundToInt().coerceAtLeast(1),
+                    true
+                ).asImageBitmap()
+            } else {
+                copyBitmapForRetainedDisplay(sourceBitmap)?.asImageBitmap()
+            }
+        } else {
+            drawable.toBitmap(
+                width = maxDimension,
+                height = maxDimension,
+                config = android.graphics.Bitmap.Config.ARGB_8888
+            ).asImageBitmap()
+        }
+    }.getOrNull()
+}
 
 internal fun retainNowPlayingCoverFrame(
     displayedFrame: NowPlayingCoverFrame?,
@@ -399,10 +551,125 @@ internal fun retainNowPlayingCoverFrame(
     return displayedFrame.takeIf { hasCurrentSong }
 }
 
+internal fun shouldClearNowPlayingCoverFrame(
+    currentSongKey: String?,
+    requestedCoverUrl: String?,
+    clearDelayElapsed: Boolean
+): Boolean {
+    return currentSongKey == null && requestedCoverUrl == null && clearDelayElapsed
+}
+
+internal fun shouldClearNowPlayingRetainedCoverAfterGrace(
+    currentSongKey: String?,
+    requestedCoverUrl: String?,
+    hasRetainedFrame: Boolean,
+    requestFailed: Boolean,
+    clearDelayElapsed: Boolean
+): Boolean {
+    if (!clearDelayElapsed || !hasRetainedFrame) return false
+    val noRequestedCover = requestedCoverUrl?.trim().isNullOrEmpty()
+    return currentSongKey.isNullOrBlank() &&
+        (noRequestedCover || requestFailed)
+}
+
+internal fun shouldRetainNowPlayingCoverOnError(
+    currentSongKey: String?,
+    displayedFrame: NowPlayingCoverFrame?
+): Boolean = currentSongKey != null || displayedFrame != null
+
+internal fun resolveNowPlayingCoverRequestUrl(
+    resolvedCoverUrl: String?,
+    visualCoverUrl: String?,
+    visualCoverSongKey: String?,
+    currentSongKey: String?,
+    resolvedCoverSongKey: String? = null,
+    resolvedCoverOwnerRequired: Boolean = false
+): String? {
+    val resolved = resolvedCoverUrl?.trim()?.takeIf(String::isNotEmpty)
+    val resolvedBelongsToCurrentSong = when {
+        resolvedCoverSongKey != null -> currentSongKey == null ||
+            resolvedCoverSongKey == currentSongKey
+        resolvedCoverOwnerRequired -> false
+        else -> true
+    }
+    if (resolved != null && resolvedBelongsToCurrentSong) return resolved
+
+    val visual = visualCoverUrl?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    val belongsToCurrentSong = currentSongKey != null &&
+        (visualCoverSongKey == null || visualCoverSongKey == currentSongKey)
+    return visual.takeIf { belongsToCurrentSong }
+}
+
+internal fun resolveNowPlayingVisibleCoverFrame(
+    displayedFrame: NowPlayingCoverFrame?,
+    requestedFrame: NowPlayingCoverFrame?,
+    hasCurrentSong: Boolean,
+    cachedFrame: NowPlayingCoverFrame? = null,
+    failedRequest: NowPlayingCoverRequest? = null,
+    clearRetainedFrame: Boolean = false
+): NowPlayingCoverFrame? {
+    if (!hasCurrentSong) return null
+    if (clearRetainedFrame) return null
+    val failedFrame = failedRequest?.frame
+    val retainedCandidate = cachedFrame ?: displayedFrame
+    val retainedFrame = if (
+        retainedCandidate != null &&
+            requestedFrame != null &&
+            retainedCandidate.decodedBitmap == null &&
+            sameNowPlayingCoverSource(retainedCandidate, requestedFrame)
+    ) {
+        requestedFrame
+    } else {
+        retainedCandidate
+    }
+    if (retainedFrame?.decodedBitmap != null) {
+        return retainedFrame
+    }
+    if (
+        retainedFrame != null &&
+        (failedFrame == null || !sameNowPlayingCoverRequestFrame(retainedFrame, failedFrame))
+    ) {
+        return retainedFrame
+    }
+    return requestedFrame?.takeUnless { frame ->
+        failedFrame != null && sameNowPlayingCoverRequestFrame(frame, failedFrame)
+    }
+}
+
+internal fun isNowPlayingCachedCoverFrameCompatible(
+    cachedFrame: NowPlayingCoverFrame?,
+    requestedFrame: NowPlayingCoverFrame?
+): Boolean {
+    if (cachedFrame?.decodedBitmap == null) return false
+    return requestedFrame == null ||
+        sameNowPlayingCoverSource(cachedFrame, requestedFrame)
+}
+
+internal fun isNowPlayingRetainedCoverFrameCompatible(
+    cachedFrame: NowPlayingCoverFrame?,
+    requestedFrame: NowPlayingCoverFrame?
+): Boolean {
+    if (cachedFrame?.decodedBitmap == null) return false
+    return requestedFrame == null ||
+        (
+            cachedFrame.coverUrl == requestedFrame.coverUrl &&
+                cachedFrame.ownerSongKey == requestedFrame.ownerSongKey
+            )
+}
+
+internal fun shouldAnimateNowPlayingCoverFrame(
+    previousFrame: NowPlayingCoverFrame?,
+    targetFrame: NowPlayingCoverFrame?
+): Boolean {
+    if (previousFrame == null || targetFrame == null) return false
+    return !sameNowPlayingCoverFrame(previousFrame, targetFrame)
+}
+
 @Composable
 private fun StableNowPlayingCoverImage(
     coverUrl: String?,
     songKey: String?,
+    songKeyAliases: List<String> = emptyList(),
     context: Context,
     coverRequestSizePx: Int,
     offlineMode: Boolean,
@@ -414,26 +681,194 @@ private fun StableNowPlayingCoverImage(
         buildNowPlayingCoverRequest(
             coverUrl = coverUrl,
             songKey = songKey,
-            coverCacheKey = coverCacheKey
+            coverCacheKey = coverCacheKey,
+            requestToken = Any()
         )
     }
     var displayedFrame by remember { mutableStateOf<NowPlayingCoverFrame?>(null) }
+    var failedCoverRequest by remember(requestedCover) {
+        mutableStateOf<NowPlayingCoverRequest?>(null)
+    }
+    var clearRetainedFrame by remember(songKey, requestedCover) {
+        mutableStateOf(false)
+    }
+    val decodedFramesBySongKey = remember {
+        mutableStateMapOf<String, NowPlayingCoverFrame>()
+    }
+    val effectiveSongKeyAliases = remember(songKey, songKeyAliases) {
+        buildList {
+            songKey?.takeIf(String::isNotBlank)?.let(::add)
+            songKeyAliases.forEach { alias ->
+                alias.takeIf(String::isNotBlank)?.let(::add)
+            }
+        }.distinct()
+    }
+    var previousVisibleFrame by remember { mutableStateOf<NowPlayingCoverFrame?>(null) }
     val latestRequestedCover by rememberUpdatedState(requestedCover)
-    val currentDisplayedFrame = retainNowPlayingCoverFrame(
-        displayedFrame = displayedFrame,
-        hasCurrentSong = songKey != null
+    val latestSongKey by rememberUpdatedState(songKey)
+    val latestSongKeyAliases by rememberUpdatedState(effectiveSongKeyAliases)
+    val failedRequestForCurrentCover = failedCoverRequest?.takeIf { failed ->
+        shouldHandleNowPlayingCoverError(failed, requestedCover)
+    }
+    val latestFailedRequest by rememberUpdatedState(failedRequestForCurrentCover)
+    val cachedFrameForSong = effectiveSongKeyAliases
+        .asSequence()
+        .mapNotNull(decodedFramesBySongKey::get)
+        .firstOrNull { frame ->
+            isNowPlayingCachedCoverFrameCompatible(
+                cachedFrame = frame,
+                requestedFrame = requestedCover?.frame
+            )
+        }
+    val retainedBitmapFrame = run {
+        val requestedFrame = requestedCover?.frame
+        val sharedEntry = requestedFrame
+            ?.let { frame ->
+                RetainedPlaybackCoverBitmapCache.getExact(
+                    ownerKey = frame.ownerSongKey,
+                    coverUrl = frame.coverUrl
+                )
+            }
+            ?: effectiveSongKeyAliases.asSequence()
+                .mapNotNull(RetainedPlaybackCoverBitmapCache::getLatestForOwner)
+                .firstOrNull()
+        sharedEntry?.let { entry ->
+            NowPlayingCoverFrame(
+                coverUrl = entry.coverUrl,
+                cacheKey = entry.cacheKey,
+                decodedBitmap = entry.bitmap,
+                ownerSongKey = entry.ownerKey,
+                requestToken = requestedFrame?.requestToken ?: Any()
+            ).takeIf { frame ->
+                isNowPlayingRetainedCoverFrameCompatible(
+                    cachedFrame = frame,
+                    requestedFrame = requestedFrame
+                )
+            }
+        }
+    }
+    val currentDisplayedFrame = cachedFrameForSong ?: retainedBitmapFrame ?: displayedFrame
+    val hasSongOrCoverTransition = shouldKeepNowPlayingCoverVisible(
+        currentSongKey = songKey,
+        displayedFrame = currentDisplayedFrame,
+        requestedFrame = requestedCover?.frame
+    )
+    val visibleFrame = resolveNowPlayingVisibleCoverFrame(
+        displayedFrame = currentDisplayedFrame,
+        requestedFrame = requestedCover?.frame,
+        hasCurrentSong = hasSongOrCoverTransition,
+        cachedFrame = cachedFrameForSong,
+        failedRequest = failedRequestForCurrentCover,
+        clearRetainedFrame = clearRetainedFrame
+    )
+    val animateVisibleFrame = shouldAnimateNowPlayingCoverFrame(
+        previousFrame = previousVisibleFrame,
+        targetFrame = visibleFrame
     )
 
-    LaunchedEffect(songKey) {
-        if (songKey == null) {
+    SideEffect {
+        if (previousVisibleFrame != visibleFrame) {
+            previousVisibleFrame = visibleFrame
+        }
+    }
+
+    LaunchedEffect(
+        songKey,
+        requestedCover,
+        failedRequestForCurrentCover,
+        currentDisplayedFrame
+    ) {
+        if (clearRetainedFrame) {
+            return@LaunchedEffect
+        }
+        val retainedFrameAtStart = currentDisplayedFrame ?: return@LaunchedEffect
+        val requestAtStart = requestedCover
+        val songAtStart = songKey
+        val failedAtStart = failedRequestForCurrentCover
+        val noRequestedCover = requestAtStart?.frame?.coverUrl?.trim().isNullOrEmpty()
+        if (songAtStart != null && !noRequestedCover && failedAtStart == null) {
+            return@LaunchedEffect
+        }
+        if (songAtStart == null && !noRequestedCover) {
+            return@LaunchedEffect
+        }
+        delay(NowPlayingCoverNullGraceMs)
+        if (
+            latestSongKey == songAtStart &&
+                latestRequestedCover == requestAtStart &&
+                latestFailedRequest == failedAtStart &&
+                shouldClearNowPlayingRetainedCoverAfterGrace(
+                    currentSongKey = latestSongKey,
+                    requestedCoverUrl = latestRequestedCover?.frame?.coverUrl,
+                    hasRetainedFrame = true,
+                    requestFailed = latestFailedRequest != null,
+                    clearDelayElapsed = true
+                )
+        ) {
+            clearRetainedFrame = true
             displayedFrame = null
+            decodedFramesBySongKey.entries.removeAll { (_, cachedFrame) ->
+                cachedFrame == retainedFrameAtStart
+            }
+        }
+    }
+
+    fun publishDecodedFrame(request: NowPlayingCoverRequest, frame: NowPlayingCoverFrame) {
+        if (!shouldCommitNowPlayingCoverRequest(request, latestRequestedCover)) return
+        displayedFrame = frame
+        failedCoverRequest = null
+        clearRetainedFrame = false
+        resolveNowPlayingCoverCacheKeys(
+            requestSongKey = request.songKey,
+            latestRequestSongKey = latestRequestedCover?.songKey,
+            latestSongKeyAliases = latestSongKeyAliases
+        ).forEach { key ->
+            decodedFramesBySongKey[key] = frame
+            frame.decodedBitmap?.let { bitmap ->
+                RetainedPlaybackCoverBitmapCache.put(
+                    ownerKey = key,
+                    coverUrl = frame.coverUrl,
+                    cacheKey = frame.cacheKey,
+                    bitmap = bitmap
+                )
+            }
+            while (decodedFramesBySongKey.size > NowPlayingCoverFrameCacheLimit) {
+                val oldestKey = decodedFramesBySongKey.keys.firstOrNull() ?: break
+                decodedFramesBySongKey.remove(oldestKey)
+            }
+        }
+    }
+
+    fun rejectDecodedFrame(
+        frame: NowPlayingCoverFrame,
+        failedRequest: NowPlayingCoverRequest?
+    ) {
+        if (!shouldHandleNowPlayingCoverError(failedRequest, latestRequestedCover)) {
+            return
+        }
+        val displayedDecodedFrame = displayedFrame?.takeIf { candidate ->
+            candidate.decodedBitmap != null &&
+                sameNowPlayingCoverRequestFrame(candidate, frame)
+        }
+        val cachedDecodedFrame = decodedFramesBySongKey.values.firstOrNull { candidate ->
+            candidate.decodedBitmap != null &&
+                sameNowPlayingCoverRequestFrame(candidate, frame)
+        }
+        if (displayedDecodedFrame != null || cachedDecodedFrame != null) {
+            return
+        }
+        failedCoverRequest = failedRequest
+        // 请求失败时保留当前可见帧, 直到真正停止播放后再由延迟清理逻辑移除
+        decodedFramesBySongKey.entries.removeAll { (_, cachedFrame) ->
+            cachedFrame.decodedBitmap == null &&
+                sameNowPlayingCoverRequestFrame(cachedFrame, frame)
         }
     }
 
     Box(modifier = modifier) {
         Crossfade(
-            targetState = currentDisplayedFrame,
-            animationSpec = if (currentDisplayedFrame == null) {
+            targetState = visibleFrame,
+            animationSpec = if (!animateVisibleFrame) {
                 snap()
             } else {
                 tween(durationMillis = NowPlayingCoverImageCrossfadeMs)
@@ -453,65 +888,117 @@ private fun StableNowPlayingCoverImage(
                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
+            } else if (frame.decodedBitmap != null) {
+                Image(
+                    bitmap = frame.decodedBitmap,
+                    contentDescription = contentDescription,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
             } else {
+                key(frame.requestToken) {
+                    AsyncImage(
+                        model = remember(
+                            context,
+                            frame,
+                            coverRequestSizePx,
+                            offlineMode
+                        ) {
+                            offlineCachedImageRequest(
+                                context = context,
+                                data = frame.coverUrl,
+                                sizePx = coverRequestSizePx,
+                                allowHardware = false,
+                                crossfade = false,
+                                offlineMode = offlineMode,
+                                cacheKey = frame.cacheKey
+                            )
+                        },
+                        contentDescription = contentDescription,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        onSuccess = { state ->
+                            val requested = requestedCover
+                            if (
+                                requested != null &&
+                                    frame == requested.frame &&
+                                    shouldCommitNowPlayingCoverRequest(
+                                        completedRequest = requested,
+                                        latestRequest = latestRequestedCover
+                                    )
+                            ) {
+                                resolveNowPlayingCoverBitmap(
+                                    state = state,
+                                    sizePx = coverRequestSizePx
+                                )?.let { decodedBitmap ->
+                                    publishDecodedFrame(
+                                        request = requested,
+                                        frame = frame.copy(decodedBitmap = decodedBitmap)
+                                    )
+                                } ?: rejectDecodedFrame(frame, requested)
+                            }
+                        },
+                        onError = {
+                            val requested = requestedCover
+                            if (requested != null && frame == requested.frame) {
+                                rejectDecodedFrame(
+                                    frame = frame,
+                                    failedRequest = requested
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        if (
+            requestedCover != null &&
+            failedRequestForCurrentCover == null &&
+            !sameNowPlayingCoverSource(requestedCover.frame, visibleFrame)
+        ) {
+            key(requestedCover.requestToken) {
                 AsyncImage(
                     model = remember(
                         context,
-                        frame,
+                        requestedCover.frame,
                         coverRequestSizePx,
                         offlineMode
                     ) {
                         offlineCachedImageRequest(
                             context = context,
-                            data = frame.coverUrl,
+                            data = requestedCover.frame.coverUrl,
                             sizePx = coverRequestSizePx,
                             allowHardware = false,
                             crossfade = false,
                             offlineMode = offlineMode,
-                            cacheKey = frame.cacheKey
+                            cacheKey = requestedCover.frame.cacheKey
                         )
                     },
-                    contentDescription = contentDescription,
+                    contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = 0f },
+                    onSuccess = { state ->
+                        resolveNowPlayingCoverBitmap(
+                            state = state,
+                            sizePx = coverRequestSizePx
+                        )?.let { decodedBitmap ->
+                            publishDecodedFrame(
+                                request = requestedCover,
+                                frame = requestedCover.frame.copy(decodedBitmap = decodedBitmap)
+                            )
+                        } ?: rejectDecodedFrame(requestedCover.frame, requestedCover)
+                    },
+                    onError = {
+                        rejectDecodedFrame(
+                            frame = requestedCover.frame,
+                            failedRequest = requestedCover
+                        )
+                    }
                 )
             }
-        }
-
-        if (requestedCover != null && requestedCover.frame != currentDisplayedFrame) {
-            AsyncImage(
-                model = remember(
-                    context,
-                    requestedCover.frame,
-                    coverRequestSizePx,
-                    offlineMode
-                ) {
-                    offlineCachedImageRequest(
-                        context = context,
-                        data = requestedCover.frame.coverUrl,
-                        sizePx = coverRequestSizePx,
-                        allowHardware = false,
-                        crossfade = false,
-                        offlineMode = offlineMode,
-                        cacheKey = requestedCover.frame.cacheKey
-                    )
-                },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = 0f },
-                onSuccess = {
-                    if (
-                        shouldCommitNowPlayingCoverRequest(
-                            completedRequest = requestedCover,
-                            latestRequest = latestRequestedCover
-                        )
-                    ) {
-                        displayedFrame = requestedCover.frame
-                    }
-                }
-            )
         }
     }
 }
@@ -2080,6 +2567,8 @@ fun NowPlayingScreen(
     resolvedCoverUrl: String? = null,
     visualCoverUrl: String? = null,
     playbackSongKey: String? = null,
+    playbackSongKeyAliases: List<String> = emptyList(),
+    visualCoverSongKey: String? = null,
 ) {
     val coverLyricFontScale = lyricFontScales.coverLyric
     val coverTranslationFontScale = lyricFontScales.coverTranslation
@@ -2185,11 +2674,35 @@ fun NowPlayingScreen(
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val coverAssetRootGeneration by LocalAssetInvalidationBus.rootGenerationFlow
+        .collectAsStateWithLifecycle()
+    val coverAssetSongRevisionKey = remember(currentSong) {
+        currentSong?.stableKey().orEmpty()
+    }
+    val coverAssetSongRevision by LocalAssetInvalidationBus
+        .revisionFlow(coverAssetSongRevisionKey)
+        .collectAsStateWithLifecycle()
     val downloadedLyricsRefreshVersion by
         ManagedDownloadStorage.lyricsRefreshVersion.collectAsStateWithLifecycle()
-    val actualCoverUrl = resolvedCoverUrl ?: visualCoverUrl
-    val currentCoverUrl = visualCoverUrl ?: actualCoverUrl
-    val coverSongKey = playbackSongKey ?: currentSong?.stableKey()
+    val currentSongVisualKey = currentSong?.playbackVisualKey()
+    val coverSongKey = resolveNowPlayingCoverOwnerKey(
+        currentSongKey = currentSongVisualKey,
+        parentSongKey = playbackSongKey
+    )
+    val coverSongKeyAliases = if (currentSongVisualKey != null) {
+        currentSong?.playbackVisualKeyAliases().orEmpty()
+    } else {
+        playbackSongKeyAliases
+    }
+    val currentCoverUrl = resolveNowPlayingCoverRequestUrl(
+        resolvedCoverUrl = resolvedCoverUrl,
+        resolvedCoverSongKey = playbackSongKey,
+        resolvedCoverOwnerRequired = playbackSongKey == null && currentSongVisualKey != null,
+        visualCoverUrl = visualCoverUrl,
+        visualCoverSongKey = visualCoverSongKey,
+        currentSongKey = coverSongKey
+    )
+    val actualCoverUrl = currentCoverUrl
     val coverPreviewOnTapEnabled = shouldOpenNowPlayingCoverPreviewOnTap(currentSong)
     val coverPreviewOnLongPressEnabled =
         shouldOpenNowPlayingCoverPreviewOnLongPress(currentSong)
@@ -3532,14 +4045,16 @@ fun NowPlayingScreen(
                                 StableNowPlayingCoverImage(
                                     coverUrl = currentCoverUrl,
                                     songKey = coverSongKey,
+                                    songKeyAliases = coverSongKeyAliases,
                                     context = context,
                                     coverRequestSizePx = coverRequestSizePx,
                                     offlineMode = offlineMode,
-                                    coverCacheKey = listOf(
-                                        "nowplaying-cover",
-                                        currentCoverUrl.orEmpty(),
-                                        downloadPresenceVersion
-                                    ).joinToString("|"),
+                                    coverCacheKey = buildNowPlayingCoverCacheKey(
+                                        coverUrl = currentCoverUrl,
+                                        downloadPresenceVersion = downloadPresenceVersion,
+                                        assetRootGeneration = coverAssetRootGeneration,
+                                        assetSongRevision = coverAssetSongRevision
+                                    ),
                                     contentDescription = currentSong?.customName
                                         ?: currentSong?.name
                                         ?: "",

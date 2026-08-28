@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.storage.migration
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.json.JSONObject
 
 internal class ManagedDownloadMigrationCheckpointStore internal constructor(
@@ -19,6 +20,95 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         return runCatching {
             preferences.getInt(keyFor(workId), 0)
         }.getOrDefault(0).coerceAtLeast(0)
+    }
+
+    /**
+     * returns the complete migration input that was committed before enqueue
+     */
+    fun readRequest(): ManagedMigrationRequest? {
+        val raw = runCatching {
+            preferences.getString(ACTIVE_REQUEST_KEY, null)
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+        return try {
+            decodeRequest(JSONObject(raw))
+        } catch (error: ManagedDownloadMigrationException) {
+            throw error
+        } catch (error: Exception) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移请求无法读取，等待恢复",
+                error
+            )
+        }
+    }
+
+    // commit is intentional because the process may die before WorkManager enqueue
+    @SuppressLint("UseKtx")
+    fun recordRequest(request: ManagedMigrationRequest): ManagedMigrationRequest {
+        val normalized = request.normalized()
+        if (normalized.workId.isBlank()) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移请求缺少任务标识，等待重试"
+            )
+        }
+        val committed = preferences.edit()
+            .putString(ACTIVE_REQUEST_KEY, encodeRequest(normalized).toString())
+            .commit()
+        if (!committed) {
+            throw ManagedDownloadMigrationException.transient(
+                "无法持久化迁移请求"
+            )
+        }
+        return normalized
+    }
+
+    /**
+     * terminal failure must not be restarted forever, while its journal remains
+     * available for an explicit retry from the settings screen
+     */
+    fun markRequestTerminal(workId: String): Boolean {
+        val current = readRequest() ?: return false
+        if (current.workId != workId) return false
+        recordRequest(current.copy(autoResume = false))
+        return true
+    }
+
+    @SuppressLint("UseKtx")
+    fun clearRequest(workId: String? = null): Boolean {
+        if (workId != null) {
+            val current = readRequest()
+            if (current != null && current.workId != workId) return true
+        }
+        return preferences.edit().remove(ACTIVE_REQUEST_KEY).commit()
+    }
+
+    /**
+     * clears all migration credentials in one SharedPreferences commit after the
+     * target has been verified and the catalog scan has been published
+     */
+    @SuppressLint("UseKtx")
+    fun clearCompleted(workIds: Collection<String>): Boolean {
+        val normalizedIds = workIds.map(String::trim).filter(String::isNotBlank).toSet()
+        val currentRequest = readRequest()
+        val currentJournal = readReplacementJournal()
+        val editor = preferences.edit()
+        normalizedIds.forEach { workId ->
+            editor.remove(keyFor(workId))
+            editor.remove(targetNamesKeyFor(workId))
+            editor.remove(progressKeyFor(workId))
+        }
+        if (
+            currentRequest == null ||
+                currentRequest.workId in normalizedIds ||
+                currentRequest.checkpointWorkId?.let(normalizedIds::contains) == true
+        ) {
+            editor.remove(ACTIVE_REQUEST_KEY)
+        }
+        // 只清理属于本次已验证迁移的替换事务，不能让并发或旧事务的
+        // journal 在另一项迁移完成时被误删
+        if (currentJournal == null || currentJournal.workId in normalizedIds) {
+            editor.remove(ACTIVE_REPLACEMENT_JOURNAL_KEY)
+        }
+        return editor.commit()
     }
 
     // KTX edit discards commit's boolean result, which is required for retry decisions
@@ -73,6 +163,44 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
+     * reads the last durable migration progress snapshot. A missing or malformed
+     * optional progress record must not invalidate the file migration journal
+     */
+    fun readProgress(workId: String): ManagedDownloadStorage.MigrationProgress? {
+        val raw = runCatching {
+            preferences.getString(progressKeyFor(workId), null)
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+        return runCatching {
+            decodeProgress(JSONObject(raw))
+        }.getOrNull()
+    }
+
+    /**
+     * persists a complete progress snapshot so a restarted worker can explain
+     * its current phase before it touches either storage root
+     */
+    @SuppressLint("UseKtx")
+    fun recordProgress(
+        workId: String,
+        progress: ManagedDownloadStorage.MigrationProgress
+    ): ManagedDownloadStorage.MigrationProgress {
+        val normalized = normalizeProgress(progress)
+        val durableProgress = mergeMigrationProgressFloor(
+            floor = readProgress(workId),
+            current = normalized
+        )
+        val committed = preferences.edit()
+            .putString(progressKeyFor(workId), encodeProgress(durableProgress).toString())
+            .commit()
+        if (!committed) {
+            throw ManagedDownloadMigrationException.transient(
+                "无法持久化迁移进度"
+            )
+        }
+        return durableProgress
+    }
+
+    /**
      * Returns the active replacement journal, if one was durably written.
      * Unknown fields are ignored so journals written by a newer build remain
      * readable after a rollback.
@@ -119,12 +247,168 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         return preferences.edit()
             .remove(keyFor(workId))
             .remove(targetNamesKeyFor(workId))
+            .remove(progressKeyFor(workId))
             .commit()
     }
 
     private fun keyFor(workId: String): String = "$KEY_PREFIX$workId"
 
     private fun targetNamesKeyFor(workId: String): String = "$TARGET_NAMES_KEY_PREFIX$workId"
+
+    private fun progressKeyFor(workId: String): String = "$PROGRESS_KEY_PREFIX$workId"
+
+    private fun encodeRequest(request: ManagedMigrationRequest): JSONObject {
+        return JSONObject().apply {
+            put("version", CURRENT_MIGRATION_REQUEST_VERSION)
+            put("workId", request.workId)
+            put("fromDirectoryUri", request.fromDirectoryUri)
+            put("toDirectoryUri", request.toDirectoryUri)
+            put("targetLabel", request.targetLabel)
+            put("releasePreviousPermission", request.releasePreviousPermission)
+            put("minimumSourceEntryCount", request.minimumSourceEntryCount)
+            put("checkpointWorkId", request.checkpointWorkId)
+            put("autoResume", request.autoResume)
+        }
+    }
+
+    private fun decodeRequest(root: JSONObject): ManagedMigrationRequest {
+        val version = root.optInt("version", CURRENT_MIGRATION_REQUEST_VERSION)
+        if (version != CURRENT_MIGRATION_REQUEST_VERSION) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移请求版本不受支持: $version"
+            )
+        }
+        val workId = root.optString("workId").trim()
+        if (workId.isBlank()) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移请求缺少任务标识"
+            )
+        }
+        return ManagedMigrationRequest(
+            workId = workId,
+            fromDirectoryUri = root.optNullableString("fromDirectoryUri"),
+            toDirectoryUri = root.optNullableString("toDirectoryUri"),
+            targetLabel = root.optString("targetLabel").trim(),
+            releasePreviousPermission = root.optBoolean(
+                "releasePreviousPermission",
+                false
+            ),
+            minimumSourceEntryCount = root.optInt(
+                "minimumSourceEntryCount",
+                0
+            ).coerceAtLeast(0),
+            checkpointWorkId = root.optNullableString("checkpointWorkId"),
+            autoResume = root.optBoolean("autoResume", true)
+        ).normalized()
+    }
+
+    private fun encodeProgress(
+        progress: ManagedDownloadStorage.MigrationProgress
+    ): JSONObject {
+        return JSONObject().apply {
+            put("version", CURRENT_MIGRATION_PROGRESS_VERSION)
+            put("stage", progress.stage.name)
+            put("totalFiles", progress.totalFiles)
+            put("processedFiles", progress.processedFiles)
+            put("copiedFiles", progress.copiedFiles)
+            put("copiedBytes", progress.copiedBytes)
+            put("totalBytes", progress.totalBytes)
+            put("metadataFilesProcessed", progress.metadataFilesProcessed)
+            put("metadataFilesTotal", progress.metadataFilesTotal)
+            put("cleanupFilesProcessed", progress.cleanupFilesProcessed)
+            put("cleanupFilesTotal", progress.cleanupFilesTotal)
+            put("verificationFilesProcessed", progress.verificationFilesProcessed)
+            put("verificationFilesTotal", progress.verificationFilesTotal)
+            put("verifiedBytes", progress.verifiedBytes)
+            put("verificationBytesTotal", progress.verificationBytesTotal)
+            progress.currentFileName?.let { currentFileName ->
+                put("currentFileName", currentFileName)
+            }
+        }
+    }
+
+    private fun decodeProgress(
+        root: JSONObject
+    ): ManagedDownloadStorage.MigrationProgress? {
+        if (
+            root.optInt("version", CURRENT_MIGRATION_PROGRESS_VERSION) !=
+                CURRENT_MIGRATION_PROGRESS_VERSION
+        ) {
+            return null
+        }
+        val stage = ManagedDownloadStorage.MigrationStage.entries.firstOrNull { candidate ->
+            candidate.name == root.optString("stage").trim()
+        } ?: return null
+        val totalFiles = root.optInt("totalFiles", 0).coerceAtLeast(0)
+        val processedFiles = root.optInt("processedFiles", 0)
+            .coerceAtLeast(0)
+            .coerceAtMost(totalFiles)
+        val metadataFilesTotal = root.optInt("metadataFilesTotal", 0).coerceAtLeast(0)
+        val cleanupFilesTotal = root.optInt("cleanupFilesTotal", 0).coerceAtLeast(0)
+        val verificationFilesTotal = root.optInt("verificationFilesTotal", 0)
+            .coerceAtLeast(0)
+        return ManagedDownloadStorage.MigrationProgress(
+            stage = stage,
+            totalFiles = totalFiles,
+            processedFiles = processedFiles,
+            copiedFiles = root.optInt("copiedFiles", 0)
+                .coerceAtLeast(0)
+                .coerceAtMost(totalFiles),
+            copiedBytes = root.optLong("copiedBytes", 0L).coerceAtLeast(0L),
+            totalBytes = root.optLong("totalBytes", 0L).coerceAtLeast(0L),
+            metadataFilesProcessed = root.optInt("metadataFilesProcessed", 0)
+                .coerceAtLeast(0)
+                .coerceAtMost(metadataFilesTotal),
+            metadataFilesTotal = metadataFilesTotal,
+            cleanupFilesProcessed = root.optInt("cleanupFilesProcessed", 0)
+                .coerceAtLeast(0)
+                .coerceAtMost(cleanupFilesTotal),
+            cleanupFilesTotal = cleanupFilesTotal,
+            currentFileName = root.optString("currentFileName")
+                .trim()
+                .takeIf(String::isNotBlank),
+            verificationFilesProcessed = root.optInt("verificationFilesProcessed", 0)
+                .coerceAtLeast(0)
+                .coerceAtMost(verificationFilesTotal),
+            verificationFilesTotal = verificationFilesTotal,
+            verifiedBytes = root.optLong("verifiedBytes", 0L).coerceAtLeast(0L),
+            verificationBytesTotal = root.optLong("verificationBytesTotal", 0L)
+                .coerceAtLeast(0L)
+        )
+    }
+
+    private fun normalizeProgress(
+        progress: ManagedDownloadStorage.MigrationProgress
+    ): ManagedDownloadStorage.MigrationProgress {
+        val totalFiles = progress.totalFiles.coerceAtLeast(0)
+        val metadataFilesTotal = progress.metadataFilesTotal.coerceAtLeast(0)
+        val cleanupFilesTotal = progress.cleanupFilesTotal.coerceAtLeast(0)
+        val verificationFilesTotal = progress.verificationFilesTotal.coerceAtLeast(0)
+        return progress.copy(
+            totalFiles = totalFiles,
+            processedFiles = progress.processedFiles.coerceAtLeast(0).coerceAtMost(totalFiles),
+            copiedFiles = progress.copiedFiles.coerceAtLeast(0).coerceAtMost(totalFiles),
+            copiedBytes = progress.copiedBytes.coerceAtLeast(0L),
+            totalBytes = progress.totalBytes.coerceAtLeast(0L),
+            metadataFilesProcessed = progress.metadataFilesProcessed
+                .coerceAtLeast(0)
+                .coerceAtMost(metadataFilesTotal),
+            metadataFilesTotal = metadataFilesTotal,
+            cleanupFilesProcessed = progress.cleanupFilesProcessed
+                .coerceAtLeast(0)
+                .coerceAtMost(cleanupFilesTotal),
+            cleanupFilesTotal = cleanupFilesTotal,
+            currentFileName = progress.currentFileName
+                ?.trim()
+                ?.takeIf(String::isNotBlank),
+            verificationFilesProcessed = progress.verificationFilesProcessed
+                .coerceAtLeast(0)
+                .coerceAtMost(verificationFilesTotal),
+            verificationFilesTotal = verificationFilesTotal,
+            verifiedBytes = progress.verifiedBytes.coerceAtLeast(0L),
+            verificationBytesTotal = progress.verificationBytesTotal.coerceAtLeast(0L)
+        )
+    }
 
     private fun encodeReplacementJournal(
         journal: ManagedMigrationReplacementJournal
@@ -296,6 +580,10 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         internal const val PREFERENCES_NAME = "managed_download_migration_checkpoint"
         internal const val KEY_PREFIX = "minimum_audio_count:"
         internal const val TARGET_NAMES_KEY_PREFIX = "target_names:"
+        internal const val PROGRESS_KEY_PREFIX = "progress:"
+        internal const val ACTIVE_REQUEST_KEY = "request:active"
         internal const val ACTIVE_REPLACEMENT_JOURNAL_KEY = "replacement_journal:active"
+        internal const val CURRENT_MIGRATION_REQUEST_VERSION = 1
+        internal const val CURRENT_MIGRATION_PROGRESS_VERSION = 1
     }
 }

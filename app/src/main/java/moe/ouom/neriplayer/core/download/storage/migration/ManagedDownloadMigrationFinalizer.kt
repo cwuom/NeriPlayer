@@ -120,18 +120,27 @@ internal class ManagedDownloadMigrationFinalizer(
     private val readText: (Context, String) -> String?,
     private val entryReader: ManagedMigrationEntryReader,
     private val writeRootText: (Context, ManagedDownloadRootHandle, String, String) -> ManagedDownloadStorage.StoredEntry?,
+    private val writeRootTextWithKnownEntry: (
+        Context,
+        ManagedDownloadRootHandle,
+        String,
+        String,
+        ManagedDownloadStorage.StoredEntry?
+    ) -> ManagedDownloadStorage.StoredEntry? = { context, root, name, content, _ ->
+        writeRootText(context, root, name, content)
+    },
     private val restoreLastModified: (
         Context,
         ManagedDownloadStorage.StoredEntry,
         Long
     ) -> Unit = { _, _, _ -> },
-    private val deleteReference: (
+    private val deleteReference: suspend (
         Context,
         TrustedManagedRef,
         ManagedDownloadRootHandle
     ) -> StorageMutationResult,
     private val rewriteMetadataReferences: (String, Map<String, String>) -> String,
-    private val deleteReferences: (
+    private val deleteReferences: suspend (
         Context,
         Collection<TrustedManagedRef>,
         ManagedDownloadRootHandle,
@@ -564,7 +573,7 @@ internal class ManagedDownloadMigrationFinalizer(
         val deletionResults = if (deletionReferences.isEmpty()) {
             emptyMap()
         } else {
-            runCatching {
+            try {
                 deleteReferences(
                     context,
                     deletionReferences,
@@ -572,7 +581,9 @@ internal class ManagedDownloadMigrationFinalizer(
                     ::startReference,
                     ::finishReference
                 )
-            }.getOrElse { error ->
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 val result = error.toStorageMutationResult()
                 deletionReferences.associateWith { result }
             }
@@ -676,11 +687,12 @@ internal class ManagedDownloadMigrationFinalizer(
                 return MetadataRewriteOutcome(copied = copied, failed = true)
             }
             val rewrittenEntry = try {
-                writeRootText(
+                writeRootTextWithKnownEntry(
                     context,
                     targetRoot,
                     copied.copiedEntry.name,
-                    rewriteInput.rewrittenMetadata
+                    rewriteInput.rewrittenMetadata,
+                    copied.copiedEntry
                 ) ?: throw IllegalStateException(
                     "无法读取回写后的 metadata: ${copied.copiedEntry.name}"
                 )
@@ -983,7 +995,7 @@ internal class ManagedDownloadMigrationFinalizer(
             ?: reference.takeIf { it.startsWith('/') }
     }
 
-    private fun rollbackMigratedEntry(
+    private suspend fun rollbackMigratedEntry(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         targetRoot: ManagedDownloadRootHandle
@@ -996,15 +1008,18 @@ internal class ManagedDownloadMigrationFinalizer(
         }
         val targetReference = migrationEntry.copiedEntry.toTrustedManagedRef()
         val result = targetReference?.let { reference ->
-            runCatching {
+            try {
                 deleteReference(context, reference, targetRoot)
-            }.onFailure {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 NPLogger.w(
                     tag,
                     "回滚迁移目标文件失败: " +
-                        "${migrationEntry.copiedEntry.reference}, ${it.message}"
+                        "${migrationEntry.copiedEntry.reference}, ${error.message}"
                 )
-            }.getOrElse { error -> error.toStorageMutationResult() }
+                error.toStorageMutationResult()
+            }
         } ?: StorageMutationResult.OutOfScope
         return if (result.isCleanupConfirmed()) 0 else 1
     }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.reference
 
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.core.net.toUri
@@ -10,6 +11,10 @@ import java.io.FileNotFoundException
 import java.net.URI
 
 internal object ManagedDownloadReferenceIo {
+    private const val DOCUMENT_QUERY_ATTEMPTS = 2
+    private const val NULL_DOCUMENT_CURSOR_MESSAGE =
+        "provider returned null document cursor"
+
     sealed interface DeleteResult {
         data object Deleted : DeleteResult
         data object Missing : DeleteResult
@@ -67,12 +72,17 @@ internal object ManagedDownloadReferenceIo {
         val uri = runCatching { normalized.toUri() }.getOrElse { error ->
             return AccessResult.ProviderFailure(error)
         }
+        return inspect(context, uri)
+    }
+
+    fun inspect(context: Context, uri: Uri): AccessResult {
         uri.toLocalFile()?.let { return inspectFile(it) }
         return inspectDocument(context, uri)
     }
 
     fun inspectDirectory(context: Context, uri: Uri): AccessResult {
-        return inspectDirectory(context, uri.toString())
+        uri.toLocalFile()?.let { return inspectDirectoryFile(it) }
+        return inspectDocumentDirectory(context, uri)
     }
 
     fun inspectDirectory(context: Context, reference: String?): AccessResult {
@@ -186,15 +196,11 @@ internal object ManagedDownloadReferenceIo {
 
     private fun inspectDocument(context: Context, uri: Uri): AccessResult {
         try {
-            val cursor = context.contentResolver.query(
-                uri,
-                arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID),
-                null,
-                null,
-                null
-            ) ?: return AccessResult.ProviderFailure(
-                IllegalStateException("provider returned null document cursor")
-            )
+            val cursor = queryDocumentCursor(
+                context = context,
+                uri = uri,
+                projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            ) ?: return inspectDocumentWithoutCursor(context, uri)
             cursor.use {
                 if (!it.moveToFirst()) return AccessResult.Missing
             }
@@ -222,14 +228,12 @@ internal object ManagedDownloadReferenceIo {
 
     private fun inspectDocumentDirectory(context: Context, uri: Uri): AccessResult {
         try {
-            val cursor = context.contentResolver.query(
-                uri,
-                arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
-                null,
-                null,
-                null
+            val cursor = queryDocumentCursor(
+                context = context,
+                uri = uri,
+                projection = arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE)
             ) ?: return AccessResult.ProviderFailure(
-                IllegalStateException("provider returned null document cursor")
+                nullDocumentCursorFailure(uri)
             )
             cursor.use {
                 if (!it.moveToFirst()) return AccessResult.Missing
@@ -250,6 +254,37 @@ internal object ManagedDownloadReferenceIo {
             return classifyDocumentFailure(error)
         } catch (error: Throwable) {
             return classifyDocumentFailure(error)
+        }
+    }
+
+    private fun queryDocumentCursor(
+        context: Context,
+        uri: Uri,
+        projection: Array<String>
+    ): Cursor? {
+        repeat(DOCUMENT_QUERY_ATTEMPTS) {
+            context.contentResolver.query(uri, projection, null, null, null)?.let { cursor ->
+                return cursor
+            }
+        }
+        return null
+    }
+
+    private fun inspectDocumentWithoutCursor(context: Context, uri: Uri): AccessResult {
+        return try {
+            context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                AccessResult.Accessible
+            } ?: AccessResult.ProviderFailure(nullDocumentCursorFailure(uri))
+        } catch (error: SecurityException) {
+            AccessResult.PermissionLost
+        } catch (error: Throwable) {
+            AccessResult.ProviderFailure(nullDocumentCursorFailure(uri, error))
+        }
+    }
+
+    private fun nullDocumentCursorFailure(uri: Uri, descriptorError: Throwable? = null): Throwable {
+        return IllegalStateException("$NULL_DOCUMENT_CURSOR_MESSAGE: $uri").also { failure ->
+            descriptorError?.let(failure::addSuppressed)
         }
     }
 

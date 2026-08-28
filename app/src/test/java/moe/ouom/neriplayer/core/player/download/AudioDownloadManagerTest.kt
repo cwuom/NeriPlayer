@@ -27,6 +27,7 @@ import java.io.IOException
 import java.net.SocketException
 import java.net.UnknownHostException
 import java.util.concurrent.atomic.AtomicBoolean
+import org.json.JSONObject
 
 class AudioDownloadManagerTest {
 
@@ -197,7 +198,93 @@ class AudioDownloadManagerTest {
                 verifiedManagedReference = null,
                 rawEvidence = ManagedDownloadReferenceLookup.Result.Present,
                 managedReferenceIsExplicitlyIncomplete = false
-            ) is LocalPlaybackReferenceResolution.Playable
+        ) is LocalPlaybackReferenceResolution.Playable
+        )
+    }
+
+    @Test
+    fun `present formal managed audio bypasses stale completion metadata`() {
+        val present = ManagedDownloadReferenceLookup.Result.Present
+
+        assertTrue(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                evidence = present
+            )
+        )
+        assertTrue(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "/storage/emulated/0/NeriPlayer/Song.flac",
+                isManagedDownload = true,
+                evidence = present
+            )
+        )
+        assertFalse(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/downloads/Song.flac.npdl_pending",
+                isManagedDownload = true,
+                evidence = present
+            )
+        )
+        assertFalse(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/download_staging/Song.flac",
+                isManagedDownload = true,
+                evidence = present
+            )
+        )
+        assertFalse(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/downloads/npdl_song.flac.download",
+                isManagedDownload = true,
+                evidence = present
+            )
+        )
+        assertFalse(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                evidence = ManagedDownloadReferenceLookup.Result.Missing
+            )
+        )
+        assertFalse(
+            shouldUseDirectPresentLocalPlayback(
+                reference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                evidence = present,
+                downloadCancelled = true
+            )
+        )
+    }
+
+    @Test
+    fun `completed bridge allows pending reference without synchronous provider probe`() {
+        assertTrue(
+            shouldUseCompletedAudioReferenceDirectly(
+                reference = "content://provider/downloads/Song.flac.npdl_pending"
+            )
+        )
+        assertTrue(
+            shouldUseCompletedAudioReferenceDirectly(
+                reference = "/storage/emulated/0/NeriPlayer/Song.flac"
+            )
+        )
+        assertFalse(
+            shouldUseCompletedAudioReferenceDirectly(
+                reference = "content://provider/download_staging/Song.flac"
+            )
+        )
+        assertFalse(
+            shouldUseCompletedAudioReferenceDirectly(
+                reference = "content://provider/downloads/npdl_song.flac.download"
+            )
+        )
+        assertFalse(
+            shouldUseCompletedAudioReferenceDirectly(
+                reference = "content://provider/downloads/Song.flac",
+                downloadCancelled = true
+            )
         )
     }
 
@@ -244,6 +331,17 @@ class AudioDownloadManagerTest {
                 metadata = null
             )
         )
+        assertTrue(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = true,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    downloadFinalized = false,
+                    artifactState = "CORE_COMMITTED"
+                )
+            )
+        )
         assertFalse(
             isReadableManagedAudioPlaybackAllowed(
                 audioIsPending = false,
@@ -255,6 +353,20 @@ class AudioDownloadManagerTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun `core commit seeds durable playable metadata before enrichment`() {
+        val seeded = coreCommittedSeedMetadataJson(
+            """{"downloadFinalized":false,"artifactState":"COMMITTING","stableKey":"song"}"""
+        )
+
+        assertTrue(seeded != null)
+        val json = JSONObject(requireNotNull(seeded))
+        assertFalse(json.optBoolean("downloadFinalized", true))
+        assertEquals("CORE_COMMITTED", json.optString("artifactState"))
+        assertEquals("song", json.optString("stableKey"))
+        assertNull(coreCommittedSeedMetadataJson("not-json"))
     }
 
     @Test
@@ -272,7 +384,61 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `present legacy audio remains playable while repair metadata is pending`() {
+        val repairMetadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+            downloadFinalized = false,
+            artifactState = "REPAIR_REQUIRED"
+        )
+
+        assertTrue(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = repairMetadata,
+                allowLegacyPublishedAudio = true
+            )
+        )
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = false,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = repairMetadata,
+                allowLegacyPublishedAudio = false
+            )
+        )
+        assertFalse(
+            isReadableManagedAudioPlaybackAllowed(
+                audioIsPending = true,
+                downloadActive = false,
+                downloadCancelled = false,
+                metadata = repairMetadata,
+                allowLegacyPublishedAudio = true
+            )
+        )
+    }
+
+    @Test
     fun `only typed missing permits a downloaded song to use remote fallback`() {
+        assertEquals(
+            LocalPlaybackReferenceResolution.Playable(
+                "content://provider/downloads/Song.flac"
+            ),
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.Present
+            )
+        )
+        assertTrue(
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.Present,
+                indexedReferenceIsExplicitlyIncomplete = true
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
         assertEquals(
             LocalPlaybackReferenceResolution.Missing,
             selectIndexedLocalPlaybackResolution(
@@ -280,6 +446,23 @@ class AudioDownloadManagerTest {
                 indexedReference = "content://provider/downloads/Song.flac",
                 indexedEvidence = ManagedDownloadReferenceLookup.Result.Missing
             )
+        )
+        assertTrue(
+            selectIndexedLocalPlaybackResolution(
+                verifiedReference = null,
+                indexedReference = "content://provider/downloads/Song.npdl_pending.flac",
+                indexedEvidence = ManagedDownloadReferenceLookup.Result.Missing,
+                missingIsTransient = true
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
+        )
+        assertTrue(
+            selectPermittedLocalPlaybackResolution(
+                rawLocalReference = "content://provider/downloads/Song.flac",
+                isManagedDownload = true,
+                verifiedManagedReference = null,
+                rawEvidence = ManagedDownloadReferenceLookup.Result.Missing,
+                missingIsTransient = true
+            ) is LocalPlaybackReferenceResolution.TemporarilyUnavailable
         )
         assertTrue(
             selectIndexedLocalPlaybackResolution(
@@ -456,6 +639,42 @@ class AudioDownloadManagerTest {
         assertFalse(executionBody.contains("ManagedDownloadStorage.saveAudioFromTemp("))
         assertTrue(source.contains("private suspend fun downloadPayloadForTransport("))
         assertTrue(source.contains("private suspend fun finalizeDownloadedAudio("))
+    }
+
+    @Test
+    fun `completed bridge is retained until a real transport starts`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val executionBody = methodBody(source, "executeDownloadSong")
+        val cachedLookupIndex = executionBody.indexOf(
+            "hasFastCachedManagedDownloadForStart(context, song)"
+        )
+        val bridgeClearIndex = executionBody.indexOf(
+            "clearCompletedAudioReference(songKey)"
+        )
+        val transportIndex = executionBody.indexOf("downloadPayloadForTransport(")
+
+        assertTrue(cachedLookupIndex >= 0)
+        assertTrue(bridgeClearIndex > cachedLookupIndex)
+        assertTrue(transportIndex > bridgeClearIndex)
+    }
+
+    @Test
+    fun `recent completed bridge is checked before SAF inspection`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/AudioDownloadManager.kt"
+        ).readText()
+        val playbackBody = methodBody(source, "resolvePermittedLocalPlayback")
+        val bridgeIndex = playbackBody.indexOf(
+            "resolveRecentlyCommittedAudioReference("
+        )
+        val providerIndex = playbackBody.indexOf(
+            "val rawEvidence = ManagedDownloadReferenceLookup.inspect"
+        )
+
+        assertTrue(bridgeIndex >= 0)
+        assertTrue(providerIndex > bridgeIndex)
     }
 
     @Test

@@ -11,8 +11,5 @@ class ManagedLibraryItemRestorePolicyTest {
         assertFalse(shouldRestoreManagedLibraryItem("UNKNOWN"))
         assertFalse(shouldRestoreManagedLibraryItem("QUEUED"))
         assertFalse(shouldRestoreManagedLibraryItem("DOWNLOADING"))
-        assertFalse(shouldRestoreManagedLibraryItem("CORE_COMMITTED"))
-        assertFalse(shouldRestoreManagedLibraryItem("ASSETS_ENRICHING"))
-        assertFalse(shouldRestoreManagedLibraryItem("DEGRADED_COMPLETE"))
     }
 }

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSong as matche
 import moe.ouom.neriplayer.core.download.catalog.matchesDownloadedSongCatalogEntry as matchesDownloadedSongCatalogEntryDelegate
 import moe.ouom.neriplayer.core.download.catalog.resolveDownloadedSongPlaybackReference as resolveDownloadedSongPlaybackReferenceDelegate
 import moe.ouom.neriplayer.core.download.catalog.deserializeDownloadedSongsCatalog as deserializeDownloadedSongsCatalogDelegate
+import moe.ouom.neriplayer.core.download.catalog.downloadedSongPlaybackReferenceCandidates as downloadedSongPlaybackReferenceCandidatesDelegate
 import moe.ouom.neriplayer.core.download.catalog.serializeDownloadedSongsCatalog as serializeDownloadedSongsCatalogDelegate
 import moe.ouom.neriplayer.core.download.catalog.shouldPublishDownloadedSongCatalogUpdate as shouldPublishDownloadedSongCatalogUpdateDelegate
 import moe.ouom.neriplayer.core.download.catalog.upsertDownloadedSongCatalog as upsertDownloadedSongCatalogDelegate
@@ -407,6 +408,14 @@ internal fun findDownloadedSongCatalogMatch(
 
 internal fun resolveDownloadedSongPlaybackReference(song: DownloadedSong): String? =
     resolveDownloadedSongPlaybackReferenceDelegate(song)
+
+internal fun resolveDownloadedSongPlaybackReference(
+    song: DownloadedSong,
+    isAccessible: (String) -> Boolean
+): String? = resolveDownloadedSongPlaybackReferenceDelegate(song, isAccessible)
+
+internal fun downloadedSongPlaybackReferenceCandidates(song: DownloadedSong): List<String> =
+    downloadedSongPlaybackReferenceCandidatesDelegate(song)
 
 internal fun shouldPublishDownloadedSongCatalogUpdate(
     currentSong: DownloadedSong,

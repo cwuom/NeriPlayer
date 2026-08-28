@@ -8,7 +8,9 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.identity
+import moe.ouom.neriplayer.data.model.remoteDownloadIdentityOrNull
 import moe.ouom.neriplayer.data.model.stableKey
+import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 
 internal data class ManagedDownloadAudioLookupResult(
     val entry: ManagedDownloadStorage.StoredEntry,
@@ -22,7 +24,7 @@ internal object ManagedDownloadStorageLookup {
     ): List<ManagedDownloadStorage.StoredEntry> {
         val grouped = audioEntries
             .mapNotNull { entry ->
-                metadataByAudioName[entry.name]
+                metadataForEntry(metadataByAudioName, entry)
                     ?.stableKey
                     ?.takeIf(String::isNotBlank)
                     ?.let { stableKey -> stableKey to entry }
@@ -33,7 +35,7 @@ internal object ManagedDownloadStorageLookup {
             .mapTo(hashSetOf()) { entries ->
                 entries.sortedWith(
                     compareByDescending<ManagedDownloadStorage.StoredEntry> { entry ->
-                        isFinalizedDownloadedMetadata(metadataByAudioName[entry.name])
+                        isFinalizedDownloadedMetadata(metadataForEntry(metadataByAudioName, entry))
                     }
                         .thenBy { entry ->
                             if (entries.any { candidate ->
@@ -53,7 +55,7 @@ internal object ManagedDownloadStorageLookup {
             }
         if (winners.isEmpty()) return audioEntries
         return audioEntries.filter { entry ->
-            val stableKey = metadataByAudioName[entry.name]
+            val stableKey = metadataForEntry(metadataByAudioName, entry)
                 ?.stableKey
                 ?.takeIf(String::isNotBlank)
             val groupSize = stableKey?.let { grouped[it]?.size ?: 0 } ?: 0
@@ -80,7 +82,7 @@ internal object ManagedDownloadStorageLookup {
         song: SongItem,
         fileNameTemplate: String?
     ): ManagedDownloadAudioLookupResult? {
-        val identity = song.identity()
+        val identity = song.remoteDownloadIdentityOrNull() ?: song.identity()
         val stableKey = identity.stableKey()
         val remoteTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
             song.channelId,
@@ -165,6 +167,12 @@ internal object ManagedDownloadStorageLookup {
         }
 
         if (requiresVerifiedRemoteIdentity) {
+            findUniqueLegacyLocalAudioEntry(
+                snapshot = snapshot,
+                song = song,
+                fileNameTemplate = fileNameTemplate,
+                remoteTrackKey = remoteTrackKey
+            )?.let { return ManagedDownloadAudioLookupResult(it, "legacyLocalEvidence") }
             return null
         }
         val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
@@ -214,6 +222,51 @@ internal object ManagedDownloadStorageLookup {
             )
     }
 
+    /**
+     * pending 文件的实际扩展名是 .pending, 但匹配应使用其逻辑音频名
+     */
+    fun findPendingAudioEntry(
+        audioEntries: List<ManagedDownloadStorage.StoredEntry>,
+        baseNames: List<String>
+    ): ManagedDownloadStorage.StoredEntry? {
+        val normalizedBaseNames = baseNames
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+        if (normalizedBaseNames.isEmpty()) return null
+
+        fun matchOrdinal(logicalName: String): Int? {
+            return normalizedBaseNames.asSequence()
+                .flatMap { baseName ->
+                    audioExtensions.asSequence().mapNotNull { extension ->
+                        val expectedName = "$baseName.$extension"
+                        when {
+                            logicalName.equals(expectedName, ignoreCase = true) -> 0
+                            else -> ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
+                                actualName = logicalName,
+                                expectedName = expectedName
+                            )
+                                ?.plus(1)
+                        }
+                    }
+                }
+                .minOrNull()
+        }
+
+        return audioEntries.asSequence()
+            .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
+            .filter(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+            .mapNotNull { entry ->
+                matchOrdinal(entry.logicalName)?.let { ordinal -> entry to ordinal }
+            }
+            .minWithOrNull(
+                compareBy<Pair<ManagedDownloadStorage.StoredEntry, Int>> { it.second }
+                    .thenByDescending { it.first.sizeBytes }
+                    .thenBy { it.first.name }
+            )
+            ?.first
+    }
+
     fun findIndexedEntryByNames(
         names: List<String>,
         entriesByName: Map<String, ManagedDownloadStorage.StoredEntry>
@@ -233,7 +286,7 @@ internal object ManagedDownloadStorageLookup {
             ?: audioEntries
                 .sortedWith(
                     compareByDescending<ManagedDownloadStorage.StoredEntry> { entry ->
-                        isFinalizedDownloadedMetadata(metadataByAudioName[entry.name])
+                        isFinalizedDownloadedMetadata(metadataForEntry(metadataByAudioName, entry))
                     }
                         .thenByDescending { entry -> entry.sizeBytes }
                         .thenByDescending { entry -> entry.lastModifiedMs }
@@ -259,7 +312,7 @@ internal object ManagedDownloadStorageLookup {
         stableKey: String,
         remoteTrackKey: String?
     ): Boolean {
-        val metadata = snapshot.metadataByAudioName[entry.name] ?: return false
+        val metadata = metadataForEntry(snapshot.metadataByAudioName, entry) ?: return false
         if (metadata.stableKey == stableKey) {
             return true
         }
@@ -269,5 +322,72 @@ internal object ManagedDownloadStorageLookup {
             metadata.subAudioId
         )
         return remoteTrackKey != null && remoteTrackKey == entryRemoteTrackKey
+    }
+
+    private fun metadataForEntry(
+        metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
+        entry: ManagedDownloadStorage.StoredEntry
+    ): ManagedDownloadStorage.DownloadedAudioMetadata? {
+        return metadataByAudioName[entry.name]
+            ?: metadataByAudioName[entry.logicalName]
+    }
+
+    private fun findUniqueLegacyLocalAudioEntry(
+        snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot,
+        song: SongItem,
+        fileNameTemplate: String?,
+        remoteTrackKey: String?
+    ): ManagedDownloadStorage.StoredEntry? {
+        if (!LocalSongSupport.isLocalSong(song, null)) return null
+        val baseNames = candidateManagedDownloadBaseNames(song, fileNameTemplate)
+        if (baseNames.isEmpty()) return null
+        val candidates = snapshot.audioEntries
+            .asSequence()
+            .filterNot(ManagedDownloadStorage.StoredEntry::isDirectory)
+            .filterNot(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+            .filter { entry ->
+                baseNames.any { baseName ->
+                    audioExtensions.any { extension ->
+                        val expectedName = "$baseName.$extension"
+                        listOf(entry.name, entry.logicalName).any { actualName ->
+                            actualName.equals(expectedName, ignoreCase = true) ||
+                                ManagedDownloadTreeNaming.providerNumberedNameOrdinal(
+                                    actualName = actualName,
+                                    expectedName = expectedName
+                                ) != null
+                        }
+                    }
+                }
+            }
+            .distinctBy(ManagedDownloadStorage.StoredEntry::reference)
+            .toList()
+        if (candidates.size != 1) return null
+
+        val candidate = candidates.single()
+        val metadata = metadataForEntry(snapshot.metadataByAudioName, candidate)
+            ?: return candidate
+        val expectedStableKeys = setOfNotNull(
+            song.stableKey().takeIf(String::isNotBlank),
+            song.sourceStableKey?.trim()?.takeIf(String::isNotBlank),
+            song.remoteDownloadIdentityOrNull()?.stableKey()?.takeIf(String::isNotBlank)
+        )
+        val metadataStableKey = metadata.stableKey?.trim()?.takeIf(String::isNotBlank)
+        val metadataTrackKey = ManagedDownloadSnapshotIndex.buildRemoteTrackKey(
+            metadata.channelId,
+            metadata.audioId,
+            metadata.subAudioId
+        )
+        if (
+            remoteTrackKey != null && metadataTrackKey != null &&
+                metadataTrackKey != remoteTrackKey
+        ) {
+            return null
+        }
+        if (metadataStableKey != null && metadataStableKey !in expectedStableKeys) {
+            if (remoteTrackKey == null || metadataTrackKey != remoteTrackKey) {
+                return null
+            }
+        }
+        return candidate
     }
 }

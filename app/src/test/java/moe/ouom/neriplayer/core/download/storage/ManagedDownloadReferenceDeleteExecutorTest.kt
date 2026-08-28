@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadReferenceDeleteExecutor
@@ -358,6 +360,80 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertFalse(result.hasUnconfirmedDeletes)
         assertTrue(maximumActiveWorkers.get() <= 4)
         assertEquals(references.size * SAF_DELETE_MAX_ATTEMPTS, deleteCalls.get())
+    }
+
+    @Test
+    fun `concurrent delete callbacks report each reference exactly once`() = runBlocking {
+        val references = (0 until 24).map { index ->
+            "content://documents.test/document/callback-$index"
+        }
+        val starts = ConcurrentHashMap.newKeySet<String>()
+        val finishes = ConcurrentHashMap.newKeySet<String>()
+        val finishCounts = ConcurrentHashMap<String, AtomicInteger>()
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            referenceDeleteParallelism = 3,
+            contentReferenceDeleteOperation = { _, _, maxAttempts, retryDelayMs ->
+                assertEquals(1, maxAttempts)
+                assertEquals(0L, retryDelayMs)
+                Thread.sleep(2L)
+                StorageMutationResult.Deleted
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = trustedReferences(references),
+            deletePolicy = deletePolicyFor(references),
+            parallelism = 3,
+            onDeleteStarted = { reference ->
+                assertTrue(starts.add(reference.externalReference))
+            },
+            onDeleteAttemptFinished = { reference, deleted ->
+                assertTrue(deleted)
+                finishes += reference.externalReference
+                finishCounts.getOrPut(reference.externalReference) { AtomicInteger() }
+                    .incrementAndGet()
+            }
+        )
+
+        assertEquals(references.toSet(), result.deletedReferences)
+        assertEquals(references.toSet(), starts)
+        assertEquals(references.toSet(), finishes)
+        assertTrue(finishCounts.values.all { count -> count.get() == 1 })
+    }
+
+    @Test
+    fun `concurrent delete propagates cancellation instead of retrying it`() {
+        val reference = "content://documents.test/document/cancelled"
+        val cancellation = CancellationException("cancelled")
+        val deleteCalls = AtomicInteger(0)
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                deleteCalls.incrementAndGet()
+                throw cancellation
+            }
+        )
+
+        var thrown: CancellationException? = null
+        try {
+            runBlocking {
+                executor.deleteReferencesConcurrently(
+                    context = mock(Context::class.java),
+                    references = trustedReferences(listOf(reference)),
+                    deletePolicy = deletePolicyFor(listOf(reference)),
+                    parallelism = 1
+                )
+            }
+        } catch (error: CancellationException) {
+            thrown = error
+        }
+
+        assertEquals(1, deleteCalls.get())
+        thrown?.let { error -> assertEquals(cancellation.message, error.message) }
     }
 
     @Test

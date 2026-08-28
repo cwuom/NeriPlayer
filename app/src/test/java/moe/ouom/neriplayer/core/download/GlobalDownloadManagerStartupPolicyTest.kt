@@ -285,7 +285,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             metadataSync.indexOf("resolveFinalizedManagedAudioSnapshot") <
                 metadataSync.indexOf("persistDownloadedMetadata(")
         )
-        assertTrue(downloadedPlayback.contains("resolveFinalizedManagedAudioSnapshot"))
+        assertTrue(downloadedPlayback.contains("resolvePlayableManagedAudioSnapshot"))
         assertFalse(downloadedPlayback.contains("ManagedDownloadStorage.toPlayableUri(playbackReference)"))
     }
 
@@ -1920,6 +1920,109 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertEquals(legacyDownloaded, index.find(song))
         assertTrue(matchesDownloadedSong(song, legacyDownloaded))
+    }
+
+    @Test
+    fun `downloaded catalog matches a local shaped queue item through its remote identity`() {
+        val remoteSong = SongItem(
+            id = 42L,
+            name = "Song",
+            artist = "Artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 3_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "42"
+        )
+        val downloaded = DownloadedSong(
+            id = remoteSong.id,
+            name = remoteSong.name,
+            artist = remoteSong.artist,
+            album = "Downloads",
+            filePath = "/music/song.flac",
+            fileSize = 10L,
+            downloadTime = 10L,
+            stableKey = remoteSong.stableKey(),
+            sourceChannelId = "netease",
+            sourceAudioId = "42"
+        )
+        val localShapedQueueItem = remoteSong.copy(
+            mediaUri = "content://old-tree/song",
+            sourceStableKey = null
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(listOf(downloaded))
+
+        assertEquals(downloaded, index.find(localShapedQueueItem))
+        assertTrue(matchesDownloadedSong(localShapedQueueItem, downloaded))
+    }
+
+    @Test
+    fun `downloaded catalog recovers a legacy local row after its SAF uri changes`() {
+        val localSong = SongItem(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://new-tree/document/primary%3AMusic%2FSong.flac",
+            localFileName = "Song.flac"
+        )
+        val legacyDownloaded = DownloadedSong(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/old-private/Song.flac",
+            fileSize = 1024L,
+            downloadTime = 10L,
+            durationMs = 180_000L,
+            coverPath = "/old-private/Covers/Song.jpg"
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(legacyDownloaded)
+        )
+
+        assertEquals(legacyDownloaded, index.find(localSong))
+    }
+
+    @Test
+    fun `downloaded catalog refuses ambiguous legacy local filenames`() {
+        val localSong = SongItem(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "__local_files__",
+            albumId = 0L,
+            durationMs = 180_000L,
+            coverUrl = null,
+            mediaUri = "content://new-tree/document/primary%3AMusic%2FSong.flac",
+            localFileName = "Song.flac"
+        )
+        val first = DownloadedSong(
+            id = 0L,
+            name = "Song",
+            artist = "Artist",
+            album = "Downloads",
+            filePath = "/old-private/Song.flac",
+            fileSize = 1024L,
+            downloadTime = 10L,
+            durationMs = 180_000L
+        )
+        val second = first.copy(
+            filePath = "/other-private/Song.flac",
+            downloadTime = 11L
+        )
+
+        val index = GlobalDownloadManager.buildDownloadedSongCatalogIndex(
+            listOf(first, second)
+        )
+
+        assertNull(index.find(localSong))
     }
 
     @Test

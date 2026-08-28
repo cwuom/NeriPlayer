@@ -10,9 +10,172 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ManagedDownloadMigrationWorkerProgressPolicyTest {
+    @Test
+    fun `committed replacement journal does not block ordinary startup scan`() {
+        val journal = ManagedMigrationReplacementJournal(
+            workId = "work",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+            replacements = listOf(
+                ManagedMigrationReplacementPlan(
+                    sourceReference = "content://source/audio",
+                    groupIdentity = "song",
+                    subdirectory = null,
+                    targetName = "audio.mp3",
+                    targetEntry = ManagedDownloadStorage.StoredEntry(
+                        name = "audio.mp3",
+                        reference = "content://target/audio",
+                        mediaUri = "content://target/audio",
+                        localFilePath = null,
+                        sizeBytes = 1L,
+                        lastModifiedMs = 1L
+                    ),
+                    backupName = "backup.mp3"
+                )
+            )
+        )
+        assertFalse(shouldBlockStartupForMigrationRecovery(null, journal))
+        assertTrue(
+            shouldBlockStartupForMigrationRecovery(
+                ManagedMigrationRequest(
+                    workId = "work",
+                    fromDirectoryUri = null,
+                    toDirectoryUri = "content://target",
+                    targetLabel = "target",
+                    releasePreviousPermission = false,
+                    minimumSourceEntryCount = 1
+                ),
+                journal
+            )
+        )
+    }
+
+    @Test
+    fun `active work binding never replaces a different durable request`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "persisted-work",
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1
+        )
+        val fallback = persisted.copy(workId = "requested-work")
+
+        assertFalse(
+            shouldBindMigrationRequestToActiveWork(
+                persisted = persisted,
+                fallback = fallback,
+                activeWorkId = "active-work"
+            )
+        )
+        assertTrue(
+            shouldBindMigrationRequestToActiveWork(
+                persisted = persisted,
+                fallback = fallback,
+                activeWorkId = "persisted-work"
+            )
+        )
+    }
+
+    @Test
+    fun `active work binding can restore a request when no durable request exists`() {
+        val fallback = ManagedMigrationRequest(
+            workId = "active-work",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+
+        assertTrue(
+            shouldBindMigrationRequestToActiveWork(
+                persisted = null,
+                fallback = fallback,
+                activeWorkId = "active-work"
+            )
+        )
+        assertFalse(
+            shouldBindMigrationRequestToActiveWork(
+                persisted = null,
+                fallback = fallback,
+                activeWorkId = "other-work"
+            )
+        )
+    }
+
+    @Test
+    fun `worker input cannot erase durable migration fields when old work omits them`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "old-work",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://target/root",
+            targetLabel = "target-label",
+            releasePreviousPermission = true,
+            minimumSourceEntryCount = 27,
+            checkpointWorkId = "old-work"
+        )
+        val input = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = null,
+            toDirectoryUri = null,
+            targetLabel = "",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+
+        val merged = mergeMigrationRequestForWorker(
+            persisted = persisted,
+            input = input,
+            inputKeys = emptySet()
+        )
+
+        assertEquals("content://source/root", merged.fromDirectoryUri)
+        assertEquals("content://target/root", merged.toDirectoryUri)
+        assertEquals("target-label", merged.targetLabel)
+        assertTrue(merged.releasePreviousPermission)
+        assertEquals(27, merged.minimumSourceEntryCount)
+        assertEquals("old-work", merged.checkpointWorkId)
+        assertEquals("new-work", merged.workId)
+    }
+
+    @Test
+    fun `worker rejects a durable request that points at a different root`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "old-work",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://target/root",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1
+        )
+        val input = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://other/root",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1
+        )
+
+        assertThrows(ManagedDownloadMigrationException::class.java) {
+            mergeMigrationRequestForWorker(
+                persisted = persisted,
+                input = input,
+                inputKeys = setOf(
+                    ManagedDownloadMigrationWorker.KEY_TO_DIRECTORY_URI
+                )
+            )
+        }
+    }
+
     @Test
     fun `transient provider and IO failures retry within the bounded budget`() {
         assertTrue(
@@ -53,6 +216,15 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 maxRetryAttempts = 2
             )
         )
+    }
+
+    @Test
+    fun `retryable migration outcomes become terminal after the retry budget`() {
+        assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 0, maxRetryAttempts = 2))
+        assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 1, maxRetryAttempts = 2))
+        assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 2, maxRetryAttempts = 2))
+        assertFalse(shouldRetryMigrationAttempt(runAttemptCount = -1, maxRetryAttempts = 2))
+        assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 0, maxRetryAttempts = 0))
     }
 
     @Test
@@ -304,6 +476,59 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(1, verificationProgress.verificationFilesTotal)
         assertEquals(200L, verificationProgress.verifiedBytes)
         assertEquals(200L, verificationProgress.verificationBytesTotal)
+    }
+
+    @Test
+    fun `resume floor keeps preflight reset visible until the worker catches up`() {
+        val floor = ManagedDownloadStorage.MigrationProgress(
+            stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP,
+            totalFiles = 100,
+            processedFiles = 96,
+            copiedFiles = 100,
+            copiedBytes = 10_000L,
+            totalBytes = 10_000L,
+            metadataFilesProcessed = 20,
+            metadataFilesTotal = 20,
+            cleanupFilesProcessed = 4,
+            cleanupFilesTotal = 10,
+            currentFileName = "track-96.mp3"
+        )
+        val preparing = floor.copy(
+            stage = ManagedDownloadStorage.MigrationStage.PREPARING,
+            processedFiles = 0,
+            copiedFiles = 0,
+            copiedBytes = 0L,
+            currentFileName = "track-1.mp3"
+        )
+
+        val visible = mergeMigrationProgressFloor(floor, preparing)
+
+        assertEquals(ManagedDownloadStorage.MigrationStage.CLEANING_UP, visible.stage)
+        assertEquals(96, visible.processedFiles)
+        assertEquals(4, visible.cleanupFilesProcessed)
+        assertEquals("track-96.mp3", visible.currentFileName)
+    }
+
+    @Test
+    fun `resume floor yields current stage after retry catches up`() {
+        val floor = progress(0.5f).copy(
+            stage = ManagedDownloadStorage.MigrationStage.COPYING,
+            totalFiles = 10,
+            processedFiles = 5,
+            copiedFiles = 5,
+            copiedBytes = 500L,
+            totalBytes = 1_000L
+        )
+        val caughtUp = floor.copy(
+            processedFiles = 6,
+            copiedFiles = 6,
+            copiedBytes = 600L,
+            currentFileName = "next.mp3"
+        )
+
+        val visible = mergeMigrationProgressFloor(floor, caughtUp)
+
+        assertEquals(caughtUp, visible)
     }
 
     @Test

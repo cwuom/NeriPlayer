@@ -14,7 +14,8 @@ internal class ManagedDownloadMigrationProgressTracker(
     private val totalBytes: Long,
     private val metadataFilesTotal: Int,
     private val onProgress: (ManagedDownloadStorage.MigrationProgress) -> Unit,
-    private val nowMs: () -> Long = System::currentTimeMillis
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    initialProgress: ManagedDownloadStorage.MigrationProgress? = null
 ) {
     private val lock = Any()
     private val activeCopyBytes = mutableMapOf<String, Long>()
@@ -32,6 +33,7 @@ internal class ManagedDownloadMigrationProgressTracker(
     private var cleanupFilesTotal = 0
     private var lastEmitAtMs = 0L
     private var lastEmittedStage: ManagedDownloadStorage.MigrationStage? = null
+    private var resumeFloor = initialProgress
 
     fun startPreparing(fileName: String? = null) {
         synchronized(lock) {
@@ -194,33 +196,137 @@ internal class ManagedDownloadMigrationProgressTracker(
         lastEmittedStage = stage
         val inFlightBytes = activeCopyBytes.values.sum()
         val inFlightVerificationBytes = activeVerificationBytes.values.sum()
-        onProgress(
-            ManagedDownloadStorage.MigrationProgress(
-                stage = stage,
-                totalFiles = totalFiles,
-                processedFiles = when (stage) {
-                    ManagedDownloadStorage.MigrationStage.PREPARING -> 0
-                    ManagedDownloadStorage.MigrationStage.COPYING -> copiedFiles
-                    ManagedDownloadStorage.MigrationStage.REWRITING_METADATA -> copiedFiles + metadataFilesProcessed
-                    ManagedDownloadStorage.MigrationStage.VERIFYING -> {
-                        copiedFiles + metadataFilesTotal + verificationFilesProcessed
-                    }
-                    ManagedDownloadStorage.MigrationStage.CLEANING_UP -> copiedFiles + metadataFilesTotal + cleanupFilesProcessed
-                    ManagedDownloadStorage.MigrationStage.FINALIZING -> totalFiles
-                }.coerceAtMost(totalFiles),
-                copiedFiles = copiedFiles,
-                copiedBytes = completedCopyBytes + inFlightBytes,
-                totalBytes = totalBytes,
-                metadataFilesProcessed = metadataFilesProcessed,
-                metadataFilesTotal = metadataFilesTotal,
-                cleanupFilesProcessed = cleanupFilesProcessed,
-                cleanupFilesTotal = cleanupFilesTotal,
-                currentFileName = currentFileName,
-                verificationFilesProcessed = verificationFilesProcessed,
-                verificationFilesTotal = verificationFilesTotal,
-                verifiedBytes = completedVerificationBytes + inFlightVerificationBytes,
-                verificationBytesTotal = verificationBytesTotal
-            )
+        val currentProgress = ManagedDownloadStorage.MigrationProgress(
+            stage = stage,
+            totalFiles = totalFiles,
+            processedFiles = when (stage) {
+                ManagedDownloadStorage.MigrationStage.PREPARING -> 0
+                ManagedDownloadStorage.MigrationStage.COPYING -> copiedFiles
+                ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
+                    copiedFiles + metadataFilesProcessed
+                ManagedDownloadStorage.MigrationStage.VERIFYING -> {
+                    copiedFiles + metadataFilesTotal + verificationFilesProcessed
+                }
+                ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
+                    copiedFiles + metadataFilesTotal + cleanupFilesProcessed
+                ManagedDownloadStorage.MigrationStage.FINALIZING -> totalFiles
+            }.coerceAtMost(totalFiles),
+            copiedFiles = copiedFiles,
+            copiedBytes = completedCopyBytes + inFlightBytes,
+            totalBytes = totalBytes,
+            metadataFilesProcessed = metadataFilesProcessed,
+            metadataFilesTotal = metadataFilesTotal,
+            cleanupFilesProcessed = cleanupFilesProcessed,
+            cleanupFilesTotal = cleanupFilesTotal,
+            currentFileName = currentFileName,
+            verificationFilesProcessed = verificationFilesProcessed,
+            verificationFilesTotal = verificationFilesTotal,
+            verifiedBytes = completedVerificationBytes + inFlightVerificationBytes,
+            verificationBytesTotal = verificationBytesTotal
         )
+        val floor = resumeFloor
+        val visibleProgress = mergeMigrationProgressFloor(floor, currentProgress)
+        if (floor != null && isMigrationProgressAtLeast(currentProgress, floor)) {
+            resumeFloor = null
+        }
+        onProgress(visibleProgress)
     }
+}
+
+internal fun mergeMigrationProgressFloor(
+    floor: ManagedDownloadStorage.MigrationProgress?,
+    current: ManagedDownloadStorage.MigrationProgress
+): ManagedDownloadStorage.MigrationProgress {
+    floor ?: return current
+    if (current.stage.ordinal >= floor.stage.ordinal) {
+        return current.copy(
+            totalFiles = maxOf(current.totalFiles, floor.totalFiles).coerceAtLeast(0),
+            processedFiles = maxOf(current.processedFiles, floor.processedFiles)
+                .coerceAtLeast(0)
+                .coerceAtMost(maxOf(current.totalFiles, floor.totalFiles).coerceAtLeast(0)),
+            copiedFiles = maxOf(current.copiedFiles, floor.copiedFiles).coerceAtLeast(0),
+            copiedBytes = maxOf(current.copiedBytes, floor.copiedBytes).coerceAtLeast(0L),
+            totalBytes = maxOf(current.totalBytes, floor.totalBytes).coerceAtLeast(0L),
+            metadataFilesProcessed = maxOf(
+                current.metadataFilesProcessed,
+                floor.metadataFilesProcessed
+            ).coerceAtLeast(0),
+            metadataFilesTotal = maxOf(current.metadataFilesTotal, floor.metadataFilesTotal)
+                .coerceAtLeast(0),
+            cleanupFilesProcessed = maxOf(
+                current.cleanupFilesProcessed,
+                floor.cleanupFilesProcessed
+            ).coerceAtLeast(0),
+            cleanupFilesTotal = maxOf(current.cleanupFilesTotal, floor.cleanupFilesTotal)
+                .coerceAtLeast(0),
+            currentFileName = current.currentFileName,
+            verificationFilesProcessed = maxOf(
+                current.verificationFilesProcessed,
+                floor.verificationFilesProcessed
+            ).coerceAtLeast(0),
+            verificationFilesTotal = maxOf(
+                current.verificationFilesTotal,
+                floor.verificationFilesTotal
+            ).coerceAtLeast(0),
+            verifiedBytes = maxOf(current.verifiedBytes, floor.verifiedBytes).coerceAtLeast(0L),
+            verificationBytesTotal = maxOf(
+                current.verificationBytesTotal,
+                floor.verificationBytesTotal
+            ).coerceAtLeast(0L)
+        ).boundedMigrationProgress()
+    }
+    return floor.copy(
+        totalFiles = maxOf(current.totalFiles, floor.totalFiles).coerceAtLeast(0),
+        totalBytes = maxOf(current.totalBytes, floor.totalBytes).coerceAtLeast(0L),
+        currentFileName = floor.currentFileName
+    ).boundedMigrationProgress()
+}
+
+private fun isMigrationProgressAtLeast(
+    current: ManagedDownloadStorage.MigrationProgress,
+    floor: ManagedDownloadStorage.MigrationProgress
+): Boolean {
+    if (current.stage.ordinal > floor.stage.ordinal) return true
+    if (current.stage != floor.stage) return false
+    return when (floor.stage) {
+        ManagedDownloadStorage.MigrationStage.PREPARING -> true
+        ManagedDownloadStorage.MigrationStage.COPYING ->
+            current.copiedFiles >= floor.copiedFiles &&
+                current.copiedBytes >= floor.copiedBytes
+        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
+            current.metadataFilesProcessed >= floor.metadataFilesProcessed
+        ManagedDownloadStorage.MigrationStage.VERIFYING ->
+            current.verificationFilesProcessed >= floor.verificationFilesProcessed &&
+                current.verifiedBytes >= floor.verifiedBytes
+        ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
+            current.cleanupFilesProcessed >= floor.cleanupFilesProcessed
+        ManagedDownloadStorage.MigrationStage.FINALIZING -> true
+    }
+}
+
+private fun ManagedDownloadStorage.MigrationProgress.boundedMigrationProgress():
+    ManagedDownloadStorage.MigrationProgress {
+    val boundedTotalFiles = totalFiles.coerceAtLeast(0)
+    val boundedMetadataTotal = metadataFilesTotal.coerceAtLeast(0)
+    val boundedVerificationTotal = verificationFilesTotal.coerceAtLeast(0)
+    val boundedCleanupTotal = cleanupFilesTotal.coerceAtLeast(0)
+    return copy(
+        totalFiles = boundedTotalFiles,
+        processedFiles = processedFiles.coerceAtLeast(0).coerceAtMost(boundedTotalFiles),
+        copiedFiles = copiedFiles.coerceAtLeast(0).coerceAtMost(boundedTotalFiles),
+        copiedBytes = copiedBytes.coerceAtLeast(0L),
+        totalBytes = totalBytes.coerceAtLeast(0L),
+        metadataFilesProcessed = metadataFilesProcessed.coerceAtLeast(0)
+            .coerceAtMost(boundedMetadataTotal),
+        metadataFilesTotal = boundedMetadataTotal,
+        cleanupFilesProcessed = cleanupFilesProcessed.coerceAtLeast(0)
+            .coerceAtMost(boundedCleanupTotal),
+        cleanupFilesTotal = boundedCleanupTotal,
+        verificationFilesProcessed = verificationFilesProcessed.coerceAtLeast(0)
+            .coerceAtMost(boundedVerificationTotal),
+        verificationFilesTotal = boundedVerificationTotal,
+        verifiedBytes = verifiedBytes.coerceAtLeast(0L),
+        verificationBytesTotal = verificationBytesTotal.coerceAtLeast(0L),
+        currentFileName = currentFileName?.trim()?.takeIf(String::isNotBlank)
+    )
 }

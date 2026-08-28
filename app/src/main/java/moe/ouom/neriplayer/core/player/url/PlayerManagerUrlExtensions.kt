@@ -13,6 +13,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -62,6 +63,7 @@ import moe.ouom.neriplayer.data.platform.bili.BiliVideoSkipTarget
 import moe.ouom.neriplayer.data.platform.youtube.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.listentogether.mapping.MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
 import moe.ouom.neriplayer.listentogether.mapping.toListenTogetherTrackOrNull
 import moe.ouom.neriplayer.listentogether.mapping.trustedListenTogetherStreamUrls
@@ -72,6 +74,10 @@ import java.io.File
 internal const val OFFLINE_CACHE_URL_PREFIX = "http://offline.cache/"
 internal const val YOUTUBE_PLAYBACK_PREFER_M4A = false
 internal const val YOUTUBE_STABLE_RECOVERY_QUALITY = "high"
+
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT = 6
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS = 50L
+private const val LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS = 250L
 
 internal data class CachedResourceIntegrity(
     val isComplete: Boolean,
@@ -166,8 +172,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
             listenerAudioLinkSharingActive = isListenTogetherAudioLinkFallbackEnabled()
         )
     if (isLocalSong(song)) {
-        val localResolution = AudioDownloadManager.resolvePermittedLocalPlayback(
-            context = application,
+        val localResolution = resolvePermittedLocalPlaybackWithRetry(
             song = song,
             rawLocalReference = localMediaSource(song)
         )
@@ -1244,12 +1249,44 @@ private suspend fun PlayerManager.applyResolvedMediaItem(
     return applied
 }
 
-private fun PlayerManager.checkLocalCache(
+private suspend fun PlayerManager.resolvePermittedLocalPlaybackWithRetry(
+    song: SongItem,
+    rawLocalReference: String?
+): LocalPlaybackReferenceResolution {
+    var resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
+        context = application,
+        song = song,
+        rawLocalReference = rawLocalReference
+    )
+    repeat(LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT) { retryIndex ->
+        if (!shouldRetryLocalPlaybackResolution(song, resolution)) {
+            return resolution
+        }
+        val retryNumber = retryIndex + 1
+        val delayMs = (LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS * retryNumber)
+            .coerceAtMost(LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "本地播放引用暂未稳定，等待重试: song=${song.name}, " +
+                "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
+                "resolution=$resolution"
+        )
+        delay(delayMs)
+        resolution = AudioDownloadManager.resolvePermittedLocalPlayback(
+            context = application,
+            song = song,
+            rawLocalReference = rawLocalReference
+        )
+    }
+    return resolution
+}
+
+private suspend fun PlayerManager.checkLocalCache(
     song: SongItem,
     sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
 ): SongUrlResult? {
     val context = application
-    val localResolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
+    val localResolution = resolveIndexedLocalPlaybackWithRetry(context, song)
     val localReference = when (localResolution) {
         is LocalPlaybackReferenceResolution.Playable -> localResolution.reference
         LocalPlaybackReferenceResolution.NotIndexed -> return null
@@ -1310,6 +1347,45 @@ private fun PlayerManager.checkLocalCache(
                 ?.takeIf { _currentSongFlow.value?.sameIdentityAs(song) == true }
         )
     )
+}
+
+private suspend fun resolveIndexedLocalPlaybackWithRetry(
+    context: android.content.Context,
+    song: SongItem
+): LocalPlaybackReferenceResolution {
+    var resolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
+    repeat(LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT) { retryIndex ->
+        if (!shouldRetryLocalPlaybackResolution(song, resolution)) {
+            return resolution
+        }
+        val retryNumber = retryIndex + 1
+        val delayMs = (LOCAL_PLAYBACK_RESOLUTION_RETRY_DELAY_MS * retryNumber)
+            .coerceAtMost(LOCAL_PLAYBACK_RESOLUTION_RETRY_MAX_DELAY_MS)
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "索引本地播放引用暂未稳定，等待重试: song=${song.name}, " +
+                "retry=$retryNumber/$LOCAL_PLAYBACK_RESOLUTION_RETRY_COUNT, delayMs=$delayMs, " +
+                "resolution=$resolution"
+        )
+        delay(delayMs)
+        resolution = AudioDownloadManager.resolveIndexedLocalPlaybackReference(context, song)
+    }
+    return resolution
+}
+
+internal fun shouldRetryLocalPlaybackResolution(
+    song: SongItem,
+    resolution: LocalPlaybackReferenceResolution
+): Boolean {
+    return when (resolution) {
+        is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> true
+        LocalPlaybackReferenceResolution.Missing ->
+            GlobalDownloadManager.hasDownloadedSongCached(song) ||
+                AudioDownloadManager.peekCompletedAudioReference(song) != null ||
+                AudioDownloadManager.isSongDownloadActive(song.stableKey())
+        LocalPlaybackReferenceResolution.NotIndexed,
+        is LocalPlaybackReferenceResolution.Playable -> false
+    }
 }
 
 internal fun PlayerManager.inspectExoPlayerCache(

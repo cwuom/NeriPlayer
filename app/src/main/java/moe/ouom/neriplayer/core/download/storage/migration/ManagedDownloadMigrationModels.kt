@@ -76,6 +76,31 @@ internal data class ManagedMigrationReplacementJournal(
     val targetNamesByReference: Map<String, String> = emptyMap()
 )
 
+/**
+ * 持久化一次迁移的完整输入，进程被杀后可重新创建同一迁移任务
+ */
+internal data class ManagedMigrationRequest(
+    val workId: String,
+    val fromDirectoryUri: String?,
+    val toDirectoryUri: String?,
+    val targetLabel: String,
+    val releasePreviousPermission: Boolean,
+    val minimumSourceEntryCount: Int,
+    val checkpointWorkId: String? = null,
+    val autoResume: Boolean = true
+) {
+    fun normalized(): ManagedMigrationRequest {
+        return copy(
+            workId = workId.trim(),
+            fromDirectoryUri = fromDirectoryUri?.trim()?.takeIf(String::isNotBlank),
+            toDirectoryUri = toDirectoryUri?.trim()?.takeIf(String::isNotBlank),
+            targetLabel = targetLabel.trim(),
+            minimumSourceEntryCount = minimumSourceEntryCount.coerceAtLeast(0),
+            checkpointWorkId = checkpointWorkId?.trim()?.takeIf(String::isNotBlank)
+        )
+    }
+}
+
 internal const val CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 1
 
 internal data class CopiedMigrationEntry(
@@ -144,13 +169,15 @@ internal class ManagedMigrationProgressReporter(
     totalFiles: Int,
     totalBytes: Long,
     metadataFilesTotal: Int,
-    onProgress: (ManagedDownloadStorage.MigrationProgress) -> Unit
+    onProgress: (ManagedDownloadStorage.MigrationProgress) -> Unit,
+    initialProgress: ManagedDownloadStorage.MigrationProgress? = null
 ) {
     private val delegate = ManagedDownloadMigrationProgressTracker(
         totalFiles = totalFiles,
         totalBytes = totalBytes,
         metadataFilesTotal = metadataFilesTotal,
-        onProgress = onProgress
+        onProgress = onProgress,
+        initialProgress = initialProgress
     )
 
     fun startPreparing(fileName: String? = null) {

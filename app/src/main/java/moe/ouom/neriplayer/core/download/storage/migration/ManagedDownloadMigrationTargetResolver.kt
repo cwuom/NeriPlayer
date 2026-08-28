@@ -14,17 +14,38 @@ internal object ManagedDownloadMigrationTargetResolver {
         readExistingEntry: (File) -> ManagedDownloadStorage.StoredEntry?,
         reserveName: (String) -> String,
         onReuseMetadata: (ManagedDownloadStorage.StoredEntry) -> Unit,
-        onReuseFile: (ManagedDownloadStorage.StoredEntry) -> Unit
+        onReuseFile: (ManagedDownloadStorage.StoredEntry) -> Unit,
+        preloadedMetadataCandidates: Collection<ManagedDownloadStorage.StoredEntry>? = null,
+        preloadedExistingEntry: ManagedDownloadStorage.StoredEntry? = null
     ): StoredWriteResult {
         val existing = File(parent, displayName)
-        val alternateMetadataEntry = findAlternateMetadataEntry(
-            sourceEntry = sourceEntry,
-            displayName = displayName,
-            candidateEntries = targetNames.asSequence()
-                .filter { name -> !name.equals(displayName, ignoreCase = true) }
-                .mapNotNull { name -> readExistingEntry(File(parent, name)) }
-                .toList()
-        )
+        val alternateMetadataEntry = if (preloadedMetadataCandidates != null) {
+            findAlternateMetadataEntry(
+                sourceEntry = sourceEntry,
+                displayName = displayName,
+                candidateEntries = preloadedMetadataCandidates
+            )
+        } else {
+            // metadata alternates are relevant only for metadata entries. Avoid
+            // touching every target file for ordinary audio and sidecar files
+            val sourceAudioName = ManagedDownloadTreeNaming.metadataAudioName(sourceEntry.name)
+            if (sourceAudioName == null) {
+                null
+            } else {
+                findAlternateMetadataEntry(
+                    sourceEntry = sourceEntry,
+                    displayName = displayName,
+                    candidateEntries = targetNames.asSequence()
+                        .filter { name -> !name.equals(displayName, ignoreCase = true) }
+                        .filter { name ->
+                            ManagedDownloadTreeNaming.metadataAudioName(name)
+                                ?.equals(sourceAudioName, ignoreCase = true) == true
+                        }
+                        .mapNotNull { name -> readExistingEntry(File(parent, name)) }
+                        .toList()
+                )
+            }
+        }
         if (displayName in targetNames || existing.exists() || alternateMetadataEntry != null) {
             reusedMetadataTarget(sourceEntry, targetEntry)
                 ?.let { existingEntry ->
@@ -35,7 +56,11 @@ internal object ManagedDownloadMigrationTargetResolver {
                 onReuseMetadata(existingEntry)
                 return StoredWriteResult(entry = existingEntry, createdNew = false)
             }
-            reusedEquivalentTarget(sourceEntry, targetEntry, readExistingEntry(existing))
+            reusedEquivalentTarget(
+                sourceEntry,
+                targetEntry,
+                preloadedExistingEntry ?: readExistingEntry(existing)
+            )
                 ?.let { existingEntry ->
                     onReuseFile(existingEntry)
                     return StoredWriteResult(entry = existingEntry, createdNew = false)

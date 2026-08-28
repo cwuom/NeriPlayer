@@ -51,6 +51,7 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +67,11 @@ private const val DynamicBackgroundPaletteTransitionDurationMs = 520L
 private const val DynamicBackgroundSteadyFrameIntervalNs = 1_000_000_000L / 45L
 private const val DynamicBackgroundBoostFrameIntervalNs = 1_000_000_000L / 60L
 private const val DynamicBackgroundBoostDurationNs = 900_000_000L
+
+internal fun shouldCommitDynamicBackgroundPalette(
+    requestIdentity: String,
+    latestIdentity: String?
+): Boolean = requestIdentity == latestIdentity
 
 private enum class DynamicBackgroundColorRole {
     Base,
@@ -135,7 +141,8 @@ fun HyperBackground(
     isDark: Boolean,
     coverUrl: String?,
     refreshKey: Int = 0,
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    coverIdentityKey: String? = null
 ) {
     val context = LocalContext.current
     val applicationContext = context.applicationContext
@@ -153,6 +160,7 @@ fun HyperBackground(
         mutableStateOf(false)
     }
     var targetShaderPalette by remember { mutableStateOf<DynamicBackgroundShaderPalette?>(null) }
+    var targetShaderPaletteIdentity by remember { mutableStateOf<String?>(null) }
     var activeShaderPalette by remember(painter, currentIsDark) {
         mutableStateOf<DynamicBackgroundShaderPalette?>(null)
     }
@@ -198,8 +206,25 @@ fun HyperBackground(
 
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestBoostedAnimationUntilNs by rememberUpdatedState(boostedAnimationUntilNs)
+    val coverRequestIdentity = remember(
+        coverIdentityKey,
+        coverUrl,
+        refreshKey,
+        offlineMode,
+        currentIsDark
+    ) {
+        listOf(
+            coverIdentityKey.orEmpty(),
+            coverUrl.orEmpty(),
+            refreshKey.toString(),
+            offlineMode.toString(),
+            currentIsDark.toString()
+        ).joinToString("|")
+    }
+    val latestCoverRequestIdentity by rememberUpdatedState(coverRequestIdentity)
 
-    LaunchedEffect(coverUrl, refreshKey, offlineMode, currentIsDark) {
+    LaunchedEffect(coverRequestIdentity) {
+        val requestIdentity = coverRequestIdentity
         boostedAnimationUntilNs = System.nanoTime() + DynamicBackgroundBoostDurationNs
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || coverUrl.isNullOrBlank()) {
             return@LaunchedEffect
@@ -227,18 +252,32 @@ fun HyperBackground(
                     .maximumColorCount(16)
                     .generate()
             }
+            if (!shouldCommitDynamicBackgroundPalette(requestIdentity, latestCoverRequestIdentity)) {
+                return@LaunchedEffect
+            }
             targetShaderPalette = buildDynamicBackgroundShaderPalette(
                 palette = palette,
                 isDark = currentIsDark
             )
+            targetShaderPaletteIdentity = requestIdentity
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Throwable) {
             // 提色失败时保留上一组颜色, 避免切歌瞬间退回默认背景
         }
     }
 
-    LaunchedEffect(painter, hostView, shaderInitialized, targetShaderPalette) {
+    LaunchedEffect(
+        painter,
+        hostView,
+        shaderInitialized,
+        targetShaderPalette,
+        targetShaderPaletteIdentity,
+        coverRequestIdentity
+    ) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return@LaunchedEffect
         val target = targetShaderPalette ?: return@LaunchedEffect
+        if (targetShaderPaletteIdentity != coverRequestIdentity) return@LaunchedEffect
         val view = hostView ?: return@LaunchedEffect
         if (painter == null || !shaderInitialized) return@LaunchedEffect
         val applied = animateDynamicBackgroundPalette(

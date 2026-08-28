@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.core.download.metadata
 
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -7,6 +9,7 @@ import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAs
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadRestorableMetadata
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -45,6 +48,34 @@ class DownloadedAudioMetadataStoreTest {
         assertEquals(expected, resolved)
         assertEquals(1, inspectCalls)
         assertEquals(0, materializeCalls)
+    }
+
+    @Test
+    fun `sidecar lyric reads preserve order and cap provider concurrency`() = runBlocking {
+        val inFlight = AtomicInteger(0)
+        val maximumInFlight = AtomicInteger(0)
+
+        val values = readRestorableSidecarLyricsConcurrently(
+            references = listOf("original", "translated", "romanized"),
+            parallelism = 2
+        ) { reference ->
+            val current = inFlight.incrementAndGet()
+            maximumInFlight.updateAndGet { previous -> maxOf(previous, current) }
+            delay(20L)
+            inFlight.decrementAndGet()
+            reference
+        }
+
+        assertEquals(listOf("original", "translated", "romanized"), values)
+        assertTrue(maximumInFlight.get() <= 2)
+        assertTrue(maximumInFlight.get() > 0)
+    }
+
+    @Test
+    fun `sidecar lyric read is skipped only when a baseline or song value exists`() {
+        assertTrue(shouldReadRestorableSidecarLyric(null, null))
+        assertFalse(shouldReadRestorableSidecarLyric("stored", null))
+        assertFalse(shouldReadRestorableSidecarLyric(null, "incoming"))
     }
 
     @Test

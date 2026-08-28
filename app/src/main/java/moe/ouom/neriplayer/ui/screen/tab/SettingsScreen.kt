@@ -124,6 +124,7 @@ import androidx.work.WorkManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -324,6 +325,31 @@ private data class PendingDownloadDirectoryChange(
 private enum class DownloadDirectoryPreparationResult {
     KEEP_PERSISTED_PERMISSION,
     RELEASE_PERSISTED_PERMISSION
+}
+
+/**
+ * keeps the settings surface from presenting a second modal while the shared
+ * processing banner owns the same directory operation
+ */
+internal data class DownloadDirectoryProcessingPresentation(
+    val showPreparation: Boolean,
+    val showMigration: Boolean,
+    val usesSharedProcessing: Boolean
+)
+
+internal fun resolveDownloadDirectoryProcessingPresentation(
+    isPreparing: Boolean,
+    isMigrating: Boolean,
+    processingState: ManagedLibraryProcessingState,
+    migrationProgress: ManagedDownloadStorage.MigrationProgress?
+): DownloadDirectoryProcessingPresentation {
+    val usesSharedProcessing = processingState != ManagedLibraryProcessingState.Idle
+    val hasMigrationWork = isMigrating || migrationProgress != null
+    return DownloadDirectoryProcessingPresentation(
+        showPreparation = isPreparing && !usesSharedProcessing && !hasMigrationWork,
+        showMigration = hasMigrationWork && !usesSharedProcessing,
+        usesSharedProcessing = usesSharedProcessing
+    )
 }
 
 internal sealed interface DownloadDirectoryAvailability {
@@ -1224,6 +1250,18 @@ fun SettingsScreen(
                                 onHighlightFinished = onSettingsHighlightFinished
                             )
                     )
+                }
+
+                if (
+                    selectedPage == SettingsPage.Storage &&
+                    downloadDirectorySettings.processingPresentation.usesSharedProcessing
+                ) {
+                    item(key = "${selectedPage.name}:processing") {
+                        ManagedLibraryProcessingDetailsCard(
+                            state = downloadDirectorySettings.libraryProcessing,
+                            migrationProgress = downloadDirectorySettings.migrationProgress
+                        )
+                    }
                 }
 
                 when (selectedPage) {
@@ -2644,6 +2682,7 @@ private class DownloadDirectorySettingsController(
     private val libraryProcessingState: State<ManagedLibraryProcessingState>,
     val onPickRequested: () -> Unit,
     val onResetRequested: () -> Unit,
+    val onCancelPreparation: () -> Unit,
     val onDismissSwitchWarning: () -> Unit,
     val onConfirmSwitchWarning: () -> Unit,
     val onDismissPendingChange: (PendingDownloadDirectoryChange) -> Unit,
@@ -2679,6 +2718,17 @@ private class DownloadDirectorySettingsController(
 
     val migrationProgress: ManagedDownloadStorage.MigrationProgress?
         get() = migrationProgressState.value ?: persistedMigrationProgressState.value
+
+    val libraryProcessing: ManagedLibraryProcessingState
+        get() = libraryProcessingState.value
+
+    val processingPresentation: DownloadDirectoryProcessingPresentation
+        get() = resolveDownloadDirectoryProcessingPresentation(
+            isPreparing = isPreparing,
+            isMigrating = isMigrating,
+            processingState = libraryProcessing,
+            migrationProgress = migrationProgress
+        )
 }
 
 internal suspend fun resolveDownloadDirectoryPermissionLost(
@@ -2761,6 +2811,7 @@ private fun rememberDownloadDirectorySettingsController(
     val pendingChangeState = remember { mutableStateOf<PendingDownloadDirectoryChange?>(null) }
     val isPreparingState = remember { mutableStateOf(false) }
     val isMigratingState = remember { mutableStateOf(false) }
+    val preparationJobState = remember { mutableStateOf<Job?>(null) }
     val permissionLostState = remember { mutableStateOf(false) }
     val activeMigrationWorkIdState = rememberSaveable { mutableStateOf<String?>(null) }
     val persistedMigrationProgressState = remember {
@@ -2774,10 +2825,33 @@ private fun rememberDownloadDirectorySettingsController(
         mutableStateOf(defaultDirectorySummary)
     }
 
+    LaunchedEffect(
+        migrationProgressState.value,
+        persistedMigrationProgressState.value,
+        libraryProcessingState.value
+    ) {
+        val processingState = libraryProcessingState.value
+        val progress = migrationProgressState.value ?: persistedMigrationProgressState.value
+        val operationId = processingState.operationId
+        if (
+            operationId.isNullOrBlank() ||
+            processingState.reason != ManagedLibraryProcessingReason.DIRECTORY_CHANGE ||
+            progress == null
+        ) {
+            return@LaunchedEffect
+        }
+        ManagedLibraryProcessingCoordinator.updateProgress(
+            operationId = operationId,
+            processed = progress.processedFiles.coerceAtLeast(0),
+            total = progress.totalFiles.coerceAtLeast(0)
+        )
+    }
+
     var showSwitchWarning by showSwitchWarningState
     var pendingChange by pendingChangeState
     var isPreparing by isPreparingState
     var isMigrating by isMigratingState
+    var preparationJob by preparationJobState
     var permissionLost by permissionLostState
     var activeMigrationWorkId by activeMigrationWorkIdState
     var persistedMigrationProgress by persistedMigrationProgressState
@@ -2943,6 +3017,8 @@ private fun rememberDownloadDirectorySettingsController(
         previousUri: String?,
         shouldReleasePreviousPermission: Boolean
     ) {
+        // the shared coordinator is the only progress owner once the scan starts
+        isPreparing = false
         val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
             context = context,
             reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
@@ -3151,7 +3227,7 @@ private fun rememberDownloadDirectorySettingsController(
         }
         isPreparing = true
         val targetUri = uri.toString()
-        scope.launch {
+        preparationJob = scope.launch {
             var permissionWasPersisted = false
             var keepPersistedPermission = false
             try {
@@ -3162,9 +3238,14 @@ private fun rememberDownloadDirectorySettingsController(
                     permissionWasPersisted = true
                 }
                 permissionLost = false
-                val targetSummary = withContext(Dispatchers.IO) {
-                    ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
-                }
+                val targetSummary = runDownloadDirectoryPreflight {
+                    withContext(Dispatchers.IO) {
+                        ManagedDownloadStorage.describeConfiguredDirectory(context, targetUri)
+                    }
+                }?.getOrElse { error -> throw error }
+                    ?: throw directoryProbeTimeoutFailure(
+                        DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS
+                    )
                 keepPersistedPermission = prepareDirectoryChange(
                     targetUri = targetUri,
                     targetSummary = targetSummary,
@@ -3181,6 +3262,7 @@ private fun rememberDownloadDirectorySettingsController(
                     }
                 }
                 isPreparing = false
+                preparationJob = null
             }
         }
     }
@@ -3189,9 +3271,11 @@ private fun rememberDownloadDirectorySettingsController(
         currentSummary = if (downloadDirectoryUri.isNullOrBlank()) {
             defaultDirectorySummary
         } else {
-            withContext(Dispatchers.IO) {
-                ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
-            }
+            runDownloadDirectoryPreflight {
+                withContext(Dispatchers.IO) {
+                    ManagedDownloadStorage.describeConfiguredDirectory(context, downloadDirectoryUri)
+                }
+            }?.getOrNull() ?: currentSummary
         }
     }
 
@@ -3207,7 +3291,7 @@ private fun rememberDownloadDirectorySettingsController(
         }
         pendingChange = null
         isPreparing = true
-        scope.launch {
+        preparationJob = scope.launch {
             try {
                 applyDirectoryChange(
                     targetUri = change.targetUri,
@@ -3222,6 +3306,7 @@ private fun rememberDownloadDirectorySettingsController(
                 showPreparationError(error)
             } finally {
                 isPreparing = false
+                preparationJob = null
             }
         }
     }
@@ -3245,7 +3330,7 @@ private fun rememberDownloadDirectorySettingsController(
         onResetRequested = {
             if (!guardDirectoryChange()) {
                 isPreparing = true
-                scope.launch {
+                preparationJob = scope.launch {
                     try {
                         val availabilityStartedAtNanos = System.nanoTime()
                         val availability = withContext(Dispatchers.IO) {
@@ -3298,9 +3383,13 @@ private fun rememberDownloadDirectorySettingsController(
                         showPreparationError(error)
                     } finally {
                         isPreparing = false
+                        preparationJob = null
                     }
                 }
             }
+        },
+        onCancelPreparation = {
+            preparationJob?.cancel()
         },
         onDismissSwitchWarning = { showSwitchWarning = false },
         onConfirmSwitchWarning = {
@@ -3362,6 +3451,117 @@ private fun rememberDownloadDirectorySettingsController(
             }
         }
     )
+}
+
+@Composable
+private fun ManagedLibraryProcessingDetailsCard(
+    state: ManagedLibraryProcessingState,
+    migrationProgress: ManagedDownloadStorage.MigrationProgress?
+) {
+    val title = when (state.reason) {
+        ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE ->
+            stringResource(R.string.managed_library_processing_upgrade_title)
+        ManagedLibraryProcessingReason.DIRECTORY_CHANGE ->
+            stringResource(R.string.managed_library_processing_directory_title)
+        null -> stringResource(R.string.settings_download_directory_migrating)
+    }
+    val waitingForRetry = state is ManagedLibraryProcessingState.WaitingForRetry
+    val stageText = when (migrationProgress?.stage) {
+        ManagedDownloadStorage.MigrationStage.PREPARING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_preparing)
+        ManagedDownloadStorage.MigrationStage.COPYING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_copying)
+        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
+            stringResource(R.string.settings_download_directory_migrating_stage_rewriting)
+        ManagedDownloadStorage.MigrationStage.VERIFYING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_verifying)
+        ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
+            stringResource(R.string.settings_download_directory_migrating_stage_cleanup)
+        ManagedDownloadStorage.MigrationStage.FINALIZING ->
+            stringResource(R.string.settings_download_directory_migrating)
+        null -> when (state.phase) {
+            ManagedLibraryProcessingPhase.UPGRADING_DATABASE ->
+                stringResource(R.string.managed_library_processing_upgrade_title)
+            ManagedLibraryProcessingPhase.REBUILDING_INDEX ->
+                stringResource(R.string.settings_download_directory_preparing)
+            ManagedLibraryProcessingPhase.WAITING_FOR_RETRY ->
+                stringResource(R.string.managed_library_processing_retry)
+            null -> stringResource(R.string.settings_download_directory_migrating_desc)
+        }
+    }
+    val progressCount = migrationProgress?.let { progress ->
+        when {
+            progress.stageTotal > 0 -> progress.stageProcessed to progress.stageTotal
+            progress.totalFiles > 0 -> progress.processedFiles to progress.totalFiles
+            else -> null
+        }
+    }
+    val processed = progressCount?.first?.coerceAtLeast(0)
+        ?: state.processed?.coerceAtLeast(0)
+    val total = progressCount?.second?.takeIf { it > 0 }
+        ?: state.total?.takeIf { it > 0 }
+    val progressFraction = migrationProgress?.fraction?.coerceIn(0f, 1f)
+        ?: if (processed != null && total != null) {
+            (processed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+    val currentFileSummary = migrationProgress?.currentFileName
+        ?.takeIf(String::isNotBlank)
+        ?.let { fileName ->
+            stringResource(R.string.settings_download_directory_migrating_current, fileName)
+        }
+
+    MiuixSettingsSectionCard {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = if (waitingForRetry) {
+                    stringResource(R.string.managed_library_processing_retry)
+                } else {
+                    stringResource(R.string.settings_download_directory_migrating_desc)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stageText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (processed != null && total != null) {
+                Text(
+                    text = stringResource(
+                        R.string.managed_library_processing_progress,
+                        processed,
+                        total
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (!waitingForRetry) {
+                if (progressFraction == null) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                currentFileSummary?.let { summary ->
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -3434,9 +3634,11 @@ private fun DownloadDirectoryDialogs(
         )
     }
 
-    if (controller.isPreparing) {
+    val processingPresentation = controller.processingPresentation
+
+    if (processingPresentation.showPreparation) {
         MiuixSettingsDialog(
-            onDismissRequest = {},
+            onDismissRequest = controller.onCancelPreparation,
             title = { Text(stringResource(R.string.settings_download_directory_preparing)) },
             text = {
                 Row(
@@ -3447,11 +3649,16 @@ private fun DownloadDirectoryDialogs(
                     Text(stringResource(R.string.settings_download_directory_preparing_desc))
                 }
             },
-            confirmButton = {}
+            confirmButton = {},
+            dismissButton = {
+                MiuixSettingsTextButton(onClick = controller.onCancelPreparation) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
         )
     }
 
-    if (controller.isMigrating) {
+    if (processingPresentation.showMigration) {
         val activeMigrationProgress = controller.migrationProgress
         val stageText = when (activeMigrationProgress?.stage) {
             ManagedDownloadStorage.MigrationStage.PREPARING ->

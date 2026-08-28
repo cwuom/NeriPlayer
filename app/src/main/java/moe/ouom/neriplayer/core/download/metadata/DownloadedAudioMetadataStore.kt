@@ -2,7 +2,13 @@ package moe.ouom.neriplayer.core.download.metadata
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.resolvePersistedDownloadedAudioEmbeddingState
@@ -16,6 +22,37 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
+
+/**
+ * 以固定并发度读取独立侧载, 保持返回顺序并避免阻塞下一首歌曲
+ */
+internal suspend fun readRestorableSidecarLyricsConcurrently(
+    references: List<String?>,
+    parallelism: Int = 2,
+    read: suspend (String) -> String?
+): List<String?> {
+    require(parallelism > 0) { "parallelism must be positive" }
+    if (references.isEmpty()) return emptyList()
+    val limiter = Semaphore(parallelism)
+    return coroutineScope {
+        references.map { reference ->
+            async(Dispatchers.IO) {
+                val normalized = reference?.trim()?.takeIf(String::isNotBlank)
+                    ?: return@async null
+                limiter.withPermit {
+                    read(normalized)?.takeIf(String::isNotBlank)
+                }
+            }
+        }.awaitAll()
+    }
+}
+
+internal fun shouldReadRestorableSidecarLyric(
+    baselineValue: String?,
+    songValue: String?
+): Boolean {
+    return baselineValue == null && songValue == null
+}
 
 internal data class RestorableMetadataClearPolicy(
     val title: Boolean = false,
@@ -88,6 +125,10 @@ internal class DownloadedAudioMetadataStore(
     private val writeRetryDelayMs: Long,
     private val loggerTag: String
 ) {
+    private companion object {
+        private const val SIDECAR_READ_PARALLELISM = 2
+    }
+
     suspend fun persist(
         context: Context,
         audio: ManagedDownloadStorage.StoredEntry,
@@ -99,10 +140,13 @@ internal class DownloadedAudioMetadataStore(
         artifactStateOverride: String? = null,
         operationId: String? = null,
         clearRestorableOverrides: RestorableMetadataClearPolicy =
-            RestorableMetadataClearPolicy()
+            RestorableMetadataClearPolicy(),
+        existingMetadataHint: ManagedDownloadStorage.DownloadedAudioMetadata? = null
     ): Boolean {
+        val startedAtNs = System.nanoTime()
         val identity = song.identity()
-        val existingMetadata = read(context, audio)
+        val existingMetadata = existingMetadataHint ?: read(context, audio)
+        val metadataReadMs = elapsedMs(startedAtNs)
         val resolvedEmbeddingState = resolvePersistedDownloadedAudioEmbeddingState(
             downloadFinalized = downloadFinalized,
             requestedState = metadataEmbeddingState,
@@ -116,6 +160,7 @@ internal class DownloadedAudioMetadataStore(
             existingMetadata = existingMetadata,
             resolveExistingSidecars = resolveExistingSidecars
         )
+        val sidecarResolveMs = elapsedMs(startedAtNs) - metadataReadMs
         val materializedCover = resolveDownloadedMetadataCoverAsset(
             sidecarReferences = sidecarReferences,
             coverReference = sidecars.coverReference,
@@ -133,25 +178,35 @@ internal class DownloadedAudioMetadataStore(
                 )
             }
         )
+        val coverResolveMs = elapsedMs(startedAtNs) -
+            metadataReadMs - sidecarResolveMs
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
+        val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
         val existingBaseline = existingMetadata?.restorableMetadata?.baseline
-        val shouldReadSidecarLyrics = downloadFinalized && (
-            existingBaseline == null ||
-                existingBaseline.originalLyric == null ||
-                existingBaseline.translatedLyric == null ||
-                existingBaseline.romanizedLyric == null
-        )
-        val sidecarLyrics = if (shouldReadSidecarLyrics) {
+        val sidecarLyrics = if (downloadFinalized) {
             readRestorableSidecarLyrics(
                 context = context,
-                sidecars = persistedSidecars
+                sidecars = persistedSidecars,
+                readOriginal = shouldReadRestorableSidecarLyric(
+                    baselineValue = existingBaseline?.originalLyric,
+                    songValue = metadataSong.originalLyric
+                ),
+                readTranslated = shouldReadRestorableSidecarLyric(
+                    baselineValue = existingBaseline?.translatedLyric,
+                    songValue = metadataSong.originalTranslatedLyric
+                ),
+                readRomanized = shouldReadRestorableSidecarLyric(
+                    baselineValue = existingBaseline?.romanizedLyric,
+                    songValue = metadataSong.originalRomanizedLyric
+                )
             )
         } else {
             RestorableSidecarLyrics()
         }
-        val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
+        val lyricReadMs = elapsedMs(startedAtNs) -
+            metadataReadMs - sidecarResolveMs - coverResolveMs
         val createdAtMs = existingMetadata?.createdAtMs
             ?: existingMetadata?.downloadTimeMs
             ?: audio.lastModifiedMs.takeIf { it > 0L }
@@ -212,7 +267,7 @@ internal class DownloadedAudioMetadataStore(
             if (result.getOrDefault(false)) {
                 NPLogger.d(
                     loggerTag,
-                    "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, finalized=$downloadFinalized, lyricPath=${persistedSidecars.lyricReference}, translatedLyricPath=${persistedSidecars.translatedLyricReference}, romanizedLyricPath=${persistedSidecars.romanizedLyricReference}, coverPath=${persistedSidecars.coverReference}"
+                    "保存下载 metadata: file=${audio.name}, stableKey=${identity.stableKey()}, finalized=$downloadFinalized, lyricPath=${persistedSidecars.lyricReference}, translatedLyricPath=${persistedSidecars.translatedLyricReference}, romanizedLyricPath=${persistedSidecars.romanizedLyricReference}, coverPath=${persistedSidecars.coverReference}, prepareMs=${elapsedMs(startedAtNs)}, metadataReadMs=$metadataReadMs, sidecarResolveMs=$sidecarResolveMs, coverResolveMs=$coverResolveMs, lyricReadMs=$lyricReadMs"
                 )
                 return true
             }
@@ -227,7 +282,14 @@ internal class DownloadedAudioMetadataStore(
                 delay(writeRetryDelayMs)
             }
         }
-        NPLogger.e(loggerTag, "写入下载元数据最终失败: ${audio.name} - ${lastError?.message}", lastError)
+        NPLogger.e(
+            loggerTag,
+            "写入下载元数据最终失败: ${audio.name} - ${lastError?.message}, " +
+                "prepareMs=${elapsedMs(startedAtNs)}, metadataReadMs=$metadataReadMs, " +
+                "sidecarResolveMs=$sidecarResolveMs, coverResolveMs=$coverResolveMs, " +
+                "lyricReadMs=$lyricReadMs",
+            lastError
+        )
         return false
     }
 
@@ -338,11 +400,20 @@ internal class DownloadedAudioMetadataStore(
 
     private suspend fun readRestorableSidecarLyrics(
         context: Context,
-        sidecars: DownloadedMetadataSidecarReferences
+        sidecars: DownloadedMetadataSidecarReferences,
+        readOriginal: Boolean,
+        readTranslated: Boolean,
+        readRomanized: Boolean
     ): RestorableSidecarLyrics {
-        suspend fun read(reference: String?): String? {
-            val normalized = reference?.trim()?.takeIf(String::isNotBlank) ?: return null
-            return try {
+        val values = readRestorableSidecarLyricsConcurrently(
+            references = listOf(
+                sidecars.lyricReference.takeIf { readOriginal },
+                sidecars.translatedLyricReference.takeIf { readTranslated },
+                sidecars.romanizedLyricReference.takeIf { readRomanized }
+            ),
+            parallelism = SIDECAR_READ_PARALLELISM
+        ) { normalized ->
+            try {
                 ManagedDownloadStorage.readText(context, normalized)
                     ?.takeIf(String::isNotBlank)
             } catch (error: CancellationException) {
@@ -355,12 +426,15 @@ internal class DownloadedAudioMetadataStore(
                 null
             }
         }
-
         return RestorableSidecarLyrics(
-            original = read(sidecars.lyricReference),
-            translated = read(sidecars.translatedLyricReference),
-            romanized = read(sidecars.romanizedLyricReference)
+            original = values.getOrNull(0),
+            translated = values.getOrNull(1),
+            romanized = values.getOrNull(2)
         )
+    }
+
+    private fun elapsedMs(startedAtNs: Long): Long {
+        return ((System.nanoTime() - startedAtNs) / 1_000_000L).coerceAtLeast(0L)
     }
 
     private fun buildMetadataPayload(

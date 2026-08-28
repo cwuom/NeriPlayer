@@ -17,7 +17,7 @@ internal object ManagedLibraryRebuilder {
         allowIncompleteRootPreview: Boolean = false
     ): List<ManagedLibraryRebuildItem> {
         return snapshot.audioEntries.mapNotNull { audio ->
-            val metadata = snapshot.metadataByAudioName[audio.name]
+            val metadata = ManagedDownloadStorage.metadataForAudioEntry(snapshot, audio)
             if (
                 !isFinalizedDownloadedAudioEntry(
                     rootEntriesComplete = snapshot.rootEntriesComplete ||

@@ -33,6 +33,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.mockito.Mockito.mock
 import java.io.ByteArrayInputStream
@@ -41,6 +42,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlin.system.measureTimeMillis
 
@@ -1633,6 +1635,56 @@ class ManagedDownloadStorageMigrationCompatTest {
             assertEquals(2, progressUpdates.last().cleanupFilesTotal)
         } finally {
             directory.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `migration cleanup propagates cancellation without converting it to a provider failure`() {
+        val sourceFile = Files.createTempFile("neriplayer-migration-cancel", ".mp3").toFile()
+        try {
+            val sourceEntry = ManagedDownloadStorage.StoredEntry(
+                name = sourceFile.name,
+                reference = sourceFile.absolutePath,
+                mediaUri = sourceFile.toURI().toString(),
+                localFilePath = sourceFile.absolutePath,
+                sizeBytes = sourceFile.length(),
+                lastModifiedMs = sourceFile.lastModified()
+            )
+            val copiedEntry = CopiedMigrationEntry(
+                original = ManagedMigrationEntry(null, sourceEntry),
+                copiedEntry = sourceEntry,
+                createdNew = true
+            )
+            val cancellation = CancellationException("migration cancelled")
+            val finalizer = ManagedDownloadMigrationFinalizer(
+                tag = "ManagedDownloadStorageMigrationCompatTest",
+                rewriteParallelism = { 1 },
+                deleteParallelism = { 1 },
+                readText = { _, _ -> null },
+                entryReader = InputStreamManagedMigrationEntryReader { _, entry ->
+                    File(entry.reference).inputStream()
+                },
+                writeRootText = { _, _, _, _ -> null },
+                deleteReference = { _, _, _ -> StorageMutationResult.Deleted },
+                deleteReferences = { _, _, _, _, _ -> throw cancellation },
+                rewriteMetadataReferences = { raw, _ -> raw }
+            )
+
+            val thrown = assertThrows(CancellationException::class.java) {
+                runBlocking {
+                    finalizer.cleanupMigratedEntriesDetailed(
+                        context = mock(Context::class.java),
+                        copiedEntries = listOf(copiedEntry),
+                        sourceRoot = ManagedDownloadRootHandle.FileRoot(sourceFile.parentFile!!),
+                        targetsAlreadyVerified = true
+                    )
+                }
+            }
+
+            assertEquals(cancellation.message, thrown.message)
+            assertTrue(sourceFile.exists())
+        } finally {
+            sourceFile.delete()
         }
     }
 

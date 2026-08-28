@@ -16,7 +16,10 @@ internal object ManagedDownloadSnapshotRoomMapper {
         snapshot: ManagedDownloadStorage.DownloadLibrarySnapshot
     ): List<DownloadSnapshotEntryEntity> {
         return buildList {
-            addAll(snapshot.audioEntries.toEntryEntities(rootKey, BUCKET_AUDIO))
+            addAll(
+                (snapshot.audioEntries + snapshot.pendingAudioEntries)
+                    .toEntryEntities(rootKey, BUCKET_AUDIO)
+            )
             addAll(
                 snapshot.metadataEntriesByAudioName.values
                     .toList()
@@ -92,8 +95,9 @@ internal object ManagedDownloadSnapshotRoomMapper {
         coverEntries: List<DownloadSnapshotEntryEntity>,
         lyricEntries: List<DownloadSnapshotEntryEntity>
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
+        val storedAudioEntries = audioEntries.map { it.toStoredEntry() }
         return ManagedDownloadSnapshotIndex.compose(
-            audioEntries = audioEntries.map { it.toStoredEntry() },
+            audioEntries = storedAudioEntries,
             metadataEntries = metadataEntries.map { it.toStoredEntry() },
             metadataByAudioName = metadata.associate { entity ->
                 entity.audioName to entity.toDownloadedAudioMetadata()
@@ -101,7 +105,10 @@ internal object ManagedDownloadSnapshotRoomMapper {
             coverEntries = coverEntries.map { it.toStoredEntry() },
             lyricEntries = lyricEntries.map { it.toStoredEntry() },
             // Room 目前只保存已列举的条目，恢复后仍需重新确认 root
-            rootEntriesComplete = false
+            rootEntriesComplete = false,
+            pendingAudioEntries = storedAudioEntries.filter(
+                ManagedDownloadStorage.StoredEntry::isPendingAudioWrite
+            )
         )
     }
 
@@ -128,10 +135,25 @@ internal object ManagedDownloadSnapshotRoomMapper {
     }
 
     private fun DownloadSnapshotEntryEntity.toStoredEntry(): ManagedDownloadStorage.StoredEntry {
+        // 旧 Room 行可能只保存了 reference。保持与旧 JSON 解码器一致，
+        // 但不把 https 等远端地址伪装成本地播放引用
+        val restoredMediaUri = mediaUri
+            .trim()
+            .takeIf { value ->
+                value.startsWith("/") ||
+                    value.startsWith("content:", ignoreCase = true) ||
+                    value.startsWith("file:", ignoreCase = true)
+            }
+            ?: reference.trim().takeIf { value ->
+                value.startsWith("/") ||
+                    value.startsWith("content:", ignoreCase = true) ||
+                    value.startsWith("file:", ignoreCase = true)
+            }
+            ?: mediaUri
         return ManagedDownloadStorage.StoredEntry(
             name = name,
             reference = reference,
-            mediaUri = mediaUri,
+            mediaUri = restoredMediaUri,
             localFilePath = localFilePath,
             sizeBytes = sizeBytes,
             lastModifiedMs = lastModifiedMs,

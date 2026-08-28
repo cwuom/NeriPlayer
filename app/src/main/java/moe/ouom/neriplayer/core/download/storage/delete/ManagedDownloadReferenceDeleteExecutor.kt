@@ -5,6 +5,8 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -86,42 +88,67 @@ internal class ManagedDownloadReferenceDeleteExecutor(
     suspend fun deleteReferencesConcurrently(
         context: Context,
         references: Collection<TrustedManagedRef>,
-        deletePolicy: ManagedDownloadDeletePolicy
+        deletePolicy: ManagedDownloadDeletePolicy,
+        parallelism: Int = referenceDeleteParallelism,
+        onDeleteStarted: (TrustedManagedRef) -> Unit = {},
+        onDeleteAttemptFinished: (TrustedManagedRef, Boolean) -> Unit = { _, _ -> }
     ): ManagedDownloadReferenceDeleteResult {
+        require(parallelism > 0)
         val normalizedReferences = normalizeReferences(references)
         if (normalizedReferences.isEmpty()) {
             return ManagedDownloadReferenceDeleteResult.empty()
         }
         val startedAtMs = System.currentTimeMillis()
-        val unresolvedReferences = filterAllowedReferences(
+        val allowedReferences = filterAllowedReferences(
             normalizedReferences,
             deletePolicy
-        ).toMutableList()
+        )
+        val unresolvedReferences = allowedReferences.toMutableList()
         val deletedReferences = linkedSetOf<String>()
-        repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
-            if (unresolvedReferences.isEmpty()) {
-                return@repeat
+        val startedReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
+        try {
+            repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
+                if (unresolvedReferences.isEmpty()) {
+                    return@repeat
+                }
+                val deletedInAttempt = runReferencesWithFixedWorkers(
+                    references = unresolvedReferences,
+                    parallelism = parallelism,
+                    beforeOperation = { reference ->
+                        if (startedReferences.add(reference)) {
+                            onDeleteStarted(reference)
+                        }
+                    }
+                ) { reference -> deleteReferenceOnce(context, reference) }
+                deletedReferences += deletedInAttempt.map(TrustedManagedRef::externalReference)
+                unresolvedReferences.removeAll(deletedInAttempt.toSet())
+                if (
+                    unresolvedReferences.isNotEmpty() &&
+                    attempt < SAF_DELETE_MAX_ATTEMPTS - 1
+                ) {
+                    delay(SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L))
+                }
             }
-            val deletedInAttempt = runReferencesWithFixedWorkers(unresolvedReferences) {
-                reference -> deleteReferenceOnce(context, reference)
+            if (unresolvedReferences.isNotEmpty()) {
+                deletedReferences += runReferencesWithFixedWorkers(
+                    references = unresolvedReferences,
+                    parallelism = parallelism
+                ) { reference -> isReferenceGone(context, reference) }
+                    .map(TrustedManagedRef::externalReference)
             }
-            deletedReferences += deletedInAttempt.map(TrustedManagedRef::externalReference)
-            unresolvedReferences.removeAll(deletedInAttempt.toSet())
-            if (
-                unresolvedReferences.isNotEmpty() &&
-                attempt < SAF_DELETE_MAX_ATTEMPTS - 1
-            ) {
-                delay(SAF_DELETE_RETRY_DELAY_MS * (attempt + 1L))
+        } finally {
+            startedReferences.forEach { reference ->
+                onDeleteAttemptFinished(
+                    reference,
+                    reference.externalReference in deletedReferences
+                )
             }
-        }
-        if (unresolvedReferences.isNotEmpty()) {
-            deletedReferences += runReferencesWithFixedWorkers(unresolvedReferences) {
-                reference -> isReferenceGone(context, reference)
-            }.map(TrustedManagedRef::externalReference)
         }
         NPLogger.d(
             tag,
-            "批量删除引用完成: requested=${normalizedReferences.size}, deleted=${deletedReferences.size}, costMs=${System.currentTimeMillis() - startedAtMs}"
+            "批量删除引用完成: requested=${normalizedReferences.size}, " +
+                "deleted=${deletedReferences.size}, " +
+                "costMs=${System.currentTimeMillis() - startedAtMs}"
         )
         return ManagedDownloadReferenceDeleteResult(
             requestedReferences = normalizedReferences.map(TrustedManagedRef::externalReference),
@@ -284,6 +311,8 @@ internal class ManagedDownloadReferenceDeleteExecutor(
 
     private suspend fun runReferencesWithFixedWorkers(
         references: List<TrustedManagedRef>,
+        parallelism: Int = referenceDeleteParallelism,
+        beforeOperation: (TrustedManagedRef) -> Unit = {},
         operation: (TrustedManagedRef) -> Boolean
     ): Set<TrustedManagedRef> {
         if (references.isEmpty()) {
@@ -292,24 +321,34 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val successfulReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
         val nextIndex = AtomicInteger(0)
         val operationFailures = AtomicInteger(0)
-        val workerCount = minOf(referenceDeleteParallelism, references.size)
+        val cancellation = AtomicReference<CancellationException?>()
+        val workerCount = minOf(parallelism, references.size)
         coroutineScope {
             repeat(workerCount) {
                 launch(Dispatchers.IO) {
-                    while (isActive) {
+                    while (isActive && cancellation.get() == null) {
                         val index = nextIndex.getAndIncrement()
                         if (index >= references.size) {
                             return@launch
                         }
                         val reference = references[index]
-                        val succeeded = runCatching { operation(reference) }
-                            .getOrElse { error ->
-                                if (error is SecurityException) {
-                                    throw error
-                                }
-                                operationFailures.incrementAndGet()
-                                false
-                            }
+                        try {
+                            beforeOperation(reference)
+                        } catch (error: CancellationException) {
+                            cancellation.compareAndSet(null, error)
+                            return@launch
+                        }
+                        val succeeded = try {
+                            operation(reference)
+                        } catch (error: CancellationException) {
+                            cancellation.compareAndSet(null, error)
+                            return@launch
+                        } catch (error: SecurityException) {
+                            throw error
+                        } catch (_: Throwable) {
+                            operationFailures.incrementAndGet()
+                            false
+                        }
                         if (succeeded) {
                             successfulReferences += reference
                         }
@@ -317,6 +356,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 }
             }
         }
+        cancellation.get()?.let { error -> throw error }
         if (operationFailures.get() > 0) {
             NPLogger.w(tag, "批量删除引用执行异常: count=${operationFailures.get()}")
         }

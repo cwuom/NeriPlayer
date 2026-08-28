@@ -47,8 +47,12 @@ internal class DownloadedSongBuilder(
         allowSlowLocalInspection: Boolean = true
     ): DownloadedSong {
         val effectiveSnapshot = snapshot ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
-        val metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
-        val snapshotMetadata = effectiveSnapshot.metadataByAudioName[storedAudio.name]
+        val metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.logicalName]
+            ?: effectiveSnapshot.metadataEntriesByAudioName[storedAudio.name]
+        val snapshotMetadata = ManagedDownloadStorage.metadataForAudioEntry(
+            effectiveSnapshot,
+            storedAudio
+        )
         val metadata = snapshotMetadata ?: metadataStore.read(
             context = context,
             audio = storedAudio,
@@ -225,7 +229,8 @@ internal class DownloadedSongBuilder(
             originalLyric = metadata?.originalLyric,
             originalTranslatedLyric = metadata?.originalTranslatedLyric,
             originalRomanizedLyric = metadata?.originalRomanizedLyric,
-            mediaUri = storedAudio.playbackUri,
+            mediaUri = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(storedAudio)
+                .orEmpty(),
             durationMs = metadata?.durationMs?.takeIf { it > 0L } ?: localDetails?.durationMs ?: 0L,
             stableKey = metadata?.stableKey ?: localDetails?.sourceStableKey,
             sourceIdentityAlbum = metadata?.identityAlbum,
@@ -240,20 +245,24 @@ internal class DownloadedSongBuilder(
     fun inspectAudioDetails(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry
-    ) = runCatching {
-        LocalMediaSupport.inspect(context, storedAudio.playbackUri.toUri())
-    }.onFailure { error ->
+    ) = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(storedAudio)?.let { playbackUri ->
+        runCatching {
+            LocalMediaSupport.inspect(context, playbackUri.toUri())
+        }.onFailure { error ->
         NPLogger.w(loggerTag, "读取已下载音频标签失败: ${storedAudio.name} - ${error.message}")
-    }.getOrNull()
+        }.getOrNull()
+    }
 
     private fun resolveAudioMetadataCoverReference(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry
     ): String? {
+        val playbackUri = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(storedAudio)
+            ?: return null
         val candidate = runCatching {
             LocalMediaSupport.resolveCoverUri(
                 context = context,
-                uri = storedAudio.playbackUri.toUri()
+                uri = playbackUri.toUri()
             )
         }.onFailure { error ->
             NPLogger.d(
@@ -274,7 +283,8 @@ internal class DownloadedSongBuilder(
         context: Context,
         storedAudio: ManagedDownloadStorage.StoredEntry
     ): String? {
-        val sourceUri = runCatching { storedAudio.playbackUri.toUri() }.getOrNull()
+        val sourceUri = ManagedDownloadStorage.resolveStoredEntryPlaybackUri(storedAudio)
+            ?.let { reference -> runCatching { reference.toUri() }.getOrNull() }
             ?: return null
         val candidate = LocalMediaSupport.peekMediaStoreAlbumArtUri(context, sourceUri)
             ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, sourceUri)
