@@ -17,6 +17,8 @@ import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRe
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.SafParentDocumentCache
+import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend.SafQueryResult
 import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
 import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
@@ -32,6 +34,7 @@ internal class ManagedDownloadStorageCommitWriter(
     private val treeDirectories: ManagedDownloadTreeDirectories,
     private val tag: String
 ) {
+    private val safParentDocumentCache = SafParentDocumentCache<SafQueryResult>()
     private val migrationTargetResolver = ManagedDownloadCommitMigrationTargetResolver(
         treeChildRegistry = treeChildRegistry,
         tag = tag
@@ -64,7 +67,10 @@ internal class ManagedDownloadStorageCommitWriter(
                 val backupUri = runCatching { backup.mediaUri.toUri() }.getOrNull()
                     ?: return false
                 val backupRef = StorageReference.SafRef(backupUri)
-                val backend = SafStorageBackend(context)
+                val backend = SafStorageBackend(
+                    context,
+                    parentDocumentCache = safParentDocumentCache
+                )
                 val target = root.tree.findFile(copied.copiedEntry.name)
                 if (target != null) {
                     val targetRef = StorageReference.SafRef(target.uri)
@@ -341,7 +347,10 @@ internal class ManagedDownloadStorageCommitWriter(
                 "SAF 迁移替换计划目标名发生变化: $displayName"
             )
         }
-        val backend = SafStorageBackend(context)
+        val backend = SafStorageBackend(
+            context,
+            parentDocumentCache = safParentDocumentCache
+        )
         val existingTarget = parent.findFile(displayName)
         val existingBackup = parent.findFile(plan.backupName)
         var backupEntry = existingBackup?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
@@ -517,7 +526,10 @@ internal class ManagedDownloadStorageCommitWriter(
         knownExistingReference: String? = null,
         writer: suspend (java.io.OutputStream) -> Unit
     ): ManagedDownloadStorage.StoredEntry {
-        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
+        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(
+            context,
+            parentDocumentCache = safParentDocumentCache
+        )
         val result = runBlocking(Dispatchers.IO) {
             val target = StorageTarget.SafTarget(
                 parent = StorageReference.SafRef(parent.uri),
@@ -761,7 +773,10 @@ internal class ManagedDownloadStorageCommitWriter(
         description: String
     ): StoredWriteResult {
         var copiedBytes = 0L
-        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(context)
+        val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(
+            context,
+            parentDocumentCache = safParentDocumentCache
+        )
         val result = runBlocking(Dispatchers.IO) {
             backend.writeCreateOnlyRecoverable(
                 target = StorageTarget.SafTarget(

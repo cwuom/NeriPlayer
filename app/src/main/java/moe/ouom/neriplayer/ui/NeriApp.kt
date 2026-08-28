@@ -31,6 +31,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
+import android.text.format.Formatter
 import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
@@ -43,15 +44,21 @@ import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -69,11 +76,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -108,9 +118,12 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -360,6 +373,8 @@ internal const val MAIN_TAB_LAYER_Z_INDEX = 0f
 internal const val NAV_HOST_LAYER_Z_INDEX = 1f
 internal const val MINI_PLAYER_OVERLAY_Z_INDEX = 2f
 private const val MANAGED_LIBRARY_PROCESSING_Z_INDEX = 3f
+private val MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE = 96.dp
+private val MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD = 24.dp
 private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
@@ -381,6 +396,16 @@ internal data class MainTabBackgroundTransform(
     val scale: Float,
     val alpha: Float
 )
+
+internal fun shouldExpandManagedProcessingBannerFromDrag(
+    startY: Float,
+    totalX: Float,
+    totalY: Float,
+    edgePx: Float,
+    thresholdPx: Float
+): Boolean = startY <= edgePx &&
+    totalY >= thresholdPx &&
+    totalY > abs(totalX)
 
 internal fun resolveMainTabTransitionDirection(
     initialRoute: String?,
@@ -1435,10 +1460,59 @@ private fun OfflineModeBottomBanner() {
     }
 }
 
+private fun Modifier.managedProcessingRevealGesture(
+    collapsed: Boolean,
+    edgePx: Float,
+    thresholdPx: Float,
+    onExpand: () -> Unit
+): Modifier {
+    if (!collapsed) return this
+    return pointerInput(collapsed, edgePx, thresholdPx) {
+        awaitEachGesture {
+            val down = awaitFirstDown(
+                requireUnconsumed = false,
+                pass = PointerEventPass.Initial
+            )
+            if (down.position.y > edgePx) {
+                return@awaitEachGesture
+            }
+
+            var previousPosition = down.position
+            var totalX = 0f
+            var totalY = 0f
+            var expanded = false
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Final)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                val position = change.position
+                totalX += position.x - previousPosition.x
+                totalY += position.y - previousPosition.y
+                previousPosition = position
+                if (change.pressed && !expanded && shouldExpandManagedProcessingBannerFromDrag(
+                        startY = down.position.y,
+                        totalX = totalX,
+                        totalY = totalY,
+                        edgePx = edgePx,
+                        thresholdPx = thresholdPx
+                    )) {
+                    expanded = true
+                    change.consume()
+                    onExpand()
+                    break
+                }
+                if (!change.pressed) break
+            }
+        }
+    }
+}
+
 @Composable
 private fun ManagedLibraryProcessingBanner(
     state: ManagedLibraryProcessingState,
-    modifier: Modifier = Modifier
+    migrationProgress: ManagedDownloadStorage.MigrationProgress?,
+    onCollapsedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    interactive: Boolean = true
 ) {
     val title = when (state.reason) {
         ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE ->
@@ -1448,12 +1522,83 @@ private fun ManagedLibraryProcessingBanner(
         null -> return
     }
     val waitingForRetry = state is ManagedLibraryProcessingState.WaitingForRetry
-    val processed = state.processed?.coerceAtLeast(0)
-    val total = state.total?.takeIf { it > 0 }
+    val stageText = when (migrationProgress?.stage) {
+        ManagedDownloadStorage.MigrationStage.PREPARING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_preparing)
+        ManagedDownloadStorage.MigrationStage.COPYING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_copying)
+        ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
+            stringResource(R.string.settings_download_directory_migrating_stage_rewriting)
+        ManagedDownloadStorage.MigrationStage.VERIFYING ->
+            stringResource(R.string.settings_download_directory_migrating_stage_verifying)
+        ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
+            stringResource(R.string.settings_download_directory_migrating_stage_cleanup)
+        ManagedDownloadStorage.MigrationStage.FINALIZING ->
+            stringResource(R.string.settings_download_directory_migrating)
+        null -> null
+    }
+    val stageProgress = migrationProgress?.let { progress ->
+        progress.stageProcessed.coerceAtLeast(0) to progress.stageTotal.coerceAtLeast(0)
+    }
+    val processed = stageProgress?.first ?: state.processed?.coerceAtLeast(0)
+    val total = stageProgress?.second?.takeIf { it > 0 }
+        ?: state.total?.takeIf { it > 0 }
     val progressFraction = if (processed != null && total != null) {
         (processed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
     } else {
         null
+    }
+    val currentFileSummary = migrationProgress?.currentFileName
+        ?.takeIf(String::isNotBlank)
+        ?.let { fileName ->
+            stringResource(R.string.settings_download_directory_migrating_current, fileName)
+        }
+    val bytesSummary = migrationProgress?.let { progress ->
+        val (done, totalBytes) = when (progress.stage) {
+            ManagedDownloadStorage.MigrationStage.VERIFYING ->
+                progress.verifiedBytes to progress.verificationBytesTotal
+            ManagedDownloadStorage.MigrationStage.COPYING ->
+                progress.copiedBytes to progress.totalBytes
+            else -> return@let null
+        }
+        if (totalBytes <= 0L) {
+            null
+        } else {
+            stringResource(
+                if (progress.stage == ManagedDownloadStorage.MigrationStage.VERIFYING) {
+                    R.string.settings_download_directory_migrating_verification_progress_bytes
+                } else {
+                    R.string.settings_download_directory_migrating_progress_bytes
+                },
+                Formatter.formatShortFileSize(LocalContext.current, done.coerceAtLeast(0L)),
+                Formatter.formatShortFileSize(LocalContext.current, totalBytes)
+            )
+        }
+    }
+    val dragThresholdPx = with(LocalDensity.current) {
+        MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD.toPx()
+    }
+    val gestureModifier = if (interactive) {
+        Modifier.pointerInput(dragThresholdPx) {
+            var accumulatedDragPx = 0f
+            var stateChanged = false
+            detectVerticalDragGestures(
+                onDragStart = { accumulatedDragPx = 0f },
+                onVerticalDrag = { change, dragAmount ->
+                    change.consume()
+                    if (stateChanged) return@detectVerticalDragGestures
+                    accumulatedDragPx += dragAmount
+                    when {
+                        accumulatedDragPx <= -dragThresholdPx -> {
+                            stateChanged = true
+                            onCollapsedChange(true)
+                        }
+                    }
+                }
+            )
+        }
+    } else {
+        Modifier
     }
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
@@ -1463,15 +1608,38 @@ private fun ManagedLibraryProcessingBanner(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
+            .animateContentSize(
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = FastOutSlowInEasing
+                )
+            )
+            .then(gestureModifier)
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    enabled = interactive,
+                    onClick = { onCollapsedChange(true) }
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.ExpandLess,
+                        contentDescription = stringResource(R.string.action_collapse)
+                    )
+                }
+            }
             Text(
                 text = stringResource(
                     if (waitingForRetry) {
@@ -1483,6 +1651,13 @@ private fun ManagedLibraryProcessingBanner(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            stageText?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             if (processed != null && total != null) {
                 Text(
                     text = stringResource(
@@ -1492,6 +1667,21 @@ private fun ManagedLibraryProcessingBanner(
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            bytesSummary?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            currentFileSummary?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
                 )
             }
             if (!waitingForRetry) {
@@ -2868,6 +3058,42 @@ private fun NeriAppContent(
             val snackbarHostState = remember { SnackbarHostState() }
             val managedLibraryProcessingState by
                 ManagedLibraryProcessingCoordinator.state.collectAsStateWithLifecycle()
+            val managedMigrationProgress by
+                ManagedDownloadStorage.migrationProgressFlow.collectAsStateWithLifecycle()
+            var managedProcessingBannerDisplayState by remember {
+                mutableStateOf<ManagedLibraryProcessingState>(
+                    ManagedLibraryProcessingState.Idle
+                )
+            }
+            var managedProcessingBannerDisplayProgress by remember {
+                mutableStateOf<ManagedDownloadStorage.MigrationProgress?>(null)
+            }
+            var managedProcessingBannerCollapsed by rememberSaveable {
+                mutableStateOf(false)
+            }
+            LaunchedEffect(managedLibraryProcessingState, managedMigrationProgress) {
+                if (managedLibraryProcessingState != ManagedLibraryProcessingState.Idle) {
+                    managedProcessingBannerDisplayState = managedLibraryProcessingState
+                    managedProcessingBannerDisplayProgress = managedMigrationProgress
+                } else if (managedMigrationProgress != null) {
+                    managedProcessingBannerDisplayProgress = managedMigrationProgress
+                }
+            }
+            LaunchedEffect(managedLibraryProcessingState.operationId) {
+                if (managedLibraryProcessingState != ManagedLibraryProcessingState.Idle) {
+                    managedProcessingBannerCollapsed = false
+                }
+            }
+            val managedProcessingBannerState =
+                managedLibraryProcessingState.takeIf {
+                    it != ManagedLibraryProcessingState.Idle
+                } ?: managedProcessingBannerDisplayState
+            val managedProcessingBannerProgress =
+                if (managedLibraryProcessingState != ManagedLibraryProcessingState.Idle) {
+                    managedMigrationProgress
+                } else {
+                    managedProcessingBannerDisplayProgress
+                }
             val homeHostRuntimeState = rememberHomeHostRuntimeState()
 
             @Composable
@@ -3699,6 +3925,14 @@ private fun NeriAppContent(
                         CompositionLocalProvider(
                             LocalMiniPlayerHeight provides bottomBarLayoutInsets.screenBottomInset
                         ) {
+                            val managedProcessingBannerActive =
+                                managedLibraryProcessingState != ManagedLibraryProcessingState.Idle
+                            val processingRevealEdgePx = with(LocalDensity.current) {
+                                MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE.toPx()
+                            }
+                            val processingRevealThresholdPx = with(LocalDensity.current) {
+                                MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD.toPx()
+                            }
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -3706,27 +3940,72 @@ private fun NeriAppContent(
                                         bottom = bottomBarLayoutInsets.navContentBottomPadding
                                     )
                                     .clipToBounds()
+                                    .managedProcessingRevealGesture(
+                                        collapsed = managedProcessingBannerActive &&
+                                            managedProcessingBannerCollapsed,
+                                        edgePx = processingRevealEdgePx,
+                                        thresholdPx = processingRevealThresholdPx,
+                                        onExpand = {
+                                            managedProcessingBannerCollapsed = false
+                                        }
+                                    )
                             ) {
                                 AnimatedVisibility(
-                                    visible = managedLibraryProcessingState !=
-                                        ManagedLibraryProcessingState.Idle,
+                                    visible = managedProcessingBannerActive &&
+                                        !managedProcessingBannerCollapsed,
                                     modifier = Modifier
                                         .align(Alignment.TopCenter)
+                                        .fillMaxWidth()
                                         .windowInsetsPadding(WindowInsets.statusBars)
                                         .zIndex(MANAGED_LIBRARY_PROCESSING_Z_INDEX),
-                                    enter = slideInVertically(
-                                        animationSpec = tween(durationMillis = 220),
-                                        initialOffsetY = { -it / 2 }
-                                    ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                                    exit = slideOutVertically(
-                                        animationSpec = tween(durationMillis = 180),
-                                        targetOffsetY = { -it / 2 }
-                                    ) + fadeOut(animationSpec = tween(durationMillis = 160))
+                                    enter =
+                                        fadeIn(animationSpec = tween(durationMillis = 180)) +
+                                            slideInVertically(
+                                                animationSpec = tween(
+                                                    durationMillis = 240,
+                                                    easing = FastOutSlowInEasing
+                                                ),
+                                                initialOffsetY = { -it / 2 }
+                                            ) +
+                                            expandVertically(
+                                                animationSpec = tween(
+                                                    durationMillis = 240,
+                                                    easing = FastOutSlowInEasing
+                                                ),
+                                                expandFrom = Alignment.Top
+                                            ),
+                                    exit =
+                                        fadeOut(animationSpec = tween(durationMillis = 160)) +
+                                            slideOutVertically(
+                                                animationSpec = tween(
+                                                    durationMillis = 220,
+                                                    easing = FastOutSlowInEasing
+                                                ),
+                                                targetOffsetY = { -it / 2 }
+                                            ) +
+                                            shrinkVertically(
+                                                animationSpec = tween(
+                                                    durationMillis = 220,
+                                                    easing = FastOutSlowInEasing
+                                                ),
+                                                shrinkTowards = Alignment.Top
+                                            )
                                 ) {
                                     ManagedLibraryProcessingBanner(
-                                        state = managedLibraryProcessingState
+                                        state = managedProcessingBannerState,
+                                        migrationProgress = managedProcessingBannerProgress,
+                                        interactive = managedProcessingBannerActive &&
+                                            !managedProcessingBannerCollapsed,
+                                        onCollapsedChange = {
+                                            managedProcessingBannerCollapsed = it
+                                        }
                                     )
                                 }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clipToBounds()
+                                ) {
                                 // Keep the effect on a stable layer outside NavHost transitions
                                 Box(
                                     modifier = Modifier
@@ -4492,45 +4771,54 @@ private fun NeriAppContent(
                                         }
                                     }
                                 }
-
-                                AnimatedVisibility(
-                                    visible = currentSong != null && !showNowPlaying,
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .padding(
-                                            bottom = bottomBarLayoutInsets.miniPlayerBottomPadding
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = currentSong != null && !showNowPlaying,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(
+                                                bottom = bottomBarLayoutInsets.miniPlayerBottomPadding
+                                            )
+                                            .zIndex(MINI_PLAYER_OVERLAY_Z_INDEX),
+                                        enter = slideInVertically(
+                                            animationSpec = tween(
+                                                durationMillis = 220,
+                                                easing = FastOutSlowInEasing
+                                            ),
+                                            initialOffsetY = { it / 2 }
+                                        ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+                                        exit = slideOutVertically(
+                                            animationSpec = tween(
+                                                durationMillis = 180,
+                                                easing = FastOutSlowInEasing
+                                            ),
+                                            targetOffsetY = { it / 2 }
+                                        ) + fadeOut(animationSpec = tween(durationMillis = 120))
+                                    ) {
+                                        NeriMiniPlayer(
+                                            title = currentSong?.displayName()
+                                                ?: composeResources.getString(
+                                                    R.string.nowplaying_no_playback
+                                                ),
+                                            artist = currentSong?.displayArtist() ?: "",
+                                            coverUrl = displayCoverUrl,
+                                            visualCoverUrl = playbackVisualCoverUrl,
+                                            coverIdentityKey = currentSongVisualKey,
+                                            visualCoverIdentityKey = playbackVisualCoverState.ownerSongKey,
+                                            hasCurrentSong = currentSong != null,
+                                            isPlaying = isPlaybackControlPlaying,
+                                            playPauseEnabled = !usbPlaybackPreparing,
+                                            modifier = Modifier,
+                                            onPlayPause = { PlayerManager.togglePlayPause() },
+                                            onPrevious = { PlayerManager.previous() },
+                                            onNext = { PlayerManager.next() },
+                                            onExpand = { showNowPlaying = true },
+                                            enableBlur = effectiveAdvancedBlurEnabled,
+                                            offlineMode = offlineMode,
+                                            isPlaybackWaiting = isPlaybackWaiting,
+                                            isAudioRouteMuted = isAudioRouteMuted
                                         )
-                                        .zIndex(MINI_PLAYER_OVERLAY_Z_INDEX),
-                                enter = slideInVertically(
-                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                                    initialOffsetY = { it / 2 }
-                                ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-                                exit = slideOutVertically(
-                                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                                    targetOffsetY = { it / 2 }
-                                ) + fadeOut(animationSpec = tween(durationMillis = 120))
-                                ) {
-                                    NeriMiniPlayer(
-                                    title = currentSong?.displayName()
-                                        ?: composeResources.getString(R.string.nowplaying_no_playback),
-                                    artist = currentSong?.displayArtist() ?: "",
-                                    coverUrl = displayCoverUrl,
-                                    visualCoverUrl = playbackVisualCoverUrl,
-                                    coverIdentityKey = currentSongVisualKey,
-                                    visualCoverIdentityKey = playbackVisualCoverState.ownerSongKey,
-                                    hasCurrentSong = currentSong != null,
-                                    isPlaying = isPlaybackControlPlaying,
-                                    playPauseEnabled = !usbPlaybackPreparing,
-                                    modifier = Modifier,
-                                    onPlayPause = { PlayerManager.togglePlayPause() },
-                                    onPrevious = { PlayerManager.previous() },
-                                    onNext = { PlayerManager.next() },
-                                    onExpand = { showNowPlaying = true },
-                                    enableBlur = effectiveAdvancedBlurEnabled,
-                                    offlineMode = offlineMode,
-                                    isPlaybackWaiting = isPlaybackWaiting,
-                                    isAudioRouteMuted = isAudioRouteMuted
-                                    )
+                                    }
                                 }
                             }
                         }
@@ -4962,4 +5250,5 @@ private fun NeriAppContent(
             }
         }
     }
+}
 }

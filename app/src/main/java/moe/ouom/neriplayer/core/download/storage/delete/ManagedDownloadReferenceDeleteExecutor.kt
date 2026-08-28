@@ -106,6 +106,12 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         val unresolvedReferences = allowedReferences.toMutableList()
         val deletedReferences = linkedSetOf<String>()
         val startedReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
+        val finishedReferences = ConcurrentHashMap.newKeySet<TrustedManagedRef>()
+        fun finishReference(reference: TrustedManagedRef, deleted: Boolean) {
+            if (finishedReferences.add(reference)) {
+                onDeleteAttemptFinished(reference, deleted)
+            }
+        }
         try {
             repeat(SAF_DELETE_MAX_ATTEMPTS) { attempt ->
                 if (unresolvedReferences.isEmpty()) {
@@ -118,8 +124,13 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                         if (startedReferences.add(reference)) {
                             onDeleteStarted(reference)
                         }
+                    },
+                    afterOperationSucceeded = { reference ->
+                        finishReference(reference, deleted = true)
                     }
-                ) { reference -> deleteReferenceOnce(context, reference) }
+                ) { reference ->
+                    deleteReferenceOnce(context, reference)
+                }
                 deletedReferences += deletedInAttempt.map(TrustedManagedRef::externalReference)
                 unresolvedReferences.removeAll(deletedInAttempt.toSet())
                 if (
@@ -132,15 +143,18 @@ internal class ManagedDownloadReferenceDeleteExecutor(
             if (unresolvedReferences.isNotEmpty()) {
                 deletedReferences += runReferencesWithFixedWorkers(
                     references = unresolvedReferences,
-                    parallelism = parallelism
+                    parallelism = parallelism,
+                    afterOperationSucceeded = { reference ->
+                        finishReference(reference, deleted = true)
+                    }
                 ) { reference -> isReferenceGone(context, reference) }
                     .map(TrustedManagedRef::externalReference)
             }
         } finally {
             startedReferences.forEach { reference ->
-                onDeleteAttemptFinished(
+                finishReference(
                     reference,
-                    reference.externalReference in deletedReferences
+                    deleted = reference.externalReference in deletedReferences
                 )
             }
         }
@@ -313,6 +327,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         references: List<TrustedManagedRef>,
         parallelism: Int = referenceDeleteParallelism,
         beforeOperation: (TrustedManagedRef) -> Unit = {},
+        afterOperationSucceeded: (TrustedManagedRef) -> Unit = {},
         operation: (TrustedManagedRef) -> Boolean
     ): Set<TrustedManagedRef> {
         if (references.isEmpty()) {
@@ -351,6 +366,7 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                         }
                         if (succeeded) {
                             successfulReferences += reference
+                            afterOperationSucceeded(reference)
                         }
                     }
                 }

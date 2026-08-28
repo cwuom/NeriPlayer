@@ -59,6 +59,28 @@ internal data class ManagedMigrationReplacementPlan(
     val backupName: String
 )
 
+/**
+ * durable evidence for a target that was verified before its source was removed
+ */
+internal data class ManagedMigrationCleanupReceipt(
+    val sourceReference: String,
+    val sourceName: String,
+    val sourceSubdirectory: String?,
+    val targetEntry: ManagedDownloadStorage.StoredEntry,
+    val targetDigest: String
+)
+
+/**
+ * stable source identity captured before the migration starts copying
+ */
+internal data class ManagedMigrationSourceEntry(
+    val sourceReference: String,
+    val sourceName: String,
+    val sourceSubdirectory: String?,
+    val sizeBytes: Long,
+    val lastModifiedMs: Long
+)
+
 internal enum class ManagedMigrationReplacementJournalPhase {
     PLANNED,
     TARGETS_VERIFIED,
@@ -73,8 +95,20 @@ internal data class ManagedMigrationReplacementJournal(
     val backupNamespace: String,
     val phase: ManagedMigrationReplacementJournalPhase,
     val replacements: List<ManagedMigrationReplacementPlan>,
-    val targetNamesByReference: Map<String, String> = emptyMap()
-)
+    val targetNamesByReference: Map<String, String> = emptyMap(),
+    val cleanupReceipts: List<ManagedMigrationCleanupReceipt> = emptyList(),
+    val cleanupComplete: Boolean = false,
+    val sourceEntryCount: Int = 0,
+    val sourceEntries: List<ManagedMigrationSourceEntry> = emptyList()
+) {
+    /**
+     * v1 journals never recorded the complete source set, so their count must
+     * not be inferred from a later, potentially partial provider scan
+     */
+    val sourceEntryCountKnown: Boolean
+        get() = version >= CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION &&
+            (sourceEntryCount > 0 || sourceEntries.isNotEmpty())
+}
 
 /**
  * 持久化一次迁移的完整输入，进程被杀后可重新创建同一迁移任务
@@ -101,13 +135,14 @@ internal data class ManagedMigrationRequest(
     }
 }
 
-internal const val CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 1
+internal const val CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 2
 
 internal data class CopiedMigrationEntry(
     val original: ManagedMigrationEntry,
     val copiedEntry: ManagedDownloadStorage.StoredEntry,
     val createdNew: Boolean,
     val sourceDigest: String? = null,
+    val verifiedTargetDigest: String? = null,
     val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
     val sourceAuthoritative: Boolean = false
 ) {
@@ -139,7 +174,8 @@ internal data class ManagedMigrationMetadataRewriteResult(
 
 internal data class ManagedMigrationVerificationResult(
     val failedFiles: Int,
-    val error: ManagedDownloadMigrationException? = null
+    val error: ManagedDownloadMigrationException? = null,
+    val verifiedEntries: List<CopiedMigrationEntry> = emptyList()
 )
 
 internal data class ManagedMigrationCleanupResult(

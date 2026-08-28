@@ -239,7 +239,75 @@ class ManagedDownloadMigrationCheckpointStoreTest {
             toDirectoryUri = "content://target/root",
             backupNamespace = "migration",
             phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
-            replacements = listOf(plan)
+            replacements = listOf(plan),
+            cleanupReceipts = listOf(
+                ManagedMigrationCleanupReceipt(
+                    sourceReference = "content://source/track",
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    targetEntry = target,
+                    targetDigest = "a".repeat(64)
+                )
+            ),
+            cleanupComplete = true,
+            sourceEntryCount = 1,
+            sourceEntries = listOf(
+                ManagedMigrationSourceEntry(
+                    sourceReference = "content://source/track",
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    sizeBytes = 12L,
+                    lastModifiedMs = 1L
+                )
+            )
+        )
+
+        store.recordReplacementJournal(journal)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(
+            eq(ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY),
+            payloadCaptor.capture()
+        )
+        `when`(
+            preferences.getString(
+                ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY,
+                null
+            )
+        ).thenReturn(payloadCaptor.value)
+
+        assertEquals(journal, store.readReplacementJournal())
+    }
+
+    @Test
+    fun `ordinary migration journal may have no replacement plans`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(
+            editor.putString(
+                eq(ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY),
+                anyString()
+            )
+        ).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val journal = ManagedMigrationReplacementJournal(
+            workId = "work-ordinary",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://target/root",
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.PLANNED,
+            replacements = emptyList(),
+            sourceEntryCount = 1,
+            sourceEntries = listOf(
+                ManagedMigrationSourceEntry(
+                    sourceReference = "content://source/track",
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    sizeBytes = 12L,
+                    lastModifiedMs = 1L
+                )
+            )
         )
 
         store.recordReplacementJournal(journal)

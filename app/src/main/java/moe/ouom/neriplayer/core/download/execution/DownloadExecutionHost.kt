@@ -498,7 +498,8 @@ class DefaultDownloadExecutionHost(
             cancellationRequestedByUser = operationStore.isUserCancellationRequested(
                 appContext,
                 normalizedId
-            )
+            ),
+            resumePending = operationStore.isExplicitResumePending(appContext, normalizedId)
         )
     }
 

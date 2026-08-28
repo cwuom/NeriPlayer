@@ -252,6 +252,48 @@ class CoverUrlStateTest {
     }
 
     @Test
+    fun `empty system playlist remains eligible when an additional cover exists`() {
+        assertTrue(
+            shouldKeepPlaylistForCoverResolution(
+                isSystemPlaylist = true,
+                hasSongs = false,
+                hasAdditionalCoverCandidates = true
+            )
+        )
+        assertFalse(
+            shouldKeepPlaylistForCoverResolution(
+                isSystemPlaylist = true,
+                hasSongs = false,
+                hasAdditionalCoverCandidates = false
+            )
+        )
+    }
+
+    @Test
+    fun `invalid preferred playlist cover yields the resolved fallback`() {
+        assertEquals(
+            "content://new-root/Covers/song.jpg",
+            choosePreferredPlaylistCover(
+                preferredCoverUrl = "content://old-root/Covers/song.jpg",
+                fallbackCoverUrl = "content://new-root/Covers/song.jpg",
+                preferredCoverUsable = false
+            )
+        )
+    }
+
+    @Test
+    fun `preferred playlist cover is retained while validation is pending`() {
+        assertEquals(
+            "content://old-root/Covers/song.jpg",
+            choosePreferredPlaylistCover(
+                preferredCoverUrl = "content://old-root/Covers/song.jpg",
+                fallbackCoverUrl = "content://new-root/Covers/song.jpg",
+                preferredCoverUsable = null
+            )
+        )
+    }
+
+    @Test
     fun `playlist cover signature changes when a cover source changes`() {
         val original = song(coverUrl = null)
         val updated = original.copy(coverUrl = "file:///music/cover.jpg")

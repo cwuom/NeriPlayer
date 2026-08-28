@@ -13,12 +13,16 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
+import java.util.WeakHashMap
+import java.util.LinkedHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.download.storage.SAF_PARENT_DOCUMENT_CACHE_VALIDATE_INTERVAL_MS
+import moe.ouom.neriplayer.core.download.storage.STREAM_COPY_BUFFER_SIZE_BYTES
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeMutationLocks
 
@@ -492,8 +496,23 @@ private fun replaceFileAtomically(source: File, target: File) {
 
 internal class SafStorageBackend(
     private val context: Context,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val parentDocumentCache: SafParentDocumentCache<SafQueryResult> =
+        sharedParentDocumentCache(context)
 ) : StorageBackend {
+    companion object {
+        private val sharedParentDocumentCaches = WeakHashMap<Context, SafParentDocumentCache<SafQueryResult>>()
+
+        private fun sharedParentDocumentCache(context: Context): SafParentDocumentCache<SafQueryResult> {
+            val cacheOwner = context.applicationContext ?: context
+            return synchronized(sharedParentDocumentCaches) {
+                sharedParentDocumentCaches.getOrPut(cacheOwner) {
+                    SafParentDocumentCache()
+                }
+            }
+        }
+    }
+
     override suspend fun list(directory: StorageReference): StorageDirectorySnapshot = withContext(ioDispatcher) {
         val safReference = directory as? StorageReference.SafRef
             ?: return@withContext StorageDirectorySnapshot(
@@ -553,12 +572,6 @@ internal class SafStorageBackend(
     ): StorageLookupResult<T> = withContext(ioDispatcher) {
         val safReference = reference as? StorageReference.SafRef
             ?: return@withContext StorageLookupResult.Unsupported("SAF reference required")
-        when (val result = queryDocument(safReference.uri)) {
-            SafQueryResult.Missing -> return@withContext StorageLookupResult.Missing
-            SafQueryResult.PermissionLost -> return@withContext StorageLookupResult.PermissionLost
-            is SafQueryResult.ProviderFailure -> return@withContext StorageLookupResult.ProviderFailure(result.error)
-            is SafQueryResult.Found -> Unit
-        }
         val input = try {
             context.contentResolver.openInputStream(safReference.uri)
         } catch (error: SecurityException) {
@@ -571,9 +584,17 @@ internal class SafStorageBackend(
             }
         } catch (error: Throwable) {
             return@withContext StorageLookupResult.ProviderFailure(error)
-        } ?: return@withContext StorageLookupResult.ProviderFailure(
-            IllegalStateException("provider returned null input stream")
-        )
+        } ?: run {
+            // 有些 Provider 会返回空流而不是抛出 Missing，保留一次探测来分类这种异常
+            return@withContext when (val result = queryDocument(safReference.uri)) {
+                SafQueryResult.Missing -> StorageLookupResult.Missing
+                SafQueryResult.PermissionLost -> StorageLookupResult.PermissionLost
+                is SafQueryResult.ProviderFailure -> StorageLookupResult.ProviderFailure(result.error)
+                is SafQueryResult.Found -> StorageLookupResult.ProviderFailure(
+                    IllegalStateException("provider returned null input stream")
+                )
+            }
+        }
         return@withContext try {
             val value = input.use { stream -> block(stream) }
             StorageLookupResult.Found(value)
@@ -633,7 +654,7 @@ internal class SafStorageBackend(
             return@withContext StorageWriteResult.Unsupported("valid SAF display name required")
         }
         val parentUri = safTarget.parent.uri
-        val parent = when (val result = queryDocument(parentUri)) {
+        val parent = when (val result = queryParentDocument(parentUri)) {
             SafQueryResult.Missing -> return@withContext StorageWriteResult.Missing
             SafQueryResult.PermissionLost -> return@withContext StorageWriteResult.PermissionLost
             is SafQueryResult.ProviderFailure -> {
@@ -658,14 +679,20 @@ internal class SafStorageBackend(
                 temporaryName
             )
         } catch (error: SecurityException) {
+            invalidateParentDocument(parentUri)
             return@withContext StorageWriteResult.PermissionLost
         } catch (error: UnsupportedOperationException) {
+            invalidateParentDocument(parentUri)
             return@withContext StorageWriteResult.Unsupported("provider create")
         } catch (error: Throwable) {
+            invalidateParentDocument(parentUri)
             return@withContext StorageWriteResult.ProviderFailure(error)
-        } ?: return@withContext StorageWriteResult.ProviderFailure(
-            IllegalStateException("provider refused temporary file creation")
-        )
+        } ?: run {
+            invalidateParentDocument(parentUri)
+            return@withContext StorageWriteResult.ProviderFailure(
+                IllegalStateException("provider refused temporary file creation")
+            )
+        }
 
         val output = try {
             context.contentResolver.openOutputStream(temporaryUri, "w")
@@ -1054,6 +1081,7 @@ internal class SafStorageBackend(
     override suspend fun delete(reference: TrustedManagedRef): StorageMutationResult = withContext(ioDispatcher) {
         val safReference = reference.reference as? StorageReference.SafRef
             ?: return@withContext StorageMutationResult.Unsupported("SAF reference required")
+        invalidateParentDocument(safReference.uri)
         when (val result = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> return@withContext StorageMutationResult.Missing
             SafQueryResult.PermissionLost -> return@withContext StorageMutationResult.PermissionLost
@@ -1122,6 +1150,7 @@ internal class SafStorageBackend(
     ): StorageRenameResult = withContext(ioDispatcher) {
         val safReference = reference.reference as? StorageReference.SafRef
             ?: return@withContext StorageRenameResult.Unsupported("SAF reference required")
+        invalidateParentDocument(safReference.uri)
         if (displayName.isBlank() || displayName == "." || displayName == "..") {
             return@withContext StorageRenameResult.Unsupported("valid SAF display name required")
         }
@@ -1178,6 +1207,7 @@ internal class SafStorageBackend(
                         )
                     }
                 } else {
+                    invalidateParentDocument(renamedUri)
                     StorageRenameResult.Renamed(result.document.toStat(renamedUri))
                 }
             }
@@ -1251,6 +1281,20 @@ internal class SafStorageBackend(
                 SafFileFailure.ProviderFailure -> SafQueryResult.ProviderFailure(error)
             }
         }
+    }
+
+    private fun queryParentDocument(uri: Uri): SafQueryResult {
+        return parentDocumentCache.getOrLoad(
+            key = uri.toString(),
+            load = { queryDocument(uri) },
+            shouldCache = { result ->
+                result is SafQueryResult.Found && result.document.isDirectory
+            }
+        )
+    }
+
+    private fun invalidateParentDocument(uri: Uri) {
+        parentDocumentCache.invalidate(uri.toString())
     }
 
     private fun queryChildren(uri: Uri): SafChildrenResult {
@@ -1642,7 +1686,9 @@ internal class SafStorageBackend(
                 )
             }
             input.use { source ->
-                output.use { target -> source.copyTo(target) }
+                output.use { target ->
+                    source.copyTo(target, STREAM_COPY_BUFFER_SIZE_BYTES)
+                }
             }
             when (val result = queryDocument(targetUri)) {
                 SafQueryResult.PermissionLost -> DirectSafCopyResult.PermissionLost
@@ -1683,7 +1729,7 @@ internal class SafStorageBackend(
         }
     }
 
-    private sealed interface SafQueryResult {
+    internal sealed interface SafQueryResult {
         data class Found(val document: SafDocumentMetadata) : SafQueryResult
         data object Missing : SafQueryResult
         data object PermissionLost : SafQueryResult
@@ -1719,7 +1765,7 @@ internal class SafStorageBackend(
         data class ProviderFailure(val error: Throwable) : SafChildrenResult
     }
 
-    private data class SafDocumentMetadata(
+    internal data class SafDocumentMetadata(
         val displayName: String,
         val sizeBytes: Long?,
         val lastModifiedMs: Long?,
@@ -1752,6 +1798,62 @@ internal class SafStorageBackend(
         }
     }
 
+}
+
+/**
+ * short-lived cache for successful parent-directory probes during write bursts
+ */
+internal class SafParentDocumentCache<T>(
+    private val validateIntervalMs: Long = SAF_PARENT_DOCUMENT_CACHE_VALIDATE_INTERVAL_MS,
+    private val nowMs: () -> Long = System::currentTimeMillis,
+    private val maxEntries: Int = 64
+) {
+    private data class Entry<T>(
+        val value: T,
+        val cachedAtMs: Long
+    )
+
+    private val entries = object : LinkedHashMap<String, Entry<T>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry<T>>?): Boolean {
+            return size > maxEntries
+        }
+    }
+
+    init {
+        require(validateIntervalMs > 0L)
+        require(maxEntries > 0)
+    }
+
+    fun getOrLoad(
+        key: String,
+        load: () -> T,
+        shouldCache: (T) -> Boolean
+    ): T {
+        synchronized(entries) {
+            val now = nowMs()
+            entries[key]
+                ?.takeIf { now - it.cachedAtMs <= validateIntervalMs }
+                ?.let { return it.value }
+            entries.remove(key)
+            val loaded = load()
+            if (shouldCache(loaded)) {
+                entries[key] = Entry(value = loaded, cachedAtMs = now)
+            }
+            return loaded
+        }
+    }
+
+    fun invalidate(key: String) {
+        synchronized(entries) {
+            entries.remove(key)
+        }
+    }
+
+    fun clear() {
+        synchronized(entries) {
+            entries.clear()
+        }
+    }
 }
 
 private fun emptyStorageCapabilities() = StorageCapabilities(

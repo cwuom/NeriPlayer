@@ -111,6 +111,26 @@ internal fun shouldResolvePlaylistCoverFallback(
     hasImmediateCover: Boolean
 ): Boolean = resolveLocalFallback && !hasImmediateCover
 
+internal fun shouldKeepPlaylistForCoverResolution(
+    isSystemPlaylist: Boolean,
+    hasSongs: Boolean,
+    hasAdditionalCoverCandidates: Boolean
+): Boolean = !isSystemPlaylist || hasSongs || hasAdditionalCoverCandidates
+
+internal fun choosePreferredPlaylistCover(
+    preferredCoverUrl: String?,
+    fallbackCoverUrl: String?,
+    preferredCoverUsable: Boolean?
+): String? {
+    val preferred = preferredCoverUrl?.trim()?.takeIf(String::isNotBlank)
+    val fallback = fallbackCoverUrl?.trim()?.takeIf(String::isNotBlank)
+    return when (preferredCoverUsable) {
+        true -> preferred ?: fallback
+        false -> fallback
+        null -> preferred ?: fallback
+    }
+}
+
 internal fun shouldProbeFastLocalCoverCandidate(
     isLocalSong: Boolean,
     immediateCover: String?
@@ -627,13 +647,22 @@ fun rememberPlaylistDisplayCoverUrl(
     playlist: LocalPlaylist?,
     resolveLocalFallback: Boolean = true,
     additionalCoverCandidates: List<SongItem> = emptyList(),
-    allowEmbeddedCoverFallback: Boolean = true
+    allowEmbeddedCoverFallback: Boolean = true,
+    preferredCoverUrl: String? = null
 ): String? {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
+    val normalizedPreferredCover = preferredCoverUrl
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
     val effectivePlaylist = playlist?.takeUnless {
-        it.songs.isEmpty() && LocalFilesPlaylist.isSystemPlaylist(it, appContext)
+        !shouldKeepPlaylistForCoverResolution(
+            isSystemPlaylist = LocalFilesPlaylist.isSystemPlaylist(it, appContext),
+            hasSongs = it.songs.isNotEmpty(),
+            hasAdditionalCoverCandidates = normalizedPreferredCover != null ||
+                additionalCoverCandidates.isNotEmpty()
+        )
     }
     val effectiveCoverCandidates = if (effectivePlaylist == null) {
         emptyList()
@@ -641,12 +670,14 @@ fun rememberPlaylistDisplayCoverUrl(
         additionalCoverCandidates
     }
     val playlistKey = effectivePlaylist?.let { playlist ->
-        playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates)
-    }
+        playlistCoverResolutionCacheKey(playlist, effectiveCoverCandidates) +
+            "|preferred=${normalizedPreferredCover.orEmpty()}"
+    } ?: normalizedPreferredCover?.let { "preferred:$it" }
     val resolvedCacheKey = versionedCoverCacheKey(playlistKey, downloadPresenceVersion)
     var coverUrl by remember(playlistKey) {
         mutableStateOf(
             cachedResolvedCover(resolvedCacheKey)
+                ?: normalizedPreferredCover
                 ?: effectivePlaylist?.customCoverUrl?.takeIf { it.isNotBlank() }
         )
     }
@@ -656,10 +687,32 @@ fun rememberPlaylistDisplayCoverUrl(
         appContext,
         downloadPresenceVersion,
         resolveLocalFallback,
-        allowEmbeddedCoverFallback
+        allowEmbeddedCoverFallback,
+        normalizedPreferredCover
     ) {
-        if (effectivePlaylist == null) {
+        if (effectivePlaylist == null && normalizedPreferredCover == null) {
             coverUrl = null
+            return@LaunchedEffect
+        }
+
+        if (normalizedPreferredCover != null) {
+            val preferredUsable = withContext(coverProbeDispatcher) {
+                isUsableCoverReference(appContext, normalizedPreferredCover)
+            }
+            currentCoroutineContext().ensureActive()
+            if (preferredUsable) {
+                rememberResolvedCover(resolvedCacheKey, normalizedPreferredCover)
+                coverUrl = choosePreferredPlaylistCover(
+                    preferredCoverUrl = normalizedPreferredCover,
+                    fallbackCoverUrl = null,
+                    preferredCoverUsable = true
+                )
+                return@LaunchedEffect
+            }
+            // keep the last frame visible until a replacement is resolved or rejected
+        }
+
+        if (effectivePlaylist == null) {
             return@LaunchedEffect
         }
 
@@ -688,7 +741,12 @@ fun rememberPlaylistDisplayCoverUrl(
         }
         if (!resolveLocalFallback || !allowEmbeddedCoverFallback) {
             if (immediateCover.isNullOrBlank()) {
-                coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+                coverUrl = finishCoverResolution(
+                    coverUrl,
+                    null,
+                    resolutionComplete = true,
+                    currentCoverUsable = false
+                )
             }
             return@LaunchedEffect
         }
@@ -711,7 +769,12 @@ fun rememberPlaylistDisplayCoverUrl(
             rememberResolvedCover(resolvedCacheKey, resolvedCover)
             coverUrl = resolvedCover
         } else if (immediateCover.isNullOrBlank()) {
-            coverUrl = finishCoverResolution(coverUrl, null, resolutionComplete = true)
+            coverUrl = finishCoverResolution(
+                coverUrl,
+                null,
+                resolutionComplete = true,
+                currentCoverUsable = false
+            )
         }
     }
 

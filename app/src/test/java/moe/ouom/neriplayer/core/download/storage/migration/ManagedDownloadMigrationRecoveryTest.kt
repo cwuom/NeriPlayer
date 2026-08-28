@@ -31,6 +31,42 @@ class ManagedDownloadMigrationRecoveryTest {
     }
 
     @Test
+    fun `legacy active journal defers even when a later source scan has entries`() {
+        assertTrue(
+            shouldRetryActiveMigrationJournal(
+                phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+                sourceRootAvailable = true,
+                sourceEntriesEmpty = false,
+                sourceEntryCountKnown = false
+            )
+        )
+    }
+
+    @Test
+    fun `partial source scan defers until all cleanup receipts are complete`() {
+        assertTrue(
+            shouldRetryActiveMigrationJournal(
+                phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+                sourceRootAvailable = true,
+                sourceEntriesEmpty = false,
+                sourceEntryCountKnown = true,
+                sourceEntriesIncomplete = true,
+                cleanupReceiptComplete = false
+            )
+        )
+        assertFalse(
+            shouldRetryActiveMigrationJournal(
+                phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+                sourceRootAvailable = true,
+                sourceEntriesEmpty = false,
+                sourceEntryCountKnown = true,
+                sourceEntriesIncomplete = true,
+                cleanupReceiptComplete = true
+            )
+        )
+    }
+
+    @Test
     fun `committed journal does not require source re-read`() {
         assertFalse(
             shouldRetryActiveMigrationJournal(
@@ -39,6 +75,169 @@ class ManagedDownloadMigrationRecoveryTest {
                 sourceEntriesEmpty = true
             )
         )
+    }
+
+    @Test
+    fun `complete cleanup receipt allows an empty source scan to resume`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(
+            sourceEntryCount = 1,
+            cleanupReceipts = listOf(cleanupReceipt())
+        )
+
+        assertFalse(
+            shouldRetryActiveMigrationJournal(
+                phase = journal.phase,
+                sourceRootAvailable = true,
+                sourceEntriesEmpty = true,
+                cleanupReceiptComplete = hasCompleteMigrationCleanupReceipts(journal)
+            )
+        )
+        assertTrue(hasCompleteMigrationCleanupReceipts(journal))
+        assertFalse(journal.legacyUnknownCount)
+    }
+
+    @Test
+    fun `complete source scan drops a user deleted entry but keeps verified receipts`() {
+        val receipt = cleanupReceipt()
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(
+            sourceEntryCount = 2,
+            sourceEntries = listOf(
+                ManagedMigrationSourceEntry(
+                    sourceReference = receipt.sourceReference,
+                    sourceName = receipt.sourceName,
+                    sourceSubdirectory = receipt.sourceSubdirectory,
+                    sizeBytes = 10L,
+                    lastModifiedMs = 1L
+                ),
+                ManagedMigrationSourceEntry(
+                    sourceReference = "content://source/deleted",
+                    sourceName = "deleted.mp3",
+                    sourceSubdirectory = null,
+                    sizeBytes = 10L,
+                    lastModifiedMs = 1L
+                )
+            ),
+            cleanupReceipts = listOf(receipt)
+        )
+        val current = ManagedMigrationEntry(
+            subdirectory = null,
+            entry = ManagedDownloadStorage.StoredEntry(
+                name = "remaining.mp3",
+                reference = "content://source/remaining",
+                mediaUri = "content://source/remaining",
+                localFilePath = null,
+                sizeBytes = 8L,
+                lastModifiedMs = 2L
+            )
+        )
+
+        val reconciled = reconcileMigrationSourceManifest(journal, listOf(current))
+
+        assertEquals(
+            setOf(receipt.sourceReference, current.entry.reference),
+            reconciled.sourceEntries.map(ManagedMigrationSourceEntry::sourceReference).toSet()
+        )
+        assertEquals(2, reconciled.sourceEntryCount)
+    }
+
+    @Test
+    fun `active v1 journal without receipts is marked as unknown`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(
+            version = 1,
+            sourceEntryCount = 3
+        )
+
+        assertTrue(journal.legacyUnknownCount)
+    }
+
+    @Test
+    fun `active v1 journal without a source count is marked as unknown`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(version = 1)
+
+        assertTrue(journal.legacyUnknownCount)
+    }
+
+    @Test
+    fun `legacy journal upgrades after a complete source scan`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(version = 1)
+
+        val upgraded = upgradeLegacyMigrationReplacementJournal(
+            journal = journal,
+            sourceEntryCount = 4
+        )
+
+        assertEquals(CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION, upgraded.version)
+        assertEquals(4, upgraded.sourceEntryCount)
+        assertTrue(upgraded.cleanupReceipts.isEmpty())
+        assertFalse(upgraded.legacyUnknownCount)
+    }
+
+    @Test
+    fun `committed v1 journal is not marked as unknown`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(
+            version = 1,
+            phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+        )
+
+        assertFalse(journal.legacyUnknownCount)
+    }
+
+    @Test
+    fun `incomplete cleanup receipts cannot complete a journal`() {
+        val journal = journalFor(
+            replacement = replacementFor(groupIdentity = "stable:song")
+        ).copy(
+            sourceEntryCount = 2,
+            cleanupReceipts = listOf(cleanupReceipt())
+        )
+
+        assertFalse(hasCompleteMigrationCleanupReceipts(journal))
+    }
+
+    @Test
+    fun `persisted and current receipts preserve the original source count`() {
+        val oldReceipt = cleanupReceipt(sourceReference = "content://source/old")
+        val currentReceipt = cleanupReceipt(sourceReference = "content://source/current")
+        val merged = mergePersistedMigrationCleanupReceipts(
+            persisted = listOf(oldReceipt),
+            current = listOf(oldReceipt, currentReceipt)
+        )
+
+        assertEquals(2, merged.size)
+        assertEquals(
+            setOf(oldReceipt.sourceReference, currentReceipt.sourceReference),
+            merged.map(ManagedMigrationCleanupReceipt::sourceReference).toSet()
+        )
+    }
+
+    @Test
+    fun `duplicate current receipt cannot replace persisted target identity`() {
+        val persisted = cleanupReceipt()
+        val current = persisted.copy(
+            targetEntry = persisted.targetEntry.copy(
+                reference = "content://target/replaced",
+                mediaUri = "content://target/replaced"
+            )
+        )
+
+        val merged = mergePersistedMigrationCleanupReceipts(
+            persisted = listOf(persisted),
+            current = listOf(current)
+        )
+
+        assertEquals(persisted.targetEntry.reference, merged.single().targetEntry.reference)
     }
 
     @Test
@@ -136,6 +335,22 @@ class ManagedDownloadMigrationRecoveryTest {
         assertTrue(failure.retryable)
     }
 
+    @Test
+    fun `replacement missing after receipt is retained for idempotent commit`() {
+        val replacement = replacementFor(groupIdentity = "stable:song")
+        val persisted = journalFor(replacement).copy(
+            sourceEntryCount = 1,
+            cleanupReceipts = listOf(cleanupReceipt())
+        )
+
+        val merged = mergePersistedMigrationReplacementPlan(
+            generatedPlan = ManagedMigrationNamePlan(targetNamesByReference = emptyMap()),
+            persistedJournal = persisted
+        )
+
+        assertEquals(replacement, merged.replacementPlansByReference[replacement.sourceReference])
+    }
+
     private fun journalFor(
         replacement: ManagedMigrationReplacementPlan
     ): ManagedMigrationReplacementJournal {
@@ -169,6 +384,26 @@ class ManagedDownloadMigrationRecoveryTest {
             targetName = target.name,
             targetEntry = target,
             backupName = backupName
+        )
+    }
+
+    private fun cleanupReceipt(
+        sourceReference: String = "content://source/track"
+    ): ManagedMigrationCleanupReceipt {
+        val target = ManagedDownloadStorage.StoredEntry(
+            name = "track.mp3",
+            reference = "content://target/track",
+            mediaUri = "content://target/track",
+            localFilePath = null,
+            sizeBytes = 10L,
+            lastModifiedMs = 1L
+        )
+        return ManagedMigrationCleanupReceipt(
+            sourceReference = sourceReference,
+            sourceName = "track.mp3",
+            sourceSubdirectory = null,
+            targetEntry = target,
+            targetDigest = "a".repeat(64)
         )
     }
 

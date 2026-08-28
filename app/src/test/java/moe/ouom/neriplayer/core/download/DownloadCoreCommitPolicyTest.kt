@@ -144,6 +144,20 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
+    fun `commit boundary stop also cleans operation owned pending artifacts`() {
+        listOf(
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE"
+        ).forEach { state ->
+            assertTrue(shouldCleanupCancelledPendingArtifacts(state, true))
+            assertFalse(shouldCleanupCancelledPendingArtifacts(state, false))
+        }
+        assertFalse(shouldCleanupCancelledPendingArtifacts("FINALIZED", true))
+    }
+
+    @Test
     fun `only incomplete durable artifacts resume final enrichment`() {
         assertTrue(requiresDownloadFinalizationRecovery("CORE_COMMITTED"))
         assertTrue(requiresDownloadFinalizationRecovery("ASSETS_ENRICHING"))

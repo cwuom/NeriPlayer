@@ -3749,11 +3749,16 @@ object GlobalDownloadManager {
     ) {
         val normalizedOperationId = operationId?.trim()?.takeIf(String::isNotBlank) ?: return
         val operationState = DownloadExecutionRoomStore.state(context, normalizedOperationId)
-        if (!shouldCleanupCancelledPendingArtifacts(operationState)) {
+        val stopRequestedByUser = DownloadExecutionRoomStore.isStopped(
+            context,
+            normalizedOperationId
+        )
+        if (!shouldCleanupCancelledPendingArtifacts(operationState, stopRequestedByUser)) {
             NPLogger.d(
                 TAG,
                 "跳过非取消终态的 pending 清理: song=${song.name}, " +
-                    "operationId=$normalizedOperationId, state=$operationState"
+                    "operationId=$normalizedOperationId, state=$operationState, " +
+                    "stopped=$stopRequestedByUser"
             )
             return
         }
@@ -3786,7 +3791,11 @@ object GlobalDownloadManager {
                     return@mapNotNull null
                 }
                 val state = DownloadExecutionRoomStore.state(context, request.operationId)
-                if (!shouldCleanupCancelledPendingArtifacts(state)) {
+                val stopRequestedByUser = DownloadExecutionRoomStore.isStopped(
+                    context,
+                    request.operationId
+                )
+                if (!shouldCleanupCancelledPendingArtifacts(state, stopRequestedByUser)) {
                     return@mapNotNull null
                 }
                 ManagedDownloadStorage.CancelledPendingDownloadOperation(

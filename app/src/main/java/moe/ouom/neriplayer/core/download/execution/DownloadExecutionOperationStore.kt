@@ -29,6 +29,8 @@ internal interface DownloadExecutionOperationJournal {
 
     fun isUserCancellationRequested(context: Context, operationId: String): Boolean = false
 
+    fun isExplicitResumePending(context: Context, operationId: String): Boolean = false
+
     fun stoppedSongKeys(context: Context): Set<String>
 
     fun findOperationIdForSong(context: Context, songKey: String): String?
@@ -135,6 +137,12 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
     override fun isUserCancellationRequested(context: Context, operationId: String): Boolean {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.isUserCancellationRequested(context, operationId)
+        }
+    }
+
+    override fun isExplicitResumePending(context: Context, operationId: String): Boolean {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.isExplicitResumePending(context, operationId)
         }
     }
 
@@ -291,6 +299,12 @@ class DownloadExecutionOperationStore internal constructor(
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
         val appContext = context.applicationContext
         return journalProvider(appContext).isUserCancellationRequested(appContext, normalizedId)
+    }
+
+    fun isExplicitResumePending(context: Context, operationId: String): Boolean {
+        val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+        val appContext = context.applicationContext
+        return journalProvider(appContext).isExplicitResumePending(appContext, normalizedId)
     }
 
     fun stoppedSongKeys(context: Context): Set<String> {

@@ -149,6 +149,18 @@ internal object ManagedDownloadMigrationEntryCollector {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>
     ): Set<String> {
+        val managedAudioNames = managedAudioEntries.mapTo(hashSetOf()) {
+            it.name
+        }
+        val coverNamesByReference = linkedMapOf<String, String>()
+        coverEntries.forEach { entry ->
+            sequenceOf(entry.reference, entry.mediaUri, entry.localFilePath)
+                .filterNotNull()
+                .filter(String::isNotBlank)
+                .forEach { reference ->
+                    coverNamesByReference.putIfAbsent(reference, entry.name)
+                }
+        }
         return buildSet {
             fun addStableCoverCandidates(baseNames: List<String>, stableKey: String?) {
                 stableKey
@@ -176,7 +188,7 @@ internal object ManagedDownloadMigrationEntryCollector {
             }
             metadataAudioNames
                 .asSequence()
-                .filterNot { audioName -> managedAudioEntries.any { it.name == audioName } }
+                .filterNot { audioName -> audioName in managedAudioNames }
                 .flatMap { audioName ->
                     candidateManagedDownloadBaseNames(
                         audioName.substringBeforeLast('.', audioName)
@@ -198,13 +210,7 @@ internal object ManagedDownloadMigrationEntryCollector {
                     ?.trim()
                     ?.takeIf(String::isNotBlank)
                     ?.let { coverPath ->
-                        coverEntries
-                            .firstOrNull { entry ->
-                                entry.reference == coverPath ||
-                                    entry.mediaUri == coverPath ||
-                                    entry.localFilePath == coverPath
-                            }
-                            ?.name
+                        coverNamesByReference[coverPath]
                             ?.let(::add)
                     }
             }
@@ -216,6 +222,9 @@ internal object ManagedDownloadMigrationEntryCollector {
         parsedMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata>,
         metadataAudioNames: Set<String>
     ): Set<String> {
+        val managedAudioNames = managedAudioEntries.mapTo(hashSetOf()) {
+            it.name
+        }
         return buildSet {
             fun addLyricCandidates(audioName: String, songId: Long?) {
                 val candidateBaseNames = candidateManagedDownloadBaseNames(
@@ -245,7 +254,7 @@ internal object ManagedDownloadMigrationEntryCollector {
             }
             metadataAudioNames
                 .asSequence()
-                .filterNot { audioName -> managedAudioEntries.any { it.name == audioName } }
+                .filterNot { audioName -> audioName in managedAudioNames }
                 .forEach { audioName ->
                     addLyricCandidates(
                         audioName = audioName,

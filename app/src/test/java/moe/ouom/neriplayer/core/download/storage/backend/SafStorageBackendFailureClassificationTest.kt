@@ -4,9 +4,12 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -101,6 +104,27 @@ class SafStorageBackendFailureClassificationTest {
         val result = SafStorageBackend(contextThatThrows(error)).read(reference) { it.readBytes() }
 
         assertProviderFailure(result, error)
+    }
+
+    @Test
+    fun `read opens a valid SAF stream without a preflight document query`() = runBlocking {
+        val payload = "saf-payload".encodeToByteArray()
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(resolver.openInputStream(reference.uri)).thenReturn(
+            ByteArrayInputStream(payload)
+        )
+        doAnswer { throw AssertionError("valid SAF reads must not query the document first") }
+            .`when`(resolver)
+            .query(any(), any(), any(), any(), any())
+
+        val result = SafStorageBackend(context, Dispatchers.Unconfined).read(reference) {
+            it.readBytes()
+        }
+
+        assertTrue(result is StorageLookupResult.Found)
+        assertArrayEquals(payload, (result as StorageLookupResult.Found).value)
     }
 
     @Test

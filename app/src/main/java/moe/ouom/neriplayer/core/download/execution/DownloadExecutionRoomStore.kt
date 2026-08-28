@@ -631,6 +631,14 @@ internal object DownloadExecutionRoomStore {
             .isUserCancellationRequested(operationId)
     }
 
+    suspend fun isExplicitResumePending(
+        context: Context,
+        operationId: String,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Boolean {
+        return database.downloadOperationDao().isExplicitResumePending(operationId)
+    }
+
     suspend fun isExecutionOwned(
         context: Context,
         operationId: String,

@@ -300,6 +300,10 @@ class ManagedDownloadMigrationCopyWorkerTest {
         assertEquals(bytes.size.toLong(), updates.last().verifiedBytes)
         assertEquals(bytes.size.toLong(), updates.last().verificationBytesTotal)
         assertEquals(0.97f, updates.last().fraction)
+        assertEquals(
+            sha256MigrationContent(ByteArrayInputStream(bytes)),
+            result.verifiedEntries.single().verifiedTargetDigest
+        )
     }
 
     @Test

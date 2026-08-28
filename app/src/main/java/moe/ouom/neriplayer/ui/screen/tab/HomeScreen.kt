@@ -204,7 +204,16 @@ internal fun resolveHomeContinuePagerPage(savedPage: Int, pageCount: Int): Int {
 internal fun shouldResolveHomeContinueLocalCoverFallback(
     persistedCoverUrl: String?,
     localPlaylist: LocalPlaylist?
-): Boolean = persistedCoverUrl.isNullOrBlank() && localPlaylist != null
+): Boolean = localPlaylist != null && shouldValidateHomeContinueCoverReference(persistedCoverUrl)
+
+internal fun shouldValidateHomeContinueCoverReference(
+    persistedCoverUrl: String?
+): Boolean {
+    val normalized = persistedCoverUrl?.trim().orEmpty()
+    return normalized.isEmpty() ||
+        (!normalized.startsWith("http://", ignoreCase = true) &&
+            !normalized.startsWith("https://", ignoreCase = true))
+}
 
 internal fun homeLocalFilesCoverCandidates(
     downloadedSongs: List<DownloadedSong>
@@ -325,7 +334,8 @@ fun HomeScreen(
     val localPlaylistCoverFallbackIds = usageEntries.asSequence()
         .take(HomeContinueEntryLimit)
         .filter { entry ->
-            entry.source == PlaylistUsageRepository.SOURCE_LOCAL && entry.picUrl.isNullOrBlank()
+            entry.source == PlaylistUsageRepository.SOURCE_LOCAL &&
+                shouldValidateHomeContinueCoverReference(entry.picUrl)
         }
         .mapTo(linkedSetOf()) { entry -> entry.id }
     val localPlaylistUsageLookup by produceState<Map<Long, LocalPlaylist>>(
@@ -2091,12 +2101,15 @@ private fun ContinueCard(
                 localFilesCoverCandidates
             } else {
                 emptyList()
-            }
+            },
+            preferredCoverUrl = entry.picUrl
         )
     } else {
         null
     }
-    val coverUrl = entry.picUrl?.takeIf { it.isNotBlank() } ?: resolvedLocalCoverUrl
+    val coverUrl = resolvedLocalCoverUrl
+        ?.takeIf { it.isNotBlank() }
+        ?: entry.picUrl?.takeIf { it.isNotBlank() }
 
     Column(
         modifier = modifier

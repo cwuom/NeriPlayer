@@ -26,7 +26,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.R
@@ -352,7 +352,7 @@ internal fun shouldBlockStartupForMigrationRecovery(
     journal: ManagedMigrationReplacementJournal?
 ): Boolean {
     return request?.autoResume == true ||
-        (journal != null &&
+        (request == null && journal != null &&
             journal.phase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED)
 }
 
@@ -375,8 +375,8 @@ class ManagedDownloadMigrationWorker(
                 var workProgressState = MigrationProgressThrottleState()
                 var notificationProgressState = MigrationProgressThrottleState()
                 var durableProgress = persistedProgress
-                ManagedDownloadStorage.migrationProgressFlow.collectLatest { progress ->
-                    progress ?: return@collectLatest
+                ManagedDownloadStorage.migrationProgressFlow.collect { progress ->
+                    progress ?: return@collect
                     val visibleProgress = mergeMigrationProgressFloor(
                         floor = durableProgress,
                         current = progress
@@ -407,10 +407,11 @@ class ManagedDownloadMigrationWorker(
                         operationId != null &&
                         processingState.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
                     ) {
+                        val sharedProgress = migrationProgressForSharedProcessing(visibleProgress)
                         ManagedLibraryProcessingCoordinator.updateProgress(
                             operationId = operationId,
-                            processed = visibleProgress.processedFiles,
-                            total = visibleProgress.totalFiles,
+                            processed = sharedProgress.processed,
+                            total = sharedProgress.total,
                             currentItem = visibleProgress.currentFileName,
                             context = applicationContext
                         )
@@ -531,10 +532,11 @@ class ManagedDownloadMigrationWorker(
                 // reopens the provider and rebuilds its in-memory tracker
                 setProgress(migrationProgressToWorkData(progress))
                 setForeground(createForegroundInfo(progress))
+                val sharedProgress = migrationProgressForSharedProcessing(progress)
                 ManagedLibraryProcessingCoordinator.updateProgress(
                     operationId = operationId,
-                    processed = progress.processedFiles,
-                    total = progress.totalFiles,
+                    processed = sharedProgress.processed,
+                    total = sharedProgress.total,
                     currentItem = progress.currentFileName,
                     context = applicationContext
                 )

@@ -2,6 +2,30 @@ package moe.ouom.neriplayer.core.download.storage.migration
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
+internal data class MigrationSharedProgress(
+    val processed: Int,
+    val total: Int
+)
+
+internal fun migrationProgressForSharedProcessing(
+    progress: ManagedDownloadStorage.MigrationProgress
+): MigrationSharedProgress {
+    return if (
+        progress.stage == ManagedDownloadStorage.MigrationStage.CLEANING_UP &&
+        progress.cleanupFilesTotal > 0
+    ) {
+        MigrationSharedProgress(
+            processed = progress.cleanupFilesProcessed.coerceAtLeast(0),
+            total = progress.cleanupFilesTotal.coerceAtLeast(0)
+        )
+    } else {
+        MigrationSharedProgress(
+            processed = progress.processedFiles.coerceAtLeast(0),
+            total = progress.totalFiles.coerceAtLeast(0)
+        )
+    }
+}
+
 internal data class MigrationProgressThrottleState(
     val lastPublishedAtMs: Long = Long.MIN_VALUE,
     val lastStage: ManagedDownloadStorage.MigrationStage? = null,

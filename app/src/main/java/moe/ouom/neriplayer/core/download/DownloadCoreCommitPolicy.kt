@@ -79,6 +79,20 @@ internal fun shouldCleanupCancelledPendingArtifacts(operationState: String?): Bo
     return operationState == "CANCEL_REQUESTED" || operationState == "CANCELLED"
 }
 
+/** a commit-boundary stop may leave a pending pair even though its state is durable */
+internal fun shouldCleanupCancelledPendingArtifacts(
+    operationState: String?,
+    stopRequestedByUser: Boolean
+): Boolean {
+    return shouldCleanupCancelledPendingArtifacts(operationState) ||
+        stopRequestedByUser && operationState in setOf(
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE"
+        )
+}
+
 internal fun requiresDownloadFinalizationRecovery(state: String?): Boolean {
     return state in setOf(
         "CORE_COMMITTED",

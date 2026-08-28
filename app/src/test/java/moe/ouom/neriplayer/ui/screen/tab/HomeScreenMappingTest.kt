@@ -13,10 +13,10 @@ import org.junit.Test
 class HomeScreenMappingTest {
 
     @Test
-    fun `persisted local continue cover skips playlist fallback`() {
+    fun `persisted local continue cover is revalidated against playlist sources`() {
         val playlist = LocalPlaylist(id = 7L, name = "local")
 
-        assertFalse(
+        assertTrue(
             shouldResolveHomeContinueLocalCoverFallback(
                 persistedCoverUrl = "file:///covers/saved.jpg",
                 localPlaylist = playlist
@@ -28,6 +28,14 @@ class HomeScreenMappingTest {
                 localPlaylist = playlist
             )
         )
+        assertFalse(
+            shouldResolveHomeContinueLocalCoverFallback(
+                persistedCoverUrl = "https://example.com/cover.jpg",
+                localPlaylist = playlist
+            )
+        )
+        assertTrue(shouldValidateHomeContinueCoverReference("content://old-root/cover.jpg"))
+        assertFalse(shouldValidateHomeContinueCoverReference("https://example.com/cover.jpg"))
     }
 
     @Test

@@ -1,8 +1,10 @@
 package moe.ouom.neriplayer.core.download.execution
 
+import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadExecutionDurableStatePolicyTest {
@@ -79,6 +81,35 @@ class DownloadExecutionDurableStatePolicyTest {
             resolveDownloadOperationState(
                 METADATA_ACTION_REQUIRED_OPERATION_STATE,
                 "FINALIZED"
+            )
+        )
+    }
+
+    @Test
+    fun `explicit resume remains required while scheduling is pending`() {
+        assertTrue(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RETRYABLE",
+                hasPendingUidtJob = false,
+                resumePending = true
+            )
+        )
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RETRYABLE",
+                hasPendingUidtJob = false,
+                cancellationRequestedByUser = true,
+                resumePending = true
+            )
+        )
+        assertFalse(
+            shouldRequireExplicitResume(
+                userInitiated = true,
+                state = "RUNNING",
+                hasPendingUidtJob = false,
+                resumePending = false
             )
         )
     }

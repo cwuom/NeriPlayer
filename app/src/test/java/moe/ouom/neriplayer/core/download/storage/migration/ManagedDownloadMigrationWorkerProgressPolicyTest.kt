@@ -15,6 +15,27 @@ import org.junit.Test
 
 class ManagedDownloadMigrationWorkerProgressPolicyTest {
     @Test
+    fun `shared processing uses cleanup counter while deleting verified files`() {
+        val progress = ManagedDownloadStorage.MigrationProgress(
+            stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP,
+            totalFiles = 2_301,
+            processedFiles = 2_301,
+            copiedFiles = 2_301,
+            copiedBytes = 1L,
+            totalBytes = 1L,
+            metadataFilesProcessed = 120,
+            metadataFilesTotal = 120,
+            cleanupFilesProcessed = 37,
+            cleanupFilesTotal = 2_301
+        )
+
+        assertEquals(
+            MigrationSharedProgress(processed = 37, total = 2_301),
+            migrationProgressForSharedProcessing(progress)
+        )
+    }
+
+    @Test
     fun `committed replacement journal does not block ordinary startup scan`() {
         val journal = ManagedMigrationReplacementJournal(
             workId = "work",
@@ -54,6 +75,39 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 journal
             )
         )
+    }
+
+    @Test
+    fun `terminal request does not let an incomplete journal block startup`() {
+        val request = ManagedMigrationRequest(
+            workId = "terminal-work",
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1,
+            autoResume = false
+        )
+        val journal = ManagedMigrationReplacementJournal(
+            workId = request.workId,
+            fromDirectoryUri = request.fromDirectoryUri,
+            toDirectoryUri = request.toDirectoryUri,
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+            replacements = emptyList(),
+            sourceEntryCount = 1,
+            sourceEntries = listOf(
+                ManagedMigrationSourceEntry(
+                    sourceReference = "content://source/track",
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    sizeBytes = 1L,
+                    lastModifiedMs = 1L
+                )
+            )
+        )
+
+        assertFalse(shouldBlockStartupForMigrationRecovery(request, journal))
     }
 
     @Test

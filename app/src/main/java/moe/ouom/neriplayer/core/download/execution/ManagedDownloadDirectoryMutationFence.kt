@@ -218,5 +218,26 @@ internal object ManagedDownloadDirectoryMutationFence {
 
     suspend fun closeAndDrain(): AutoCloseable = gate.closeAndDrain()
 
+    /**
+     * serializes destructive library deletion with a directory migration
+     */
+    suspend fun acquireDeleteLeaseOrNull(context: Context): AutoCloseable? {
+        if (isActive(context)) {
+            return null
+        }
+        val lease = gate.tryAcquireDownloadLease() ?: return null
+        return try {
+            if (isActive(context)) {
+                lease.close()
+                null
+            } else {
+                lease
+            }
+        } catch (error: Throwable) {
+            lease.close()
+            throw error
+        }
+    }
+
     suspend fun awaitOpen() = gate.awaitOpen()
 }

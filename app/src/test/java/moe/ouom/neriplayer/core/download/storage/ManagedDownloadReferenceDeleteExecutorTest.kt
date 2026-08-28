@@ -4,8 +4,11 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.delete.ManagedDownloadDeletePolicy
@@ -403,6 +406,44 @@ class ManagedDownloadReferenceDeleteExecutorTest {
         assertEquals(references.toSet(), finishes)
         assertTrue(finishCounts.values.all { count -> count.get() == 1 })
     }
+
+    @Test
+    fun `concurrent delete reports each completed reference before the next operation`() =
+        runBlocking {
+            val fastReference = "content://documents.test/document/fast"
+            val slowReference = "content://documents.test/document/slow"
+            val references = listOf(fastReference, slowReference)
+            val fastFinished = CountDownLatch(1)
+            val slowObservedFastFinish = AtomicBoolean(false)
+            val executor = ManagedDownloadReferenceDeleteExecutor(
+                tag = "ManagedDownloadReferenceDeleteExecutorTest",
+                isReferenceAllowed = { _, _, _, _ -> true },
+                referenceDeleteParallelism = 1,
+                contentReferenceDeleteOperation = { _, reference, _, _ ->
+                    if (reference.externalReference == slowReference) {
+                        slowObservedFastFinish.set(
+                            fastFinished.await(2, TimeUnit.SECONDS)
+                        )
+                    }
+                    StorageMutationResult.Deleted
+                }
+            )
+
+            val result = executor.deleteReferencesConcurrently(
+                context = mock(Context::class.java),
+                references = trustedReferences(references),
+                deletePolicy = deletePolicyFor(references),
+                parallelism = 1,
+                onDeleteAttemptFinished = { reference, deleted ->
+                    if (reference.externalReference == fastReference && deleted) {
+                        fastFinished.countDown()
+                    }
+                }
+            )
+
+            assertEquals(references.toSet(), result.deletedReferences)
+            assertTrue(slowObservedFastFinish.get())
+        }
 
     @Test
     fun `concurrent delete propagates cancellation instead of retrying it`() {

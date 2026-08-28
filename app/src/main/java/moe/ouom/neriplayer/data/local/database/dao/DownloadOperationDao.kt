@@ -368,7 +368,7 @@ internal interface DownloadOperationDao {
     @Query(
         "UPDATE download_operation SET state = 'RETRYABLE', " +
             "stop_requested_by_user = 0, updated_at_ms = :updatedAtMs, " +
-            "last_error_code = NULL WHERE operation_id = :operationId " +
+            "last_error_code = 'EXPLICIT_RESUME_PENDING' WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey AND state IN (:expectedStates) " +
             "AND (last_error_code IS NULL OR last_error_code != 'USER_CANCELLED')"
     )
@@ -378,6 +378,13 @@ internal interface DownloadOperationDao {
         expectedStates: List<String>,
         updatedAtMs: Long
     ): Int
+
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM download_operation " +
+            "WHERE operation_id = :operationId " +
+            "AND last_error_code = 'EXPLICIT_RESUME_PENDING')"
+    )
+    suspend fun isExplicitResumePending(operationId: String): Boolean
 
     @Query(
         "UPDATE download_operation SET state = 'STOPPED', " +

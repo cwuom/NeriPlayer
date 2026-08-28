@@ -20,10 +20,11 @@ internal fun shouldRequireExplicitResume(
     state: String?,
     hasPendingUidtJob: Boolean,
     stopRequestedByUser: Boolean = false,
-    cancellationRequestedByUser: Boolean = false
+    cancellationRequestedByUser: Boolean = false,
+    resumePending: Boolean = false
 ): Boolean {
     if (!userInitiated || cancellationRequestedByUser) return false
-    return stopRequestedByUser
+    return stopRequestedByUser || resumePending
 }
 
 internal fun mergePendingDownloadRecoveryCandidates(

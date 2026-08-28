@@ -77,6 +77,8 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationMetadataRewriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationProgressReporter
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationTargetIndex
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationCleanupReceipt
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationSourceEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementJournal
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementJournalPhase
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementPlan
@@ -86,8 +88,14 @@ import moe.ouom.neriplayer.core.download.storage.migration.mergePersistedMigrati
 import moe.ouom.neriplayer.core.download.storage.migration.mergePersistedMigrationTargetNames
 import moe.ouom.neriplayer.core.download.storage.migration.requireSuccessfulMigrationCopies
 import moe.ouom.neriplayer.core.download.storage.migration.resolveMinimumMigrationAudioCount
+import moe.ouom.neriplayer.core.download.storage.migration.reconcileMigrationSourceManifest
 import moe.ouom.neriplayer.core.download.storage.migration.persistedMigrationJournalTargetNames
 import moe.ouom.neriplayer.core.download.storage.migration.shouldRetryActiveMigrationJournal
+import moe.ouom.neriplayer.core.download.storage.migration.shouldBlockStartupForMigrationRecovery
+import moe.ouom.neriplayer.core.download.storage.migration.hasCompleteMigrationCleanupReceipts
+import moe.ouom.neriplayer.core.download.storage.migration.mergePersistedMigrationCleanupReceipts
+import moe.ouom.neriplayer.core.download.storage.migration.sha256MigrationContent
+import moe.ouom.neriplayer.core.download.storage.migration.upgradeLegacyMigrationReplacementJournal
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.recovery.ManagedDownloadPendingAudioWriteNames
 import moe.ouom.neriplayer.core.download.storage.recovery.PersistentTerminalTemporaryWriteCleanupJournal
@@ -157,6 +165,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
+import java.util.Locale
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
@@ -444,8 +453,9 @@ internal object ManagedDownloadStorage {
     private fun hasPendingStartupMigrationRecovery(context: Context): Boolean {
         return try {
             val checkpointStore = ManagedDownloadMigrationCheckpointStore(context)
-            val durableRecovery = checkpointStore.readRequest()?.autoResume == true ||
-                checkpointStore.readReplacementJournal() != null
+            val request = checkpointStore.readRequest()
+            val journal = checkpointStore.readReplacementJournal()
+            val durableRecovery = shouldBlockStartupForMigrationRecovery(request, journal)
             if (durableRecovery) {
                 return true
             }
@@ -1005,6 +1015,11 @@ internal object ManagedDownloadStorage {
                     targetRoot = targetRoot,
                     journal = requireNotNull(persistedReplacementJournal)
                 )
+                verifyMigrationCleanupReceipts(
+                    context = context,
+                    targetRoot = targetRoot,
+                    journal = requireNotNull(persistedReplacementJournal)
+                )
                 verifyPreviouslyCommittedMigrationTarget(
                     context = context,
                     targetRoot = targetRoot,
@@ -1062,6 +1077,20 @@ internal object ManagedDownloadStorage {
                 }
             )
             onSourceAudioCountResolved(minimumAudioCount)
+            val persistedJournalForAttempt = persistedReplacementJournal?.let { journal ->
+                reconcileMigrationSourceManifest(
+                    journal = upgradeLegacyMigrationReplacementJournal(
+                        journal = journal,
+                        sourceEntryCount = entries.size
+                    ),
+                    currentEntries = entries
+                )
+            }
+            if (persistedJournalForAttempt != null &&
+                persistedJournalForAttempt != persistedReplacementJournal
+            ) {
+                onReplacementJournalUpdated(persistedJournalForAttempt)
+            }
             fun verifyCommittedTargetBeforeReturningFailure() {
                 if (!targetPreviouslyCommitted) return
                 verifyPreviouslyCommittedMigrationTarget(
@@ -1074,7 +1103,13 @@ internal object ManagedDownloadStorage {
             if (shouldRetryActiveMigrationJournal(
                     phase = persistedPhase,
                     sourceRootAvailable = true,
-                    sourceEntriesEmpty = entries.isEmpty()
+                    sourceEntriesEmpty = entries.isEmpty(),
+                    cleanupReceiptComplete = persistedJournalForAttempt?.let {
+                        hasCompleteMigrationCleanupReceipts(it)
+                    } == true,
+                    sourceEntryCountKnown = persistedJournalForAttempt?.sourceEntryCountKnown
+                        ?: true,
+                    sourceEntriesIncomplete = false
                 )
             ) {
                 throw ManagedDownloadMigrationException.transient(
@@ -1082,6 +1117,34 @@ internal object ManagedDownloadStorage {
                 )
             }
             if (entries.isEmpty()) {
+                val cleanupReceiptsReady = persistedJournalForAttempt?.let {
+                    hasCompleteMigrationCleanupReceipts(it)
+                } == true
+                if (cleanupReceiptsReady) {
+                    val journal = requireNotNull(persistedJournalForAttempt)
+                    verifyCommittedMigrationReplacementJournal(
+                        context = context,
+                        targetRoot = targetRoot,
+                        journal = journal
+                    )
+                    verifyMigrationCleanupReceipts(
+                        context = context,
+                        targetRoot = targetRoot,
+                        journal = journal
+                    )
+                    verifyPreviouslyCommittedMigrationTarget(
+                        context = context,
+                        targetRoot = targetRoot,
+                        toDirectoryUri = toDirectoryUri,
+                        minimumAudioCount = minimumAudioCount
+                    )
+                    onReplacementJournalUpdated(
+                        journal.copy(
+                            phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+                            cleanupComplete = true
+                        )
+                    )
+                }
                 if (minimumAudioCount > 0) {
                     if (!targetPreviouslyCommitted) {
                         throw ManagedDownloadMigrationException.permanent(
@@ -1117,14 +1180,14 @@ internal object ManagedDownloadStorage {
                 entries = entries,
                 targetIndex = targetIndex,
                 sourceMetadataByAudioName = sourceMetadataByAudioName,
-                replacementBackupNamespace = persistedReplacementJournal?.backupNamespace
+                replacementBackupNamespace = persistedJournalForAttempt?.backupNamespace
                     ?: replacementJournalWorkId.takeIf(String::isNotBlank)
                     ?: "migration"
             )
             val persistedNames = mergePersistedMigrationTargetNames(
                 buildList {
                     add(persistedTargetNames)
-                    persistedReplacementJournal?.let { journal ->
+                    persistedJournalForAttempt?.let { journal ->
                         add(persistedMigrationJournalTargetNames(journal))
                     }
                 }
@@ -1139,25 +1202,39 @@ internal object ManagedDownloadStorage {
                 fromDirectoryUri = fromDirectoryUri,
                 toDirectoryUri = toDirectoryUri,
                 generatedPlan = namePlan,
-                persistedJournal = persistedReplacementJournal
+                persistedJournal = persistedJournalForAttempt
             )
             onTargetNamePlanResolved(namePlan.targetNamesByReference)
-            var replacementJournal = namePlan.replacementPlansByReference
-                .takeIf { it.isNotEmpty() }
-                ?.let { replacements ->
-                    ManagedMigrationReplacementJournal(
-                        workId = replacementJournalWorkId.ifBlank {
-                            persistedReplacementJournal?.workId.orEmpty()
-                        },
-                        fromDirectoryUri = fromDirectoryUri,
-                        toDirectoryUri = toDirectoryUri,
-                        backupNamespace = persistedReplacementJournal?.backupNamespace
-                            ?: replacementJournalWorkId.ifBlank { "migration" },
-                        phase = ManagedMigrationReplacementJournalPhase.PLANNED,
-                        replacements = replacements.values.toList(),
-                        targetNamesByReference = namePlan.targetNamesByReference
+            val sourceManifest = persistedJournalForAttempt?.sourceEntries
+                ?.takeIf { it.isNotEmpty() }
+                ?: entries.map { entry ->
+                    ManagedMigrationSourceEntry(
+                        sourceReference = entry.entry.reference,
+                        sourceName = entry.entry.name,
+                        sourceSubdirectory = entry.subdirectory,
+                        sizeBytes = entry.entry.sizeBytes.coerceAtLeast(0L),
+                        lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L)
                     )
                 }
+            var replacementJournal: ManagedMigrationReplacementJournal? =
+                ManagedMigrationReplacementJournal(
+                    workId = replacementJournalWorkId.ifBlank {
+                        persistedJournalForAttempt?.workId.orEmpty()
+                    },
+                    fromDirectoryUri = fromDirectoryUri,
+                    toDirectoryUri = toDirectoryUri,
+                    backupNamespace = persistedJournalForAttempt?.backupNamespace
+                        ?: replacementJournalWorkId.ifBlank { "migration" },
+                    phase = ManagedMigrationReplacementJournalPhase.PLANNED,
+                    replacements = namePlan.replacementPlansByReference.values.toList(),
+                    targetNamesByReference = namePlan.targetNamesByReference,
+                    cleanupReceipts = persistedJournalForAttempt?.cleanupReceipts.orEmpty(),
+                    sourceEntryCount = maxOf(
+                        sourceManifest.size,
+                        persistedJournalForAttempt?.cleanupReceipts?.size ?: 0
+                    ),
+                    sourceEntries = sourceManifest
+                )
             replacementJournal?.let { onReplacementJournalUpdated(it) }
 
             val copyResults = coroutineScope {
@@ -1229,6 +1306,34 @@ internal object ManagedDownloadStorage {
                     skippedFiles = verificationResult.failedFiles
                 )
             }
+            copiedEntries = verificationResult.verifiedEntries
+
+            replacementJournal = replacementJournal?.let { journal ->
+                try {
+                    val mergedJournal = journal.copy(
+                        cleanupReceipts = mergePersistedMigrationCleanupReceipts(
+                            persisted = journal.cleanupReceipts,
+                            current = buildMigrationCleanupReceipts(
+                                context = context,
+                                copiedEntries = copiedEntries
+                            )
+                        )
+                    )
+                    if (!hasCompleteMigrationCleanupReceipts(mergedJournal)) {
+                        throw ManagedDownloadMigrationException.transient(
+                            "迁移清理凭据未覆盖全部源条目，保留源文件等待恢复"
+                        )
+                    }
+                    mergedJournal
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    rollbackMigratedEntries(context, copiedEntries, targetRoot)
+                    verifyCommittedTargetBeforeReturningFailure()
+                    throw error
+                }
+            }
+            replacementJournal?.let { onReplacementJournalUpdated(it) }
 
             replacementJournal = replacementJournal?.copy(
                 phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED
@@ -1274,9 +1379,17 @@ internal object ManagedDownloadStorage {
                 progressTracker = progressTracker
             )
             if (cleanupResult.failedFiles == 0) {
-                replacementJournal = replacementJournal?.copy(
-                    phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
-                )
+                replacementJournal = replacementJournal?.let { journal ->
+                    if (!hasCompleteMigrationCleanupReceipts(journal)) {
+                        throw ManagedDownloadMigrationException.transient(
+                            "迁移清理凭据未覆盖全部源条目，保留事务等待恢复"
+                        )
+                    }
+                    journal.copy(
+                        phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+                        cleanupComplete = true
+                    )
+                }
                 replacementJournal?.let { onReplacementJournalUpdated(it) }
             }
             progressTracker.finishAll()
@@ -1299,16 +1412,19 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    private fun verifyCommittedMigrationReplacementJournal(
+    private suspend fun verifyCommittedMigrationReplacementJournal(
         context: Context,
         targetRoot: RootHandle,
         journal: ManagedMigrationReplacementJournal
     ) {
         persistedMigrationJournalTargetNames(journal)
         if (journal.replacements.isEmpty()) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移替换事务没有可验证的目标计划"
-            )
+            if (!hasCompleteMigrationCleanupReceipts(journal)) {
+                throw ManagedDownloadMigrationException.transient(
+                    "迁移事务没有可验证的目标清单"
+                )
+            }
+            return
         }
         val targetIndex = buildMigrationTargetIndex(context, targetRoot)
         journal.replacements.forEach { replacement ->
@@ -1327,6 +1443,116 @@ internal object ManagedDownloadStorage {
                 )
             }
         }
+    }
+
+    private suspend fun buildMigrationCleanupReceipts(
+        context: Context,
+        copiedEntries: List<CopiedMigrationEntry>
+    ): List<ManagedMigrationCleanupReceipt> {
+        return copiedEntries.map { copied ->
+            val targetDigest = if (
+                !ManagedDownloadTreeNaming.isMetadataName(copied.original.entry.name)
+            ) {
+                copied.verifiedTargetDigest?.takeIf(String::isNotBlank)
+                    ?: copied.sourceDigest?.takeIf(String::isNotBlank)
+                    ?: readMigrationTargetDigest(context, copied.copiedEntry)
+            } else {
+                // metadata references are rewritten after the source digest is
+                // calculated, so only the final target bytes are authoritative
+                readMigrationTargetDigest(context, copied.copiedEntry)
+            }
+            ManagedMigrationCleanupReceipt(
+                sourceReference = copied.original.entry.reference,
+                sourceName = copied.original.entry.name,
+                sourceSubdirectory = copied.original.subdirectory,
+                targetEntry = copied.copiedEntry,
+                targetDigest = targetDigest
+            )
+        }
+    }
+
+    private suspend fun verifyMigrationCleanupReceipts(
+        context: Context,
+        targetRoot: RootHandle,
+        journal: ManagedMigrationReplacementJournal
+    ) {
+        val targetIndex = buildMigrationTargetIndex(context, targetRoot)
+        journal.cleanupReceipts.forEach { receipt ->
+            val target = targetIndex.entryFor(
+                receipt.sourceSubdirectory,
+                receipt.targetEntry.name
+            ) ?: throw ManagedDownloadMigrationException.transient(
+                "迁移清理凭据目标文件暂时不可用: ${receipt.targetEntry.name}"
+            )
+            if (!areEquivalentMigrationTargetIdentity(receipt.targetEntry, target)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移清理凭据目标文档已变化: ${receipt.targetEntry.name}"
+                )
+            }
+            val digest = readMigrationTargetDigest(context, target)
+            if (!digest.equals(receipt.targetDigest, ignoreCase = true)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移清理凭据目标内容已变化: ${receipt.targetEntry.name}"
+                )
+            }
+        }
+    }
+
+    private suspend fun readMigrationTargetDigest(
+        context: Context,
+        entry: StoredEntry
+    ): String {
+        return when (val result = migrationEntryReader.read(context, entry) { input ->
+            sha256MigrationContent(input)
+        }) {
+            is StorageLookupResult.Found -> result.value.getOrElse { error ->
+                throw ManagedDownloadMigrationException.transient(
+                    "迁移目标校验暂时失败: ${entry.name}",
+                    error
+                )
+            }
+            StorageLookupResult.Missing,
+            StorageLookupResult.PermissionLost,
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported,
+            is StorageLookupResult.ProviderFailure -> {
+                throw ManagedDownloadMigrationException.transient(
+                    "迁移目标文件暂时不可用: ${entry.name}"
+                )
+            }
+        }
+    }
+
+    private fun areEquivalentMigrationTargetIdentity(
+        expected: StoredEntry,
+        actual: StoredEntry
+    ): Boolean {
+        if (
+            expected.reference == actual.reference ||
+            expected.mediaUri == actual.mediaUri ||
+            expected.localFilePath != null &&
+                expected.localFilePath == actual.localFilePath
+        ) {
+            return true
+        }
+        val expectedSafIdentity = migrationSafDocumentIdentity(expected.reference)
+            ?: migrationSafDocumentIdentity(expected.mediaUri)
+        val actualSafIdentity = migrationSafDocumentIdentity(actual.reference)
+            ?: migrationSafDocumentIdentity(actual.mediaUri)
+        return expectedSafIdentity != null && expectedSafIdentity == actualSafIdentity
+    }
+
+    private fun migrationSafDocumentIdentity(value: String?): String? {
+        val uri = value?.trim()?.takeIf(String::isNotBlank)?.let {
+            runCatching { it.toUri() }.getOrNull()
+        } ?: return null
+        if (!uri.scheme.equals("content", ignoreCase = true) || uri.authority.isNullOrBlank()) {
+            return null
+        }
+        val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+            ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+            ?: return null
+        return "${uri.authority!!.lowercase(Locale.ROOT)}\u0000$documentId"
     }
 
     private fun verifyPreviouslyCommittedMigrationTarget(

@@ -436,6 +436,30 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                     put(encodeReplacementPlan(replacement))
                 }
             })
+            put("cleanupComplete", journal.cleanupComplete)
+            put("sourceEntryCount", journal.sourceEntryCount)
+            put("cleanupReceipts", org.json.JSONArray().apply {
+                journal.cleanupReceipts.sortedWith(
+                    compareBy<ManagedMigrationCleanupReceipt>(
+                        { it.sourceSubdirectory.orEmpty() },
+                        { it.targetEntry.name },
+                        { it.sourceReference }
+                    )
+                ).forEach { receipt ->
+                    put(encodeCleanupReceipt(receipt))
+                }
+            })
+            put("sourceEntries", org.json.JSONArray().apply {
+                journal.sourceEntries.sortedWith(
+                    compareBy<ManagedMigrationSourceEntry>(
+                        { it.sourceSubdirectory.orEmpty() },
+                        { it.sourceName },
+                        { it.sourceReference }
+                    )
+                ).forEach { entry ->
+                    put(encodeSourceEntry(entry))
+                }
+            })
         }
     }
 
@@ -466,6 +490,30 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         }
     }
 
+    private fun encodeCleanupReceipt(
+        receipt: ManagedMigrationCleanupReceipt
+    ): JSONObject {
+        return JSONObject().apply {
+            put("sourceReference", receipt.sourceReference)
+            put("sourceName", receipt.sourceName)
+            put("sourceSubdirectory", receipt.sourceSubdirectory)
+            put("targetDigest", receipt.targetDigest)
+            put("targetEntry", encodeStoredEntry(receipt.targetEntry))
+        }
+    }
+
+    private fun encodeSourceEntry(
+        entry: ManagedMigrationSourceEntry
+    ): JSONObject {
+        return JSONObject().apply {
+            put("sourceReference", entry.sourceReference)
+            put("sourceName", entry.sourceName)
+            put("sourceSubdirectory", entry.sourceSubdirectory)
+            put("sizeBytes", entry.sizeBytes)
+            put("lastModifiedMs", entry.lastModifiedMs)
+        }
+    }
+
     private fun decodeReplacementJournal(root: JSONObject): ManagedMigrationReplacementJournal {
         val workId = root.optString("workId").trim().takeIf(String::isNotBlank)
             ?: invalidJournal("迁移替换事务缺少 workId")
@@ -473,7 +521,10 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             "version",
             CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION
         )
-        if (version != CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION) {
+        if (
+            version < MIN_SUPPORTED_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION ||
+            version > CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION
+        ) {
             invalidJournal("迁移替换事务版本不受支持: $version")
         }
         val backupNamespace = root.optString("backupNamespace", "migration")
@@ -484,9 +535,6 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             ?: invalidJournal("迁移替换事务阶段无法识别: $phaseName")
         val array = root.optJSONArray("replacements")
             ?: invalidJournal("迁移替换事务缺少 replacement 计划")
-        if (array.length() == 0) {
-            invalidJournal("迁移替换事务没有 replacement 计划")
-        }
         val replacements = buildList {
             for (index in 0 until array.length()) {
                 decodeReplacementPlan(array.optJSONObject(index))
@@ -495,6 +543,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             }
         }
         val targetNames = decodeTargetNames(root.optJSONObject("targetNames"))
+        val cleanupReceipts = decodeCleanupReceipts(root.optJSONArray("cleanupReceipts"))
+        val sourceEntries = decodeSourceEntries(root.optJSONArray("sourceEntries"))
         return ManagedMigrationReplacementJournal(
             version = version,
             workId = workId,
@@ -503,8 +553,95 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             backupNamespace = backupNamespace,
             phase = phase,
             replacements = replacements,
-            targetNamesByReference = targetNames
+            targetNamesByReference = targetNames,
+            cleanupReceipts = cleanupReceipts,
+            cleanupComplete = root.optBoolean("cleanupComplete", false),
+            sourceEntryCount = root.optInt("sourceEntryCount", 0).coerceAtLeast(0),
+            sourceEntries = sourceEntries
         )
+    }
+
+    private fun decodeSourceEntries(
+        array: org.json.JSONArray?
+    ): List<ManagedMigrationSourceEntry> {
+        array ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val value = array.optJSONObject(index)
+                    ?: invalidJournal("迁移源清单包含无效条目: index=$index")
+                val sourceReference = value.optString("sourceReference").trim()
+                val sourceName = value.optString("sourceName").trim()
+                val sourceSubdirectory = value.optNullableString("sourceSubdirectory")
+                val entry = ManagedMigrationSourceEntry(
+                    sourceReference = sourceReference,
+                    sourceName = sourceName,
+                    sourceSubdirectory = sourceSubdirectory,
+                    sizeBytes = value.optLong("sizeBytes", 0L).coerceAtLeast(0L),
+                    lastModifiedMs = value.optLong("lastModifiedMs", 0L).coerceAtLeast(0L)
+                )
+                if (
+                    entry.sourceReference.isBlank() ||
+                    !isSafeMigrationPlanName(entry.sourceName) ||
+                    entry.sourceSubdirectory != null &&
+                        entry.sourceSubdirectory !=
+                            moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY &&
+                        entry.sourceSubdirectory !=
+                            moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+                ) {
+                    invalidJournal("迁移源清单包含无效条目: $sourceReference")
+                }
+                add(entry)
+            }
+        }
+    }
+
+    private fun decodeCleanupReceipts(
+        array: org.json.JSONArray?
+    ): List<ManagedMigrationCleanupReceipt> {
+        array ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val value = array.optJSONObject(index)
+                    ?: invalidJournal("迁移清理凭据包含无效条目: index=$index")
+                val sourceReference = value.optString("sourceReference").trim()
+                val sourceName = value.optString("sourceName").trim()
+                val targetDigest = value.optString("targetDigest").trim()
+                val targetEntry = decodeStoredEntry(value.optJSONObject("targetEntry"))
+                    ?: invalidJournal("迁移清理凭据缺少目标条目: index=$index")
+                val receipt = ManagedMigrationCleanupReceipt(
+                    sourceReference = sourceReference,
+                    sourceName = sourceName,
+                    sourceSubdirectory = value.optNullableString("sourceSubdirectory"),
+                    targetEntry = targetEntry,
+                    targetDigest = targetDigest
+                )
+                validateDecodedCleanupReceipt(receipt)
+                add(receipt)
+            }
+        }
+    }
+
+    private fun validateDecodedCleanupReceipt(
+        receipt: ManagedMigrationCleanupReceipt
+    ) {
+        if (
+            receipt.sourceReference.isBlank() ||
+            receipt.sourceName.isBlank() ||
+            !isSafeMigrationPlanName(receipt.targetEntry.name) ||
+            receipt.targetEntry.isDirectory ||
+            receipt.sourceSubdirectory != null &&
+                receipt.sourceSubdirectory !=
+                    moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY &&
+                receipt.sourceSubdirectory !=
+                    moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY ||
+            receipt.targetDigest.length != 64 ||
+            receipt.targetDigest.any { character ->
+                character !in '0'..'9' && character !in 'a'..'f' &&
+                    character !in 'A'..'F'
+            }
+        ) {
+            invalidJournal("迁移清理凭据包含无效条目: ${receipt.sourceReference}")
+        }
     }
 
     private fun decodeTargetNames(value: JSONObject?): Map<String, String> {
@@ -585,5 +722,6 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         internal const val ACTIVE_REPLACEMENT_JOURNAL_KEY = "replacement_journal:active"
         internal const val CURRENT_MIGRATION_REQUEST_VERSION = 1
         internal const val CURRENT_MIGRATION_PROGRESS_VERSION = 1
+        internal const val MIN_SUPPORTED_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 1
     }
 }

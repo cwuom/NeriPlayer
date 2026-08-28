@@ -238,20 +238,22 @@ internal class ManagedDownloadMigrationFinalizer(
                     progressTracker?.startVerificationEntry(migrationEntry)
                     var verificationCompleted = false
                     try {
-                        val outcome = if (
-                            isMigrationTargetVerified(
-                                context = context,
-                                migrationEntry = migrationEntry,
-                                referenceMap = referenceMap,
-                                onProgress = { verifiedBytes ->
-                                    progressTracker?.onVerificationProgress(
-                                        migrationEntry,
-                                        verifiedBytes
-                                    )
-                                }
+                        val verification = verifyMigrationTarget(
+                            context = context,
+                            migrationEntry = migrationEntry,
+                            referenceMap = referenceMap,
+                            onProgress = { verifiedBytes ->
+                                progressTracker?.onVerificationProgress(
+                                    migrationEntry,
+                                    verifiedBytes
+                                )
+                            }
+                        )
+                        val outcome = if (verification.verified) {
+                            VerificationOutcome(
+                                failed = false,
+                                targetDigest = verification.targetDigest
                             )
-                        ) {
-                            VerificationOutcome(failed = false)
                         } else {
                             NPLogger.w(
                                 tag,
@@ -288,7 +290,7 @@ internal class ManagedDownloadMigrationFinalizer(
         }.awaitAll()
         val contentError = outcomes.mapNotNull(VerificationOutcome::error)
             .firstOrNull { error -> !error.retryable }
-            ?: outcomes.mapNotNull(VerificationOutcome::error).firstOrNull()
+            ?: outcomes.firstNotNullOfOrNull(VerificationOutcome::error)
         val contentFailedFiles = outcomes.count(VerificationOutcome::failed)
         if (contentFailedFiles > 0) {
             return@coroutineScope ManagedMigrationVerificationResult(
@@ -319,7 +321,16 @@ internal class ManagedDownloadMigrationFinalizer(
         }
         ManagedMigrationVerificationResult(
             failedFiles = if (layoutError == null) 0 else copiedEntries.size,
-            error = layoutError
+            error = layoutError,
+            verifiedEntries = if (layoutError == null) {
+                copiedEntries.mapIndexed { index, copied ->
+                    outcomes[index].targetDigest?.let { digest ->
+                        copied.copy(verifiedTargetDigest = digest)
+                    } ?: copied
+                }
+            } else {
+                copiedEntries
+            }
         )
     }
 
@@ -384,11 +395,15 @@ internal class ManagedDownloadMigrationFinalizer(
             throw ManagedDownloadMigrationException.targetChanged(detail)
         }
 
+        val observationsByLayoutAndIdentity = observations.associateBy { observation ->
+            observation.layoutEntry.layoutKey() to observation.layoutEntry.documentIdentity
+        }
         val expectedTargets = expectedLayout.map { expected ->
-            val observed = observations.single { observation ->
-                observation.layoutEntry.layoutKey() == expected.layoutKey() &&
-                    observation.layoutEntry.documentIdentity == expected.documentIdentity
-            }
+            val observed = observationsByLayoutAndIdentity[
+                expected.layoutKey() to expected.documentIdentity
+            ] ?: throw ManagedDownloadMigrationException.targetChanged(
+                "SAF 迁移目标文档已变化: ${expected.name}"
+            )
             observed.parent to StorageTarget.SafTarget(
                 parent = observed.parent,
                 displayName = expected.name,
@@ -755,7 +770,13 @@ internal class ManagedDownloadMigrationFinalizer(
 
     private data class VerificationOutcome(
         val failed: Boolean,
-        val error: ManagedDownloadMigrationException? = null
+        val error: ManagedDownloadMigrationException? = null,
+        val targetDigest: String? = null
+    )
+
+    private data class MigrationVerificationEvidence(
+        val verified: Boolean,
+        val targetDigest: String? = null
     )
 
     private suspend fun isMigrationTargetVerified(
@@ -763,13 +784,27 @@ internal class ManagedDownloadMigrationFinalizer(
         migrationEntry: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
         onProgress: (Long) -> Unit = {}
-    ): Boolean {
+    ): Boolean = verifyMigrationTarget(
+        context = context,
+        migrationEntry = migrationEntry,
+        referenceMap = referenceMap,
+        onProgress = onProgress
+    ).verified
+
+    private suspend fun verifyMigrationTarget(
+        context: Context,
+        migrationEntry: CopiedMigrationEntry,
+        referenceMap: Map<String, String>,
+        onProgress: (Long) -> Unit = {}
+    ): MigrationVerificationEvidence {
         val sourceEntry = migrationEntry.original.entry
         if (ManagedDownloadTreeNaming.isMetadataName(sourceEntry.name)) {
-            return hasEquivalentMigratedMetadata(
-                context = context,
-                migrationEntry = migrationEntry,
-                referenceMap = referenceMap
+            return MigrationVerificationEvidence(
+                verified = hasEquivalentMigratedMetadata(
+                    context = context,
+                    migrationEntry = migrationEntry,
+                    referenceMap = referenceMap
+                )
             )
         }
         val persistedSourceDigest = migrationEntry.sourceDigest?.takeIf(String::isNotBlank)
@@ -779,7 +814,7 @@ internal class ManagedDownloadMigrationFinalizer(
                 sourceVerifiedBytes = verifiedBytes
                 onProgress(verifiedBytes)
             }
-            ?: return false
+            ?: return MigrationVerificationEvidence(verified = false)
         val targetOffset = if (persistedSourceDigest != null) {
             0L
         } else {
@@ -787,8 +822,11 @@ internal class ManagedDownloadMigrationFinalizer(
         }
         val targetDigest = sha256ForEntry(context, migrationEntry.copiedEntry) { verifiedBytes ->
             onProgress(saturatedMigrationByteSum(targetOffset, verifiedBytes))
-        } ?: return false
-        return sourceDigest == targetDigest
+        } ?: return MigrationVerificationEvidence(verified = false)
+        return MigrationVerificationEvidence(
+            verified = sourceDigest == targetDigest,
+            targetDigest = targetDigest.takeIf { digest -> sourceDigest == digest }
+        )
     }
 
     private fun hasEquivalentMigratedMetadata(
