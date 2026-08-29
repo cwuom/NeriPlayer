@@ -551,6 +551,54 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
+    fun `pending cleanup removes owned sidecars in root and operation directories`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val targetSong = queuedSong(id = 73L, name = "Target")
+        val keptSong = queuedSong(id = 74L, name = "Kept")
+        val targetHash = ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(targetSong.stableKey())
+        val keptHash = ManagedDownloadRecoveryFiles.buildWorkingSongKeyHash(keptSong.stableKey())
+        val targetUuid = "123e4567-e89b-12d3-a456-426614174000"
+        val keptUuid = "123e4567-e89b-12d3-a456-426614174001"
+
+        val targetRootSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash}_$targetUuid.cover"
+        ).apply { writeText("target-root") }
+        val targetOperationDirectory = File(stagingDir, "operation-target").apply { mkdirs() }
+        val targetOperationSidecar = File(
+            targetOperationDirectory,
+            "npdl_sidecar_${targetHash}_$targetUuid.lyric"
+        ).apply { writeText("target-operation") }
+        val keptSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${keptHash}_$keptUuid.cover"
+        ).apply { writeText("kept") }
+        val shortHashSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash.take(8)}_$targetUuid.cover"
+        ).apply { writeText("legacy-short-hash") }
+        val malformedUuidSidecar = File(
+            stagingDir,
+            "npdl_sidecar_${targetHash}_not-a-uuid.cover"
+        ).apply { writeText("malformed-uuid") }
+        val ordinaryFile = File(stagingDir, "notes.txt").apply { writeText("keep user data") }
+
+        val deletedKeys = ManagedDownloadStorage.deletePendingWorkingDownloadArtifactsInDirectory(
+            stagingDir = stagingDir,
+            songKeys = setOf(targetSong.stableKey())
+        )
+
+        assertEquals(setOf(targetSong.stableKey()), deletedKeys)
+        assertFalse(targetRootSidecar.exists())
+        assertFalse(targetOperationSidecar.exists())
+        assertFalse(targetOperationDirectory.exists())
+        assertTrue(keptSidecar.exists())
+        assertTrue(shortHashSidecar.exists())
+        assertTrue(malformedUuidSidecar.exists())
+        assertTrue(ordinaryFile.exists())
+    }
+
+    @Test
     fun `broken resume metadata does not grant ownership for deletion`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val targetSong = queuedSong(id = 81L, name = "Target")

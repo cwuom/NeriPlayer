@@ -378,8 +378,6 @@ private val MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD = 24.dp
 private const val DRAWER_ROOT_RETAIN_ALPHA = 0.999f
 internal const val DEBUG_NAVIGATION_OPEN_DURATION_MS = 220
 internal const val DEBUG_NAVIGATION_CLOSE_DURATION_MS = 240
-internal const val APP_CONTENT_FRAME_TIMEOUT_MS = 2_000L
-
 internal enum class MainTabDetailHandoff {
     OPEN_DETAIL,
     RETURN_TO_TAB
@@ -1731,40 +1729,11 @@ fun NeriApp(
 @Composable
 internal fun AppContentMountGate(
     modifier: Modifier = Modifier,
-    timeoutMillis: Long = APP_CONTENT_FRAME_TIMEOUT_MS,
-    awaitFirstFrame: suspend () -> Unit = { withFrameNanos { } },
     content: @Composable () -> Unit
 ) {
-    var contentReady by rememberSaveable { mutableStateOf(false) }
-    var mountWithFade by rememberSaveable { mutableStateOf(true) }
-
-    LaunchedEffect(Unit) {
-        val frameObserved = withTimeoutOrNull(timeoutMillis.coerceAtLeast(0L)) {
-            awaitFirstFrame()
-            true
-        } == true
-        if (!frameObserved) {
-            NPLogger.w(
-                "NERI-App",
-                "应用内容首帧回调超时，降级为直接挂载"
-            )
-            mountWithFade = false
-        }
-        contentReady = true
-    }
-
-    AnimatedVisibility(
-        visible = contentReady,
-        enter = if (mountWithFade) {
-            fadeIn(
-                animationSpec = tween(280, easing = FastOutSlowInEasing)
-            )
-        } else {
-            EnterTransition.None
-        },
-        exit = ExitTransition.None,
-        modifier = modifier
-    ) {
+    // mount the interactive tree immediately; storage and recovery work run
+    // from lifecycle coroutines after the first usable frame
+    Box(modifier = modifier) {
         content()
     }
 }

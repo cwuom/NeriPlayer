@@ -24,6 +24,13 @@ internal object ManagedDownloadWorkingStore {
     private val legacyPreparedSidecarName = Regex(
         "npdl_sidecar_[0-9a-f]{1,64}_[0-9a-fA-F-]{36}\\.[A-Za-z0-9._-]{1,24}"
     )
+    /** 取消时只处理新格式 sidecar，避免把任意 npdl_* 文件当成下载残留 */
+    private val managedSidecarName = Regex(
+        "npdl_sidecar_([0-9a-fA-F]{64})_" +
+            "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-" +
+            "[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
+            "\\.([A-Za-z0-9._-]{1,24})"
+    )
     private val legacyOperationDirectoryName = Regex(
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
     )
@@ -240,17 +247,25 @@ internal object ManagedDownloadWorkingStore {
         val keyHashes = keys.flatMapTo(linkedSetOf()) { key ->
             listOf(buildWorkingSongKeyHash(key), legacyWorkingSongKeyHash(key))
         }
-        stagingDir.listFiles()
-            .orEmpty()
-            .filter { entry -> matchingWorkingArtifactSongKey(entry.name, keyHashes) != null }
-            .forEach { entry ->
-                val songKey = readWorkingSongKey(entry)
-                    ?.takeIf { it in keys }
-                    ?: return@forEach
-                if (deleteWorkingArtifactEntry(entry)) {
-                    deletedKeys += songKey
-                }
+        val canonicalSongKeyByHash = keys.associateBy(::buildWorkingSongKeyHash)
+        listManagedStagingFiles(stagingDir).forEach { entry ->
+            val songKey = matchingWorkingArtifactSongKey(entry.name, keyHashes)
+                ?.let { readWorkingSongKey(entry) }
+                ?.takeIf { it in keys }
+            if (songKey != null && deleteWorkingArtifactEntry(entry)) {
+                deletedKeys += songKey
+                deleteEmptyOperationDirectory(entry.parentFile, stagingDir)
+                return@forEach
             }
+            val sidecarSongKey = matchingManagedSidecarSongKey(
+                fileName = entry.name,
+                songKeyByHash = canonicalSongKeyByHash
+            ) ?: return@forEach
+            if (deleteWorkingArtifactEntry(entry)) {
+                deletedKeys += sidecarSongKey
+                deleteEmptyOperationDirectory(entry.parentFile, stagingDir)
+            }
+        }
         return deletedKeys
     }
 
@@ -496,6 +511,24 @@ internal object ManagedDownloadWorkingStore {
         return keyHash.takeIf { it in songKeyHashes }
     }
 
+    private fun matchingManagedSidecarSongKey(
+        fileName: String,
+        songKeyByHash: Map<String, String>
+    ): String? {
+        val match = managedSidecarName.matchEntire(fileName) ?: return null
+        return songKeyByHash[match.groupValues[1].lowercase()]
+    }
+
+    private fun listManagedStagingFiles(stagingDir: File): List<File> {
+        return stagingDir.listFiles().orEmpty().flatMap { entry ->
+            when {
+                entry.isFile -> listOf(entry)
+                entry.isDirectory -> entry.listFiles()?.filter(File::isFile).orEmpty()
+                else -> emptyList()
+            }
+        }
+    }
+
     private fun readWorkingSongKey(entry: File): String? {
         val workingFile = when {
             entry.name.endsWith(DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX) ->
@@ -524,5 +557,17 @@ internal object ManagedDownloadWorkingStore {
                 !entry.exists() || entry.delete()
             }
         }.getOrDefault(false)
+    }
+
+    private fun deleteEmptyOperationDirectory(
+        parent: File?,
+        stagingDir: File
+    ) {
+        if (parent == null || parent == stagingDir || !parent.isDirectory) {
+            return
+        }
+        if (parent.listFiles()?.isEmpty() == true) {
+            runCatching { parent.delete() }
+        }
     }
 }

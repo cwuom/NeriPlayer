@@ -1,22 +1,23 @@
 package moe.ouom.neriplayer.ui
 
 import java.io.File
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NeriAppStartupGlassGatePolicyTest {
     @Test
-    fun appContentMountGateRetainsOriginalFrameAndFade() {
+    fun appContentMountGateMountsImmediatelyWithoutStartupAnimation() {
         val source = source("app/src/main/java/moe/ouom/neriplayer/ui/NeriApp.kt")
         val mountGate = source
             .substringAfter("internal fun AppContentMountGate(")
             .substringBefore("@Composable\nprivate fun NeriAppContent")
 
-        assertTrue(source.contains("APP_CONTENT_FRAME_TIMEOUT_MS = 2_000L"))
-        assertTrue(mountGate.contains("withFrameNanos"))
-        assertTrue(mountGate.contains("AnimatedVisibility("))
-        assertTrue(mountGate.contains("fadeIn("))
-        assertTrue(mountGate.contains("tween(280"))
+        assertTrue(mountGate.contains("content()"))
+        assertFalse(mountGate.contains("withFrameNanos"))
+        assertFalse(mountGate.contains("AnimatedVisibility("))
+        assertFalse(mountGate.contains("fadeIn("))
+        assertFalse(mountGate.contains("withTimeoutOrNull"))
     }
 
     private fun source(path: String): String {

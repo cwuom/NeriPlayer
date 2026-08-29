@@ -146,14 +146,46 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
                 "ManagedDownloadMigrationWorker.kt"
         ).readText()
         val workerBody = methodBody(source, "runMigration")
-        assertTrue(workerBody.indexOf("checkpointStore.recordRequest(") >= 0)
+        assertTrue(workerBody.indexOf("checkpointStore.recordRequestIfCurrent(") >= 0)
         assertTrue(workerBody.lastIndexOf("waitForRetry = true") >
             workerBody.indexOf("catch (error: CancellationException)"))
-        assertTrue(workerBody.contains("checkpointStore.clearCompleted("))
+        assertTrue(workerBody.contains("checkpointStore.clearCompletedAndRunIfCurrent("))
         assertTrue(
-            workerBody.indexOf("checkpointStore.clearCompleted(") >
+            workerBody.indexOf("checkpointStore.clearCompletedAndRunIfCurrent(") >
                 workerBody.indexOf("scanLocalFilesAwait(")
         )
+    }
+
+    @Test
+    fun `migration worker owns the progress session before collecting the shared flow`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val doWorkBody = methodBody(source, "doWork")
+        val beginIndex = doWorkBody.indexOf("beginMigrationProgressSession(")
+        val collectorIndex = doWorkBody.indexOf("val progressJob = launch")
+        val collectIndex = doWorkBody.indexOf("migrationProgressFlow.collect")
+        val endIndex = doWorkBody.indexOf("endMigrationProgressSession(")
+
+        assertTrue(beginIndex >= 0)
+        assertTrue(collectorIndex > beginIndex)
+        assertTrue(collectIndex > collectorIndex)
+        assertTrue(endIndex > collectorIndex)
+    }
+
+    @Test
+    fun `old worker cannot release permission outside owner guarded completion`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val workerBody = methodBody(source, "runMigration")
+        val completionIndex = workerBody.indexOf("clearCompletedAndRunIfCurrent(")
+        val releaseIndex = workerBody.indexOf("releasePersistedDirectoryPermission(")
+
+        assertTrue(completionIndex >= 0)
+        assertTrue(releaseIndex > completionIndex)
     }
 
     @Test
@@ -162,17 +194,17 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
             "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
         ).readText()
         val body = methodBody(source, "cleanupMigrationReplacementBackups")
-        val declarationStart = source.indexOf(
-            "private fun cleanupMigrationReplacementBackups("
-        )
+        val declarationStart = Regex(
+            "private\\s+(?:suspend\\s+)?fun\\s+cleanupMigrationReplacementBackups\\("
+        ).find(source)?.range?.first ?: -1
         val declarationEnd = source.indexOf('{', declarationStart)
         assertTrue(declarationStart >= 0 && declarationEnd > declarationStart)
         assertTrue(
             source.substring(declarationStart, declarationEnd)
                 .contains("progressTracker: ManagedMigrationProgressReporter?")
         )
-        assertTrue(body.contains("progressTracker?.startCleanup(backups.size"))
-        assertTrue(body.contains("progressTracker?.finishCleanup(backup.name)"))
+        assertTrue(body.contains("progressTracker?.startCleanup(total"))
+        assertTrue(body.contains("progressTracker?.finishCleanup("))
     }
 
     @Test

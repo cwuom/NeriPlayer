@@ -20,6 +20,8 @@ internal class ManagedDownloadMigrationProgressTracker(
     private val lock = Any()
     private val activeCopyBytes = mutableMapOf<String, Long>()
     private val activeVerificationBytes = mutableMapOf<String, Long>()
+    private val seededCopyReferences = mutableSetOf<String>()
+    private val seededVerificationReferences = mutableSetOf<String>()
     private var stage: ManagedDownloadStorage.MigrationStage = ManagedDownloadStorage.MigrationStage.PREPARING
     private var currentFileName: String? = null
     private var completedCopyBytes = 0L
@@ -64,14 +66,41 @@ internal class ManagedDownloadMigrationProgressTracker(
         }
     }
 
+    /** seeds durable receipts before the first resumed copy is dispatched */
+    fun seedCompletedCopies(entries: Collection<ManagedMigrationProgressEntry>) {
+        synchronized(lock) {
+            entries.forEach { entry ->
+                if (seededCopyReferences.add(entry.reference)) {
+                    copiedFiles++
+                    completedCopyBytes += entry.sizeBytes.coerceAtLeast(0L)
+                }
+            }
+            emitLocked(force = true)
+        }
+    }
+
+    /** removes a seed when the provider fingerprint no longer matches */
+    fun unseedCopy(entry: ManagedMigrationProgressEntry) {
+        synchronized(lock) {
+            if (seededCopyReferences.remove(entry.reference)) {
+                copiedFiles = (copiedFiles - 1).coerceAtLeast(0)
+                completedCopyBytes = (completedCopyBytes - entry.sizeBytes.coerceAtLeast(0L))
+                    .coerceAtLeast(0L)
+                emitLocked(force = true)
+            }
+        }
+    }
+
     fun completeCopy(entry: ManagedMigrationProgressEntry) {
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.COPYING
             currentFileName = entry.name
             val observedBytes = activeCopyBytes.remove(entry.reference)?.coerceAtLeast(0L) ?: 0L
-            val finishedBytes = maxOf(observedBytes, entry.sizeBytes.coerceAtLeast(0L))
-            completedCopyBytes += finishedBytes
-            copiedFiles++
+            if (!seededCopyReferences.remove(entry.reference)) {
+                val finishedBytes = maxOf(observedBytes, entry.sizeBytes.coerceAtLeast(0L))
+                completedCopyBytes += finishedBytes
+                copiedFiles++
+            }
             emitLocked(force = false)
         }
     }
@@ -115,6 +144,20 @@ internal class ManagedDownloadMigrationProgressTracker(
         }
     }
 
+    /** publishes already verified receipts without waiting for every skip callback */
+    fun seedVerifiedEntries(entries: Collection<ManagedMigrationProgressEntry>) {
+        synchronized(lock) {
+            entries.forEach { entry ->
+                if (seededVerificationReferences.add(entry.reference)) {
+                    verificationFilesProcessed = (verificationFilesProcessed + 1)
+                        .coerceAtMost(verificationFilesTotal)
+                    completedVerificationBytes += entry.sizeBytes.coerceAtLeast(0L)
+                }
+            }
+            emitLocked(force = true)
+        }
+    }
+
     fun startVerificationEntry(entry: ManagedMigrationProgressEntry) {
         synchronized(lock) {
             stage = ManagedDownloadStorage.MigrationStage.VERIFYING
@@ -146,22 +189,33 @@ internal class ManagedDownloadMigrationProgressTracker(
             val observedBytes = activeVerificationBytes.remove(entry.reference)
                 ?.coerceAtLeast(0L)
                 ?: 0L
-            completedVerificationBytes += maxOf(
-                observedBytes,
-                entry.sizeBytes.coerceAtLeast(0L)
-            )
-            verificationFilesProcessed = (verificationFilesProcessed + 1)
-                .coerceAtMost(verificationFilesTotal)
+            if (!seededVerificationReferences.remove(entry.reference)) {
+                completedVerificationBytes += maxOf(
+                    observedBytes,
+                    entry.sizeBytes.coerceAtLeast(0L)
+                )
+                verificationFilesProcessed = (verificationFilesProcessed + 1)
+                    .coerceAtMost(verificationFilesTotal)
+            }
             emitLocked(force = verificationFilesProcessed >= verificationFilesTotal)
         }
     }
 
     fun startCleanup(totalEntries: Int, fileName: String?) {
         synchronized(lock) {
+            // a null file name is the existing batch boundary emitted before
+            // source cleanup; reset so replacement cleanup cannot leak counts
+            // into the next cleanup pass
+            val resetBatch =
+                stage != ManagedDownloadStorage.MigrationStage.CLEANING_UP ||
+                    fileName == null
+            if (resetBatch) {
+                cleanupFilesProcessed = 0
+            }
             stage = ManagedDownloadStorage.MigrationStage.CLEANING_UP
             cleanupFilesTotal = totalEntries
             currentFileName = fileName
-            emitLocked(force = false)
+            emitLocked(force = resetBatch)
         }
     }
 
@@ -202,13 +256,12 @@ internal class ManagedDownloadMigrationProgressTracker(
             processedFiles = when (stage) {
                 ManagedDownloadStorage.MigrationStage.PREPARING -> 0
                 ManagedDownloadStorage.MigrationStage.COPYING -> copiedFiles
-                ManagedDownloadStorage.MigrationStage.REWRITING_METADATA ->
-                    copiedFiles + metadataFilesProcessed
-                ManagedDownloadStorage.MigrationStage.VERIFYING -> {
-                    copiedFiles + metadataFilesTotal + verificationFilesProcessed
-                }
-                ManagedDownloadStorage.MigrationStage.CLEANING_UP ->
-                    copiedFiles + metadataFilesTotal + cleanupFilesProcessed
+                // metadata, verification, and cleanup operate on entries that
+                // were already counted by copying; their detailed counters
+                // remain available through stageProcessed/stageTotal
+                ManagedDownloadStorage.MigrationStage.REWRITING_METADATA,
+                ManagedDownloadStorage.MigrationStage.VERIFYING,
+                ManagedDownloadStorage.MigrationStage.CLEANING_UP -> copiedFiles
                 ManagedDownloadStorage.MigrationStage.FINALIZING -> totalFiles
             }.coerceAtMost(totalFiles),
             copiedFiles = copiedFiles,

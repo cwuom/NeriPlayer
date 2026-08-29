@@ -124,6 +124,56 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `stale quick SAF cover does not hide detailed cover`() {
+        assertEquals(
+            "file:///data/local_audio_covers/demo.jpg",
+            selectMergedImportedCoverReference(
+                quickCover = "content://old-tree/Covers/demo.jpg",
+                detailedCover = "file:///data/local_audio_covers/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `non stale quick cover remains authoritative during merge`() {
+        assertEquals(
+            "content://media/external/audio/albumart/42",
+            selectMergedImportedCoverReference(
+                quickCover = "content://media/external/audio/albumart/42",
+                detailedCover = "file:///data/local_audio_covers/demo.jpg"
+            )
+        )
+    }
+
+    @Test
+    fun `hydration clears explicitly invalid cover references after fallback exhaustion`() {
+        val context = mock(Context::class.java)
+        val audioFile = tempFolder.newFile("song.mp3").apply { writeText("audio") }
+        val invalidCover = tempFolder.newFile("cover.jpg").apply { writeText("not an image") }
+        val song = SongItem(
+            id = 7L,
+            name = "Song",
+            artist = "Artist",
+            album = "Local Files",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidCover.toURI().toString(),
+            originalCoverUrl = invalidCover.toURI().toString(),
+            localFilePath = audioFile.absolutePath,
+            localFileName = audioFile.name,
+            channelId = "local"
+        )
+
+        val hydrated = LocalAudioImportManager.hydrateLocalSongCoverMetadata(
+            context = context,
+            song = song
+        )
+
+        assertNull(hydrated.coverUrl)
+        assertNull(hydrated.originalCoverUrl)
+    }
+
+    @Test
     fun `empty media store result falls back to SAF traversal`() {
         val indexedSong = SongItem(
             id = 1L,

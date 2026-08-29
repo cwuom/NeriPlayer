@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.core.download.storage.commit
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -52,11 +54,43 @@ internal class ManagedDownloadStorageCommitWriter(
         val backup = copied.replacementBackup ?: return true
         return when (root) {
             is ManagedDownloadRootHandle.FileRoot -> {
+                val parent = copied.original.subdirectory
+                    ?.let { runCatching { resolveManagedFileSubdirectory(root.dir, it) }.getOrNull() }
+                    ?: root.dir
+                val targetFile = File(parent, copied.copiedEntry.name)
                 val backupFile = backup.localFilePath?.let(::File)
-                    ?: File(backup.reference)
-                val targetFile = File(root.dir, copied.copiedEntry.name)
-                if (!backupFile.exists()) return targetFile.exists()
-                if (targetFile.exists() && !targetFile.delete()) return false
+                    ?: backup.reference.takeIf { it.startsWith("/") }?.let(::File)
+                val targetEntry = targetFile.takeIf(File::exists)?.let(
+                    ManagedDownloadStoredEntryMapper::fromFile
+                )
+                if (isRestoredMigrationReplacementTarget(
+                        expectedTarget = copied.copiedEntry,
+                        replacementBackup = backup,
+                        actualTarget = targetEntry
+                    )
+                ) {
+                    return true
+                }
+                if (backupFile == null || !isFileEntryInParent(backupFile, parent)) {
+                    return false
+                }
+                if (!backupFile.exists()) {
+                    return targetEntry != null && sameManagedMigrationStoredEntryIdentity(
+                        copied.copiedEntry,
+                        targetEntry
+                    )
+                }
+                val actualBackup = ManagedDownloadStoredEntryMapper.fromFile(backupFile)
+                if (!sameManagedMigrationStoredEntryIdentity(backup, actualBackup)) {
+                    return false
+                }
+                if (targetFile.exists()) {
+                    val actualTarget = ManagedDownloadStoredEntryMapper.fromFile(targetFile)
+                    if (!sameManagedMigrationStoredEntryIdentity(copied.copiedEntry, actualTarget)) {
+                        return false
+                    }
+                    if (!targetFile.delete() && targetFile.exists()) return false
+                }
                 runCatching {
                     java.nio.file.Files.move(backupFile.toPath(), targetFile.toPath())
                     targetFile.exists()
@@ -64,43 +98,191 @@ internal class ManagedDownloadStorageCommitWriter(
             }
 
             is ManagedDownloadRootHandle.TreeRoot -> {
-                val backupUri = runCatching { backup.mediaUri.toUri() }.getOrNull()
-                    ?: return false
-                val backupRef = StorageReference.SafRef(backupUri)
-                val backend = SafStorageBackend(
-                    context,
-                    parentDocumentCache = safParentDocumentCache
+                restoreSafMigrationReplacementDirect(
+                    context = context,
+                    root = root,
+                    copied = copied,
+                    backup = backup
+                )?.let { return it }
+                val parents = findMigrationReplacementParents(
+                    context = context,
+                    root = root,
+                    subdirectory = copied.original.subdirectory
                 )
-                val target = root.tree.findFile(copied.copiedEntry.name)
-                if (target != null) {
-                    val targetRef = StorageReference.SafRef(target.uri)
-                    val deleted = runBlocking(Dispatchers.IO) {
-                        backend.delete(
-                            moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
-                                reference = targetRef,
-                                externalReference = target.uri.toString()
+                if (parents.isEmpty()) return false
+                parents.forEach { parent ->
+                    val target = parent.findFile(copied.copiedEntry.name)
+                    val targetEntry = target?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
+                    if (isRestoredMigrationReplacementTarget(
+                            expectedTarget = copied.copiedEntry,
+                            replacementBackup = backup,
+                            actualTarget = targetEntry
+                        )
+                    ) {
+                        return true
+                    }
+                    if (targetEntry != null && !sameManagedMigrationStoredEntryIdentity(
+                            copied.copiedEntry,
+                            targetEntry
+                        )
+                    ) {
+                        return@forEach
+                    }
+                    val backupDocument = parent.findFile(backup.name)
+                    val backupEntry = backupDocument?.let(
+                        ManagedDownloadStoredEntryMapper::fromDocumentFile
+                    )
+                    if (backupEntry == null ||
+                        !sameManagedMigrationStoredEntryIdentity(backup, backupEntry)
+                    ) {
+                        return@forEach
+                    }
+                    val backend = SafStorageBackend(
+                        context,
+                        parentDocumentCache = safParentDocumentCache
+                    )
+                    if (target != null) {
+                        val targetRef = StorageReference.SafRef(target.uri)
+                        val deleted = runBlocking(Dispatchers.IO) {
+                            backend.delete(
+                                moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                                    reference = targetRef,
+                                    externalReference = target.uri.toString()
+                                )
                             )
+                        }
+                        if (deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
+                            deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
+                        ) {
+                            return@forEach
+                        }
+                    }
+                    val renamed = runBlocking(Dispatchers.IO) {
+                        backend.rename(
+                            StorageReference.SafRef(backupDocument.uri).let { reference ->
+                                moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                                    reference = reference,
+                                    externalReference = backupDocument.uri.toString()
+                                )
+                            },
+                            copied.copiedEntry.name
                         )
                     }
-                    if (deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
-                        deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
-                    ) {
-                        return false
-                    }
+                    if (renamed is StorageRenameResult.Renamed) return true
                 }
-                val renamed = runBlocking(Dispatchers.IO) {
-                    backend.rename(
-                        moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
-                            reference = backupRef,
-                            externalReference = backupUri.toString()
-                        ),
-                        copied.copiedEntry.name
-                    )
-                }
-                renamed is StorageRenameResult.Renamed
+                false
             }
         }
     }
+
+    /**
+     * Uses the opaque document references recorded in the receipt before any
+     * directory-name lookup. This keeps restart recovery independent of
+     * provider numbering such as Covers (1).
+     */
+    private fun restoreSafMigrationReplacementDirect(
+        context: Context,
+        root: ManagedDownloadRootHandle.TreeRoot,
+        copied: CopiedMigrationEntry,
+        backup: ManagedDownloadStorage.StoredEntry
+    ): Boolean? {
+        val backupUri = safDocumentUri(backup) ?: return null
+        if (!isSafReferenceBoundToRoot(root.tree.uri, backupUri)) return null
+        val backupDocument = DocumentFile.fromSingleUri(context, backupUri)
+            ?: return null
+        if (!backupDocument.exists()) return null
+        val actualBackup = ManagedDownloadStoredEntryMapper.fromDocumentFile(backupDocument)
+            ?: return null
+        if (!sameManagedMigrationStoredEntryIdentity(backup, actualBackup)) return false
+
+        val targetUri = safDocumentUri(copied.copiedEntry)
+            ?.takeIf { uri -> isSafReferenceBoundToRoot(root.tree.uri, uri) }
+        val targetDocument = targetUri?.let { uri ->
+            DocumentFile.fromSingleUri(context, uri)
+                ?.takeIf(DocumentFile::exists)
+        }
+        val actualTarget = targetDocument?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
+        if (actualTarget != null) {
+            if (
+                isRestoredMigrationReplacementTarget(
+                    expectedTarget = copied.copiedEntry,
+                    replacementBackup = backup,
+                    actualTarget = actualTarget
+                )
+            ) {
+                return true
+            }
+            if (!sameManagedMigrationStoredEntryIdentity(copied.copiedEntry, actualTarget)) {
+                return false
+            }
+            val backend = SafStorageBackend(
+                context,
+                parentDocumentCache = safParentDocumentCache
+            )
+            val deleted = runBlocking(Dispatchers.IO) {
+                backend.delete(
+                    moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                        reference = StorageReference.SafRef(targetDocument.uri),
+                        externalReference = targetDocument.uri.toString()
+                    )
+                )
+            }
+            if (
+                deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Deleted &&
+                deleted !is moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult.Missing
+            ) {
+                return false
+            }
+        }
+
+        val backend = SafStorageBackend(
+            context,
+            parentDocumentCache = safParentDocumentCache
+        )
+        val renamed = runBlocking(Dispatchers.IO) {
+            backend.rename(
+                moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
+                    reference = StorageReference.SafRef(backupUri),
+                    externalReference = backupUri.toString()
+                ),
+                copied.copiedEntry.name
+            )
+        }
+        return when (renamed) {
+            is StorageRenameResult.Renamed -> renamed.stat.displayName == copied.copiedEntry.name
+            StorageRenameResult.Missing,
+            StorageRenameResult.OutOfScope,
+            StorageRenameResult.PermissionLost,
+            is StorageRenameResult.ProviderFailure,
+            is StorageRenameResult.Unsupported -> false
+        }
+    }
+
+    private fun safDocumentUri(entry: ManagedDownloadStorage.StoredEntry): android.net.Uri? {
+        return sequenceOf(entry.reference, entry.mediaUri)
+            .mapNotNull { raw -> runCatching { raw.trim().toUri() }.getOrNull() }
+            .firstOrNull { uri ->
+                uri.scheme.equals("content", ignoreCase = true) &&
+                    !uri.authority.isNullOrBlank()
+            }
+    }
+
+    private fun isSafReferenceBoundToRoot(
+        rootUri: android.net.Uri,
+        referenceUri: android.net.Uri
+    ): Boolean {
+        if (!referenceUri.authority.equals(rootUri.authority, ignoreCase = true)) {
+            return false
+        }
+        val rootDocumentId = runCatching {
+            DocumentsContract.getTreeDocumentId(rootUri)
+        }.getOrNull() ?: return false
+        val referenceTreeId = runCatching {
+            DocumentsContract.getTreeDocumentId(referenceUri)
+        }.getOrNull() ?: return false
+        return referenceTreeId == rootDocumentId
+    }
+
     fun writeMigrationRootStream(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -293,6 +475,7 @@ internal class ManagedDownloadStorageCommitWriter(
         displayName: String,
         input: InputStream,
         sourceEntry: ManagedDownloadStorage.StoredEntry,
+        expectedTargetEntry: ManagedDownloadStorage.StoredEntry?,
         plan: ManagedMigrationReplacementPlan,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
@@ -300,6 +483,30 @@ internal class ManagedDownloadStorageCommitWriter(
             throw ManagedDownloadMigrationException.targetChanged(
                 "迁移替换计划目标名发生变化: $displayName"
             )
+        }
+        val existingTarget = File(root, displayName)
+        val existingBackup = File(root, plan.backupName)
+        val expectedTarget = expectedTargetEntry ?: plan.targetEntry
+        if (existingTarget.exists()) {
+            val actualTarget = ManagedDownloadStoredEntryMapper.fromFile(existingTarget)
+            if (!sameManagedMigrationStoredEntryIdentity(expectedTarget, actualTarget)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移替换目标文档已发生变化: $displayName"
+                )
+            }
+        }
+        if (existingBackup.exists()) {
+            if (!existingBackup.isFile) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移替换备份不是普通文件: $displayName"
+                )
+            }
+            val actualBackup = ManagedDownloadStoredEntryMapper.fromFile(existingBackup)
+            if (!sameMigrationReplacementBackupIdentity(plan.targetEntry, actualBackup)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移替换备份文档已发生变化: $displayName"
+                )
+            }
         }
         val replacement = ManagedDownloadCommitIo.copyFileReplacementAtomically(
             parent = root,
@@ -339,6 +546,7 @@ internal class ManagedDownloadStorageCommitWriter(
         mimeType: String,
         input: InputStream,
         sourceEntry: ManagedDownloadStorage.StoredEntry,
+        expectedTargetEntry: ManagedDownloadStorage.StoredEntry?,
         plan: ManagedMigrationReplacementPlan,
         onProgress: ((Long) -> Unit)?
     ): StoredWriteResult {
@@ -355,6 +563,29 @@ internal class ManagedDownloadStorageCommitWriter(
         val existingBackup = parent.findFile(plan.backupName)
         var backupEntry = existingBackup?.let(ManagedDownloadStoredEntryMapper::fromDocumentFile)
         var target = existingTarget
+        val expectedTarget = expectedTargetEntry ?: plan.targetEntry
+        if (target != null) {
+            val actualTarget = ManagedDownloadStoredEntryMapper.fromDocumentFile(target)
+                ?: throw ManagedDownloadMigrationException.targetChanged(
+                    "SAF 迁移替换目标无法读取: $displayName"
+                )
+            if (!sameManagedMigrationStoredEntryIdentity(expectedTarget, actualTarget)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "SAF 迁移替换目标文档已发生变化: $displayName"
+                )
+            }
+        }
+        if (existingBackup != null) {
+            val actualBackup = backupEntry
+                ?: throw ManagedDownloadMigrationException.targetChanged(
+                    "SAF 迁移替换备份无法读取: $displayName"
+                )
+            if (!sameManagedMigrationStoredEntryIdentity(plan.targetEntry, actualBackup)) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "SAF 迁移替换备份文档已发生变化: $displayName"
+                )
+            }
+        }
         if (target != null && backupEntry == null) {
             val trustedTarget = StorageReference.SafRef(target.uri).let { reference ->
                 moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef(
@@ -480,6 +711,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 displayName = displayName,
                 input = input,
                 sourceEntry = sourceEntry,
+                expectedTargetEntry = targetEntry,
                 plan = plan,
                 onProgress = onProgress
             )
@@ -627,6 +859,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 mimeType = mimeType,
                 input = input,
                 sourceEntry = sourceEntry,
+                expectedTargetEntry = targetEntry,
                 plan = plan,
                 onProgress = onProgress
             )
@@ -673,6 +906,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 displayName = displayName,
                 input = input,
                 sourceEntry = sourceEntry,
+                expectedTargetEntry = targetEntry,
                 plan = plan,
                 onProgress = onProgress
             )
@@ -735,6 +969,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 mimeType = mimeType,
                 input = input,
                 sourceEntry = sourceEntry,
+                expectedTargetEntry = targetEntry,
                 plan = plan,
                 onProgress = onProgress
             )
@@ -826,6 +1061,181 @@ internal class ManagedDownloadStorageCommitWriter(
         return StoredWriteResult(entry = entry, createdNew = true)
     }
 
+    private fun findMigrationReplacementParents(
+        context: Context,
+        root: ManagedDownloadRootHandle.TreeRoot,
+        subdirectory: String?
+    ): List<DocumentFile> {
+        if (subdirectory.isNullOrBlank()) return listOf(root.tree)
+        return treeDirectories.findSubdirectories(
+            context = context,
+            root = root,
+            desiredName = subdirectory,
+            canonicalLast = false
+        ).mapNotNull { childRoot ->
+            (childRoot as? ManagedDownloadRootHandle.TreeRoot)?.tree
+        }
+    }
+
+}
+
+internal fun sameManagedMigrationStoredEntryIdentity(
+    expected: ManagedDownloadStorage.StoredEntry,
+    actual: ManagedDownloadStorage.StoredEntry
+): Boolean {
+    if (expected.reference.isNotBlank() && expected.reference == actual.reference) return true
+    if (expected.mediaUri.isNotBlank() && expected.mediaUri == actual.mediaUri) return true
+    if (
+        expected.localFilePath?.isNotBlank() == true &&
+        actual.localFilePath?.isNotBlank() == true &&
+        runCatching {
+            File(expected.localFilePath).canonicalFile == File(actual.localFilePath).canonicalFile
+        }.getOrDefault(false)
+    ) {
+        return true
+    }
+    val expectedSafIdentity = sequenceOf(expected.reference, expected.mediaUri)
+        .mapNotNull(::managedMigrationSafIdentity)
+        .toSet()
+    val actualSafIdentity = sequenceOf(actual.reference, actual.mediaUri)
+        .mapNotNull(::managedMigrationSafIdentity)
+        .toSet()
+    return expectedSafIdentity.any(actualSafIdentity::contains)
+}
+
+internal fun sameMigrationReplacementBackupIdentity(
+    expectedTarget: ManagedDownloadStorage.StoredEntry,
+    actualBackup: ManagedDownloadStorage.StoredEntry
+): Boolean {
+    if (sameManagedMigrationStoredEntryIdentity(expectedTarget, actualBackup)) return true
+    if (expectedTarget.isDirectory || actualBackup.isDirectory) return false
+    val expectedPath = expectedTarget.localFilePath
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return false
+    val actualPath = actualBackup.localFilePath
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return false
+    val sameParent = runCatching {
+        File(expectedPath).canonicalFile.parentFile == File(actualPath).canonicalFile.parentFile
+    }.getOrDefault(false)
+    if (!sameParent) return false
+    return expectedTarget.sizeBytes > 0L &&
+        actualBackup.sizeBytes > 0L &&
+        expectedTarget.sizeBytes == actualBackup.sizeBytes &&
+        expectedTarget.lastModifiedMs > 0L &&
+        actualBackup.lastModifiedMs > 0L &&
+        expectedTarget.lastModifiedMs == actualBackup.lastModifiedMs
+}
+
+internal fun isRestoredMigrationReplacementTarget(
+    expectedTarget: ManagedDownloadStorage.StoredEntry,
+    replacementBackup: ManagedDownloadStorage.StoredEntry?,
+    actualTarget: ManagedDownloadStorage.StoredEntry?
+): Boolean {
+    val backup = replacementBackup ?: return false
+    val actual = actualTarget ?: return false
+    if (
+        expectedTarget.isDirectory ||
+        backup.isDirectory ||
+        actual.isDirectory ||
+        actual.name != expectedTarget.name
+    ) {
+        return false
+    }
+    if (sameManagedMigrationStoredEntryIdentity(expectedTarget, actual)) return false
+    val backupIdentity = sameManagedMigrationStoredEntryIdentity(backup, actual)
+    val hasSafReference = sequenceOf(backup.reference, backup.mediaUri, actual.reference, actual.mediaUri)
+        .mapNotNull { value -> value.trim().takeIf(String::isNotBlank) }
+        .any { value -> value.substringBefore(':').equals("content", ignoreCase = true) }
+    if (hasSafReference) {
+        // SAF document IDs are the only stable identity accepted for provider
+        // entries; equal size and timestamp are insufficient
+        return backupIdentity
+    }
+    return backupIdentity || (
+        migrationFingerprintCompatible(backup.sizeBytes, actual.sizeBytes) &&
+            migrationFingerprintCompatible(backup.lastModifiedMs, actual.lastModifiedMs) &&
+            backup.sizeBytes > 0L &&
+            backup.lastModifiedMs > 0L &&
+            actual.sizeBytes > 0L &&
+            actual.lastModifiedMs > 0L
+        )
+}
+
+private fun migrationFingerprintCompatible(expected: Long, actual: Long): Boolean {
+    return expected <= 0L || actual <= 0L || expected == actual
+}
+
+private fun managedMigrationSafIdentity(value: String): String? {
+    val normalized = value.trim().takeIf(String::isNotBlank) ?: return null
+    val uri = runCatching { normalized.toUri() }.getOrNull()
+    if (
+        uri != null &&
+        (!uri.scheme.equals("content", ignoreCase = true) || uri.authority.isNullOrBlank())
+    ) {
+        return null
+    }
+    val authority = uri?.authority ?: rawSafAuthority(normalized) ?: return null
+    val documentId = rawSafDocumentId(normalized)
+        ?: uri?.let { parsed ->
+            runCatching { DocumentsContract.getDocumentId(parsed) }.getOrNull()
+                ?: parsed.pathSegments.documentIdFromSafPath()
+                ?: parsed.pathSegments
+                    .takeIf { segments -> segments.firstOrNull() == "tree" }
+                    ?.let { segments ->
+                        runCatching { DocumentsContract.getTreeDocumentId(parsed) }.getOrNull()
+                            ?: segments.getOrNull(1)
+                    }
+        }
+        ?: return null
+    return authority.lowercase(Locale.ROOT) + "\u0000" + documentId
+}
+
+private fun rawSafAuthority(value: String): String? {
+    val schemeEnd = value.indexOf("://")
+    if (schemeEnd <= 0 || !value.regionMatches(0, "content", 0, schemeEnd, true)) {
+        return null
+    }
+    val authorityStart = schemeEnd + 3
+    val authorityEnd = value.indexOfAny(charArrayOf('/', '?', '#'), authorityStart)
+    return value.substring(
+        authorityStart,
+        if (authorityEnd >= 0) authorityEnd else value.length
+    ).takeIf(String::isNotBlank)
+}
+
+private fun rawSafDocumentId(value: String): String? {
+    val schemeEnd = value.indexOf("://")
+    if (schemeEnd <= 0) return null
+    val pathStart = value.indexOf('/', schemeEnd + 3)
+    if (pathStart < 0) return null
+    val pathEnd = value.indexOfAny(charArrayOf('?', '#'), pathStart)
+        .let { end -> if (end >= 0) end else value.length }
+    val segments = value.substring(pathStart, pathEnd)
+        .split('/')
+        .filter(String::isNotEmpty)
+    return when {
+        segments.size >= 4 && segments[0] == "tree" && segments[2] == "document" -> segments[3]
+        segments.size >= 2 && segments[0] == "document" -> segments[1]
+        segments.size >= 2 && segments[0] == "tree" -> segments[1]
+        else -> null
+    }
+}
+
+private fun List<String>.documentIdFromSafPath(): String? {
+    return when {
+        size >= 4 && this[0] == "tree" && this[2] == "document" -> this[3]
+        size >= 2 && this[0] == "document" -> this[1]
+        else -> null
+    }
+}
+
+private fun isFileEntryInParent(entry: File, parent: File): Boolean {
+    val canonicalParent = runCatching { parent.canonicalFile }.getOrNull() ?: return false
+    val canonicalEntry = runCatching { entry.canonicalFile }.getOrNull() ?: return false
+    return canonicalEntry.parentFile == canonicalParent
 }
 
 internal fun resolveManagedFileSubdirectory(root: File, desiredName: String): File {

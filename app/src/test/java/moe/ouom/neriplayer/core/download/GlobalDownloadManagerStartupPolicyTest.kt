@@ -521,6 +521,20 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `download progress task recovery button invokes the durable resume entry point`() {
+        val screenSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/ui/screen/DownloadProgressScreen.kt"
+        ).readText()
+
+        assertTrue(
+            screenSource.contains(
+                "GlobalDownloadManager.resumeDownloadTask(context, songKey)"
+            )
+        )
+        assertFalse(screenSource.contains("onResume: () -> Unit = {}"))
+    }
+
+    @Test
     fun `legacy download backfill precedes unfinalized startup recovery`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -777,6 +791,37 @@ class GlobalDownloadManagerStartupPolicyTest {
             shouldRunInitialDownloadScan(
                 catalogReady = true,
                 hasRecoveredEntries = true
+            )
+        )
+    }
+
+    @Test
+    fun `legacy upgrade remains visible until a rebuilt catalog is published`() {
+        assertTrue(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.Running(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.Running(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+                )
+            )
+        )
+        assertFalse(
+            GlobalDownloadManager.shouldCompleteProcessingAfterCatalogPublish(
+                ManagedLibraryProcessingState.WaitingForRetry(
+                    operationId = "legacy",
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+                    phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE
+                )
             )
         )
     }

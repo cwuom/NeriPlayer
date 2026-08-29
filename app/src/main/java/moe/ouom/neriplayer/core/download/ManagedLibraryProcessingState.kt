@@ -13,6 +13,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+private const val MANAGED_PROCESSING_STATE_RUNNING = "running"
+
 enum class ManagedLibraryProcessingReason {
     LEGACY_DATABASE_UPGRADE,
     DIRECTORY_CHANGE
@@ -140,6 +142,21 @@ internal object ManagedLibraryProcessingStateMachine {
         }
     }
 
+    fun advancePhase(
+        current: ManagedLibraryProcessingState,
+        operationId: String,
+        phase: ManagedLibraryProcessingPhase
+    ): ManagedLibraryProcessingState {
+        if (current.operationId != operationId || current.phase == phase) {
+            return current
+        }
+        return when (current) {
+            ManagedLibraryProcessingState.Idle -> current
+            is ManagedLibraryProcessingState.Running -> current.copy(phase = phase)
+            is ManagedLibraryProcessingState.WaitingForRetry -> current.copy(phase = phase)
+        }
+    }
+
     fun waitingForRetry(
         current: ManagedLibraryProcessingState,
         operationId: String
@@ -234,7 +251,8 @@ internal fun restoreManagedLibraryProcessingState(
     phaseName: String?,
     processed: Int? = null,
     total: Int? = null,
-    currentItem: String? = null
+    currentItem: String? = null,
+    restoredRunning: Boolean = false
 ): ManagedLibraryProcessingState {
     val restoredOperationId = operationId?.takeIf(String::isNotBlank)
         ?: return ManagedLibraryProcessingState.Idle
@@ -249,14 +267,52 @@ internal fun restoreManagedLibraryProcessingState(
         normalizedTotal?.let(value::coerceAtMost) ?: value
     }
 
-    return ManagedLibraryProcessingState.WaitingForRetry(
-        operationId = restoredOperationId,
-        reason = restoredReason,
-        phase = restoredPhase,
-        processed = normalizedProcessed,
-        total = normalizedTotal,
-        currentItem = currentItem?.trim()?.takeIf(String::isNotBlank)
-    )
+    val currentItemValue = currentItem?.trim()?.takeIf(String::isNotBlank)
+    return if (restoredRunning) {
+        ManagedLibraryProcessingState.Running(
+            operationId = restoredOperationId,
+            reason = restoredReason,
+            phase = restoredPhase,
+            processed = normalizedProcessed,
+            total = normalizedTotal,
+            currentItem = currentItemValue
+        )
+    } else {
+        ManagedLibraryProcessingState.WaitingForRetry(
+            operationId = restoredOperationId,
+            reason = restoredReason,
+            phase = restoredPhase,
+            processed = normalizedProcessed,
+            total = normalizedTotal,
+            currentItem = currentItemValue
+        )
+    }
+}
+
+internal fun describeManagedLibraryProcessingBusy(
+    state: ManagedLibraryProcessingState,
+    requestedReason: ManagedLibraryProcessingReason? = null
+): String? {
+    if (state is ManagedLibraryProcessingState.Idle) return null
+    val operationId = state.operationId?.takeIf(String::isNotBlank) ?: "unknown"
+    val reason = state.reason?.name ?: "unknown"
+    val phase = state.phase?.name ?: "unknown"
+    val relation = when {
+        requestedReason == null -> "active"
+        requestedReason == state.reason -> "same-reason"
+        else -> "different-reason"
+    }
+    return "operationId=$operationId, reason=$reason, phase=$phase, relation=$relation"
+}
+
+internal fun isManagedLibraryProcessingOwnedByCurrentProcess(
+    stateKind: String?,
+    ownerProcessToken: String?,
+    currentProcessToken: String?
+): Boolean {
+    return stateKind == MANAGED_PROCESSING_STATE_RUNNING &&
+        ownerProcessToken?.trim()?.isNotBlank() == true &&
+        ownerProcessToken == currentProcessToken
 }
 
 internal class ManagedLibraryProcessingBusyException(
@@ -271,6 +327,10 @@ object ManagedLibraryProcessingCoordinator {
     private const val KEY_PROCESSED = "processed"
     private const val KEY_TOTAL = "total"
     private const val KEY_CURRENT_ITEM = "current_item"
+    private const val KEY_STATE_KIND = "state_kind"
+    private const val KEY_OWNER_PROCESS_TOKEN = "owner_process_token"
+    private const val STATE_KIND_RUNNING = MANAGED_PROCESSING_STATE_RUNNING
+    private const val STATE_KIND_WAITING = "waiting"
     private const val PROGRESS_PERSIST_INTERVAL_MS = 250L
     private const val PROGRESS_PERSIST_DELTA = 16
 
@@ -282,8 +342,26 @@ object ManagedLibraryProcessingCoordinator {
     private var persistenceContext: Context? = null
     private var lastProgressPersistedAtMs = 0L
     private var lastProgressPersisted: ManagedLibraryProcessingState? = null
+    private val processToken = UUID.randomUUID().toString()
 
     val state: StateFlow<ManagedLibraryProcessingState> = mutableState.asStateFlow()
+
+    /** restores the small persisted state synchronously before the first frame */
+    fun restoreImmediately(context: Context): ManagedLibraryProcessingState {
+        if (!mutex.tryLock()) return mutableState.value
+        return try {
+            persistenceContext = context.applicationContext
+            if (mutableState.value != ManagedLibraryProcessingState.Idle) {
+                return mutableState.value
+            }
+            val restored = readPersistedState(context.applicationContext)
+            mutableState.value = restored
+            resetProgressPersistence(restored)
+            restored
+        } finally {
+            mutex.unlock()
+        }
+    }
 
     suspend fun restore(context: Context): ManagedLibraryProcessingState = mutex.withLock {
         persistenceContext = context.applicationContext
@@ -385,6 +463,24 @@ object ManagedLibraryProcessingCoordinator {
         mutableState.value = next
     }
 
+    /** keeps the same operation visible while the rebuilt catalog is published */
+    suspend fun advancePhase(
+        context: Context,
+        operationId: String,
+        phase: ManagedLibraryProcessingPhase
+    ) = mutex.withLock {
+        val current = mutableState.value
+        val next = ManagedLibraryProcessingStateMachine.advancePhase(
+            current = current,
+            operationId = operationId,
+            phase = phase
+        )
+        if (next == current) return@withLock
+        persist(context.applicationContext, next)
+        mutableState.value = next
+        resetProgressPersistence(next)
+    }
+
     suspend fun waitingForRetry(context: Context, operationId: String) = mutex.withLock {
         val current = mutableState.value
         val next = ManagedLibraryProcessingStateMachine.waitingForRetry(
@@ -426,6 +522,15 @@ object ManagedLibraryProcessingCoordinator {
                 .putString(KEY_OPERATION_ID, state.operationId)
                 .putString(KEY_REASON, state.reason?.name)
                 .putString(KEY_PHASE, state.phase?.name)
+                .putString(
+                    KEY_STATE_KIND,
+                    if (state is ManagedLibraryProcessingState.Running) {
+                        STATE_KIND_RUNNING
+                    } else {
+                        STATE_KIND_WAITING
+                    }
+                )
+                .putString(KEY_OWNER_PROCESS_TOKEN, processToken)
                 .apply {
                     if (processed == null) remove(KEY_PROCESSED)
                     else putInt(KEY_PROCESSED, processed)
@@ -443,13 +548,19 @@ object ManagedLibraryProcessingCoordinator {
 
     private fun readPersistedState(context: Context): ManagedLibraryProcessingState {
         val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+        val restoredRunning = isManagedLibraryProcessingOwnedByCurrentProcess(
+            stateKind = preferences.getString(KEY_STATE_KIND, null),
+            ownerProcessToken = preferences.getString(KEY_OWNER_PROCESS_TOKEN, null),
+            currentProcessToken = processToken
+        )
         return restoreManagedLibraryProcessingState(
             operationId = preferences.getString(KEY_OPERATION_ID, null),
             reasonName = preferences.getString(KEY_REASON, null),
             phaseName = preferences.getString(KEY_PHASE, null),
             processed = preferences.getIntOrNull(KEY_PROCESSED),
             total = preferences.getIntOrNull(KEY_TOTAL),
-            currentItem = preferences.getString(KEY_CURRENT_ITEM, null)
+            currentItem = preferences.getString(KEY_CURRENT_ITEM, null),
+            restoredRunning = restoredRunning
         )
     }
 

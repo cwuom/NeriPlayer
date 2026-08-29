@@ -233,9 +233,84 @@ internal fun shouldRetryMigrationAttempt(
     return maxRetryAttempts > 0 && runAttemptCount in 0 until maxRetryAttempts
 }
 
+internal fun shouldRearmMigrationWorkOnStartup(
+    state: androidx.work.WorkInfo.State,
+    runAttemptCount: Int,
+    retryAttemptOffset: Int,
+    maxRetryAttempts: Int
+): Boolean {
+    // a retrying WorkManager row may retain a long backoff after process death;
+    // a fresh request can safely reuse the durable migration journal instead.
+    // Its historical attempts stay in the durable request so replacement cannot
+    // reset the terminal retry budget.
+    return state == androidx.work.WorkInfo.State.ENQUEUED &&
+        runAttemptCount > 0 &&
+        migrationRetryAttemptCount(retryAttemptOffset, runAttemptCount) < maxRetryAttempts
+}
+
+internal fun migrationRetryAttemptCount(
+    retryAttemptOffset: Int,
+    runAttemptCount: Int
+): Int {
+    return (retryAttemptOffset.coerceAtLeast(0).toLong() +
+        runAttemptCount.coerceAtLeast(0).toLong())
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+}
+
+internal fun shouldAbortSupersededMigrationWorker(
+    persisted: ManagedMigrationRequest?,
+    currentWorkId: String
+): Boolean {
+    val persistedWorkId = persisted?.workId?.trim()?.takeIf(String::isNotBlank)
+        ?: return false
+    val activeWorkId = currentWorkId.trim().takeIf(String::isNotBlank)
+        ?: return false
+    val persistedUuid = runCatching { UUID.fromString(persistedWorkId) }.getOrNull()
+    val activeUuid = runCatching { UUID.fromString(activeWorkId) }.getOrNull()
+    if (
+        persistedWorkId == activeWorkId ||
+        persistedUuid != null && persistedUuid == activeUuid
+    ) {
+        return false
+    }
+    val checkpointWorkId = persisted.checkpointWorkId?.trim()
+        ?.takeIf(String::isNotBlank)
+    val checkpointUuid = checkpointWorkId?.let {
+        runCatching { UUID.fromString(it) }.getOrNull()
+    }
+    if (
+        checkpointWorkId != null &&
+        (checkpointWorkId == activeWorkId ||
+            checkpointUuid != null && checkpointUuid == activeUuid)
+    ) {
+        return true
+    }
+    // every normal enqueue uses the request UUID as the WorkManager id; a
+    // mismatch between two UUIDs therefore identifies a superseded worker
+    return persistedUuid != null && activeUuid != null
+}
+
 internal fun shouldRetryAfterMigrationFinalScan(
     outcome: ManagedLibraryRefreshOutcome
 ): Boolean = outcome !is ManagedLibraryRefreshOutcome.Published
+
+internal fun migrationProgressCheckpointIds(
+    currentWorkId: String,
+    inputCheckpointWorkId: String?,
+    persistedRequest: ManagedMigrationRequest?,
+    persistedJournal: ManagedMigrationReplacementJournal?
+): List<String> {
+    return sequenceOf(
+        currentWorkId,
+        inputCheckpointWorkId,
+        persistedRequest?.checkpointWorkId,
+        persistedRequest?.workId,
+        persistedJournal?.workId
+    ).mapNotNull { value ->
+        value?.trim()?.takeIf(String::isNotBlank)
+    }.distinct().toList()
+}
 
 internal fun mergeMigrationRequestForWorker(
     persisted: ManagedMigrationRequest?,
@@ -364,12 +439,44 @@ class ManagedDownloadMigrationWorker(
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val checkpointStore = ManagedDownloadMigrationCheckpointStore(applicationContext)
         val migrationWorkId = id.toString()
-        val persistedProgress = checkpointStore.readProgress(migrationWorkId)
+        val persistedRequest = runCatching { checkpointStore.readRequest() }.getOrNull()
+        val persistedJournal = runCatching { checkpointStore.readReplacementJournal() }.getOrNull()
+        val persistedProgress = selectMigrationProgressCheckpoint(
+            checkpointIds = migrationProgressCheckpointIds(
+                currentWorkId = migrationWorkId,
+                inputCheckpointWorkId = inputData.getString(KEY_CHECKPOINT_WORK_ID),
+                persistedRequest = persistedRequest,
+                persistedJournal = persistedJournal
+            ),
+            readProgress = checkpointStore::readProgress
+        )
+        val latestRequest = runCatching { checkpointStore.readRequest() }.getOrNull()
+        if (
+            latestRequest != null &&
+            shouldAbortSupersededMigrationWorker(latestRequest, migrationWorkId)
+        ) {
+            NPLogger.i(
+                TAG,
+                "迁移 Worker 在订阅进度前已被新请求替换，跳过旧任务: " +
+                    "workId=$migrationWorkId"
+            )
+            return@withContext Result.success()
+        }
+        if (!ManagedDownloadStorage.beginMigrationProgressSession(
+            ownerWorkId = migrationWorkId,
+            persistedProgress = persistedProgress
+        )) {
+            NPLogger.i(
+                TAG,
+                "迁移进度仍由旧 Worker 持有，等待其释放后重试: " +
+                    "workId=$migrationWorkId"
+            )
+            return@withContext Result.retry()
+        }
         coroutineScope {
-            setForeground(createForegroundInfo())
+            setForeground(createForegroundInfo(persistedProgress))
             persistedProgress?.let { progress ->
                 setProgress(migrationProgressToWorkData(progress))
-                setForeground(createForegroundInfo(progress))
             }
             val progressJob = launch {
                 var workProgressState = MigrationProgressThrottleState()
@@ -377,6 +484,9 @@ class ManagedDownloadMigrationWorker(
                 var durableProgress = persistedProgress
                 ManagedDownloadStorage.migrationProgressFlow.collect { progress ->
                     progress ?: return@collect
+                    if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                        return@collect
+                    }
                     val visibleProgress = mergeMigrationProgressFloor(
                         floor = durableProgress,
                         current = progress
@@ -391,10 +501,11 @@ class ManagedDownloadMigrationWorker(
                             percentDelta = WORK_PROGRESS_PERCENT_DELTA
                         )
                     ) {
-                        durableProgress = checkpointStore.recordProgress(
-                            migrationWorkId,
-                            visibleProgress
-                        )
+                        durableProgress = checkpointStore.recordProgressIfCurrent(
+                            ownerWorkId = migrationWorkId,
+                            workId = migrationWorkId,
+                            progress = visibleProgress
+                        ) ?: return@collect
                         setProgress(migrationProgressToWorkData(durableProgress))
                         workProgressState = updateMigrationProgressThrottleState(
                             durableProgress,
@@ -435,6 +546,7 @@ class ManagedDownloadMigrationWorker(
                 runMigration()
             } finally {
                 progressJob.cancelAndJoin()
+                ManagedDownloadStorage.endMigrationProgressSession(migrationWorkId)
             }
         }
     }
@@ -442,8 +554,19 @@ class ManagedDownloadMigrationWorker(
     private suspend fun runMigration(): Result {
         val migrationWorkId = id.toString()
         val checkpointStore = ManagedDownloadMigrationCheckpointStore(applicationContext)
+        val receiptBatcher = ManagedDownloadMigrationCopyReceiptBatcher { receipts ->
+            checkpointStore.recordCopyReceiptsIfCurrent(
+                ownerWorkId = migrationWorkId,
+                workId = migrationWorkId,
+                receipts = receipts
+            )
+        }
         var processingOperationId: String? = null
         var directoryMutationLease: AutoCloseable? = null
+        var logicalRetryAttemptCount = migrationRetryAttemptCount(
+            retryAttemptOffset = 0,
+            runAttemptCount = runAttemptCount
+        )
         try {
             // write the complete input before opening either root. This closes the
             // crash window between WorkManager dispatch and the first checkpoint
@@ -462,12 +585,35 @@ class ManagedDownloadMigrationWorker(
                 ),
                 checkpointWorkId = inputData.getString(KEY_CHECKPOINT_WORK_ID)
             )
+            val persistedRequestAtStart = checkpointStore.readRequest()
+            if (shouldAbortSupersededMigrationWorker(persistedRequestAtStart, migrationWorkId)) {
+                NPLogger.i(
+                    TAG,
+                    "迁移 Worker 已被新请求替换，跳过旧任务收尾: workId=$migrationWorkId"
+                )
+                return Result.success()
+            }
             val effectiveRequest = mergeMigrationRequestForWorker(
-                persisted = checkpointStore.readRequest(),
+                persisted = persistedRequestAtStart,
                 input = inputRequest,
                 inputKeys = inputData.keyValueMap.keys
             )
-            checkpointStore.recordRequest(effectiveRequest)
+            logicalRetryAttemptCount = migrationRetryAttemptCount(
+                retryAttemptOffset = effectiveRequest.retryAttemptOffset,
+                runAttemptCount = runAttemptCount
+            )
+            if (
+                !checkpointStore.recordRequestIfCurrent(
+                    expectedWorkId = persistedRequestAtStart?.workId,
+                    request = effectiveRequest
+                )
+            ) {
+                NPLogger.i(
+                    TAG,
+                    "迁移请求已在 Worker 启动期间被替换，跳过旧任务: workId=$migrationWorkId"
+                )
+                return Result.success()
+            }
             ManagedLibraryProcessingCoordinator.restore(applicationContext)
             val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
                 context = applicationContext,
@@ -521,12 +667,27 @@ class ManagedDownloadMigrationWorker(
                     }
                 }
             )
-            val persistedProgress = checkpointStore.readProgress(migrationWorkId)
-                ?: if (checkpointWorkId != migrationWorkId) {
-                    checkpointStore.readProgress(checkpointWorkId)
-                } else {
-                    null
+            val persistedCopyReceipts = mergePersistedMigrationCopyReceipts(
+                current = checkpointStore.readCopyReceipts(migrationWorkId),
+                checkpoints = buildList {
+                    if (checkpointWorkId != migrationWorkId) {
+                        add(checkpointStore.readCopyReceipts(checkpointWorkId))
+                    }
+                    activeReplacementJournal?.workId
+                        ?.takeIf(String::isNotBlank)
+                        ?.takeUnless { it == migrationWorkId || it == checkpointWorkId }
+                        ?.let { workId -> add(checkpointStore.readCopyReceipts(workId)) }
                 }
+            )
+            val persistedProgress = selectMigrationProgressCheckpoint(
+                checkpointIds = migrationProgressCheckpointIds(
+                    currentWorkId = migrationWorkId,
+                    inputCheckpointWorkId = inputData.getString(KEY_CHECKPOINT_WORK_ID),
+                    persistedRequest = effectiveRequest,
+                    persistedJournal = activeReplacementJournal
+                ),
+                readProgress = checkpointStore::readProgress
+            )
             persistedProgress?.let { progress ->
                 // keep the last durable stage visible while the replacement worker
                 // reopens the provider and rebuilds its in-memory tracker
@@ -541,6 +702,13 @@ class ManagedDownloadMigrationWorker(
                     context = applicationContext
                 )
             }
+            if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                NPLogger.i(
+                    TAG,
+                    "迁移请求在打开目录前已被替换，跳过旧任务: workId=$migrationWorkId"
+                )
+                return Result.success()
+            }
             val settingsRepository = SettingsRepository(applicationContext)
             val targetPreviouslyCommitted = ManagedDownloadStorage.areEquivalentDirectoryUris(
                 settingsRepository.downloadDirectoryUriFlow.first(),
@@ -554,36 +722,67 @@ class ManagedDownloadMigrationWorker(
                 targetPreviouslyCommitted = targetPreviouslyCommitted,
                 persistedTargetNames = persistedTargetNames,
                 onSourceAudioCountResolved = { resolvedMinimumAudioCount ->
-                    checkpointStore.recordMinimumAudioCount(
+                    checkpointStore.recordMinimumAudioCountIfCurrent(
+                        ownerWorkId = migrationWorkId,
                         workId = migrationWorkId,
                         minimumAudioCount = resolvedMinimumAudioCount
                     )
                 },
                 onTargetNamePlanResolved = { targetNames ->
-                    checkpointStore.recordTargetNames(
+                    checkpointStore.recordTargetNamesIfCurrent(
+                        ownerWorkId = migrationWorkId,
                         workId = migrationWorkId,
                         targetNames = targetNames
                     )
                 },
                 onTargetVerified = {
-                    settingsRepository.setDownloadDirectory(
-                        uri = toDirectoryUri,
-                        label = targetLabel
-                    )
-                    ManagedDownloadStorage.updateConfiguredTreeUri(toDirectoryUri)
-                    ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
+                    if (checkpointStore.isRequestCurrent(migrationWorkId)) {
+                        settingsRepository.setDownloadDirectory(
+                            uri = toDirectoryUri,
+                            label = targetLabel
+                        )
+                        ManagedDownloadStorage.updateConfiguredTreeUri(toDirectoryUri)
+                        ManagedDownloadStorage.updateCustomDirectoryLabel(targetLabel)
+                    }
                 },
                 persistedReplacementJournal = activeReplacementJournal,
                 replacementJournalWorkId = activeReplacementJournal?.workId
                     ?.takeIf(String::isNotBlank)
                     ?: migrationWorkId,
-                onReplacementJournalUpdated = checkpointStore::recordReplacementJournal,
-                persistedProgress = persistedProgress
+                onReplacementJournalUpdated = { journal ->
+                    checkpointStore.recordReplacementJournalIfCurrent(
+                        ownerWorkId = migrationWorkId,
+                        journal = journal
+                    )
+                },
+                persistedProgress = persistedProgress,
+                progressOwnerWorkId = migrationWorkId,
+                persistedCopyReceipts = persistedCopyReceipts,
+                onCopyReceipt = { receipt ->
+                    receiptBatcher.add(receipt)
+                },
+                onCopyReceiptInvalidated = { sourceReference ->
+                    receiptBatcher.invalidate(sourceReference)
+                    checkpointStore.clearCopyReceiptIfCurrent(
+                        ownerWorkId = migrationWorkId,
+                        workId = migrationWorkId,
+                        sourceReference = sourceReference
+                    )
+                },
+                onCopyReceiptsFlush = receiptBatcher::flush
             )
+            if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
+                NPLogger.i(
+                    TAG,
+                    "迁移请求在目录处理期间已被替换，保留新任务继续执行: " +
+                        "workId=$migrationWorkId"
+                )
+                return Result.success()
+            }
             if (!migrationResult.canSwitchDirectory) {
                 val retryCleanup = migrationResult.hasOnlyRetryableCleanupFailures &&
                     shouldRetryMigrationAttempt(
-                        runAttemptCount = runAttemptCount,
+                        runAttemptCount = logicalRetryAttemptCount,
                         maxRetryAttempts = MAX_RETRY_ATTEMPTS
                     )
                 if (retryCleanup) {
@@ -614,7 +813,7 @@ class ManagedDownloadMigrationWorker(
             )
             if (shouldRetryAfterMigrationFinalScan(finalScanOutcome)) {
                 val retryFinalScan = shouldRetryMigrationAttempt(
-                    runAttemptCount = runAttemptCount,
+                    runAttemptCount = logicalRetryAttemptCount,
                     maxRetryAttempts = MAX_RETRY_ATTEMPTS
                 )
                 transitionProcessingState(
@@ -632,7 +831,7 @@ class ManagedDownloadMigrationWorker(
             when (migrationCleanupWorkDecision(migrationResult)) {
                 MigrationCleanupWorkDecision.RETRY -> {
                     val retryCleanup = shouldRetryMigrationAttempt(
-                        runAttemptCount = runAttemptCount,
+                        runAttemptCount = logicalRetryAttemptCount,
                         maxRetryAttempts = MAX_RETRY_ATTEMPTS
                     )
                     transitionProcessingState(
@@ -671,17 +870,33 @@ class ManagedDownloadMigrationWorker(
                 applicationContext,
                 operationId
             )
-            if (releasePreviousPermission && migrationResult.canReleasePreviousPermission) {
-                ManagedDownloadStorage.releasePersistedDirectoryPermission(
-                    applicationContext,
-                    fromDirectoryUri
+            when (
+                val cleared = checkpointStore.clearCompletedAndRunIfCurrent(
+                    ownerWorkId = migrationWorkId,
+                    workIds = listOf(migrationWorkId, checkpointWorkId),
+                    beforeClear = {
+                        if (releasePreviousPermission &&
+                            migrationResult.canReleasePreviousPermission
+                        ) {
+                            ManagedDownloadStorage.releasePersistedDirectoryPermission(
+                                applicationContext,
+                                fromDirectoryUri
+                            )
+                        }
+                    }
                 )
+            ) {
+                null -> {
+                    NPLogger.i(
+                        TAG,
+                        "迁移清理阶段发现请求已被替换，保留新任务凭据: " +
+                            "workId=$migrationWorkId"
+                    )
+                    return Result.success()
+                }
+                false -> error("无法清理已完成的迁移凭据")
+                true -> Unit
             }
-            check(
-                checkpointStore.clearCompleted(
-                    listOf(migrationWorkId, checkpointWorkId)
-                )
-            ) { "无法清理已完成的迁移凭据" }
             return Result.success(
                 workDataOf(
                     KEY_MOVED_FILES to migrationResult.movedFiles,
@@ -705,7 +920,7 @@ class ManagedDownloadMigrationWorker(
         } catch (error: Exception) {
             val retry = shouldRetryMigrationFailure(
                 error = error,
-                runAttemptCount = runAttemptCount,
+                runAttemptCount = logicalRetryAttemptCount,
                 maxRetryAttempts = MAX_RETRY_ATTEMPTS
             )
             processingOperationId?.let { operationId ->
@@ -724,6 +939,16 @@ class ManagedDownloadMigrationWorker(
                 Result.failure(workDataOf(KEY_ERROR_MESSAGE to (error.message ?: "")))
             }
         } finally {
+            withContext(NonCancellable) {
+                runCatching { receiptBatcher.flush() }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "迁移复制凭据最终刷盘失败: ${error.message}",
+                            error
+                        )
+                    }
+            }
             directoryMutationLease?.let { lease ->
                 lease.close()
                 GlobalDownloadManager.recoverPendingDownloadsAfterStorageMutation(
@@ -884,8 +1109,21 @@ class ManagedDownloadMigrationWorker(
                     requested
                 }
                 val workManager = WorkManager.getInstance(appContext)
-                val active = activeMigrationWorkInfo(workManager)
+                val active = activeMigrationWorkInfo(
+                    workManager = workManager,
+                    preferredWorkId = durableRequest.workId,
+                    fallbackWorkId = durableRequest.checkpointWorkId
+                )
                 if (active != null) {
+                    if (shouldReplaceActiveMigrationWork(durableRequest, active.id.toString())) {
+                        checkpointStore.recordRequest(durableRequest)
+                        return@withLock enqueueDurableRequestLocked(
+                            workManager = workManager,
+                            checkpointStore = checkpointStore,
+                            request = durableRequest,
+                            existingWorkPolicy = ExistingWorkPolicy.REPLACE
+                        )
+                    }
                     ensureRequestForActiveWork(
                         checkpointStore = checkpointStore,
                         activeWork = active,
@@ -914,17 +1152,69 @@ class ManagedDownloadMigrationWorker(
                     val appContext = context.applicationContext
                     val checkpointStore = ManagedDownloadMigrationCheckpointStore(appContext)
                     val workManager = WorkManager.getInstance(appContext)
-                    val active = activeMigrationWorkInfo(workManager)
+                    val persisted = checkpointStore.readRequest()
+                    val active = activeMigrationWorkInfo(
+                        workManager = workManager,
+                        preferredWorkId = persisted?.workId,
+                        fallbackWorkId = persisted?.checkpointWorkId
+                    )
                     if (active != null) {
+                        if (shouldReplaceActiveMigrationWork(persisted, active.id.toString())) {
+                            val resumed = persisted!!.copy(
+                                workId = UUID.randomUUID().toString(),
+                                checkpointWorkId = active.id.toString()
+                            )
+                            checkpointStore.recordRequest(resumed)
+                            NPLogger.i(
+                                TAG,
+                                "启动发现新请求与活动迁移不一致，立即替换旧任务: " +
+                                    "old=${active.id}, new=${resumed.workId}"
+                            )
+                            return@withLock enqueueDurableRequestLocked(
+                                workManager = workManager,
+                                checkpointStore = checkpointStore,
+                                request = resumed,
+                                existingWorkPolicy = ExistingWorkPolicy.REPLACE
+                            )
+                        }
+                        if (
+                            persisted?.autoResume == true &&
+                            shouldRearmMigrationWorkOnStartup(
+                                state = active.state,
+                                runAttemptCount = active.runAttemptCount,
+                                retryAttemptOffset = persisted.retryAttemptOffset,
+                                maxRetryAttempts = MAX_RETRY_ATTEMPTS
+                            )
+                        ) {
+                            val resumed = persisted.copy(
+                                workId = UUID.randomUUID().toString(),
+                                checkpointWorkId = active.id.toString(),
+                                retryAttemptOffset = migrationRetryAttemptCount(
+                                    retryAttemptOffset = persisted.retryAttemptOffset,
+                                    runAttemptCount = active.runAttemptCount
+                                )
+                            )
+                            checkpointStore.recordRequest(resumed)
+                            NPLogger.i(
+                                TAG,
+                                "启动立即重置迁移退避任务: " +
+                                    "old=${active.id}, new=${resumed.workId}, " +
+                                    "attempt=${active.runAttemptCount}"
+                            )
+                            return@withLock enqueueDurableRequestLocked(
+                                workManager = workManager,
+                                checkpointStore = checkpointStore,
+                                request = resumed,
+                                existingWorkPolicy = ExistingWorkPolicy.REPLACE
+                            )
+                        }
                         ensureRequestForActiveWork(
                             checkpointStore = checkpointStore,
                             activeWork = active,
-                            fallback = checkpointStore.readRequest()
-                                ?.copy(autoResume = true)
+                            fallback = persisted?.copy(autoResume = true)
                         )
                         return@withLock active.id.toString()
                     }
-                    val persisted = checkpointStore.readRequest()
                     val request = when {
                         persisted?.autoResume == true -> persisted
                         persisted != null -> return@withLock null
@@ -948,8 +1238,7 @@ class ManagedDownloadMigrationWorker(
                     } ?: return@withLock null
                     val resumed = request.copy(
                         workId = UUID.randomUUID().toString(),
-                        checkpointWorkId = request.checkpointWorkId
-                            ?: request.workId
+                        checkpointWorkId = request.workId
                     )
                     checkpointStore.recordRequest(resumed)
                     enqueueDurableRequestLocked(
@@ -975,7 +1264,8 @@ class ManagedDownloadMigrationWorker(
         private fun enqueueDurableRequestLocked(
             workManager: WorkManager,
             checkpointStore: ManagedDownloadMigrationCheckpointStore,
-            request: ManagedMigrationRequest
+            request: ManagedMigrationRequest,
+            existingWorkPolicy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP
         ): String {
             val workRequest = OneTimeWorkRequestBuilder<ManagedDownloadMigrationWorker>()
                 .apply {
@@ -1004,23 +1294,38 @@ class ManagedDownloadMigrationWorker(
                 .build()
             workManager.enqueueUniqueWork(
                 WORK_NAME,
-                ExistingWorkPolicy.KEEP,
+                existingWorkPolicy,
                 workRequest
             ).result.get()
-            val activeAfter = activeMigrationWorkInfo(workManager)
-            if (activeAfter != null && activeAfter.id.toString() != request.workId) {
-                ensureRequestForActiveWork(
-                    checkpointStore = checkpointStore,
-                    activeWork = activeAfter,
-                    fallback = request
+            val activeAfter = activeMigrationWorkInfo(
+                workManager = workManager,
+                preferredWorkId = request.workId,
+                fallbackWorkId = request.checkpointWorkId
+            )
+            if (activeAfter != null && !migrationWorkIdsEqual(
+                    activeAfter.id.toString(),
+                    request.workId
                 )
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "迁移新任务已入队但旧任务仍可见，保留新请求等待 WorkManager 替换: " +
+                        "requested=${request.workId}, active=${activeAfter.id}"
+                )
+                return workRequest.id.toString()
             }
             return activeAfter?.id?.toString() ?: workRequest.id.toString()
         }
 
-        private fun activeMigrationWorkInfo(workManager: WorkManager) =
-            workManager.getWorkInfosForUniqueWork(WORK_NAME).get()
-                .firstOrNull { info -> !info.state.isFinished }
+        private fun activeMigrationWorkInfo(
+            workManager: WorkManager,
+            preferredWorkId: String? = null,
+            fallbackWorkId: String? = null
+        ) = selectActiveMigrationWorkInfo(
+            workInfos = workManager.getWorkInfosForUniqueWork(WORK_NAME).get(),
+            preferredWorkId = preferredWorkId,
+            fallbackWorkId = fallbackWorkId
+        )
 
         private fun ensureRequestForActiveWork(
             checkpointStore: ManagedDownloadMigrationCheckpointStore,

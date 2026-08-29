@@ -56,11 +56,14 @@ import moe.ouom.neriplayer.data.local.media.LocalMetadataSidecar
 import moe.ouom.neriplayer.data.local.media.LocalKnownSidecarReferences
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
 import moe.ouom.neriplayer.data.local.media.NearbyLyricReferences
+import moe.ouom.neriplayer.data.local.media.CoverReferenceValidation
 import moe.ouom.neriplayer.data.local.media.localMediaUri
 import moe.ouom.neriplayer.data.local.media.normalizeLocalAlbumIdentity
 import moe.ouom.neriplayer.data.local.media.preferredLocalMediaReference
 import moe.ouom.neriplayer.data.local.media.isMediaStoreSidecarReference
 import moe.ouom.neriplayer.data.local.media.isMediaStoreUri
+import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
+import moe.ouom.neriplayer.data.local.media.validateCoverReference
 import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -290,6 +293,29 @@ internal fun selectHydratedLocalCoverReference(
         return fallback
     }
     return fallback ?: existing ?: sidecar
+}
+
+internal data class LocalCoverHydrationResult(
+    val song: SongItem,
+    val clearCoverUrl: Boolean = false,
+    val clearOriginalCoverUrl: Boolean = false
+)
+
+/**
+ * a stale SAF reference from the quick scan must not hide a newer detailed cover
+ */
+internal fun selectMergedImportedCoverReference(
+    quickCover: String?,
+    detailedCover: String?
+): String? {
+    val quick = quickCover.normalizeImportedCoverReference()
+    val detailed = detailedCover.normalizeImportedCoverReference()
+    return when {
+        quick == null -> detailed
+        detailed == null -> quick
+        isPotentiallyStaleSafCoverReference(quick) && quick != detailed -> detailed
+        else -> quick
+    }
 }
 
 private fun String?.normalizeImportedCoverReference(): String? {
@@ -2236,9 +2262,10 @@ object LocalAudioImportManager {
             album = normalizeQuickImportedMetadata(detailedSong.album) ?: quickSong.album,
             usesFallbackAlbum = false
         )
-        val resolvedCoverUrl = quickSong.coverUrl
-            ?.takeIf { it.isNotBlank() }
-            ?: detailedSong.coverUrl
+        val resolvedCoverUrl = selectMergedImportedCoverReference(
+            quickCover = quickSong.coverUrl,
+            detailedCover = detailedSong.coverUrl
+        )
         val quickLocalPath = quickSong.localFilePath?.takeIf { it.isNotBlank() }
         val detailedLocalPath = detailedSong.localFilePath?.takeIf { it.isNotBlank() }
         val resolvedLocalPath = quickLocalPath ?: detailedLocalPath
@@ -2271,9 +2298,10 @@ object LocalAudioImportManager {
             originalArtist = normalizeQuickImportedMetadata(quickSong.originalArtist)
                 ?: normalizeQuickImportedMetadata(detailedSong.originalArtist)
                 ?: resolvedArtist,
-            originalCoverUrl = quickSong.originalCoverUrl
-                ?: detailedSong.originalCoverUrl
-                ?: resolvedCoverUrl,
+            originalCoverUrl = selectMergedImportedCoverReference(
+                quickCover = quickSong.originalCoverUrl,
+                detailedCover = detailedSong.originalCoverUrl
+            ) ?: resolvedCoverUrl,
             originalLyric = quickSong.originalLyric ?: detailedSong.originalLyric,
             originalTranslatedLyric = quickSong.originalTranslatedLyric
                 ?: detailedSong.originalTranslatedLyric,
@@ -2656,21 +2684,101 @@ object LocalAudioImportManager {
     fun hydrateLocalSongCoverMetadata(
         context: Context,
         song: SongItem
-    ): SongItem {
+    ): SongItem = hydrateLocalSongCoverMetadataResult(context, song).song
+
+    internal fun hydrateLocalSongCoverMetadataResult(
+        context: Context,
+        song: SongItem
+    ): LocalCoverHydrationResult {
         if (!LocalSongSupport.isLocalSong(song, context)) {
-            return song
+            return LocalCoverHydrationResult(song)
         }
-        if (!song.coverUrl.isNullOrBlank()) {
-            return song
+        val existingCover = song.coverUrl
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val existingCoverValidation = existingCover?.let {
+            validateCoverReference(context, it)
         }
-        val nearbyCover = runCatching {
-            LocalMediaSupport.resolveNearbyCoverUri(context, song)
-                ?: LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
-                ?: LocalMediaSupport.resolveCoverUri(context, song)
-        }.getOrNull()?.takeIf(String::isNotBlank) ?: return song
-        return song.copy(
-            coverUrl = nearbyCover,
-            originalCoverUrl = song.originalCoverUrl ?: nearbyCover
+        val originalCover = song.originalCoverUrl
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val originalCoverValidation = originalCover?.let {
+            validateCoverReference(context, it)
+        }
+        if (existingCoverValidation == CoverReferenceValidation.USABLE) {
+            if (originalCover == null || originalCoverValidation != CoverReferenceValidation.INVALID) {
+                return LocalCoverHydrationResult(song)
+            }
+            return LocalCoverHydrationResult(song.copy(originalCoverUrl = existingCover))
+        }
+        val metadata = runCatching {
+            LocalMediaSupport.readLocalMetadataSidecarFast(
+                context = context,
+                song = song
+            )
+        }.getOrNull()
+        val resolvedCover = sequence<String?> {
+            song.customCoverUrl?.let { yield(it) }
+            metadata?.coverPath?.let { yield(it) }
+            metadata?.customCoverUrl?.let { yield(it) }
+            val managedCover = runCatching {
+                resolveCachedManagedCoverReference(
+                    song = song,
+                    metadata = metadata ?: return@runCatching null
+                )
+            }.getOrNull()
+            if (managedCover != null) yield(managedCover)
+            val nearbyCover = runCatching {
+                LocalMediaSupport.resolveNearbyCoverUri(context, song)
+            }.getOrNull()
+            if (nearbyCover != null) yield(nearbyCover)
+            val mediaStoreCover = runCatching {
+                LocalMediaSupport.peekMediaStoreAlbumArtUri(context, song)
+            }.getOrNull()
+            if (mediaStoreCover != null) yield(mediaStoreCover)
+            val cachedEmbeddedCover = runCatching {
+                LocalMediaSupport.peekCachedEmbeddedCoverUri(context, song)
+            }.getOrNull()
+            if (cachedEmbeddedCover != null) yield(cachedEmbeddedCover)
+            val resolvedLocalCover = runCatching {
+                LocalMediaSupport.resolveCoverUri(context, song)
+            }.getOrNull()
+            if (resolvedLocalCover != null) yield(resolvedLocalCover)
+            metadata?.coverUrl?.let { yield(it) }
+            metadata?.originalCoverUrl?.let { yield(it) }
+            song.originalCoverUrl?.let { yield(it) }
+            }
+            .mapNotNull { candidate -> candidate?.trim()?.takeIf(String::isNotBlank) }
+            .firstOrNull { isUsableCoverReference(context, it) }
+        if (resolvedCover == null) {
+            if (
+                existingCoverValidation != CoverReferenceValidation.INVALID &&
+                originalCoverValidation != CoverReferenceValidation.INVALID
+            ) {
+                return LocalCoverHydrationResult(song)
+            }
+            return LocalCoverHydrationResult(
+                song = song.copy(
+                    coverUrl = existingCover
+                        ?.takeUnless { existingCoverValidation == CoverReferenceValidation.INVALID },
+                    originalCoverUrl = originalCover
+                        ?.takeUnless { originalCoverValidation == CoverReferenceValidation.INVALID }
+                ),
+                clearCoverUrl = existingCoverValidation == CoverReferenceValidation.INVALID,
+                clearOriginalCoverUrl =
+                    originalCoverValidation == CoverReferenceValidation.INVALID
+            )
+        }
+        val resolvedOriginalCover = originalCover
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf { isUsableCoverReference(context, it) }
+            ?: resolvedCover
+        return LocalCoverHydrationResult(
+            song.copy(
+                coverUrl = resolvedCover,
+                originalCoverUrl = resolvedOriginalCover
+            )
         )
     }
 

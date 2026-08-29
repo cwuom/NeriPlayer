@@ -4,7 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
 
 internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     private val preferences: SharedPreferences
@@ -44,21 +46,33 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     // commit is intentional because the process may die before WorkManager enqueue
     @SuppressLint("UseKtx")
     fun recordRequest(request: ManagedMigrationRequest): ManagedMigrationRequest {
-        val normalized = request.normalized()
-        if (normalized.workId.isBlank()) {
-            throw ManagedDownloadMigrationException.transient(
-                "迁移请求缺少任务标识，等待重试"
-            )
+        return synchronized(requestMutationLock) {
+            writeRequestLocked(request)
         }
-        val committed = preferences.edit()
-            .putString(ACTIVE_REQUEST_KEY, encodeRequest(normalized).toString())
-            .commit()
-        if (!committed) {
-            throw ManagedDownloadMigrationException.transient(
-                "无法持久化迁移请求"
-            )
+    }
+
+    /**
+     * writes a request only when the request read by the caller is still
+     * current. This prevents a replaced WorkManager worker from restoring its
+     * old id over the new durable request
+     */
+    @SuppressLint("UseKtx")
+    fun recordRequestIfCurrent(
+        expectedWorkId: String?,
+        request: ManagedMigrationRequest
+    ): Boolean {
+        return synchronized(requestMutationLock) {
+            val current = readRequest()
+            val expected = expectedWorkId?.trim()?.takeIf(String::isNotBlank)
+            if (
+                (expected == null && current != null) ||
+                (expected != null && current?.workId != expected)
+            ) {
+                return@synchronized false
+            }
+            writeRequestLocked(request)
+            true
         }
-        return normalized
     }
 
     /**
@@ -66,19 +80,23 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
      * available for an explicit retry from the settings screen
      */
     fun markRequestTerminal(workId: String): Boolean {
-        val current = readRequest() ?: return false
-        if (current.workId != workId) return false
-        recordRequest(current.copy(autoResume = false))
-        return true
+        return synchronized(requestMutationLock) {
+            val current = readRequest() ?: return@synchronized false
+            if (current.workId != workId) return@synchronized false
+            writeRequestLocked(current.copy(autoResume = false))
+            true
+        }
     }
 
     @SuppressLint("UseKtx")
     fun clearRequest(workId: String? = null): Boolean {
-        if (workId != null) {
-            val current = readRequest()
-            if (current != null && current.workId != workId) return true
+        return synchronized(requestMutationLock) {
+            if (workId != null) {
+                val current = readRequest()
+                if (current != null && current.workId != workId) return@synchronized true
+            }
+            preferences.edit().remove(ACTIVE_REQUEST_KEY).commit()
         }
-        return preferences.edit().remove(ACTIVE_REQUEST_KEY).commit()
     }
 
     /**
@@ -87,33 +105,108 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
      */
     @SuppressLint("UseKtx")
     fun clearCompleted(workIds: Collection<String>): Boolean {
-        val normalizedIds = workIds.map(String::trim).filter(String::isNotBlank).toSet()
-        val currentRequest = readRequest()
-        val currentJournal = readReplacementJournal()
-        val editor = preferences.edit()
-        normalizedIds.forEach { workId ->
-            editor.remove(keyFor(workId))
-            editor.remove(targetNamesKeyFor(workId))
-            editor.remove(progressKeyFor(workId))
+        return synchronized(requestMutationLock) {
+            clearCompletedLocked(workIds)
         }
-        if (
-            currentRequest == null ||
-                currentRequest.workId in normalizedIds ||
-                currentRequest.checkpointWorkId?.let(normalizedIds::contains) == true
-        ) {
-            editor.remove(ACTIVE_REQUEST_KEY)
+    }
+
+    /**
+     * clears migration credentials only while the caller still owns the active request
+     */
+    @SuppressLint("UseKtx")
+    fun clearCompletedIfCurrent(
+        ownerWorkId: String,
+        workIds: Collection<String>
+    ): Boolean? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            clearCompletedLocked(workIds)
         }
-        // 只清理属于本次已验证迁移的替换事务，不能让并发或旧事务的
-        // journal 在另一项迁移完成时被误删
-        if (currentJournal == null || currentJournal.workId in normalizedIds) {
-            editor.remove(ACTIVE_REPLACEMENT_JOURNAL_KEY)
+    }
+
+    /**
+     * performs the final side effect while the completion owner is still held
+     *
+     * A replacement request cannot be committed between the ownership check,
+     * releasing the old tree grant, and clearing the completed checkpoint
+     */
+    @SuppressLint("UseKtx")
+    fun clearCompletedAndRunIfCurrent(
+        ownerWorkId: String,
+        workIds: Collection<String>,
+        beforeClear: () -> Unit
+    ): Boolean? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            beforeClear()
+            clearCompletedLocked(workIds)
         }
-        return editor.commit()
+    }
+
+    @SuppressLint("UseKtx")
+    private fun clearCompletedLocked(workIds: Collection<String>): Boolean {
+        synchronized(copyReceiptMutationLock) {
+            val normalizedIds = workIds.map(String::trim).filter(String::isNotBlank).toSet()
+            val currentRequest = readRequest()
+            val currentJournal = readReplacementJournal()
+            val editor = preferences.edit()
+            normalizedIds.forEach { workId ->
+                editor.remove(keyFor(workId))
+                editor.remove(targetNamesKeyFor(workId))
+                editor.remove(progressKeyFor(workId))
+                copyReceiptKeysFor(workId).forEach(editor::remove)
+                editor.remove(copyReceiptIndexKeyFor(workId))
+            }
+            // only the worker that owns the active request may clear it.
+            // checkpointWorkId deliberately remains addressable for old
+            // progress and receipt cleanup, but is not an ownership token
+            if (currentRequest == null || currentRequest.workId in normalizedIds) {
+                editor.remove(ACTIVE_REQUEST_KEY)
+            }
+            // 只清理属于本次已验证迁移的替换事务，不能让并发或旧事务的
+            // journal 在另一项迁移完成时被误删
+            if (currentJournal == null || currentJournal.workId in normalizedIds) {
+                editor.remove(ACTIVE_REPLACEMENT_JOURNAL_KEY)
+            }
+            return editor.commit()
+        }
+    }
+
+    fun isRequestCurrent(workId: String): Boolean {
+        val normalizedWorkId = workId.trim().takeIf(String::isNotBlank) ?: return false
+        return synchronized(requestMutationLock) {
+            isRequestCurrentLocked(normalizedWorkId)
+        }
+    }
+
+    /**
+     * persists a source count only while this worker still owns the request
+     */
+    @SuppressLint("UseKtx")
+    fun recordMinimumAudioCountIfCurrent(
+        ownerWorkId: String,
+        workId: String,
+        minimumAudioCount: Int
+    ): Int? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            recordMinimumAudioCountLocked(workId, minimumAudioCount)
+        }
     }
 
     // KTX edit discards commit's boolean result, which is required for retry decisions
     @SuppressLint("UseKtx")
     fun recordMinimumAudioCount(workId: String, minimumAudioCount: Int): Int {
+        return synchronized(requestMutationLock) {
+            recordMinimumAudioCountLocked(workId, minimumAudioCount)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun recordMinimumAudioCountLocked(
+        workId: String,
+        minimumAudioCount: Int
+    ): Int {
         val persistedCount = readMinimumAudioCount(workId)
         val resolvedCount = maxOf(persistedCount, minimumAudioCount).coerceAtLeast(0)
         val committed = preferences.edit()
@@ -146,6 +239,28 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
 
     @SuppressLint("UseKtx")
     fun recordTargetNames(workId: String, targetNames: Map<String, String>): Map<String, String> {
+        return synchronized(requestMutationLock) {
+            recordTargetNamesLocked(workId, targetNames)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    fun recordTargetNamesIfCurrent(
+        ownerWorkId: String,
+        workId: String,
+        targetNames: Map<String, String>
+    ): Map<String, String>? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            recordTargetNamesLocked(workId, targetNames)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun recordTargetNamesLocked(
+        workId: String,
+        targetNames: Map<String, String>
+    ): Map<String, String> {
         val payload = JSONObject().apply {
             targetNames.toSortedMap().forEach { (sourceReference, targetName) ->
                 put(sourceReference, targetName)
@@ -184,6 +299,28 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         workId: String,
         progress: ManagedDownloadStorage.MigrationProgress
     ): ManagedDownloadStorage.MigrationProgress {
+        return synchronized(requestMutationLock) {
+            recordProgressLocked(workId, progress)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    fun recordProgressIfCurrent(
+        ownerWorkId: String,
+        workId: String,
+        progress: ManagedDownloadStorage.MigrationProgress
+    ): ManagedDownloadStorage.MigrationProgress? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            recordProgressLocked(workId, progress)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun recordProgressLocked(
+        workId: String,
+        progress: ManagedDownloadStorage.MigrationProgress
+    ): ManagedDownloadStorage.MigrationProgress {
         val normalized = normalizeProgress(progress)
         val durableProgress = mergeMigrationProgressFloor(
             floor = readProgress(workId),
@@ -198,6 +335,178 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             )
         }
         return durableProgress
+    }
+
+    /**
+     * returns copy receipts that survived a process restart
+     */
+    fun readCopyReceipts(workId: String): List<ManagedMigrationCopyReceipt> {
+        val normalizedWorkId = workId.trim()
+        if (normalizedWorkId.isBlank()) return emptyList()
+        val prefix = copyReceiptKeyPrefixFor(normalizedWorkId)
+        return runCatching {
+            val indexedSuffixes = readIndexedCopyReceiptSuffixes(normalizedWorkId)
+            val indexedReceipts = indexedSuffixes?.mapNotNull { suffix ->
+                decodeCopyReceiptAtKey(prefix + suffix)
+            }
+            val receipts = if (
+                indexedSuffixes != null &&
+                    indexedReceipts?.size == indexedSuffixes.size
+            ) {
+                // an empty, valid index is authoritative; scanning all preferences
+                // here would make every completed migration pay a global lookup
+                indexedReceipts.orEmpty()
+            } else {
+                scanCopyReceiptKeys(normalizedWorkId)
+                    .mapNotNull(::decodeCopyReceiptAtKey)
+            }
+            receipts
+                .distinctBy(ManagedMigrationCopyReceipt::sourceReference)
+                .sortedWith(
+                    compareBy<ManagedMigrationCopyReceipt>(
+                        { it.sourceSubdirectory.orEmpty() },
+                        { it.sourceName },
+                        { it.sourceReference }
+                    )
+                )
+                .toList()
+        }.getOrDefault(emptyList())
+    }
+
+    fun readCopyReceipt(workId: String, sourceReference: String): ManagedMigrationCopyReceipt? {
+        val normalizedWorkId = workId.trim()
+        val normalizedReference = sourceReference.trim()
+        if (normalizedWorkId.isBlank() || normalizedReference.isBlank()) return null
+        val raw = runCatching {
+            preferences.getString(
+                copyReceiptKeyFor(normalizedWorkId, normalizedReference),
+                null
+            )
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+        return runCatching { decodeCopyReceipt(JSONObject(raw)) }.getOrNull()
+    }
+
+    @SuppressLint("UseKtx")
+    fun recordCopyReceipt(
+        workId: String,
+        receipt: ManagedMigrationCopyReceipt
+    ): ManagedMigrationCopyReceipt {
+        recordCopyReceipts(workId, listOf(receipt))
+        return receipt
+    }
+
+    /**
+     * commits a bounded batch of receipts with one index rewrite. The receipt
+     * payloads remain individually addressable so an interrupted batch loses
+     * at most the current batch, never an already committed entry
+     */
+    @SuppressLint("UseKtx")
+    fun recordCopyReceipts(
+        workId: String,
+        receipts: Collection<ManagedMigrationCopyReceipt>
+    ): Int {
+        return synchronized(copyReceiptMutationLock) {
+            recordCopyReceiptsLocked(workId, receipts)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    fun recordCopyReceiptsIfCurrent(
+        ownerWorkId: String,
+        workId: String,
+        receipts: Collection<ManagedMigrationCopyReceipt>
+    ): Int? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            synchronized(copyReceiptMutationLock) {
+                recordCopyReceiptsLocked(workId, receipts)
+            }
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun recordCopyReceiptsLocked(
+        workId: String,
+        receipts: Collection<ManagedMigrationCopyReceipt>
+    ): Int {
+        val normalizedWorkId = workId.trim()
+        if (normalizedWorkId.isBlank()) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移复制凭据缺少任务标识，等待重试"
+            )
+        }
+        val normalizedReceipts = linkedMapOf<String, ManagedMigrationCopyReceipt>()
+        receipts.forEach { receipt ->
+            validateCopyReceipt(receipt)
+            val reference = receipt.sourceReference.trim()
+            val previous = normalizedReceipts[reference]
+            if (previous != null && previous != receipt) {
+                throw ManagedDownloadMigrationException.transient(
+                    "迁移复制凭据批次存在不一致: $reference"
+                )
+            }
+            normalizedReceipts[reference] = receipt
+        }
+        if (normalizedReceipts.isEmpty()) return 0
+        val existingSuffixes = reliableCopyReceiptSuffixes(normalizedWorkId)
+        val updatedSuffixes = existingSuffixes.toMutableSet()
+        val editor = preferences.edit()
+        normalizedReceipts.forEach { (sourceReference, receipt) ->
+            editor.putString(
+                copyReceiptKeyFor(normalizedWorkId, sourceReference),
+                encodeCopyReceipt(receipt).toString()
+            )
+            updatedSuffixes += copyReceiptKeySuffixFor(sourceReference)
+        }
+        val committed = editor
+            .putString(
+                copyReceiptIndexKeyFor(normalizedWorkId),
+                encodeCopyReceiptIndex(updatedSuffixes)
+            )
+            .commit()
+        if (!committed) {
+            throw ManagedDownloadMigrationException.transient(
+                "无法持久化迁移复制凭据"
+            )
+        }
+        return normalizedReceipts.size
+    }
+
+    @SuppressLint("UseKtx")
+    fun clearCopyReceipt(workId: String, sourceReference: String): Boolean {
+        return synchronized(copyReceiptMutationLock) {
+            clearCopyReceiptLocked(workId, sourceReference)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    fun clearCopyReceiptIfCurrent(
+        ownerWorkId: String,
+        workId: String,
+        sourceReference: String
+    ): Boolean? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            synchronized(copyReceiptMutationLock) {
+                clearCopyReceiptLocked(workId, sourceReference)
+            }
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun clearCopyReceiptLocked(workId: String, sourceReference: String): Boolean {
+        val normalizedWorkId = workId.trim()
+        val normalizedReference = sourceReference.trim()
+        if (normalizedWorkId.isBlank() || normalizedReference.isBlank()) return true
+        val existingSuffixes = reliableCopyReceiptSuffixes(normalizedWorkId)
+        val updatedSuffixes = existingSuffixes - copyReceiptKeySuffixFor(normalizedReference)
+        return preferences.edit()
+            .remove(copyReceiptKeyFor(normalizedWorkId, normalizedReference))
+            .putString(
+                copyReceiptIndexKeyFor(normalizedWorkId),
+                encodeCopyReceiptIndex(updatedSuffixes)
+            )
+            .commit()
     }
 
     /**
@@ -226,6 +535,26 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     fun recordReplacementJournal(
         journal: ManagedMigrationReplacementJournal
     ): ManagedMigrationReplacementJournal {
+        return synchronized(requestMutationLock) {
+            recordReplacementJournalLocked(journal)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    fun recordReplacementJournalIfCurrent(
+        ownerWorkId: String,
+        journal: ManagedMigrationReplacementJournal
+    ): ManagedMigrationReplacementJournal? {
+        return synchronized(requestMutationLock) {
+            if (!isRequestCurrentLocked(ownerWorkId)) return@synchronized null
+            recordReplacementJournalLocked(journal)
+        }
+    }
+
+    @SuppressLint("UseKtx")
+    private fun recordReplacementJournalLocked(
+        journal: ManagedMigrationReplacementJournal
+    ): ManagedMigrationReplacementJournal {
         val committed = preferences.edit()
             .putString(ACTIVE_REPLACEMENT_JOURNAL_KEY, encodeReplacementJournal(journal).toString())
             .commit()
@@ -237,6 +566,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         return journal
     }
 
+    private fun isRequestCurrentLocked(workId: String): Boolean {
+        val normalizedWorkId = workId.trim().takeIf(String::isNotBlank) ?: return false
+        return readRequest()?.workId == normalizedWorkId
+    }
+
     @SuppressLint("UseKtx")
     fun clearReplacementJournal(): Boolean {
         return preferences.edit().remove(ACTIVE_REPLACEMENT_JOURNAL_KEY).commit()
@@ -244,18 +578,156 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
 
     @SuppressLint("UseKtx")
     fun clear(workId: String): Boolean {
-        return preferences.edit()
-            .remove(keyFor(workId))
-            .remove(targetNamesKeyFor(workId))
-            .remove(progressKeyFor(workId))
-            .commit()
+        return synchronized(copyReceiptMutationLock) {
+            val editor = preferences.edit()
+                .remove(keyFor(workId))
+                .remove(targetNamesKeyFor(workId))
+                .remove(progressKeyFor(workId))
+            copyReceiptKeysFor(workId).forEach(editor::remove)
+            editor.remove(copyReceiptIndexKeyFor(workId))
+            editor.commit()
+        }
     }
 
     private fun keyFor(workId: String): String = "$KEY_PREFIX$workId"
 
+    @SuppressLint("UseKtx")
+    private fun writeRequestLocked(request: ManagedMigrationRequest): ManagedMigrationRequest {
+        val normalized = request.normalized()
+        if (normalized.workId.isBlank()) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移请求缺少任务标识，等待重试"
+            )
+        }
+        val committed = preferences.edit()
+            .putString(ACTIVE_REQUEST_KEY, encodeRequest(normalized).toString())
+            .commit()
+        if (!committed) {
+            throw ManagedDownloadMigrationException.transient(
+                "无法持久化迁移请求"
+            )
+        }
+        return normalized
+    }
+
     private fun targetNamesKeyFor(workId: String): String = "$TARGET_NAMES_KEY_PREFIX$workId"
 
     private fun progressKeyFor(workId: String): String = "$PROGRESS_KEY_PREFIX$workId"
+
+    private fun copyReceiptKeyPrefixFor(workId: String): String {
+        return "$COPY_RECEIPT_KEY_PREFIX$workId:"
+    }
+
+    private fun copyReceiptIndexKeyFor(workId: String): String {
+        return "$COPY_RECEIPT_INDEX_KEY_PREFIX${workId.trim()}"
+    }
+
+    private fun copyReceiptKeyFor(workId: String, sourceReference: String): String {
+        return copyReceiptKeyPrefixFor(workId.trim()) + copyReceiptKeySuffixFor(sourceReference)
+    }
+
+    private fun copyReceiptKeySuffixFor(sourceReference: String): String {
+        return sha256Key(sourceReference.trim())
+    }
+
+    private fun copyReceiptKeysFor(workId: String): Set<String> {
+        val normalizedWorkId = workId.trim()
+        if (normalizedWorkId.isBlank()) return emptySet()
+        val prefix = copyReceiptKeyPrefixFor(normalizedWorkId)
+        val indexedSuffixes = readIndexedCopyReceiptSuffixes(normalizedWorkId)
+        val indexedKeys = indexedSuffixes
+            ?.mapTo(linkedSetOf()) { suffix -> prefix + suffix }
+            .orEmpty()
+        if (
+            indexedSuffixes != null &&
+                indexedKeys.all { key -> preferences.getString(key, null)?.isNotBlank() == true }
+        ) {
+            return indexedKeys
+        }
+        // an absent or incomplete index can only be recovered by the legacy scan
+        return indexedKeys + scanCopyReceiptKeys(normalizedWorkId)
+    }
+
+    private fun decodeCopyReceiptAtKey(key: String): ManagedMigrationCopyReceipt? {
+        return preferences.getString(key, null)
+            ?.takeIf(String::isNotBlank)
+            ?.let { raw ->
+                runCatching { decodeCopyReceipt(JSONObject(raw)) }.getOrNull()
+            }
+    }
+
+    private fun reliableCopyReceiptSuffixes(workId: String): Set<String> {
+        val indexed = readIndexedCopyReceiptSuffixes(workId)
+        if (indexed == null) return scanCopyReceiptSuffixes(workId)
+        if (indexed.isEmpty()) return indexed
+        val prefix = copyReceiptKeyPrefixFor(workId)
+        val indexIsUsable = indexed.all { suffix ->
+            decodeCopyReceiptAtKey(prefix + suffix) != null
+        }
+        return if (indexIsUsable) indexed else scanCopyReceiptSuffixes(workId)
+    }
+
+    private fun scanCopyReceiptKeys(workId: String): Set<String> {
+        val prefix = copyReceiptKeyPrefixFor(workId.trim())
+        return runCatching {
+            preferences.all.keys
+                .filter { key -> key.startsWith(prefix) }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    private fun scanCopyReceiptSuffixes(workId: String): Set<String> {
+        val prefix = copyReceiptKeyPrefixFor(workId.trim())
+        return runCatching {
+            preferences.all.keys
+                .asSequence()
+                .filter { key -> key.startsWith(prefix) }
+                .map { key -> key.removePrefix(prefix) }
+                .filter(::isSha256Digest)
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    /**
+     * returns null for an absent or malformed index so old receipt keys remain
+     * recoverable through the compatibility scan
+     */
+    private fun readIndexedCopyReceiptSuffixes(workId: String): Set<String>? {
+        val raw = runCatching {
+            preferences.getString(copyReceiptIndexKeyFor(workId), null)
+        }.getOrNull()?.takeIf(String::isNotBlank) ?: return null
+        return try {
+            val array = JSONArray(raw)
+            val suffixes = linkedSetOf<String>()
+            for (index in 0 until array.length()) {
+                val suffix = array.opt(index)
+                if (suffix !is String || !isSha256Digest(suffix)) return null
+                suffixes += suffix
+            }
+            suffixes
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun encodeCopyReceiptIndex(suffixes: Collection<String>): String {
+        return JSONArray().apply {
+            suffixes
+                .asSequence()
+                .filter(::isSha256Digest)
+                .distinct()
+                .sorted()
+                .forEach(::put)
+        }.toString()
+    }
+
+    private fun sha256Key(value: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+        return digest.joinToString(separator = "") { byte ->
+            (byte.toInt() and 0xff).toString(16).padStart(2, '0')
+        }
+    }
 
     private fun encodeRequest(request: ManagedMigrationRequest): JSONObject {
         return JSONObject().apply {
@@ -268,6 +740,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("minimumSourceEntryCount", request.minimumSourceEntryCount)
             put("checkpointWorkId", request.checkpointWorkId)
             put("autoResume", request.autoResume)
+            put("retryAttemptOffset", request.retryAttemptOffset.coerceAtLeast(0))
         }
     }
 
@@ -298,7 +771,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                 0
             ).coerceAtLeast(0),
             checkpointWorkId = root.optNullableString("checkpointWorkId"),
-            autoResume = root.optBoolean("autoResume", true)
+            autoResume = root.optBoolean("autoResume", true),
+            retryAttemptOffset = root.optInt("retryAttemptOffset", 0).coerceAtLeast(0)
         ).normalized()
     }
 
@@ -438,6 +912,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             })
             put("cleanupComplete", journal.cleanupComplete)
             put("sourceEntryCount", journal.sourceEntryCount)
+            put("deletedSourceAudioCount", journal.deletedSourceAudioCount.coerceAtLeast(0))
+            put("sourceEntriesComplete", journal.sourceEntriesComplete)
             put("cleanupReceipts", org.json.JSONArray().apply {
                 journal.cleanupReceipts.sortedWith(
                     compareBy<ManagedMigrationCleanupReceipt>(
@@ -487,6 +963,23 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("sizeBytes", entry.sizeBytes)
             put("lastModifiedMs", entry.lastModifiedMs)
             put("isDirectory", entry.isDirectory)
+        }
+    }
+
+    private fun encodeCopyReceipt(receipt: ManagedMigrationCopyReceipt): JSONObject {
+        return JSONObject().apply {
+            put("version", CURRENT_MIGRATION_COPY_RECEIPT_VERSION)
+            put("sourceReference", receipt.sourceReference)
+            put("sourceName", receipt.sourceName)
+            put("sourceSubdirectory", receipt.sourceSubdirectory)
+            put("sourceSizeBytes", receipt.sourceSizeBytes)
+            put("sourceLastModifiedMs", receipt.sourceLastModifiedMs)
+            put("targetEntry", encodeStoredEntry(receipt.targetEntry))
+            put("sourceDigest", receipt.sourceDigest)
+            put("verifiedTargetDigest", receipt.verifiedTargetDigest)
+            put("createdNew", receipt.createdNew)
+            put("sourceAuthoritative", receipt.sourceAuthoritative)
+            put("replacementBackup", receipt.replacementBackup?.let(::encodeStoredEntry))
         }
     }
 
@@ -545,6 +1038,18 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         val targetNames = decodeTargetNames(root.optJSONObject("targetNames"))
         val cleanupReceipts = decodeCleanupReceipts(root.optJSONArray("cleanupReceipts"))
         val sourceEntries = decodeSourceEntries(root.optJSONArray("sourceEntries"))
+        val sourceEntryCount = root.optInt("sourceEntryCount", 0).coerceAtLeast(0)
+        val deletedSourceAudioCount = root.optInt(
+            "deletedSourceAudioCount",
+            0
+        ).coerceAtLeast(0)
+        val sourceEntriesComplete = if (root.has("sourceEntriesComplete")) {
+            root.optBoolean("sourceEntriesComplete", false)
+        } else {
+            // v2 journals written before the explicit marker can still infer
+            // completeness when they contain a non-empty manifest
+            sourceEntryCount > 0 || sourceEntries.isNotEmpty() || deletedSourceAudioCount > 0
+        }
         return ManagedMigrationReplacementJournal(
             version = version,
             workId = workId,
@@ -556,8 +1061,10 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             targetNamesByReference = targetNames,
             cleanupReceipts = cleanupReceipts,
             cleanupComplete = root.optBoolean("cleanupComplete", false),
-            sourceEntryCount = root.optInt("sourceEntryCount", 0).coerceAtLeast(0),
-            sourceEntries = sourceEntries
+            sourceEntryCount = sourceEntryCount,
+            sourceEntries = sourceEntries,
+            deletedSourceAudioCount = deletedSourceAudioCount,
+            sourceEntriesComplete = sourceEntriesComplete
         )
     }
 
@@ -708,6 +1215,76 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         )
     }
 
+    private fun decodeCopyReceipt(root: JSONObject): ManagedMigrationCopyReceipt {
+        if (
+            root.optInt("version", CURRENT_MIGRATION_COPY_RECEIPT_VERSION) !=
+                CURRENT_MIGRATION_COPY_RECEIPT_VERSION
+        ) {
+            throw IllegalArgumentException("迁移复制凭据版本不受支持")
+        }
+        val targetEntry = decodeStoredEntry(root.optJSONObject("targetEntry"))
+            ?: throw IllegalArgumentException("迁移复制凭据缺少目标条目")
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = root.optString("sourceReference").trim(),
+            sourceName = root.optString("sourceName").trim(),
+            sourceSubdirectory = root.optNullableString("sourceSubdirectory"),
+            sourceSizeBytes = root.optLong("sourceSizeBytes", 0L),
+            sourceLastModifiedMs = root.optLong("sourceLastModifiedMs", 0L),
+            targetEntry = targetEntry,
+            sourceDigest = root.optNullableString("sourceDigest"),
+            verifiedTargetDigest = root.optNullableString("verifiedTargetDigest"),
+            createdNew = root.optBoolean("createdNew", false),
+            sourceAuthoritative = root.optBoolean("sourceAuthoritative", false),
+            replacementBackup = decodeStoredEntry(root.optJSONObject("replacementBackup"))
+        )
+        validateCopyReceipt(receipt)
+        return receipt
+    }
+
+    private fun validateCopyReceipt(receipt: ManagedMigrationCopyReceipt) {
+        fun validateStoredEntry(
+            entry: moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
+        ) {
+            if (
+                !isSafeMigrationPlanName(entry.name) ||
+                entry.reference.isBlank() ||
+                entry.mediaUri.isBlank() ||
+                entry.isDirectory ||
+                entry.sizeBytes < 0L ||
+                entry.lastModifiedMs < 0L
+            ) {
+                throw ManagedDownloadMigrationException.transient(
+                    "迁移复制凭据包含无效目标条目: ${entry.name}"
+                )
+            }
+        }
+        if (
+            receipt.sourceReference.isBlank() ||
+            !isSafeMigrationPlanName(receipt.sourceName) ||
+            receipt.sourceSizeBytes < 0L ||
+            receipt.sourceLastModifiedMs < 0L ||
+            receipt.sourceSubdirectory != null &&
+                receipt.sourceSubdirectory !=
+                    moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY &&
+                receipt.sourceSubdirectory !=
+                    moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY ||
+            receipt.sourceDigest?.let(::isSha256Digest) == false
+                || receipt.verifiedTargetDigest?.let(::isSha256Digest) == false
+        ) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移复制凭据包含无效源条目: ${receipt.sourceReference}"
+            )
+        }
+        validateStoredEntry(receipt.targetEntry)
+        receipt.replacementBackup?.let(::validateStoredEntry)
+    }
+
+    private fun isSha256Digest(value: String): Boolean {
+        return value.length == 64 && value.all { character ->
+            character in '0'..'9' || character in 'a'..'f' || character in 'A'..'F'
+        }
+    }
+
     private fun JSONObject.optNullableString(key: String): String? {
         if (!has(key) || isNull(key)) return null
         return optString(key).trim().takeIf(String::isNotBlank)
@@ -718,10 +1295,16 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         internal const val KEY_PREFIX = "minimum_audio_count:"
         internal const val TARGET_NAMES_KEY_PREFIX = "target_names:"
         internal const val PROGRESS_KEY_PREFIX = "progress:"
+        internal const val COPY_RECEIPT_KEY_PREFIX = "copy_receipt:"
+        internal const val COPY_RECEIPT_INDEX_KEY_PREFIX = "copy_receipt_index:"
         internal const val ACTIVE_REQUEST_KEY = "request:active"
         internal const val ACTIVE_REPLACEMENT_JOURNAL_KEY = "replacement_journal:active"
         internal const val CURRENT_MIGRATION_REQUEST_VERSION = 1
         internal const val CURRENT_MIGRATION_PROGRESS_VERSION = 1
+        internal const val CURRENT_MIGRATION_COPY_RECEIPT_VERSION = 1
         internal const val MIN_SUPPORTED_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION = 1
+
+        private val copyReceiptMutationLock = Any()
+        private val requestMutationLock = Any()
     }
 }

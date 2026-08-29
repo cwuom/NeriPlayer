@@ -70,6 +70,7 @@ import moe.ouom.neriplayer.util.network.isFileInsideDirectory
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -362,38 +363,112 @@ internal fun isMediaStoreCoverReference(reference: String): Boolean {
     return normalized.startsWith("content://media/external/audio/albumart/")
 }
 
+internal enum class CoverReferenceValidation {
+    USABLE,
+    INVALID,
+    UNAVAILABLE
+}
+
 /**
  * checks that a local cover reference still points to readable image data
  */
 internal fun isUsableCoverReference(context: Context, reference: String): Boolean {
-    val normalized = reference.trim()
-    if (normalized.isEmpty()) return false
+    return validateCoverReference(context, reference) == CoverReferenceValidation.USABLE
+}
+
+internal fun validateCoverReference(
+    context: Context,
+    reference: String
+): CoverReferenceValidation {
+    val uri = runCatching { reference.trim().toUri() }.getOrNull()
+        ?: return CoverReferenceValidation.INVALID
+    return validateCoverReference(context, uri)
+}
+
+internal fun validateCoverReference(
+    context: Context,
+    uri: Uri
+): CoverReferenceValidation {
+    val normalized = uri.toString().trim()
+    if (normalized.isEmpty()) return CoverReferenceValidation.INVALID
     if (
         normalized.startsWith("http://", ignoreCase = true) ||
         normalized.startsWith("https://", ignoreCase = true)
     ) {
-        return true
+        return CoverReferenceValidation.USABLE
     }
-    val uri = runCatching { normalized.toUri() }.getOrNull() ?: return false
     return when {
         uri.scheme.equals("file", ignoreCase = true) -> {
-            uri.path?.let(::File)?.let(::isUsableCoverFile) == true
-        }
-        uri.scheme.equals("content", ignoreCase = true) -> {
-            if (isMediaStoreCoverReference(normalized)) {
-                runCatching {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
-                }.getOrDefault(false)
+            if (uri.path?.let(::File)?.let(::isUsableCoverFile) == true) {
+                CoverReferenceValidation.USABLE
             } else {
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use(::hasDecodableImage) == true
-                }.getOrDefault(false)
+                CoverReferenceValidation.INVALID
             }
         }
-        uri.scheme.isNullOrBlank() -> {
-            uri.path?.takeIf { it.startsWith("/") }?.let(::File)?.let(::isUsableCoverFile) == true
+        uri.scheme.equals("content", ignoreCase = true) -> {
+            validateContentCoverReference(context, uri)
         }
-        else -> true
+        uri.scheme.isNullOrBlank() -> {
+            if (
+                uri.path?.takeIf { it.startsWith("/") }
+                    ?.let(::File)
+                    ?.let(::isUsableCoverFile) == true
+            ) {
+                CoverReferenceValidation.USABLE
+            } else {
+                CoverReferenceValidation.INVALID
+            }
+        }
+        else -> CoverReferenceValidation.USABLE
+    }
+}
+
+private fun validateContentCoverReference(
+    context: Context,
+    uri: Uri
+): CoverReferenceValidation {
+    return try {
+        val stream = context.contentResolver.openInputStream(uri)
+        if (stream != null) {
+            stream.use { input ->
+                if (hasDecodableImage(input)) {
+                    CoverReferenceValidation.USABLE
+                } else {
+                    CoverReferenceValidation.INVALID
+                }
+            }
+        } else {
+            validateContentCoverDescriptor(context, uri)
+        }
+    } catch (_: SecurityException) {
+        CoverReferenceValidation.UNAVAILABLE
+    } catch (_: FileNotFoundException) {
+        CoverReferenceValidation.INVALID
+    } catch (_: Exception) {
+        validateContentCoverDescriptor(context, uri)
+    }
+}
+
+private fun validateContentCoverDescriptor(
+    context: Context,
+    uri: Uri
+): CoverReferenceValidation {
+    return try {
+        val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+            ?: return CoverReferenceValidation.INVALID
+        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
+            if (hasDecodableImage(input)) {
+                CoverReferenceValidation.USABLE
+            } else {
+                CoverReferenceValidation.INVALID
+            }
+        }
+    } catch (_: SecurityException) {
+        CoverReferenceValidation.UNAVAILABLE
+    } catch (_: FileNotFoundException) {
+        CoverReferenceValidation.INVALID
+    } catch (_: Exception) {
+        CoverReferenceValidation.UNAVAILABLE
     }
 }
 
@@ -3411,19 +3486,12 @@ object LocalMediaSupport {
     }
 
     fun resolveCoverUri(context: Context, song: SongItem): String? {
-        val localUri = song.localMediaUri()
-        if (localUri != null && localUri.scheme.equals("content", ignoreCase = true)) {
-            return resolveCoverUri(context, localUri)
-        }
-        val directFile = song.localFilePath
-            ?.takeIf { it.isNotBlank() && !it.startsWith("content://", ignoreCase = true) }
-            ?.let(::File)
-            ?.takeIf(File::isFile)
-        directFile
-            ?.let { resolveCoverUri(context, Uri.fromFile(it)) }
-            ?.takeIf(String::isNotBlank)
-            ?.let { return it }
-        return localUri?.let { resolveCoverUri(context, it) }
+        return song.localMediaUriCandidates()
+            .asSequence()
+            .mapNotNull { candidate -> resolveCoverUri(context, candidate) }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .firstOrNull { isUsableCoverReference(context, it) }
     }
 
     internal fun resolveCoverReferenceByPriority(
@@ -3537,11 +3605,9 @@ object LocalMediaSupport {
         }
         val cacheKey = source.toString()
         synchronized(mediaStoreAlbumArtCache) {
-            if (mediaStoreAlbumArtCache.containsKey(cacheKey)) {
-                return mediaStoreAlbumArtCache[cacheKey]
-            }
+            mediaStoreAlbumArtCache[cacheKey]?.let { return it }
         }
-        return runCatching {
+        val coverUri = runCatching {
             context.contentResolver.query(
                 source,
                 arrayOf(MediaStore.Audio.Media.ALBUM_ID),
@@ -3558,11 +3624,13 @@ object LocalMediaSupport {
             }
         }.onFailure {
             NPLogger.d(TAG, "MediaStore album art hint unavailable for $source: ${it.message}")
-        }.getOrNull().also { coverUri ->
+        }.getOrNull()?.takeIf { isUsableCoverReference(context, it) }
+        if (coverUri != null) {
             synchronized(mediaStoreAlbumArtCache) {
                 mediaStoreAlbumArtCache[cacheKey] = coverUri
             }
         }
+        return coverUri
     }
 
     fun mediaStoreAlbumArtUri(albumId: Long): String {
@@ -6414,10 +6482,14 @@ object LocalMediaSupport {
 
     private fun findCachedEmbeddedCover(context: Context, uriKey: String): String? {
         val file = embeddedCoverFile(context, uriKey)
-        return file
-            .takeIf { it.isFile && it.length() > 0L }
-            ?.toURI()
-            ?.toString()
+        if (!file.isFile || file.length() <= 0L) return null
+        if (!isUsableCoverFile(file)) {
+            if (!file.delete()) {
+                NPLogger.w(TAG, "remove invalid embedded cover cache failed: ${file.name}")
+            }
+            return null
+        }
+        return file.toURI().toString()
     }
 
     private fun embeddedCoverFile(context: Context, uriKey: String): File {
@@ -6429,7 +6501,12 @@ object LocalMediaSupport {
         if (embeddedPicture == null || embeddedPicture.isEmpty()) return null
         val file = embeddedCoverFile(context, uriKey)
         if (file.isFile && file.length() > 0L) {
-            return file.toURI().toString()
+            if (isUsableCoverFile(file)) {
+                return file.toURI().toString()
+            }
+            if (!file.delete()) {
+                NPLogger.w(TAG, "replace invalid embedded cover cache failed: ${file.name}")
+            }
         }
         val parent = file.parentFile ?: return null
         if (!parent.isDirectory && !parent.mkdirs()) {
@@ -6447,7 +6524,11 @@ object LocalMediaSupport {
     }
 
     private fun compactEmbeddedCoverForCache(sourceBytes: ByteArray): ByteArray? {
-        if (sourceBytes.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) return sourceBytes
+        if (sourceBytes.size <= MAX_EMBEDDED_COVER_CACHE_BYTES) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)
+            return sourceBytes.takeIf { bounds.outWidth > 0 && bounds.outHeight > 0 }
+        }
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(sourceBytes, 0, sourceBytes.size, bounds)

@@ -181,10 +181,22 @@ internal object LegacyJsonCleanupScheduler {
                         processed = processed,
                         total = total
                     )
-                }
-                    .also { result ->
+                }.also { result ->
                         if (result.isComplete) {
-                            ManagedLibraryProcessingCoordinator.complete(appContext, operationId)
+                            if (result.rowsCompleted > 0) {
+                                // database rows are durable now, but the visible
+                                // catalog still needs one complete SAF rebuild
+                                ManagedLibraryProcessingCoordinator.advancePhase(
+                                    context = appContext,
+                                    operationId = operationId,
+                                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                                )
+                            } else {
+                                ManagedLibraryProcessingCoordinator.complete(
+                                    appContext,
+                                    operationId
+                                )
+                            }
                         } else {
                             ManagedLibraryProcessingCoordinator.waitingForRetry(
                                 appContext,

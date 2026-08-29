@@ -108,9 +108,23 @@ private fun StorageReference.SafRef.documentIdentity(): String? {
     val authority = uri.authority?.lowercase(Locale.ROOT)?.takeIf(String::isNotBlank)
         ?: return null
     val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-        ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+        ?: uri.pathSegments.documentIdFromSafPath()
+        ?: uri.pathSegments
+            .takeIf { segments -> segments.firstOrNull() == "tree" }
+            ?.let { segments ->
+                runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
+                    ?: segments.getOrNull(1)
+            }
         ?: return null
     return "$authority\u0000$documentId"
+}
+
+private fun List<String>.documentIdFromSafPath(): String? {
+    return when {
+        size >= 4 && this[0] == "tree" && this[2] == "document" -> this[3]
+        size >= 2 && this[0] == "document" -> this[1]
+        else -> null
+    }
 }
 
 internal class ManagedDownloadMigrationFinalizer(
@@ -186,9 +200,26 @@ internal class ManagedDownloadMigrationFinalizer(
                 if (!ManagedDownloadTreeNaming.isMetadataName(copied.original.entry.name)) {
                     return@mapIndexedNotNull null
                 }
-                async(Dispatchers.IO) {
-                    index to rewriteLimiter.withPermit {
-                        rewriteMetadataEntry(context, targetRoot, copied, referenceMap, progressTracker)
+                if (copied.verifiedTargetDigest?.isNotBlank() == true) {
+                    async(Dispatchers.IO) {
+                        progressTracker?.startRewrite(copied.copiedEntry.name)
+                        progressTracker?.finishRewrite(copied.copiedEntry.name)
+                        index to MetadataRewriteOutcome(
+                            copied = copied,
+                            failed = false
+                        )
+                    }
+                } else {
+                    async(Dispatchers.IO) {
+                        index to rewriteLimiter.withPermit {
+                            rewriteMetadataEntry(
+                                context,
+                                targetRoot,
+                                copied,
+                                referenceMap,
+                                progressTracker
+                            )
+                        }
                     }
                 }
             }
@@ -210,13 +241,15 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         targetRoot: ManagedDownloadRootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
-        progressTracker: ManagedMigrationProgressReporter? = null
+        progressTracker: ManagedMigrationProgressReporter? = null,
+        onEntryVerified: suspend (CopiedMigrationEntry) -> Unit = {}
     ): Int {
         return verifyMigratedEntriesDetailed(
             context = context,
             targetRoot = targetRoot,
             copiedEntries = copiedEntries,
-            progressTracker = progressTracker
+            progressTracker = progressTracker,
+            onEntryVerified = onEntryVerified
         ).failedFiles
     }
 
@@ -224,7 +257,8 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         targetRoot: ManagedDownloadRootHandle,
         copiedEntries: List<CopiedMigrationEntry>,
-        progressTracker: ManagedMigrationProgressReporter? = null
+        progressTracker: ManagedMigrationProgressReporter? = null,
+        onEntryVerified: suspend (CopiedMigrationEntry) -> Unit = {}
     ): ManagedMigrationVerificationResult = coroutineScope {
         if (copiedEntries.isEmpty()) {
             return@coroutineScope ManagedMigrationVerificationResult(failedFiles = 0)
@@ -249,10 +283,19 @@ internal class ManagedDownloadMigrationFinalizer(
                                 )
                             }
                         )
-                        val outcome = if (verification.verified) {
+                        val verifiedEntry = if (verification.verified) {
+                            migrationEntry.copy(
+                                verifiedTargetDigest = verification.targetDigest
+                                    ?: migrationEntry.verifiedTargetDigest
+                            )
+                        } else {
+                            null
+                        }
+                        val outcome = if (verifiedEntry != null) {
+                            onEntryVerified(verifiedEntry)
                             VerificationOutcome(
                                 failed = false,
-                                targetDigest = verification.targetDigest
+                                targetDigest = verifiedEntry.verifiedTargetDigest
                             )
                         } else {
                             NPLogger.w(
@@ -691,6 +734,17 @@ internal class ManagedDownloadMigrationFinalizer(
                 return MetadataRewriteOutcome(copied = copied, failed = false)
             }
             if (
+                copied.reusedFromReceipt &&
+                rewriteInput.targetMetadata != rewriteInput.sourceMetadata
+            ) {
+                NPLogger.w(
+                    tag,
+                    "拒绝覆盖已恢复但内容发生变化的迁移 metadata: " +
+                        copied.copiedEntry.reference
+                )
+                return MetadataRewriteOutcome(copied = copied, failed = true)
+            }
+            if (
                 !copied.createdNew &&
                 !copied.sourceAuthoritative &&
                 rewriteInput.targetMetadata != rewriteInput.sourceMetadata
@@ -799,11 +853,15 @@ internal class ManagedDownloadMigrationFinalizer(
     ): MigrationVerificationEvidence {
         val sourceEntry = migrationEntry.original.entry
         if (ManagedDownloadTreeNaming.isMetadataName(sourceEntry.name)) {
+            val metadata = readEquivalentMigratedMetadata(
+                context = context,
+                migrationEntry = migrationEntry,
+                referenceMap = referenceMap
+            ) ?: return MigrationVerificationEvidence(verified = false)
             return MigrationVerificationEvidence(
-                verified = hasEquivalentMigratedMetadata(
-                    context = context,
-                    migrationEntry = migrationEntry,
-                    referenceMap = referenceMap
+                verified = true,
+                targetDigest = sha256MigrationContent(
+                    java.io.ByteArrayInputStream(metadata.target.toByteArray(Charsets.UTF_8))
                 )
             )
         }
@@ -829,21 +887,29 @@ internal class ManagedDownloadMigrationFinalizer(
         )
     }
 
-    private fun hasEquivalentMigratedMetadata(
+    private data class EquivalentMigratedMetadata(
+        val target: String
+    )
+
+    private fun readEquivalentMigratedMetadata(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         referenceMap: Map<String, String>
-    ): Boolean {
+    ): EquivalentMigratedMetadata? {
         return try {
             val sourceMetadata = readText(context, migrationEntry.original.entry.reference)
-                ?: return false
+                ?: return null
             val targetMetadata = readText(context, migrationEntry.copiedEntry.reference)
-                ?: return false
+                ?: return null
             val expectedTargetMetadata = rewriteMetadataReferences(sourceMetadata, referenceMap)
-            areEquivalentJsonValues(
+            if (!areEquivalentJsonValues(
                 JSONObject(expectedTargetMetadata),
                 JSONObject(targetMetadata)
-            )
+            )) {
+                null
+            } else {
+                EquivalentMigratedMetadata(target = targetMetadata)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -855,7 +921,7 @@ internal class ManagedDownloadMigrationFinalizer(
                 message = "迁移 metadata 校验暂时失败: ${migrationEntry.original.entry.name}",
                 error = error
             )?.let { migrationError -> throw migrationError }
-            false
+            null
         }
     }
 
@@ -1038,6 +1104,9 @@ internal class ManagedDownloadMigrationFinalizer(
         migrationEntry: CopiedMigrationEntry,
         targetRoot: ManagedDownloadRootHandle
     ): Int {
+        if (migrationEntry.reusedFromReceipt) {
+            return 0
+        }
         if (!migrationEntry.createdNew && migrationEntry.replacementBackup == null) {
             return 0
         }

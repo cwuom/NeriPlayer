@@ -12,8 +12,40 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
+import java.util.UUID
 
 class ManagedDownloadMigrationWorkerProgressPolicyTest {
+    @Test
+    fun `progress session rejects stale owner cleanup and publishes only current owner`() {
+        val session = ManagedDownloadMigrationProgressSession()
+        val oldProgress = progress(stage = ManagedDownloadStorage.MigrationStage.FINALIZING)
+        val newProgress = progress(stage = ManagedDownloadStorage.MigrationStage.PREPARING)
+
+        assertTrue(session.tryClaim("old-work", oldProgress))
+        assertFalse(session.tryClaim("new-work", newProgress))
+        assertTrue(session.finish("old-work"))
+        assertTrue(session.tryClaim("new-work", newProgress))
+
+        assertFalse(session.publish("old-work", oldProgress))
+        assertEquals(newProgress, session.flow.value)
+        assertTrue(session.publish("new-work", newProgress.copy(currentFileName = "next")))
+        assertEquals("next", session.flow.value?.currentFileName)
+        assertTrue(session.finish("new-work"))
+        assertNull(session.flow.value)
+    }
+
+    @Test
+    fun `legacy progress restoration cannot overwrite an active worker session`() {
+        val session = ManagedDownloadMigrationProgressSession()
+        val progress = progress(stage = ManagedDownloadStorage.MigrationStage.COPYING)
+
+        assertTrue(session.tryClaim("active-work", progress))
+        assertFalse(session.restoreIfIdle(progress.copy(currentFileName = "stale")))
+        assertEquals(null, session.flow.value?.currentFileName)
+    }
+
     @Test
     fun `shared processing uses cleanup counter while deleting verified files`() {
         val progress = ManagedDownloadStorage.MigrationProgress(
@@ -32,6 +64,23 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(
             MigrationSharedProgress(processed = 37, total = 2_301),
             migrationProgressForSharedProcessing(progress)
+        )
+    }
+
+    private fun progress(
+        stage: ManagedDownloadStorage.MigrationStage
+    ): ManagedDownloadStorage.MigrationProgress {
+        return ManagedDownloadStorage.MigrationProgress(
+            stage = stage,
+            totalFiles = 2,
+            processedFiles = if (stage == ManagedDownloadStorage.MigrationStage.FINALIZING) 2 else 0,
+            copiedFiles = if (stage == ManagedDownloadStorage.MigrationStage.FINALIZING) 2 else 0,
+            copiedBytes = 2L,
+            totalBytes = 2L,
+            metadataFilesProcessed = 0,
+            metadataFilesTotal = 0,
+            cleanupFilesProcessed = 0,
+            cleanupFilesTotal = 0
         )
     }
 
@@ -108,6 +157,32 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         )
 
         assertFalse(shouldBlockStartupForMigrationRecovery(request, journal))
+    }
+
+    @Test
+    fun `complete empty source manifest is known after restart`() {
+        val journal = ManagedMigrationReplacementJournal(
+            workId = "empty-source",
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.PLANNED,
+            replacements = emptyList(),
+            sourceEntryCount = 0,
+            sourceEntries = emptyList(),
+            sourceEntriesComplete = true
+        )
+
+        assertTrue(journal.sourceEntryCountKnown)
+        assertTrue(
+            shouldRetryActiveMigrationJournal(
+                phase = journal.phase,
+                sourceRootAvailable = true,
+                sourceEntriesEmpty = true,
+                cleanupReceiptComplete = true,
+                sourceEntryCountKnown = journal.sourceEntryCountKnown
+            ).not()
+        )
     }
 
     @Test
@@ -201,6 +276,82 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
+    fun `restart checks the old checkpoint before waiting for migration work`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://target/root",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1,
+            checkpointWorkId = "old-work"
+        )
+        val journal = ManagedMigrationReplacementJournal(
+            workId = "journal-work",
+            fromDirectoryUri = persisted.fromDirectoryUri,
+            toDirectoryUri = persisted.toDirectoryUri,
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+            replacements = emptyList()
+        )
+
+        assertEquals(
+            listOf("new-work", "input-work", "old-work", "journal-work"),
+            migrationProgressCheckpointIds(
+                currentWorkId = "new-work",
+                inputCheckpointWorkId = "input-work",
+                persistedRequest = persisted,
+                persistedJournal = journal
+            )
+        )
+    }
+
+    @Test
+    fun `restart keeps the furthest durable checkpoint when a new work id is stale`() {
+        val stale = ManagedDownloadStorage.MigrationProgress(
+            stage = ManagedDownloadStorage.MigrationStage.COPYING,
+            totalFiles = 10,
+            processedFiles = 3,
+            copiedFiles = 3,
+            copiedBytes = 30L,
+            totalBytes = 100L,
+            metadataFilesProcessed = 0,
+            metadataFilesTotal = 0,
+            cleanupFilesProcessed = 0,
+            cleanupFilesTotal = 0
+        )
+        val durable = ManagedDownloadStorage.MigrationProgress(
+            stage = ManagedDownloadStorage.MigrationStage.VERIFYING,
+            totalFiles = 10,
+            processedFiles = 10,
+            copiedFiles = 10,
+            copiedBytes = 100L,
+            totalBytes = 100L,
+            metadataFilesProcessed = 0,
+            metadataFilesTotal = 0,
+            cleanupFilesProcessed = 0,
+            cleanupFilesTotal = 0,
+            verificationFilesProcessed = 2,
+            verificationFilesTotal = 10,
+            verifiedBytes = 20L,
+            verificationBytesTotal = 100L
+        )
+
+        val selected = selectMigrationProgressCheckpoint(
+            checkpointIds = listOf("new-work", "old-work"),
+            readProgress = { checkpointId ->
+                when (checkpointId) {
+                    "new-work" -> stale
+                    "old-work" -> durable
+                    else -> null
+                }
+            }
+        )
+
+        assertEquals(durable, selected)
+    }
+
+    @Test
     fun `worker rejects a durable request that points at a different root`() {
         val persisted = ManagedMigrationRequest(
             workId = "old-work",
@@ -279,6 +430,215 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 2, maxRetryAttempts = 2))
         assertFalse(shouldRetryMigrationAttempt(runAttemptCount = -1, maxRetryAttempts = 2))
         assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 0, maxRetryAttempts = 0))
+    }
+
+    @Test
+    fun `startup rearms only while the durable retry budget remains`() {
+        assertTrue(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 1,
+                retryAttemptOffset = 0,
+                maxRetryAttempts = 2
+            )
+        )
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 0,
+                retryAttemptOffset = 0,
+                maxRetryAttempts = 2
+            )
+        )
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.RUNNING,
+                runAttemptCount = 2,
+                retryAttemptOffset = 0,
+                maxRetryAttempts = 2
+            )
+        )
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 1,
+                retryAttemptOffset = 1,
+                maxRetryAttempts = 2
+            )
+        )
+    }
+
+    @Test
+    fun `startup replacement retains consumed retry attempts`() {
+        assertEquals(1, migrationRetryAttemptCount(0, 1))
+        assertEquals(2, migrationRetryAttemptCount(1, 1))
+        assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 1, maxRetryAttempts = 2))
+        assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 2, maxRetryAttempts = 2))
+    }
+
+    @Test
+    fun `replaced worker is identified by the new request checkpoint`() {
+        val oldWorkId = "11111111-1111-1111-1111-111111111111"
+        val newWorkId = "22222222-2222-2222-2222-222222222222"
+        val persisted = ManagedMigrationRequest(
+            workId = newWorkId,
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0,
+            checkpointWorkId = oldWorkId
+        )
+
+        assertTrue(shouldAbortSupersededMigrationWorker(persisted, oldWorkId))
+        assertFalse(shouldAbortSupersededMigrationWorker(persisted, newWorkId))
+        assertTrue(
+            shouldAbortSupersededMigrationWorker(
+                persisted.copy(checkpointWorkId = "first-work"),
+                "33333333-3333-3333-3333-333333333333"
+            )
+        )
+        assertFalse(
+            shouldAbortSupersededMigrationWorker(
+                persisted.copy(checkpointWorkId = "other-work"),
+                "legacy-work"
+            )
+        )
+        assertFalse(
+            shouldAbortSupersededMigrationWorker(
+                persisted.copy(workId = newWorkId.uppercase()),
+                newWorkId.lowercase()
+            )
+        )
+    }
+
+    @Test
+    fun `active work selection prefers the durable request id`() {
+        val old = mock(androidx.work.WorkInfo::class.java)
+        val current = mock(androidx.work.WorkInfo::class.java)
+        val oldId = UUID.fromString("11111111-1111-1111-1111-111111111111")
+        val currentId = UUID.fromString("22222222-2222-2222-2222-222222222222")
+        `when`(old.id).thenReturn(oldId)
+        `when`(current.id).thenReturn(currentId)
+        `when`(old.state).thenReturn(androidx.work.WorkInfo.State.RUNNING)
+        `when`(current.state).thenReturn(androidx.work.WorkInfo.State.ENQUEUED)
+
+        assertEquals(
+            current,
+            selectActiveMigrationWorkInfo(listOf(old, current), currentId.toString())
+        )
+    }
+
+    @Test
+    fun `active work selection matches a durable UUID without case or whitespace`() {
+        val current = mock(androidx.work.WorkInfo::class.java)
+        val currentId = UUID.fromString("22222222-2222-2222-2222-222222222222")
+        `when`(current.id).thenReturn(currentId)
+        `when`(current.state).thenReturn(androidx.work.WorkInfo.State.ENQUEUED)
+
+        assertEquals(
+            current,
+            selectActiveMigrationWorkInfo(
+                workInfos = listOf(current),
+                preferredWorkId = "  ${currentId.toString().uppercase()}  "
+            )
+        )
+        assertTrue(migrationWorkIdsEqual(currentId.toString(), currentId.toString().uppercase()))
+        assertTrue(migrationWorkIdsEqual(" Legacy-Work ", "legacy-work"))
+        assertFalse(migrationWorkIdsEqual(" ", currentId.toString()))
+    }
+
+    @Test
+    fun `active work selection falls back to the old checkpoint when the request is missing`() {
+        val old = mock(androidx.work.WorkInfo::class.java)
+        val oldId = UUID.fromString("11111111-1111-1111-1111-111111111111")
+        `when`(old.id).thenReturn(oldId)
+        `when`(old.state).thenReturn(androidx.work.WorkInfo.State.RUNNING)
+
+        assertEquals(
+            old,
+            selectActiveMigrationWorkInfo(
+                workInfos = listOf(old),
+                preferredWorkId = "22222222-2222-2222-2222-222222222222",
+                fallbackWorkId = "  ${oldId.toString().uppercase()}"
+            )
+        )
+    }
+
+    @Test
+    fun `active work selection is independent of WorkManager row order`() {
+        val first = mock(androidx.work.WorkInfo::class.java)
+        val second = mock(androidx.work.WorkInfo::class.java)
+        val blocked = mock(androidx.work.WorkInfo::class.java)
+        `when`(first.id).thenReturn(UUID.fromString("11111111-1111-1111-1111-111111111111"))
+        `when`(second.id).thenReturn(UUID.fromString("22222222-2222-2222-2222-222222222222"))
+        `when`(blocked.id).thenReturn(UUID.fromString("33333333-3333-3333-3333-333333333333"))
+        `when`(first.state).thenReturn(androidx.work.WorkInfo.State.ENQUEUED)
+        `when`(second.state).thenReturn(androidx.work.WorkInfo.State.ENQUEUED)
+        `when`(blocked.state).thenReturn(androidx.work.WorkInfo.State.BLOCKED)
+
+        assertEquals(
+            first,
+            selectActiveMigrationWorkInfo(listOf(blocked, second, first))
+        )
+        assertEquals(
+            first,
+            selectActiveMigrationWorkInfo(listOf(first, blocked, second))
+        )
+    }
+
+    @Test
+    fun `committed receipt audio count ignores metadata and sidecars`() {
+        val target = ManagedDownloadStorage.StoredEntry(
+            name = "track.mp3",
+            reference = "content://target/track",
+            mediaUri = "content://target/track",
+            localFilePath = null,
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+        val journal = ManagedMigrationReplacementJournal(
+            workId = "receipt-count",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            backupNamespace = "migration",
+            phase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+            replacements = emptyList(),
+            cleanupReceipts = listOf(
+                ManagedMigrationCleanupReceipt(
+                    sourceReference = "content://source/audio",
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    targetEntry = target,
+                    targetDigest = "a".repeat(64)
+                ),
+                ManagedMigrationCleanupReceipt(
+                    sourceReference = "content://source/metadata",
+                    sourceName = "track.mp3.npmeta.json",
+                    sourceSubdirectory = null,
+                    targetEntry = target.copy(name = "track.mp3.npmeta.json"),
+                    targetDigest = "b".repeat(64)
+                ),
+                ManagedMigrationCleanupReceipt(
+                    sourceReference = "content://source/cover",
+                    sourceName = "cover.jpg",
+                    sourceSubdirectory = "Covers",
+                    targetEntry = target.copy(name = "cover.jpg"),
+                    targetDigest = "c".repeat(64)
+                )
+            )
+        )
+
+        assertEquals(1, committedMigrationAudioReceiptCount(journal))
+        assertTrue(committedMigrationReceiptsMeetAudioMinimum(journal, 1))
+        assertFalse(committedMigrationReceiptsMeetAudioMinimum(journal, 2))
+    }
+
+    @Test
+    fun `target digest fingerprint fast path requires stable size and timestamp`() {
+        assertTrue(canReuseMigrationTargetDigest(10L, 10L, 20L, 20L))
+        assertFalse(canReuseMigrationTargetDigest(10L, 11L, 20L, 20L))
+        assertFalse(canReuseMigrationTargetDigest(10L, 10L, 0L, 20L))
     }
 
     @Test
@@ -458,6 +818,13 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(7, resolveMinimumMigrationAudioCount(0, 7))
         assertEquals(9, resolveMinimumMigrationAudioCount(9, 7))
         assertEquals(0, resolveMinimumMigrationAudioCount(-1, -1))
+    }
+
+    @Test
+    fun `confirmed source deletion lowers the persisted audio minimum`() {
+        assertEquals(8, resolveMinimumMigrationAudioCount(9, 7, 1))
+        assertEquals(0, resolveMinimumMigrationAudioCount(9, 7, 12))
+        assertEquals(9, resolveMinimumMigrationAudioCount(9, 7, -1))
     }
 
     @Test

@@ -71,6 +71,24 @@ internal data class ManagedMigrationCleanupReceipt(
 )
 
 /**
+ * durable evidence that one source entry was copied to its planned target
+ * before the migration reached the batch verification stage
+ */
+internal data class ManagedMigrationCopyReceipt(
+    val sourceReference: String,
+    val sourceName: String,
+    val sourceSubdirectory: String?,
+    val sourceSizeBytes: Long,
+    val sourceLastModifiedMs: Long,
+    val targetEntry: ManagedDownloadStorage.StoredEntry,
+    val sourceDigest: String? = null,
+    val verifiedTargetDigest: String? = null,
+    val createdNew: Boolean,
+    val sourceAuthoritative: Boolean,
+    val replacementBackup: ManagedDownloadStorage.StoredEntry? = null
+)
+
+/**
  * stable source identity captured before the migration starts copying
  */
 internal data class ManagedMigrationSourceEntry(
@@ -99,7 +117,12 @@ internal data class ManagedMigrationReplacementJournal(
     val cleanupReceipts: List<ManagedMigrationCleanupReceipt> = emptyList(),
     val cleanupComplete: Boolean = false,
     val sourceEntryCount: Int = 0,
-    val sourceEntries: List<ManagedMigrationSourceEntry> = emptyList()
+    val sourceEntries: List<ManagedMigrationSourceEntry> = emptyList(),
+    /** audio sources confirmed missing after the complete source scan */
+    val deletedSourceAudioCount: Int = 0,
+    /** distinguishes a complete empty source scan from an unknown legacy count */
+    val sourceEntriesComplete: Boolean =
+        sourceEntryCount > 0 || sourceEntries.isNotEmpty() || deletedSourceAudioCount > 0
 ) {
     /**
      * v1 journals never recorded the complete source set, so their count must
@@ -107,7 +130,12 @@ internal data class ManagedMigrationReplacementJournal(
      */
     val sourceEntryCountKnown: Boolean
         get() = version >= CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION &&
-            (sourceEntryCount > 0 || sourceEntries.isNotEmpty())
+            (sourceEntriesComplete ||
+                // copies of older in-memory journals may retain the default
+                // marker while still carrying a non-empty complete manifest
+                sourceEntryCount > 0 ||
+                sourceEntries.isNotEmpty() ||
+                deletedSourceAudioCount > 0)
 }
 
 /**
@@ -121,7 +149,9 @@ internal data class ManagedMigrationRequest(
     val releasePreviousPermission: Boolean,
     val minimumSourceEntryCount: Int,
     val checkpointWorkId: String? = null,
-    val autoResume: Boolean = true
+    val autoResume: Boolean = true,
+    /** retries consumed by workers replaced during startup recovery */
+    val retryAttemptOffset: Int = 0
 ) {
     fun normalized(): ManagedMigrationRequest {
         return copy(
@@ -130,7 +160,8 @@ internal data class ManagedMigrationRequest(
             toDirectoryUri = toDirectoryUri?.trim()?.takeIf(String::isNotBlank),
             targetLabel = targetLabel.trim(),
             minimumSourceEntryCount = minimumSourceEntryCount.coerceAtLeast(0),
-            checkpointWorkId = checkpointWorkId?.trim()?.takeIf(String::isNotBlank)
+            checkpointWorkId = checkpointWorkId?.trim()?.takeIf(String::isNotBlank),
+            retryAttemptOffset = retryAttemptOffset.coerceAtLeast(0)
         )
     }
 }
@@ -144,8 +175,26 @@ internal data class CopiedMigrationEntry(
     val sourceDigest: String? = null,
     val verifiedTargetDigest: String? = null,
     val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
-    val sourceAuthoritative: Boolean = false
+    val sourceAuthoritative: Boolean = false,
+    /** receipt-reused targets may have changed while the process was stopped */
+    val reusedFromReceipt: Boolean = false
 ) {
+    fun toCopyReceipt(): ManagedMigrationCopyReceipt {
+        return ManagedMigrationCopyReceipt(
+            sourceReference = original.entry.reference,
+            sourceName = original.entry.name,
+            sourceSubdirectory = original.subdirectory,
+            sourceSizeBytes = original.entry.sizeBytes.coerceAtLeast(0L),
+            sourceLastModifiedMs = original.entry.lastModifiedMs.coerceAtLeast(0L),
+            targetEntry = copiedEntry,
+            sourceDigest = sourceDigest,
+            verifiedTargetDigest = verifiedTargetDigest,
+            createdNew = createdNew,
+            sourceAuthoritative = sourceAuthoritative,
+            replacementBackup = replacementBackup
+        )
+    }
+
     fun toVerificationProgressEntry(): ManagedMigrationProgressEntry {
         val sourceBytes = if (sourceDigest.isNullOrBlank()) {
             original.entry.sizeBytes.coerceAtLeast(0L)
@@ -164,6 +213,23 @@ internal data class CopiedMigrationEntry(
             sizeBytes = logicalBytes
         )
     }
+}
+
+internal fun ManagedMigrationCopyReceipt.toCopiedMigrationEntry(
+    original: ManagedMigrationEntry,
+    targetEntry: ManagedDownloadStorage.StoredEntry = this.targetEntry,
+    reusedFromReceipt: Boolean = false
+): CopiedMigrationEntry {
+    return CopiedMigrationEntry(
+        original = original,
+        copiedEntry = targetEntry,
+        createdNew = createdNew,
+        sourceDigest = sourceDigest,
+        verifiedTargetDigest = verifiedTargetDigest,
+        replacementBackup = replacementBackup,
+        sourceAuthoritative = sourceAuthoritative,
+        reusedFromReceipt = reusedFromReceipt
+    )
 }
 
 internal data class ManagedMigrationMetadataRewriteResult(
@@ -185,9 +251,22 @@ internal data class ManagedMigrationCleanupResult(
 
 internal fun resolveMinimumMigrationAudioCount(
     requestedMinimum: Int,
-    discoveredSourceAudioCount: Int
+    discoveredSourceAudioCount: Int,
+    deletedSourceAudioCount: Int = 0
 ): Int {
-    return maxOf(requestedMinimum, discoveredSourceAudioCount).coerceAtLeast(0)
+    return adjustMinimumMigrationAudioCountForDeletedSources(
+        minimumAudioCount = maxOf(requestedMinimum, discoveredSourceAudioCount),
+        deletedSourceAudioCount = deletedSourceAudioCount
+    )
+}
+
+internal fun adjustMinimumMigrationAudioCountForDeletedSources(
+    minimumAudioCount: Int,
+    deletedSourceAudioCount: Int
+): Int {
+    return (minimumAudioCount.toLong() - deletedSourceAudioCount.coerceAtLeast(0).toLong())
+        .coerceIn(0L, Int.MAX_VALUE.toLong())
+        .toInt()
 }
 
 internal data class StoredWriteResult(
@@ -228,6 +307,14 @@ internal class ManagedMigrationProgressReporter(
         delegate.onCopyProgress(entry.toProgressEntry(), copiedBytes)
     }
 
+    fun seedCompletedCopies(entries: Collection<ManagedMigrationEntry>) {
+        delegate.seedCompletedCopies(entries.map(ManagedMigrationEntry::toProgressEntry))
+    }
+
+    fun unseedCopy(entry: ManagedMigrationEntry) {
+        delegate.unseedCopy(entry.toProgressEntry())
+    }
+
     fun completeCopy(entry: ManagedMigrationEntry) {
         delegate.completeCopy(entry.toProgressEntry())
     }
@@ -246,6 +333,10 @@ internal class ManagedMigrationProgressReporter(
 
     fun startVerification(entries: List<CopiedMigrationEntry>) {
         delegate.startVerification(entries.map(CopiedMigrationEntry::toVerificationProgressEntry))
+    }
+
+    fun seedVerifiedEntries(entries: Collection<CopiedMigrationEntry>) {
+        delegate.seedVerifiedEntries(entries.map(CopiedMigrationEntry::toVerificationProgressEntry))
     }
 
     fun startVerificationEntry(entry: CopiedMigrationEntry) {

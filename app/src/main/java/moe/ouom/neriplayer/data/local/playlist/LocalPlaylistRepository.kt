@@ -166,6 +166,13 @@ class LocalPlaylistRepository private constructor(
         val success: Boolean
     )
 
+    private data class SongMetadataUpdate(
+        val originalSong: SongItem,
+        val newSongInfo: SongItem,
+        val clearCoverUrl: Boolean = false,
+        val clearOriginalCoverUrl: Boolean = false
+    )
+
     private data class NeteaseRemotePlaylistSyncPlan(
         val targetPlaylistId: Long,
         val totalSongs: Int,
@@ -2001,34 +2008,43 @@ class LocalPlaylistRepository private constructor(
 
             val refreshDispatcher = Dispatchers.IO.limitedParallelism(LOCAL_METADATA_REFRESH_PARALLELISM)
             var processedCount = 0
-            val allUpdates = ArrayList<Pair<SongItem, SongItem>>()
+            val allUpdates = ArrayList<SongMetadataUpdate>()
             val refreshStartedAt = SystemClock.elapsedRealtime()
             candidates.chunked(LOCAL_METADATA_REFRESH_BATCH_SIZE).forEach { batch ->
                 val batchStartedAt = SystemClock.elapsedRealtime()
                 val updates = coroutineScope {
                     batch.map { originalSong ->
                         async(refreshDispatcher) {
-                            val hydratedSong = if (includeEmbeddedAssets) {
-                                LocalAudioImportManager.hydrateLocalSongMetadata(
-                                    context,
-                                    originalSong
+                            when {
+                                includeEmbeddedAssets -> SongMetadataUpdate(
+                                    originalSong = originalSong,
+                                    newSongInfo = LocalAudioImportManager.hydrateLocalSongMetadata(
+                                        context,
+                                        originalSong
+                                    )
                                 )
-                            } else if (includeLyricContents) {
-                                LocalAudioImportManager.hydrateLocalSongTextMetadata(
-                                    context,
-                                    originalSong
+                                includeLyricContents -> SongMetadataUpdate(
+                                    originalSong = originalSong,
+                                    newSongInfo = LocalAudioImportManager.hydrateLocalSongTextMetadata(
+                                        context,
+                                        originalSong
+                                    )
                                 )
-                            } else {
-                                LocalAudioImportManager.hydrateLocalSongCoverMetadata(
-                                    context,
-                                    originalSong
-                                )
+                                else -> LocalAudioImportManager
+                                    .hydrateLocalSongCoverMetadataResult(context, originalSong)
+                                    .let { result ->
+                                        SongMetadataUpdate(
+                                            originalSong = originalSong,
+                                            newSongInfo = result.song,
+                                            clearCoverUrl = result.clearCoverUrl,
+                                            clearOriginalCoverUrl = result.clearOriginalCoverUrl
+                                        )
+                                    }
                             }
-                            originalSong to hydratedSong
                         }
                     }.awaitAll()
-                }.filter { (originalSong, hydratedSong) ->
-                    hydratedSong != originalSong
+                }.filter { update ->
+                    update.newSongInfo != update.originalSong
                 }
                 allUpdates += updates
                 processedCount += batch.size
@@ -2188,7 +2204,7 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private suspend fun applySongMetadataUpdates(updates: List<Pair<SongItem, SongItem>>) {
+    private suspend fun applySongMetadataUpdates(updates: List<SongMetadataUpdate>) {
         if (updates.isEmpty()) {
             return
         }
@@ -2199,10 +2215,12 @@ class LocalPlaylistRepository private constructor(
             val updated = _playlists.value.map { playlist ->
                 var playlistChanged = false
                 val refreshedSongs = playlist.songs.map { currentSong ->
-                    val newSongInfo = updateIndex.find(currentSong) ?: return@map currentSong
+                    val update = updateIndex.find(currentSong) ?: return@map currentSong
                     val mergedSongInfo = mergeSongMetadataForPersistence(
                         currentSong = currentSong,
-                        newSongInfo = newSongInfo
+                        newSongInfo = update.newSongInfo,
+                        clearCoverUrl = update.clearCoverUrl,
+                        clearOriginalCoverUrl = update.clearOriginalCoverUrl
                     )
                     if (currentSong == mergedSongInfo) {
                         currentSong
@@ -2238,12 +2256,19 @@ class LocalPlaylistRepository private constructor(
         if (updates.isEmpty()) return
 
         commitPlaylistMutation {
-            val updateIndex = SongMetadataUpdateIndex(updates)
+            val updateIndex = SongMetadataUpdateIndex(
+                updates.map { (originalSong, hydratedSong) ->
+                    SongMetadataUpdate(
+                        originalSong = originalSong,
+                        newSongInfo = hydratedSong
+                    )
+                }
+            )
             var changed = false
             val updated = _playlists.value.map { playlist ->
                 var playlistChanged = false
                 val refreshedSongs = playlist.songs.map { currentSong ->
-                    val hydratedSong = updateIndex.find(currentSong)
+                    val hydratedSong = updateIndex.find(currentSong)?.newSongInfo
                         ?: return@map currentSong
                     val durationMs = hydratedSong.durationMs
                         .takeIf { it > 0L && currentSong.durationMs <= 0L }
@@ -2271,23 +2296,23 @@ class LocalPlaylistRepository private constructor(
         }
     }
 
-    private class SongMetadataUpdateIndex(updates: List<Pair<SongItem, SongItem>>) {
-        private val byIdentity = HashMap<SongIdentity, SongItem>(updates.size * 2)
-        private val byLocalKey = HashMap<String, SongItem>(updates.size * 3)
+    private class SongMetadataUpdateIndex(updates: List<SongMetadataUpdate>) {
+        private val byIdentity = HashMap<SongIdentity, SongMetadataUpdate>(updates.size * 2)
+        private val byLocalKey = HashMap<String, SongMetadataUpdate>(updates.size * 3)
 
         init {
-            updates.forEach { (originalSong, hydratedSong) ->
-                byIdentity[originalSong.identity()] = hydratedSong
+            updates.forEach { update ->
+                byIdentity[update.originalSong.identity()] = update
                 LocalSongSupport.localDuplicateKeys(
-                    song = originalSong,
+                    song = update.originalSong,
                     includeMetadataFallback = true
                 ).forEach { key ->
-                    byLocalKey.putIfAbsent(key, hydratedSong)
+                    byLocalKey.putIfAbsent(key, update)
                 }
             }
         }
 
-        fun find(song: SongItem): SongItem? {
+        fun find(song: SongItem): SongMetadataUpdate? {
             byIdentity[song.identity()]?.let { return it }
             return LocalSongSupport.localDuplicateKeys(
                 song = song,
@@ -2311,15 +2336,25 @@ class LocalPlaylistRepository private constructor(
 
     private fun mergeSongMetadataForPersistence(
         currentSong: SongItem,
-        newSongInfo: SongItem
+        newSongInfo: SongItem,
+        clearCoverUrl: Boolean = false,
+        clearOriginalCoverUrl: Boolean = false
     ): SongItem {
         val mergedSong = newSongInfo.copy(
             addedAt = currentSong.addedAt,
-            coverUrl = newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
-                ?: currentSong.coverUrl,
-            originalCoverUrl = newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
-                ?: currentSong.originalCoverUrl
-                ?: currentSong.coverUrl,
+            coverUrl = if (clearCoverUrl) {
+                null
+            } else {
+                newSongInfo.coverUrl.takeIf { !it.isNullOrBlank() }
+                    ?: currentSong.coverUrl
+            },
+            originalCoverUrl = if (clearOriginalCoverUrl) {
+                null
+            } else {
+                newSongInfo.originalCoverUrl.takeIf { !it.isNullOrBlank() }
+                    ?: currentSong.originalCoverUrl
+                    ?: currentSong.coverUrl.takeUnless { clearCoverUrl }
+            },
             syncMembershipTokens = currentSong.syncMembershipTokens.normalizedSyncCausalTokens()
         )
         if (!shouldPreserveEntryPlaybackSource(currentSong, newSongInfo)) {
@@ -2334,10 +2369,14 @@ class LocalPlaylistRepository private constructor(
             album = currentSong.album,
             albumId = currentSong.albumId,
             durationMs = currentSong.durationMs,
-            coverUrl = currentSong.coverUrl,
+            coverUrl = currentSong.coverUrl.takeUnless { clearCoverUrl },
             originalName = currentSong.originalName,
             originalArtist = currentSong.originalArtist,
-            originalCoverUrl = currentSong.originalCoverUrl ?: currentSong.coverUrl,
+            originalCoverUrl = if (clearOriginalCoverUrl) {
+                null
+            } else {
+                currentSong.originalCoverUrl ?: currentSong.coverUrl.takeUnless { clearCoverUrl }
+            },
             mediaUri = currentSong.mediaUri,
             localFileName = currentSong.localFileName,
             localFilePath = currentSong.localFilePath,

@@ -4,7 +4,9 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.security.MessageDigest
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertArrayEquals
@@ -764,6 +766,43 @@ class LocalMediaSupportTest {
                 reference = invalidCover.toURI().toString()
             )
         )
+    }
+
+    @Test
+    fun `media store cover reference must contain decodable image data`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val uri = mock(Uri::class.java)
+        doReturn("content").`when`(uri).scheme
+        doReturn("content://media/external/audio/albumart/42").`when`(uri).toString()
+        doReturn(resolver).`when`(context).contentResolver
+        doReturn(ByteArrayInputStream("not an image".toByteArray()))
+            .`when`(resolver)
+            .openInputStream(uri)
+
+        assertEquals(
+            CoverReferenceValidation.INVALID,
+            validateCoverReference(context, uri)
+        )
+    }
+
+    @Test
+    fun `corrupted embedded cover cache is removed before lookup`() {
+        val context = mock(Context::class.java)
+        val source = mock(Uri::class.java)
+        val sourceReference = "file:///storage/emulated/0/Music/song.flac"
+        doReturn("file").`when`(source).scheme
+        doReturn("/storage/emulated/0/Music/song.flac").`when`(source).path
+        doReturn(sourceReference).`when`(source).toString()
+        val coverDir = File(tempFolder.root, "local_audio_covers").apply { mkdirs() }
+        val key = MessageDigest.getInstance("SHA-256")
+            .digest(sourceReference.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val cached = File(coverDir, "$key.jpg").apply { writeText("not an image") }
+        doReturn(tempFolder.root).`when`(context).filesDir
+
+        assertNull(LocalMediaSupport.peekCachedEmbeddedCoverUri(context, source))
+        assertFalse(cached.exists())
     }
 
     @Test

@@ -88,6 +88,19 @@ class UidtDownloadJobService : JobService() {
             try {
                 val result = DownloadExecutionHosts.default.execute(applicationContext, operationId)
                 wantsReschedule = shouldRescheduleUidtExecution(result)
+                if (
+                    shouldCancelUidtFallback(
+                        result = result,
+                        fallbackExecuting = DownloadExecutionHosts.default.isExecuting(
+                            operationId
+                        )
+                    )
+                ) {
+                    ForegroundDownloadWorker.cancelFallback(
+                        context = applicationContext,
+                        operationId = operationId
+                    )
+                }
                 NPLogger.d(TAG, "UIDT 下载任务结束: operationId=$operationId, result=$result")
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -136,6 +149,12 @@ class UidtDownloadJobService : JobService() {
         completionGates[params.jobId]?.markSchedulerStopped()
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
         if (operationId != null) {
+            if (stopAction == UidtStopAction.STOP_AND_CANCEL_BACKENDS) {
+                ForegroundDownloadWorker.cancelFallback(
+                    context = applicationContext,
+                    operationId = operationId
+                )
+            }
             val accepted = UidtStopCoordinators.default.enqueue(
                 UidtStopRequest(
                     context = applicationContext,
@@ -373,4 +392,12 @@ internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boo
         DownloadExecutionResult.UserActionRequired,
         DownloadExecutionResult.NetworkPolicyWaiting -> false
     }
+}
+
+/** keeps a fallback owner alive, but retires stale work after a terminal UIDT result */
+internal fun shouldCancelUidtFallback(
+    result: DownloadExecutionResult,
+    fallbackExecuting: Boolean
+): Boolean {
+    return !fallbackExecuting && !shouldRescheduleUidtExecution(result)
 }

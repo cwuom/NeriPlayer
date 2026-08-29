@@ -130,4 +130,53 @@ class UidtDownloadJobPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `terminal UIDT results retire a pending fallback`() {
+        val terminalResults = listOf(
+            DownloadExecutionResult.Accepted,
+            DownloadExecutionResult.AlreadyHandled,
+            DownloadExecutionResult.MissingOperation,
+            DownloadExecutionResult.Cancelled,
+            DownloadExecutionResult.UserStopped,
+            DownloadExecutionResult.UserActionRequired,
+            DownloadExecutionResult.NetworkPolicyWaiting
+        )
+
+        terminalResults.forEach { result ->
+            assertTrue(
+                "terminal result must cancel stale fallback: $result",
+                shouldCancelUidtFallback(
+                    result = result,
+                    fallbackExecuting = false
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `UIDT does not cancel a fallback that still owns execution`() {
+        assertFalse(
+            shouldCancelUidtFallback(
+                result = DownloadExecutionResult.AlreadyHandled,
+                fallbackExecuting = true
+            )
+        )
+    }
+
+    @Test
+    fun `retryable UIDT results retain the fallback recovery path`() {
+        assertFalse(
+            shouldCancelUidtFallback(
+                result = DownloadExecutionResult.Retry,
+                fallbackExecuting = false
+            )
+        )
+        assertFalse(
+            shouldCancelUidtFallback(
+                result = DownloadExecutionResult.Failed(IllegalStateException("retry")),
+                fallbackExecuting = false
+            )
+        )
+    }
 }

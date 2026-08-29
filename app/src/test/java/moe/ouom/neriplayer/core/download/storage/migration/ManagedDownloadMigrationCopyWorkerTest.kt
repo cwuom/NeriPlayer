@@ -10,6 +10,9 @@ import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.backend.StorageMutationResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.core.download.storage.backend.StorageReference
+import moe.ouom.neriplayer.core.download.storage.backend.StorageStat
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import org.junit.Assert.assertEquals
@@ -136,6 +139,296 @@ class ManagedDownloadMigrationCopyWorkerTest {
         assertFalse(requireNotNull(result.copiedEntry).createdNew)
         assertEquals(1, updates.last().copiedFiles)
         assertEquals(source.sizeBytes, updates.last().copiedBytes)
+    }
+
+    @Test
+    fun `valid copy receipt skips source and target streams`() = runTest {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val target = entry("audio.mp3", "target-audio", 4L)
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = source.reference,
+            sourceName = source.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = source.sizeBytes,
+            sourceLastModifiedMs = source.lastModifiedMs,
+            targetEntry = target,
+            sourceDigest = "a".repeat(64),
+            verifiedTargetDigest = "a".repeat(64),
+            createdNew = false,
+            sourceAuthoritative = false
+        )
+        val result = copyWorker(
+            openInput = { error("receipt fast path must not open a stream") }
+        ).copyEntry(
+            context = context,
+            targetRoot = targetRoot,
+            migrationEntry = ManagedMigrationEntry(null, source),
+            targetIndex = targetIndex(target),
+            namePlan = ManagedMigrationNamePlan(
+                targetNamesByReference = mapOf(source.reference to target.name)
+            ),
+            resumeReceipt = receipt
+        )
+
+        assertNull(result.error)
+        assertSame(target, result.copiedEntry?.copiedEntry)
+        assertEquals(receipt.sourceDigest, result.copiedEntry?.sourceDigest)
+        assertEquals(
+            receipt.verifiedTargetDigest,
+            result.copiedEntry?.verifiedTargetDigest
+        )
+        assertTrue(requireNotNull(result.copiedEntry).reusedFromReceipt)
+    }
+
+    @Test
+    fun `copy receipt is rejected when source fingerprint changes`() {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val target = entry("audio.mp3", "target-audio", 4L)
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = source.reference,
+            sourceName = source.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = source.sizeBytes,
+            sourceLastModifiedMs = source.lastModifiedMs,
+            targetEntry = target,
+            sourceDigest = "a".repeat(64),
+            createdNew = false,
+            sourceAuthoritative = false
+        )
+
+        assertFalse(
+            canReuseMigrationCopyReceipt(
+                receipt = receipt,
+                sourceEntry = source.copy(sizeBytes = 5L),
+                sourceSubdirectory = null,
+                targetName = target.name,
+                targetEntry = target
+            )
+        )
+        assertFalse(
+            canReuseMigrationCopyReceipt(
+                receipt = receipt,
+                sourceEntry = source,
+                sourceSubdirectory = null,
+                targetName = target.name,
+                targetEntry = target.copy(lastModifiedMs = 10L)
+            )
+        )
+    }
+
+    @Test
+    fun `source receipt fingerprint requires current provider stat`() {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = source.reference,
+            sourceName = source.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = source.sizeBytes,
+            sourceLastModifiedMs = source.lastModifiedMs,
+            targetEntry = entry("audio.mp3", "target-audio", 4L),
+            sourceDigest = "a".repeat(64),
+            createdNew = false,
+            sourceAuthoritative = false
+        )
+
+        assertTrue(
+            isCurrentMigrationSourceFingerprint(
+                receipt = receipt,
+                sourceName = source.name,
+                statResult = StorageLookupResult.Found(
+                    sourceStat(source.name, source.sizeBytes, source.lastModifiedMs)
+                )
+            )
+        )
+        assertFalse(
+            isCurrentMigrationSourceFingerprint(
+                receipt = receipt,
+                sourceName = source.name,
+                statResult = StorageLookupResult.Found(
+                    sourceStat(source.name, source.sizeBytes + 1L, source.lastModifiedMs)
+                )
+            )
+        )
+        assertFalse(
+            isCurrentMigrationSourceFingerprint(
+                receipt = receipt,
+                sourceName = source.name,
+                statResult = StorageLookupResult.Found(
+                    sourceStat(source.name, source.sizeBytes, source.lastModifiedMs + 1L)
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `source receipt fingerprint rejects missing provider and unknown stats`() {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = source.reference,
+            sourceName = source.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = source.sizeBytes,
+            sourceLastModifiedMs = source.lastModifiedMs,
+            targetEntry = entry("audio.mp3", "target-audio", 4L),
+            createdNew = false,
+            sourceAuthoritative = false
+        )
+        val results = listOf<StorageLookupResult<StorageStat>>(
+            StorageLookupResult.Missing,
+            StorageLookupResult.PermissionLost,
+            StorageLookupResult.ProviderFailure(IllegalStateException("provider")),
+            StorageLookupResult.Unsupported("stat"),
+            StorageLookupResult.Found(sourceStat(source.name, null, source.lastModifiedMs)),
+            StorageLookupResult.Found(sourceStat(source.name, source.sizeBytes, null)),
+            StorageLookupResult.Found(sourceStat(source.name, 0L, source.lastModifiedMs)),
+            StorageLookupResult.Found(sourceStat(source.name, source.sizeBytes, 0L)),
+            StorageLookupResult.Found(
+                sourceStat(source.name, source.sizeBytes, source.lastModifiedMs)
+                    .copy(displayName = "other.mp3")
+            ),
+            StorageLookupResult.Found(
+                sourceStat(source.name, source.sizeBytes, source.lastModifiedMs)
+                    .copy(isDirectory = true)
+            )
+        )
+
+        results.forEach { result ->
+            assertFalse(
+                isCurrentMigrationSourceFingerprint(
+                    receipt = receipt,
+                    sourceName = source.name,
+                    statResult = result
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `copy queue keeps only entries with reusable receipt targets`() {
+        val reusableSource = entry("reusable.mp3", "source-reusable", 4L)
+        val staleSource = entry("stale.mp3", "source-stale", 4L)
+        val reusableTarget = entry("reusable.mp3", "target-reusable", 4L)
+        val staleTarget = entry("stale.mp3", "target-stale", 5L)
+        val currentStaleTarget = staleTarget.copy(sizeBytes = 4L)
+        val reusableReceipt = ManagedMigrationCopyReceipt(
+            sourceReference = reusableSource.reference,
+            sourceName = reusableSource.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = reusableSource.sizeBytes,
+            sourceLastModifiedMs = reusableSource.lastModifiedMs,
+            targetEntry = reusableTarget,
+            sourceDigest = "a".repeat(64),
+            verifiedTargetDigest = "a".repeat(64),
+            createdNew = true,
+            sourceAuthoritative = true
+        )
+        val staleReceipt = reusableReceipt.copy(
+            sourceReference = staleSource.reference,
+            sourceName = staleSource.name,
+            sourceSizeBytes = staleSource.sizeBytes,
+            targetEntry = staleTarget
+        )
+        val entries = listOf(
+            ManagedMigrationEntry(null, reusableSource),
+            ManagedMigrationEntry(null, staleSource)
+        )
+        val namePlan = ManagedMigrationNamePlan(
+            targetNamesByReference = mapOf(
+                reusableSource.reference to reusableTarget.name,
+                staleSource.reference to staleTarget.name
+            )
+        )
+
+        val reusable = collectReusableMigrationCopyPairs(
+            entries = entries,
+            persistedCopyReceipts = mapOf(
+                reusableSource.reference to reusableReceipt,
+                staleSource.reference to staleReceipt
+            ),
+            namePlan = namePlan,
+            targetIndex = targetIndex(reusableTarget, currentStaleTarget)
+        )
+
+        assertEquals(listOf(reusableSource.reference), reusable.map {
+            it.sourceEntry.entry.reference
+        })
+    }
+
+    @Test
+    fun `source deleted during copy is reported without retry or target write`() = runTest {
+        val source = entry(
+            name = "deleted.mp3",
+            reference = "source-deleted",
+            sizeBytes = 4L
+        )
+        val updates = mutableListOf<ManagedDownloadStorage.MigrationProgress>()
+        val progressReporter = ManagedMigrationProgressReporter(
+            totalFiles = 1,
+            totalBytes = source.sizeBytes,
+            metadataFilesTotal = 0,
+            onProgress = updates::add
+        )
+        val result = copyWorker(openInput = { null }).copyEntry(
+            context = context,
+            targetRoot = targetRoot,
+            migrationEntry = ManagedMigrationEntry(null, source),
+            targetIndex = targetIndex(),
+            namePlan = ManagedMigrationNamePlan(
+                targetNamesByReference = mapOf(source.reference to source.name)
+            ),
+            progressTracker = progressReporter
+        )
+        progressReporter.finishAll()
+
+        assertTrue(result.sourceDeleted)
+        assertNull(result.copiedEntry)
+        assertNull(result.error)
+        assertEquals(1, updates.last().copiedFiles)
+        assertEquals(source.sizeBytes, updates.last().copiedBytes)
+    }
+
+    @Test
+    fun `source deleted while validating a reused target is reported as skipped`() = runTest {
+        val source = entry("deleted.mp3", "source-deleted", 4L)
+        val target = entry("deleted.mp3", "target-existing", 4L)
+        val result = copyWorker(openInput = { null }).copyEntry(
+            context = context,
+            targetRoot = targetRoot,
+            migrationEntry = ManagedMigrationEntry(null, source),
+            targetIndex = targetIndex(target),
+            namePlan = ManagedMigrationNamePlan(
+                targetNamesByReference = mapOf(source.reference to target.name),
+                reusedTargetsByReference = mapOf(source.reference to target)
+            )
+        )
+
+        assertTrue(result.sourceDeleted)
+        assertNull(result.copiedEntry)
+        assertNull(result.error)
+    }
+
+    @Test
+    fun `successful copy collection ignores entries deleted by the user`() = runTest {
+        val source = entry("deleted.mp3", "source-deleted", 4L)
+        val deleted = copyWorker(openInput = { null }).copyEntry(
+            context = context,
+            targetRoot = targetRoot,
+            migrationEntry = ManagedMigrationEntry(null, source),
+            targetIndex = targetIndex(),
+            namePlan = ManagedMigrationNamePlan(
+                targetNamesByReference = mapOf(source.reference to source.name)
+            )
+        )
+
+        var rollbackCalled = false
+        val copied = requireSuccessfulMigrationCopies(
+            results = listOf(deleted),
+            rollback = { rollbackCalled = true }
+        )
+
+        assertTrue(deleted.sourceDeleted)
+        assertTrue(copied.isEmpty())
+        assertFalse(rollbackCalled)
     }
 
     @Test
@@ -307,6 +600,123 @@ class ManagedDownloadMigrationCopyWorkerTest {
     }
 
     @Test
+    fun `verified receipt rehashes current target content`() = runTest {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val target = entry("audio.mp3", "target-audio", 4L)
+        val content = byteArrayOf(1, 2, 3, 4)
+        val digest = sha256MigrationContent(ByteArrayInputStream(content))
+        val copied = copiedEntry(
+            source = source,
+            target = target,
+            sourceDigest = digest
+        ).copy(verifiedTargetDigest = digest)
+
+        val reads = mutableListOf<String>()
+        val verifiedCallbacks = mutableListOf<String>()
+        val result = migrationFinalizer(
+            openInput = { entry ->
+                reads += entry.reference
+                ByteArrayInputStream(content)
+            }
+        ).verifyMigratedEntriesDetailed(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = listOf(copied),
+            onEntryVerified = { verifiedCallbacks += it.copiedEntry.name }
+        )
+
+        assertEquals(0, result.failedFiles)
+        assertEquals(digest, result.verifiedEntries.single().verifiedTargetDigest)
+        assertEquals(listOf(target.name), verifiedCallbacks)
+        assertEquals(listOf(target.reference), reads)
+    }
+
+    @Test
+    fun `verified metadata receipt rereads current equivalent JSON`() = runTest {
+        val source = entry("audio.mp3.npmeta.json", "source-metadata", 32L)
+        val target = entry("audio.mp3.npmeta.json", "target-metadata", 32L)
+        val reads = mutableListOf<String>()
+        val copied = copiedEntry(source, target).copy(
+            verifiedTargetDigest = "a".repeat(64)
+        )
+
+        val result = migrationFinalizer(
+            readText = { reference ->
+                reads += reference
+                when (reference) {
+                    source.reference -> "{\"title\":\"original\"}"
+                    target.reference -> "{\"title\":\"changed\"}"
+                    else -> error("unexpected metadata reference: $reference")
+                }
+            }
+        ).verifyMigratedEntriesDetailed(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = listOf(copied)
+        )
+
+        assertEquals(1, result.failedFiles)
+        assertTrue(result.verifiedEntries.isEmpty())
+        assertEquals(listOf(source.reference, target.reference), reads)
+    }
+
+    @Test
+    fun `changed receipt target is preserved when verification fails`() = runTest {
+        val source = entry("audio.mp3", "source-audio", 4L)
+        val target = entry("audio.mp3", "target-audio", 4L)
+        val expectedBytes = byteArrayOf(1, 2, 3, 4)
+        val changedBytes = byteArrayOf(4, 3, 2, 1)
+        val digest = sha256MigrationContent(ByteArrayInputStream(expectedBytes))
+        val receipt = ManagedMigrationCopyReceipt(
+            sourceReference = source.reference,
+            sourceName = source.name,
+            sourceSubdirectory = null,
+            sourceSizeBytes = source.sizeBytes,
+            sourceLastModifiedMs = source.lastModifiedMs,
+            targetEntry = target,
+            sourceDigest = digest,
+            verifiedTargetDigest = digest,
+            createdNew = true,
+            sourceAuthoritative = true
+        )
+        val copied = receipt.toCopiedMigrationEntry(
+            original = ManagedMigrationEntry(null, source),
+            reusedFromReceipt = true
+        )
+        val reads = mutableListOf<String>()
+        var deleteCalls = 0
+        val finalizer = migrationFinalizer(
+            openInput = { entry ->
+                reads += entry.reference
+                ByteArrayInputStream(changedBytes)
+            },
+            deleteReference = {
+                deleteCalls += 1
+                StorageMutationResult.Deleted
+            }
+        )
+
+        val verification = finalizer.verifyMigratedEntriesDetailed(
+            context = context,
+            targetRoot = targetRoot,
+            copiedEntries = listOf(copied)
+        )
+
+        assertTrue(copied.reusedFromReceipt)
+        assertEquals(1, verification.failedFiles)
+        assertEquals(listOf(target.reference), reads)
+        assertEquals(
+            0,
+            finalizer.rollbackMigratedEntries(
+                context = context,
+                copiedEntries = listOf(copied),
+                targetRoot = targetRoot
+            )
+        )
+        assertEquals(0, deleteCalls)
+    }
+
+    @Test
     fun `SAF target layout rejects duplicate canonical names before source cleanup`() {
         val expected = listOf(
             ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target")
@@ -334,6 +744,18 @@ class ManagedDownloadMigrationCopyWorkerTest {
         val detail = validateMigrationTargetLayout(expected, observed)
 
         assertTrue(requireNotNull(detail).contains("多个目标文档"))
+    }
+
+    @Test
+    fun `SAF target layout rejects a receipt target moved from Covers to root`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry("Covers", "cover.jpg", "provider\u0000cover")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "cover.jpg", "provider\u0000cover")
+        )
+
+        assertTrue(requireNotNull(validateMigrationTargetLayout(expected, observed)).contains("名称不唯一"))
     }
 
     @Test
@@ -376,7 +798,8 @@ class ManagedDownloadMigrationCopyWorkerTest {
         readText: (String) -> String? = { "{}" },
         openInput: (ManagedDownloadStorage.StoredEntry) -> InputStream? = {
             ByteArrayInputStream(byteArrayOf(1, 2, 3, 4))
-        }
+        },
+        deleteReference: () -> StorageMutationResult = { StorageMutationResult.Deleted }
     ): ManagedDownloadMigrationFinalizer {
         return ManagedDownloadMigrationFinalizer(
             tag = "MigrationCopyWorkerTest",
@@ -387,7 +810,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
                 openInput(entry)
             },
             writeRootText = { _, _, _, _ -> error("writeRootText must not be called") },
-            deleteReference = { _, _, _ -> StorageMutationResult.Deleted },
+            deleteReference = { _, _, _ -> deleteReference() },
             rewriteMetadataReferences = { content, _ -> content }
         )
     }
@@ -440,6 +863,20 @@ class ManagedDownloadMigrationCopyWorkerTest {
             localFilePath = null,
             sizeBytes = sizeBytes,
             lastModifiedMs = 1L
+        )
+    }
+
+    private fun sourceStat(
+        name: String,
+        sizeBytes: Long?,
+        lastModifiedMs: Long?
+    ): StorageStat {
+        return StorageStat(
+            reference = StorageReference.FileRef(name),
+            displayName = name,
+            sizeBytes = sizeBytes,
+            lastModifiedMs = lastModifiedMs,
+            isDirectory = false
         )
     }
 }

@@ -149,6 +149,8 @@ import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProbeRe
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationPolicy
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCheckpointStore
+import moe.ouom.neriplayer.core.download.storage.migration.selectActiveMigrationWorkInfo
 import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFromWorkData
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
@@ -2867,10 +2869,13 @@ private fun rememberDownloadDirectorySettingsController(
     LaunchedEffect(Unit) {
         val runningWork = withContext(Dispatchers.IO) {
             runCatching {
-                WorkManager.getInstance(context)
-                    .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
-                    .get()
-                    .firstOrNull { info -> !info.state.isFinished }
+                val request = ManagedDownloadMigrationCheckpointStore(context).readRequest()
+                selectActiveMigrationWorkInfo(
+                    workInfos = WorkManager.getInstance(context)
+                        .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
+                        .get(),
+                    preferredWorkId = request?.workId
+                )
             }.getOrNull()
         }
         if (runningWork != null) {

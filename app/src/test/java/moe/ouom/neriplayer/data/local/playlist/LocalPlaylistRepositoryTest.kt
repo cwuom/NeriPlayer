@@ -883,6 +883,134 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned metadata clears invalid covers without restoring them from persistence merge`() = runTest {
+        val playlistId = 160L
+        val storage = RecordingStorage(primary = null)
+        val audioFile = tempFolder.newFile("invalid-cover-song.mp3")
+        val invalidCover = tempFolder.newFile("invalid-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val song = SongItem(
+            id = 161L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidCover.toURI().toString(),
+            originalCoverUrl = invalidCover.toURI().toString(),
+            mediaUri = audioFile.toURI().toString(),
+            localFilePath = audioFile.absolutePath,
+            channelId = "local"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(song)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(song))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+
+        val restoredRepository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false,
+            storage = storage
+        )
+        val restored = restoredRepository.playlists.value.single().songs.single()
+        assertNull(restored.coverUrl)
+        assertNull(restored.originalCoverUrl)
+    }
+
+    @Test
+    fun `scanned alias clears invalid covers while keeping the existing playback source`() = runTest {
+        val playlistId = 164L
+        val existingAudio = tempFolder.newFile("retained-source.mp3")
+        val scannedAliasAudio = tempFolder.newFile("scanned-alias.mp3")
+        val invalidExistingCover = tempFolder.newFile("invalid-existing-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val invalidScannedCover = tempFolder.newFile("invalid-scanned-cover.jpg").apply {
+            writeText("not an image")
+        }
+        val existing = SongItem(
+            id = 165L,
+            name = "Local song",
+            artist = "Artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = invalidExistingCover.toURI().toString(),
+            originalCoverUrl = invalidExistingCover.toURI().toString(),
+            mediaUri = existingAudio.toURI().toString(),
+            localFilePath = existingAudio.absolutePath,
+            channelId = "local",
+            audioId = "shared-local-audio-id"
+        )
+        val scannedAlias = existing.copy(
+            id = 166L,
+            coverUrl = invalidScannedCover.toURI().toString(),
+            originalCoverUrl = invalidScannedCover.toURI().toString(),
+            mediaUri = scannedAliasAudio.toURI().toString(),
+            localFilePath = scannedAliasAudio.absolutePath
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "invalid-cover-alias-refresh.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(existing)))
+        )
+
+        repository.refreshScannedLocalSongMetadata(listOf(scannedAlias))
+
+        val refreshed = repository.playlists.value.single().songs.single()
+        assertEquals(existing.mediaUri, refreshed.mediaUri)
+        assertEquals(existing.localFilePath, refreshed.localFilePath)
+        assertNull(refreshed.coverUrl)
+        assertNull(refreshed.originalCoverUrl)
+    }
+
+    @Test
+    fun `ordinary metadata update still preserves existing covers when new values are absent`() = runTest {
+        val playlistId = 162L
+        val original = localSong(163).copy(
+            coverUrl = "file:///persisted-cover.jpg",
+            originalCoverUrl = "file:///persisted-original-cover.jpg"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "preserve-cover-update.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "Local", songs = mutableListOf(original)))
+        )
+
+        repository.updateSongMetadata(
+            originalSong = original,
+            newSongInfo = original.copy(coverUrl = null, originalCoverUrl = null)
+        )
+
+        val updated = repository.playlists.value.single().songs.single()
+        assertEquals(original.coverUrl, updated.coverUrl)
+        assertEquals(original.originalCoverUrl, updated.originalCoverUrl)
+    }
+
+    @Test
     fun `user metadata update schedules auto sync when requested`() = runTest {
         val playlistId = 156L
         val original = remoteNeteaseSong(id = 157L)

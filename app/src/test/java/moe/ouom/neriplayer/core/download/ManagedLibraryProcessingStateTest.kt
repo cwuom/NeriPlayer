@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,6 +122,27 @@ class ManagedLibraryProcessingStateTest {
     }
 
     @Test
+    fun `same process directory migration remains exclusive while running`() {
+        val running = ManagedLibraryProcessingStateMachine.begin(
+            operationId = "migration-running",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            processed = 96,
+            total = 512
+        )
+
+        val secondAttempt = ManagedLibraryProcessingStateMachine.tryBeginExclusive(
+            current = running,
+            operationId = "migration-retry",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            resumeWaitingOperation = true
+        )
+
+        assertNull(secondAttempt)
+    }
+
+    @Test
     fun `process death restores an interrupted mutation as retryable`() {
         val restored = restoreManagedLibraryProcessingState(
             operationId = "interrupted",
@@ -138,6 +160,115 @@ class ManagedLibraryProcessingStateTest {
         assertEquals(128, restored.processed)
         assertEquals(2_000, restored.total)
         assertEquals("track-128.mp3", restored.currentItem)
+    }
+
+    @Test
+    fun `persisted running state from another process is downgraded to retryable`() {
+        val restored = restoreManagedLibraryProcessingState(
+            operationId = "interrupted",
+            reasonName = ManagedLibraryProcessingReason.DIRECTORY_CHANGE.name,
+            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name,
+            processed = 128,
+            total = 2_000,
+            restoredRunning = false
+        )
+
+        assertTrue(restored is ManagedLibraryProcessingState.WaitingForRetry)
+        assertEquals("interrupted", restored.operationId)
+        assertEquals(128, restored.processed)
+        assertEquals(2_000, restored.total)
+    }
+
+    @Test
+    fun `worker restart claims the downgraded migration without a backoff retry`() {
+        val restored = restoreManagedLibraryProcessingState(
+            operationId = "interrupted-migration",
+            reasonName = ManagedLibraryProcessingReason.DIRECTORY_CHANGE.name,
+            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name,
+            processed = 640,
+            total = 2_000,
+            restoredRunning = false
+        )
+
+        val claimed = ManagedLibraryProcessingStateMachine.tryBeginExclusive(
+            current = restored,
+            operationId = "new-work-id",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX,
+            resumeWaitingOperation = true
+        )
+
+        assertEquals("interrupted-migration", claimed?.operationId)
+        assertEquals(640, claimed?.processed)
+        assertEquals(2_000, claimed?.total)
+    }
+
+    @Test
+    fun `same process running state remains owned`() {
+        val restored = restoreManagedLibraryProcessingState(
+            operationId = "active",
+            reasonName = ManagedLibraryProcessingReason.DIRECTORY_CHANGE.name,
+            phaseName = ManagedLibraryProcessingPhase.REBUILDING_INDEX.name,
+            restoredRunning = true
+        )
+
+        assertTrue(restored is ManagedLibraryProcessingState.Running)
+        assertEquals("active", restored.operationId)
+        assertEquals(ManagedLibraryProcessingReason.DIRECTORY_CHANGE, restored.reason)
+    }
+
+    @Test
+    fun `only the current process token can retain a running record`() {
+        assertTrue(
+            isManagedLibraryProcessingOwnedByCurrentProcess(
+                stateKind = "running",
+                ownerProcessToken = "process-a",
+                currentProcessToken = "process-a"
+            )
+        )
+        assertFalse(
+            isManagedLibraryProcessingOwnedByCurrentProcess(
+                stateKind = "running",
+                ownerProcessToken = "process-a",
+                currentProcessToken = "process-b"
+            )
+        )
+        assertFalse(
+            isManagedLibraryProcessingOwnedByCurrentProcess(
+                stateKind = "waiting",
+                ownerProcessToken = "process-a",
+                currentProcessToken = "process-a"
+            )
+        )
+    }
+
+    @Test
+    fun `busy description identifies same and different operation reasons`() {
+        val state = ManagedLibraryProcessingState.Running(
+            operationId = "migration",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+        )
+
+        assertEquals(
+            "operationId=migration, reason=DIRECTORY_CHANGE, " +
+                "phase=REBUILDING_INDEX, relation=same-reason",
+            describeManagedLibraryProcessingBusy(
+                state,
+                ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+            )
+        )
+        assertEquals(
+            "operationId=migration, reason=DIRECTORY_CHANGE, " +
+                "phase=REBUILDING_INDEX, relation=different-reason",
+            describeManagedLibraryProcessingBusy(
+                state,
+                ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
+            )
+        )
+        assertFalse(
+            describeManagedLibraryProcessingBusy(ManagedLibraryProcessingState.Idle) != null
+        )
     }
 
     @Test
@@ -230,5 +361,27 @@ class ManagedLibraryProcessingStateTest {
         assertNull(restored.processed)
         assertNull(restored.total)
         assertNull(restored.currentItem)
+    }
+
+    @Test
+    fun `upgrade stays visible while the rebuilt catalog is being published`() {
+        val running = ManagedLibraryProcessingStateMachine.begin(
+            operationId = "upgrade",
+            reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE,
+            phase = ManagedLibraryProcessingPhase.UPGRADING_DATABASE,
+            processed = 12,
+            total = 12
+        )
+
+        val rebuilding = ManagedLibraryProcessingStateMachine.advancePhase(
+            current = running,
+            operationId = running.operationId,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+        )
+
+        assertEquals(running.operationId, rebuilding.operationId)
+        assertEquals(ManagedLibraryProcessingPhase.REBUILDING_INDEX, rebuilding.phase)
+        assertEquals(12, rebuilding.processed)
+        assertEquals(12, rebuilding.total)
     }
 }

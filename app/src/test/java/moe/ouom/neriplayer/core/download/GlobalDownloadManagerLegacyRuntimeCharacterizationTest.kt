@@ -249,6 +249,67 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
         assertFalse(deleteBody.contains("persistFastIndex("))
     }
 
+    @Test
+    fun `download deletion is fenced against directory migration`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val asyncBody = methodBody(source, "deleteDownloadedSongs")
+        val resultBody = methodBody(source, "deleteDownloadedSongsWithResult")
+
+        assertTrue(
+            "asynchronous deletion must acquire the directory mutation lease",
+            asyncBody.contains("acquireDeleteLeaseOrNull")
+        )
+        assertTrue(
+            "synchronous deletion must acquire the directory mutation lease",
+            resultBody.contains("acquireDeleteLeaseOrNull")
+        )
+        assertTrue(
+            "deferred deletion must restore the hidden catalog entries",
+            source.contains("restoreDeferredDownloadedSongDeleteSession")
+        )
+    }
+
+    @Test
+    fun `manual resume keeps the task until a durable operation can be staged`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "resumeDownloadTask")
+        val launchIndex = body.indexOf("scope.launch")
+        val scheduleIndex = body.indexOf("scheduleUserDownload(")
+
+        assertTrue(
+            "resume must schedule asynchronously after cancellation settles",
+            launchIndex >= 0 && scheduleIndex > launchIndex
+        )
+        assertFalse(
+            "resume must not remove the only visible task before Room staging succeeds",
+            body.contains("removeDownloadTask(")
+        )
+        assertTrue(
+            "a cancelled operation must be purged before its deterministic id is reused",
+            body.contains("purgeCancelled")
+        )
+    }
+
+    @Test
+    fun `directory mutation defers existing retryable operations instead of hiding them`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "stageAndPromotePendingDownloadQueue")
+        val lookupIndex = body.indexOf("existingReusableOperationIds")
+        val deferIndex = body.indexOf("markWaitingForStorageMutation")
+        val returnedIdsIndex = body.indexOf("allWaitingOperationIds")
+
+        assertTrue(
+            "storage mutation must include existing retryable operations",
+            lookupIndex >= 0 && deferIndex > lookupIndex && returnedIdsIndex > deferIndex
+        )
+    }
+
     private fun indexOfOperationCall(source: String, methodName: String): Int {
         return Regex(
             "(?:DownloadExecutionRoomStore|DownloadExecutionOperationStore)[^\\n{}]*\\b$methodName\\b"

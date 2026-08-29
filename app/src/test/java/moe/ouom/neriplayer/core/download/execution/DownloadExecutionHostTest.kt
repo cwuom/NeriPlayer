@@ -269,6 +269,41 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `terminal operation states do not enter host admission or retry`() = runTest {
+        val terminalStates = listOf(
+            "COMPLETED" to DownloadExecutionResult.AlreadyHandled,
+            "FINALIZED" to DownloadExecutionResult.AlreadyHandled,
+            "INVALID" to DownloadExecutionResult.MissingOperation,
+            "CANCEL_REQUESTED" to DownloadExecutionResult.Cancelled,
+            "CANCELLED" to DownloadExecutionResult.Cancelled,
+            METADATA_ACTION_REQUIRED_OPERATION_STATE to
+                DownloadExecutionResult.UserActionRequired
+        )
+
+        terminalStates.forEachIndexed { index, (state, expectedResult) ->
+            val context = mockContext()
+            val journal = InMemoryDownloadExecutionOperationJournal()
+            val store = DownloadExecutionOperationStore { journal }
+            val request = DownloadExecutionRequest(
+                operationId = "operation-terminal-$index",
+                song = sampleSong().copy(id = 20_000L + index)
+            )
+            store.save(context, request)
+            journal.forceState(request.operationId, state, updatedAtMs = 1L)
+            val host = DefaultDownloadExecutionHost(
+                operationStore = store,
+                entryPoint = DownloadOperationEntryPoint { _, _ ->
+                    error("terminal operation must not enter the entry point")
+                },
+                sdkInt = 28
+            )
+
+            assertEquals(expectedResult, host.execute(context, request.operationId))
+            assertEquals(0, journal.hostAdmissionAcquireCount)
+        }
+    }
+
+    @Test
     fun `detached enrichment settles hosts without overwriting durable core state`() = runTest {
         val context = mockContext()
         val store = DownloadExecutionOperationStore { testJournal }

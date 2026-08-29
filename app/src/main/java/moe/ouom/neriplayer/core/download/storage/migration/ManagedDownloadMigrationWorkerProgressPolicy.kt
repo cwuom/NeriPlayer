@@ -1,11 +1,72 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import androidx.work.WorkInfo
+import java.util.Locale
+import java.util.UUID
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
 internal data class MigrationSharedProgress(
     val processed: Int,
     val total: Int
 )
+
+internal fun selectActiveMigrationWorkInfo(
+    workInfos: Iterable<WorkInfo>,
+    preferredWorkId: String? = null,
+    fallbackWorkId: String? = null
+): WorkInfo? {
+    val active = workInfos.filterNot { info -> info.state.isFinished }
+    if (active.isEmpty()) return null
+
+    fun findById(workId: String?): WorkInfo? {
+        return workId?.trim()?.takeIf(String::isNotBlank)?.let { requestedId ->
+            active.firstOrNull { info ->
+                migrationWorkIdsEqual(info.id.toString(), requestedId)
+            }
+        }
+    }
+
+    findById(preferredWorkId)?.let { return it }
+    findById(fallbackWorkId)?.let { return it }
+
+    // workmanager does not guarantee the order of rows returned for a unique name
+    return active.minWithOrNull(
+        compareBy<WorkInfo>(
+            { migrationWorkStatePriority(it.state) },
+            { -it.generation },
+            { -it.runAttemptCount },
+            { it.id.toString().lowercase(Locale.ROOT) }
+        )
+    )
+}
+
+internal fun migrationWorkIdsEqual(left: String?, right: String?): Boolean {
+    val normalizedLeft = left?.trim()?.takeIf(String::isNotBlank) ?: return false
+    val normalizedRight = right?.trim()?.takeIf(String::isNotBlank) ?: return false
+    if (normalizedLeft.equals(normalizedRight, ignoreCase = true)) return true
+    val leftUuid = runCatching { UUID.fromString(normalizedLeft) }.getOrNull()
+    val rightUuid = runCatching { UUID.fromString(normalizedRight) }.getOrNull()
+    return leftUuid != null && leftUuid == rightUuid
+}
+
+internal fun shouldReplaceActiveMigrationWork(
+    persistedRequest: ManagedMigrationRequest?,
+    activeWorkId: String?
+): Boolean {
+    val persistedId = persistedRequest?.workId
+    return persistedId != null &&
+        activeWorkId != null &&
+        !migrationWorkIdsEqual(persistedId, activeWorkId)
+}
+
+private fun migrationWorkStatePriority(state: WorkInfo.State): Int {
+    return when (state) {
+        WorkInfo.State.RUNNING -> 0
+        WorkInfo.State.ENQUEUED -> 1
+        WorkInfo.State.BLOCKED -> 2
+        else -> 3
+    }
+}
 
 internal fun migrationProgressForSharedProcessing(
     progress: ManagedDownloadStorage.MigrationProgress
@@ -24,6 +85,21 @@ internal fun migrationProgressForSharedProcessing(
             total = progress.totalFiles.coerceAtLeast(0)
         )
     }
+}
+
+/** merges every durable checkpoint so a resumed worker never moves the UI backwards */
+internal fun selectMigrationProgressCheckpoint(
+    checkpointIds: Iterable<String>,
+    readProgress: (String) -> ManagedDownloadStorage.MigrationProgress?
+): ManagedDownloadStorage.MigrationProgress? {
+    var selected: ManagedDownloadStorage.MigrationProgress? = null
+    checkpointIds.forEach { checkpointId ->
+        val candidate = readProgress(checkpointId) ?: return@forEach
+        selected = selected?.let { floor ->
+            mergeMigrationProgressFloor(floor = floor, current = candidate)
+        } ?: candidate
+    }
+    return selected
 }
 
 internal data class MigrationProgressThrottleState(

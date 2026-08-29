@@ -50,14 +50,19 @@ class UidtStopCoordinatorTest {
     }
 
     @Test
-    fun `UIDT start leaves an already running fallback under host admission`() {
+    fun `UIDT start only retires a fallback after execution completes`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
                 "UidtDownloadJobService.kt"
         ).readText()
         val onStartJob = methodBody(source, "override fun onStartJob(")
 
-        assertFalse(onStartJob.contains("cancelFallback("))
+        val executeIndex = onStartJob.indexOf(
+            "DownloadExecutionHosts.default.execute(applicationContext, operationId)"
+        )
+        val cancelIndex = onStartJob.indexOf("cancelFallback(")
+        assertTrue(executeIndex >= 0)
+        assertTrue(cancelIndex > executeIndex)
     }
 
     @Test

@@ -8,10 +8,15 @@ import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 
 internal object ManagedDownloadStoredEntryMapper {
     fun fromFile(file: File): ManagedDownloadStorage.StoredEntry {
+        val mediaUri = runCatching {
+            Uri.fromFile(file).toString()
+        }.getOrElse {
+            file.toURI().toString()
+        }
         return ManagedDownloadStorage.StoredEntry(
             name = file.name,
             reference = file.absolutePath,
-            mediaUri = Uri.fromFile(file).toString(),
+            mediaUri = mediaUri,
             localFilePath = file.absolutePath,
             sizeBytes = file.length(),
             lastModifiedMs = file.lastModified(),

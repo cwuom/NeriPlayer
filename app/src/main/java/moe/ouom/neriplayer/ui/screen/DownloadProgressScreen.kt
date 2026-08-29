@@ -529,6 +529,12 @@ fun DownloadProgressScreen(
                                 context.performHapticFeedback()
                                 GlobalDownloadManager.cancelDownloadTask(songKey)
                             },
+                            onResume = {
+                                if (!effectiveIsClearing) {
+                                    context.performHapticFeedback()
+                                    GlobalDownloadManager.resumeDownloadTask(context, songKey)
+                                }
+                            },
                             actionsEnabled = !effectiveIsClearing,
                             modifier = Modifier.animateItem(
                                 fadeInSpec = tween(durationMillis = 250),
@@ -610,9 +616,9 @@ private fun DownloadProgressEmptyContent(isClearing: Boolean) {
 private fun DownloadTaskItem(
     task: DownloadTask,
     onCancel: () -> Unit,
+    onResume: () -> Unit,
     actionsEnabled: Boolean,
-    modifier: Modifier = Modifier,
-    onResume: () -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     val songName = remember(task.song) { task.song.displayName() }
     val songArtist = remember(task.song) { task.song.displayArtist() }

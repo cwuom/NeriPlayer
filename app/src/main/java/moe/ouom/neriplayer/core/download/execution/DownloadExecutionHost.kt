@@ -583,20 +583,18 @@ class DefaultDownloadExecutionHost(
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext DownloadExecutionResult.UserStopped
         }
-        if (operationStore.currentState(appContext, normalizedId) == "CANCEL_REQUESTED") {
+        resolvePreExecutionResult(
+            operationStore.currentState(appContext, normalizedId)
+        )?.let { result ->
             releaseHostAdmissionIfIdle(appContext, normalizedId)
-            return@withContext DownloadExecutionResult.Cancelled
-        }
-        if (
-            operationStore.currentState(appContext, normalizedId) ==
-                WAITING_STORAGE_MUTATION_OPERATION_STATE
-        ) {
-            releaseHostAdmissionIfIdle(appContext, normalizedId)
-            return@withContext DownloadExecutionResult.AlreadyHandled
+            return@withContext result
         }
         val claimResult = synchronized(executionAdmissionLock) {
             when {
-                !tryAcquireHostAdmission(appContext, normalizedId) -> DownloadExecutionResult.Retry
+                !tryAcquireHostAdmission(appContext, normalizedId) ->
+                    resolvePreExecutionResult(
+                        operationStore.currentState(appContext, normalizedId)
+                    ) ?: DownloadExecutionResult.Retry
                 !executingOperationIds.add(normalizedId) -> resolveConcurrentExecutionResult(
                     systemRetryStopPending = systemRetryStopOperationIds.contains(normalizedId)
                 )
@@ -888,6 +886,27 @@ internal fun resolveConcurrentExecutionResult(
         DownloadExecutionResult.Retry
     } else {
         DownloadExecutionResult.AlreadyHandled
+    }
+}
+
+internal fun resolvePreExecutionResult(
+    currentState: String?
+): DownloadExecutionResult? {
+    return when (currentState) {
+        null,
+        "INVALID" -> DownloadExecutionResult.MissingOperation
+
+        "CANCEL_REQUESTED",
+        "CANCELLED" -> DownloadExecutionResult.Cancelled
+
+        METADATA_ACTION_REQUIRED_OPERATION_STATE ->
+            DownloadExecutionResult.UserActionRequired
+
+        WAITING_STORAGE_MUTATION_OPERATION_STATE,
+        "FINALIZED",
+        "COMPLETED" -> DownloadExecutionResult.AlreadyHandled
+
+        else -> null
     }
 }
 

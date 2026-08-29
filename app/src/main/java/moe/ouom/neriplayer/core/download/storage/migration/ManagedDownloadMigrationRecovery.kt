@@ -2,6 +2,171 @@ package moe.ouom.neriplayer.core.download.storage.migration
 
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.audioExtensions
+
+internal fun migrationSourceEntryCount(
+    sourceEntries: Iterable<ManagedMigrationSourceEntry>,
+    cleanupReceipts: Iterable<ManagedMigrationCleanupReceipt>
+): Int {
+    val references = buildSet {
+        sourceEntries.forEach { entry ->
+            entry.sourceReference.trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+        cleanupReceipts.forEach { receipt ->
+            receipt.sourceReference.trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+    }
+    return references.size
+}
+
+/**
+ * pure recovery decisions for copy receipts whose source disappeared before a
+ * cleanup receipt was committed
+ */
+internal data class ManagedMigrationDeletedSourceCopyReceiptRecoveryPlan(
+    val journal: ManagedMigrationReplacementJournal,
+    val promoteCandidates: List<ManagedMigrationCopyReceipt>,
+    val rollbackCandidates: List<ManagedMigrationCopyReceipt>,
+    val preserveCandidates: List<ManagedMigrationCopyReceipt>,
+    val deletedSourceAudioCount: Int
+) {
+    val updatedJournal: ManagedMigrationReplacementJournal
+        get() = journal
+}
+
+/**
+ * Plans recovery for receipts loaded from the checkpoint store. The caller is
+ * responsible for fresh target validation and for applying the selected
+ * rollback or promotion; this function only reconciles durable state.
+ */
+internal fun planDeletedSourceCopyReceiptRecovery(
+    journal: ManagedMigrationReplacementJournal,
+    currentSourceReferences: Iterable<String>,
+    copyReceipts: Map<String, ManagedMigrationCopyReceipt>
+): ManagedMigrationDeletedSourceCopyReceiptRecoveryPlan {
+    return planDeletedSourceCopyReceiptRecovery(
+        journal = journal,
+        currentSourceReferences = currentSourceReferences,
+        copyReceipts = copyReceipts.values
+    )
+}
+
+internal fun planDeletedSourceCopyReceiptRecovery(
+    journal: ManagedMigrationReplacementJournal,
+    currentSourceReferences: Iterable<String>,
+    copyReceipts: Iterable<ManagedMigrationCopyReceipt>
+): ManagedMigrationDeletedSourceCopyReceiptRecoveryPlan {
+    val currentReferences = currentSourceReferences
+        .asSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+    val cleanupReferences = journal.cleanupReceipts
+        .asSequence()
+        .map { receipt -> receipt.sourceReference.trim() }
+        .filter(String::isNotBlank)
+        .toSet()
+    val journalReferences = buildSet {
+        journal.sourceEntries.forEach { entry ->
+            entry.sourceReference.trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+        journal.targetNamesByReference.keys.forEach { reference ->
+            reference.trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+        journal.replacements.forEach { replacement ->
+            replacement.sourceReference.trim().takeIf(String::isNotBlank)?.let(::add)
+        }
+        addAll(cleanupReferences)
+    }
+    val receiptsByReference = linkedMapOf<String, ManagedMigrationCopyReceipt>()
+    copyReceipts.forEach { rawReceipt ->
+        val sourceReference = rawReceipt.sourceReference.trim()
+        if (sourceReference.isBlank()) return@forEach
+        val receipt = if (rawReceipt.sourceReference == sourceReference) {
+            rawReceipt
+        } else {
+            rawReceipt.copy(sourceReference = sourceReference)
+        }
+        val previous = receiptsByReference[sourceReference]
+        if (previous == null) {
+            receiptsByReference[sourceReference] = receipt
+        } else if (previous != receipt) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移复制凭据存在不一致: $sourceReference"
+            )
+        }
+    }
+
+    val missingReceipts = receiptsByReference.values
+        .filter { receipt ->
+            receipt.sourceReference in journalReferences &&
+                receipt.sourceReference !in currentReferences &&
+                receipt.sourceReference !in cleanupReferences
+        }
+        .sortedWith(
+            compareBy<ManagedMigrationCopyReceipt>(
+                { it.sourceSubdirectory.orEmpty() },
+                { it.sourceName },
+                { it.sourceReference }
+            )
+        )
+    if (missingReceipts.isEmpty()) {
+        return ManagedMigrationDeletedSourceCopyReceiptRecoveryPlan(
+            journal = journal,
+            promoteCandidates = emptyList(),
+            rollbackCandidates = emptyList(),
+            preserveCandidates = emptyList(),
+            deletedSourceAudioCount = journal.deletedSourceAudioCount
+        )
+    }
+    val promoteCandidates = missingReceipts.filter { receipt ->
+        receipt.sourceAuthoritative &&
+            !receipt.createdNew &&
+            receipt.replacementBackup == null
+    }
+    val rollbackCandidates = missingReceipts.filter { receipt ->
+        receipt.createdNew || receipt.replacementBackup != null
+    }
+    val preserveCandidates = missingReceipts.filterNot { receipt ->
+        receipt in promoteCandidates || receipt in rollbackCandidates
+    }
+    val handledReferences = missingReceipts
+        .mapTo(HashSet(), ManagedMigrationCopyReceipt::sourceReference)
+    val remainingSourceEntries = journal.sourceEntries.filterNot { entry ->
+        entry.sourceReference.trim() in handledReferences
+    }
+    val remainingReplacements = journal.replacements.filterNot { replacement ->
+        replacement.sourceReference.trim() in handledReferences
+    }
+    val remainingTargetNames = journal.targetNamesByReference.filterKeys { reference ->
+        reference.trim() !in handledReferences
+    }
+    val additionalDeletedAudioCount = missingReceipts.count { receipt ->
+        receipt.sourceSubdirectory == null &&
+            receipt.sourceName.substringAfterLast('.', "").lowercase() in audioExtensions
+    }
+    val updatedJournal = journal.copy(
+        replacements = remainingReplacements,
+        targetNamesByReference = remainingTargetNames,
+        sourceEntries = remainingSourceEntries,
+        sourceEntryCount = migrationSourceEntryCount(
+            sourceEntries = remainingSourceEntries,
+            cleanupReceipts = journal.cleanupReceipts
+        ),
+        sourceEntriesComplete = true,
+        deletedSourceAudioCount = saturatedAudioDeletionCount(
+            existing = journal.deletedSourceAudioCount,
+            additional = additionalDeletedAudioCount
+        )
+    )
+    return ManagedMigrationDeletedSourceCopyReceiptRecoveryPlan(
+        journal = updatedJournal,
+        promoteCandidates = promoteCandidates,
+        rollbackCandidates = rollbackCandidates,
+        preserveCandidates = preserveCandidates,
+        deletedSourceAudioCount = updatedJournal.deletedSourceAudioCount
+    )
+}
 
 internal fun shouldRetryActiveMigrationJournal(
     phase: ManagedMigrationReplacementJournalPhase?,
@@ -18,6 +183,23 @@ internal fun shouldRetryActiveMigrationJournal(
     if (!sourceEntryCountKnown) return true
     if (sourceEntriesIncomplete && !cleanupReceiptComplete) return true
     return sourceEntriesEmpty && !cleanupReceiptComplete
+}
+
+internal fun shouldUseDirectMigrationReceiptValidation(
+    usePersistedManifest: Boolean,
+    persistedReceiptCount: Int
+): Boolean {
+    return usePersistedManifest && persistedReceiptCount > 0
+}
+
+internal fun isMigrationDocumentIdWithinTree(
+    treeDocumentId: String,
+    documentId: String
+): Boolean {
+    val root = treeDocumentId.trim()
+    val child = documentId.trim()
+    if (root.isBlank() || child.isBlank()) return false
+    return child == root || child.startsWith("$root/")
 }
 
 internal val ManagedMigrationReplacementJournal.legacyUnknownCount: Boolean
@@ -38,7 +220,9 @@ internal fun upgradeLegacyMigrationReplacementJournal(
         sourceEntryCount = maxOf(
             sourceEntryCount.coerceAtLeast(0),
             journal.replacements.size
-        )
+        ),
+        // a legacy journal never proved that its source enumeration was complete
+        sourceEntriesComplete = false
     )
 }
 
@@ -46,6 +230,41 @@ internal fun reconcileMigrationSourceManifest(
     journal: ManagedMigrationReplacementJournal,
     currentEntries: Iterable<ManagedMigrationEntry>
 ): ManagedMigrationReplacementJournal {
+    val currentEntriesList = currentEntries.toList()
+    val currentReferences = currentEntriesList.mapTo(HashSet()) { entry ->
+        entry.entry.reference
+    }
+    val verifiedReferences = journal.cleanupReceipts
+        .mapTo(HashSet(), ManagedMigrationCleanupReceipt::sourceReference)
+    val currentFingerprints = currentEntriesList.mapTo(HashSet()) { entry ->
+        MigrationSourceFingerprint(
+            sourceName = entry.entry.name,
+            sourceSubdirectory = entry.subdirectory,
+            sizeBytes = entry.entry.sizeBytes.coerceAtLeast(0L),
+            lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L)
+        )
+    }
+    val previouslyKnownEntries = journal.sourceEntries.associateBy(
+        ManagedMigrationSourceEntry::sourceReference
+    )
+    val newlyDeletedAudioCount = if (journal.sourceEntryCountKnown) {
+            previouslyKnownEntries
+            .filterKeys { reference ->
+                reference !in currentReferences && reference !in verifiedReferences
+            }
+            .values
+            .filterNot { entry ->
+                MigrationSourceFingerprint(
+                    sourceName = entry.sourceName,
+                    sourceSubdirectory = entry.sourceSubdirectory,
+                    sizeBytes = entry.sizeBytes.coerceAtLeast(0L),
+                    lastModifiedMs = entry.lastModifiedMs.coerceAtLeast(0L)
+                ) in currentFingerprints
+            }
+            .count(ManagedMigrationSourceEntry::isAudioSource)
+    } else {
+        0
+    }
     val merged = linkedMapOf<String, ManagedMigrationSourceEntry>()
     fun add(entry: ManagedMigrationSourceEntry) {
         if (entry.sourceReference.isBlank() || entry.sourceName.isBlank()) return
@@ -63,7 +282,7 @@ internal fun reconcileMigrationSourceManifest(
             )
         )
     }
-    val currentByReference = currentEntries.associateBy { it.entry.reference }
+    val currentByReference = currentEntriesList.associateBy { it.entry.reference }
     // a complete provider scan is the only point at which a missing source can
     // be interpreted as a user deletion; stale manifest entries are discarded
     // while durable receipts remain authoritative for already verified files
@@ -71,7 +290,7 @@ internal fun reconcileMigrationSourceManifest(
         reference in currentByReference ||
             journal.cleanupReceipts.any { receipt -> receipt.sourceReference == reference }
     }
-    currentEntries.forEach { entry ->
+    currentEntriesList.forEach { entry ->
         add(
             ManagedMigrationSourceEntry(
                 sourceReference = entry.entry.reference,
@@ -91,8 +310,103 @@ internal fun reconcileMigrationSourceManifest(
     )
     return journal.copy(
         sourceEntries = ordered,
-        sourceEntryCount = ordered.size.coerceAtLeast(journal.cleanupReceipts.size)
+        sourceEntryCount = migrationSourceEntryCount(
+            sourceEntries = ordered,
+            cleanupReceipts = journal.cleanupReceipts
+        ),
+        sourceEntriesComplete = true,
+        deletedSourceAudioCount = saturatedAudioDeletionCount(
+            existing = journal.deletedSourceAudioCount,
+            additional = newlyDeletedAudioCount
+        )
     )
+}
+
+private data class MigrationSourceFingerprint(
+    val sourceName: String,
+    val sourceSubdirectory: String?,
+    val sizeBytes: Long,
+    val lastModifiedMs: Long
+)
+
+internal fun removeDeletedMigrationSources(
+    journal: ManagedMigrationReplacementJournal,
+    deletedReferences: Iterable<String>
+): ManagedMigrationReplacementJournal {
+    val verifiedReferences = journal.cleanupReceipts
+        .mapTo(HashSet(), ManagedMigrationCleanupReceipt::sourceReference)
+    val deletions = deletedReferences.asSequence()
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .filterNot(verifiedReferences::contains)
+        .toSet()
+    if (deletions.isEmpty()) return journal
+    val deletedAudioCount = journal.sourceEntries
+        .asSequence()
+        .filter { entry -> entry.sourceReference in deletions }
+        .count(ManagedMigrationSourceEntry::isAudioSource)
+    val sourceEntries = journal.sourceEntries.filterNot { entry ->
+        entry.sourceReference in deletions
+    }
+    return journal.copy(
+        replacements = journal.replacements.filterNot { replacement ->
+            replacement.sourceReference in deletions
+        },
+        targetNamesByReference = journal.targetNamesByReference
+            .filterKeys { reference -> reference !in deletions },
+        sourceEntries = sourceEntries,
+        sourceEntryCount = migrationSourceEntryCount(
+            sourceEntries = sourceEntries,
+            cleanupReceipts = journal.cleanupReceipts
+        ),
+        sourceEntriesComplete = true,
+        deletedSourceAudioCount = saturatedAudioDeletionCount(
+            existing = journal.deletedSourceAudioCount,
+            additional = deletedAudioCount
+        )
+    )
+}
+
+internal fun ManagedMigrationSourceEntry.isAudioSource(): Boolean {
+    return sourceSubdirectory == null &&
+        sourceName.substringAfterLast('.', "").lowercase() in audioExtensions
+}
+
+internal fun committedMigrationAudioReceiptCount(
+    journal: ManagedMigrationReplacementJournal
+): Int {
+    return journal.cleanupReceipts.count { receipt ->
+        receipt.sourceSubdirectory == null &&
+            receipt.sourceName.substringAfterLast('.', "").lowercase() in audioExtensions
+    }
+}
+
+internal fun committedMigrationReceiptsMeetAudioMinimum(
+    journal: ManagedMigrationReplacementJournal,
+    minimumAudioCount: Int
+): Boolean {
+    return minimumAudioCount <= 0 ||
+        committedMigrationAudioReceiptCount(journal) >= minimumAudioCount
+}
+
+internal fun canReuseMigrationTargetDigest(
+    expectedSizeBytes: Long,
+    actualSizeBytes: Long,
+    expectedLastModifiedMs: Long,
+    actualLastModifiedMs: Long
+): Boolean {
+    return expectedSizeBytes > 0L &&
+        actualSizeBytes > 0L &&
+        expectedSizeBytes == actualSizeBytes &&
+        expectedLastModifiedMs > 0L &&
+        actualLastModifiedMs > 0L &&
+        expectedLastModifiedMs == actualLastModifiedMs
+}
+
+private fun saturatedAudioDeletionCount(existing: Int, additional: Int): Int {
+    return (existing.coerceAtLeast(0).toLong() + additional.coerceAtLeast(0).toLong())
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
 }
 
 internal fun mergePersistedMigrationCleanupReceipts(
@@ -127,6 +441,44 @@ internal fun mergePersistedMigrationCleanupReceipts(
             { it.sourceReference }
         )
     )
+}
+
+internal fun mergePersistedMigrationCopyReceipts(
+    checkpoints: Iterable<Iterable<ManagedMigrationCopyReceipt>>
+): Map<String, ManagedMigrationCopyReceipt> {
+    val merged = linkedMapOf<String, ManagedMigrationCopyReceipt>()
+    checkpoints.flatten().forEach { receipt ->
+        val reference = receipt.sourceReference.trim()
+        if (reference.isBlank()) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移复制凭据缺少源文档引用"
+            )
+        }
+        val previous = merged[reference]
+        if (previous != null && previous != receipt) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移复制凭据存在不一致: $reference"
+            )
+        }
+        merged[reference] = receipt
+    }
+    return merged
+}
+
+/**
+ * current worker receipts supersede stale checkpoint rows
+ * older checkpoints still must agree with each other so provider swaps are
+ * never hidden by recovery ordering
+ */
+internal fun mergePersistedMigrationCopyReceipts(
+    current: Iterable<ManagedMigrationCopyReceipt>,
+    checkpoints: Iterable<Iterable<ManagedMigrationCopyReceipt>>
+): Map<String, ManagedMigrationCopyReceipt> {
+    val currentReceipts = mergePersistedMigrationCopyReceipts(listOf(current))
+    val persistedReceipts = mergePersistedMigrationCopyReceipts(checkpoints)
+    return persistedReceipts.toMutableMap().apply {
+        putAll(currentReceipts)
+    }
 }
 
 internal fun hasCompleteMigrationCleanupReceipts(
