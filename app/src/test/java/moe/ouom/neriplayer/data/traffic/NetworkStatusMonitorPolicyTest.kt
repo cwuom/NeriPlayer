@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.data.traffic
 
+import android.net.NetworkCapabilities
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -184,6 +187,116 @@ class NetworkStatusMonitorPolicyTest {
             resolveLikelyInternetAccess(
                 availability = LikelyNetworkTransportAvailability.OFFLINE
             )
+        )
+    }
+
+    @Test
+    fun `internet transport without validation cannot recover downloads`() {
+        assertFalse(
+            hasValidatedInternetCapability(
+                hasInternetCapability = true,
+                hasValidatedCapability = false
+            )
+        )
+    }
+
+    @Test
+    fun `validated internet requires both capability flags`() {
+        assertTrue(
+            hasValidatedInternetCapability(
+                hasInternetCapability = true,
+                hasValidatedCapability = true
+            )
+        )
+        assertFalse(
+            hasValidatedInternetCapability(
+                hasInternetCapability = false,
+                hasValidatedCapability = true
+            )
+        )
+    }
+
+    @Test
+    fun `unvalidated transport is not eligible for download network policy`() {
+        assertEquals(
+            null,
+            resolveValidatedTrafficNetworkType(
+                networkType = TrafficNetworkType.WIFI,
+                hasInternetCapability = true,
+                hasValidatedCapability = false
+            )
+        )
+    }
+
+    @Test
+    fun `download policy keeps an unvalidated wifi transport recoverable`() {
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            resolveDownloadNetworkType(
+                validatedType = null,
+                transportType = TrafficNetworkType.WIFI
+            )
+        )
+    }
+
+    @Test
+    fun `download policy never promotes an unvalidated cellular transport`() {
+        assertEquals(
+            null,
+            resolveDownloadNetworkType(
+                validatedType = null,
+                transportType = TrafficNetworkType.MOBILE
+            )
+        )
+    }
+
+    @Test
+    fun `validated mobile network remains mobile for download policy`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveDownloadNetworkType(
+                validatedType = TrafficNetworkType.MOBILE,
+                transportType = TrafficNetworkType.WIFI
+            )
+        )
+    }
+
+    @Test
+    fun `validated transport keeps its billing class`() {
+        assertEquals(
+            TrafficNetworkType.MOBILE,
+            resolveValidatedTrafficNetworkType(
+                networkType = TrafficNetworkType.MOBILE,
+                hasInternetCapability = true,
+                hasValidatedCapability = true
+            )
+        )
+    }
+
+    @Test
+    fun `validated network type helper rejects unvalidated capabilities`() {
+        val capabilities = mock(NetworkCapabilities::class.java)
+        `when`(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)).thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+            .thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            .thenReturn(false)
+
+        assertEquals(null, capabilities.validatedTrafficNetworkTypeOrNull())
+    }
+
+    @Test
+    fun `validated network type helper accepts validated internet`() {
+        val capabilities = mock(NetworkCapabilities::class.java)
+        `when`(capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)).thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+            .thenReturn(true)
+        `when`(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            .thenReturn(true)
+
+        assertEquals(
+            TrafficNetworkType.WIFI,
+            capabilities.validatedTrafficNetworkTypeOrNull()
         )
     }
 

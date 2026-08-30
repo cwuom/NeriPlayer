@@ -3,6 +3,8 @@ package moe.ouom.neriplayer.data.local.audioimport
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
+import android.net.Uri
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
@@ -521,6 +523,40 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
+    fun `external audio replacement preserves an existing recoverable backup`() {
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        val uri = mock(Uri::class.java)
+        val uriString = "content://downloads/audio/1"
+        `when`(uri.toString()).thenReturn(uriString)
+        val target = tempFolder.newFile("song.mp3").apply { writeText("stale") }
+        val uriKey = MessageDigest.getInstance("SHA-256")
+            .digest(uriString.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val backup = File(
+            target.parentFile,
+            ".${target.name}.${uriKey.take(8)}.backup"
+        ).apply { writeText("recoverable") }
+
+        `when`(context.contentResolver).thenReturn(resolver)
+        doReturn(ByteArrayInputStream("fresh".toByteArray()))
+            .`when`(resolver)
+            .openInputStream(uri)
+
+        val method = LocalAudioImportManager::class.java.getDeclaredMethod(
+            "copyExternalAudioToTarget",
+            Context::class.java,
+            Uri::class.java,
+            File::class.java,
+            Long::class.javaObjectType
+        ).apply { isAccessible = true }
+        method.invoke(LocalAudioImportManager, context, uri, target, 5L)
+
+        assertEquals("fresh", target.readText())
+        assertEquals("recoverable", backup.readText())
+    }
+
+    @Test
     fun `buildNearbySidecarCopyPlans keeps source Covers artwork as track specific target`() {
         val sourceDir = tempFolder.newFolder("source-cover-dir")
         val sourceAudio = File(sourceDir, "song.flac").apply { writeText("audio") }
@@ -672,6 +708,34 @@ class LocalAudioImportManagerTest {
         assertEquals(
             resolveFilesystemCreationTime(importedFile) ?: sourceTime,
             song.addedAt
+        )
+    }
+
+    @Test
+    fun `media store timestamps reject invalid and future seconds`() {
+        assertEquals(0L, resolveMediaStoreSourceAddedAt(-1L, 0L))
+        assertEquals(0L, resolveMediaStoreSourceAddedAt(Long.MAX_VALUE, null))
+        assertEquals(
+            1_700_000_000_000L,
+            resolveMediaStoreSourceAddedAt(1_700_000_000L, null)
+        )
+    }
+
+    @Test
+    fun `filesystem creation observation keeps equal timestamp with lower confidence`() {
+        assertEquals(
+            "INFERRED",
+            resolveFilesystemCreationConfidence(
+                creationTimeMs = 100L,
+                lastModifiedTimeMs = 100L
+            )
+        )
+        assertEquals(
+            "EXACT",
+            resolveFilesystemCreationConfidence(
+                creationTimeMs = 100L,
+                lastModifiedTimeMs = 101L
+            )
         )
     }
 

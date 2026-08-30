@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceIo
@@ -34,7 +35,16 @@ class SafStorageBackendFailureClassificationTest {
     }
 
     @Test
-    fun `stat classifies wrapped missing file provider error as missing`() = runBlocking {
+    fun `stat classifies an explicit missing child without scope error as missing`() = runBlocking {
+        val error = FileNotFoundException("Missing file for primary:root/song.npmeta.json")
+
+        val result = SafStorageBackend(contextThatThrows(error)).stat(reference)
+
+        assertEquals(StorageLookupResult.Missing, result)
+    }
+
+    @Test
+    fun `stat classifies wrapped missing child failure as missing`() = runBlocking {
         val error = IllegalArgumentException(
             "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
             FileNotFoundException(
@@ -45,6 +55,18 @@ class SafStorageBackendFailureClassificationTest {
         val result = SafStorageBackend(contextThatThrows(error)).stat(reference)
 
         assertEquals(StorageLookupResult.Missing, result)
+    }
+
+    @Test
+    fun `stat keeps inability to determine child scope as provider failure`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            java.io.IOException("canonical path unavailable")
+        )
+
+        val result = SafStorageBackend(contextThatThrows(error)).stat(reference)
+
+        assertProviderFailure(result, error)
     }
 
     @Test
@@ -104,6 +126,57 @@ class SafStorageBackendFailureClassificationTest {
         val result = SafStorageBackend(contextThatThrows(error)).read(reference) { it.readBytes() }
 
         assertProviderFailure(result, error)
+    }
+
+    @Test
+    fun `read classifies wrapped missing child failure as missing`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            FileNotFoundException(
+                "Missing file for primary:root/song.npmeta.json at /storage/emulated/0/root/song.npmeta.json"
+            )
+        )
+
+        val result = SafStorageBackend(contextThatThrows(error)).read(reference) { it.readBytes() }
+
+        assertEquals(StorageLookupResult.Missing, result)
+    }
+
+    @Test
+    fun `read gives wrapped permission failure precedence over missing text`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            FileNotFoundException("Permission denied for primary:root/song.npmeta.json")
+        )
+
+        val result = SafStorageBackend(contextThatThrows(error)).read(reference) { it.readBytes() }
+
+        assertEquals(StorageLookupResult.PermissionLost, result)
+    }
+
+    @Test
+    fun `read classifies provider missing failure raised while consuming stream`() = runBlocking {
+        val error = IllegalArgumentException(
+            "Failed to determine if primary:root/song.npmeta.json is child of primary:root",
+            FileNotFoundException(
+                "Missing file for primary:root/song.npmeta.json at " +
+                    "/storage/emulated/0/root/song.npmeta.json"
+            )
+        )
+        val context = mock(Context::class.java)
+        val resolver = mock(ContentResolver::class.java)
+        `when`(context.contentResolver).thenReturn(resolver)
+        `when`(resolver.openInputStream(reference.uri)).thenReturn(
+            object : InputStream() {
+                override fun read(): Int = throw error
+            }
+        )
+
+        val result = SafStorageBackend(context).read(reference) { input ->
+            input.read()
+        }
+
+        assertEquals(StorageLookupResult.Missing, result)
     }
 
     @Test
@@ -176,6 +249,7 @@ class SafStorageBackendFailureClassificationTest {
         val resolver = mock(ContentResolver::class.java)
         `when`(context.contentResolver).thenReturn(resolver)
         doAnswer { throw error }.`when`(resolver).query(any(), any(), any(), any(), any())
+        doAnswer { throw error }.`when`(resolver).openInputStream(any())
         return context
     }
 

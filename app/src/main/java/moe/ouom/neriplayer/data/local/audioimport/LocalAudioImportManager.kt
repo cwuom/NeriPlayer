@@ -73,6 +73,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.Locale
+import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
 enum class LocalAudioScanPhase {
@@ -202,6 +203,8 @@ private fun isMediaStoreSourceReference(reference: String?): Boolean {
         normalized.startsWith("content://com.android.providers.media.documents/")
 }
 
+private const val CREATION_TIME_FUTURE_TOLERANCE_MS = 24L * 60L * 60L * 1_000L
+
 internal fun resolveMediaStoreSourceAddedAt(
     dateAddedSeconds: Long?,
     dateModifiedSeconds: Long?
@@ -221,6 +224,22 @@ internal fun resolveScannedSourceAddedAt(
 }
 
 internal fun resolveFilesystemCreationTime(file: File): Long? {
+    return resolveFilesystemCreationObservation(file)?.timestampMs
+}
+
+internal data class FilesystemCreationObservation(
+    val timestampMs: Long,
+    val confidence: String
+)
+
+internal fun resolveFilesystemCreationConfidence(
+    creationTimeMs: Long,
+    lastModifiedTimeMs: Long
+): String {
+    return if (creationTimeMs == lastModifiedTimeMs) "INFERRED" else "EXACT"
+}
+
+internal fun resolveFilesystemCreationObservation(file: File): FilesystemCreationObservation? {
     return runCatching {
         val attributes = Files.readAttributes(
             file.toPath(),
@@ -229,15 +248,34 @@ internal fun resolveFilesystemCreationTime(file: File): Long? {
         )
         val creationTimeMs = attributes.creationTime().toMillis()
         val lastModifiedTimeMs = attributes.lastModifiedTime().toMillis()
-        creationTimeMs
-            .takeIf { it > 0L && it != lastModifiedTimeMs }
+        val latestAllowed = System.currentTimeMillis() + CREATION_TIME_FUTURE_TOLERANCE_MS
+        if (creationTimeMs <= 0L || creationTimeMs > latestAllowed) {
+            return@runCatching null
+        }
+        FilesystemCreationObservation(
+            timestampMs = creationTimeMs,
+            confidence = resolveFilesystemCreationConfidence(
+                creationTimeMs = creationTimeMs,
+                lastModifiedTimeMs = lastModifiedTimeMs
+            )
+        )
     }.getOrNull()
 }
 
 internal fun localSongNewestFirstComparator(): Comparator<SongItem> {
     return compareByDescending<SongItem> { song ->
-        song.addedAt.takeIf { timestamp -> timestamp > 0L } ?: Long.MIN_VALUE
+        (song.logicalCreatedAtMs ?: song.addedAt)
+            .takeIf { timestamp -> timestamp > 0L }
+            ?: Long.MIN_VALUE
     }
+        .thenByDescending { song ->
+            when (song.createdAtConfidence?.uppercase(Locale.ROOT)) {
+                "EXACT" -> 3
+                "PROVIDER_REPORTED" -> 2
+                "INFERRED" -> 1
+                else -> 0
+            }
+        }
         .thenBy { it.sourceStableKey.orEmpty() }
         .thenBy { it.mediaUri.orEmpty() }
         .thenBy { it.localFileName.orEmpty() }
@@ -355,11 +393,18 @@ private fun buildLocalSidecarMetadataIndex(
 
 private fun Long?.toEpochMillisOrNull(): Long? {
     val seconds = this?.takeIf { it > 0L } ?: return null
-    return if (seconds > Long.MAX_VALUE / 1_000L) {
-        Long.MAX_VALUE
-    } else {
-        seconds * 1_000L
+    val latestAllowedSeconds =
+        (System.currentTimeMillis() / 1_000L) + (CREATION_TIME_FUTURE_TOLERANCE_MS / 1_000L)
+    if (seconds > latestAllowedSeconds || seconds > Long.MAX_VALUE / 1_000L) {
+        return null
     }
+    return seconds * 1_000L
+}
+
+private fun Long?.toValidTimestampMsOrNull(): Long? {
+    val timestamp = this?.takeIf { it > 0L } ?: return null
+    val latestAllowed = System.currentTimeMillis() + CREATION_TIME_FUTURE_TOLERANCE_MS
+    return timestamp.takeIf { it <= latestAllowed }
 }
 
 internal data class SidecarCopyPlan(
@@ -375,6 +420,8 @@ internal data class QuickImportedSongSeed(
     val album: String?,
     val durationMs: Long?,
     val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
     val localFile: File? = null,
     val nearbyCoverUri: String? = null,
     val mediaStoreCoverUri: String? = null,
@@ -395,12 +442,36 @@ private data class QuickImportedAudioInfo(
     val album: String? = null,
     val durationMs: Long? = null,
     val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
     val mediaStoreCoverUri: String? = null
 )
 
 private data class ExternalAudioCopyInfo(
     val displayName: String?,
+    val sizeBytes: Long?,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
+    val sourceLastModifiedAt: Long? = null
+)
+
+private data class ExternalProviderTimestampInfo(
+    val dateAddedMs: Long? = null,
+    val dateModifiedMs: Long? = null,
+    val documentLastModifiedMs: Long? = null
+)
+
+private data class ExternalAudioBaseInfo(
+    val displayName: String?,
     val sizeBytes: Long?
+)
+
+private data class StabilizedExternalAudio(
+    val uri: Uri,
+    val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null
 )
 
 private data class FolderScanCandidate(
@@ -408,6 +479,8 @@ private data class FolderScanCandidate(
     val displayName: String? = null,
     val nearbyCoverUri: String? = null,
     val sourceAddedAt: Long? = null,
+    val sourceAddedAtSource: String? = null,
+    val sourceAddedAtConfidence: String? = null,
     val durationMs: Long? = null,
     val knownSidecarReferences: LocalKnownSidecarReferences? = null
 )
@@ -1016,8 +1089,16 @@ object LocalAudioImportManager {
 
         distinctUris.take(MAX_EXTERNAL_IMPORT_COUNT).forEach { uri ->
             val sourceFile = resolveSourceFile(context, uri)
+            val sourceCopyInfo = if (
+                uri.scheme.equals("content", ignoreCase = true) &&
+                    uri.authority != MediaStore.AUTHORITY
+            ) {
+                queryExternalAudioCopyInfo(context, uri, sourceFile)
+            } else {
+                null
+            }
             val displayName = sourceFile?.name
-                ?: queryExternalAudioCopyInfo(context, uri).displayName
+                ?: sourceCopyInfo?.displayName
                 ?: uri.lastPathSegment
                 ?: uri.toString()
             val candidateReferences = buildList {
@@ -1039,21 +1120,41 @@ object LocalAudioImportManager {
                 NPLogger.d(TAG, "skip unfinalized managed external audio: $uri")
                 return@forEach
             }
-            val stableUri = runCatching {
-                stabilizeExternalUri(context, uri)
+            val stabilizedAudio = runCatching {
+                stabilizeExternalUri(
+                    context = context,
+                    uri = uri,
+                    sourceFile = sourceFile,
+                    copyInfo = sourceCopyInfo
+                )
             }.getOrRethrowCancellation {
                 NPLogger.e(TAG, "Failed to stabilize external audio: $uri", it)
             }
 
-            if (stableUri == null) {
+            if (stabilizedAudio == null) {
                 failedCount++
                 return@forEach
             }
 
             val song = runCatching {
-                buildQuickImportedSong(context, stableUri)
+                val imported = buildQuickImportedSong(context, stabilizedAudio.uri)
+                val sourceAddedAt = stabilizedAudio.sourceAddedAt
+                if (sourceAddedAt == null || sourceAddedAt <= 0L) {
+                    imported
+                } else {
+                    imported.copy(
+                        addedAt = sourceAddedAt,
+                        logicalCreatedAtMs = sourceAddedAt,
+                        createdAtSource = stabilizedAudio.sourceAddedAtSource,
+                        createdAtConfidence = stabilizedAudio.sourceAddedAtConfidence
+                    )
+                }
             }.getOrRethrowCancellation {
-                NPLogger.e(TAG, "Failed to import stabilized external audio: $stableUri", it)
+                NPLogger.e(
+                    TAG,
+                    "Failed to import stabilized external audio: ${stabilizedAudio.uri}",
+                    it
+                )
             }
 
             if (song != null) {
@@ -1071,7 +1172,7 @@ object LocalAudioImportManager {
         }
 
         LocalAudioImportResult(
-            songs = songs.distinctBy { it.identity() },
+            songs = orderScannedSongs(songs.distinctBy { it.identity() }),
             failedCount = failedCount,
             completed = true,
             metadataDeferred = false
@@ -1591,7 +1692,9 @@ object LocalAudioImportManager {
     }
 
     private fun orderScannedSongs(songs: List<SongItem>): List<SongItem> {
-        return songs.sortedWith(localSongNewestFirstComparator())
+        return songs
+            .distinctBy { it.identity() }
+            .sortedWith(localSongNewestFirstComparator())
     }
 
     private suspend fun scanExternalStorageFolderWithMediaStore(
@@ -1762,18 +1865,34 @@ object LocalAudioImportManager {
                             knownSidecarReferences[contentUri.toString()] = references
                         }
                     }
+                    val dateAddedSeconds = dateAddedIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val dateModifiedSeconds = dateModifiedIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val filesystemCreation = resolvedFile
+                        ?.let(::resolveFilesystemCreationObservation)
                     val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
-                        dateAddedSeconds = dateAddedIndex
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong),
-                        dateModifiedSeconds = dateModifiedIndex
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong)
+                        dateAddedSeconds = dateAddedSeconds,
+                        dateModifiedSeconds = dateModifiedSeconds
                     )
                     val sourceAddedAt = resolveScannedSourceAddedAt(
-                        preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
+                        preferredTimestampMs = filesystemCreation?.timestampMs,
                         fallbackTimestampMs = mediaStoreSourceAddedAt
                     )
+                    val sourceAddedAtSource = when {
+                        filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                        dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                        dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                        else -> "UNKNOWN"
+                    }
+                    val sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                        "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                        else -> "UNKNOWN"
+                    }
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
                             sourceRef = sourceReference,
@@ -1791,6 +1910,8 @@ object LocalAudioImportManager {
                                 .takeIf { !cursor.isNull(it) }
                                 ?.let(cursor::getLong),
                             sourceAddedAt = sourceAddedAt,
+                            sourceAddedAtSource = sourceAddedAtSource,
+                            sourceAddedAtConfidence = sourceAddedAtConfidence,
                             localFile = resolvedFile,
                             nearbyCoverUri = nearbyCoverUri,
                             mediaStoreCoverUri = mediaStoreCoverUri,
@@ -2077,18 +2198,34 @@ object LocalAudioImportManager {
                     managedSidecarReferences?.let { references ->
                         indexedManagedSidecarReferences[contentUri.toString()] = references
                     }
+                    val dateAddedSeconds = idxDateAdded
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val dateModifiedSeconds = idxDateModified
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
+                        ?.let(cursor::getLong)
+                    val filesystemCreation = resolvedFile
+                        ?.let(::resolveFilesystemCreationObservation)
                     val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
-                        dateAddedSeconds = idxDateAdded
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong),
-                        dateModifiedSeconds = idxDateModified
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong)
+                        dateAddedSeconds = dateAddedSeconds,
+                        dateModifiedSeconds = dateModifiedSeconds
                     )
                     val sourceAddedAt = resolveScannedSourceAddedAt(
-                        preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
+                        preferredTimestampMs = filesystemCreation?.timestampMs,
                         fallbackTimestampMs = mediaStoreSourceAddedAt
                     )
+                    val sourceAddedAtSource = when {
+                        filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                        dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                        dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                        else -> "UNKNOWN"
+                    }
+                    val sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                        "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                        else -> "UNKNOWN"
+                    }
 
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -2099,6 +2236,8 @@ object LocalAudioImportManager {
                             album = idxAlbum.takeIf { it >= 0 }?.let(cursor::getString),
                             durationMs = duration,
                             sourceAddedAt = sourceAddedAt,
+                            sourceAddedAtSource = sourceAddedAtSource,
+                            sourceAddedAtConfidence = sourceAddedAtConfidence,
                             localFile = resolvedFile,
                             nearbyCoverUri = managedSidecarReferences?.cover,
                             mediaStoreCoverUri = mediaStoreCoverUri
@@ -2213,11 +2352,31 @@ object LocalAudioImportManager {
             usesFallbackAlbum = resolvedAlbumSeed.isNullOrBlank()
         )
         val stableId = computeStableSongId(seed.stableIdentitySource ?: resolvedSource)
+        val filesystemCreation = seed.localFile?.let(::resolveFilesystemCreationObservation)
+        val filesystemModifiedAt = seed.localFile?.lastModified()
         val sourceAddedAt = resolveScannedSourceAddedAt(
             preferredTimestampMs = seed.sourceAddedAt,
-            fallbackTimestampMs = seed.localFile?.let(::resolveFilesystemCreationTime)
-                ?: seed.localFile?.lastModified()
+            fallbackTimestampMs = filesystemCreation?.timestampMs ?: filesystemModifiedAt
         )
+        val logicalCreatedAt = sourceAddedAt.takeIf { it > 0L }
+        val createdAtSource = seed.sourceAddedAtSource
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: when {
+                seed.sourceAddedAt?.let { it > 0L } == true -> "PROVIDER_NATIVE"
+                filesystemCreation != null -> "FILESYSTEM_BIRTH"
+                filesystemModifiedAt?.let { it > 0L } == true -> "MTIME_FALLBACK"
+                else -> "UNKNOWN"
+            }
+        val createdAtConfidence = seed.sourceAddedAtConfidence
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: when (createdAtSource) {
+                "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                "PROVIDER_NATIVE" -> "PROVIDER_REPORTED"
+                "MTIME_FALLBACK" -> "INFERRED"
+                else -> "UNKNOWN"
+            }
 
         return SongItem(
             id = stableId,
@@ -2245,7 +2404,10 @@ object LocalAudioImportManager {
             channelId = "local",
             audioId = stableId.toString(),
             sourceStableKey = seed.sourceStableKey,
-            addedAt = sourceAddedAt
+            addedAt = sourceAddedAt,
+            logicalCreatedAtMs = logicalCreatedAt,
+            createdAtSource = createdAtSource,
+            createdAtConfidence = createdAtConfidence
         )
     }
 
@@ -2959,6 +3121,14 @@ object LocalAudioImportManager {
 
     private fun buildFolderScannedSong(context: Context, uri: Uri): SongItem {
         val details = LocalMediaSupport.inspectForScan(context, uri)
+        val localFile = details.filePath?.let(::File)?.takeIf(File::exists)
+        val filesystemCreation = localFile?.let(::resolveFilesystemCreationObservation)
+        val sourceAddedAt = filesystemCreation?.timestampMs ?: details.lastModifiedMs
+        val sourceAddedAtSource = when {
+            filesystemCreation != null -> "FILESYSTEM_BIRTH"
+            details.lastModifiedMs?.let { it > 0L } == true -> "SAF_LAST_MODIFIED"
+            else -> "UNKNOWN"
+        }
         return buildQuickImportedSong(
             seed = QuickImportedSongSeed(
                 sourceRef = uri.toString(),
@@ -2967,12 +3137,14 @@ object LocalAudioImportManager {
                 artist = details.artist,
                 album = details.album.takeUnless { details.usesFallbackAlbum },
                 durationMs = details.durationMs,
-                sourceAddedAt = details.filePath
-                    ?.let(::File)
-                    ?.takeIf(File::exists)
-                    ?.let(::resolveFilesystemCreationTime)
-                    ?: details.lastModifiedMs,
-                localFile = details.filePath?.let(::File)?.takeIf(File::exists),
+                sourceAddedAt = sourceAddedAt,
+                sourceAddedAtSource = sourceAddedAtSource,
+                sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                    "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                    "SAF_LAST_MODIFIED" -> "INFERRED"
+                    else -> "UNKNOWN"
+                },
+                localFile = localFile,
                 nearbyCoverUri = details.coverUri,
                 sourceStableKey = details.sourceStableKey,
                 matchedLyric = details.lyricContent,
@@ -3088,6 +3260,12 @@ object LocalAudioImportManager {
                                 baseName = baseName
                             ),
                             sourceAddedAt = child.lastModifiedMs,
+                            sourceAddedAtSource = child.lastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "SAF_LAST_MODIFIED" },
+                            sourceAddedAtConfidence = child.lastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "INFERRED" },
                             durationMs = child.durationMs,
                             knownSidecarReferences = resolveKnownSidecarReferences(
                                 directIndex = directSidecarIndex,
@@ -3221,6 +3399,9 @@ object LocalAudioImportManager {
                         val baseName = displayName
                             ?.substringBeforeLast('.', displayName)
                             .orEmpty()
+                        val childLastModifiedMs = runCatching {
+                            child.lastModified()
+                        }.getOrNull()
                         candidates += FolderScanCandidate(
                             uri = child.uri,
                             displayName = displayName,
@@ -3230,7 +3411,13 @@ object LocalAudioImportManager {
                                 rootCoverIndex = rootCoverIndex,
                                 baseName = baseName
                             ),
-                            sourceAddedAt = runCatching { child.lastModified() }.getOrNull(),
+                            sourceAddedAt = childLastModifiedMs,
+                            sourceAddedAtSource = childLastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "SAF_LAST_MODIFIED" },
+                            sourceAddedAtConfidence = childLastModifiedMs
+                                ?.takeIf { it > 0L }
+                                ?.let { "INFERRED" },
                             durationMs = null,
                             knownSidecarReferences = resolveKnownSidecarReferences(
                                 directIndex = directSidecarIndex,
@@ -3398,6 +3585,8 @@ object LocalAudioImportManager {
                 album = null,
                 durationMs = candidate.durationMs,
                 sourceAddedAt = candidate.sourceAddedAt,
+                sourceAddedAtSource = candidate.sourceAddedAtSource,
+                sourceAddedAtConfidence = candidate.sourceAddedAtConfidence,
                 nearbyCoverUri = candidate.nearbyCoverUri
             ),
             unknownArtistLabel = unknownArtistLabel
@@ -3619,6 +3808,8 @@ object LocalAudioImportManager {
     ): SongItem {
         val resolvedFile = resolveSourceFile(context, uri)
         val queryInfo = queryQuickImportedAudioInfo(context, uri)
+        val filesystemCreation = resolvedFile
+            ?.let(::resolveFilesystemCreationObservation)
         val durationMs = queryInfo.durationMs?.takeIf { it > 0L }
             ?: runCatching {
                 LocalMediaSupport.inspectQuick(
@@ -3652,10 +3843,11 @@ object LocalAudioImportManager {
                 artist = queryInfo.artist,
                 album = queryInfo.album,
                 durationMs = durationMs,
-                sourceAddedAt = resolveScannedSourceAddedAt(
-                    preferredTimestampMs = resolvedFile?.let(::resolveFilesystemCreationTime),
-                    fallbackTimestampMs = queryInfo.sourceAddedAt
-                ),
+                sourceAddedAt = filesystemCreation?.timestampMs ?: queryInfo.sourceAddedAt,
+                sourceAddedAtSource = filesystemCreation?.let { "FILESYSTEM_BIRTH" }
+                    ?: queryInfo.sourceAddedAtSource,
+                sourceAddedAtConfidence = filesystemCreation?.confidence
+                    ?: queryInfo.sourceAddedAtConfidence,
                 localFile = resolvedFile,
                 nearbyCoverUri = nearbyCoverUri,
                 mediaStoreCoverUri = queryInfo.mediaStoreCoverUri,
@@ -3695,6 +3887,19 @@ object LocalAudioImportManager {
                 if (!cursor.moveToFirst()) {
                     return@use QuickImportedAudioInfo()
                 }
+                val dateAddedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                val dateModifiedIndex = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                val dateAddedSeconds = dateAddedIndex
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                val dateModifiedSeconds = dateModifiedIndex
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                val sourceAddedAtSource = when {
+                    dateAddedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_ADDED"
+                    dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
+                    else -> "UNKNOWN"
+                }
                 QuickImportedAudioInfo(
                     title = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
@@ -3709,13 +3914,15 @@ object LocalAudioImportManager {
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong),
                     sourceAddedAt = resolveMediaStoreSourceAddedAt(
-                        dateAddedSeconds = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong),
-                        dateModifiedSeconds = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
-                            .takeIf { it >= 0 && !cursor.isNull(it) }
-                            ?.let(cursor::getLong)
+                        dateAddedSeconds = dateAddedSeconds,
+                        dateModifiedSeconds = dateModifiedSeconds
                     ),
+                    sourceAddedAtSource = sourceAddedAtSource,
+                    sourceAddedAtConfidence = when (sourceAddedAtSource) {
+                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                        else -> "UNKNOWN"
+                    },
                     mediaStoreCoverUri = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
                         .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
@@ -3732,22 +3939,35 @@ object LocalAudioImportManager {
         }
     }
 
-    private fun stabilizeExternalUri(context: Context, uri: Uri): Uri {
+    private fun stabilizeExternalUri(
+        context: Context,
+        uri: Uri,
+        sourceFile: File? = null,
+        copyInfo: ExternalAudioCopyInfo? = null
+    ): StabilizedExternalAudio {
         if (uri.scheme.equals("file", ignoreCase = true)) {
-            return uri
+            return StabilizedExternalAudio(uri)
         }
         if (uri.scheme.equals("content", ignoreCase = true) && uri.authority == MediaStore.AUTHORITY) {
-            return uri
+            return StabilizedExternalAudio(uri)
         }
 
         val resolver = context.contentResolver
-        val copyInfo = queryExternalAudioCopyInfo(context, uri)
-        copyInfo.sizeBytes?.takeIf { it > MAX_EXTERNAL_IMPORT_BYTES }?.let { sizeBytes ->
+        val resolvedSourceFile = sourceFile ?: resolveSourceFile(context, uri)
+        val resolvedCopyInfo = copyInfo
+            ?: queryExternalAudioCopyInfo(context, uri, resolvedSourceFile)
+        resolvedCopyInfo.sizeBytes?.takeIf { it > MAX_EXTERNAL_IMPORT_BYTES }?.let { sizeBytes ->
             error("External audio is too large: $sizeBytes bytes")
         }
 
-        val displayName = copyInfo.displayName ?: runCatching {
-            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val displayName = resolvedCopyInfo.displayName ?: try {
+            resolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
                 val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 if (column >= 0 && cursor.moveToFirst()) {
                     cursor.getString(column)
@@ -3755,7 +3975,12 @@ object LocalAudioImportManager {
                     null
                 }
             }
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取外部音频显示名失败: uri=$uri, error=${error.message}")
+            null
+        }
 
         val extension = displayName
             ?.substringAfterLast('.', "")
@@ -3779,11 +4004,23 @@ object LocalAudioImportManager {
             "${baseName.take(48)}_${stableKey(uri.toString()).take(12)}.$extension"
         )
 
-        if (shouldCopyExternalAudio(targetFile, copyInfo.sizeBytes)) {
-            copyExternalAudioToTarget(context, uri, targetFile, copyInfo.sizeBytes)
+        if (shouldCopyExternalAudio(targetFile, resolvedCopyInfo.sizeBytes)) {
+            copyExternalAudioToTarget(context, uri, targetFile, resolvedCopyInfo.sizeBytes)
         }
+        resolvedCopyInfo.sourceLastModifiedAt
+            ?.takeIf { it > 0L }
+            ?.let { sourceLastModifiedAt ->
+                runCatching { targetFile.setLastModified(sourceLastModifiedAt) }
+                    .onFailure { error ->
+                        NPLogger.d(
+                            TAG,
+                            "无法保留导入文件 mtime: ${targetFile.name}, " +
+                                "error=${error.message}"
+                        )
+                    }
+            }
 
-        resolveSourceFile(context, uri)?.let { sourceFile ->
+        resolvedSourceFile?.let { sourceFile ->
             copyNearbySidecars(sourceFile, targetFile)
         }
         LocalMediaSupport.copyNearbyLyricSidecars(
@@ -3793,11 +4030,68 @@ object LocalAudioImportManager {
             targetFile = targetFile
         )
 
-        return Uri.fromFile(targetFile)
+        return StabilizedExternalAudio(
+            uri = Uri.fromFile(targetFile),
+            sourceAddedAt = resolvedCopyInfo.sourceAddedAt,
+            sourceAddedAtSource = resolvedCopyInfo.sourceAddedAtSource,
+            sourceAddedAtConfidence = resolvedCopyInfo.sourceAddedAtConfidence
+        )
     }
 
-    private fun queryExternalAudioCopyInfo(context: Context, uri: Uri): ExternalAudioCopyInfo {
-        return runCatching {
+    private fun queryExternalAudioCopyInfo(
+        context: Context,
+        uri: Uri,
+        sourceFile: File? = null
+    ): ExternalAudioCopyInfo {
+        val baseInfo = queryExternalAudioBaseInfo(context, uri)
+        val filesystemCreation = sourceFile?.let(::resolveFilesystemCreationObservation)
+        val filesystemModified = sourceFile?.lastModified()
+            ?.toValidTimestampMsOrNull()
+        val providerTimestamps = when {
+            isMediaStoreAuthority(uri.authority) -> {
+                queryExternalMediaStoreTimestamps(context, uri)
+            }
+            sourceFile == null -> queryExternalDocumentTimestamp(context, uri)
+            else -> null
+        }
+        val sourceAddedAt = filesystemCreation?.timestampMs
+            ?: providerTimestamps?.dateAddedMs
+            ?: providerTimestamps?.dateModifiedMs
+            ?: providerTimestamps?.documentLastModifiedMs
+            ?: filesystemModified
+        val sourceAddedAtSource = when {
+            filesystemCreation != null -> "FILESYSTEM_BIRTH"
+            providerTimestamps?.dateAddedMs != null -> "MEDIASTORE_DATE_ADDED"
+            providerTimestamps?.dateModifiedMs != null -> "MEDIASTORE_DATE_MODIFIED"
+            providerTimestamps?.documentLastModifiedMs != null -> "SAF_LAST_MODIFIED"
+            filesystemModified != null -> "MTIME_FALLBACK"
+            else -> null
+        }
+        val sourceAddedAtConfidence = when {
+            filesystemCreation != null -> filesystemCreation.confidence
+            providerTimestamps?.dateAddedMs != null -> "PROVIDER_REPORTED"
+            providerTimestamps?.dateModifiedMs != null ||
+                providerTimestamps?.documentLastModifiedMs != null ||
+                filesystemModified != null -> "INFERRED"
+            else -> null
+        }
+        return ExternalAudioCopyInfo(
+            displayName = baseInfo?.displayName,
+            sizeBytes = baseInfo?.sizeBytes,
+            sourceAddedAt = sourceAddedAt,
+            sourceAddedAtSource = sourceAddedAtSource,
+            sourceAddedAtConfidence = sourceAddedAtConfidence,
+            sourceLastModifiedAt = filesystemModified
+                ?: providerTimestamps?.dateModifiedMs
+                ?: providerTimestamps?.documentLastModifiedMs
+        )
+    }
+
+    private fun queryExternalAudioBaseInfo(
+        context: Context,
+        uri: Uri
+    ): ExternalAudioBaseInfo? {
+        return try {
             context.contentResolver.query(
                 uri,
                 arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
@@ -3805,20 +4099,95 @@ object LocalAudioImportManager {
                 null,
                 null
             )?.use { cursor ->
-                if (!cursor.moveToFirst()) {
-                    return@use null
-                }
+                if (!cursor.moveToFirst()) return@use null
                 val displayNameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                ExternalAudioCopyInfo(
-                    displayName = displayNameIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                ExternalAudioBaseInfo(
+                    displayName = displayNameIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getString),
-                    sizeBytes = sizeIndex.takeIf { it >= 0 && !cursor.isNull(it) }
+                    sizeBytes = sizeIndex
+                        .takeIf { it >= 0 && !cursor.isNull(it) }
                         ?.let(cursor::getLong)
                         ?.takeIf { it >= 0L }
                 )
             }
-        }.getOrNull() ?: ExternalAudioCopyInfo(displayName = null, sizeBytes = null)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取外部音频基础信息失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun queryExternalMediaStoreTimestamps(
+        context: Context,
+        uri: Uri
+    ): ExternalProviderTimestampInfo? {
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(
+                    MediaStore.MediaColumns.DATE_ADDED,
+                    MediaStore.MediaColumns.DATE_MODIFIED
+                ),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val dateAdded = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toEpochMillisOrNull()
+                val dateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toEpochMillisOrNull()
+                ExternalProviderTimestampInfo(
+                    dateAddedMs = dateAdded,
+                    dateModifiedMs = dateModified
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取 MediaStore 时间失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun queryExternalDocumentTimestamp(
+        context: Context,
+        uri: Uri
+    ): ExternalProviderTimestampInfo? {
+        return try {
+            context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val lastModified = cursor
+                    .getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    .takeIf { it >= 0 && !cursor.isNull(it) }
+                    ?.let(cursor::getLong)
+                    .toValidTimestampMsOrNull()
+                ExternalProviderTimestampInfo(documentLastModifiedMs = lastModified)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.d(TAG, "读取 SAF 时间失败: uri=$uri, error=${error.message}")
+            null
+        }
+    }
+
+    private fun isMediaStoreAuthority(authority: String?): Boolean {
+        return authority == MediaStore.AUTHORITY ||
+            authority == "com.android.providers.media.documents"
     }
 
     private fun shouldCopyExternalAudio(targetFile: File, expectedBytes: Long?): Boolean {
@@ -3842,8 +4211,20 @@ object LocalAudioImportManager {
             targetFile.parentFile ?: error("Import target has no parent"),
             ".${targetFile.name}.${stableKey(uri.toString()).take(8)}.partial"
         )
+        val backupFile = File(
+            targetFile.parentFile ?: error("Import target has no parent"),
+            ".${targetFile.name}.${stableKey(uri.toString()).take(8)}.backup"
+        )
         partialFile.delete()
+        if (!targetFile.exists() && backupFile.isFile) {
+            if (backupFile.renameTo(targetFile) &&
+                !shouldCopyExternalAudio(targetFile, expectedBytes)
+            ) {
+                return
+            }
+        }
         var copiedBytes = 0L
+        var stagedTargetFile: File? = null
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 partialFile.outputStream().use { output ->
@@ -3863,14 +4244,51 @@ object LocalAudioImportManager {
             if (!ManagedDownloadSizePolicy.isTransferSizeComplete(expectedBytes, copiedBytes)) {
                 error("External audio copy size mismatch: expected=$expectedBytes actual=$copiedBytes")
             }
-            if (targetFile.exists() && !targetFile.delete()) {
-                error("Unable to replace stale import file: ${targetFile.name}")
+            val hadExistingTarget = targetFile.exists()
+            if (hadExistingTarget) {
+                val stageFile = if (!backupFile.exists()) {
+                    backupFile
+                } else {
+                    File(
+                        targetFile.parentFile ?: error("Import target has no parent"),
+                        ".${targetFile.name}.${stableKey(uri.toString()).take(8)}." +
+                            "${UUID.randomUUID()}.stale"
+                    )
+                }
+                if (!targetFile.renameTo(stageFile)) {
+                    error("Unable to stage stale import file: ${targetFile.name}")
+                }
+                stagedTargetFile = stageFile
             }
             if (!partialFile.renameTo(targetFile)) {
                 error("Unable to commit imported audio file: ${targetFile.name}")
             }
+            stagedTargetFile?.let { stagedFile ->
+                if (stagedFile.exists() && !stagedFile.delete()) {
+                    NPLogger.d(TAG, "无法删除外部导入备份文件: ${stagedFile.name}")
+                }
+            }
+        } catch (error: CancellationException) {
+            partialFile.delete()
+            stagedTargetFile?.let { stagedFile ->
+                if (!targetFile.exists() && stagedFile.isFile) {
+                    stagedFile.renameTo(targetFile)
+                }
+            }
+            if (!targetFile.exists() && backupFile.isFile) {
+                backupFile.renameTo(targetFile)
+            }
+            throw error
         } catch (error: Throwable) {
             partialFile.delete()
+            stagedTargetFile?.let { stagedFile ->
+                if (!targetFile.exists() && stagedFile.isFile) {
+                    stagedFile.renameTo(targetFile)
+                }
+            }
+            if (!targetFile.exists() && backupFile.isFile) {
+                backupFile.renameTo(targetFile)
+            }
             throw error
         }
     }
@@ -3880,7 +4298,7 @@ object LocalAudioImportManager {
             return uri.path?.let(::File)?.takeIf(File::exists)
         }
 
-        val dataPath = runCatching {
+        val dataPath = try {
             context.contentResolver.query(
                 uri,
                 arrayOf(MediaStore.MediaColumns.DATA, "_data"),
@@ -3897,19 +4315,27 @@ object LocalAudioImportManager {
                     null
                 }
             }
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
 
         if (!dataPath.isNullOrBlank()) {
             return File(dataPath).takeIf(File::exists)
         }
 
-        return runCatching {
+        return try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
                 Os.readlink("/proc/self/fd/${descriptor.fd}")
                     .takeIf { it.startsWith("/") && File(it).exists() }
                     ?.let(::File)
             }
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun resolveScannedFilePath(
@@ -3932,9 +4358,13 @@ object LocalAudioImportManager {
     }
 
     private fun probeReadableContentReference(context: Context, uri: Uri): Boolean {
-        return runCatching {
+        return try {
             context.contentResolver.openInputStream(uri)?.use { input -> input.read() != -1 } == true
-        }.getOrDefault(false)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     internal fun copyNearbySidecars(sourceFile: File, targetFile: File) {

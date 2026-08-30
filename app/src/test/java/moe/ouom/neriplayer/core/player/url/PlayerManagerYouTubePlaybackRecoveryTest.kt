@@ -175,6 +175,38 @@ class PlayerManagerYouTubePlaybackRecoveryTest {
     }
 
     @Test
+    fun `local missing file retries local reference after migration`() {
+        assertTrue(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+    }
+
+    @Test
+    fun `local network or decoder failure does not trigger local rebind`() {
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+        assertFalse(
+            shouldAttemptCachedPlaybackRepair(
+                error = playbackError(PlaybackException.ERROR_CODE_DECODING_FAILED),
+                isOfflineCache = false,
+                isYouTubeTrack = false,
+                isLocalSong = true
+            )
+        )
+    }
+
+    @Test
     fun `remote decoder failure does not trigger generic cache recovery`() {
         val error = playbackError(PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED)
 

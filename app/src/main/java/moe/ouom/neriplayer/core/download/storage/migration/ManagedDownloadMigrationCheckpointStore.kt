@@ -980,6 +980,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("createdNew", receipt.createdNew)
             put("sourceAuthoritative", receipt.sourceAuthoritative)
             put("replacementBackup", receipt.replacementBackup?.let(::encodeStoredEntry))
+            put("sourceLogicalCreatedAtMs", receipt.sourceLogicalCreatedAtMs)
+            put("sourceCreatedAtSource", receipt.sourceCreatedAtSource)
+            put("sourceCreatedAtConfidence", receipt.sourceCreatedAtConfidence)
         }
     }
 
@@ -992,6 +995,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("sourceSubdirectory", receipt.sourceSubdirectory)
             put("targetDigest", receipt.targetDigest)
             put("targetEntry", encodeStoredEntry(receipt.targetEntry))
+            put("sourceLogicalCreatedAtMs", receipt.sourceLogicalCreatedAtMs)
+            put("sourceCreatedAtSource", receipt.sourceCreatedAtSource)
+            put("sourceCreatedAtConfidence", receipt.sourceCreatedAtConfidence)
         }
     }
 
@@ -1004,6 +1010,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             put("sourceSubdirectory", entry.sourceSubdirectory)
             put("sizeBytes", entry.sizeBytes)
             put("lastModifiedMs", entry.lastModifiedMs)
+            put("logicalCreatedAtMs", entry.logicalCreatedAtMs)
+            put("createdAtSource", entry.createdAtSource)
+            put("createdAtConfidence", entry.createdAtConfidence)
         }
     }
 
@@ -1084,7 +1093,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                     sourceName = sourceName,
                     sourceSubdirectory = sourceSubdirectory,
                     sizeBytes = value.optLong("sizeBytes", 0L).coerceAtLeast(0L),
-                    lastModifiedMs = value.optLong("lastModifiedMs", 0L).coerceAtLeast(0L)
+                    lastModifiedMs = value.optLong("lastModifiedMs", 0L).coerceAtLeast(0L),
+                    logicalCreatedAtMs = value.optLong("logicalCreatedAtMs", 0L)
+                        .takeIf { value.has("logicalCreatedAtMs") && it > 0L },
+                    createdAtSource = value.optNullableString("createdAtSource"),
+                    createdAtConfidence = value.optNullableString("createdAtConfidence")
                 )
                 if (
                     entry.sourceReference.isBlank() ||
@@ -1094,6 +1107,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                             moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY &&
                         entry.sourceSubdirectory !=
                             moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
+                    || !isValidMigrationCreatedAtMetadata(
+                        timestampMs = entry.logicalCreatedAtMs,
+                        source = entry.createdAtSource,
+                        confidence = entry.createdAtConfidence
+                    )
                 ) {
                     invalidJournal("迁移源清单包含无效条目: $sourceReference")
                 }
@@ -1120,7 +1138,15 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                     sourceName = sourceName,
                     sourceSubdirectory = value.optNullableString("sourceSubdirectory"),
                     targetEntry = targetEntry,
-                    targetDigest = targetDigest
+                    targetDigest = targetDigest,
+                    sourceLogicalCreatedAtMs = value.optLong(
+                        "sourceLogicalCreatedAtMs",
+                        0L
+                    ).takeIf { value.has("sourceLogicalCreatedAtMs") && it > 0L },
+                    sourceCreatedAtSource = value.optNullableString("sourceCreatedAtSource"),
+                    sourceCreatedAtConfidence = value.optNullableString(
+                        "sourceCreatedAtConfidence"
+                    )
                 )
                 validateDecodedCleanupReceipt(receipt)
                 add(receipt)
@@ -1145,7 +1171,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             receipt.targetDigest.any { character ->
                 character !in '0'..'9' && character !in 'a'..'f' &&
                     character !in 'A'..'F'
-            }
+            } || !isValidMigrationCreatedAtMetadata(
+                timestampMs = receipt.sourceLogicalCreatedAtMs,
+                source = receipt.sourceCreatedAtSource,
+                confidence = receipt.sourceCreatedAtConfidence
+            )
         ) {
             invalidJournal("迁移清理凭据包含无效条目: ${receipt.sourceReference}")
         }
@@ -1235,7 +1265,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             verifiedTargetDigest = root.optNullableString("verifiedTargetDigest"),
             createdNew = root.optBoolean("createdNew", false),
             sourceAuthoritative = root.optBoolean("sourceAuthoritative", false),
-            replacementBackup = decodeStoredEntry(root.optJSONObject("replacementBackup"))
+            replacementBackup = decodeStoredEntry(root.optJSONObject("replacementBackup")),
+            sourceLogicalCreatedAtMs = root.optLong("sourceLogicalCreatedAtMs", 0L)
+                .takeIf { root.has("sourceLogicalCreatedAtMs") && it > 0L },
+            sourceCreatedAtSource = root.optNullableString("sourceCreatedAtSource"),
+            sourceCreatedAtConfidence = root.optNullableString("sourceCreatedAtConfidence")
         )
         validateCopyReceipt(receipt)
         return receipt
@@ -1270,6 +1304,11 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                     moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY ||
             receipt.sourceDigest?.let(::isSha256Digest) == false
                 || receipt.verifiedTargetDigest?.let(::isSha256Digest) == false
+                || !isValidMigrationCreatedAtMetadata(
+                    timestampMs = receipt.sourceLogicalCreatedAtMs,
+                    source = receipt.sourceCreatedAtSource,
+                    confidence = receipt.sourceCreatedAtConfidence
+                )
         ) {
             throw ManagedDownloadMigrationException.transient(
                 "迁移复制凭据包含无效源条目: ${receipt.sourceReference}"

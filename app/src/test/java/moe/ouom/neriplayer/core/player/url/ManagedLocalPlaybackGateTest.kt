@@ -59,6 +59,24 @@ class ManagedLocalPlaybackGateTest {
     }
 
     @Test
+    fun `migration file-not-found recovery invalidates stale bridge before refresh`() {
+        val lifecycleSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/lifecycle/" +
+                "PlayerManagerLifecycleExtensions.kt"
+        ).readText()
+        val errorBody = lifecycleSource.substringAfter("override fun onPlayerError")
+            .substringBefore("override fun onPlaybackStateChanged")
+
+        assertTrue(errorBody.contains("invalidateCompletedAudioReference"))
+        assertTrue(errorBody.contains("ERROR_CODE_IO_FILE_NOT_FOUND"))
+        assertTrue(errorBody.contains("allowLocalSongRecovery = isLocalFileMissingRecovery"))
+        assertTrue(
+            errorBody.contains("!isLocalFileMissingRecovery &&\n" +
+                "                    shouldResumeAfterRecovery")
+        )
+    }
+
+    @Test
     fun `catalog ready miss still probes the durable snapshot before NotIndexed`() {
         val downloadSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +

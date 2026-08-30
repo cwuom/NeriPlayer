@@ -163,6 +163,115 @@ class AudioDownloadManagerPlaybackRaceTest {
         assertFalse(body.contains("ManagedDownloadReferenceLookup.inspect"))
     }
 
+    @Test
+    fun `missing managed reference forces one fresh root rebind`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "resolvePermittedLocalPlayback")
+
+        assertTrue(body.contains("forceResolveManagedPlaybackAfterMissing"))
+        assertTrue(body.contains("rawEvidence == ManagedDownloadReferenceLookup.Result.Missing"))
+        assertTrue(source.contains("forceRefresh = true"))
+        assertTrue(source.contains("MANAGED_PLAYBACK_REBIND_COOLDOWN_MS"))
+    }
+
+    @Test
+    fun `completed bridge is invalidated when managed root generation changes`() {
+        assertFalse(
+            shouldInvalidateCompletedAudioReferenceForRoot(
+                referenceRootGeneration = 4L,
+                currentRootGeneration = 4L
+            )
+        )
+        assertTrue(
+            shouldInvalidateCompletedAudioReferenceForRoot(
+                referenceRootGeneration = 4L,
+                currentRootGeneration = 5L
+            )
+        )
+    }
+
+    @Test
+    fun `completed bridge rejects private file after switching to saf`() {
+        assertTrue(
+            shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference = "file:///storage/emulated/0/Android/data/app/files/song.mp3",
+                configuredDirectoryUri =
+                    "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+            )
+        )
+        assertTrue(
+            shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference = "/storage/emulated/0/Android/data/app/files/song.mp3",
+                configuredDirectoryUri =
+                    "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+            )
+        )
+    }
+
+    @Test
+    fun `completed bridge keeps current saf document and rejects another tree`() {
+        val currentRoot =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+        assertFalse(
+            shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference =
+                    "content://com.android.externalstorage.documents/document/" +
+                        "primary%3AMusic%2Fsong.mp3",
+                configuredDirectoryUri = currentRoot
+            )
+        )
+        assertTrue(
+            shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference =
+                    "content://com.android.externalstorage.documents/tree/primary%3AOther" +
+                        "/document/primary%3AOther%2Fsong.mp3",
+                configuredDirectoryUri = currentRoot
+            )
+        )
+    }
+
+    @Test
+    fun `completed bridge does not reject when no saf root is configured`() {
+        assertFalse(
+            shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference = "file:///storage/emulated/0/Music/song.mp3",
+                configuredDirectoryUri = null
+            )
+        )
+    }
+
+    @Test
+    fun `explicit local playback invalidation removes every song and URI alias`() {
+        val suffix = System.nanoTime().toString()
+        val path = "/downloads/invalidate-$suffix.mp3"
+        val audio = storedEntry(path)
+        val sourceSong = SongItem(
+            id = 731L,
+            name = "Song",
+            artist = "Artist",
+            album = "Netease",
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            channelId = "netease",
+            audioId = "731"
+        )
+        val queueSong = sourceSong.copy(
+            localFilePath = path,
+            mediaUri = audio.mediaUri,
+            sourceStableKey = sourceSong.stableKey()
+        )
+
+        AudioDownloadManager.rememberCompletedAudioReference(sourceSong, audio)
+        AudioDownloadManager.invalidateCompletedAudioReference(queueSong)
+
+        assertNull(AudioDownloadManager.peekCompletedAudioReference(sourceSong))
+        assertNull(AudioDownloadManager.peekCompletedAudioReferenceByRawReference(path))
+    }
+
     private fun storedEntry(path: String): ManagedDownloadStorage.StoredEntry {
         return ManagedDownloadStorage.StoredEntry(
             name = File(path).name,

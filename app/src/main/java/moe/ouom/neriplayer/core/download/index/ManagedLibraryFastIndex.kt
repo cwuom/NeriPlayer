@@ -27,7 +27,11 @@ internal data class ManagedLibraryIndexEntry(
     val subAudioId: String? = null,
     val playlistContextId: String? = null,
     val durationMs: Long? = null,
-    val coverPath: String? = null
+    val coverPath: String? = null,
+    // optional temporal metadata keeps warm previews ordered across migration
+    val logicalCreatedAtMs: Long? = null,
+    val createdAtSource: String? = null,
+    val createdAtConfidence: String? = null
 )
 
 internal object ManagedLibraryFastIndex {
@@ -154,6 +158,9 @@ internal object ManagedLibraryFastIndex {
             put("playlistContextId", playlistContextId)
             put("durationMs", durationMs)
             put("coverPath", coverPath)
+            put("logicalCreatedAtMs", logicalCreatedAtMs)
+            put("createdAtSource", createdAtSource)
+            put("createdAtConfidence", createdAtConfidence)
         }
     }
 
@@ -187,7 +194,13 @@ internal object ManagedLibraryFastIndex {
             subAudioId = optString("subAudioId").takeIf(String::isNotBlank),
             playlistContextId = optString("playlistContextId").takeIf(String::isNotBlank),
             durationMs = optLong("durationMs").takeIf { has("durationMs") && it > 0L },
-            coverPath = optString("coverPath").takeIf(String::isNotBlank)
+            coverPath = optString("coverPath").takeIf(String::isNotBlank),
+            logicalCreatedAtMs = optLong("logicalCreatedAtMs")
+                .takeIf { has("logicalCreatedAtMs") && it > 0L },
+            createdAtSource = optString("createdAtSource")
+                .takeIf(String::isNotBlank),
+            createdAtConfidence = optString("createdAtConfidence")
+                .takeIf(String::isNotBlank)
         )
     }
 

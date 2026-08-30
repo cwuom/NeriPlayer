@@ -350,12 +350,19 @@ internal class ManagedDownloadStorageCommitWriter(
                 val directory = treeDirectories.findOrCreateDirectory(context, root.tree, subdirectory)
                     ?: return null
                 treeDirectories.ensureManagedMediaScanIsolation(context, subdirectory, directory)
+                val knownChild = treeChildRegistry.peekTreeChild(
+                    parent = directory,
+                    childName = displayName
+                )
                 val entry = writeSafEntry(
                     context = context,
                     parent = directory,
                     displayName = displayName,
                     mimeType = mimeType,
-                    expectedSizeBytes = bytes.size.toLong()
+                    expectedSizeBytes = bytes.size.toLong(),
+                    expectedAbsent = knownChild == null,
+                    knownExistingReference = knownChild?.documentUri?.toString(),
+                    fallbackOnOptimisticCommitFailure = true
                 ) { output -> output.write(bytes) }
                 entry
             }
@@ -756,6 +763,7 @@ internal class ManagedDownloadStorageCommitWriter(
         expectedSizeBytes: Long?,
         expectedAbsent: Boolean = false,
         knownExistingReference: String? = null,
+        fallbackOnOptimisticCommitFailure: Boolean = false,
         writer: suspend (java.io.OutputStream) -> Unit
     ): ManagedDownloadStorage.StoredEntry {
         val backend = moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend(
@@ -768,7 +776,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 displayName = displayName,
                 mimeType = mimeType
             )
-            if (expectedAbsent) {
+            val optimisticResult = if (expectedAbsent) {
                 backend.writeCreateOnlyRecoverable(target = target, writer = writer)
             } else if (!knownExistingReference.isNullOrBlank()) {
                 backend.replaceKnownRecoverable(
@@ -780,6 +788,18 @@ internal class ManagedDownloadStorageCommitWriter(
                 )
             } else {
                 backend.writeRecoverable(target = target, writer = writer)
+            }
+            if (
+                fallbackOnOptimisticCommitFailure &&
+                    shouldFallbackAfterOptimisticCommitFailure(
+                        expectedAbsent = expectedAbsent,
+                        knownExistingReference = knownExistingReference,
+                        result = optimisticResult
+                    )
+            ) {
+                backend.writeRecoverable(target = target, writer = writer)
+            } else {
+                optimisticResult
             }
         }
         val stat = when (result) {
@@ -820,6 +840,19 @@ internal class ManagedDownloadStorageCommitWriter(
         val entry = stat.toStoredEntry().copy(sizeBytes = verifiedSize ?: stat.sizeBytes ?: 0L)
         treeChildRegistry.rememberTreeChild(parent, entry)
         return entry
+    }
+
+    private fun shouldFallbackAfterOptimisticCommitFailure(
+        expectedAbsent: Boolean,
+        knownExistingReference: String?,
+        result: StorageWriteResult
+    ): Boolean {
+        val error = (result as? StorageWriteResult.ProviderFailure)?.error
+        val targetChanged = error is StorageTargetChangedException
+        val renameUnsupported = result is StorageWriteResult.Unsupported &&
+            result.operation.contains("rename", ignoreCase = true)
+        return (expectedAbsent || !knownExistingReference.isNullOrBlank()) &&
+            (targetChanged || renameUnsupported)
     }
 
     private fun StorageStat.toStoredEntry(): ManagedDownloadStorage.StoredEntry {

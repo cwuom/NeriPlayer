@@ -207,6 +207,39 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned adds to a regular playlist retain source creation time`() = runTest {
+        val playlistId = 44L
+        val sourceSong = localSong(index = 9, name = "source-time").copy(
+            addedAt = 123L,
+            logicalCreatedAtMs = 123L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "regular_scanned_creation_time.json"),
+            normalizePlaylists = { it },
+            autoSyncEnabled = false
+        )
+        repository.updatePlaylists(
+            listOf(LocalPlaylist(id = playlistId, name = "普通歌单"))
+        )
+
+        assertEquals(
+            1,
+            repository.addScannedSongsToPlaylistAndCount(playlistId, listOf(sourceSong))
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == playlistId }
+            .songs
+            .single()
+        assertEquals(123L, stored.addedAt)
+        assertEquals(123L, stored.logicalCreatedAtMs)
+        assertTrue((stored.membershipAddedAtMs ?: 0L) > 123L)
+    }
+
+    @Test
     fun `adding downloaded local copy to favorites keeps original favorite order`() = runTest {
         val repository = LocalPlaylistRepository.createForTest(
             context = mockContext(),
@@ -1444,9 +1477,10 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `scanned local song gets current library membership time`() = runTest {
+    fun `scanned local song keeps source creation time and records membership time`() = runTest {
         val sourceSong = localSong(index = 703, name = "old source").copy(
-            addedAt = 1L
+            addedAt = 1L,
+            logicalCreatedAtMs = 1L
         )
         val context = mockContext()
         val repository = LocalPlaylistRepository.createForTest(
@@ -1474,7 +1508,98 @@ class LocalPlaylistRepositoryTest {
             .single { it.id == LocalFilesPlaylist.SYSTEM_ID }
             .songs
             .single()
-        assertTrue(stored.addedAt > 1L)
+        assertEquals(1L, stored.addedAt)
+        assertTrue((stored.membershipAddedAtMs ?: 0L) > 1L)
+    }
+
+    @Test
+    fun `scanned timestamp helper falls back to membership for unknown source`() {
+        val song = localSong(index = 704)
+        assertEquals(
+            99L,
+            resolvePlaylistSongAddedAt(
+                song = song,
+                membershipAddedAt = 100L,
+                index = 1,
+                preserveScannedSourceAddedAt = true
+            )
+        )
+    }
+
+    @Test
+    fun `local files playlist orders manually added songs by logical creation time`() = runTest {
+        val older = localSong(index = 705, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 706, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_creation_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
+
+        assertEquals(
+            listOf(newer.id, older.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `manual local file adds are sorted by logical creation time`() = runTest {
+        val older = localSong(index = 707, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 708, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_manual_creation_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addSongsToLocalFilesPlaylist(listOf(older, newer))
+
+        assertEquals(
+            listOf(newer.id, older.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
     }
 
     @Test

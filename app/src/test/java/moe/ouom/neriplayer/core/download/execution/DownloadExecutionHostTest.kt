@@ -242,6 +242,7 @@ class DownloadExecutionHostTest {
         assertTrue(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.WIFI))
         assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.MOBILE))
         assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.ROAMING))
+        assertFalse(shouldHandoffWifiBoundDownloadWake(null))
     }
 
     @Test

@@ -13,6 +13,12 @@ internal interface DownloadClearFenceStore {
     fun clear(context: Context): Boolean
 }
 
+/** 清空下载任务与删除整个下载库使用不同的进程死亡恢复策略 */
+internal enum class DownloadClearPurpose {
+    TASK_PROGRESS,
+    FULL_LIBRARY_DELETE
+}
+
 internal enum class DownloadClearFenceReleaseResult {
     RELEASED,
     SUPERSEDED,
@@ -22,10 +28,30 @@ internal enum class DownloadClearFenceReleaseResult {
 internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
     private val clearRequestEpoch = AtomicLong(0L)
     private val clearedRequestEpoch = AtomicLong(0L)
+    @Volatile
+    private var requestedPurpose = DownloadClearPurpose.TASK_PROGRESS
     private val schedulingLock = Any()
 
-    internal fun beginClear(): Long {
+    internal fun beginClear(
+        purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS
+    ): Long {
+        requestedPurpose = purpose
         return clearRequestEpoch.incrementAndGet()
+    }
+
+    internal fun activePurpose(context: Context): DownloadClearPurpose {
+        return synchronized(schedulingLock) {
+            try {
+                preferencesOrNull(context)?.getString(PURPOSE_KEY, null)
+                    ?.let { value ->
+                        runCatching { DownloadClearPurpose.valueOf(value) }.getOrNull()
+                    }
+                    ?: DownloadClearPurpose.TASK_PROGRESS
+            } catch (_: Throwable) {
+                // 读取失败时保守保留 catalog，避免把已下载歌曲误判为已删除
+                DownloadClearPurpose.TASK_PROGRESS
+            }
+        }
     }
 
     override fun isActive(context: Context): Boolean {
@@ -59,6 +85,7 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
                     commitFenceEdit(preferences) {
                         putBoolean(ACTIVE_KEY, true)
                         putLong(REQUESTED_AT_MS_KEY, System.currentTimeMillis())
+                        putString(PURPOSE_KEY, requestedPurpose.name)
                     }
                 } == true
             } catch (_: Throwable) {
@@ -87,6 +114,7 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
                     commitFenceEdit(preferences) {
                         remove(ACTIVE_KEY)
                         remove(REQUESTED_AT_MS_KEY)
+                        remove(PURPOSE_KEY)
                     }
                 } == true
                 if (cleared) {
@@ -149,4 +177,5 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
     private const val PREFERENCES_NAME = "download_clear_fence_v1"
     private const val ACTIVE_KEY = "active"
     private const val REQUESTED_AT_MS_KEY = "requested_at_ms"
+    private const val PURPOSE_KEY = "purpose"
 }

@@ -116,6 +116,138 @@ class AudioDownloadManagerTest {
     }
 
     @Test
+    fun `stale wifi callback after cellular replacement cannot change policy`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertTrue(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "cellular",
+                networkType = TrafficNetworkType.MOBILE,
+                activeNetworkKey = "cellular"
+            )
+        )
+        tracker.markWifiLossHandled()
+
+        assertFalse(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "wifi",
+                networkType = TrafficNetworkType.WIFI,
+                activeNetworkKey = "cellular"
+            )
+        )
+        assertEquals(1L, tracker.currentGeneration())
+    }
+
+    @Test
+    fun `unknown active snapshot does not mutate network policy`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertFalse(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "cellular",
+                networkType = TrafficNetworkType.MOBILE,
+                activeNetworkKey = null,
+                activeNetworkKnown = false
+            )
+        )
+        assertEquals(0L, tracker.currentGeneration())
+    }
+
+    @Test
+    fun `duplicate confirmed callback does not advance network generation`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertFalse(
+            tracker.onDefaultNetworkObserved(
+                networkKey = "wifi",
+                networkType = TrafficNetworkType.WIFI,
+                activeNetworkKey = "wifi"
+            )
+        )
+        assertEquals(0L, tracker.currentGeneration())
+    }
+
+    @Test
+    fun `network observation emits Wi-Fi recovery only for a new confirmed snapshot`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "cellular", networkType = TrafficNetworkType.MOBILE)
+
+        val first = tracker.observeDefaultNetwork(
+            networkKey = "wifi",
+            networkType = TrafficNetworkType.WIFI,
+            activeNetworkKey = "wifi"
+        )
+        val duplicate = tracker.observeDefaultNetwork(
+            networkKey = "wifi",
+            networkType = TrafficNetworkType.WIFI,
+            activeNetworkKey = "wifi"
+        )
+
+        assertTrue(first.changed)
+        assertTrue(first.becameWifi)
+        assertFalse(first.shouldPause)
+        assertEquals(1L, first.generation)
+        assertFalse(duplicate.changed)
+        assertFalse(duplicate.becameWifi)
+        assertEquals(first.generation, duplicate.generation)
+    }
+
+    @Test
+    fun `unknown active snapshot after network loss does not pause Wi-Fi work`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertFalse(
+            tracker.onDefaultNetworkLost(
+                networkKey = "wifi",
+                activeNetworkKey = null,
+                activeNetworkKnown = false
+            )
+        )
+        assertEquals(0L, tracker.currentGeneration())
+    }
+
+    @Test
+    fun `confirmed absence of an active network pauses Wi-Fi work conservatively`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
+
+        assertTrue(
+            tracker.onDefaultNetworkLost(
+                networkKey = "wifi",
+                activeNetworkKey = null,
+                activeNetworkKnown = true
+            )
+        )
+        assertEquals(1L, tracker.currentGeneration())
+    }
+
+    @Test
+    fun `new Wi-Fi network after loss emits a recovery transition`() {
+        val tracker = DownloadNetworkPolicyTracker()
+        tracker.seed(networkKey = "wifi-old", networkType = TrafficNetworkType.WIFI)
+
+        assertTrue(
+            tracker.onDefaultNetworkLost(
+                networkKey = "wifi-old",
+                activeNetworkKey = null,
+                activeNetworkKnown = true
+            )
+        )
+        val recovery = tracker.observeDefaultNetwork(
+            networkKey = "wifi-new",
+            networkType = TrafficNetworkType.WIFI,
+            activeNetworkKey = "wifi-new"
+        )
+
+        assertTrue(recovery.changed)
+        assertTrue(recovery.becameWifi)
+    }
+
+    @Test
     fun `managed local references require a strictly verified replacement`() {
         assertEquals(
             "/Music/local.mp3",

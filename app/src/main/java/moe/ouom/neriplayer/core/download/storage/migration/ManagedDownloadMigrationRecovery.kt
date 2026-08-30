@@ -278,7 +278,10 @@ internal fun reconcileMigrationSourceManifest(
                 sourceName = receipt.sourceName,
                 sourceSubdirectory = receipt.sourceSubdirectory,
                 sizeBytes = receipt.targetEntry.sizeBytes.coerceAtLeast(0L),
-                lastModifiedMs = receipt.targetEntry.lastModifiedMs.coerceAtLeast(0L)
+                lastModifiedMs = receipt.targetEntry.lastModifiedMs.coerceAtLeast(0L),
+                logicalCreatedAtMs = receipt.sourceLogicalCreatedAtMs,
+                createdAtSource = receipt.sourceCreatedAtSource,
+                createdAtConfidence = receipt.sourceCreatedAtConfidence
             )
         )
     }
@@ -297,7 +300,10 @@ internal fun reconcileMigrationSourceManifest(
                 sourceName = entry.entry.name,
                 sourceSubdirectory = entry.subdirectory,
                 sizeBytes = entry.entry.sizeBytes.coerceAtLeast(0L),
-                lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L)
+                lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L),
+                logicalCreatedAtMs = entry.logicalCreatedAtMs(),
+                createdAtSource = entry.logicalCreatedAtSource(),
+                createdAtConfidence = entry.logicalCreatedAtConfidence()
             )
         )
     }

@@ -53,6 +53,16 @@ internal interface DownloadOperationDao {
     ): List<DownloadOperationEntity>
 
     @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE stable_key IN (:stableKeys) AND state IN (:states) " +
+            "ORDER BY stable_key ASC, updated_at_ms DESC, created_at_ms DESC, operation_id ASC"
+    )
+    suspend fun findAllByStableKeysAnyLibrary(
+        stableKeys: List<String>,
+        states: List<String>
+    ): List<DownloadOperationEntity>
+
+    @Query(
         "SELECT operation_id FROM download_operation " +
             "WHERE library_id = :libraryId AND stable_key = :stableKey AND state IN (:states) " +
             "AND stop_requested_by_user = 0 " +
@@ -80,6 +90,9 @@ internal interface DownloadOperationDao {
     @Query("SELECT * FROM download_operation WHERE state IN (:states)")
     suspend fun findByStates(states: List<String>): List<DownloadOperationEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM download_operation WHERE state IN (:states))")
+    fun hasAnyByStates(states: List<String>): Boolean
+
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE library_id = :libraryId AND state IN (:states)"
@@ -97,6 +110,18 @@ internal interface DownloadOperationDao {
     )
     suspend fun findByStatesInLibraryPage(
         libraryId: String,
+        states: List<String>,
+        limit: Int,
+        offset: Int
+    ): List<DownloadOperationEntity>
+
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE state IN (:states) " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit OFFSET :offset"
+    )
+    suspend fun findByStatesPage(
         states: List<String>,
         limit: Int,
         offset: Int
@@ -221,6 +246,39 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
+        "UPDATE download_operation SET library_id = :libraryId, " +
+            "updated_at_ms = :updatedAtMs, " +
+            "last_error_code = CASE WHEN last_error_code = 'ROOT_CHANGED' " +
+            "THEN NULL ELSE last_error_code END, " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND library_id != :libraryId AND state IN (:states) " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun rehomeOperationLibrary(
+        operationId: String,
+        stableKey: String,
+        libraryId: String,
+        states: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET library_id = :libraryId, " +
+            "updated_at_ms = :updatedAtMs, " +
+            "last_error_code = CASE WHEN last_error_code = 'ROOT_CHANGED' " +
+            "THEN NULL ELSE last_error_code END, " +
+            "host_process_token = NULL, host_admitted_at_ms = NULL " +
+            "WHERE library_id != :libraryId AND state IN (:states) " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun rehomeOperationsLibrary(
+        libraryId: String,
+        states: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
         "UPDATE download_operation SET source_hint_json = :sourceHintJson, " +
             "updated_at_ms = :updatedAtMs WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey"
@@ -253,14 +311,29 @@ internal interface DownloadOperationDao {
         "UPDATE download_operation SET bytes_written = :bytesWritten, " +
             "total_bytes = :totalBytes WHERE operation_id = :operationId " +
             "AND library_id = :libraryId AND stable_key = :stableKey " +
-            "AND state = 'RUNNING' AND stop_requested_by_user = 0"
+            "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
     )
     suspend fun updateProgressCheckpoint(
         operationId: String,
         libraryId: String,
         stableKey: String,
         bytesWritten: Long,
-        totalBytes: Long?
+        totalBytes: Long?,
+        expectedStates: List<String>
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET bytes_written = :bytesWritten, " +
+            "total_bytes = :totalBytes WHERE operation_id = :operationId " +
+            "AND stable_key = :stableKey AND state IN (:expectedStates) " +
+            "AND stop_requested_by_user = 0"
+    )
+    suspend fun updateProgressCheckpointAnyLibrary(
+        operationId: String,
+        stableKey: String,
+        bytesWritten: Long,
+        totalBytes: Long?,
+        expectedStates: List<String>
     ): Int
 
     @Query(
@@ -353,6 +426,23 @@ internal interface DownloadOperationDao {
     ): Boolean
 
     @Query(
+        "SELECT EXISTS(SELECT 1 FROM download_operation " +
+            "WHERE operation_id = :operationId AND stable_key = :stableKey " +
+            "AND state IN ('RUNNING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0 " +
+            "AND NOT EXISTS(SELECT 1 FROM download_operation competitor " +
+            "WHERE competitor.stable_key = :stableKey " +
+            "AND competitor.operation_id != :operationId " +
+            "AND competitor.stop_requested_by_user = 0 " +
+            "AND competitor.state IN ('PENDING_QUEUE', 'QUEUED', 'RETRYABLE', " +
+            "'RUNNING', 'COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING')))"
+    )
+    suspend fun isExecutionOwnedAnyLibrary(
+        operationId: String,
+        stableKey: String
+    ): Boolean
+
+    @Query(
         "UPDATE download_operation SET stop_requested_by_user = 0, " +
             "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
             "THEN NULL ELSE last_error_code END, " +
@@ -361,6 +451,17 @@ internal interface DownloadOperationDao {
     )
     suspend fun clearUserStopForStableKeys(
         libraryId: String,
+        stableKeys: List<String>,
+        updatedAtMs: Long
+    ): Int
+
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 0, " +
+            "last_error_code = CASE WHEN last_error_code = 'USER_CANCELLED' " +
+            "THEN NULL ELSE last_error_code END, " +
+            "updated_at_ms = :updatedAtMs WHERE stable_key IN (:stableKeys)"
+    )
+    suspend fun clearUserStopForStableKeysAnyLibrary(
         stableKeys: List<String>,
         updatedAtMs: Long
     ): Int

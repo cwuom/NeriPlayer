@@ -143,6 +143,17 @@ internal class ManagedDownloadTreeChildRegistry(
         return treeChildCache.peekChildren(parent.uri.toString())
     }
 
+    fun cachedTreeChildrenIfFresh(
+        parent: DocumentFile,
+        maxCacheAgeMs: Long
+    ): Collection<QueriedTreeChild>? {
+        return treeChildCache.cachedChildren(
+            cacheKey = parent.uri.toString(),
+            nowMs = System.currentTimeMillis(),
+            maxCacheAgeMs = maxCacheAgeMs
+        )
+    }
+
     fun peekTreeChildrenIncludingIncomplete(parent: DocumentFile): Collection<QueriedTreeChild>? {
         return treeChildCache.peekAllChildren(parent.uri.toString())
     }

@@ -48,9 +48,9 @@ class DownloadProgressPagePresentationTest {
     }
 
     @Test
-    fun `clear presentation wins over a stale durable task snapshot`() {
+    fun `active clear keeps determinate progress over a stale durable snapshot`() {
         assertEquals(
-            DownloadProgressPagePresentation.EMPTY,
+            DownloadProgressPagePresentation.CLEARING,
             resolveDownloadProgressPagePresentation(
                 initialProbeState = DownloadProgressInitialProbeState.RESOLVED,
                 hasVisibleContent = false,

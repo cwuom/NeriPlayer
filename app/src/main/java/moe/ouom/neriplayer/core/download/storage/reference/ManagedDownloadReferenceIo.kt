@@ -9,6 +9,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileNotFoundException
 import java.net.URI
+import kotlinx.coroutines.CancellationException
 
 internal object ManagedDownloadReferenceIo {
     private const val DOCUMENT_QUERY_ATTEMPTS = 2
@@ -35,6 +36,8 @@ internal object ManagedDownloadReferenceIo {
                 val localContent = try {
                     File(reference).inputStream().bufferedReader(Charsets.UTF_8).use { it.readText() }
                 } catch (error: SecurityException) {
+                    throw error
+                } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
                     null
@@ -136,6 +139,8 @@ internal object ManagedDownloadReferenceIo {
             }
         } catch (error: SecurityException) {
             DeleteResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             DeleteResult.ProviderFailure(error)
         }
@@ -174,6 +179,8 @@ internal object ManagedDownloadReferenceIo {
             else file.inputStream().use { AccessResult.Accessible }
         } catch (error: SecurityException) {
             AccessResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             AccessResult.Missing
         } catch (error: Throwable) {
@@ -187,6 +194,8 @@ internal object ManagedDownloadReferenceIo {
             else AccessResult.Accessible
         } catch (error: SecurityException) {
             AccessResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             AccessResult.Missing
         } catch (error: Throwable) {
@@ -212,6 +221,8 @@ internal object ManagedDownloadReferenceIo {
                 )
             } catch (error: SecurityException) {
                 return AccessResult.PermissionLost
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: FileNotFoundException) {
                 return classifyDocumentOpenFailure(error)
             } catch (error: Throwable) {
@@ -219,6 +230,8 @@ internal object ManagedDownloadReferenceIo {
             }
         } catch (error: SecurityException) {
             return AccessResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             return classifyDocumentFailure(error)
         } catch (error: Throwable) {
@@ -250,6 +263,8 @@ internal object ManagedDownloadReferenceIo {
             return AccessResult.Accessible
         } catch (error: SecurityException) {
             return AccessResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             return classifyDocumentFailure(error)
         } catch (error: Throwable) {
@@ -277,6 +292,8 @@ internal object ManagedDownloadReferenceIo {
             } ?: AccessResult.ProviderFailure(nullDocumentCursorFailure(uri))
         } catch (error: SecurityException) {
             AccessResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             AccessResult.ProviderFailure(nullDocumentCursorFailure(uri, error))
         }
@@ -336,6 +353,8 @@ internal object ManagedDownloadReferenceIo {
             }
         } catch (error: SecurityException) {
             return DeleteResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             return deleteExceptionResult(error) ?: deleteContentReferenceWithFallback(context, uri)
         }
@@ -355,6 +374,8 @@ internal object ManagedDownloadReferenceIo {
             }
         } catch (error: SecurityException) {
             return DeleteResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             deleteExceptionResult(error)?.let { return it }
         }
@@ -372,6 +393,8 @@ internal object ManagedDownloadReferenceIo {
             }
         } catch (error: SecurityException) {
             return DeleteResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             return deleteExceptionResult(error) ?: DeleteResult.ProviderFailure(error)
         }

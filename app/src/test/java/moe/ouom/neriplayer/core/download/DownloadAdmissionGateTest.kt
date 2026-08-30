@@ -8,6 +8,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.core.download.task.DownloadTaskStore
 import moe.ouom.neriplayer.data.model.SongItem
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -135,6 +136,59 @@ class DownloadAdmissionGateTest {
         visibility.finish(token)
         assertFalse(visibility.isClearing.value)
         assertFalse(visibility.isTaskPresentationCleared.value)
+    }
+
+    @Test
+    fun `clear visibility exposes bounded phase progress and resets after finish`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token)
+        assertEquals(0, visibility.progress.value?.percentage)
+        visibility.markFencePersisted(token)
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 701,
+            completedItemCount = 8,
+            totalItemCount = 20
+        )
+        assertEquals(50, visibility.progress.value?.percentage)
+        assertEquals(60, visibility.progress.value?.displayPercentage)
+        assertEquals(8, visibility.progress.value?.completedItemCount)
+        assertEquals(20, visibility.progress.value?.totalItemCount)
+        assertEquals(701, visibility.progress.value?.affectedItemCount)
+
+        gate.runClear(token) {}
+        visibility.finish(token)
+        assertNull(visibility.progress.value)
+    }
+
+    @Test
+    fun `clear visibility can restore persisted phase progress for the active generation`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+        visibility.begin(token)
+
+        visibility.restore(
+            token = token,
+            progress = DownloadClearVisibility.ClearProgress(
+                phase = DownloadClearVisibility.ClearPhase.CLEANING,
+                completedSteps = 2,
+                totalSteps = 4,
+                affectedItemCount = 1000,
+                completedItemCount = 240,
+                totalItemCount = 1000
+            )
+        )
+
+        assertTrue(visibility.isTaskPresentationCleared.value)
+        assertEquals(50, visibility.progress.value?.percentage)
+        assertEquals(240, visibility.progress.value?.completedItemCount)
+        assertEquals(1000, visibility.progress.value?.totalItemCount)
     }
 
     @Test

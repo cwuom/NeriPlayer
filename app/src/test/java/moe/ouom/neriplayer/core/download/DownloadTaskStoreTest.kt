@@ -119,6 +119,114 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `durable progress restores before transfer starts and rejects stale attempt`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(99L)
+            val attemptId = store.ensureDownloadTasks(
+                songs = listOf(downloadSong),
+                status = DownloadStatus.WAITING_NETWORK,
+                durableAttemptIds = mapOf(downloadSong.stableKey() to 77L)
+            ).getValue(downloadSong.stableKey())
+            assertEquals(77L, attemptId)
+
+            val checkpoint = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 512L
+            )
+            assertTrue(store.restoreProgress(checkpoint))
+            assertEquals(checkpoint, store.findTask(downloadSong.stableKey())?.progress)
+            assertFalse(
+                store.restoreProgress(
+                    progress(
+                        song = downloadSong,
+                        attemptId = attemptId + 1L,
+                        bytesRead = 900L
+                    )
+                )
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `wifi recovery keeps restored progress when it resumes the same durable attempt`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(100L)
+            val songKey = downloadSong.stableKey()
+            val attemptId = store.ensureDownloadTasks(
+                songs = listOf(downloadSong),
+                status = DownloadStatus.WAITING_NETWORK,
+                durableAttemptIds = mapOf(songKey to 7_777L)
+            ).getValue(songKey)
+            val checkpoint = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 4_096L
+            )
+            assertTrue(store.restoreProgress(checkpoint))
+
+            val resumedAttemptId = store.ensureDownloadTasks(
+                songs = listOf(downloadSong),
+                status = DownloadStatus.QUEUED,
+                durableAttemptIds = mapOf(songKey to attemptId)
+            ).getValue(songKey)
+
+            assertEquals(attemptId, resumedAttemptId)
+            assertEquals(DownloadStatus.QUEUED, store.findTask(songKey)?.status)
+            assertEquals(checkpoint, store.findTask(songKey)?.progress)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `batch restore updates many queued tasks with one logical snapshot`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val songs = (1L..256L).map(::song)
+            val attemptIds = store.ensureDownloadTasks(
+                songs = songs,
+                status = DownloadStatus.QUEUED,
+                durableAttemptIds = songs.associate { it.stableKey() to it.id + 10_000L }
+            )
+
+            val restored = store.restoreProgressBatch(
+                songs.map { downloadSong ->
+                    progress(
+                        song = downloadSong,
+                        attemptId = attemptIds.getValue(downloadSong.stableKey()),
+                        bytesRead = downloadSong.id
+                    )
+                }
+            )
+
+            assertEquals(songs.size, restored)
+            assertEquals(
+                songs.map { it.id },
+                store.currentTasks().map { task -> task.progress?.bytesRead }
+            )
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `large active batch keeps per song progress isolated`() {
         val scope = CoroutineScope(SupervisorJob())
         try {

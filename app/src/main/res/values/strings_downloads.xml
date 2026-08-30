@@ -13,6 +13,12 @@
     <string name="download_loading_tasks">正在读取下载任务…</string>
     <string name="download_loading_tasks_recovering">暂时无法读取下载任务，正在重试…</string>
     <string name="download_clearing_tasks">正在停止并清空下载任务…</string>
+    <string name="download_clearing_tasks_with_progress">正在清空下载任务: %1$d%% (%2$d 项)</string>
+    <string name="download_clear_phase_preparing">准备中</string>
+    <string name="download_clear_phase_cancelling">停止下载中</string>
+    <string name="download_clear_phase_cleaning">清理临时文件中</string>
+    <string name="download_clear_phase_purging">整理记录中</string>
+    <string name="download_clear_item_progress">已处理 %1$d/%2$d 个文件</string>
     <string name="download_empty">暂无已下载歌曲</string>
     <string name="download_desc">管理下载任务和本地文件</string>
     <string name="download_manage_desc">管理音乐下载和本地文件</string>

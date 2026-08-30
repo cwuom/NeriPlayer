@@ -2552,7 +2552,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh: Boolean = true,
         resumedPlaybackCommandSource: PlaybackCommandSource? = null,
         youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-        cacheKeyToInvalidateBeforeResolve: String? = null
+        cacheKeyToInvalidateBeforeResolve: String? = null,
+        allowLocalSongRecovery: Boolean = false
     ) = refreshCurrentSongUrlImpl(
         resumePositionMs = resumePositionMs,
         allowFallback = allowFallback,
@@ -2562,7 +2563,8 @@ object PlayerManager {
         resumePlaybackAfterRefresh = resumePlaybackAfterRefresh,
         resumedPlaybackCommandSource = resumedPlaybackCommandSource,
         youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve
+        cacheKeyToInvalidateBeforeResolve = cacheKeyToInvalidateBeforeResolve,
+        allowLocalSongRecovery = allowLocalSongRecovery
     )
 
     internal fun handleTrackEndedIfNeeded(source: String) =

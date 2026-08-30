@@ -531,23 +531,58 @@ class DefaultDownloadExecutionHost(
         if (latestExit.timestamp <= lastHandledTimestamp) {
             return emptySet()
         }
-        preferences.edit {
-            putLong(PROCESS_EXIT_TIMESTAMP_KEY, latestExit.timestamp)
-        }
         if (sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            preferences.edit {
+                putLong(PROCESS_EXIT_TIMESTAMP_KEY, latestExit.timestamp)
+            }
             return emptySet()
         }
         val activeStates = listOf("PENDING_QUEUE", "QUEUED", "RETRYABLE") +
             INTERRUPTED_DOWNLOAD_OPERATION_STATES
-        val entries = kotlinx.coroutines.runBlocking(Dispatchers.IO) {
-            DownloadExecutionRoomStore.listByStates(context, activeStates)
-        }
-        return entries
-            .filter { it.request.userInitiated }
-            .mapTo(linkedSetOf()) { entry ->
-                operationStore.markStopped(context.applicationContext, entry.request.operationId)
-                entry.request.song.stableKey()
+        val entries = try {
+            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                DownloadExecutionRoomStore.listByStatesAnyLibrary(context, activeStates)
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "读取用户停止进程的 durable operation 失败，保留退出标记待下次重试: " +
+                    error.message,
+                error
+            )
+            return emptySet()
+        }
+        val stoppedKeys = try {
+            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                DownloadExecutionRoomStore.markUserRequestedProcessExitOperations(
+                    context = context.applicationContext,
+                    entries = entries
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "写入用户停止标记失败，保留退出时间戳待下次重试: ${error.message}",
+                error
+            )
+            return emptySet()
+        }
+        val expectedUserInitiatedCount = entries.count { it.request.userInitiated }
+        if (stoppedKeys.size < expectedUserInitiatedCount) {
+            moe.ouom.neriplayer.core.logging.NPLogger.w(
+                "DownloadExecutionHost",
+                "部分下载 operation 未写入用户停止标记，保留退出时间戳待下次重试"
+            )
+            return emptySet()
+        }
+        preferences.edit {
+            putLong(PROCESS_EXIT_TIMESTAMP_KEY, latestExit.timestamp)
+        }
+        return stoppedKeys
     }
 
     override suspend fun execute(

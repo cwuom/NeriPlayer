@@ -10,6 +10,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
 import moe.ouom.neriplayer.core.download.DownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.resolvePersistedDownloadedAudioEmbeddingState
 import moe.ouom.neriplayer.core.download.naming.candidateManagedDownloadBaseNames
@@ -22,6 +23,7 @@ import moe.ouom.neriplayer.data.model.identity
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * 以固定并发度读取独立侧载, 保持返回顺序并避免阻塞下一首歌曲
@@ -52,6 +54,17 @@ internal fun shouldReadRestorableSidecarLyric(
     songValue: String?
 ): Boolean {
     return baselineValue == null && songValue == null
+}
+
+internal fun resolveCreatedAtConfidence(source: String?): String {
+    return when (source?.trim()?.uppercase(Locale.ROOT)) {
+        "CORE_COMMIT", "MANAGED_COMMIT", "MIGRATION_LOGICAL", "FILESYSTEM_BIRTH" -> "EXACT"
+        "MEDIASTORE_DATE_ADDED", "PROVIDER_CREATED_AT", "PROVIDER_NATIVE" ->
+            "PROVIDER_REPORTED"
+        "MTIME", "MTIME_FALLBACK", "SAF_LAST_MODIFIED", "MEDIASTORE_DATE_MODIFIED",
+        "INDEX_PREVIEW", "LEGACY_V15", "DOWNLOAD_TIME", "IMPORT_TIME" -> "INFERRED"
+        else -> "UNKNOWN"
+    }
 }
 
 internal data class RestorableMetadataClearPolicy(
@@ -125,6 +138,9 @@ internal class DownloadedAudioMetadataStore(
     private val writeRetryDelayMs: Long,
     private val loggerTag: String
 ) {
+    private val writeAttempts: Int
+        get() = maxWriteAttempts.coerceAtLeast(1)
+
     private companion object {
         private const val SIDECAR_READ_PARALLELISM = 2
     }
@@ -145,39 +161,71 @@ internal class DownloadedAudioMetadataStore(
     ): Boolean {
         val startedAtNs = System.nanoTime()
         val identity = song.identity()
-        val existingMetadata = existingMetadataHint ?: read(context, audio)
+        val existingMetadata = existingMetadataHint ?: retryMetadataPreparation(
+            phase = "READ_BASELINE"
+        ) {
+            read(context, audio)
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "读取下载元数据基线失败，保留核心音频等待重试: " +
+                    "file=${audio.name}, error=${error.message}",
+                error
+            )
+            return false
+        }
         val metadataReadMs = elapsedMs(startedAtNs)
         val resolvedEmbeddingState = resolvePersistedDownloadedAudioEmbeddingState(
             downloadFinalized = downloadFinalized,
             requestedState = metadataEmbeddingState,
             existingState = existingMetadata?.metadataEmbeddingState
         )
-        val sidecars = resolveSidecarReferences(
-            context = context,
-            audio = audio,
-            song = song,
-            sidecarReferences = sidecarReferences,
-            existingMetadata = existingMetadata,
-            resolveExistingSidecars = resolveExistingSidecars
-        )
+        val sidecars = retryMetadataPreparation(phase = "READ_SIDECARS") {
+            resolveSidecarReferences(
+                context = context,
+                audio = audio,
+                song = song,
+                sidecarReferences = sidecarReferences,
+                existingMetadata = existingMetadata,
+                resolveExistingSidecars = resolveExistingSidecars
+            )
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "读取下载侧载失败，保留核心音频等待重试: " +
+                    "file=${audio.name}, error=${error.message}",
+                error
+            )
+            return false
+        }
         val sidecarResolveMs = elapsedMs(startedAtNs) - metadataReadMs
-        val materializedCover = resolveDownloadedMetadataCoverAsset(
-            sidecarReferences = sidecarReferences,
-            coverReference = sidecars.coverReference,
-            inspect = { reference ->
-                ManagedDownloadCoverAssetStore.inspect(
-                    context = context,
-                    reference = reference
-                )
-            },
-            materialize = { reference ->
-                ManagedDownloadCoverAssetStore.materialize(
-                    context = context,
-                    reference = reference,
-                    preferredFileName = null
-                )
-            }
-        )
+        val materializedCover = retryMetadataPreparation(phase = "BUILD_COVER") {
+            resolveDownloadedMetadataCoverAsset(
+                sidecarReferences = sidecarReferences,
+                coverReference = sidecars.coverReference,
+                inspect = { reference ->
+                    ManagedDownloadCoverAssetStore.inspect(
+                        context = context,
+                        reference = reference
+                    )
+                },
+                materialize = { reference ->
+                    ManagedDownloadCoverAssetStore.materialize(
+                        context = context,
+                        reference = reference,
+                        preferredFileName = null
+                    )
+                }
+            )
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "整理下载封面失败，保留核心音频等待重试: " +
+                    "file=${audio.name}, error=${error.message}",
+                error
+            )
+            return false
+        }
         val coverResolveMs = elapsedMs(startedAtNs) -
             metadataReadMs - sidecarResolveMs
         val persistedSidecars = sidecars.copy(
@@ -186,33 +234,45 @@ internal class DownloadedAudioMetadataStore(
         val metadataSong = preserveMissingDownloadedMetadataLyrics(song, existingMetadata)
         val existingBaseline = existingMetadata?.restorableMetadata?.baseline
         val sidecarLyrics = if (downloadFinalized) {
-            readRestorableSidecarLyrics(
-                context = context,
-                sidecars = persistedSidecars,
-                readOriginal = shouldReadRestorableSidecarLyric(
-                    baselineValue = existingBaseline?.originalLyric,
-                    songValue = metadataSong.originalLyric
-                ),
-                readTranslated = shouldReadRestorableSidecarLyric(
-                    baselineValue = existingBaseline?.translatedLyric,
-                    songValue = metadataSong.originalTranslatedLyric
-                ),
-                readRomanized = shouldReadRestorableSidecarLyric(
-                    baselineValue = existingBaseline?.romanizedLyric,
-                    songValue = metadataSong.originalRomanizedLyric
+            retryMetadataPreparation(phase = "READ_LYRICS") {
+                readRestorableSidecarLyrics(
+                    context = context,
+                    sidecars = persistedSidecars,
+                    readOriginal = shouldReadRestorableSidecarLyric(
+                        baselineValue = existingBaseline?.originalLyric,
+                        songValue = metadataSong.originalLyric
+                    ),
+                    readTranslated = shouldReadRestorableSidecarLyric(
+                        baselineValue = existingBaseline?.translatedLyric,
+                        songValue = metadataSong.originalTranslatedLyric
+                    ),
+                    readRomanized = shouldReadRestorableSidecarLyric(
+                        baselineValue = existingBaseline?.romanizedLyric,
+                        songValue = metadataSong.originalRomanizedLyric
+                    )
                 )
-            )
+            }.getOrElse { error ->
+                NPLogger.e(
+                    loggerTag,
+                    "读取下载歌词失败，保留核心音频等待重试: " +
+                        "file=${audio.name}, error=${error.message}",
+                    error
+                )
+                return false
+            }
         } else {
             RestorableSidecarLyrics()
         }
         val lyricReadMs = elapsedMs(startedAtNs) -
             metadataReadMs - sidecarResolveMs - coverResolveMs
-        val createdAtMs = existingMetadata?.createdAtMs
-            ?: existingMetadata?.downloadTimeMs
-            ?: audio.lastModifiedMs.takeIf { it > 0L }
-            ?: System.currentTimeMillis()
-        val createdAtSource = existingMetadata?.createdAtSource
-            ?: "MANAGED_COMMIT"
+        val createdAt = resolveDownloadedMetadataCreatedAt(
+            existing = existingMetadata,
+            song = song,
+            audioLastModifiedMs = audio.lastModifiedMs
+        )
+        val createdAtMs = createdAt.timestampMs
+        val createdAtSource = createdAt.source
+        val createdAtConfidence = createdAt.confidence
         val restorableMetadata = resolveRestorableMetadata(
             song = metadataSong,
             existing = existingMetadata?.restorableMetadata,
@@ -240,6 +300,7 @@ internal class DownloadedAudioMetadataStore(
             metadataEmbeddingState = resolvedEmbeddingState,
             createdAtMs = createdAtMs,
             createdAtSource = createdAtSource,
+            createdAtConfidence = createdAtConfidence,
             artifactId = existingMetadata?.artifactId,
             operationId = operationId ?: existingMetadata?.operationId,
             artifactState = artifactStateOverride
@@ -253,16 +314,22 @@ internal class DownloadedAudioMetadataStore(
             audioFileName = audio.logicalName,
             libraryId = existingMetadata?.libraryId,
             libraryAddedAtMs = existingMetadata?.libraryAddedAtMs
+                ?: song.membershipAddedAtMs?.takeIf { it > 0L }
                 ?: createdAtMs.takeIf { it > 0L },
-            sourceCreatedAtMs = existingMetadata?.sourceCreatedAtMs,
+            sourceCreatedAtMs = existingMetadata?.sourceCreatedAtMs
+                ?: song.logicalCreatedAtMs?.takeIf { it > 0L },
             sourceModifiedAtMs = existingMetadata?.sourceModifiedAtMs,
             restorableMetadata = restorableMetadata
         )
 
         var lastError: Throwable? = null
-        repeat(maxWriteAttempts) { attempt ->
-            val result = runCatching {
-                ManagedDownloadStorage.saveMetadata(context, audio, payload.toString())
+        repeat(writeAttempts) { attempt ->
+            val result = try {
+                Result.success(ManagedDownloadStorage.saveMetadata(context, audio, payload.toString()))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
             }
             if (result.getOrDefault(false)) {
                 NPLogger.d(
@@ -274,7 +341,7 @@ internal class DownloadedAudioMetadataStore(
             val error = result.exceptionOrNull()
                 ?: IllegalStateException("下载元数据写入读回校验失败")
             lastError = error
-            if (attempt < maxWriteAttempts - 1) {
+            if (attempt < writeAttempts - 1) {
                 NPLogger.w(
                     loggerTag,
                     "写入下载元数据失败(第${attempt + 1}次): ${audio.name} - ${error.message}"
@@ -291,6 +358,37 @@ internal class DownloadedAudioMetadataStore(
             lastError
         )
         return false
+    }
+
+    private suspend fun <T> retryMetadataPreparation(
+        phase: String,
+        block: suspend () -> T
+    ): Result<T> {
+        var lastError: Throwable? = null
+        repeat(maxWriteAttempts.coerceAtLeast(1)) { attempt ->
+            try {
+                return Result.success(block())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                lastError = error
+                if (attempt < maxWriteAttempts.coerceAtLeast(1) - 1) {
+                    val retryMessage =
+                        "元数据准备阶段失败，准备重试: phase=$phase, " +
+                            "attempt=${attempt + 1}, error=${error.message}"
+                    NPLogger.w(
+                        loggerTag,
+                        retryMessage
+                    )
+                    val multiplier = 1L shl attempt.coerceAtMost(4)
+                    delay((writeRetryDelayMs.coerceAtLeast(0L) * multiplier)
+                        .coerceAtMost(2_000L))
+                }
+            }
+        }
+        return Result.failure(
+            lastError ?: IllegalStateException("元数据准备阶段失败: $phase")
+        )
     }
 
     suspend fun read(
@@ -310,15 +408,41 @@ internal class DownloadedAudioMetadataStore(
         audio: ManagedDownloadStorage.StoredEntry,
         coverReference: String
     ): Boolean {
-        val metadataEntry = ManagedDownloadStorage.findMetadataForAudio(context, audio)
-            ?: return false
-        val raw = ManagedDownloadStorage.readText(context, metadataEntry.reference)
-            ?: return false
-        val materialized = ManagedDownloadCoverAssetStore.materialize(
-            context = context,
-            reference = coverReference,
-            preferredFileName = null
-        )
+        val metadataEntry = retryMetadataPreparation(phase = "READ_COVER_BASELINE") {
+            ManagedDownloadStorage.findMetadataForAudio(context, audio)
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "读取封面回写基线失败: file=${audio.name}, error=${error.message}",
+                error
+            )
+            return false
+        } ?: return false
+        val raw = retryMetadataPreparation(phase = "READ_COVER_METADATA") {
+            ManagedDownloadStorage.readText(context, metadataEntry.reference)
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "读取封面回写 metadata 失败: file=${audio.name}, " +
+                    "error=${error.message}",
+                error
+            )
+            return false
+        } ?: return false
+        val materialized = retryMetadataPreparation(phase = "BUILD_COVER_REFERENCE") {
+            ManagedDownloadCoverAssetStore.materialize(
+                context = context,
+                reference = coverReference,
+                preferredFileName = null
+            )
+        }.getOrElse { error ->
+            NPLogger.e(
+                loggerTag,
+                "整理封面回写引用失败: file=${audio.name}, error=${error.message}",
+                error
+            )
+            return false
+        }
         val effectiveReference = materialized?.reference ?: coverReference
         val patchedPayload = patchDownloadedMetadataCoverReference(
             rawMetadata = raw,
@@ -328,16 +452,20 @@ internal class DownloadedAudioMetadataStore(
         )
             ?: return false
         var lastError: Throwable? = null
-        repeat(maxWriteAttempts) { attempt ->
-            val result = runCatching {
-                ManagedDownloadStorage.saveMetadata(context, audio, patchedPayload)
+        repeat(writeAttempts) { attempt ->
+            val result = try {
+                Result.success(ManagedDownloadStorage.saveMetadata(context, audio, patchedPayload))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                Result.failure(error)
             }
             if (result.getOrDefault(false)) {
                 NPLogger.d(loggerTag, "补写下载封面侧载引用: file=${audio.name}, coverPath=$effectiveReference")
                 return true
             }
             lastError = result.exceptionOrNull()
-            if (attempt < maxWriteAttempts - 1) {
+            if (attempt < writeAttempts - 1) {
                 delay(writeRetryDelayMs)
             }
         }
@@ -363,16 +491,30 @@ internal class DownloadedAudioMetadataStore(
         }
 
         val candidateBaseNames = candidateManagedDownloadBaseNames(audio.nameWithoutExtension)
-        val discoveredCoverReference = ManagedDownloadStorage.findCoverReference(context, audio)
-            ?: existingMetadata?.coverPath
+        val explicitCoverReference = sidecarReferences?.coverReference
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val existingCoverReference = existingMetadata?.coverPath
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        // 已有 metadata 是同一音频的权威索引。先复用它，只有没有引用时
+        // 才触发 snapshot/SAF 查找，避免大目录下每首歌重复枚举。
+        val discoveredCoverReference = explicitCoverReference
+            ?: existingCoverReference
+            ?: ManagedDownloadStorage.findCoverReference(context, audio)
         return DownloadedMetadataSidecarReferences(
-            coverReference = sidecarReferences?.coverReference
+            coverReference = explicitCoverReference
                 ?: resolveDownloadedMetadataCoverReference(
                     existingCoverReference = discoveredCoverReference,
                     song = song,
                     previousCustomCoverReference = existingMetadata?.customCoverUrl
                 ),
             lyricReference = sidecarReferences?.lyricReference
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: existingMetadata?.lyricPath
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
                 ?: ManagedDownloadStorage.findLyricLocation(
                     context = context,
                     songId = song.id,
@@ -381,6 +523,11 @@ internal class DownloadedAudioMetadataStore(
                 )
                 ?: existingMetadata?.lyricPath,
             translatedLyricReference = sidecarReferences?.translatedLyricReference
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: existingMetadata?.translatedLyricPath
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
                 ?: ManagedDownloadStorage.findLyricLocation(
                     context = context,
                     songId = song.id,
@@ -389,12 +536,16 @@ internal class DownloadedAudioMetadataStore(
                 )
                 ?: existingMetadata?.translatedLyricPath,
             romanizedLyricReference = sidecarReferences?.romanizedLyricReference
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: existingMetadata?.romanizedLyricPath
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
                 ?: ManagedDownloadStorage.findRomanizedLyricLocation(
                     context = context,
                     songId = song.id,
                     candidateBaseNames = candidateBaseNames
                 )
-                ?: existingMetadata?.romanizedLyricPath
         )
     }
 
@@ -417,6 +568,10 @@ internal class DownloadedAudioMetadataStore(
                 ManagedDownloadStorage.readText(context, normalized)
                     ?.takeIf(String::isNotBlank)
             } catch (error: CancellationException) {
+                throw error
+            } catch (error: ManagedDownloadRootProviderException) {
+                throw error
+            } catch (error: SecurityException) {
                 throw error
             } catch (error: Exception) {
                 NPLogger.w(
@@ -448,6 +603,7 @@ internal class DownloadedAudioMetadataStore(
         metadataEmbeddingState: DownloadedAudioEmbeddingState?,
         createdAtMs: Long,
         createdAtSource: String,
+        createdAtConfidence: String,
         artifactId: String?,
         operationId: String?,
         artifactState: String?,
@@ -498,6 +654,7 @@ internal class DownloadedAudioMetadataStore(
             put("metadataEmbeddingState", metadataEmbeddingState?.name)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
+            put("createdAtConfidence", createdAtConfidence)
             put("artifactId", artifactId)
             put("operationId", operationId)
             put("artifactState", artifactState)
@@ -629,6 +786,51 @@ internal fun resolveDownloadedAudioTime(
 ): Long? {
     return existingTimeMs?.takeIf { it > 0L }
         ?: fallbackTimeMs?.takeIf { it > 0L }
+}
+
+internal data class DownloadedMetadataCreatedAt(
+    val timestampMs: Long,
+    val source: String,
+    val confidence: String
+)
+
+internal fun resolveDownloadedMetadataCreatedAt(
+    existing: ManagedDownloadStorage.DownloadedAudioMetadata?,
+    song: SongItem,
+    audioLastModifiedMs: Long?,
+    nowMs: Long = System.currentTimeMillis()
+): DownloadedMetadataCreatedAt {
+    val existingCreatedAt = existing?.createdAtMs?.takeIf { it > 0L }
+    val existingDownloadTime = existing?.downloadTimeMs?.takeIf { it > 0L }
+    val songCreatedAt = song.logicalCreatedAtMs?.takeIf { it > 0L }
+    val songAddedAt = song.addedAt.takeIf { it > 0L }
+    val audioModifiedAt = audioLastModifiedMs?.takeIf { it > 0L }
+    val timestamp = existingCreatedAt
+        ?: existingDownloadTime
+        ?: songCreatedAt
+        ?: songAddedAt
+        ?: audioModifiedAt
+        ?: nowMs.coerceAtLeast(1L)
+    val source = when {
+        existingCreatedAt != null -> existing.createdAtSource
+        existingDownloadTime != null -> existing.createdAtSource ?: "DOWNLOAD_TIME"
+        songCreatedAt != null -> song.createdAtSource ?: "UNKNOWN"
+        songAddedAt != null -> song.createdAtSource ?: "UNKNOWN"
+        audioModifiedAt != null -> "MTIME"
+        else -> "MANAGED_COMMIT"
+    }?.trim()?.takeIf(String::isNotBlank) ?: "MANAGED_COMMIT"
+    val confidence = when {
+        existingCreatedAt != null -> existing.createdAtConfidence
+        existingDownloadTime != null -> null
+        songCreatedAt != null || songAddedAt != null -> song.createdAtConfidence
+        else -> null
+    }?.trim()?.takeIf(String::isNotBlank)
+        ?: resolveCreatedAtConfidence(source)
+    return DownloadedMetadataCreatedAt(
+        timestampMs = timestamp,
+        source = source,
+        confidence = confidence
+    )
 }
 
 internal fun preserveMissingDownloadedMetadataLyrics(

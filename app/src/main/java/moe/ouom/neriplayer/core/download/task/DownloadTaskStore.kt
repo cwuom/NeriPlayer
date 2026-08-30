@@ -165,6 +165,85 @@ internal class DownloadTaskStore(
         }
     }
 
+    /**
+     * 从持久化检查点回填任务卡片，不受传输节流影响
+     *
+     * 重启后任务尚未进入 DOWNLOADING，普通 updateProgress 会拒绝这类进度，
+     * 进而让页面一直显示 0。只接受当前 attempt，并保留单调递增的字节数。
+     */
+    fun restoreProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
+        return synchronized(mutationLock) {
+            val taskIndex = songKeyIndex[progress.songKey] ?: -1
+            if (taskIndex < 0) return@synchronized false
+            val currentTask = _downloadTasks.value[taskIndex]
+            if (
+                currentTask.status !in RESTORABLE_PROGRESS_STATUSES ||
+                !shouldApplyTaskMutation(currentTask, progress.attemptId)
+            ) {
+                return@synchronized false
+            }
+            val effectiveProgress = mergeDownloadTaskProgress(
+                current = currentTask.progress,
+                incoming = progress
+            )
+            if (currentTask.progress == effectiveProgress) {
+                return@synchronized true
+            }
+            clearProgressPublishState(progress.songKey)
+            val updatedTasks = _downloadTasks.value.replaceAt(
+                taskIndex,
+                currentTask.copy(progress = effectiveProgress)
+            )
+            _downloadTasks.value = updatedTasks
+            songKeyIndex = buildSongKeyIndex(updatedTasks)
+            true
+        }
+    }
+
+    /**
+     * 批量回填持久化进度，只复制和重建一次任务索引
+     *
+     * 启动恢复可能同时包含数百个任务，逐项调用 restoreProgress 会重复复制
+     * 整个列表并重复重建索引，导致页面首帧和恢复变慢
+     */
+    fun restoreProgressBatch(
+        progresses: Collection<AudioDownloadManager.DownloadProgress>
+    ): Int {
+        if (progresses.isEmpty()) return 0
+        return synchronized(mutationLock) {
+            val currentTasks = _downloadTasks.value
+            val updatedTasks = currentTasks.toMutableList()
+            var acceptedCount = 0
+            var changed = false
+            progresses.forEach { progress ->
+                val taskIndex = songKeyIndex[progress.songKey] ?: return@forEach
+                val currentTask = updatedTasks[taskIndex]
+                if (
+                    currentTask.status !in RESTORABLE_PROGRESS_STATUSES ||
+                    !shouldApplyTaskMutation(currentTask, progress.attemptId)
+                ) {
+                    return@forEach
+                }
+                acceptedCount++
+                val effectiveProgress = mergeDownloadTaskProgress(
+                    current = currentTask.progress,
+                    incoming = progress
+                )
+                if (currentTask.progress == effectiveProgress) {
+                    return@forEach
+                }
+                clearProgressPublishState(progress.songKey)
+                updatedTasks[taskIndex] = currentTask.copy(progress = effectiveProgress)
+                changed = true
+            }
+            if (changed) {
+                _downloadTasks.value = updatedTasks
+                songKeyIndex = buildSongKeyIndex(updatedTasks)
+            }
+            acceptedCount
+        }
+    }
+
     fun removeObsoleteWaitingNetworkTasks(recoveryCandidateKeys: Set<String>) {
         mutate { tasks ->
             tasks.filterNot { task ->
@@ -314,7 +393,21 @@ internal class DownloadTaskStore(
                     attemptIds[songKey] = existingTask.attemptId
                     return@forEach
                 }
-                val attemptId = adoptDurableAttemptId(durableAttemptIds[songKey])
+                val durableAttemptId = durableAttemptIds[songKey]
+                    ?.takeIf { attemptId -> attemptId > 0L }
+                if (
+                    existingTask?.status == DownloadStatus.WAITING_NETWORK &&
+                        durableAttemptId == existingTask.attemptId
+                ) {
+                    // 同一 durable attempt 从等待网络回到队列时不能清掉已恢复的进度
+                    attemptIds[songKey] = existingTask.attemptId
+                    updatedTasks[requireNotNull(existingIndex)] = existingTask.copy(
+                        song = song,
+                        status = status
+                    )
+                    return@forEach
+                }
+                val attemptId = adoptDurableAttemptId(durableAttemptId)
                 attemptIds[songKey] = attemptId
                 clearProgressPublishState(songKey)
                 val task = DownloadTask(
@@ -510,6 +603,14 @@ internal class DownloadTaskStore(
             index.putIfAbsent(task.song.stableKey(), i)
         }
         return index
+    }
+
+    private companion object {
+        val RESTORABLE_PROGRESS_STATUSES = setOf(
+            DownloadStatus.QUEUED,
+            DownloadStatus.DOWNLOADING,
+            DownloadStatus.WAITING_NETWORK
+        )
     }
 
     private inline fun updateTask(

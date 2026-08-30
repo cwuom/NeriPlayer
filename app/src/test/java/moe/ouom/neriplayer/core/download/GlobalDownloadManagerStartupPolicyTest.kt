@@ -4,8 +4,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +25,119 @@ import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 
 class GlobalDownloadManagerStartupPolicyTest {
+
+    @Test
+    fun `empty scan coverage reuses snapshot references instead of probing each song`() {
+        val audio = ManagedDownloadStorage.StoredEntry(
+            name = "song.mp3",
+            reference = "content://downloads/song.mp3",
+            mediaUri = "content://downloads/song.mp3",
+            localFilePath = null,
+            sizeBytes = 1L,
+            lastModifiedMs = 10L
+        )
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            audioEntries = listOf(audio),
+            pendingAudioEntries = emptyList()
+        )
+        val existingSongs = listOf(
+            DownloadedSong(
+                id = 1L,
+                name = "song",
+                artist = "artist",
+                album = "album",
+                filePath = "/stale/path/song.mp3",
+                fileSize = 1L,
+                downloadTime = 10L,
+                mediaUri = audio.mediaUri
+            ),
+            DownloadedSong(
+                id = 2L,
+                name = "missing",
+                artist = "artist",
+                album = "album",
+                filePath = "content://downloads/missing.mp3",
+                fileSize = 1L,
+                downloadTime = 9L
+            )
+        )
+
+        assertEquals(
+            DownloadedSongReferenceCoverage(
+                knownReferenceCount = 2,
+                missingReferenceCount = 1
+            ),
+            observeDownloadedSongReferencesFromSnapshot(existingSongs, snapshot)
+        )
+    }
+
+    @Test
+    fun `large refresh plan is partitioned without creating one deferred per song`() {
+        val items = (0 until 1_000).toList()
+        val batches = partitionForBoundedParallelism(items, maxParallelism = 4)
+
+        assertEquals(250, batches.size)
+        assertTrue(batches.all { batch -> batch.size in 1..4 })
+        assertEquals(items, batches.flatten())
+    }
+
+    @Test
+    fun `wifi recovery probe retries only while wifi and candidates remain`() {
+        assertTrue(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = true,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.MOBILE,
+                hasPendingCandidates = true,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = false,
+                attempt = 0,
+                maxAttempts = 6
+            )
+        )
+        assertFalse(
+            shouldContinueWifiRecoveryProbe(
+                networkType = TrafficNetworkType.WIFI,
+                hasPendingCandidates = true,
+                attempt = 5,
+                maxAttempts = 6
+            )
+        )
+    }
+
+    @Test
+    fun `cancelled operation is purged only after root cleanup succeeds`() {
+        assertTrue(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = false,
+                cleanupSucceeded = true
+            )
+        )
+        assertFalse(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = false,
+                cleanupSucceeded = false
+            )
+        )
+        assertFalse(
+            shouldPurgeCancelledDownloadOperation(
+                keepCancellationOperation = true,
+                cleanupSucceeded = true
+            )
+        )
+    }
 
     @Test
     fun `finalized temporary cleanup keeps audio and both metadata targets together`() {
@@ -584,7 +700,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         val clearFenceIndex = clearAllBody.indexOf("clearDownloadClearFence(")
         val clearRequestIndex = clearAllBody.indexOf(
-            "PersistentDownloadClearFenceStore.beginClear()"
+            "PersistentDownloadClearFenceStore.beginClear("
         )
 
         assertTrue(clearRequestIndex >= 0)
@@ -661,6 +777,79 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(workerSource.contains("fun scheduleAll(context: Context)"))
         assertFalse(workerSource.contains("fun rearmAll(context: Context)"))
         assertTrue(workerSource.contains("recoverPendingDownloadsFromWifiWake(applicationContext)"))
+        assertTrue(
+            workerSource.contains("applicationContext.currentDownloadNetworkTypeOrNull()")
+        )
+        assertFalse(
+            workerSource.contains("applicationContext.currentTrafficNetworkTypeOrNull()")
+        )
+    }
+
+    @Test
+    fun `partial Wi-Fi cancellation does not cancel the global wake for other songs`() {
+        val workerSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/WifiBoundDownloadWakeWorker.kt"
+        ).readText()
+        val partialCancelBody = workerSource.substringAfter(
+            "fun cancelAll("
+        ).substringBefore("fun cancelAllOwned(")
+
+        assertTrue(partialCancelBody.contains("cancelUniqueWork(uniqueWorkName(operationId))"))
+        assertFalse(partialCancelBody.contains("cancelAllWorkByTag(ALL_WIFI_WAKE_WORK_TAG)"))
+        assertTrue(
+            workerSource.substringAfter("fun cancelAllOwned(")
+                .contains("cancelAllWorkByTag(ALL_WIFI_WAKE_WORK_TAG)")
+        )
+    }
+
+    @Test
+    fun `recovery triggers share one suspending slot instead of dropping startup work`() = runBlocking {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        assertTrue(source.contains("private val pendingDownloadRecoverySlot = Mutex()"))
+        assertTrue(source.contains("withPendingDownloadRecoverySlot(\"startup\")"))
+        assertTrue(source.contains("withPendingDownloadRecoverySlot(\"network:"))
+        assertFalse(source.contains("pendingDownloadRecoveryActive"))
+        assertFalse(source.contains("跳过启动下载恢复: 已有恢复任务执行中"))
+
+        val slot = Mutex()
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val secondEntered = CompletableDeferred<Unit>()
+        val first = launch {
+            slot.withLock {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+        val second = launch {
+            slot.withLock {
+                secondEntered.complete(Unit)
+            }
+        }
+        delay(20L)
+        assertFalse(secondEntered.isCompleted)
+        releaseFirst.complete(Unit)
+        secondEntered.await()
+        joinAll(first, second)
+    }
+
+    @Test
+    fun `startup restores Room progress before interactive gate`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val progressIndex = initializeBody.indexOf("restorePersistedDownloadProgress(appContext)")
+        val gateIndex = initializeBody.indexOf("AppStartupWorkGate.awaitInteractiveContentOrTimeout()")
+
+        assertTrue(progressIndex >= 0)
+        assertTrue(gateIndex >= 0)
+        assertTrue(progressIndex < gateIndex)
+        assertEquals(1, initializeBody.split("restorePersistedDownloadProgress(appContext)").size - 1)
     }
 
     @Test
@@ -672,17 +861,11 @@ class GlobalDownloadManagerStartupPolicyTest {
             "internal suspend fun recoverPendingDownloadsFromWifiWake"
         ).substringBefore("private suspend fun cancelDownloadTaskInBackground")
 
-        val lockBusyIndex = wakeBody.indexOf("if (!tryBeginPendingDownloadRecovery())")
         val activeBranchIndex = wakeBody.indexOf("if (hasBlockingActiveDownloadOperationsForRecovery())")
         val acceptedIndex = wakeBody.indexOf("val accepted = recoverPendingResumableDownloads")
 
-        assertTrue(lockBusyIndex >= 0)
-        assertTrue(
-            wakeBody.substring(
-                lockBusyIndex,
-                wakeBody.indexOf("return try", lockBusyIndex)
-            ).contains("return false")
-        )
+        assertTrue(wakeBody.contains("withPendingDownloadRecoverySlot(\"wifi_wake\")"))
+        assertFalse(wakeBody.contains("tryBeginPendingDownloadRecovery"))
         assertTrue(activeBranchIndex >= 0)
         assertTrue(
             wakeBody.substring(

@@ -1808,7 +1808,15 @@ class ManagedDownloadStorageMigrationCompatTest {
                     createdNew = false
                 ),
                 CopiedMigrationEntry(
-                    original = ManagedMigrationEntry(null, entry(sourceMetadata)),
+                    original = ManagedMigrationEntry(
+                        subdirectory = null,
+                        entry = entry(sourceMetadata),
+                        metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                            createdAtMs = 1_700_000_123_000L,
+                            createdAtSource = "MTIME",
+                            createdAtConfidence = "INFERRED"
+                        )
+                    ),
                     copiedEntry = entry(targetMetadata),
                     createdNew = false
                 )
@@ -1840,6 +1848,9 @@ class ManagedDownloadStorageMigrationCompatTest {
             assertEquals(targetAudio.toURI().toString(), rewritten.getString("mediaUri"))
             assertEquals(targetAudio.absolutePath, rewritten.getString("localFilePath"))
             assertEquals("1|local|${targetAudio.toURI()}", rewritten.getString("stableKey"))
+            assertEquals(1_700_000_123_000L, rewritten.getLong("createdAtMs"))
+            assertEquals("MTIME", rewritten.getString("createdAtSource"))
+            assertEquals("INFERRED", rewritten.getString("createdAtConfidence"))
             assertEquals(
                 0,
                 finalizer.verifyMigratedEntries(

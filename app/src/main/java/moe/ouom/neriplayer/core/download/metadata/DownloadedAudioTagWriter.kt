@@ -249,8 +249,16 @@ internal object DownloadedAudioTagWriter {
         explicitReferences: List<String?>,
         fallbacks: List<String?>
     ): List<String?> {
+        val referencesToRead = explicitReferences.indices.map { index ->
+            explicitReferences.getOrNull(index).takeIf {
+                shouldReadEmbeddedLyricReference(
+                    reference = it,
+                    fallback = fallbacks.getOrNull(index)
+                )
+            }
+        }
         val resolved = readRestorableSidecarLyricsConcurrently(
-            references = explicitReferences,
+            references = referencesToRead,
             parallelism = 2
         ) { reference ->
             try {
@@ -264,6 +272,13 @@ internal object DownloadedAudioTagWriter {
         return explicitReferences.indices.map { index ->
             resolved.getOrNull(index) ?: fallbacks.getOrNull(index)
         }
+    }
+
+    internal fun shouldReadEmbeddedLyricReference(
+        reference: String?,
+        fallback: String?
+    ): Boolean {
+        return !reference.isNullOrBlank() && fallback.isNullOrBlank()
     }
 
     internal fun normalizeEmbeddedAlbumName(album: String): String? =

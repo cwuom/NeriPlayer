@@ -14,9 +14,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.jvm.JvmName
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
+import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 
 /** wakes a Wi-Fi-bound operation only after a Wi-Fi-class transport is available again */
 class WifiBoundDownloadWakeWorker(
@@ -27,7 +28,7 @@ class WifiBoundDownloadWakeWorker(
         val operationId = inputData.getString(OPERATION_ID_KEY)
             ?.let(::normalizeDownloadOperationId)
         if (operationId == null) {
-            if (!shouldHandoffWifiBoundDownloadWake(applicationContext.currentTrafficNetworkType())) {
+            if (!shouldHandoffWifiBoundDownloadWake(applicationContext.currentDownloadNetworkTypeOrNull())) {
                 return@withContext Result.retry()
             }
             return@withContext if (
@@ -49,7 +50,7 @@ class WifiBoundDownloadWakeWorker(
         if (!shouldScheduleWifiBoundDownloadWakeup(request.requiresWifiNetwork, state)) {
             return@withContext Result.success()
         }
-        if (!shouldHandoffWifiBoundDownloadWake(applicationContext.currentTrafficNetworkType())) {
+        if (!shouldHandoffWifiBoundDownloadWake(applicationContext.currentDownloadNetworkTypeOrNull())) {
             return@withContext Result.retry()
         }
         when (
@@ -89,12 +90,9 @@ class WifiBoundDownloadWakeWorker(
             context: Context,
             operationId: String
         ): Boolean {
-            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
-            return enqueue(
-                context = context,
-                operationId = normalizedId,
-                policy = wifiBoundDownloadWakeExistingWorkPolicy
-            )
+            // 所有 WIFI 等待项由一个全局 worker 批量恢复，避免一首歌创建一个
+            // WorkManager 任务导致约束回调和内存开销随队列线性增长
+            return normalizeDownloadOperationId(operationId) != null && scheduleAll(context)
         }
 
         /** preserves a follow-up wake when a generic execution host hands work back to policy */
@@ -102,12 +100,7 @@ class WifiBoundDownloadWakeWorker(
             context: Context,
             operationId: String
         ): Boolean {
-            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
-            return enqueue(
-                context = context,
-                operationId = normalizedId,
-                policy = wifiBoundDownloadWakeHandoffRearmPolicy
-            )
+            return normalizeDownloadOperationId(operationId) != null && scheduleAll(context)
         }
 
         private fun enqueue(
@@ -145,6 +138,7 @@ class WifiBoundDownloadWakeWorker(
             if (normalizedIds.isEmpty()) return
             runCatching {
                 val workManager = WorkManager.getInstance(context.applicationContext)
+                // 子集取消不能清掉全局唤醒，否则会连带影响仍在等待网络的歌曲
                 normalizedIds.forEach { operationId ->
                     workManager.cancelUniqueWork(uniqueWorkName(operationId))
                 }
@@ -204,4 +198,9 @@ internal val wifiBoundDownloadWakeHandoffRearmPolicy = ExistingWorkPolicy.APPEND
 
 internal fun shouldHandoffWifiBoundDownloadWake(
     currentNetworkType: TrafficNetworkType
+): Boolean = currentNetworkType == TrafficNetworkType.WIFI
+
+@JvmName("shouldHandoffWifiBoundDownloadWakeNullable")
+internal fun shouldHandoffWifiBoundDownloadWake(
+    currentNetworkType: TrafficNetworkType?
 ): Boolean = currentNetworkType == TrafficNetworkType.WIFI

@@ -15,6 +15,7 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.WeakHashMap
 import java.util.LinkedHashMap
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -376,6 +377,8 @@ internal class FileStorageBackend(
             }
         } catch (_: SecurityException) {
             StorageRenameResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             StorageRenameResult.ProviderFailure(error)
         }
@@ -521,6 +524,10 @@ internal class SafStorageBackend(
             )
         when (val parent = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> StorageDirectorySnapshot(emptyList(), StorageConfidence.Missing)
+            SafQueryResult.OutOfScope -> StorageDirectorySnapshot(
+                emptyList(),
+                StorageConfidence.OutOfScope
+            )
             SafQueryResult.PermissionLost -> StorageDirectorySnapshot(
                 emptyList(),
                 StorageConfidence.PermissionLost
@@ -542,6 +549,10 @@ internal class SafStorageBackend(
                         emptyList(),
                         StorageConfidence.Missing
                     )
+                    SafChildrenResult.OutOfScope -> StorageDirectorySnapshot(
+                        emptyList(),
+                        StorageConfidence.OutOfScope
+                    )
                     SafChildrenResult.PermissionLost -> StorageDirectorySnapshot(
                         emptyList(),
                         StorageConfidence.PermissionLost
@@ -560,6 +571,7 @@ internal class SafStorageBackend(
             ?: return@withContext StorageLookupResult.Unsupported("SAF reference required")
         when (val result = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> StorageLookupResult.Missing
+            SafQueryResult.OutOfScope -> StorageLookupResult.OutOfScope
             SafQueryResult.PermissionLost -> StorageLookupResult.PermissionLost
             is SafQueryResult.ProviderFailure -> StorageLookupResult.ProviderFailure(result.error)
             is SafQueryResult.Found -> StorageLookupResult.Found(result.document.toStat(safReference.uri))
@@ -574,20 +586,29 @@ internal class SafStorageBackend(
             ?: return@withContext StorageLookupResult.Unsupported("SAF reference required")
         val input = try {
             context.contentResolver.openInputStream(safReference.uri)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext StorageLookupResult.PermissionLost
         } catch (error: FileNotFoundException) {
             return@withContext when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> StorageLookupResult.Missing
+                SafFileFailure.OutOfScope -> StorageLookupResult.OutOfScope
                 SafFileFailure.PermissionLost -> StorageLookupResult.PermissionLost
                 SafFileFailure.ProviderFailure -> StorageLookupResult.ProviderFailure(error)
             }
         } catch (error: Throwable) {
-            return@withContext StorageLookupResult.ProviderFailure(error)
+            return@withContext when (classifySafFailure(error)) {
+                SafFileFailure.Missing -> StorageLookupResult.Missing
+                SafFileFailure.OutOfScope -> StorageLookupResult.OutOfScope
+                SafFileFailure.PermissionLost -> StorageLookupResult.PermissionLost
+                SafFileFailure.ProviderFailure -> StorageLookupResult.ProviderFailure(error)
+            }
         } ?: run {
             // 有些 Provider 会返回空流而不是抛出 Missing，保留一次探测来分类这种异常
             return@withContext when (val result = queryDocument(safReference.uri)) {
                 SafQueryResult.Missing -> StorageLookupResult.Missing
+                SafQueryResult.OutOfScope -> StorageLookupResult.OutOfScope
                 SafQueryResult.PermissionLost -> StorageLookupResult.PermissionLost
                 is SafQueryResult.ProviderFailure -> StorageLookupResult.ProviderFailure(result.error)
                 is SafQueryResult.Found -> StorageLookupResult.ProviderFailure(
@@ -603,7 +624,12 @@ internal class SafStorageBackend(
         } catch (error: StorageReadBlockFailure) {
             throw error
         } catch (error: Throwable) {
-            StorageLookupResult.ProviderFailure(error)
+            when (classifySafFailure(error)) {
+                SafFileFailure.Missing -> StorageLookupResult.Missing
+                SafFileFailure.OutOfScope -> StorageLookupResult.OutOfScope
+                SafFileFailure.PermissionLost -> StorageLookupResult.PermissionLost
+                SafFileFailure.ProviderFailure -> StorageLookupResult.ProviderFailure(error)
+            }
         }
     }
 
@@ -656,6 +682,7 @@ internal class SafStorageBackend(
         val parentUri = safTarget.parent.uri
         val parent = when (val result = queryParentDocument(parentUri)) {
             SafQueryResult.Missing -> return@withContext StorageWriteResult.Missing
+            SafQueryResult.OutOfScope -> return@withContext StorageWriteResult.OutOfScope
             SafQueryResult.PermissionLost -> return@withContext StorageWriteResult.PermissionLost
             is SafQueryResult.ProviderFailure -> {
                 return@withContext StorageWriteResult.ProviderFailure(result.error)
@@ -678,6 +705,8 @@ internal class SafStorageBackend(
                 safTarget.mimeType,
                 temporaryName
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             invalidateParentDocument(parentUri)
             return@withContext StorageWriteResult.PermissionLost
@@ -696,6 +725,8 @@ internal class SafStorageBackend(
 
         val output = try {
             context.contentResolver.openOutputStream(temporaryUri, "w")
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext cleanupTemporarySafWriteFailure(
                 temporaryUri,
@@ -706,6 +737,7 @@ internal class SafStorageBackend(
                 temporaryUri,
                 when (classifySafFileNotFound(error)) {
                     SafFileFailure.Missing -> StorageWriteResult.Missing
+                    SafFileFailure.OutOfScope -> StorageWriteResult.OutOfScope
                     SafFileFailure.PermissionLost -> StorageWriteResult.PermissionLost
                     SafFileFailure.ProviderFailure -> StorageWriteResult.ProviderFailure(error)
                 }
@@ -743,6 +775,12 @@ internal class SafStorageBackend(
                     StorageWriteResult.ProviderFailure(
                         IllegalStateException("temporary file disappeared after write")
                     )
+                )
+            }
+            SafQueryResult.OutOfScope -> {
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.OutOfScope
                 )
             }
             SafQueryResult.PermissionLost -> {
@@ -788,6 +826,12 @@ internal class SafStorageBackend(
                         )
                     )
                 }
+                SafQueryResult.OutOfScope -> {
+                    return@commit cleanupTemporarySafWriteFailure(
+                        temporaryUri,
+                        StorageWriteResult.OutOfScope
+                    )
+                }
                 SafQueryResult.PermissionLost -> {
                     return@commit cleanupTemporarySafWriteFailure(
                         temporaryUri,
@@ -826,6 +870,12 @@ internal class SafStorageBackend(
                     StorageWriteResult.ProviderFailure(
                         IllegalStateException("provider lost parent children during write")
                     )
+                )
+            }
+            SafChildrenResult.OutOfScope -> {
+                return@commit cleanupTemporarySafWriteFailure(
+                    temporaryUri,
+                    StorageWriteResult.OutOfScope
                 )
             }
             SafChildrenResult.PermissionLost -> {
@@ -943,6 +993,8 @@ internal class SafStorageBackend(
                 }
                 val renamedUri = try {
                     DocumentsContract.renameDocument(context.contentResolver, existingUri, backupName)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: SecurityException) {
                     return@commit cleanupTemporarySafWriteFailure(
                         temporaryUri,
@@ -979,6 +1031,16 @@ internal class SafStorageBackend(
 
         val finalUri = try {
             DocumentsContract.renameDocument(context.contentResolver, temporaryUri, safTarget.displayName)
+        } catch (error: CancellationException) {
+            rollbackSafReplacement(
+                parentUri = parentUri,
+                temporaryUri = temporaryUri,
+                finalUri = null,
+                backupUri = backupUri,
+                displayName = safTarget.displayName,
+                initialResult = StorageWriteResult.ProviderFailure(error)
+            )
+            throw error
         } catch (error: SecurityException) {
             return@commit rollbackSafReplacement(
                 parentUri = parentUri,
@@ -1028,6 +1090,16 @@ internal class SafStorageBackend(
                     initialResult = StorageWriteResult.ProviderFailure(
                         IllegalStateException("renamed file cannot be queried")
                     )
+                )
+            }
+            SafQueryResult.OutOfScope -> {
+                return@commit rollbackSafReplacement(
+                    parentUri = parentUri,
+                    temporaryUri = temporaryUri,
+                    finalUri = finalUri,
+                    backupUri = backupUri,
+                    displayName = safTarget.displayName,
+                    initialResult = StorageWriteResult.OutOfScope
                 )
             }
             SafQueryResult.PermissionLost -> {
@@ -1084,6 +1156,7 @@ internal class SafStorageBackend(
         invalidateParentDocument(safReference.uri)
         when (val result = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> return@withContext StorageMutationResult.Missing
+            SafQueryResult.OutOfScope -> return@withContext StorageMutationResult.OutOfScope
             SafQueryResult.PermissionLost -> return@withContext StorageMutationResult.PermissionLost
             is SafQueryResult.ProviderFailure -> {
                 return@withContext StorageMutationResult.ProviderFailure(result.error)
@@ -1093,11 +1166,14 @@ internal class SafStorageBackend(
         confirmSafDelete(safReference.uri)?.let { return@withContext it }
         try {
             DocumentsContract.deleteDocument(context.contentResolver, safReference.uri)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext StorageMutationResult.PermissionLost
         } catch (error: FileNotFoundException) {
             return@withContext when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> StorageMutationResult.Missing
+                SafFileFailure.OutOfScope -> StorageMutationResult.OutOfScope
                 SafFileFailure.PermissionLost -> StorageMutationResult.PermissionLost
                 SafFileFailure.ProviderFailure -> StorageMutationResult.ProviderFailure(error)
             }
@@ -1113,11 +1189,14 @@ internal class SafStorageBackend(
 
         try {
             context.contentResolver.delete(safReference.uri, null, null)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext StorageMutationResult.PermissionLost
         } catch (error: FileNotFoundException) {
             return@withContext when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> StorageMutationResult.Missing
+                SafFileFailure.OutOfScope -> StorageMutationResult.OutOfScope
                 SafFileFailure.PermissionLost -> StorageMutationResult.PermissionLost
                 SafFileFailure.ProviderFailure -> StorageMutationResult.ProviderFailure(error)
             }
@@ -1132,6 +1211,8 @@ internal class SafStorageBackend(
         try {
             androidx.documentfile.provider.DocumentFile.fromSingleUri(context, safReference.uri)
                 ?.delete()
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext StorageMutationResult.PermissionLost
         } catch (error: Throwable) {
@@ -1156,6 +1237,7 @@ internal class SafStorageBackend(
         }
         when (val current = queryDocument(safReference.uri)) {
             SafQueryResult.Missing -> return@withContext StorageRenameResult.Missing
+            SafQueryResult.OutOfScope -> return@withContext StorageRenameResult.OutOfScope
             SafQueryResult.PermissionLost -> return@withContext StorageRenameResult.PermissionLost
             is SafQueryResult.ProviderFailure -> {
                 return@withContext StorageRenameResult.ProviderFailure(current.error)
@@ -1174,6 +1256,8 @@ internal class SafStorageBackend(
                 safReference.uri,
                 displayName
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SecurityException) {
             return@withContext StorageRenameResult.PermissionLost
         } catch (error: UnsupportedOperationException) {
@@ -1181,6 +1265,7 @@ internal class SafStorageBackend(
         } catch (error: FileNotFoundException) {
             return@withContext when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> StorageRenameResult.Missing
+                SafFileFailure.OutOfScope -> StorageRenameResult.OutOfScope
                 SafFileFailure.PermissionLost -> StorageRenameResult.PermissionLost
                 SafFileFailure.ProviderFailure -> StorageRenameResult.ProviderFailure(error)
             }
@@ -1192,6 +1277,7 @@ internal class SafStorageBackend(
             SafQueryResult.Missing -> StorageRenameResult.ProviderFailure(
                 IllegalStateException("renamed document cannot be queried")
             )
+            SafQueryResult.OutOfScope -> StorageRenameResult.OutOfScope
             SafQueryResult.PermissionLost -> StorageRenameResult.PermissionLost
             is SafQueryResult.ProviderFailure -> StorageRenameResult.ProviderFailure(result.error)
             is SafQueryResult.Found -> {
@@ -1233,6 +1319,7 @@ internal class SafStorageBackend(
         val document = when (val result = queryDocument(safReference.uri)) {
             is SafQueryResult.Found -> result.document
             SafQueryResult.Missing,
+            SafQueryResult.OutOfScope,
             SafQueryResult.PermissionLost,
             is SafQueryResult.ProviderFailure -> return@withContext emptyStorageCapabilities()
         }
@@ -1268,15 +1355,19 @@ internal class SafStorageBackend(
             }
         } catch (error: SecurityException) {
             SafQueryResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> SafQueryResult.Missing
+                SafFileFailure.OutOfScope -> SafQueryResult.OutOfScope
                 SafFileFailure.PermissionLost -> SafQueryResult.PermissionLost
                 SafFileFailure.ProviderFailure -> SafQueryResult.ProviderFailure(error)
             }
         } catch (error: Throwable) {
             when (classifySafFailure(error)) {
                 SafFileFailure.Missing -> SafQueryResult.Missing
+                SafFileFailure.OutOfScope -> SafQueryResult.OutOfScope
                 SafFileFailure.PermissionLost -> SafQueryResult.PermissionLost
                 SafFileFailure.ProviderFailure -> SafQueryResult.ProviderFailure(error)
             }
@@ -1302,6 +1393,8 @@ internal class SafStorageBackend(
             DocumentsContract.getDocumentId(uri)
         } catch (error: SecurityException) {
             return SafChildrenResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             return SafChildrenResult.ProviderFailure(error)
         }
@@ -1309,6 +1402,8 @@ internal class SafStorageBackend(
             DocumentsContract.isTreeUri(uri)
         } catch (error: SecurityException) {
             return SafChildrenResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             return SafChildrenResult.ProviderFailure(error)
         }
@@ -1320,6 +1415,8 @@ internal class SafStorageBackend(
             }
         } catch (error: SecurityException) {
             return SafChildrenResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             return SafChildrenResult.ProviderFailure(error)
         }
@@ -1354,15 +1451,19 @@ internal class SafStorageBackend(
             }
         } catch (error: SecurityException) {
             SafChildrenResult.PermissionLost
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: FileNotFoundException) {
             when (classifySafFileNotFound(error)) {
                 SafFileFailure.Missing -> SafChildrenResult.Missing
+                SafFileFailure.OutOfScope -> SafChildrenResult.OutOfScope
                 SafFileFailure.PermissionLost -> SafChildrenResult.PermissionLost
                 SafFileFailure.ProviderFailure -> SafChildrenResult.ProviderFailure(error)
             }
         } catch (error: Throwable) {
             when (classifySafFailure(error)) {
                 SafFileFailure.Missing -> SafChildrenResult.Missing
+                SafFileFailure.OutOfScope -> SafChildrenResult.OutOfScope
                 SafFileFailure.PermissionLost -> SafChildrenResult.PermissionLost
                 SafFileFailure.ProviderFailure -> SafChildrenResult.ProviderFailure(error)
             }
@@ -1375,6 +1476,9 @@ internal class SafStorageBackend(
     ): StorageWriteResult {
         val finalUri = try {
             DocumentsContract.renameDocument(context.contentResolver, temporaryUri, displayName)
+        } catch (error: CancellationException) {
+            cleanupTemporarySafWriteCancellation(temporaryUri, error)
+            throw error
         } catch (error: SecurityException) {
             return cleanupTemporarySafWriteFailure(
                 temporaryUri,
@@ -1401,6 +1505,7 @@ internal class SafStorageBackend(
             SafQueryResult.Missing -> StorageWriteResult.ProviderFailure(
                 IllegalStateException("renamed create-only document cannot be queried")
             )
+            SafQueryResult.OutOfScope -> StorageWriteResult.OutOfScope
             SafQueryResult.PermissionLost -> StorageWriteResult.PermissionLost
             is SafQueryResult.ProviderFailure -> StorageWriteResult.ProviderFailure(result.error)
             is SafQueryResult.Found -> {
@@ -1467,6 +1572,7 @@ internal class SafStorageBackend(
                     IllegalStateException("SAF 写入前父目录不可见")
                 )
             }
+            SafChildrenResult.OutOfScope -> return StorageWriteResult.OutOfScope
             SafChildrenResult.PermissionLost -> return StorageWriteResult.PermissionLost
             is SafChildrenResult.ProviderFailure -> {
                 return StorageWriteResult.ProviderFailure(result.error)
@@ -1529,6 +1635,7 @@ internal class SafStorageBackend(
         val observedFinalUri = finalUri ?: when (val lookup = findNamedSafChild(parentUri, displayName)) {
             is NamedSafChild.Found -> lookup.uri
             NamedSafChild.Missing -> null
+            NamedSafChild.OutOfScope -> return StorageWriteResult.OutOfScope
             NamedSafChild.PermissionLost -> return StorageWriteResult.PermissionLost
             is NamedSafChild.ProviderFailure -> {
                 return StorageWriteResult.ProviderFailure(lookup.error)
@@ -1557,6 +1664,7 @@ internal class SafStorageBackend(
                 reference?.let { NamedSafChild.Found(it.uri) } ?: NamedSafChild.Missing
             }
             SafChildrenResult.Missing -> NamedSafChild.Missing
+            SafChildrenResult.OutOfScope -> NamedSafChild.OutOfScope
             SafChildrenResult.PermissionLost -> NamedSafChild.PermissionLost
             is SafChildrenResult.ProviderFailure -> NamedSafChild.ProviderFailure(children.error)
         }
@@ -1565,6 +1673,9 @@ internal class SafStorageBackend(
     private fun deleteSafDocumentAndConfirm(uri: Uri): Throwable? {
         when (val initial = queryDocument(uri)) {
             SafQueryResult.Missing -> return null
+            SafQueryResult.OutOfScope -> return IllegalArgumentException(
+                "SAF 文档不在当前树范围内: $uri"
+            )
             SafQueryResult.PermissionLost -> {
                 return SecurityException("SAF 删除前权限丢失: $uri")
             }
@@ -1573,11 +1684,16 @@ internal class SafStorageBackend(
         }
         try {
             DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             return error
         }
         return when (val result = queryDocument(uri)) {
             SafQueryResult.Missing -> null
+            SafQueryResult.OutOfScope -> IllegalArgumentException(
+                "SAF 删除后文档不在当前树范围内: $uri"
+            )
             SafQueryResult.PermissionLost -> SecurityException(
                 "SAF 删除后无法确认权限: $uri"
             )
@@ -1591,6 +1707,9 @@ internal class SafStorageBackend(
     private fun confirmSafDocumentName(uri: Uri, displayName: String): Throwable? {
         return when (val result = queryDocument(uri)) {
             SafQueryResult.Missing -> IllegalStateException("SAF 重命名后的文档丢失")
+            SafQueryResult.OutOfScope -> IllegalArgumentException(
+                "SAF 重命名后的文档不在当前树范围内: $displayName"
+            )
             SafQueryResult.PermissionLost -> SecurityException(
                 "SAF 重命名后权限丢失: $displayName"
             )
@@ -1605,6 +1724,8 @@ internal class SafStorageBackend(
     private fun restoreBackupAndConfirm(uri: Uri, displayName: String): Throwable? {
         val restoredUri = try {
             DocumentsContract.renameDocument(context.contentResolver, uri, displayName)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
             return error
         } ?: return IllegalStateException("SAF 备份恢复未返回目标 URI")
@@ -1622,6 +1743,7 @@ internal class SafStorageBackend(
     private sealed interface NamedSafChild {
         data class Found(val uri: Uri) : NamedSafChild
         data object Missing : NamedSafChild
+        data object OutOfScope : NamedSafChild
         data object PermissionLost : NamedSafChild
         data class ProviderFailure(val error: Throwable) : NamedSafChild
     }
@@ -1654,6 +1776,7 @@ internal class SafStorageBackend(
             when (classifySafFileNotFound(error)) {
                 SafFileFailure.PermissionLost -> DirectSafCreateResult.PermissionLost
                 SafFileFailure.Missing -> DirectSafCreateResult.Unsupported
+                SafFileFailure.OutOfScope -> DirectSafCreateResult.Unsupported
                 SafFileFailure.ProviderFailure -> DirectSafCreateResult.ProviderFailure(error)
             }
         } catch (error: CancellationException) {
@@ -1691,6 +1814,9 @@ internal class SafStorageBackend(
                 }
             }
             when (val result = queryDocument(targetUri)) {
+                SafQueryResult.OutOfScope -> DirectSafCopyResult.ProviderFailure(
+                    IllegalArgumentException("direct SAF target is outside the current tree")
+                )
                 SafQueryResult.PermissionLost -> DirectSafCopyResult.PermissionLost
                 is SafQueryResult.ProviderFailure -> {
                     DirectSafCopyResult.ProviderFailure(result.error)
@@ -1720,6 +1846,7 @@ internal class SafStorageBackend(
             when (classifySafFileNotFound(error)) {
                 SafFileFailure.PermissionLost -> DirectSafCopyResult.PermissionLost
                 SafFileFailure.Missing -> DirectSafCopyResult.ProviderFailure(error)
+                SafFileFailure.OutOfScope -> DirectSafCopyResult.ProviderFailure(error)
                 SafFileFailure.ProviderFailure -> DirectSafCopyResult.ProviderFailure(error)
             }
         } catch (error: CancellationException) {
@@ -1732,12 +1859,14 @@ internal class SafStorageBackend(
     internal sealed interface SafQueryResult {
         data class Found(val document: SafDocumentMetadata) : SafQueryResult
         data object Missing : SafQueryResult
+        data object OutOfScope : SafQueryResult
         data object PermissionLost : SafQueryResult
         data class ProviderFailure(val error: Throwable) : SafQueryResult
     }
 
     private enum class SafFileFailure {
         Missing,
+        OutOfScope,
         PermissionLost,
         ProviderFailure
     }
@@ -1754,13 +1883,26 @@ internal class SafStorageBackend(
             ManagedDownloadReferenceIo.isMissingDocumentFailure(error) -> {
                 SafFileFailure.Missing
             }
+            isOutOfScopeDocumentFailure(error) -> {
+                SafFileFailure.OutOfScope
+            }
             else -> SafFileFailure.ProviderFailure
+        }
+    }
+
+    private fun isOutOfScopeDocumentFailure(error: Throwable): Boolean {
+        return generateSequence(error) { it.cause }.any { cause ->
+            val message = cause.message?.lowercase(Locale.ROOT).orEmpty()
+            message.contains("not a child of") ||
+                message.contains("outside the tree") ||
+                message.contains("out of scope")
         }
     }
 
     private sealed interface SafChildrenResult {
         data class Found(val entries: List<StorageStat>) : SafChildrenResult
         data object Missing : SafChildrenResult
+        data object OutOfScope : SafChildrenResult
         data object PermissionLost : SafChildrenResult
         data class ProviderFailure(val error: Throwable) : SafChildrenResult
     }

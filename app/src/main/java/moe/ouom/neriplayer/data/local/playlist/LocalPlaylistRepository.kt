@@ -50,6 +50,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
+import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
@@ -108,6 +109,19 @@ data class LocalPlaylistDeleteResult(
     val playlist: LocalPlaylist,
     val index: Int
 )
+
+internal fun resolvePlaylistSongAddedAt(
+    song: SongItem,
+    membershipAddedAt: Long,
+    index: Int,
+    preserveScannedSourceAddedAt: Boolean
+): Long {
+    val fallback = (membershipAddedAt - index).coerceAtLeast(1L)
+    if (!preserveScannedSourceAddedAt) return fallback
+    return (song.logicalCreatedAtMs ?: song.addedAt)
+        .takeIf { it > 0L }
+        ?: fallback
+}
 
 internal fun shouldRewriteLegacyPlaylistsAfterInitialLoad(
     migrationRequired: Boolean,
@@ -551,7 +565,7 @@ class LocalPlaylistRepository private constructor(
         var changed = false
         val migrated = playlists.map { playlist ->
             if (playlist.songOrderVersion >= DISPLAY_ORDER_SONG_ORDER_VERSION) {
-                val displaySongs = sortSongsByAddedAtForDisplay(playlist.songs)
+                val displaySongs = sortSongsForDisplay(playlist, playlist.songs)
                 if (displaySongs == playlist.songs) {
                     playlist
                 } else {
@@ -561,7 +575,14 @@ class LocalPlaylistRepository private constructor(
             } else {
                 changed = true
                 playlist.copy(
-                    songs = migrateLegacySongsToDisplayOrder(playlist.songs, playlist.modifiedAt),
+                    songs = migrateLegacySongsToDisplayOrder(
+                        playlist.songs,
+                        playlist.modifiedAt,
+                        preserveLogicalCreatedAt = isLocalFilesPlaylist(
+                            playlist.id,
+                            playlist.name
+                        )
+                    ),
                     songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                 )
             }
@@ -638,9 +659,15 @@ class LocalPlaylistRepository private constructor(
 
     private fun migrateLegacySongsToDisplayOrder(
         songs: List<SongItem>,
-        playlistModifiedAt: Long
+        playlistModifiedAt: Long,
+        preserveLogicalCreatedAt: Boolean = false
     ): MutableList<SongItem> {
         if (songs.isEmpty()) return mutableListOf()
+
+        if (preserveLogicalCreatedAt && songs.any { it.logicalCreatedAtMs != null }) {
+            return songs.sortedWith(localSongNewestFirstComparator())
+                .toMutableList()
+        }
 
         val newestAddedAt = maxOf(
             System.currentTimeMillis(),
@@ -665,6 +692,18 @@ class LocalPlaylistRepository private constructor(
                     .thenBy { it.index }
             )
             .mapTo(mutableListOf()) { it.value }
+    }
+
+    private fun sortSongsForDisplay(
+        playlist: LocalPlaylist,
+        songs: List<SongItem>
+    ): MutableList<SongItem> {
+        return if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
+            songs.sortedWith(localSongNewestFirstComparator())
+                .toMutableList()
+        } else {
+            sortSongsByAddedAtForDisplay(songs)
+        }
     }
 
     private fun persistToDisk(playlists: List<LocalPlaylist>, serialized: String = gson.toJson(playlists)) {
@@ -1045,9 +1084,16 @@ class LocalPlaylistRepository private constructor(
             "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
         }
         return songs.mapIndexed { index, song ->
+            val membershipAddedAt = (addedAt - index).coerceAtLeast(1L)
             song.copy(
                 // membership time records when NeriPlayer imported the song
-                addedAt = (addedAt - index).coerceAtLeast(1L),
+                addedAt = resolvePlaylistSongAddedAt(
+                    song = song,
+                    membershipAddedAt = addedAt,
+                    index = index,
+                    preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
+                ),
+                membershipAddedAtMs = membershipAddedAt,
                 syncMembershipTokens = listOf(membershipTokens[index])
             )
         }
@@ -1084,6 +1130,42 @@ class LocalPlaylistRepository private constructor(
         newSongs: List<SongItem>
     ): MutableList<SongItem> {
         return (newSongs + existingSongs).toMutableList()
+    }
+
+    private fun orderLocalFilesSongs(songs: List<SongItem>): List<SongItem> {
+        return songs.distinctBy { it.identity() }
+            .sortedWith(localSongNewestFirstComparator())
+    }
+
+    private fun mergeLocalTemporalMetadata(
+        existingSongs: List<SongItem>,
+        scannedSongs: List<SongItem>
+    ): List<SongItem> {
+        if (existingSongs.isEmpty() || scannedSongs.isEmpty()) return scannedSongs
+        return scannedSongs.map { scannedSong ->
+            val existingSong = existingSongs.firstOrNull { existing ->
+                hasExistingSong(
+                    existingSongs = listOf(existing),
+                    candidate = scannedSong,
+                    includeLocalMetadataFallback = true
+                )
+            } ?: return@map scannedSong
+            scannedSong.copy(
+                addedAt = if (scannedSong.logicalCreatedAtMs != null) {
+                    scannedSong.addedAt
+                } else {
+                    existingSong.addedAt
+                },
+                logicalCreatedAtMs = scannedSong.logicalCreatedAtMs
+                    ?: existingSong.logicalCreatedAtMs,
+                createdAtSource = scannedSong.createdAtSource
+                    ?: existingSong.createdAtSource,
+                createdAtConfidence = scannedSong.createdAtConfidence
+                    ?: existingSong.createdAtConfidence,
+                membershipAddedAtMs = scannedSong.membershipAddedAtMs
+                    ?: existingSong.membershipAddedAtMs
+            )
+        }
     }
 
     private fun buildPlaylistSongDeletionMutation(
@@ -1839,7 +1921,8 @@ class LocalPlaylistRepository private constructor(
             } else {
                 val toAdd = stampSongsForPlaylistInsert(
                     songs = newSongs,
-                    addedAt = nextPlaylistSongAddedAt(playlist, now)
+                    addedAt = nextPlaylistSongAddedAt(playlist, now),
+                    preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                 )
                 addedSongs = toAdd
                 syncMutation += buildPlaylistSongDeletionRemoval(playlist.id, toAdd)
@@ -1859,12 +1942,18 @@ class LocalPlaylistRepository private constructor(
         allowEmptyReplacement: Boolean = false
     ): Boolean {
         return withContext(Dispatchers.IO) {
-            val normalizedSongs = distinctPlaylistSongs(
+            val scannedSongs = distinctPlaylistSongs(
                 songs = hydrateLocalSongsForPersistence(songs),
                 includeLocalMetadataFallback = true
             )
             commitPlaylistMutation {
                 val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
+                val normalizedSongs = orderLocalFilesSongs(
+                    mergeLocalTemporalMetadata(
+                        existingSongs = currentLocalFiles?.songs.orEmpty(),
+                        scannedSongs = scannedSongs
+                    )
+                )
                 if (
                     normalizedSongs.isEmpty() &&
                     !allowEmptyReplacement &&
@@ -1882,7 +1971,7 @@ class LocalPlaylistRepository private constructor(
                         playlist
                     } else {
                         playlist.copy(
-                            songs = normalizedSongs,
+                            songs = normalizedSongs.toMutableList(),
                             modifiedAt = System.currentTimeMillis(),
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
@@ -1946,8 +2035,9 @@ class LocalPlaylistRepository private constructor(
                         includeLocalMetadataFallback = true
                     )
                     if (newSongs.isEmpty()) {
-                        if (existingSongs == playlist.songs) playlist else playlist.copy(
-                            songs = existingSongs,
+                        val normalizedSongs = orderLocalFilesSongs(existingSongs)
+                        if (normalizedSongs == playlist.songs) playlist else playlist.copy(
+                            songs = normalizedSongs.toMutableList(),
                             modifiedAt = now,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
@@ -1958,8 +2048,9 @@ class LocalPlaylistRepository private constructor(
                             preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                         )
                         addedSongs = toAdd
+                        val normalizedSongs = orderLocalFilesSongs(existingSongs + toAdd)
                         playlist.copy(
-                            songs = mergeNewSongsFirst(existingSongs, toAdd),
+                            songs = normalizedSongs.toMutableList(),
                             modifiedAt = now,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
@@ -2342,6 +2433,14 @@ class LocalPlaylistRepository private constructor(
     ): SongItem {
         val mergedSong = newSongInfo.copy(
             addedAt = currentSong.addedAt,
+            logicalCreatedAtMs = currentSong.logicalCreatedAtMs
+                ?: newSongInfo.logicalCreatedAtMs,
+            createdAtSource = currentSong.createdAtSource
+                ?: newSongInfo.createdAtSource,
+            createdAtConfidence = currentSong.createdAtConfidence
+                ?: newSongInfo.createdAtConfidence,
+            membershipAddedAtMs = currentSong.membershipAddedAtMs
+                ?: newSongInfo.membershipAddedAtMs,
             coverUrl = if (clearCoverUrl) {
                 null
             } else {

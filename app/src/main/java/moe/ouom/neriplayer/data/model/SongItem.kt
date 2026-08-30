@@ -40,5 +40,11 @@ data class SongItem(
     val addedAt: Long = 0L,
     val syncMembershipTokens: List<SyncCausalToken>? = emptyList(),
     val matchedRomanizedLyric: String? = null,
-    val originalRomanizedLyric: String? = null
+    val originalRomanizedLyric: String? = null,
+    // logical creation time survives directory migration and provider renames
+    val logicalCreatedAtMs: Long? = null,
+    val createdAtSource: String? = null,
+    val createdAtConfidence: String? = null,
+    // playlist membership time is separate from the source file creation time
+    val membershipAddedAtMs: Long? = null
 ) : Parcelable

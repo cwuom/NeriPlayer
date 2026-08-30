@@ -665,7 +665,11 @@ internal fun shouldAttemptCachedPlaybackRepair(
     isLocalSong: Boolean
 ): Boolean {
     if (isOfflineCache) return true
-    if (isLocalSong) return false
+    if (isLocalSong) {
+        // 迁移切根或源文件清理与 Media3 打开文件之间存在窄竞态。
+        // 仅对明确的文件不存在重绑本地引用，不能把网络或解码错误当成迁移问题
+        return error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
+    }
     if (isYouTubeTrack) {
         return shouldAttemptYouTubePlaybackRecovery(error, isOfflineCache)
     }
@@ -859,10 +863,11 @@ internal fun PlayerManager.refreshCurrentSongUrlImpl(
     resumePlaybackAfterRefresh: Boolean = true,
     resumedPlaybackCommandSource: PlaybackCommandSource? = null,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    cacheKeyToInvalidateBeforeResolve: String? = null
+    cacheKeyToInvalidateBeforeResolve: String? = null,
+    allowLocalSongRecovery: Boolean = false
 ) {
     val song = _currentSongFlow.value ?: return
-    if (isLocalSong(song)) return
+    if (isLocalSong(song) && !allowLocalSongRecovery) return
     NPLogger.d(
         "NERI-PlayerManager",
         "refreshCurrentSongUrl: song=${song.name}, resumePositionMs=$resumePositionMs, allowFallback=$allowFallback, reason=$reason, bypassCooldown=$bypassCooldown, resumePlaybackAfterRefresh=$resumePlaybackAfterRefresh, commandSource=$resumedPlaybackCommandSource, stack=[${debugStackHint()}]"

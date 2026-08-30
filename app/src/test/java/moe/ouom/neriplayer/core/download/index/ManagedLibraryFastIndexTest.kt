@@ -34,6 +34,16 @@ class ManagedLibraryFastIndexTest {
     }
 
     @Test
+    fun `fast index write is blocked when sidecar enumeration is incomplete`() {
+        val snapshot = ManagedDownloadStorage.emptyDownloadLibrarySnapshot().copy(
+            rootEntriesComplete = true,
+            sidecarEntriesComplete = false
+        )
+
+        assertFalse(ManagedDownloadStorage.shouldPersistFastIndex(snapshot))
+    }
+
+    @Test
     fun `index round trips and sorts entries`() {
         val entries = listOf(
             entry("z-song"),
@@ -93,6 +103,28 @@ class ManagedLibraryFastIndexTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun `index round trips optional logical creation metadata`() {
+        val original = entry("temporal").copy(
+            logicalCreatedAtMs = 123_456L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "EXACT"
+        )
+
+        val restored = ManagedLibraryFastIndex.decode(
+            ManagedLibraryFastIndex.encode(
+                libraryId = "library",
+                shard = "03",
+                entries = listOf(original),
+                generatedAtMs = 42L
+            )
+        )?.entries?.single()
+
+        assertEquals(123_456L, restored?.logicalCreatedAtMs)
+        assertEquals("FILESYSTEM_BIRTH", restored?.createdAtSource)
+        assertEquals("EXACT", restored?.createdAtConfidence)
     }
 
     @Test

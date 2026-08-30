@@ -82,14 +82,14 @@ internal fun shouldDeferStartupManagedCleanup(
 }
 
 internal fun shouldDeferPendingDownloadRecoveryForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean {
     return networkType != TrafficNetworkType.WIFI && !mobileDataOverrideAllowed
 }
 
 internal fun shouldDeferQueuedDownloadStartForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean
 ): Boolean {
@@ -108,7 +108,7 @@ internal fun shouldDeferQueuedDownloadStartForNetwork(
  */
 internal fun shouldDeferDownloadExecutionForNetwork(
     requiresWifiNetwork: Boolean,
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean {
     return requiresWifiNetwork && shouldDeferPendingDownloadRecoveryForNetwork(

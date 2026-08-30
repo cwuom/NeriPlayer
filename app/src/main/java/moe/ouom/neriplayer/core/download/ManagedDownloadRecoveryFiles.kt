@@ -103,8 +103,8 @@ internal object ManagedDownloadRecoveryFiles {
         workingFile: File,
         song: SongItem,
         operationId: String? = null
-    ) {
-        ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song, operationId)
+    ): Boolean {
+        return ManagedDownloadWorkingStore.saveWorkingResumeMetadata(workingFile, song, operationId)
     }
 
     fun readWorkingResumeFingerprint(workingFile: File): ManagedDownloadStorage.WorkingResumeFingerprint? {
@@ -114,8 +114,8 @@ internal object ManagedDownloadRecoveryFiles {
     fun updateWorkingResumeFingerprint(
         workingFile: File,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint
-    ) {
-        ManagedDownloadWorkingStore.updateWorkingResumeFingerprint(workingFile, fingerprint)
+    ): Boolean {
+        return ManagedDownloadWorkingStore.updateWorkingResumeFingerprint(workingFile, fingerprint)
     }
 
     fun deleteWorkingResumeMetadata(workingFile: File?) {

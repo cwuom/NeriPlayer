@@ -45,6 +45,45 @@ class DownloadRecoveryOperationIdentityTest {
     }
 
     @Test
+    fun `pending queue codec preserves logical creation time across resume`() {
+        val song = SongItem(
+            id = 703L,
+            name = "Created source",
+            artist = "Artist",
+            album = "Album",
+            albumId = 1L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "content://example/703",
+            addedAt = 1_700_000_000_000L,
+            logicalCreatedAtMs = 1_600_000_000_000L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "INFERRED",
+            membershipAddedAtMs = 1_700_000_000_100L
+        )
+        val entry = ManagedDownloadStorage.PendingDownloadQueueEntry(
+            stableKey = song.stableKey(),
+            song = song,
+            order = 0,
+            queuedAtMs = 42L,
+            operationId = "operation-703"
+        )
+
+        val payload = ManagedDownloadStorageJsonCodec.serializePendingDownloadQueuePayload(
+            entries = listOf(entry),
+            updatedAtMs = 42L
+        )
+        val restored = ManagedDownloadStorageJsonCodec
+            .parsePendingDownloadQueuePayload(payload)
+            .single()
+
+        assertEquals(song.logicalCreatedAtMs, restored.song.logicalCreatedAtMs)
+        assertEquals(song.createdAtSource, restored.song.createdAtSource)
+        assertEquals(song.createdAtConfidence, restored.song.createdAtConfidence)
+        assertEquals(song.membershipAddedAtMs, restored.song.membershipAddedAtMs)
+    }
+
+    @Test
     fun `legacy operation song payload without artist or album remains resumable`() {
         val song = ManagedDownloadStorageJsonCodec.workingResumeMetadataSongFromJson(
             """

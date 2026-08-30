@@ -91,6 +91,39 @@ class AssetEnrichmentCoordinatorTest {
     }
 
     @Test
+    fun `timeout callback failure is reported without cancelling the job`() = runBlocking {
+        val unhandledFailures = AtomicInteger(0)
+        val exceptionHandler = CoroutineExceptionHandler { _, _ ->
+            unhandledFailures.incrementAndGet()
+        }
+        val scope = kotlinx.coroutines.CoroutineScope(
+            SupervisorJob() + Dispatchers.Default + exceptionHandler
+        )
+        val coordinator = AssetEnrichmentCoordinator(
+            scope = scope,
+            parallelism = 1,
+            timeoutMs = 20L
+        )
+        val callbackFailure = IllegalStateException("timeout callback failed")
+        val completionError = AtomicReference<Throwable?>(null)
+
+        val job = coordinator.enqueue(
+            operationId = "timeout-callback-failure",
+            onTimeout = { throw callbackFailure },
+            onCompletion = { error -> completionError.set(error) }
+        ) {
+            delay(200L)
+        }
+
+        withTimeout(2_000L) { job.join() }
+        assertTrue(job.isCompleted)
+        assertTrue(!job.isCancelled)
+        assertEquals(callbackFailure, completionError.get())
+        assertEquals(0, unhandledFailures.get())
+        scope.cancel()
+    }
+
+    @Test
     fun `enqueued enrichment lets its caller finish while assets remain active`() = runBlocking {
         val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1)

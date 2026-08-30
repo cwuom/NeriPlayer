@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
 import java.io.IOException
+import java.util.Locale
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
 internal class ManagedDownloadMigrationException(
@@ -34,6 +35,31 @@ internal data class ManagedMigrationEntry(
     val entry: ManagedDownloadStorage.StoredEntry,
     val metadata: ManagedDownloadStorage.DownloadedAudioMetadata? = null
 ) {
+    fun logicalCreatedAtMs(): Long? {
+        return metadata?.createdAtMs?.takeIf { it > 0L }
+            ?: metadata?.sourceCreatedAtMs?.takeIf { it > 0L }
+            ?: entry.lastModifiedMs.takeIf { it > 0L }
+    }
+
+    fun logicalCreatedAtSource(): String? {
+        return metadata?.createdAtSource?.trim()?.takeIf(String::isNotBlank)
+            ?: metadata?.sourceCreatedAtMs?.takeIf { it > 0L }?.let {
+                "PROVIDER_CREATED_AT"
+            }
+            ?: logicalCreatedAtMs()?.let {
+                if (entry.reference.startsWith("content://", ignoreCase = true)) {
+                    "SAF_LAST_MODIFIED"
+                } else {
+                    "MTIME"
+                }
+            }
+    }
+
+    fun logicalCreatedAtConfidence(): String? {
+        return metadata?.createdAtConfidence?.trim()?.takeIf(String::isNotBlank)
+            ?: logicalCreatedAtSource()?.let(::resolveMigrationCreatedAtConfidence)
+    }
+
     fun toRef(): ManagedMigrationEntryRef {
         return ManagedMigrationEntryRef(
             subdirectory = subdirectory,
@@ -67,7 +93,10 @@ internal data class ManagedMigrationCleanupReceipt(
     val sourceName: String,
     val sourceSubdirectory: String?,
     val targetEntry: ManagedDownloadStorage.StoredEntry,
-    val targetDigest: String
+    val targetDigest: String,
+    val sourceLogicalCreatedAtMs: Long? = null,
+    val sourceCreatedAtSource: String? = null,
+    val sourceCreatedAtConfidence: String? = null
 )
 
 /**
@@ -85,7 +114,10 @@ internal data class ManagedMigrationCopyReceipt(
     val verifiedTargetDigest: String? = null,
     val createdNew: Boolean,
     val sourceAuthoritative: Boolean,
-    val replacementBackup: ManagedDownloadStorage.StoredEntry? = null
+    val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
+    val sourceLogicalCreatedAtMs: Long? = null,
+    val sourceCreatedAtSource: String? = null,
+    val sourceCreatedAtConfidence: String? = null
 )
 
 /**
@@ -96,7 +128,10 @@ internal data class ManagedMigrationSourceEntry(
     val sourceName: String,
     val sourceSubdirectory: String?,
     val sizeBytes: Long,
-    val lastModifiedMs: Long
+    val lastModifiedMs: Long,
+    val logicalCreatedAtMs: Long? = null,
+    val createdAtSource: String? = null,
+    val createdAtConfidence: String? = null
 )
 
 internal enum class ManagedMigrationReplacementJournalPhase {
@@ -191,7 +226,10 @@ internal data class CopiedMigrationEntry(
             verifiedTargetDigest = verifiedTargetDigest,
             createdNew = createdNew,
             sourceAuthoritative = sourceAuthoritative,
-            replacementBackup = replacementBackup
+            replacementBackup = replacementBackup,
+            sourceLogicalCreatedAtMs = original.logicalCreatedAtMs(),
+            sourceCreatedAtSource = original.logicalCreatedAtSource(),
+            sourceCreatedAtConfidence = original.logicalCreatedAtConfidence()
         )
     }
 
@@ -213,6 +251,29 @@ internal data class CopiedMigrationEntry(
             sizeBytes = logicalBytes
         )
     }
+}
+
+internal fun resolveMigrationCreatedAtConfidence(source: String?): String {
+    return when (source?.trim()?.uppercase(Locale.ROOT)) {
+        "CORE_COMMIT", "MANAGED_COMMIT", "MIGRATION_LOGICAL" -> "EXACT"
+        "FILESYSTEM_BIRTH" -> "EXACT"
+        "MEDIASTORE_DATE_ADDED", "PROVIDER_CREATED_AT", "PROVIDER_NATIVE" ->
+            "PROVIDER_REPORTED"
+        "SAF_LAST_MODIFIED", "MEDIASTORE_DATE_MODIFIED", "MTIME", "MTIME_FALLBACK",
+        "INDEX_PREVIEW", "LEGACY_V15", "DOWNLOAD_TIME", "IMPORT_TIME" -> "INFERRED"
+        else -> "UNKNOWN"
+    }
+}
+
+internal fun isValidMigrationCreatedAtMetadata(
+    timestampMs: Long?,
+    source: String?,
+    confidence: String?
+): Boolean {
+    if (timestampMs != null && timestampMs <= 0L) return false
+    if (source != null && (source.isBlank() || source.length > 64)) return false
+    if (confidence != null && (confidence.isBlank() || confidence.length > 32)) return false
+    return true
 }
 
 internal fun ManagedMigrationCopyReceipt.toCopiedMigrationEntry(

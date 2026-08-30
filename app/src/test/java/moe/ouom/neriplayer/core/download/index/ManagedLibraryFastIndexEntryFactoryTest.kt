@@ -67,6 +67,9 @@ class ManagedLibraryFastIndexEntryFactoryTest {
         assertEquals("playlist", entry.playlistContextId)
         assertEquals(1234L, entry.durationMs)
         assertEquals("content://provider/cover", entry.coverPath)
+        assertEquals(4567L, entry.logicalCreatedAtMs)
+        assertEquals("MTIME", entry.createdAtSource)
+        assertEquals("INFERRED", entry.createdAtConfidence)
     }
 
     @Test
@@ -102,5 +105,8 @@ class ManagedLibraryFastIndexEntryFactoryTest {
         assertNull(entry.downloadTimeMs)
         assertNull(entry.durationMs)
         assertNull(entry.coverPath)
+        assertNull(entry.logicalCreatedAtMs)
+        assertNull(entry.createdAtSource)
+        assertNull(entry.createdAtConfidence)
     }
 }

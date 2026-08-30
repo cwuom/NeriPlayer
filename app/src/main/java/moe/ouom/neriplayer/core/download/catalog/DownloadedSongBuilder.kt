@@ -44,7 +44,8 @@ internal class DownloadedSongBuilder(
         existingDownloadTime: Long? = null,
         loadLyricContents: Boolean = false,
         resolveLyricFallbacks: Boolean = false,
-        allowSlowLocalInspection: Boolean = true
+        allowSlowLocalInspection: Boolean = true,
+        verifySnapshotReferences: Boolean = true
     ): DownloadedSong {
         val effectiveSnapshot = snapshot ?: ManagedDownloadStorage.buildDownloadLibrarySnapshot(context)
         val metadataEntry = effectiveSnapshot.metadataEntriesByAudioName[storedAudio.logicalName]
@@ -76,7 +77,9 @@ internal class DownloadedSongBuilder(
             storedAudio = storedAudio,
             snapshot = effectiveSnapshot
         )?.takeIf { reference ->
-            isAccessibleManagedReference(
+            (
+                !verifySnapshotReferences && reference in effectiveSnapshot.knownReferences
+            ) || isAccessibleManagedReference(
                 ManagedDownloadReferenceIo.inspect(context, reference)
             )
         }
@@ -88,7 +91,10 @@ internal class DownloadedSongBuilder(
                     effectiveSnapshot
                 ),
                 metadata?.coverUrl,
-                metadata?.originalCoverUrl
+                metadata?.originalCoverUrl,
+                trustedReferences = effectiveSnapshot.knownReferences.takeIf {
+                    !verifySnapshotReferences
+                } ?: emptySet()
             )
         } else {
             null
@@ -96,7 +102,11 @@ internal class DownloadedSongBuilder(
         val metadataCoverReference = if (
             cachedCoverReference == null && indexedCoverReference == null
         ) {
-            resolveCachedAudioMetadataCoverReference(context, storedAudio)
+            if (allowSlowLocalInspection) {
+                resolveCachedAudioMetadataCoverReference(context, storedAudio)
+            } else {
+                null
+            }
                 ?: if (allowSlowLocalInspection) {
                     resolveAudioMetadataCoverReference(context, storedAudio)
                 } else {
@@ -537,15 +547,17 @@ internal class DownloadedSongBuilder(
 
     private fun resolveAccessibleManagedReference(
         context: Context,
-        vararg references: String?
+        vararg references: String?,
+        trustedReferences: Set<String> = emptySet()
     ): String? {
         return references.firstNotNullOfOrNull { reference ->
             val candidate = reference?.takeIf(::isResolvableLocalReference)
                 ?: return@firstNotNullOfOrNull null
             candidate.takeIf { reference ->
-                isAccessibleManagedReference(
-                    ManagedDownloadReferenceIo.inspect(context, reference)
-                )
+                reference in trustedReferences ||
+                    isAccessibleManagedReference(
+                        ManagedDownloadReferenceIo.inspect(context, reference)
+                    )
             }
         }
     }

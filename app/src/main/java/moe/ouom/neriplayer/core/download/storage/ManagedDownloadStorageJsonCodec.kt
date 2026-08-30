@@ -217,6 +217,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("metadataEmbeddingState", metadataEmbeddingState?.name)
             put("createdAtMs", createdAtMs)
             put("createdAtSource", createdAtSource)
+            put("createdAtConfidence", createdAtConfidence)
             put("artifactId", artifactId)
             put("operationId", operationId)
             put("terminalTemporaryWriteCleanupToken", terminalTemporaryWriteCleanupToken)
@@ -287,6 +288,10 @@ internal object ManagedDownloadStorageJsonCodec {
             put("audioId", audioId)
             put("subAudioId", subAudioId)
             put("playlistContextId", playlistContextId)
+            put("logicalCreatedAtMs", logicalCreatedAtMs)
+            put("createdAtSource", createdAtSource)
+            put("createdAtConfidence", createdAtConfidence)
+            put("membershipAddedAtMs", membershipAddedAtMs)
             put("streamUrl", streamUrl)
             put(
                 "neteaseArtists",
@@ -377,6 +382,12 @@ internal object ManagedDownloadStorageJsonCodec {
             audioId = optPresentString("audioId"),
             subAudioId = optPresentString("subAudioId"),
             playlistContextId = optPresentString("playlistContextId"),
+            logicalCreatedAtMs = optLong("logicalCreatedAtMs")
+                .takeIf { has("logicalCreatedAtMs") && it > 0L },
+            createdAtSource = optPresentString("createdAtSource"),
+            createdAtConfidence = optPresentString("createdAtConfidence"),
+            membershipAddedAtMs = optLong("membershipAddedAtMs")
+                .takeIf { has("membershipAddedAtMs") && it > 0L },
             streamUrl = optPresentString("streamUrl"),
             neteaseArtists = optJSONArray("neteaseArtists").toNeteaseArtistSummaries()
         )
@@ -502,6 +513,8 @@ internal object ManagedDownloadStorageJsonCodec {
                 .takeIf { has("createdAtMs") && it > 0L }
                 ?: restorable?.createdAtMs,
             createdAtSource = optString("createdAtSource")
+                .takeIf(String::isNotBlank),
+            createdAtConfidence = optString("createdAtConfidence")
                 .takeIf(String::isNotBlank),
             artifactId = optString("artifactId").takeIf(String::isNotBlank),
             operationId = optString("operationId").takeIf(String::isNotBlank),

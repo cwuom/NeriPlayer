@@ -35,6 +35,7 @@ import android.os.Looper
 import androidx.core.net.toUri
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -80,6 +81,7 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadAtomicFile
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
+import moe.ouom.neriplayer.core.download.storage.directory.ManagedDownloadDirectoryIdentity
 import moe.ouom.neriplayer.core.download.storage.reference.ManagedDownloadReferenceLookup
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
@@ -89,6 +91,7 @@ import moe.ouom.neriplayer.core.player.resolver.youtube.YouTubeGoogleVideoRangeS
 import moe.ouom.neriplayer.data.auth.youtube.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.LocalSongSupport
+import moe.ouom.neriplayer.data.local.storage.LocalStorageRootGeneration
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playbackVisualKey
 import moe.ouom.neriplayer.data.model.displayCoverUrl
@@ -110,9 +113,12 @@ import moe.ouom.neriplayer.data.settings.resolveDownloadAudioQualitySelection
 import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
+import moe.ouom.neriplayer.data.traffic.currentDownloadNetworkTypeOrNull
 import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkType
-import moe.ouom.neriplayer.data.traffic.hasLikelyInternetAccess
-import moe.ouom.neriplayer.data.traffic.trafficNetworkType
+import moe.ouom.neriplayer.data.traffic.currentTrafficNetworkTypeOrNull
+import moe.ouom.neriplayer.data.traffic.downloadNetworkTypeOrNull
+import moe.ouom.neriplayer.data.traffic.hasConfirmedInternetAccess
+import moe.ouom.neriplayer.data.traffic.validatedTrafficNetworkTypeOrNull
 import moe.ouom.neriplayer.util.io.readBytesLimited
 import okhttp3.Dispatcher
 import okhttp3.Request
@@ -131,6 +137,7 @@ import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
+import java.net.URI
 import java.net.URLConnection
 import java.net.UnknownHostException
 import java.security.MessageDigest
@@ -220,6 +227,7 @@ object AudioDownloadManager {
     /** core 提交和目录索引发布之间允许播放入口复用已校验引用的最长时间 */
     private const val COMPLETED_AUDIO_REFERENCE_RETENTION_MS = 2 * 60 * 1_000L
     private const val COMPLETED_AUDIO_REFERENCE_MAX_ENTRIES = 512
+    private const val MANAGED_PLAYBACK_REBIND_COOLDOWN_MS = 1_500L
     private const val YOUTUBE_DOWNLOAD_SHARED_DIRECT_RESOLVE_TIMEOUT_MS = 3_500L
     private const val YOUTUBE_DOWNLOAD_FRESH_DIRECT_RESOLVE_TIMEOUT_MS = 18_000L
     private const val YOUTUBE_DOWNLOAD_SHARED_PLAYABLE_RESOLVE_TIMEOUT_MS = 6_000L
@@ -271,6 +279,7 @@ object AudioDownloadManager {
         ConcurrentHashMap<String, CompletedAudioReference>()
     /** 多张映射必须一起替换，否则首播可能读到旧 URI 别名 */
     private val completedAudioReferenceMutationLock = Any()
+    private val managedPlaybackRebindAtMsBySongKey = ConcurrentHashMap<String, Long>()
     private val partialSidecarReferencesBySongKey =
         ConcurrentHashMap<String, DownloadedSidecarReferences>()
     private val coverDownloadSingleFlight =
@@ -295,7 +304,8 @@ object AudioDownloadManager {
     private data class CompletedAudioReference(
         val audio: ManagedDownloadStorage.StoredEntry,
         val committedAtMs: Long,
-        val songLookupKeys: Set<String>
+        val songLookupKeys: Set<String>,
+        val rootGeneration: Long
     )
 
     private data class CachedManagedAudio(
@@ -374,43 +384,42 @@ object AudioDownloadManager {
             val initialNetwork = connectivityManager.activeNetwork
             val initialNetworkType = initialNetwork
                 ?.let { network -> connectivityManager.getNetworkCapabilities(network) }
-                ?.trafficNetworkType()
-                ?: appContext.currentTrafficNetworkType()
+                ?.downloadNetworkTypeOrNull()
             downloadNetworkPolicyTracker.seed(initialNetwork, initialNetworkType)
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    connectivityManager.getNetworkCapabilities(network)
-                        ?.trafficNetworkType()
-                        ?.let { networkType ->
-                            handleDefaultDownloadNetworkObserved(
-                                context = appContext,
-                                network = network,
-                                networkType = networkType,
-                                reason = "network_available"
-                            )
-                        }
-                    if (appContext.hasLikelyInternetAccess()) {
+                    handleDefaultDownloadNetworkCallback(
+                        context = appContext,
+                        connectivityManager = connectivityManager,
+                        callbackNetwork = network,
+                        reason = "network_available"
+                    )
+                    if (appContext.hasConfirmedInternetAccess()) {
                         notifyRecoveryOpportunity("network_available")
                     }
                 }
 
                 override fun onCapabilitiesChanged(
                     network: Network,
-                    networkCapabilities: NetworkCapabilities
+                    _networkCapabilities: NetworkCapabilities
                 ) {
-                    handleDefaultDownloadNetworkObserved(
+                    handleDefaultDownloadNetworkCallback(
                         context = appContext,
-                        network = network,
-                        networkType = networkCapabilities.trafficNetworkType(),
+                        connectivityManager = connectivityManager,
+                        callbackNetwork = network,
                         reason = "network_capabilities_changed"
                     )
-                    if (appContext.hasLikelyInternetAccess()) {
+                    if (appContext.hasConfirmedInternetAccess()) {
                         notifyRecoveryOpportunity("network_available")
                     }
                 }
 
                 override fun onLost(network: Network) {
-                    handleDefaultDownloadNetworkLost(appContext, network)
+                    handleDefaultDownloadNetworkLost(
+                        context = appContext,
+                        connectivityManager = connectivityManager,
+                        network = network
+                    )
                 }
             }
             val registered = runCatching {
@@ -423,19 +432,95 @@ object AudioDownloadManager {
         }
     }
 
+    private fun handleDefaultDownloadNetworkCallback(
+        context: Context,
+        connectivityManager: ConnectivityManager,
+        callbackNetwork: Network,
+        reason: String
+    ) {
+        val activeNetwork = runCatching { connectivityManager.activeNetwork }
+            .getOrElse { error ->
+                NPLogger.d(
+                    TAG,
+                    "忽略网络回调: 无法读取 activeNetwork, error=${error.message}"
+                )
+                return
+        }
+        if (activeNetwork != callbackNetwork) {
+            NPLogger.d(
+                TAG,
+                "忽略过时网络回调: callback=$callbackNetwork, " +
+                    "active=$activeNetwork, reason=$reason"
+            )
+            // 回调可能在系统切换默认网络的窗口内到达，直接以当前 active
+            // 快照收敛一次，避免旧 WIFI 事件把策略留在错误状态
+            val currentNetwork = activeNetwork ?: return
+            val currentType = runCatching {
+                connectivityManager.getNetworkCapabilities(currentNetwork)
+                    ?.downloadNetworkTypeOrNull()
+            }.getOrElse { error ->
+                NPLogger.d(
+                    TAG,
+                    "忽略过时网络回调的 active 快照: 无法读取 capabilities, " +
+                        "error=${error.message}"
+                )
+                return
+            } ?: return
+            handleDefaultDownloadNetworkObserved(
+                context = context,
+                network = currentNetwork,
+                networkType = currentType,
+                reason = "${reason}_active_snapshot",
+                activeNetworkKnown = true
+            )
+            return
+        }
+        val activeType = runCatching {
+            connectivityManager.getNetworkCapabilities(activeNetwork)
+                ?.downloadNetworkTypeOrNull()
+        }.getOrElse { error ->
+            NPLogger.d(
+                TAG,
+                "忽略网络回调: 无法读取 capabilities, error=${error.message}"
+            )
+            return
+        } ?: run {
+            NPLogger.d(TAG, "忽略网络回调: active capabilities 尚未稳定, reason=$reason")
+            return
+        }
+        handleDefaultDownloadNetworkObserved(
+            context = context,
+            network = callbackNetwork,
+            networkType = activeType,
+            reason = reason,
+            activeNetworkKnown = true
+        )
+    }
+
     private fun handleDefaultDownloadNetworkObserved(
         context: Context,
         network: Network,
         networkType: TrafficNetworkType,
-        reason: String
+        reason: String,
+        activeNetworkKnown: Boolean = true
     ) {
-        if (networkType == TrafficNetworkType.WIFI) {
+        val observation = downloadNetworkPolicyTracker.observeDefaultNetwork(
+            networkKey = network,
+            networkType = networkType,
+            activeNetworkKey = network,
+            activeNetworkKnown = activeNetworkKnown
+        )
+        if (observation.becameWifi) {
             GlobalDownloadManager.onWifiBoundDownloadNetworkRestored(
                 context = context,
                 reason = reason
             )
+            GlobalDownloadManager.scheduleWifiRecoveryProbe(
+                context = context,
+                reason = reason
+            )
         }
-        if (downloadNetworkPolicyTracker.onDefaultNetworkObserved(network, networkType)) {
+        if (observation.shouldPause) {
             interruptDownloadsForWifiLoss(
                 networkType = networkType,
                 reason = reason
@@ -443,28 +528,53 @@ object AudioDownloadManager {
         }
     }
 
-    private fun handleDefaultDownloadNetworkLost(context: Context, network: Network) {
-        if (!downloadNetworkPolicyTracker.onDefaultNetworkLost(network)) {
+    private fun handleDefaultDownloadNetworkLost(
+        context: Context,
+        connectivityManager: ConnectivityManager,
+        network: Network
+    ) {
+        val activeNetworkSnapshot = runCatching { connectivityManager.activeNetwork }
+            .getOrElse { error ->
+                NPLogger.d(
+                    TAG,
+                    "忽略网络丢失回调: 无法读取 activeNetwork, error=${error.message}"
+                )
+                return
+            }
+        val shouldPause = downloadNetworkPolicyTracker.onDefaultNetworkLost(
+            networkKey = network,
+            activeNetworkKey = activeNetworkSnapshot,
+            activeNetworkKnown = true
+        )
+        val nextNetworkType = context.currentDownloadNetworkTypeOrNull()
+        if (nextNetworkType == TrafficNetworkType.WIFI) {
+            // onLost may race the replacement WIFI callback; keep a recovery
+            // edge here so a missed callback cannot strand waiting downloads
+            GlobalDownloadManager.scheduleWifiRecoveryProbe(
+                context = context,
+                reason = "network_lost_replacement_wifi"
+            )
             return
         }
-        val nextNetworkType = context.currentTrafficNetworkType()
-        if (nextNetworkType != TrafficNetworkType.WIFI) {
-            downloadNetworkPolicyTracker.markWifiLossHandled()
-            interruptDownloadsForWifiLoss(
-                networkType = nextNetworkType,
-                reason = "network_lost"
-            )
+        if (!shouldPause) {
+            return
         }
+        downloadNetworkPolicyTracker.markWifiLossHandled()
+        interruptDownloadsForWifiLoss(
+            networkType = nextNetworkType,
+            reason = "network_lost"
+        )
     }
 
     private fun interruptDownloadsForWifiLoss(
-        networkType: TrafficNetworkType,
+        networkType: TrafficNetworkType?,
         reason: String
     ) {
         if (networkType != TrafficNetworkType.WIFI) {
             NPLogger.w(
                 TAG,
-                "WIFI 下载环境已切换，准备中断下载: reason=$reason, nextType=$networkType"
+                "WIFI 下载环境已切换，准备中断下载: reason=$reason, " +
+                    "nextType=${networkType ?: "UNKNOWN"}"
             )
             GlobalDownloadManager.interruptDownloadsForWifiDisconnected(networkType)
         }
@@ -607,7 +717,8 @@ object AudioDownloadManager {
 
     private data class DownloadedPayloadSummary(
         val actualBytes: Long,
-        val expectedBytes: Long?
+        val expectedBytes: Long?,
+        val resumeMetadataAvailable: Boolean = true
     )
 
     private class DownloadCoreCommitTracker(
@@ -905,8 +1016,8 @@ object AudioDownloadManager {
         requestUrl: String,
         headers: Map<String, List<String>>,
         expectedContentLength: Long?
-    ) {
-        runCatching {
+    ): Boolean {
+        return runCatching {
             ManagedDownloadStorage.updateWorkingResumeFingerprint(
                 workingFile = destFile,
                 fingerprint = ManagedDownloadStorage.WorkingResumeFingerprint(
@@ -918,7 +1029,7 @@ object AudioDownloadManager {
             )
         }.onFailure { error ->
             NPLogger.e(TAG, "写入续传指纹失败，后续续传将退化为整文件重下: ${destFile.name}", error)
-        }
+        }.getOrDefault(false)
     }
 
     internal fun resolveResponseExpectedBytes(
@@ -1014,10 +1125,8 @@ object AudioDownloadManager {
             }
             lastRecoveryOpportunityAtMs = nowMs
         }
-        if (!GlobalDownloadManager.hasPendingRecoveryCandidates(appContext)) {
-            NPLogger.d(TAG, "跳过无候选下载恢复机会: reason=$reason")
-            return
-        }
+        // Connectivity 回调线程不能同步查询 Room/SAF；恢复入口本身会在 IO
+        // 协程中做候选检查，没有候选时立即返回
         evictDownloadConnections()
         retryWakeSignalVersion.value = advanceRetryWakeSignalVersion(retryWakeSignalVersion.value)
         GlobalDownloadManager.recoverPendingDownloadsForNetworkRestored(
@@ -1324,8 +1433,22 @@ object AudioDownloadManager {
             operationId = operationId,
             mediaSequence = mediaSequence
         )
-        hlsResumeStatesByWorkingPath[destFile.absolutePath] = state
-        persistHlsResumeState(destFile, state)
+        val path = destFile.absolutePath
+        val previousState = hlsResumeStatesByWorkingPath[path]
+        try {
+            // 先把 checkpoint 原子落盘，再发布内存状态，避免只在当前进程中
+            // 看起来可恢复而重启后找不到对应证据
+            persistHlsResumeState(destFile, state)
+            hlsResumeStatesByWorkingPath[path] = state
+        } catch (error: Throwable) {
+            if (previousState == null) {
+                hlsResumeStatesByWorkingPath.remove(path)
+                deletePersistedHlsResumeState(destFile)
+            } else {
+                hlsResumeStatesByWorkingPath[path] = previousState
+            }
+            throw error
+        }
     }
 
     private fun resolveHlsResumeState(
@@ -1608,6 +1731,9 @@ object AudioDownloadManager {
     ): ManagedDownloadStorage.StoredEntry? {
         synchronized(completedAudioReferenceMutationLock) {
             val current = completedAudioReferencesBySongKey[songKey] ?: return null
+            if (isCompletedAudioReferenceExpired(songKey, current)) {
+                return null
+            }
             removeCompletedAudioReferenceAliases(current)
             return current.audio
         }
@@ -1620,9 +1746,29 @@ object AudioDownloadManager {
     ) {
         synchronized(completedAudioReferenceMutationLock) {
             val current = completedAudioReferencesBySongKey[songKey] ?: return
+            if (isCompletedAudioReferenceExpired(songKey, current)) {
+                return
+            }
             if (!retainForPlayback && (expectedAudio == null || current.audio == expectedAudio)) {
                 removeCompletedAudioReferenceAliases(current)
             }
+        }
+    }
+
+    /** 迁移或切换下载根后，主动丢弃仍指向旧目录的内存桥接引用 */
+    internal fun invalidateCompletedAudioReference(song: SongItem) {
+        synchronized(completedAudioReferenceMutationLock) {
+            val matches = buildSet {
+                completedAudioSongLookupKeys(song).forEach { key ->
+                    completedAudioReferencesBySongKey[key]?.let(::add)
+                }
+                listOfNotNull(song.localFilePath, song.mediaUri).forEach { reference ->
+                    completedAudioReferenceKeys(reference).forEach { key ->
+                        completedAudioReferencesByReference[key]?.let(::add)
+                    }
+                }
+            }
+            matches.forEach(::removeCompletedAudioReferenceAliases)
         }
     }
 
@@ -1732,7 +1878,8 @@ object AudioDownloadManager {
             val completed = CompletedAudioReference(
                 audio = storedAudio,
                 committedAtMs = System.currentTimeMillis(),
-                songLookupKeys = normalizedSongLookupKeys
+                songLookupKeys = normalizedSongLookupKeys,
+                rootGeneration = LocalStorageRootGeneration.current()
             )
             normalizedSongLookupKeys.forEach { key ->
                 completedAudioReferencesBySongKey[key]
@@ -1798,6 +1945,15 @@ object AudioDownloadManager {
             .toSet()
     }
 
+    private fun completedAudioReferenceKeys(reference: String?): Set<String> {
+        return listOfNotNull(
+            reference?.trim()?.takeIf(String::isNotBlank),
+            safeToPlayableUri(reference)
+        ).map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+    }
+
     private fun safeToPlayableUri(reference: String?): String? {
         return runCatching {
             ManagedDownloadStorage.toPlayableUri(reference)
@@ -1808,10 +1964,13 @@ object AudioDownloadManager {
         lookupKey: String,
         current: CompletedAudioReference
     ): Boolean {
-        if (
-            System.currentTimeMillis() - current.committedAtMs <
-                COMPLETED_AUDIO_REFERENCE_RETENTION_MS
-        ) {
+        val generationChanged = shouldInvalidateCompletedAudioReferenceForRoot(
+            referenceRootGeneration = current.rootGeneration,
+            currentRootGeneration = LocalStorageRootGeneration.current()
+        )
+        val expiredByAge = System.currentTimeMillis() - current.committedAtMs >=
+            COMPLETED_AUDIO_REFERENCE_RETENTION_MS
+        if (!generationChanged && !expiredByAge) {
             return false
         }
         if (completedAudioReferencesBySongKey.remove(lookupKey, current)) {
@@ -2137,6 +2296,7 @@ object AudioDownloadManager {
                     var attemptNumber = 1
                     var activeTransportKind: DownloadTransportKind? = null
                     var activeWorkingFileName: String? = null
+                    var resumeMetadataAvailable = true
                     var forceRefreshYouTubeSource = false
                     // 直链下载被 403 后置位: 后续重试改走不需 pot 的 HLS, 避免在脏 IP 上死磕必 403 的直链
                     var avoidYouTubeDirectSource = false
@@ -2298,11 +2458,19 @@ object AudioDownloadManager {
                                 activeWorkingFileName = fileName
                                 activeTransportKind = transportKind
                                 val currentWorkingFile = requireNotNull(tempFile)
-                                ManagedDownloadStorage.saveWorkingResumeMetadata(
+                                resumeMetadataAvailable = ManagedDownloadStorage.saveWorkingResumeMetadata(
                                     workingFile = currentWorkingFile,
                                     song = workingSong,
                                     operationId = effectiveOperationId
                                 )
+                                if (!resumeMetadataAvailable) {
+                                    NPLogger.w(
+                                        TAG,
+                                        "续传元数据不可用，当前下载继续但不宣称可无损恢复: " +
+                                            "file=${currentWorkingFile.name}, " +
+                                            "operationId=$effectiveOperationId"
+                                    )
+                                }
                                 currentWorkingFile
                             }
                             // 只有确认即将开始新的网络传输后才清理旧桥接, 避免重复请求
@@ -2319,6 +2487,8 @@ object AudioDownloadManager {
                                 attemptId = attemptId,
                                 effectiveOperationId = effectiveOperationId
                             )
+                            resumeMetadataAvailable = resumeMetadataAvailable &&
+                                downloadedPayload.resumeMetadataAvailable
                             val committedAudio = finalizeDownloadedAudio(
                                 context = context,
                                 songKey = songKey,
@@ -2438,7 +2608,7 @@ object AudioDownloadManager {
                                     transportKind = activeTransportKind,
                                     existingBytes = partialBytes,
                                     hasHlsResumeState = hasHlsResumeState(tempFile)
-                                )
+                                ) && resumeMetadataAvailable
                                 if (
                                     !preservePartial &&
                                         deleteWorkingFileUnlessNetworkPolicyPaused(songKey, tempFile)
@@ -2708,12 +2878,14 @@ object AudioDownloadManager {
         )
         ensureSongDownloadNotCancelled(songKey, "audio_commit", batchSessionId, attemptId)
         coreCommitTracker.phase = DownloadCoreCommitPhase.COMMITTING
-        val committingMarked = runCatching {
+        val committingMarked = try {
             DownloadExecutionRoomStore.markCommitting(
                 context = context,
                 operationId = effectiveOperationId
             )
-        }.getOrElse { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
             throw IOException(
                 "无法确认下载 operation 的提交所有权",
                 error
@@ -2728,7 +2900,6 @@ object AudioDownloadManager {
         // 作为 seed metadata 同步写入，进程在收尾回调前退出时仍能安全恢复首播
         val coreCommittedSeedMetadata = coreCommittedSeedMetadataJson(pendingMetadata)
         val committedAudio = withContext(NonCancellable) {
-            clearHlsResumeState(workingFile)
             ManagedDownloadStorage.saveAudioFromTemp(
                 context = context,
                 fileName = fileName,
@@ -2741,12 +2912,14 @@ object AudioDownloadManager {
             )
         }
         coreCommitTracker.phase = DownloadCoreCommitPhase.CORE_COMMITTED
-        val coreOperationMarked = runCatching {
+        val coreOperationMarked = try {
             DownloadExecutionRoomStore.markCoreCommitted(
                 context = context,
                 operationId = effectiveOperationId
             )
-        }.getOrElse { error ->
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
             NPLogger.w(
                 TAG,
                 "写入下载 operation core commit 阶段失败: ${error.message}"
@@ -2759,6 +2932,9 @@ object AudioDownloadManager {
                 "pending metadata 已提交但 operation journal 未确认，" +
                     "保留音频等待收尾恢复: operationId=$effectiveOperationId"
             )
+        } else {
+            // 只有目标写入成功且 durable operation 已确认后才删除 HLS 断点
+            clearHlsResumeState(workingFile)
         }
         if (committedAudio.isPendingAudioWrite) {
             NPLogger.d(
@@ -2767,7 +2943,9 @@ object AudioDownloadManager {
                     "song=${workingSong.name}, file=${committedAudio.name}"
             )
         }
-        ManagedDownloadStorage.deleteWorkingResumeMetadata(workingFile)
+        if (coreOperationMarked) {
+            ManagedDownloadStorage.deleteWorkingResumeMetadata(workingFile)
+        }
         return CoreCommittedAudio(
             audio = committedAudio,
             transferredBytes = transferredBytes
@@ -3762,7 +3940,9 @@ object AudioDownloadManager {
         attemptId: Long? = null
     ) {
         val initialDelayMs = delayMs.coerceAtLeast(0L)
-        val startedOffline = !context.hasLikelyInternetAccess()
+        // 下载重试只接受已确认的 INTERNET_CAPABILITY_INTERNET，未知状态不能
+        // 被当作在线或蜂窝网络，避免切网窗口误恢复或误暂停
+        val startedOffline = !context.hasConfirmedInternetAccess()
         var remainingMs = if (startedOffline) {
             maxOf(initialDelayMs, TRANSIENT_DOWNLOAD_OFFLINE_RECOVERY_WAIT_MS)
         } else {
@@ -3772,8 +3952,8 @@ object AudioDownloadManager {
         var observedWakeSignalVersion = retryWakeSignalVersion.value
         while (remainingMs > 0L) {
             ensureSongDownloadNotCancelled(songKey, "retry_wait", batchSessionId, attemptId)
-            val hasLikelyInternetNow = context.hasLikelyInternetAccess()
-            if (startedOffline && hasLikelyInternetNow) {
+            val hasConfirmedInternetNow = context.hasConfirmedInternetAccess()
+            if (startedOffline && hasConfirmedInternetNow) {
                 val nowMs = System.currentTimeMillis()
                 val recoveredAtMs = recoveredOnlineAtMs ?: nowMs.also { recoveredOnlineAtMs = it }
                 if (nowMs - recoveredAtMs >= TRANSIENT_DOWNLOAD_NETWORK_SETTLE_MS) {
@@ -3790,7 +3970,11 @@ object AudioDownloadManager {
             }
             if (wakeSignalResult != null) {
                 observedWakeSignalVersion = wakeSignalResult
-                if (!startedOffline || hasLikelyInternetNow || context.hasLikelyInternetAccess()) {
+                if (
+                    !startedOffline ||
+                        hasConfirmedInternetNow ||
+                        context.hasConfirmedInternetAccess()
+                ) {
                     if (!startedOffline) {
                         return
                     }
@@ -4515,6 +4699,28 @@ object AudioDownloadManager {
             ?: peekCompletedAudioReference(song)
             ?: return null
         val reference = playableReferenceForManagedAudio(audio) ?: return null
+        if (shouldDiscardCompletedReferenceForConfiguredSaf(
+                reference = reference,
+                configuredDirectoryUri = ManagedDownloadStorage.configuredDirectoryUri()
+            )
+        ) {
+            invalidateCompletedAudioReference(song)
+            NPLogger.d(
+                TAG,
+                "目录已切换到 SAF，丢弃旧完成桥接引用并等待当前根重绑定: " +
+                    "songKey=$songKey, reference=$reference"
+            )
+            return null
+        }
+        if (isMissingFilePlaybackReference(reference)) {
+            invalidateCompletedAudioReference(song)
+            NPLogger.d(
+                TAG,
+                "完成桥接引用已不存在，等待当前存储根重新绑定: " +
+                    "songKey=$songKey, reference=$reference"
+            )
+            return null
+        }
         if (!shouldUseCompletedAudioReferenceDirectly(
                 reference = reference,
                 downloadCancelled = GlobalDownloadManager.isSongCancelled(songKey)
@@ -4620,6 +4826,14 @@ object AudioDownloadManager {
         }
         val verifiedManagedReference = if (isManagedDownload) {
             getLocalPlaybackUri(appContext, song)
+                ?: if (rawEvidence == ManagedDownloadReferenceLookup.Result.Missing) {
+                    forceResolveManagedPlaybackAfterMissing(
+                        context = appContext,
+                        song = song
+                    )
+                } else {
+                    null
+                }
         } else {
             null
         }
@@ -4641,6 +4855,68 @@ object AudioDownloadManager {
                 reference = reference
             )
         )
+    }
+
+    /** 旧 catalog 只剩失效路径时，单飞一次强制快照重绑到迁移后的引用 */
+    private suspend fun forceResolveManagedPlaybackAfterMissing(
+        context: Context,
+        song: SongItem
+    ): String? {
+        val songKey = song.stableKey()
+        val nowMs = System.currentTimeMillis()
+        val shouldRefresh = synchronized(managedPlaybackRebindAtMsBySongKey) {
+            val previousAtMs = managedPlaybackRebindAtMsBySongKey[songKey]
+            if (previousAtMs != null && nowMs - previousAtMs < MANAGED_PLAYBACK_REBIND_COOLDOWN_MS) {
+                false
+            } else {
+                managedPlaybackRebindAtMsBySongKey[songKey] = nowMs
+                true
+            }
+        }
+        if (!shouldRefresh) {
+            return null
+        }
+        val audio = try {
+            ManagedDownloadStorage.findDownloadedAudio(
+                context = context,
+                song = song,
+                forceRefresh = true
+            ) ?: ManagedDownloadStorage.peekDownloadedAudio(song)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "旧本地引用缺失时强制重绑失败，保留目录等待重试: " +
+                    "song=${song.name}, error=${error.message}",
+                error
+            )
+            return null
+        }
+        val reference = audio
+            ?.let(::playableReferenceForManagedAudio)
+            ?.takeIf { candidate ->
+                ManagedDownloadReferenceLookup.inspect(context, candidate) ==
+                    ManagedDownloadReferenceLookup.Result.Present
+            }
+        if (reference != null) {
+            requestBackgroundDownloadIndexRefresh(context)
+            return ManagedDownloadStorage.toPlayableUri(reference) ?: reference
+        }
+        GlobalDownloadManager.scanLocalFiles(context, forceRefresh = false)
+        return null
+    }
+
+    private fun isMissingFilePlaybackReference(reference: String): Boolean {
+        val normalized = reference.trim()
+        val path = when {
+            normalized.startsWith("/") -> normalized
+            normalized.startsWith("file:", ignoreCase = true) -> {
+                runCatching { URI(normalized).path }.getOrNull()
+            }
+            else -> null
+        } ?: return false
+        return !File(path).isFile
     }
 
     internal fun resolveIndexedLocalPlaybackReference(
@@ -5650,7 +5926,7 @@ object AudioDownloadManager {
                     "resolvedTotal=$total"
             )
             NPLogger.d(TAG, "文件总大小: $total bytes, songId=$songId")
-            withNetworkPolicyMutationPermit(
+            val resumeMetadataWritten = withNetworkPolicyMutationPermit(
                 songKey = songKey,
                 stage = "direct_resume_metadata",
                 batchSessionId = batchSessionId,
@@ -5716,7 +5992,8 @@ object AudioDownloadManager {
             }
             DownloadedPayloadSummary(
                 actualBytes = readSoFar,
-                expectedBytes = total.takeIf { it > 0L }
+                expectedBytes = total.takeIf { it > 0L },
+                resumeMetadataAvailable = resumeMetadataWritten
             )
         }
     }
@@ -5757,6 +6034,7 @@ object AudioDownloadManager {
         }
 
         var downloadedBytes = resumedBytes
+        var resumeMetadataAvailable = true
         val queryTotalHint = YouTubeGoogleVideoRangeSupport.resolveQueryContentLength(
             request.url.toString()
         ) ?: 0L
@@ -5819,6 +6097,8 @@ object AudioDownloadManager {
                     downloadedBytes = chunkResult.value.downloadedBytes
                     totalBytes = chunkResult.value.totalBytes
                     strictTotalBytes = strictTotalBytes || chunkResult.value.strictTotalBytes
+                    resumeMetadataAvailable = resumeMetadataAvailable &&
+                        chunkResult.value.resumeMetadataAvailable
                     if (
                         chunkResult.chunkLength !=
                         YouTubeGoogleVideoRangeSupport.candidateChunkLengths(
@@ -5857,7 +6137,8 @@ object AudioDownloadManager {
         }
         return@withContext DownloadedPayloadSummary(
             actualBytes = downloadedBytes,
-            expectedBytes = expectedBytes
+            expectedBytes = expectedBytes,
+            resumeMetadataAvailable = resumeMetadataAvailable
         )
     }
 
@@ -5866,7 +6147,8 @@ object AudioDownloadManager {
         val downloadedBytes: Long,
         val totalBytes: Long,
         val isEndOfStream: Boolean,
-        val strictTotalBytes: Boolean
+        val strictTotalBytes: Boolean,
+        val resumeMetadataAvailable: Boolean = true
     )
 
     private fun downloadChunk(
@@ -5978,7 +6260,7 @@ object AudioDownloadManager {
                         "分块总长度不匹配: expected=$currentTotalBytes, actual=$totalBytes"
                     )
                 }
-                withNetworkPolicyMutationPermit(
+                val resumeMetadataWritten = withNetworkPolicyMutationPermit(
                     songKey = songKey,
                     stage = "chunked_resume_metadata",
                     batchSessionId = batchSessionId,
@@ -6038,7 +6320,8 @@ object AudioDownloadManager {
                     downloadedBytes = downloadedBytes,
                     totalBytes = totalBytes,
                     isEndOfStream = isEndOfStream,
-                    strictTotalBytes = true
+                    strictTotalBytes = true,
+                    resumeMetadataAvailable = resumeMetadataWritten
                 )
             }
         } finally {
@@ -6144,6 +6427,60 @@ internal fun shouldUseCompletedAudioReferenceDirectly(
         ?: return false
     return !(fileName.startsWith(DOWNLOAD_STAGING_FILE_PREFIX) &&
         fileName.endsWith(DOWNLOAD_STAGING_FILE_SUFFIX))
+}
+
+internal fun shouldInvalidateCompletedAudioReferenceForRoot(
+    referenceRootGeneration: Long,
+    currentRootGeneration: Long
+): Boolean = referenceRootGeneration != currentRootGeneration
+
+/**
+ * SAF 根切换后，完成桥中的旧 file URI 或其他 tree 不能再直接交给播放器
+ * 这里只做 URI 字符串解析，不访问 DocumentsProvider，避免拖慢首播
+ */
+internal fun shouldDiscardCompletedReferenceForConfiguredSaf(
+    reference: String?,
+    configuredDirectoryUri: String?
+): Boolean {
+    val normalizedReference = reference?.trim()?.takeIf(String::isNotBlank) ?: return false
+    val configured = configuredDirectoryUri?.trim()?.takeIf(String::isNotBlank) ?: return false
+    if (normalizedReference.startsWith("/") ||
+        normalizedReference.startsWith("file:", ignoreCase = true)
+    ) {
+        return true
+    }
+    if (!normalizedReference.startsWith("content:", ignoreCase = true)) {
+        return false
+    }
+    val normalizedConfigured = ManagedDownloadDirectoryIdentity
+        .normalizeConfiguredDirectoryUri(configured)
+        ?: return false
+    val configuredAuthority = ManagedDownloadDirectoryIdentity
+        .extractDirectoryAuthority(normalizedConfigured)
+        .takeIf(String::isNotBlank)
+        ?: return false
+    val referenceAuthority = ManagedDownloadDirectoryIdentity
+        .extractDirectoryAuthority(normalizedReference)
+    if (!referenceAuthority.equals(configuredAuthority, ignoreCase = true)) {
+        return true
+    }
+    val configuredTreeId = ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(
+        normalizedConfigured,
+        "/tree/"
+    ) ?: return false
+    val referenceTreeId = ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(
+        normalizedReference,
+        "/tree/"
+    )
+    if (referenceTreeId != null) {
+        return referenceTreeId != configuredTreeId
+    }
+    val referenceDocumentId = ManagedDownloadDirectoryIdentity.extractDirectoryDocumentId(
+        normalizedReference,
+        "/document/"
+    ) ?: return false
+    return referenceDocumentId != configuredTreeId &&
+        !referenceDocumentId.startsWith("$configuredTreeId/")
 }
 
 internal fun isFormalManagedAudioReference(reference: String?): Boolean {

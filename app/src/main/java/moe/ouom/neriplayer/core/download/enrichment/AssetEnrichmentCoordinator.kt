@@ -1,14 +1,15 @@
 package moe.ouom.neriplayer.core.download.enrichment
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -37,12 +38,14 @@ internal class AssetEnrichmentCoordinator(
             jobsByOperationId[normalizedId]?.let { existing ->
                 if (existing.isActive) return@synchronized existing
             }
+            val timeoutCallbackFailure = AtomicReference<Throwable?>(null)
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 semaphore.withPermit {
                     try {
                         withTimeout(timeoutMs) { block() }
                     } catch (error: TimeoutCancellationException) {
                         runCatching { onTimeout(error) }
+                            .onFailure(timeoutCallbackFailure::set)
                     } catch (error: CancellationException) {
                         throw error
                     }
@@ -51,7 +54,8 @@ internal class AssetEnrichmentCoordinator(
             jobsByOperationId[normalizedId] = job
             job.invokeOnCompletion { error ->
                 jobsByOperationId.remove(normalizedId, job)
-                runCatching { onCompletion(error) }
+                val completionError = error ?: timeoutCallbackFailure.get()
+                runCatching { onCompletion(completionError) }
             }
             job.start()
             job

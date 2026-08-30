@@ -384,10 +384,20 @@ class DownloadProgressPresentationTest {
                 checkpointTotalBytes = 100L
             )
         )
-        assertNull(
+        assertEquals(
+            RecoveredDownloadProgress(bytesRead = 0L, totalBytes = 100L),
             resolveRecoveredDownloadProgress(
                 workingFileBytes = 0L,
-                checkpointTotalBytes = 100L
+                checkpointTotalBytes = 100L,
+                checkpointBytesWritten = 0L
+            )
+        )
+        assertEquals(
+            RecoveredDownloadProgress(bytesRead = 42L, totalBytes = 0L),
+            resolveRecoveredDownloadProgress(
+                workingFileBytes = 0L,
+                checkpointTotalBytes = null,
+                checkpointBytesWritten = 42L
             )
         )
         assertNull(

@@ -56,6 +56,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.download.BatchDownloadOverallProgress
 import moe.ouom.neriplayer.core.download.DownloadStatus
 import moe.ouom.neriplayer.core.download.DownloadTask
+import moe.ouom.neriplayer.core.download.DownloadClearVisibility
 import moe.ouom.neriplayer.core.download.ExplicitDownloadResumeCandidate
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -64,6 +65,7 @@ import moe.ouom.neriplayer.core.download.isDownloadTaskCancellable
 import moe.ouom.neriplayer.core.download.visibleDownloadProgressTasks
 import moe.ouom.neriplayer.core.download.visibleExplicitResumeCandidates
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearProgressStore
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.execution.WAITING_STORAGE_MUTATION_OPERATION_STATE
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
@@ -85,7 +87,8 @@ private const val DOWNLOAD_PROGRESS_BOOTSTRAP_RECHECK_MAX_DELAY_MS = 5_000L
 internal data class DownloadProgressBootstrapState(
     val durablePendingSongKeys: Set<String> = emptySet(),
     val explicitResumeCandidates: List<ExplicitDownloadResumeCandidate> = emptyList(),
-    val clearFenceActive: Boolean = false
+    val clearFenceActive: Boolean = false,
+    val clearProgress: DownloadClearVisibility.ClearProgress? = null
 )
 
 internal enum class DownloadProgressPagePresentation {
@@ -109,11 +112,11 @@ internal fun resolveDownloadProgressPagePresentation(
     isClearing: Boolean,
     isClearPresentationCleared: Boolean
 ): DownloadProgressPagePresentation {
-    if (isClearPresentationCleared) {
-        return DownloadProgressPagePresentation.EMPTY
-    }
     if (isClearing) {
         return DownloadProgressPagePresentation.CLEARING
+    }
+    if (isClearPresentationCleared) {
+        return DownloadProgressPagePresentation.EMPTY
     }
     if (hasVisibleContent || hasKnownPendingTasks) {
         return DownloadProgressPagePresentation.CONTENT
@@ -177,7 +180,10 @@ private suspend fun readDownloadProgressBootstrapState(
 ): DownloadProgressBootstrapState = withContext(Dispatchers.IO) {
     val appContext = context.applicationContext
     if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-        return@withContext DownloadProgressBootstrapState(clearFenceActive = true)
+        return@withContext DownloadProgressBootstrapState(
+            clearFenceActive = true,
+            clearProgress = PersistentDownloadClearProgressStore.read(appContext)
+        )
     }
 
     val durablePendingSongKeys = linkedSetOf<String>()
@@ -194,7 +200,10 @@ private suspend fun readDownloadProgressBootstrapState(
     ).map { entry -> entry.request.song.stableKey() }
 
     if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-        return@withContext DownloadProgressBootstrapState(clearFenceActive = true)
+        return@withContext DownloadProgressBootstrapState(
+            clearFenceActive = true,
+            clearProgress = PersistentDownloadClearProgressStore.read(appContext)
+        )
     }
 
     DownloadProgressBootstrapState(
@@ -220,6 +229,8 @@ fun DownloadProgressScreen(
     val isDownloadTaskClearPresentationCleared by
         GlobalDownloadManager.isDownloadTaskClearPresentationCleared
             .collectAsStateWithLifecycle()
+    val downloadClearProgress by GlobalDownloadManager.downloadClearProgress
+        .collectAsStateWithLifecycle()
     var bootstrapProbeResult by remember(context) {
         mutableStateOf<DownloadProgressBootstrapProbeResult?>(null)
     }
@@ -270,6 +281,20 @@ fun DownloadProgressScreen(
     }
     val effectiveIsClearing = isClearingDownloadTasks ||
         bootstrapState?.clearFenceActive == true
+    // 进程在清空期间被杀时，内存进度会丢失，但持久化栅栏仍然有效
+    // 先显示可确定的零阶段进度，避免页面退回无进度的无限加载状态
+    val effectiveClearProgress = downloadClearProgress
+        ?: bootstrapState?.clearProgress
+        ?: if (effectiveIsClearing) {
+            DownloadClearVisibility.ClearProgress(
+                phase = DownloadClearVisibility.ClearPhase.PREPARING,
+                completedSteps = 0,
+                totalSteps = 4,
+                affectedItemCount = 0
+            )
+        } else {
+            null
+        }
     val shouldRecheckBootstrap = shouldRecheckDownloadProgressBootstrap(
         initialProbeState = initialProbeState,
         clearFenceActive = bootstrapState?.clearFenceActive == true,
@@ -400,8 +425,13 @@ fun DownloadProgressScreen(
                             pagePresentation == DownloadProgressPagePresentation.UNAVAILABLE ->
                                 stringResource(R.string.download_loading_tasks_recovering)
 
-                            effectiveIsClearing ->
-                                stringResource(R.string.download_clearing_tasks)
+                            effectiveIsClearing -> effectiveClearProgress?.let { progress ->
+                                stringResource(
+                                    R.string.download_clearing_tasks_with_progress,
+                                    progress.displayPercentage,
+                                    progress.affectedItemCount
+                                )
+                            } ?: stringResource(R.string.download_clearing_tasks)
 
                             visibleBatchProgress != null -> stringResource(
                                 R.string.download_progress_with_percentage,
@@ -457,9 +487,10 @@ fun DownloadProgressScreen(
             }
 
             DownloadProgressPagePresentation.EMPTY,
-            DownloadProgressPagePresentation.CLEARING -> {
+                DownloadProgressPagePresentation.CLEARING -> {
                 DownloadProgressEmptyContent(
-                    isClearing = pagePresentation == DownloadProgressPagePresentation.CLEARING
+                    isClearing = pagePresentation == DownloadProgressPagePresentation.CLEARING,
+                    clearProgress = effectiveClearProgress
                 )
             }
 
@@ -581,7 +612,10 @@ private fun DownloadProgressBootstrapUnavailableContent() {
 }
 
 @Composable
-private fun DownloadProgressEmptyContent(isClearing: Boolean) {
+private fun DownloadProgressEmptyContent(
+    isClearing: Boolean,
+    clearProgress: DownloadClearVisibility.ClearProgress?
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -597,14 +631,54 @@ private fun DownloadProgressEmptyContent(isClearing: Boolean) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (isClearing && clearProgress != null) {
+                LinearProgressIndicator(
+                    progress = { clearProgress.displayFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             Text(
-                text = stringResource(
-                    if (isClearing) {
-                        R.string.download_clearing_tasks
-                    } else {
-                        R.string.download_no_tasks
+                text = if (isClearing && clearProgress != null) {
+                    val phase = when (clearProgress.phase) {
+                        DownloadClearVisibility.ClearPhase.PREPARING ->
+                            R.string.download_clear_phase_preparing
+
+                        DownloadClearVisibility.ClearPhase.CANCELLING ->
+                            R.string.download_clear_phase_cancelling
+
+                        DownloadClearVisibility.ClearPhase.CLEANING ->
+                            R.string.download_clear_phase_cleaning
+
+                        DownloadClearVisibility.ClearPhase.PURGING ->
+                            R.string.download_clear_phase_purging
                     }
-                ),
+                    stringResource(
+                        R.string.download_clearing_tasks_with_progress,
+                        clearProgress.displayPercentage,
+                        clearProgress.affectedItemCount
+                    ) + " · " + stringResource(phase) +
+                        if (clearProgress.totalItemCount > 0) {
+                            " · " + stringResource(
+                                R.string.download_clear_item_progress,
+                                clearProgress.completedItemCount,
+                                clearProgress.totalItemCount
+                            )
+                        } else {
+                            ""
+                        }
+                } else {
+                    stringResource(
+                        if (isClearing) {
+                            R.string.download_clearing_tasks
+                        } else {
+                            R.string.download_no_tasks
+                        }
+                    )
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

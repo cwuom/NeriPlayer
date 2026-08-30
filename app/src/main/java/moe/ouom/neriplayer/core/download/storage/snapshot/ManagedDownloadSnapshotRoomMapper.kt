@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.storage.snapshot
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotEntryEntity
 import moe.ouom.neriplayer.data.local.database.entity.DownloadSnapshotMetadataEntity
 
@@ -106,6 +107,7 @@ internal object ManagedDownloadSnapshotRoomMapper {
             lyricEntries = lyricEntries.map { it.toStoredEntry() },
             // Room 目前只保存已列举的条目，恢复后仍需重新确认 root
             rootEntriesComplete = false,
+            sidecarEntriesComplete = false,
             pendingAudioEntries = storedAudioEntries.filter(
                 ManagedDownloadStorage.StoredEntry::isPendingAudioWrite
             )
@@ -197,7 +199,8 @@ internal object ManagedDownloadSnapshotRoomMapper {
             durationMs = durationMs,
             downloadFinalized = downloadFinalized,
             createdAtMs = createdAtMs,
-            createdAtSource = createdAtSource
+            createdAtSource = createdAtSource,
+            createdAtConfidence = createdAtSource?.let(::resolveCreatedAtConfidence)
         )
     }
 

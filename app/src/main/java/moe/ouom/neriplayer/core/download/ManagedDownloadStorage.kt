@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadCoverLook
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadManagedAudioPolicy
 import moe.ouom.neriplayer.core.download.storage.lookup.ManagedDownloadStorageLookup
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadMetadataCodec
+import moe.ouom.neriplayer.core.download.metadata.resolveCreatedAtConfidence
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCopyWorker
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationProgressSession
@@ -188,6 +189,7 @@ import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentHashMap
 import java.util.UUID
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle as RootHandle
 
@@ -199,10 +201,13 @@ internal object ManagedDownloadStorage {
     private const val SIDECAR_REFRESH_THROTTLE_MS = 400L
     private const val FAST_LYRICS_SLOW_LOG_MS = 120L
     private const val FAST_INDEX_MANIFEST_LOCK_SHARD = "__manifest__"
+    private const val METADATA_SCAN_PARALLELISM = 4
 
     private val snapshotBuildLock = Any()
     private val sidecarRefreshLock = Any()
     private val snapshotWarmupLock = Any()
+    private val metadataScanDispatcher =
+        Dispatchers.IO.limitedParallelism(METADATA_SCAN_PARALLELISM)
     private val batchReferenceDeleteMutex = Mutex()
     private val snapshotScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var snapshotWarmupJob: Job? = null
@@ -785,6 +790,8 @@ internal object ManagedDownloadStorage {
         val knownReferences: Set<String>,
         /** root 子项查询是否完整，false 时不能把空结果当成目录事实 */
         val rootEntriesComplete: Boolean = true,
+        /** Covers/Lyrics 子项查询是否完整，false 时沿用旧侧载索引 */
+        val sidecarEntriesComplete: Boolean = true,
         /** 已完成核心写入但尚未提升为正式文件名的音频 */
         val pendingAudioEntries: List<StoredEntry> = emptyList(),
         /** pending metadata 与正式 metadata 同名时, 为 pending 音频保留独立凭据 */
@@ -871,7 +878,8 @@ internal object ManagedDownloadStorage {
         val libraryAddedAtMs: Long? = null,
         val sourceCreatedAtMs: Long? = null,
         val sourceModifiedAtMs: Long? = null,
-        val restorableMetadata: ManagedDownloadRestorableMetadata? = null
+        val restorableMetadata: ManagedDownloadRestorableMetadata? = null,
+        val createdAtConfidence: String? = null
     )
 
     fun primeSettings(directoryUri: String?, directoryLabel: String?, fileNameTemplate: String? = null) {
@@ -1437,7 +1445,10 @@ internal object ManagedDownloadStorage {
                         sourceName = entry.entry.name,
                         sourceSubdirectory = entry.subdirectory,
                         sizeBytes = entry.entry.sizeBytes.coerceAtLeast(0L),
-                        lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L)
+                        lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L),
+                        logicalCreatedAtMs = entry.logicalCreatedAtMs(),
+                        createdAtSource = entry.logicalCreatedAtSource(),
+                        createdAtConfidence = entry.logicalCreatedAtConfidence()
                     )
                 }
             val sourceManifest = persistedJournalForAttempt?.sourceEntries
@@ -1452,7 +1463,10 @@ internal object ManagedDownloadStorage {
                         sourceName = entry.entry.name,
                         sourceSubdirectory = entry.subdirectory,
                         sizeBytes = entry.entry.sizeBytes.coerceAtLeast(0L),
-                        lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L)
+                        lastModifiedMs = entry.entry.lastModifiedMs.coerceAtLeast(0L),
+                        logicalCreatedAtMs = entry.logicalCreatedAtMs(),
+                        createdAtSource = entry.logicalCreatedAtSource(),
+                        createdAtConfidence = entry.logicalCreatedAtConfidence()
                     )
                 }
             var replacementJournal: ManagedMigrationReplacementJournal? =
@@ -1800,6 +1814,11 @@ internal object ManagedDownloadStorage {
                     sizeBytes = receipt.sourceSizeBytes.coerceAtLeast(0L),
                     lastModifiedMs = receipt.sourceLastModifiedMs.coerceAtLeast(0L),
                     isDirectory = false
+                ),
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    createdAtMs = receipt.sourceLogicalCreatedAtMs,
+                    createdAtSource = receipt.sourceCreatedAtSource,
+                    createdAtConfidence = receipt.sourceCreatedAtConfidence
                 )
             )
         }
@@ -1978,7 +1997,10 @@ internal object ManagedDownloadStorage {
                         sourceName = receipt.sourceName,
                         sourceSubdirectory = receipt.sourceSubdirectory,
                         targetEntry = target,
-                        targetDigest = targetDigest
+                        targetDigest = targetDigest,
+                        sourceLogicalCreatedAtMs = receipt.sourceLogicalCreatedAtMs,
+                        sourceCreatedAtSource = receipt.sourceCreatedAtSource,
+                        sourceCreatedAtConfidence = receipt.sourceCreatedAtConfidence
                     )
                 )
             }
@@ -2065,7 +2087,10 @@ internal object ManagedDownloadStorage {
                 sourceName = copied.original.entry.name,
                 sourceSubdirectory = copied.original.subdirectory,
                 targetEntry = copied.copiedEntry,
-                targetDigest = targetDigest
+                targetDigest = targetDigest,
+                sourceLogicalCreatedAtMs = copied.original.logicalCreatedAtMs(),
+                sourceCreatedAtSource = copied.original.logicalCreatedAtSource(),
+                sourceCreatedAtConfidence = copied.original.logicalCreatedAtConfidence()
             )
         }
     }
@@ -2539,8 +2564,8 @@ internal object ManagedDownloadStorage {
         workingFile: File,
         song: SongItem,
         operationId: String? = null
-    ) {
-        ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song, operationId)
+    ): Boolean {
+        return ManagedDownloadRecoveryFiles.saveWorkingResumeMetadata(workingFile, song, operationId)
     }
 
     internal fun findWorkingFileForResume(
@@ -2559,8 +2584,8 @@ internal object ManagedDownloadStorage {
     internal fun updateWorkingResumeFingerprint(
         workingFile: File,
         fingerprint: WorkingResumeFingerprint
-    ) {
-        ManagedDownloadRecoveryFiles.updateWorkingResumeFingerprint(workingFile, fingerprint)
+    ): Boolean {
+        return ManagedDownloadRecoveryFiles.updateWorkingResumeFingerprint(workingFile, fingerprint)
     }
 
     internal fun deleteWorkingResumeMetadata(workingFile: File?) {
@@ -3675,6 +3700,16 @@ internal object ManagedDownloadStorage {
                 return@mapNotNull null
             }
             val stableKey = metadata?.stableKey?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val logicalCreatedAtMs = metadata.createdAtMs
+                ?: metadata.downloadTimeMs
+                ?: audio.lastModifiedMs.takeIf { it > 0L }
+            val createdAtSource = metadata.createdAtSource
+                ?: when {
+                    metadata.createdAtMs != null -> "MANAGED_COMMIT"
+                    metadata.downloadTimeMs != null -> "DOWNLOAD_TIME"
+                    audio.lastModifiedMs > 0L -> "MTIME"
+                    else -> null
+                }
             ManagedLibraryIndexEntry(
                 stableKey = stableKey,
                 artifactId = metadata.artifactId ?: "managed:$libraryId:$stableKey",
@@ -3697,7 +3732,11 @@ internal object ManagedDownloadStorage {
                 subAudioId = metadata.subAudioId,
                 playlistContextId = metadata.playlistContextId,
                 durationMs = metadata.durationMs.takeIf { it > 0L },
-                coverPath = ManagedDownloadCoverLookup.findCoverReference(snapshot, audio)
+                coverPath = ManagedDownloadCoverLookup.findCoverReference(snapshot, audio),
+                logicalCreatedAtMs = logicalCreatedAtMs,
+                createdAtSource = createdAtSource,
+                createdAtConfidence = metadata.createdAtConfidence
+                    ?: createdAtSource?.let(::resolveCreatedAtConfidence)
             )
         }
         val entriesByShard = entries.groupBy { entry -> ManagedLibraryFastIndex.shardFor(entry.stableKey) }
@@ -3757,7 +3796,9 @@ internal object ManagedDownloadStorage {
 
     internal fun shouldPersistFastIndex(snapshot: DownloadLibrarySnapshot): Boolean {
         // incomplete metadata is not evidence that the corresponding shard is empty
-        return snapshot.rootEntriesComplete && snapshot.audioEntriesWithoutMetadata.isEmpty()
+        return snapshot.rootEntriesComplete &&
+            snapshot.sidecarEntriesComplete &&
+            snapshot.audioEntriesWithoutMetadata.isEmpty()
     }
 
     internal suspend fun restoreFastIndexPreview(
@@ -3855,8 +3896,11 @@ internal object ManagedDownloadStorage {
                 downloadTimeMs = entry.downloadTimeMs,
                 downloadFinalized = entry.state in setOf("FINALIZED", "COMPLETE"),
                 metadataEmbeddingState = entry.metadataEmbeddingState,
-                createdAtMs = entry.updatedAtMs,
-                createdAtSource = "INDEX_PREVIEW",
+                createdAtMs = entry.logicalCreatedAtMs ?: entry.updatedAtMs,
+                createdAtSource = entry.createdAtSource ?: "INDEX_PREVIEW",
+                createdAtConfidence = entry.createdAtConfidence
+                    ?: entry.createdAtSource?.let(::resolveCreatedAtConfidence)
+                    ?: "INFERRED",
                 artifactId = entry.artifactId,
                 artifactState = entry.state,
                 audioFileName = entry.audioName
@@ -3872,7 +3916,8 @@ internal object ManagedDownloadStorage {
                 metadataByAudioName = metadataByAudioName,
                 coverEntries = emptyList(),
                 lyricEntries = emptyList(),
-                rootEntriesComplete = false
+                rootEntriesComplete = false,
+                sidecarEntriesComplete = false
             )
         )
         NPLogger.d(TAG, "使用 Managed SAF fast index 发布预览: entries=${entries.size}")
@@ -3946,7 +3991,10 @@ internal object ManagedDownloadStorage {
                         "coversComplete=${coverRefresh.isComplete}, " +
                         "lyricsComplete=${lyricRefresh.isComplete}"
                 )
-                return activeSnapshot
+                // buildDownloadLibrarySnapshot 已经把可用的旧侧载合并进 requested
+                // snapshot。返回 activeSnapshot 会把同一轮更新的音频核心条目回退掉，
+                // 进而让刚提交的歌曲暂时变白
+                return snapshot
             }
             lastSidecarRefreshKey = cacheKey
             lastSidecarRefreshAtMs = System.currentTimeMillis()
@@ -4004,8 +4052,8 @@ internal object ManagedDownloadStorage {
             cachedSnapshot?.let { return@synchronized it }
         }
 
-        val rootRefresh = treeDirectories.refreshRootEntries(context, root)
-        val rootEntries = rootRefresh.entries.filterNot(StoredEntry::isDirectory)
+        val libraryRefresh = treeDirectories.refreshDownloadLibraryEntries(context, root)
+        val rootEntries = libraryRefresh.rootEntries.filterNot(StoredEntry::isDirectory)
         val pendingAudioEntries = rootEntries.filter(StoredEntry::isPendingAudioWrite)
         val pendingAudioLogicalNames = pendingAudioEntries
             .mapTo(hashSetOf(), StoredEntry::logicalName)
@@ -4037,27 +4085,32 @@ internal object ManagedDownloadStorage {
                         { it.second.name }
                     )
                 )!!.second
-            }
+        }
         var reusedMetadataCount = 0
-        val metadataByAudioName = buildMap {
-            metadataEntriesByAudioName.forEach { (audioName, entry) ->
-                val cachedEntry = cachedSnapshot?.metadataEntriesByAudioName?.get(audioName)
-                val cachedMetadata = cachedSnapshot?.metadataByAudioName?.get(audioName)
-                val metadata = if (
-                    canReuseCachedDownloadedMetadata(
-                        cachedEntry = cachedEntry,
-                        currentEntry = entry,
-                        cachedMetadata = cachedMetadata
-                    )
-                ) {
-                    reusedMetadataCount++
-                    cachedMetadata
-                } else {
-                    parseDownloadedAudioMetadata(context, entry)
-                }
-                if (metadata != null) {
-                    put(audioName, metadata)
-                }
+        val metadataEntriesToParse = mutableListOf<Pair<String, StoredEntry>>()
+        val metadataByAudioName = linkedMapOf<String, DownloadedAudioMetadata>()
+        metadataEntriesByAudioName.forEach { (audioName, entry) ->
+            val cachedEntry = cachedSnapshot?.metadataEntriesByAudioName?.get(audioName)
+            val cachedMetadata = cachedSnapshot?.metadataByAudioName?.get(audioName)
+            if (
+                canReuseCachedDownloadedMetadata(
+                    cachedEntry = cachedEntry,
+                    currentEntry = entry,
+                    cachedMetadata = cachedMetadata
+                )
+            ) {
+                reusedMetadataCount++
+                metadataByAudioName[audioName] = requireNotNull(cachedMetadata)
+            } else {
+                metadataEntriesToParse += audioName to entry
+            }
+        }
+        parseDownloadedAudioMetadataBatch(
+            context = context,
+            entries = metadataEntriesToParse
+        ).forEach { (audioName, metadata) ->
+            if (metadata != null) {
+                metadataByAudioName[audioName] = metadata
             }
         }
         val pendingMetadataEntriesByAudioName = metadataEntries
@@ -4078,13 +4131,28 @@ internal object ManagedDownloadStorage {
                     )
                 )!!.second
             }
+        val pendingMetadataEntriesToParse = pendingMetadataEntriesByAudioName
+            .mapNotNull { (audioName, entry) ->
+                if (metadataEntriesByAudioName[audioName] == entry) {
+                    return@mapNotNull null
+                }
+                audioName to entry
+            }
         val pendingMetadataByAudioName = buildMap {
             pendingMetadataEntriesByAudioName.forEach { (audioName, entry) ->
                 val metadata = if (metadataEntriesByAudioName[audioName] == entry) {
                     metadataByAudioName[audioName]
                 } else {
-                    parseDownloadedAudioMetadata(context, entry)
+                    null
                 }
+                if (metadata != null) {
+                    put(audioName, metadata)
+                }
+            }
+            parseDownloadedAudioMetadataBatch(
+                context = context,
+                entries = pendingMetadataEntriesToParse
+            ).forEach { (audioName, metadata) ->
                 if (metadata != null) {
                     put(audioName, metadata)
                 }
@@ -4096,8 +4164,18 @@ internal object ManagedDownloadStorage {
                 "刷新下载目录复用未变化 metadata: reused=$reusedMetadataCount, total=${metadataEntries.size}"
             )
         }
-        val coverEntries = listSubdirectoryEntries(context, root, COVER_SUBDIRECTORY)
-        val lyricEntries = listSubdirectoryEntries(context, root, LYRIC_SUBDIRECTORY)
+        val coverEntries = if (libraryRefresh.sidecarEntriesComplete) {
+            libraryRefresh.coverEntries
+        } else {
+            cachedSnapshot?.coverEntriesByName?.values?.toList()
+                ?: libraryRefresh.coverEntries
+        }
+        val lyricEntries = if (libraryRefresh.sidecarEntriesComplete) {
+            libraryRefresh.lyricEntries
+        } else {
+            cachedSnapshot?.lyricEntriesByName?.values?.toList()
+                ?: libraryRefresh.lyricEntries
+        }
         val coverEntriesByName = coverEntries.associateBy(StoredEntry::name)
         val lyricEntriesByName = lyricEntries.associateBy(StoredEntry::name)
         val allowMetadataLessAudio = includeMetadataLessAudioForLegacyUpgrade ||
@@ -4128,7 +4206,8 @@ internal object ManagedDownloadStorage {
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
-            rootEntriesComplete = rootRefresh.isComplete,
+            rootEntriesComplete = libraryRefresh.rootEntriesComplete,
+            sidecarEntriesComplete = libraryRefresh.sidecarEntriesComplete,
             pendingAudioEntries = pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
         )
@@ -4178,7 +4257,9 @@ internal object ManagedDownloadStorage {
         activeSnapshot: DownloadLibrarySnapshot?,
         respectThrottle: Boolean
     ): Boolean {
-        return !respectThrottle && activeSnapshot === requestedSnapshot
+        return !respectThrottle &&
+            activeSnapshot === requestedSnapshot &&
+            requestedSnapshot.sidecarEntriesComplete
     }
 
     private fun composeSnapshot(
@@ -4188,6 +4269,7 @@ internal object ManagedDownloadStorage {
         coverEntries: List<StoredEntry>,
         lyricEntries: List<StoredEntry>,
         rootEntriesComplete: Boolean = true,
+        sidecarEntriesComplete: Boolean = true,
         pendingAudioEntries: List<StoredEntry> = emptyList(),
         pendingMetadataByAudioName: Map<String, DownloadedAudioMetadata> = emptyMap()
     ): DownloadLibrarySnapshot {
@@ -4198,6 +4280,7 @@ internal object ManagedDownloadStorage {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             rootEntriesComplete = rootEntriesComplete,
+            sidecarEntriesComplete = sidecarEntriesComplete,
             pendingAudioEntries = pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
         )
@@ -4627,8 +4710,22 @@ internal object ManagedDownloadStorage {
      */
     internal suspend fun cleanupCancelledPendingDownloadArtifacts(
         context: Context,
-        operations: Collection<CancelledPendingDownloadOperation>
+        operations: Collection<CancelledPendingDownloadOperation>,
+        onProgress: (completedItems: Int, totalItems: Int) -> Unit = { _, _ -> }
     ): StartupRecoveryResult = withContext(Dispatchers.IO) {
+        fun reportProgress(completedItems: Int, totalItems: Int) {
+            runCatching {
+                onProgress(
+                    completedItems.coerceAtLeast(0),
+                    totalItems.coerceAtLeast(0)
+                )
+            }.onFailure { error ->
+                NPLogger.w(
+                    TAG,
+                    "取消清理进度回调失败，继续执行清理: ${error.message}"
+                )
+            }
+        }
         val normalizedOperations = operations.mapNotNull { operation ->
             val stableKey = operation.stableKey.trim().takeIf(String::isNotBlank)
                 ?: return@mapNotNull null
@@ -4641,7 +4738,9 @@ internal object ManagedDownloadStorage {
         }
         try {
             val root = resolveRootBlocking(context)
-            val refresh = treeDirectories.refreshRootEntries(context, root)
+            // 清空期间优先复用完整根缓存，缓存缺失时才向 provider 发起一次枚举
+            val refresh = treeDirectories.cachedRootEntries(root)
+                ?: treeDirectories.refreshRootEntries(context, root)
             if (!refresh.isComplete) {
                 NPLogger.w(
                     TAG,
@@ -4672,8 +4771,10 @@ internal object ManagedDownloadStorage {
                 )
             }
             if (referencesToDelete.isEmpty()) {
+                reportProgress(0, 0)
                 return@withContext StartupRecoveryResult()
             }
+            reportProgress(0, referencesToDelete.size)
             val entriesToDelete = rootEntries.filter { entry ->
                 entry.reference in referencesToDelete
             }
@@ -4703,17 +4804,33 @@ internal object ManagedDownloadStorage {
                     failedCount = terminalTemporaryWriteTargets.size
                 )
             }
-            val deletedReferences = deleteReferencesInternal(
+            val deletePolicy = buildManagedDeletePolicy(
                 context = context,
-                references = referencesToDelete,
                 allowedRoot = root,
-                trustedReferences = referencesToDelete,
-                invalidateSnapshot = true
+                trustedReferences = referencesToDelete
+            )
+            val trustedReferences = resolveTrustedManagedReferences(
+                references = referencesToDelete,
+                deletePolicy = deletePolicy
+            )
+            val completedReferences = AtomicInteger(0)
+            val deletedReferences = deleteReferencesInternalConcurrently(
+                context = context,
+                references = trustedReferences,
+                deletePolicy = deletePolicy,
+                invalidateSnapshot = true,
+                onDeleteAttemptFinished = { _, _ ->
+                    reportProgress(
+                        completedItems = completedReferences.incrementAndGet(),
+                        totalItems = referencesToDelete.size
+                    )
+                }
             )
             val temporaryCleanup = when {
                 terminalTemporaryWriteTargets.isEmpty() -> StartupRecoveryResult()
                 else -> cleanupPersistedTerminalTemporaryWriteArtifacts(context)
             }
+            reportProgress(referencesToDelete.size, referencesToDelete.size)
             val failedCount =
                 referencesToDelete.size - deletedReferences.size + temporaryCleanup.failedCount
             NPLogger.d(
@@ -7948,7 +8065,10 @@ internal object ManagedDownloadStorage {
                 sourceName = receipt.sourceName,
                 sourceSubdirectory = receipt.sourceSubdirectory,
                 sizeBytes = receipt.targetEntry.sizeBytes.coerceAtLeast(0L),
-                lastModifiedMs = receipt.targetEntry.lastModifiedMs.coerceAtLeast(0L)
+                lastModifiedMs = receipt.targetEntry.lastModifiedMs.coerceAtLeast(0L),
+                logicalCreatedAtMs = receipt.sourceLogicalCreatedAtMs,
+                createdAtSource = receipt.sourceCreatedAtSource,
+                createdAtConfidence = receipt.sourceCreatedAtConfidence
             )
             val previous = manifest[reference]
             if (previous != null && (
@@ -7990,6 +8110,11 @@ internal object ManagedDownloadStorage {
                     sizeBytes = sourceEntry.sizeBytes.coerceAtLeast(0L),
                     lastModifiedMs = sourceEntry.lastModifiedMs.coerceAtLeast(0L),
                     isDirectory = false
+                ),
+                metadata = ManagedDownloadStorage.DownloadedAudioMetadata(
+                    createdAtMs = sourceEntry.logicalCreatedAtMs,
+                    createdAtSource = sourceEntry.createdAtSource,
+                    createdAtConfidence = sourceEntry.createdAtConfidence
                 )
             )
         }
@@ -8322,9 +8447,16 @@ internal object ManagedDownloadStorage {
                     )
                 )!!.second
             }
+        val audioLastModifiedByName = rootEntries
+            .asSequence()
+            .filter { entry -> entry.extension in audioExtensions }
+            .associate { entry -> entry.name to entry.lastModifiedMs }
         val parsedMetadataByAudioName = metadataEntriesByAudioName.mapNotNull { (audioName, entry) ->
             parseDownloadedAudioMetadata(context, entry)?.let { metadata ->
-                audioName to metadata
+                audioName to enrichMigrationMetadataTemporalFields(
+                    metadata = metadata,
+                    audioLastModifiedMs = audioLastModifiedByName[audioName]
+                )
             }
         }.toMap()
         return ManagedDownloadMigrationEntryCollector.collect(
@@ -8333,6 +8465,25 @@ internal object ManagedDownloadStorage {
             lyricEntries = lyricEntries,
             parsedMetadataByAudioName = parsedMetadataByAudioName,
             allowMetadataLessAudio = allowMetadataLessAudio
+        )
+    }
+
+    private fun enrichMigrationMetadataTemporalFields(
+        metadata: DownloadedAudioMetadata,
+        audioLastModifiedMs: Long?
+    ): DownloadedAudioMetadata {
+        val fallbackTimestamp = audioLastModifiedMs?.takeIf { it > 0L } ?: return metadata
+        if (
+            metadata.createdAtMs?.let { it > 0L } == true ||
+                metadata.sourceCreatedAtMs?.let { it > 0L } == true
+        ) {
+            return metadata
+        }
+        return metadata.copy(
+            createdAtMs = fallbackTimestamp,
+            createdAtSource = metadata.createdAtSource ?: "MTIME",
+            createdAtConfidence = metadata.createdAtConfidence ?: "INFERRED",
+            sourceModifiedAtMs = metadata.sourceModifiedAtMs ?: fallbackTimestamp
         )
     }
 
@@ -8386,6 +8537,46 @@ internal object ManagedDownloadStorage {
     ): DownloadedAudioMetadata? {
         val raw = readTextInternal(context, entry.reference) ?: return null
         return parseDownloadedAudioMetadataJson(raw)
+    }
+
+    /**
+     * 并行读取互不相关的 metadata，单个 sidecar 暂时不可读时保留其余音频结果
+     */
+    private fun parseDownloadedAudioMetadataBatch(
+        context: Context,
+        entries: Collection<Pair<String, StoredEntry>>
+    ): Map<String, DownloadedAudioMetadata?> {
+        if (entries.isEmpty()) return emptyMap()
+        return runBlocking(Dispatchers.IO) {
+            coroutineScope {
+                val results = linkedMapOf<String, DownloadedAudioMetadata?>()
+                entries.toList()
+                    .chunked(METADATA_SCAN_PARALLELISM)
+                    .forEach { batch ->
+                        batch.map { (audioName, entry) ->
+                            async(metadataScanDispatcher) {
+                                val metadata = try {
+                                    val raw = readTextInternalSuspending(context, entry.reference)
+                                    raw?.let(::parseDownloadedAudioMetadataJson)
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    NPLogger.w(
+                                        TAG,
+                                        "读取下载 metadata 失败，保留音频并等待重试: " +
+                                            "name=$audioName, error=${error.message}"
+                                    )
+                                    null
+                                }
+                                audioName to metadata
+                            }
+                        }.awaitAll().forEach { (audioName, metadata) ->
+                            results[audioName] = metadata
+                        }
+                    }
+                results
+            }
+        }
     }
 
     internal fun serializeSnapshotCachePayload(
@@ -8452,7 +8643,7 @@ internal object ManagedDownloadStorage {
             val refresh = treeDirectories.refreshRootEntries(context, root)
             if (!refresh.isComplete) {
                 NPLogger.w(TAG, "下载目录枚举不完整，跳过待提交音频清理")
-                return StartupRecoveryResult()
+                return StartupRecoveryResult(failedCount = 1)
             }
             val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
             val metadataNames = rootEntries.mapTo(linkedSetOf(), StoredEntry::name)
@@ -8496,7 +8687,7 @@ internal object ManagedDownloadStorage {
             throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "下载目录不可用，跳过待提交音频清理: ${error.message}")
-            StartupRecoveryResult()
+            StartupRecoveryResult(failedCount = 1)
         }
     }
 
@@ -8506,7 +8697,7 @@ internal object ManagedDownloadStorage {
             val refresh = treeDirectories.refreshManagedMigrationEntries(context, root)
             if (!refresh.isComplete) {
                 NPLogger.w(TAG, "下载目录枚举不完整，跳过未完成半成品清理")
-                return StartupRecoveryResult()
+                return StartupRecoveryResult(failedCount = 1)
             }
             val rootEntries = refresh.rootEntries.filterNot(StoredEntry::isDirectory)
             val parsedMetadataEntries = rootEntries
@@ -8555,7 +8746,7 @@ internal object ManagedDownloadStorage {
             throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "清理未完成下载半成品失败: ${error.message}")
-            StartupRecoveryResult()
+            StartupRecoveryResult(failedCount = 1)
         }
     }
 
@@ -9045,24 +9236,31 @@ internal object ManagedDownloadStorage {
     }
 
     private fun readTextInternal(context: Context, reference: String): String? {
-        val target = backendReference(context, reference) ?: return null
         return runBlocking(Dispatchers.IO) {
-            when (val result = target.backend.read(target.reference) { input ->
-                input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            }) {
-                is StorageLookupResult.Found -> {
-                    result.value
-                }
-                StorageLookupResult.Missing -> null
-                StorageLookupResult.PermissionLost -> {
-                    throw SecurityException("storage permission lost: $reference")
-                }
-                is StorageLookupResult.ProviderFailure -> {
-                    throw ManagedDownloadRootProviderException(reference, result.error)
-                }
-                StorageLookupResult.OutOfScope,
-                is StorageLookupResult.Unsupported -> null
+            readTextInternalSuspending(context, reference)
+        }
+    }
+
+    private suspend fun readTextInternalSuspending(
+        context: Context,
+        reference: String
+    ): String? {
+        val target = backendReference(context, reference) ?: return null
+        return when (val result = target.backend.read(target.reference) { input ->
+            input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }) {
+            is StorageLookupResult.Found -> {
+                result.value
             }
+            StorageLookupResult.Missing -> null
+            StorageLookupResult.PermissionLost -> {
+                throw SecurityException("storage permission lost: $reference")
+            }
+            is StorageLookupResult.ProviderFailure -> {
+                throw ManagedDownloadRootProviderException(reference, result.error)
+            }
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> null
         }
     }
 
@@ -9536,12 +9734,14 @@ internal object ManagedDownloadStorage {
         context: Context,
         references: Collection<TrustedManagedRef>,
         deletePolicy: ManagedDownloadDeletePolicy,
-        invalidateSnapshot: Boolean
+        invalidateSnapshot: Boolean,
+        onDeleteAttemptFinished: (TrustedManagedRef, Boolean) -> Unit = { _, _ -> }
     ): Set<String> {
         val deleteResult = referenceDeleteExecutor.deleteReferencesConcurrently(
             context = context,
             references = references,
-            deletePolicy = deletePolicy
+            deletePolicy = deletePolicy,
+            onDeleteAttemptFinished = onDeleteAttemptFinished
         )
         applyDeleteResultToSnapshot(context, deleteResult, invalidateSnapshot)
         return deleteResult.deletedReferences

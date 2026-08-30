@@ -38,6 +38,28 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `embedded lyric sidecar is skipped when the download already has lyric text`() {
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = "content://managed/song.lrc",
+                fallback = "[00:01.00]ready"
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = "content://managed/song.lrc",
+                fallback = ""
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldReadEmbeddedLyricReference(
+                reference = null,
+                fallback = null
+            )
+        )
+    }
+
+    @Test
     fun `standardized lyric embedding converts netease word lyric to lrc`() {
         val rawLyric = """
             [12580,3470](12580,250,0)难(12830,300,0)以(13130,200,0)忘记

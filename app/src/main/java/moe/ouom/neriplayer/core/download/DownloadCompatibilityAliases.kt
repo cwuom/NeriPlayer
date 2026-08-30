@@ -164,12 +164,12 @@ internal fun shouldDeferStartupManagedCleanup(configuredDirectoryUri: String?, t
     shouldDeferStartupManagedCleanupDelegate(configuredDirectoryUri, treeRootAvailable)
 
 internal fun shouldDeferPendingDownloadRecoveryForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean = shouldDeferPendingDownloadRecoveryForNetworkDelegate(networkType, mobileDataOverrideAllowed)
 
 internal fun shouldDeferQueuedDownloadStartForNetwork(
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean,
     deferForNetworkPolicy: Boolean
 ): Boolean = shouldDeferQueuedDownloadStartForNetworkDelegate(
@@ -180,7 +180,7 @@ internal fun shouldDeferQueuedDownloadStartForNetwork(
 
 internal fun shouldDeferDownloadExecutionForNetwork(
     requiresWifiNetwork: Boolean,
-    networkType: TrafficNetworkType,
+    networkType: TrafficNetworkType?,
     mobileDataOverrideAllowed: Boolean
 ): Boolean = shouldDeferDownloadExecutionForNetworkDelegate(
     requiresWifiNetwork,
@@ -238,7 +238,7 @@ internal fun isMobileDataDownloadInterruptionSnapshotCurrent(
 internal fun isWifiBoundNetworkPolicyObservationCurrent(
     snapshotEpoch: Long,
     currentEpoch: Long,
-    currentNetworkType: TrafficNetworkType
+    currentNetworkType: TrafficNetworkType?
 ): Boolean {
     return snapshotEpoch == currentEpoch && currentNetworkType != TrafficNetworkType.WIFI
 }

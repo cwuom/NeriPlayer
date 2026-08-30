@@ -124,6 +124,27 @@ class DownloadedAudioMetadataStoreTest {
     }
 
     @Test
+    fun `metadata creation time prefers source song time over target mtime`() {
+        val song = testSong().copy(
+            addedAt = 1_700_000_000_000L,
+            logicalCreatedAtMs = 1_600_000_000_000L,
+            createdAtSource = "FILESYSTEM_BIRTH",
+            createdAtConfidence = "INFERRED"
+        )
+
+        val createdAt = resolveDownloadedMetadataCreatedAt(
+            existing = null,
+            song = song,
+            audioLastModifiedMs = 1_800_000_000_000L,
+            nowMs = 1_900_000_000_000L
+        )
+
+        assertEquals(1_600_000_000_000L, createdAt.timestampMs)
+        assertEquals("FILESYSTEM_BIRTH", createdAt.source)
+        assertEquals("INFERRED", createdAt.confidence)
+    }
+
+    @Test
     fun `restorable offset keeps an existing value when incoming metadata omits it`() {
         assertEquals(
             -321L,

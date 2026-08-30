@@ -16,6 +16,7 @@ sealed interface ManagedLibraryRefreshOutcome {
 }
 
 enum class ManagedLibraryRefreshPreserveReason {
+    DOWNLOAD_CLEAR_IN_PROGRESS,
     INCOMPLETE_ROOT_ENUMERATION,
     SUSPICIOUS_EMPTY_RESULT,
     SUPERSEDED_BY_METADATA_CHANGE

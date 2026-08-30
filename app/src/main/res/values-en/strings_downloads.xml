@@ -13,6 +13,12 @@
     <string name="download_loading_tasks">Reading download tasks…</string>
     <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>
     <string name="download_clearing_tasks">Stopping and clearing download tasks…</string>
+    <string name="download_clearing_tasks_with_progress">Clearing download tasks: %1$d%% (%2$d items)</string>
+    <string name="download_clear_phase_preparing">Preparing</string>
+    <string name="download_clear_phase_cancelling">Stopping downloads</string>
+    <string name="download_clear_phase_cleaning">Cleaning temporary files</string>
+    <string name="download_clear_phase_purging">Finalizing records</string>
+    <string name="download_clear_item_progress">Processed %1$d/%2$d files</string>
     <string name="download_empty">No Downloads</string>
     <string name="download_desc">Manage downloads</string>
     <string name="download_manage_desc">Manage downloads</string>

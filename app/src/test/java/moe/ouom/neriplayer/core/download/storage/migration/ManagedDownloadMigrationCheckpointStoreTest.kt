@@ -165,7 +165,10 @@ class ManagedDownloadMigrationCheckpointStoreTest {
             verifiedTargetDigest = "a".repeat(64),
             createdNew = true,
             sourceAuthoritative = true,
-            replacementBackup = null
+            replacementBackup = null,
+            sourceLogicalCreatedAtMs = 1_234L,
+            sourceCreatedAtSource = "FILESYSTEM_BIRTH",
+            sourceCreatedAtConfidence = "PROVIDER_REPORTED"
         )
 
         store.recordCopyReceipt("work-copy", receipt)
@@ -829,7 +832,10 @@ class ManagedDownloadMigrationCheckpointStoreTest {
             verifiedTargetDigest = "a".repeat(64),
             createdNew = true,
             sourceAuthoritative = true,
-            replacementBackup = null
+            replacementBackup = null,
+            sourceLogicalCreatedAtMs = 1_234L,
+            sourceCreatedAtSource = "FILESYSTEM_BIRTH",
+            sourceCreatedAtConfidence = "PROVIDER_REPORTED"
         )
     }
 }

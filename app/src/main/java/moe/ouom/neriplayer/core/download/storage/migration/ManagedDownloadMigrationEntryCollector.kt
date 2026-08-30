@@ -128,7 +128,14 @@ internal object ManagedDownloadMigrationEntryCollector {
             }
             metadataEntries.forEach { entry ->
                 // metadata 可能是上次迁移留下的唯一残留, 不能依赖音频文件仍然存在
-                add(ManagedMigrationEntry(subdirectory = null, entry = entry))
+                val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                add(
+                    ManagedMigrationEntry(
+                        subdirectory = null,
+                        entry = entry,
+                        metadata = audioName?.let(parsedMetadataByAudioName::get)
+                    )
+                )
             }
             coverEntries.forEach { entry ->
                 if (entry.name in managedCoverNames) {

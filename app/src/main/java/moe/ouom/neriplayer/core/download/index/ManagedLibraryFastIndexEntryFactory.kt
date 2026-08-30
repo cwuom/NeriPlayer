@@ -39,7 +39,23 @@ internal object ManagedLibraryFastIndexEntryFactory {
             subAudioId = song.subAudioId,
             playlistContextId = song.playlistContextId,
             durationMs = song.durationMs.takeIf { it > 0L },
-            coverPath = coverPath
+            coverPath = coverPath,
+            logicalCreatedAtMs = song.logicalCreatedAtMs
+                ?: song.addedAt.takeIf { it > 0L }
+                ?: audio.lastModifiedMs.takeIf { it > 0L },
+            createdAtSource = song.createdAtSource
+                ?: when {
+                    song.logicalCreatedAtMs != null -> "MANAGED_COMMIT"
+                    song.addedAt > 0L -> "DOWNLOAD_TIME"
+                    audio.lastModifiedMs > 0L -> "MTIME"
+                    else -> null
+                },
+            createdAtConfidence = song.createdAtConfidence
+                ?: when {
+                    song.logicalCreatedAtMs != null -> "EXACT"
+                    song.addedAt > 0L || audio.lastModifiedMs > 0L -> "INFERRED"
+                    else -> null
+                }
         )
     }
 }

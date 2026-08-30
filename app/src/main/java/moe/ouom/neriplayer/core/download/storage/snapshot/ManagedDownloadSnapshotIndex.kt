@@ -13,6 +13,7 @@ internal object ManagedDownloadSnapshotIndex {
         coverEntries: List<ManagedDownloadStorage.StoredEntry>,
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>,
         rootEntriesComplete: Boolean = true,
+        sidecarEntriesComplete: Boolean = true,
         pendingAudioEntries: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
         pendingMetadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> =
             emptyMap()
@@ -137,6 +138,7 @@ internal object ManagedDownloadSnapshotIndex {
                 lyricEntries.forEach { add(it.reference) }
             },
             rootEntriesComplete = rootEntriesComplete,
+            sidecarEntriesComplete = sidecarEntriesComplete,
             pendingAudioEntries = normalizedPendingAudioEntries,
             pendingMetadataByAudioName = normalizedPendingMetadataByAudioName
         )
@@ -178,6 +180,7 @@ internal object ManagedDownloadSnapshotIndex {
                 ManagedDownloadStorageJsonCodec.storedEntriesToJsonArray(snapshot.lyricEntriesByName.values.toList())
             )
             put("rootEntriesComplete", snapshot.rootEntriesComplete)
+            put("sidecarEntriesComplete", snapshot.sidecarEntriesComplete)
         }.toString()
     }
 
@@ -223,6 +226,7 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             rootEntriesComplete = root.optBoolean("rootEntriesComplete", true),
+            sidecarEntriesComplete = root.optBoolean("sidecarEntriesComplete", true),
             pendingAudioEntries = pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
         )
@@ -276,6 +280,7 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntries = snapshot.coverEntriesByName.values.toList(),
             lyricEntries = snapshot.lyricEntriesByName.values.toList(),
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
             pendingAudioEntries = snapshot.pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
         )
@@ -298,6 +303,7 @@ internal object ManagedDownloadSnapshotIndex {
                 coverEntries = snapshot.coverEntriesByName.values.toList(),
                 lyricEntries = snapshot.lyricEntriesByName.values.toList(),
                 rootEntriesComplete = snapshot.rootEntriesComplete,
+                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
                 pendingAudioEntries = if (storedEntry.isPendingAudioWrite) {
                     replaceStoredEntry(snapshot.pendingAudioEntries, storedEntry)
                 } else {
@@ -316,6 +322,7 @@ internal object ManagedDownloadSnapshotIndex {
                 coverEntries = replaceStoredEntry(snapshot.coverEntriesByName.values, storedEntry),
                 lyricEntries = snapshot.lyricEntriesByName.values.toList(),
                 rootEntriesComplete = snapshot.rootEntriesComplete,
+                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
                 pendingAudioEntries = snapshot.pendingAudioEntries,
                 pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
             )
@@ -327,6 +334,7 @@ internal object ManagedDownloadSnapshotIndex {
                 coverEntries = snapshot.coverEntriesByName.values.toList(),
                 lyricEntries = replaceStoredEntry(snapshot.lyricEntriesByName.values, storedEntry),
                 rootEntriesComplete = snapshot.rootEntriesComplete,
+                sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
                 pendingAudioEntries = snapshot.pendingAudioEntries,
                 pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
             )
@@ -339,6 +347,7 @@ internal object ManagedDownloadSnapshotIndex {
         lyricEntries: List<ManagedDownloadStorage.StoredEntry>
     ): ManagedDownloadStorage.DownloadLibrarySnapshot {
         if (
+            snapshot.sidecarEntriesComplete &&
             snapshot.coverEntriesByName.values.toList() == coverEntries &&
             snapshot.lyricEntriesByName.values.toList() == lyricEntries
         ) {
@@ -351,6 +360,7 @@ internal object ManagedDownloadSnapshotIndex {
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            sidecarEntriesComplete = true,
             pendingAudioEntries = snapshot.pendingAudioEntries,
             pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName
         )
@@ -380,6 +390,7 @@ internal object ManagedDownloadSnapshotIndex {
             lyricEntries = snapshot.lyricEntriesByName.values
                 .filterNot { entry -> entry.reference in references },
             rootEntriesComplete = snapshot.rootEntriesComplete,
+            sidecarEntriesComplete = snapshot.sidecarEntriesComplete,
             pendingAudioEntries = snapshot.pendingAudioEntries
                 .filterNot { entry -> entry.reference in references },
             pendingMetadataByAudioName = snapshot.pendingMetadataByAudioName

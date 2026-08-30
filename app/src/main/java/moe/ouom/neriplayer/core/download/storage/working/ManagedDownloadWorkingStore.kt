@@ -153,9 +153,9 @@ internal object ManagedDownloadWorkingStore {
         workingFile: File,
         song: SongItem,
         operationId: String? = null
-    ) {
+    ): Boolean {
         val metadataFile = buildWorkingResumeMetadataFile(workingFile)
-        runCatching {
+        return runCatching {
             val existingFingerprint = readWorkingResumeFingerprintFile(metadataFile)
             val existingOperationId = readWorkingOperationIdFile(metadataFile)
             metadataFile.parentFile?.mkdirs()
@@ -167,9 +167,10 @@ internal object ManagedDownloadWorkingStore {
             val content = metadataJson.toString()
             assert(content.isNotBlank()) { "续传元数据序列化为空: ${workingFile.name}" }
             ManagedDownloadAtomicFile.writeTextAtomically(metadataFile, content)
+            true
         }.onFailure { error ->
             NPLogger.e(TAG, "写入下载恢复元数据失败: ${metadataFile.name}", error)
-        }
+        }.getOrDefault(false)
     }
 
     fun readWorkingResumeFingerprint(
@@ -181,9 +182,9 @@ internal object ManagedDownloadWorkingStore {
     fun updateWorkingResumeFingerprint(
         workingFile: File,
         fingerprint: ManagedDownloadStorage.WorkingResumeFingerprint
-    ) {
+    ): Boolean {
         val metadataFile = buildWorkingResumeMetadataFile(workingFile)
-        runCatching {
+        return runCatching {
             metadataFile.parentFile?.mkdirs()
             val metadataJson = ManagedDownloadStorageJsonCodec.mergeWorkingResumeFingerprint(
                 rawJson = metadataFile.takeIf(File::isFile)?.readText(Charsets.UTF_8),
@@ -192,9 +193,10 @@ internal object ManagedDownloadWorkingStore {
             val content = metadataJson.toString()
             assert(content.isNotBlank()) { "续传指纹序列化为空: ${workingFile.name}" }
             ManagedDownloadAtomicFile.writeTextAtomically(metadataFile, content)
+            true
         }.onFailure { error ->
             NPLogger.e(TAG, "写入下载恢复指纹失败: ${metadataFile.name}", error)
-        }
+        }.getOrDefault(false)
     }
 
     fun deleteWorkingResumeMetadata(workingFile: File?) {

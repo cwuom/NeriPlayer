@@ -248,7 +248,10 @@ internal fun DownloadedSong.toPlaybackSongItem(
         audioId = resolvedSourceAudioId,
         subAudioId = resolvedSourceSubAudioId,
         playlistContextId = sourcePlaylistContextId,
-        sourceStableKey = remoteSourceIdentity?.stableKey() ?: stableKey
+        sourceStableKey = remoteSourceIdentity?.stableKey() ?: stableKey,
+        logicalCreatedAtMs = downloadTime.takeIf { it > 0L },
+        createdAtSource = "MANAGED_COMMIT".takeIf { downloadTime > 0L },
+        createdAtConfidence = "EXACT".takeIf { downloadTime > 0L }
     )
 }
 

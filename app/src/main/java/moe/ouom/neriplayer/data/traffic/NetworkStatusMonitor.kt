@@ -15,12 +15,66 @@ fun Context.hasLikelyInternetAccess(): Boolean {
     )
 }
 
+internal fun Context.hasConfirmedInternetAccess(): Boolean {
+    val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        ?: return false
+    val activeNetwork = runCatching { connectivityManager.activeNetwork }
+        .getOrNull()
+        ?: return false
+    val capabilities = runCatching {
+        connectivityManager.getNetworkCapabilities(activeNetwork)
+    }.getOrNull()
+        ?: return false
+    return hasValidatedInternetCapability(
+        hasInternetCapability = capabilities.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_INTERNET
+        ),
+        hasValidatedCapability = capabilities.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_VALIDATED
+        )
+    )
+}
+
 fun Context.isOfflineModeNow(): Boolean = !hasLikelyInternetAccess()
 
 fun Context.currentTrafficNetworkType(): TrafficNetworkType {
+    // 保留旧 API 的 MOBILE 回退，避免改变历史统计和 UI 序列化；下载策略
+    // 使用可空快照，不能把未知状态当成移动网络
+    return currentTransportTrafficNetworkTypeOrNull() ?: TrafficNetworkType.MOBILE
+}
+
+internal fun Context.currentTrafficNetworkTypeOrNull(): TrafficNetworkType? {
     val connectivityManager = getSystemService(ConnectivityManager::class.java)
-        ?: return TrafficNetworkType.MOBILE
-    return connectivityManager.currentTrafficNetworkType()
+        ?: return null
+    return connectivityManager.currentValidatedTrafficNetworkTypeOrNull()
+}
+
+/**
+ * 返回下载策略可用的网络类别
+ *
+ * 未验证窗口只能信任明确的 Wi-Fi 类传输，不能把未验证蜂窝当成可用移动网络
+ */
+internal fun Context.currentDownloadNetworkTypeOrNull(): TrafficNetworkType? {
+    return resolveDownloadNetworkType(
+        validatedType = currentTrafficNetworkTypeOrNull(),
+        transportType = currentTransportTrafficNetworkTypeOrNull()
+    )
+}
+
+/**
+ * 下载策略只在未验证窗口保留明确的 Wi-Fi 类传输
+ */
+internal fun resolveDownloadNetworkType(
+    validatedType: TrafficNetworkType?,
+    transportType: TrafficNetworkType?
+): TrafficNetworkType? {
+    return validatedType ?: transportType?.takeIf { type -> type == TrafficNetworkType.WIFI }
+}
+
+internal fun Context.currentTransportTrafficNetworkTypeOrNull(): TrafficNetworkType? {
+    val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        ?: return null
+    return connectivityManager.currentTransportTrafficNetworkTypeOrNull()
 }
 
 internal fun Context.currentLikelyNetworkTransportAvailability(): LikelyNetworkTransportAvailability {
@@ -233,6 +287,24 @@ internal fun resolveLikelyInternetAccess(
     availability: LikelyNetworkTransportAvailability
 ): Boolean = availability != LikelyNetworkTransportAvailability.OFFLINE
 
+internal fun hasValidatedInternetCapability(
+    hasInternetCapability: Boolean,
+    hasValidatedCapability: Boolean
+): Boolean = hasInternetCapability && hasValidatedCapability
+
+internal fun resolveValidatedTrafficNetworkType(
+    networkType: TrafficNetworkType?,
+    hasInternetCapability: Boolean,
+    hasValidatedCapability: Boolean
+): TrafficNetworkType? {
+    return networkType.takeIf {
+        it != null && hasValidatedInternetCapability(
+            hasInternetCapability = hasInternetCapability,
+            hasValidatedCapability = hasValidatedCapability
+        )
+    }
+}
+
 internal fun isDirectNetworkTransport(
     hasWifiTransport: Boolean,
     hasCellularTransport: Boolean,
@@ -275,12 +347,30 @@ internal fun isLegalNetworkTransport(
         hasThreadTransport
 }
 
-private fun ConnectivityManager.currentTrafficNetworkType(): TrafficNetworkType = runCatching {
-    val activeNetwork = activeNetwork ?: return@runCatching TrafficNetworkType.MOBILE
-    val capabilities = getNetworkCapabilities(activeNetwork)
-        ?: return@runCatching TrafficNetworkType.MOBILE
-    capabilities.trafficNetworkType()
-}.getOrDefault(TrafficNetworkType.MOBILE)
+private fun ConnectivityManager.currentTransportTrafficNetworkTypeOrNull(): TrafficNetworkType? =
+    runCatching {
+        val activeNetwork = activeNetwork ?: return@runCatching null
+        val capabilities = getNetworkCapabilities(activeNetwork)
+            ?: return@runCatching null
+        capabilities.trafficNetworkType()
+    }.getOrNull()
+
+private fun ConnectivityManager.currentValidatedTrafficNetworkTypeOrNull(): TrafficNetworkType? =
+    runCatching {
+        val activeNetwork = activeNetwork ?: return@runCatching null
+        val capabilities = getNetworkCapabilities(activeNetwork)
+            ?: return@runCatching null
+        val networkType = capabilities.trafficNetworkType()
+        resolveValidatedTrafficNetworkType(
+            networkType = networkType,
+            hasInternetCapability = capabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_INTERNET
+            ),
+            hasValidatedCapability = capabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_VALIDATED
+            )
+        )
+    }.getOrNull()
 
 internal fun NetworkCapabilities.trafficNetworkType(): TrafficNetworkType {
     return resolveTrafficNetworkType(
@@ -289,6 +379,26 @@ internal fun NetworkCapabilities.trafficNetworkType(): TrafficNetworkType {
         hasEthernetTransport = hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET),
         isNotRoaming = hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING),
         isNotMetered = hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    )
+}
+
+internal fun NetworkCapabilities.validatedTrafficNetworkTypeOrNull(): TrafficNetworkType? {
+    return resolveValidatedTrafficNetworkType(
+        networkType = trafficNetworkType(),
+        hasInternetCapability = hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+        hasValidatedCapability = hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    )
+}
+
+/**
+ * 网络回调收敛使用的类别
+ *
+ * capability 尚未拿到 VALIDATED 时，保留 Wi-Fi 传输事实，等待可达性自行重试
+ */
+internal fun NetworkCapabilities.downloadNetworkTypeOrNull(): TrafficNetworkType? {
+    return resolveDownloadNetworkType(
+        validatedType = validatedTrafficNetworkTypeOrNull(),
+        transportType = trafficNetworkType()
     )
 }
 

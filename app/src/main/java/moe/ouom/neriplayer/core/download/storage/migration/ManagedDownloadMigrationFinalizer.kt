@@ -711,7 +711,10 @@ internal class ManagedDownloadMigrationFinalizer(
                 MetadataRewriteInput(
                     sourceMetadata = sourceMetadata,
                     targetMetadata = targetMetadata,
-                    rewrittenMetadata = rewriteMetadataReferences(sourceMetadata, referenceMap)
+                    rewrittenMetadata = enrichMigratedMetadataTemporalFields(
+                        metadata = rewriteMetadataReferences(sourceMetadata, referenceMap),
+                        sourceEntry = copied.original
+                    )
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -901,7 +904,10 @@ internal class ManagedDownloadMigrationFinalizer(
                 ?: return null
             val targetMetadata = readText(context, migrationEntry.copiedEntry.reference)
                 ?: return null
-            val expectedTargetMetadata = rewriteMetadataReferences(sourceMetadata, referenceMap)
+            val expectedTargetMetadata = enrichMigratedMetadataTemporalFields(
+                metadata = rewriteMetadataReferences(sourceMetadata, referenceMap),
+                sourceEntry = migrationEntry.original
+            )
             if (!areEquivalentJsonValues(
                 JSONObject(expectedTargetMetadata),
                 JSONObject(targetMetadata)
@@ -923,6 +929,50 @@ internal class ManagedDownloadMigrationFinalizer(
             )?.let { migrationError -> throw migrationError }
             null
         }
+    }
+
+    private fun enrichMigratedMetadataTemporalFields(
+        metadata: String,
+        sourceEntry: ManagedMigrationEntry
+    ): String {
+        if (
+            sourceEntry.metadata == null &&
+            ManagedDownloadTreeNaming.isMetadataName(sourceEntry.entry.name)
+        ) {
+            return metadata
+        }
+        val timestampMs = sourceEntry.logicalCreatedAtMs()?.takeIf { it > 0L }
+            ?: return metadata
+        val source = sourceEntry.logicalCreatedAtSource()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        val confidence = sourceEntry.logicalCreatedAtConfidence()
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+        if (!isValidMigrationCreatedAtMetadata(timestampMs, source, confidence)) {
+            return metadata
+        }
+        val json = JSONObject(metadata)
+        val existingTimestamp = json.optLong("createdAtMs", 0L)
+            .takeIf {
+                json.has("createdAtMs") && !json.isNull("createdAtMs") && it > 0L
+            }
+        if (existingTimestamp == null) {
+            json.put("createdAtMs", timestampMs)
+        }
+        val existingSource = json.optString("createdAtSource")
+            .trim()
+            .takeIf(String::isNotBlank)
+        if (existingSource == null && source != null) {
+            json.put("createdAtSource", source)
+        }
+        val existingConfidence = json.optString("createdAtConfidence")
+            .trim()
+            .takeIf(String::isNotBlank)
+        if (existingConfidence == null && confidence != null) {
+            json.put("createdAtConfidence", confidence)
+        }
+        return json.toString()
     }
 
     private fun areEquivalentJsonValues(expected: Any?, actual: Any?): Boolean {
