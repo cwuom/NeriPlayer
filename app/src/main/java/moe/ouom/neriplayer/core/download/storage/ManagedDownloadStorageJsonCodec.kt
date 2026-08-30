@@ -157,6 +157,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("localFilePath", localFilePath)
             put("sizeBytes", sizeBytes)
             put("lastModifiedMs", lastModifiedMs)
+            put("sizeKnown", sizeKnown)
             put("isDirectory", isDirectory)
         }
     }
@@ -172,6 +173,7 @@ internal object ManagedDownloadStorageJsonCodec {
             localFilePath = optString("localFilePath").takeIf(String::isNotBlank),
             sizeBytes = optLong("sizeBytes"),
             lastModifiedMs = optLong("lastModifiedMs"),
+            sizeKnown = optBoolean("sizeKnown", optLong("sizeBytes") > 0L),
             isDirectory = optBoolean("isDirectory")
         )
     }
@@ -347,8 +349,8 @@ internal object ManagedDownloadStorageJsonCodec {
     private fun JSONObject.toWorkingResumeMetadataSong(): SongItem? {
         val id = optLong("id").takeIf { has("id") } ?: return null
         val name = optString("name").takeIf(String::isNotBlank) ?: return null
-        // older operation payloads may not contain remote artist or album details yet
-        // their channel-based stable key is still sufficient to resume the transfer
+        // 旧 operation 载荷可能还没有远程歌手或专辑信息
+        // 只要保留按频道生成的稳定键，就仍然可以恢复传输
         val artist = optString("artist")
         val album = optString("album")
         return SongItem(

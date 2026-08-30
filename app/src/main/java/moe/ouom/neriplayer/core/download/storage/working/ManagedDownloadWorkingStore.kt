@@ -281,32 +281,53 @@ internal object ManagedDownloadWorkingStore {
         }
         return metadataEntries
             .asSequence()
-            .filter { metadataFile ->
-                shouldPreserveWorkingResumeMetadataForResume(metadataFile, nowMs)
-            }
             .mapNotNull { metadataFile ->
-                val workingFileName = metadataFile.name.removeSuffix(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
-                val workingFile = File(metadataFile.parentFile ?: stagingDir, workingFileName)
-                val song = runCatching {
-                    metadataFile.readText(Charsets.UTF_8)
-                }.mapCatching(ManagedDownloadStorage::parseWorkingResumeMetadataSong)
-                    .getOrNull()
-                    ?: return@mapNotNull null
-                val operationId = runCatching {
-                    ManagedDownloadStorageJsonCodec.workingResumeOperationIdFromJson(
-                        metadataFile.readText(Charsets.UTF_8)
-                    )
-                }.getOrNull()
-                ManagedDownloadStorage.PendingResumableDownload(
-                    song = song,
-                    workingFile = workingFile,
-                    operationId = operationId ?: metadataFile.parentFile
-                        ?.takeIf { it != stagingDir }
-                        ?.name
+                readPendingResumableDownload(
+                    metadataFile = metadataFile,
+                    stagingDir = stagingDir,
+                    nowMs = nowMs
                 )
             }
             .sortedBy { it.workingFile.lastModified() }
             .toList()
+    }
+
+    /** 每个恢复清单只读取和解析一次，避免启动时同一小文件被重复读取 */
+    private fun readPendingResumableDownload(
+        metadataFile: File,
+        stagingDir: File,
+        nowMs: Long
+    ): ManagedDownloadStorage.PendingResumableDownload? {
+        if (!metadataFile.isFile) {
+            return null
+        }
+        val ageMs = (nowMs - metadataFile.lastModified().coerceAtLeast(0L)).coerceAtLeast(0L)
+        if (ageMs > DOWNLOAD_STAGING_MAX_AGE_MS) {
+            return null
+        }
+        val workingFileName = metadataFile.name.removeSuffix(DOWNLOAD_STAGING_RESUME_METADATA_SUFFIX)
+        if (workingFileName.isBlank()) {
+            return null
+        }
+        val workingFile = File(metadataFile.parentFile ?: stagingDir, workingFileName)
+        if (!isFreshNamedNonEmptyWorkingFile(workingFile, nowMs)) {
+            return null
+        }
+        val rawJson = runCatching {
+            metadataFile.readText(Charsets.UTF_8)
+        }.getOrNull() ?: return null
+        val song = ManagedDownloadStorage.parseWorkingResumeMetadataSong(rawJson)
+            ?: return null
+        val operationId = runCatching {
+            ManagedDownloadStorageJsonCodec.workingResumeOperationIdFromJson(rawJson)
+        }.getOrNull()
+        return ManagedDownloadStorage.PendingResumableDownload(
+            song = song,
+            workingFile = workingFile,
+            operationId = operationId ?: metadataFile.parentFile
+                ?.takeIf { it != stagingDir }
+                ?.name
+        )
     }
 
     fun cleanupStagingFilesInDirectory(

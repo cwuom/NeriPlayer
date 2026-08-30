@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 
 internal object ManagedDownloadReferenceIo {
     private const val DOCUMENT_QUERY_ATTEMPTS = 2
@@ -130,12 +131,14 @@ internal object ManagedDownloadReferenceIo {
 
     fun deleteFileReference(file: File): DeleteResult {
         return try {
-            when {
-                !file.exists() -> DeleteResult.Missing
-                file.deleteRecursively() -> DeleteResult.Deleted
-                else -> DeleteResult.ProviderFailure(
-                    IllegalStateException("file reference delete was not confirmed")
-                )
+            FileStorageMutationLocks.withTargetLockBlocking(file) {
+                when {
+                    !file.exists() -> DeleteResult.Missing
+                    file.deleteRecursively() -> DeleteResult.Deleted
+                    else -> DeleteResult.ProviderFailure(
+                        IllegalStateException("file reference delete was not confirmed")
+                    )
+                }
             }
         } catch (error: SecurityException) {
             DeleteResult.PermissionLost

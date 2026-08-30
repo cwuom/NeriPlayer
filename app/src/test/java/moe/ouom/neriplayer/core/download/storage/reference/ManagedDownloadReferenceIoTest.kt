@@ -5,10 +5,19 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
@@ -110,5 +119,64 @@ class ManagedDownloadReferenceIoTest {
 
         assertTrue(result is ManagedDownloadReferenceIo.AccessResult.ProviderFailure)
         assertEquals(2, queryCount)
+    }
+
+    @Test
+    fun `nested missing file provider exception is classified as missing`() {
+        val nested = IllegalArgumentException(
+            "Failed to determine if primary:Downloads/song.mp3.npmeta.json is child of " +
+                "primary:Downloads: java.io.FileNotFoundException: Missing file for " +
+                "primary:Downloads/song.mp3.npmeta.json"
+        )
+        val wrapped = RuntimeException("DocumentsProvider lookup failed", nested)
+
+        assertTrue(ManagedDownloadReferenceIo.isMissingDocumentFailure(wrapped))
+    }
+
+    @Test
+    fun `permission cause wins over nested missing file text`() {
+        val nested = IllegalArgumentException(
+            "Missing file for primary:Downloads/song.mp3",
+            SecurityException("permission denied")
+        )
+
+        assertFalse(ManagedDownloadReferenceIo.isMissingDocumentFailure(nested))
+    }
+
+    @Test
+    fun `file reference delete waits for an in-flight backend write`() = runBlocking {
+        val root = Files.createTempDirectory("neriplayer-reference-io").toFile()
+        try {
+            val backend = FileStorageBackend(root)
+            val writerEntered = CompletableDeferred<Unit>()
+            val releaseWriter = CompletableDeferred<Unit>()
+            val writer = async(Dispatchers.Default) {
+                backend.writeRecoverable(StorageTarget.FileTarget("song.mp3")) { output ->
+                    output.write("audio".toByteArray())
+                    writerEntered.complete(Unit)
+                    releaseWriter.await()
+                }
+            }
+            withTimeout(5_000L) { writerEntered.await() }
+
+            val deleteStarted = CompletableDeferred<Unit>()
+            val delete = async(Dispatchers.Default) {
+                deleteStarted.complete(Unit)
+                ManagedDownloadReferenceIo.deleteFileReference(root.resolve("song.mp3"))
+            }
+            withTimeout(5_000L) { deleteStarted.await() }
+            delay(100L)
+            assertFalse(delete.isCompleted)
+
+            releaseWriter.complete(Unit)
+            withTimeout(5_000L) { writer.await() }
+            assertEquals(
+                ManagedDownloadReferenceIo.DeleteResult.Deleted,
+                withTimeout(5_000L) { delete.await() }
+            )
+            assertFalse(root.resolve("song.mp3").exists())
+        } finally {
+            root.deleteRecursively()
+        }
     }
 }

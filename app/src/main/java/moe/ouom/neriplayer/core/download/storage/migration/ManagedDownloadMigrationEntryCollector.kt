@@ -10,6 +10,48 @@ import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNa
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
 internal object ManagedDownloadMigrationEntryCollector {
+    /**
+     * 判断目录中是否存在尚未完成提交的下载产物
+     *
+     * 旧版本把 pending 音频和 pending metadata 直接写在根目录，新版本则
+     * 放到 .tmp。迁移不能把这些文件当成正式媒体复制，否则重启后可能把
+     * 半成品发布到媒体库；调用方应先让下载恢复流程收敛，再重新迁移
+     */
+    fun isPendingArtifact(entry: ManagedDownloadStorage.StoredEntry): Boolean {
+        if (entry.isDirectory) return false
+        if (entry.isPendingAudioWrite) return true
+        val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+            ?: return false
+        return ManagedDownloadTreeNaming.isPendingMetadataName(
+            actualName = entry.name,
+            audioName = audioName
+        )
+    }
+
+    /**
+     * 返回根目录和 .tmp 中的 pending 名称，名称只用于诊断和有界重试日志
+     */
+    fun pendingArtifactNames(
+        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ): List<String> {
+        return (rootEntries.asSequence() + temporaryEntries.asSequence())
+            .filter(::isPendingArtifact)
+            .map(ManagedDownloadStorage.StoredEntry::name)
+            .distinct()
+            .sorted()
+            .toList()
+    }
+
+    fun hasPendingArtifacts(
+        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ): Boolean {
+        return rootEntries.asSequence()
+            .plus(temporaryEntries.asSequence())
+            .any(::isPendingArtifact)
+    }
+
     fun requiresSidecarEvidence(
         rootEntries: List<ManagedDownloadStorage.StoredEntry>,
         allowMetadataLessAudio: Boolean

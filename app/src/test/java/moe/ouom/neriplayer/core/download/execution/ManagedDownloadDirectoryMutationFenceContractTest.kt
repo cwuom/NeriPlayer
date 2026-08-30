@@ -41,6 +41,31 @@ class ManagedDownloadDirectoryMutationFenceContractTest {
     }
 
     @Test
+    fun `pending migration preflight recovery runs only after lease release`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        )
+        val migrationBody = source.substringAfter(
+            "private suspend fun runMigration(): Result"
+        ).substringBefore("private fun createForegroundInfo(")
+        val closeIndex = migrationBody.indexOf("val leaseClosed = runCatching")
+        val bypassIndex = migrationBody.indexOf(
+            "reconcilePendingDownloadsAfterMigrationBlocked("
+        )
+        val genericRecoveryIndex = migrationBody.indexOf(
+            "recoverPendingDownloadsAfterStorageMutation("
+        )
+
+        assertTrue(closeIndex >= 0)
+        assertTrue(bypassIndex > closeIndex)
+        assertTrue(genericRecoveryIndex > bypassIndex)
+        assertTrue(
+            migrationBody.contains("MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE")
+        )
+    }
+
+    @Test
     fun `core metadata and sidecar writes also hold a directory commit lease`() {
         val source = readSource(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

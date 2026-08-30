@@ -60,7 +60,8 @@ internal object PersistentDownloadClearProgressStore {
 
     fun clear(context: Context) {
         runCatching {
-            preferences(context).edit { clear() }
+            // 清理完成后进程可能立即被回收，异步 edit 会让旧进度在下次启动复活
+            preferences(context).edit(commit = true) { clear() }
         }.onFailure { error ->
             NPLogger.w(TAG, "清除下载清空进度失败: ${error.message}")
         }

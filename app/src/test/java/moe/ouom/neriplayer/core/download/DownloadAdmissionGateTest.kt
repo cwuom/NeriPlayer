@@ -102,6 +102,23 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
+    fun `failed clear release lets a later retry own the gate`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val owner = gate.beginClear()
+        val follower = gate.beginClear()
+        val waiting = async { gate.awaitClear(follower) }
+
+        assertTrue(gate.releaseFailedClear(owner))
+        waiting.await()
+        assertTrue(waiting.isCompleted)
+
+        val retry = gate.beginClear()
+        assertTrue(retry.ownsClear)
+        assertTrue(retry.generation > owner.generation)
+        gate.runClear(retry) {}
+    }
+
+    @Test
     fun `finishing an older clear cannot hide a newer clear`() = runTest {
         val gate = DownloadAdmissionGate()
         val visibility = DownloadClearVisibility()
@@ -164,6 +181,137 @@ class DownloadAdmissionGateTest {
         gate.runClear(token) {}
         visibility.finish(token)
         assertNull(visibility.progress.value)
+    }
+
+    @Test
+    fun `clear visibility keeps item watermark across a retry`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token)
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 25,
+            completedItemCount = 25,
+            totalItemCount = 25
+        )
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 25,
+            completedItemCount = 0,
+            totalItemCount = 25
+        )
+
+        assertEquals(25, visibility.progress.value?.completedItemCount)
+        assertEquals(25, visibility.progress.value?.totalItemCount)
+    }
+
+    @Test
+    fun `complete provider scan may replace stale item watermark`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val visibility = DownloadClearVisibility()
+        val token = gate.beginClear()
+
+        visibility.begin(token)
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 696,
+            completedItemCount = 0,
+            totalItemCount = 696
+        )
+        visibility.update(
+            token = token,
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            affectedItemCount = 696,
+            completedItemCount = 5,
+            totalItemCount = 5,
+            resetItemWatermark = true
+        )
+
+        assertEquals(5, visibility.progress.value?.completedItemCount)
+        assertEquals(5, visibility.progress.value?.totalItemCount)
+    }
+
+    @Test
+    fun `artifact progress treats a complete residual scan as checked work`() {
+        val visibility = DownloadClearVisibility()
+        val checkedProgress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            totalSteps = 4,
+            affectedItemCount = 25,
+            completedItemCount = 25,
+            totalItemCount = 25,
+            failedItemCount = 25
+        )
+
+        assertEquals(75, checkedProgress.displayPercentage)
+
+        assertEquals(
+            DownloadClearVisibility.ArtifactProgress(
+                completedItemCount = 25,
+                totalItemCount = 25,
+                failedItemCount = 25
+            ),
+            visibility.resolveArtifactProgress(
+                artifactCount = 25,
+                scanComplete = true
+            )
+        )
+        assertEquals(
+            DownloadClearVisibility.ArtifactProgress(
+                completedItemCount = 0,
+                totalItemCount = 1,
+                failedItemCount = 1
+            ),
+            visibility.resolveArtifactProgress(
+                artifactCount = 0,
+                scanComplete = false
+            )
+        )
+        assertEquals(
+            DownloadClearVisibility.ArtifactProgress(
+                completedItemCount = 0,
+                totalItemCount = 1,
+                failedItemCount = 1
+            ),
+            visibility.resolveArtifactProgress(
+                artifactCount = 0,
+                scanComplete = true,
+                cleanupFailed = true
+            )
+        )
+        assertEquals(
+            DownloadClearVisibility.ArtifactProgress(
+                completedItemCount = 3,
+                totalItemCount = 3,
+                failedItemCount = 3
+            ),
+            visibility.resolveArtifactProgress(
+                artifactCount = 3,
+                scanComplete = true,
+                cleanupFailed = true
+            )
+        )
+        assertEquals(
+            DownloadClearVisibility.ArtifactProgress(
+                completedItemCount = 0,
+                totalItemCount = 0,
+                failedItemCount = 0
+            ),
+            visibility.resolveArtifactProgress(
+                artifactCount = -4,
+                scanComplete = true
+            )
+        )
     }
 
     @Test

@@ -125,6 +125,38 @@ class ManagedDownloadStorageWorkingFileTest {
     }
 
     @Test
+    fun `resume discovery ignores malformed metadata without rescanning valid entries`() {
+        val stagingDir = tempFolder.newFolder("download_staging")
+        val song = queuedSong(id = 903L, name = "Valid")
+        val valid = ManagedDownloadStorage.createWorkingFile(
+            context = mock(android.content.Context::class.java).also { context ->
+                `when`(context.filesDir).thenReturn(tempFolder.root)
+            },
+            songKey = song.stableKey(),
+            fileName = "valid.m4a",
+            operationId = "operation-valid"
+        ).apply { writeText("partial") }
+        ManagedDownloadStorage.saveWorkingResumeMetadata(
+            valid,
+            song,
+            operationId = "operation-valid"
+        )
+        val malformed = ManagedDownloadStorage.buildWorkingResumeMetadataFile(
+            File(stagingDir, "npdl_${"b".repeat(64)}_invalid.m4a.download")
+        ).apply {
+            parentFile?.mkdirs()
+            writeText("not-json")
+        }
+        File(malformed.parentFile, malformed.name.removeSuffix(".resume.json"))
+            .writeText("partial")
+
+        val discovered = ManagedDownloadStorage.listPendingResumableDownloadsInDirectory(stagingDir)
+
+        assertEquals(1, discovered.size)
+        assertEquals("operation-valid", discovered.single().operationId)
+    }
+
+    @Test
     fun `staging cleanup keeps fresh resumable partial and removes stale leftovers`() {
         val stagingDir = tempFolder.newFolder("download_staging")
         val nowMs = System.currentTimeMillis()

@@ -32,6 +32,14 @@ import org.json.JSONObject
 class AudioDownloadManagerTest {
 
     @Test
+    fun `network recovery wakes only on an unconfirmed to confirmed edge`() {
+        assertTrue(shouldTriggerNetworkRecovery(wasConfirmed = false, isConfirmed = true))
+        assertFalse(shouldTriggerNetworkRecovery(wasConfirmed = true, isConfirmed = true))
+        assertFalse(shouldTriggerNetworkRecovery(wasConfirmed = false, isConfirmed = false))
+        assertFalse(shouldTriggerNetworkRecovery(wasConfirmed = true, isConfirmed = false))
+    }
+
+    @Test
     fun `wifi to mobile default transition requests protection only once`() {
         val tracker = DownloadNetworkPolicyTracker()
         tracker.seed(networkKey = "wifi", networkType = TrafficNetworkType.WIFI)
@@ -802,7 +810,7 @@ class AudioDownloadManagerTest {
             "resolveRecentlyCommittedAudioReference("
         )
         val providerIndex = playbackBody.indexOf(
-            "val rawEvidence = ManagedDownloadReferenceLookup.inspect"
+            "ManagedDownloadReferenceLookup.inspect"
         )
 
         assertTrue(bridgeIndex >= 0)

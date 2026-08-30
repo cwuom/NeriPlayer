@@ -130,6 +130,106 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
     }
 
     @Test
+    fun `durable core metadata protects zero sized SAF pending audio`() {
+        val metadataReference = "content://downloads/audio/core.mp3.npmeta.json"
+        val pendingAudioReference =
+            "content://downloads/tmp/core.mp3.npdl_pending.1.pending"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("core.mp3.npmeta.json", metadataReference),
+                entry(
+                    "core.mp3.npdl_pending.1.pending",
+                    pendingAudioReference,
+                    sizeBytes = 0L
+                )
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("core.mp3.npmeta.json", metadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = "song:core",
+                        operationId = "operation:core",
+                        audioFileName = "core.mp3",
+                        downloadFinalized = false,
+                        artifactState = "CORE_COMMITTED"
+                    )
+                )
+            ),
+            managedSidecarReferences = emptySet()
+        )
+
+        assertTrue(references.isEmpty())
+    }
+
+    @Test
+    fun `durable core sidecar is protected from another empty unfinalized entry`() {
+        val durableMetadataReference = "content://downloads/audio/core.mp3.npmeta.json"
+        val durableAudioReference = "content://downloads/tmp/core.mp3.npdl_pending.core.pending"
+        val staleMetadataReference = "content://downloads/audio/stale.mp3.npmeta.json"
+        val staleAudioReference = "content://downloads/tmp/stale.mp3.npdl_pending.stale.pending"
+        val sharedSidecarReference = "content://downloads/covers/shared.jpg"
+
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("core.mp3.npmeta.json", durableMetadataReference),
+                entry("core.mp3.npdl_pending.core.pending", durableAudioReference, sizeBytes = 0L),
+                entry("stale.mp3.npmeta.json", staleMetadataReference),
+                entry("stale.mp3.npdl_pending.stale.pending", staleAudioReference, sizeBytes = 0L)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("core.mp3.npmeta.json", durableMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        stableKey = "song:core",
+                        operationId = "operation:core",
+                        audioFileName = "core.mp3",
+                        downloadFinalized = false,
+                        artifactState = "CORE_COMMITTED",
+                        coverPath = sharedSidecarReference
+                    )
+                ),
+                ManagedDownloadParsedMetadataEntry(
+                    entry("stale.mp3.npmeta.json", staleMetadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(
+                        downloadFinalized = false,
+                        coverPath = sharedSidecarReference
+                    )
+                )
+            ),
+            managedSidecarReferences = setOf(sharedSidecarReference)
+        )
+
+        assertTrue(references.contains(staleMetadataReference))
+        assertTrue(references.contains(staleAudioReference))
+        assertFalse(references.contains(durableMetadataReference))
+        assertFalse(references.contains(durableAudioReference))
+        assertFalse(references.contains(sharedSidecarReference))
+    }
+
+    @Test
+    fun `unknown provider size preserves unfinalized audio`() {
+        val metadataReference = "content://downloads/audio/unknown.mp3.npmeta.json"
+        val audioReference = "content://downloads/audio/unknown.mp3"
+        val references = ManagedDownloadUnfinalizedCleanupPlanner.planReferencesToDelete(
+            rootEntries = listOf(
+                entry("unknown.mp3.npmeta.json", metadataReference),
+                entry("unknown.mp3", audioReference, sizeBytes = 0L, sizeKnown = false)
+            ),
+            parsedMetadataEntries = listOf(
+                ManagedDownloadParsedMetadataEntry(
+                    entry("unknown.mp3.npmeta.json", metadataReference),
+                    ManagedDownloadStorage.DownloadedAudioMetadata(downloadFinalized = false)
+                )
+            ),
+            managedSidecarReferences = emptySet()
+        )
+
+        assertFalse(references.contains(metadataReference))
+        assertFalse(references.contains(audioReference))
+    }
+
+    @Test
     fun `collision orphan pending metadata is removed only after matching final audio`() {
         val orphanMetadataReference = "content://downloads/audio/song.mp3.npmeta.pending.json"
         val existingAudioReference = "content://downloads/audio/song.mp3"
@@ -220,7 +320,8 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
     private fun entry(
         name: String,
         reference: String,
-        sizeBytes: Long = 1L
+        sizeBytes: Long = 1L,
+        sizeKnown: Boolean = true
     ): ManagedDownloadStorage.StoredEntry {
         return ManagedDownloadStorage.StoredEntry(
             name = name,
@@ -228,7 +329,8 @@ class ManagedDownloadUnfinalizedCleanupPlannerTest {
             mediaUri = reference,
             localFilePath = null,
             sizeBytes = sizeBytes,
-            lastModifiedMs = 1L
+            lastModifiedMs = 1L,
+            sizeKnown = sizeKnown
         )
     }
 }

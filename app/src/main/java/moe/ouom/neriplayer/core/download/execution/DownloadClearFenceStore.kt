@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
 import java.util.concurrent.atomic.AtomicLong
+import moe.ouom.neriplayer.core.download.catalog.PersistentDownloadedSongDeleteIntentStore
 
 internal interface DownloadClearFenceStore {
     fun isActive(context: Context): Boolean
@@ -42,10 +43,14 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
     internal fun activePurpose(context: Context): DownloadClearPurpose {
         return synchronized(schedulingLock) {
             try {
-                preferencesOrNull(context)?.getString(PURPOSE_KEY, null)
+                val persistedPurpose = preferencesOrNull(context)?.getString(PURPOSE_KEY, null)
                     ?.let { value ->
                         runCatching { DownloadClearPurpose.valueOf(value) }.getOrNull()
                     }
+                persistedPurpose
+                    ?: PersistentDownloadedSongDeleteIntentStore.hasPending(context)
+                        .takeIf { it }
+                        ?.let { DownloadClearPurpose.FULL_LIBRARY_DELETE }
                     ?: DownloadClearPurpose.TASK_PROGRESS
             } catch (_: Throwable) {
                 // 读取失败时保守保留 catalog，避免把已下载歌曲误判为已删除
@@ -59,7 +64,8 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
             return true
         }
         return synchronized(schedulingLock) {
-            isPersistedFenceActive(context)
+            isPersistedFenceActive(context) ||
+                PersistentDownloadedSongDeleteIntentStore.hasPending(context)
         }
     }
 
@@ -69,7 +75,11 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         schedule: () -> T
     ): T {
         return synchronized(schedulingLock) {
-            if (isClearRequested() || isPersistedFenceActive(context)) {
+            if (
+                isClearRequested() ||
+                    isPersistedFenceActive(context) ||
+                    PersistentDownloadedSongDeleteIntentStore.hasPending(context)
+            ) {
                 onFenceActive()
             } else {
                 schedule()
@@ -151,7 +161,7 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         return try {
             preferencesOrNull(context)?.getBoolean(ACTIVE_KEY, false) ?: false
         } catch (_: Throwable) {
-            // unable to read the fence must keep downloads stopped until storage recovers
+            // 读不到栅栏时先停住下载，等存储恢复后再继续
             true
         }
     }
@@ -161,7 +171,7 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         preferences: SharedPreferences,
         mutation: SharedPreferences.Editor.() -> Unit
     ): Boolean {
-        // the commit result is the durable fence acknowledgement for crash recovery
+        // commit 返回成功才算栅栏已经写入，可供崩溃后恢复
         val editor = preferences.edit()
         editor.mutation()
         return editor.commit()

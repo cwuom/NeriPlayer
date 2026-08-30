@@ -12,6 +12,28 @@ import org.mockito.Mockito.`when`
 
 class DownloadExecutionOperationJournalCharacterizationTest {
     @Test
+    fun `host admission handoff accepts every interrupted durable state`() {
+        val interruptedStates = listOf(
+            "RUNNING",
+            "COMMITTING",
+            "CORE_COMMITTED",
+            "ASSETS_ENRICHING",
+            "DEGRADED_COMPLETE"
+        )
+
+        interruptedStates.forEach { state ->
+            assertTrue(
+                "$state must be claimable by a fresh process",
+                state in DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_STATES
+            )
+        }
+        assertTrue(
+            "STOPPED must remain user controlled",
+            "STOPPED" !in DownloadExecutionRoomStore.HOST_ADMISSION_HANDOFF_STATES
+        )
+    }
+
+    @Test
     fun `generic upsert never reopens a cancelled operation identity`() {
         assertTrue(
             !shouldRestartOperation(

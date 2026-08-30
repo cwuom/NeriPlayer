@@ -655,6 +655,57 @@ class NeriUserDataDatabaseMigrationTest {
     }
 
     @Test
+    fun migrateFromVersion15ToVersion16MergesExistingUpgradePayload() {
+        helper.createDatabase(TEST_DATABASE_VERSION_15_EXISTING_PAYLOAD_NAME, 15).apply {
+            execSQL(
+                """
+                CREATE TABLE legacy_download_upgrade_payload (
+                  stable_key TEXT NOT NULL PRIMARY KEY,
+                  payload_json TEXT NOT NULL
+                )
+                """.trimIndent()
+            )
+            execSQL(
+                """
+                INSERT INTO legacy_download_upgrade_payload (stable_key, payload_json)
+                VALUES ('preexisting', '{"legacyMarker":"keep"}')
+                """.trimIndent()
+            )
+            insertVersion15CatalogRow(
+                catalogKey = "file:/existing/song.flac",
+                rootKey = "root",
+                stableKey = "preexisting",
+                filePath = "/existing/song.flac",
+                fileSize = 42L
+            )
+            close()
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DATABASE_VERSION_15_EXISTING_PAYLOAD_NAME,
+            16,
+            false,
+            NeriUserDataDatabase.MIGRATION_15_FINAL
+        )
+
+        try {
+            val payload = JSONObject(
+                migrated.stringFor(
+                    "SELECT payload_json FROM legacy_download_upgrade_payload " +
+                        "WHERE stable_key = 'preexisting'"
+                )
+            )
+            assertEquals("keep", payload.getString("legacyMarker"))
+            assertEquals(
+                "/existing/song.flac",
+                payload.getJSONObject("downloaded_song_catalog").getString("file_path")
+            )
+        } finally {
+            migrated.close()
+        }
+    }
+
+    @Test
     fun migrateFromVersion15ToVersion16MapsThousandRowsWithinLinearBudget() {
         helper.createDatabase(TEST_DATABASE_VERSION_15_LARGE_NAME, 15).apply {
             beginTransaction()
@@ -986,6 +1037,8 @@ class NeriUserDataDatabaseMigrationTest {
             "neri-user-data-migration-v15-unverified-test"
         const val TEST_DATABASE_VERSION_15_ORPHAN_METADATA_NAME =
             "neri-user-data-migration-v15-orphan-metadata-test"
+        const val TEST_DATABASE_VERSION_15_EXISTING_PAYLOAD_NAME =
+            "neri-user-data-migration-v15-existing-payload-test"
         const val TEST_DATABASE_VERSION_15_LOOKUP_NAME =
             "neri-user-data-migration-v15-lookup-test"
         const val TEST_DATABASE_VERSION_15_LARGE_NAME =

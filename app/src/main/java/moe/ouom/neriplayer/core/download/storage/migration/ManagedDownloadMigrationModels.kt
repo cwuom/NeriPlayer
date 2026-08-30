@@ -1,8 +1,8 @@
 package moe.ouom.neriplayer.core.download.storage.migration
 
+import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import java.io.IOException
 import java.util.Locale
-import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 
 internal class ManagedDownloadMigrationException(
     message: String,
@@ -86,7 +86,7 @@ internal data class ManagedMigrationReplacementPlan(
 )
 
 /**
- * durable evidence for a target that was verified before its source was removed
+ * 源文件删除前已经完成校验的目标凭据
  */
 internal data class ManagedMigrationCleanupReceipt(
     val sourceReference: String,
@@ -100,8 +100,7 @@ internal data class ManagedMigrationCleanupReceipt(
 )
 
 /**
- * durable evidence that one source entry was copied to its planned target
- * before the migration reached the batch verification stage
+ * 迁移进入批次校验前，某个源条目已经复制到计划目标的持久凭据
  */
 internal data class ManagedMigrationCopyReceipt(
     val sourceReference: String,
@@ -121,7 +120,7 @@ internal data class ManagedMigrationCopyReceipt(
 )
 
 /**
- * stable source identity captured before the migration starts copying
+ * 迁移开始复制前记录的稳定源身份
  */
 internal data class ManagedMigrationSourceEntry(
     val sourceReference: String,
@@ -153,21 +152,19 @@ internal data class ManagedMigrationReplacementJournal(
     val cleanupComplete: Boolean = false,
     val sourceEntryCount: Int = 0,
     val sourceEntries: List<ManagedMigrationSourceEntry> = emptyList(),
-    /** audio sources confirmed missing after the complete source scan */
+    /** 完整源扫描后确认已经不存在的音频来源 */
     val deletedSourceAudioCount: Int = 0,
-    /** distinguishes a complete empty source scan from an unknown legacy count */
+    /** 区分完整空源扫描和旧版本的未知数量 */
     val sourceEntriesComplete: Boolean =
         sourceEntryCount > 0 || sourceEntries.isNotEmpty() || deletedSourceAudioCount > 0
 ) {
     /**
-     * v1 journals never recorded the complete source set, so their count must
-     * not be inferred from a later, potentially partial provider scan
+     * v1 日志没有记录完整源集合，不能用之后可能不完整的 Provider 扫描推断数量
      */
     val sourceEntryCountKnown: Boolean
         get() = version >= CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION &&
             (sourceEntriesComplete ||
-                // copies of older in-memory journals may retain the default
-                // marker while still carrying a non-empty complete manifest
+                // 旧内存日志的标记可能仍是默认值，但清单本身已经包含完整内容
                 sourceEntryCount > 0 ||
                 sourceEntries.isNotEmpty() ||
                 deletedSourceAudioCount > 0)
@@ -185,7 +182,7 @@ internal data class ManagedMigrationRequest(
     val minimumSourceEntryCount: Int,
     val checkpointWorkId: String? = null,
     val autoResume: Boolean = true,
-    /** retries consumed by workers replaced during startup recovery */
+    /** 启动恢复期间被替换 Worker 消耗的重试次数 */
     val retryAttemptOffset: Int = 0
 ) {
     fun normalized(): ManagedMigrationRequest {
@@ -211,7 +208,7 @@ internal data class CopiedMigrationEntry(
     val verifiedTargetDigest: String? = null,
     val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
     val sourceAuthoritative: Boolean = false,
-    /** receipt-reused targets may have changed while the process was stopped */
+    /** 进程停止期间，复用凭据的目标文件可能已经发生变化 */
     val reusedFromReceipt: Boolean = false
 ) {
     fun toCopyReceipt(): ManagedMigrationCopyReceipt {
@@ -334,8 +331,8 @@ internal data class StoredWriteResult(
     val entry: ManagedDownloadStorage.StoredEntry,
     val createdNew: Boolean,
     /**
-     * deterministic backup retained while a source-authoritative replacement is
-     * being verified. The migration journal owns its eventual deletion.
+     * 源文件仍是权威时保留确定性备份，等待替换目标校验完成
+     * 备份最终由迁移日志负责删除
      */
     val replacementBackup: ManagedDownloadStorage.StoredEntry? = null,
     val sourceAuthoritative: Boolean = false

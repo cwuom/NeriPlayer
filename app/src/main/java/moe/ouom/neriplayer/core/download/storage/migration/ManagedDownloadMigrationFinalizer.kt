@@ -59,15 +59,30 @@ internal fun validateMigrationTargetLayout(
             .map(ManagedMigrationTargetLayoutEntry::documentIdentity)
             .filter(String::isNotBlank)
             .distinct()
-        if (plannedIdentities.size != 1 || plannedEntries.any { it.documentIdentity.isBlank() }) {
+        if (
+            plannedEntries.size != 1 ||
+                plannedIdentities.size != 1 ||
+                plannedEntries.any { it.documentIdentity.isBlank() }
+        ) {
             return "迁移计划名称指向多个目标文档: $displayName"
         }
         val matchingEntries = observedGroups[key].orEmpty()
-        if (matchingEntries.size != 1) {
-            return "SAF 迁移目标名称不唯一: $displayName, count=${matchingEntries.size}"
+        if (matchingEntries.isEmpty()) {
+            return "SAF 迁移目标名称不唯一: $displayName, count=0"
         }
-        if (matchingEntries.single().documentIdentity != plannedIdentities.single()) {
+        if (matchingEntries.any { it.documentIdentity.isBlank() }) {
+            return "SAF 迁移目标文档身份不可解析: $displayName"
+        }
+        val expectedIdentity = plannedIdentities.single()
+        val matchingIdentityCount = matchingEntries.count { entry ->
+            entry.documentIdentity == expectedIdentity
+        }
+        if (matchingIdentityCount == 0) {
             return "SAF 迁移目标文档已变化: $displayName"
+        }
+        if (matchingIdentityCount != 1) {
+            return "SAF 迁移目标名称对应多个相同文档: $displayName, " +
+                "count=$matchingIdentityCount"
         }
     }
     return null

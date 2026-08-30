@@ -1127,36 +1127,65 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
 
         private fun copyV15DownloadPayload(db: SupportSQLiteDatabase) {
             val catalogLookup = buildLegacyCatalogLookup(db)
+            // 迁移在同一事务内执行，内存缓存可避免每行再次查询载荷表
+            val payloadCache = loadLegacyPayloadCache(db)
             copyLegacyTableRows(
                 db = db,
                 tableName = "download_pending_queue",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
             copyLegacyTableRows(
                 db = db,
                 tableName = "download_cancelled_key",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
             copyLegacyTableRows(
                 db = db,
                 tableName = "downloaded_song_catalog",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
             copyLegacyTableRows(
                 db = db,
                 tableName = "download_snapshot_entry",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
             copyLegacyTableRows(
                 db = db,
                 tableName = "download_snapshot_metadata",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
             copyLegacyTableRows(
                 db = db,
                 tableName = "managed_download_artifact",
-                catalogLookup = catalogLookup
+                catalogLookup = catalogLookup,
+                payloadCache = payloadCache
             )
+        }
+
+        private fun loadLegacyPayloadCache(
+            db: SupportSQLiteDatabase
+        ): MutableMap<String, JSONObject> {
+            if (!hasTable(db, "legacy_download_upgrade_payload")) {
+                return linkedMapOf()
+            }
+            val cache = linkedMapOf<String, JSONObject>()
+            forEachLegacyBatch(
+                db = db,
+                tableName = "legacy_download_upgrade_payload",
+                projection = "`stable_key`, `payload_json`"
+            ) { cursor, _ ->
+                val stableKey = cursorString(cursor, "stable_key") ?: return@forEachLegacyBatch
+                val payload = runCatching {
+                    JSONObject(cursorString(cursor, "payload_json") ?: return@runCatching null)
+                }.getOrNull() ?: return@forEachLegacyBatch
+                cache[stableKey] = payload
+            }
+            return cache
         }
 
         private fun dropLegacyDownloadProjectionTables(db: SupportSQLiteDatabase) {
@@ -1168,47 +1197,126 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
         private fun copyLegacyTableRows(
             db: SupportSQLiteDatabase,
             tableName: String,
-            catalogLookup: LegacyCatalogLookup
+            catalogLookup: LegacyCatalogLookup,
+            payloadCache: MutableMap<String, JSONObject>
         ) {
             if (!hasTable(db, tableName)) return
-            val payloadUpsert = db.compileStatement(
-                "INSERT OR REPLACE INTO `legacy_download_upgrade_payload` " +
-                    "(`stable_key`, `payload_json`) VALUES (?, ?)"
-            )
-            db.query("SELECT * FROM `$tableName`").use { cursor ->
-                val columnNames = cursor.columnNames
-                while (cursor.moveToNext()) {
-                    val row = rowToJson(cursor, columnNames)
-                    val stableKey = resolveLegacyStableKey(
-                        tableName = tableName,
-                        cursor = cursor,
-                        catalogLookup = catalogLookup
-                    ) ?: fallbackLegacyStableKey(tableName, cursor)
-                    val existing = db.query(
-                        "SELECT payload_json FROM `legacy_download_upgrade_payload` " +
-                            "WHERE stable_key = ? LIMIT 1",
-                        arrayOf(stableKey)
-                    ).use { existingCursor ->
-                        if (existingCursor.moveToFirst()) {
-                            runCatching { JSONObject(existingCursor.getString(0)) }
-                                .getOrNull()
-                        } else {
-                            null
-                        }
-                    } ?: JSONObject()
-                    mergeLegacyRow(
-                        payload = existing,
-                        tableName = tableName,
-                        stableKey = stableKey,
-                        row = row
-                    )
+            val pendingWrites = LinkedHashMap<String, String>()
+            forEachLegacyBatch(db = db, tableName = tableName) { cursor, columnNames ->
+                val row = rowToJson(cursor, columnNames)
+                val stableKey = resolveLegacyStableKey(
+                    tableName = tableName,
+                    cursor = cursor,
+                    catalogLookup = catalogLookup
+                ) ?: fallbackLegacyStableKey(tableName, cursor)
+                val existing = payloadCache[stableKey] ?: JSONObject()
+                val hadStableKey = existing.has("stableKey") &&
+                    !existing.isNull("stableKey") &&
+                    existing.optString("stableKey") == stableKey
+                val changed = mergeLegacyRow(
+                    payload = existing,
+                    tableName = tableName,
+                    stableKey = stableKey,
+                    row = row
+                )
+                if (changed || !hadStableKey) {
                     existing.put("stableKey", stableKey)
                     val payloadJson = existing.toString()
-                    payloadUpsert.clearBindings()
-                    payloadUpsert.bindString(1, stableKey)
-                    payloadUpsert.bindString(2, payloadJson)
-                    payloadUpsert.executeInsert()
+                    pendingWrites[stableKey] = payloadJson
+                    payloadCache[stableKey] = existing
+                    if (pendingWrites.size >= LEGACY_PAYLOAD_UPSERT_BATCH_SIZE) {
+                        flushPayloadWrites(db, pendingWrites)
+                    }
                 }
+            }
+            flushPayloadWrites(db, pendingWrites)
+        }
+
+        private fun flushPayloadWrites(
+            db: SupportSQLiteDatabase,
+            pendingWrites: LinkedHashMap<String, String>
+        ) {
+            while (pendingWrites.isNotEmpty()) {
+                val batch = pendingWrites.entries
+                    .take(LEGACY_PAYLOAD_UPSERT_BATCH_SIZE)
+                val placeholders = List(batch.size) { "(?, ?)" }.joinToString(",")
+                val statement = db.compileStatement(
+                    "INSERT OR REPLACE INTO `legacy_download_upgrade_payload` " +
+                        "(`stable_key`, `payload_json`) VALUES $placeholders"
+                )
+                statement.use { insertStatement ->
+                    batch.forEachIndexed { index, entry ->
+                        val parameterOffset = index * 2
+                        insertStatement.bindString(parameterOffset + 1, entry.key)
+                        insertStatement.bindString(parameterOffset + 2, entry.value)
+                    }
+                    insertStatement.executeInsert()
+                }
+                batch.forEach { entry -> pendingWrites.remove(entry.key) }
+            }
+        }
+
+        private fun forEachLegacyBatch(
+            db: SupportSQLiteDatabase,
+            tableName: String,
+            projection: String = "*",
+            block: (Cursor, Array<String>) -> Unit
+        ) {
+            var useRowId = true
+            var lastRowId: Long? = null
+            var offset = 0
+            var processedRows = 0
+            while (true) {
+                var rowsInBatch = 0
+                val query = if (useRowId) {
+                    if (lastRowId == null) {
+                        "SELECT rowid AS `$LEGACY_ROW_ID_ALIAS`, $projection " +
+                            "FROM `$tableName` ORDER BY rowid ASC " +
+                            "LIMIT $LEGACY_MIGRATION_BATCH_SIZE"
+                    } else {
+                        "SELECT rowid AS `$LEGACY_ROW_ID_ALIAS`, $projection " +
+                            "FROM `$tableName` WHERE rowid > ? ORDER BY rowid ASC " +
+                            "LIMIT $LEGACY_MIGRATION_BATCH_SIZE"
+                    }
+                } else {
+                    "SELECT $projection FROM `$tableName` " +
+                        "LIMIT $LEGACY_MIGRATION_BATCH_SIZE OFFSET $offset"
+                }
+                val cursor = try {
+                    if (useRowId && lastRowId != null) {
+                        db.query(query, arrayOf(lastRowId.toString()))
+                    } else {
+                        db.query(query)
+                    }
+                } catch (error: Exception) {
+                    if (!useRowId) throw error
+                    // 少数旧库可能没有 ROWID，退回兼容分页
+                    useRowId = false
+                    lastRowId = null
+                    offset = processedRows
+                    db.query(
+                        "SELECT $projection FROM `$tableName` " +
+                            "LIMIT $LEGACY_MIGRATION_BATCH_SIZE OFFSET $offset"
+                    )
+                }
+                cursor.use {
+                    val rowIdIndex = if (useRowId) {
+                        it.getColumnIndex(LEGACY_ROW_ID_ALIAS)
+                    } else {
+                        -1
+                    }
+                    val columnNames = it.columnNames
+                    while (it.moveToNext()) {
+                        rowsInBatch += 1
+                        if (rowIdIndex >= 0) {
+                            lastRowId = it.getLong(rowIdIndex)
+                        }
+                        block(it, columnNames)
+                    }
+                }
+                processedRows += rowsInBatch
+                if (rowsInBatch < LEGACY_MIGRATION_BATCH_SIZE) return
+                if (!useRowId) offset += rowsInBatch
             }
         }
 
@@ -1286,7 +1394,7 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             tableName: String,
             stableKey: String,
             row: JSONObject
-        ) {
+        ): Boolean {
             if (tableName == "download_snapshot_entry") {
                 val entries = payload.optJSONArray("download_snapshot_entries")
                     ?: org.json.JSONArray().also {
@@ -1294,34 +1402,41 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
                     }
                 if (!containsJsonObject(entries, row)) {
                     entries.put(row)
+                    return true
                 }
-                return
+                return false
             }
             val previous = payload.optJSONObject(tableName)
             if (previous == null) {
                 payload.put(tableName, row)
                 addCamelCaseAliases(payload, row)
-                return
+                return true
             }
 
-            when (compareLegacyBytes(previous, row)) {
-                true -> return
-                false -> appendLegacyConflict(
-                    payload = payload,
-                    tableName = tableName,
-                    stableKey = stableKey,
-                    reason = "SAME_STABLE_KEY_DIFFERENT_BYTES",
-                    previous = previous,
-                    duplicate = row
-                )
-                null -> appendLegacyConflict(
-                    payload = payload,
-                    tableName = tableName,
-                    stableKey = stableKey,
-                    reason = "SAME_STABLE_KEY_BYTES_UNVERIFIED",
-                    previous = previous,
-                    duplicate = row
-                )
+            return when (compareLegacyBytes(previous, row)) {
+                true -> false
+                false -> {
+                    appendLegacyConflict(
+                        payload = payload,
+                        tableName = tableName,
+                        stableKey = stableKey,
+                        reason = "SAME_STABLE_KEY_DIFFERENT_BYTES",
+                        previous = previous,
+                        duplicate = row
+                    )
+                    true
+                }
+                null -> {
+                    appendLegacyConflict(
+                        payload = payload,
+                        tableName = tableName,
+                        stableKey = stableKey,
+                        reason = "SAME_STABLE_KEY_BYTES_UNVERIFIED",
+                        previous = previous,
+                        duplicate = row
+                    )
+                    true
+                }
             }
         }
 
@@ -1425,9 +1540,12 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
         }
 
         private fun rowToJson(cursor: Cursor, columnNames: Array<String>): JSONObject {
+            val rowIdIndex = cursor.getColumnIndex(LEGACY_ROW_ID_ALIAS)
             return JSONObject().apply {
                 columnNames.forEachIndexed { index, columnName ->
-                    put(columnName, cursorValue(cursor, index))
+                    if (index != rowIdIndex && columnName != LEGACY_ROW_ID_ALIAS) {
+                        put(columnName, cursorValue(cursor, index))
+                    }
                 }
             }
         }
@@ -1481,6 +1599,21 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             }
         }
 
+        private fun tableColumnNames(
+            db: SupportSQLiteDatabase,
+            tableName: String
+        ): Set<String> {
+            val columns = linkedSetOf<String>()
+            db.query("PRAGMA table_info(`$tableName`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                if (nameIndex < 0) return columns
+                while (cursor.moveToNext()) {
+                    cursor.getString(nameIndex)?.let(columns::add)
+                }
+            }
+            return columns
+        }
+
         private data class LegacyCatalogLookup(
             val stableKeysByReference: Map<String, Set<String>>,
             val stableKeysByNormalizedName: Map<String, Set<String>>
@@ -1494,27 +1627,37 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             }
             val stableKeysByReference = linkedMapOf<String, MutableSet<String>>()
             val stableKeysByNormalizedName = linkedMapOf<String, MutableSet<String>>()
-            db.query("SELECT * FROM `downloaded_song_catalog`").use { cursor ->
-                while (cursor.moveToNext()) {
-                    val stableKey = cursorString(cursor, "stable_key")
-                        ?: deriveCatalogStableKey(cursor)
-                        ?: continue
-                    listOfNotNull(
-                        cursorString(cursor, "file_path"),
-                        cursorString(cursor, "media_uri"),
-                        cursorString(cursor, "catalog_key")
-                    ).forEach { rawReference ->
-                        val reference = rawReference.trim().takeIf(String::isNotBlank)
-                            ?: return@forEach
-                        stableKeysByReference.getOrPut(reference) { linkedSetOf() }
-                            .add(stableKey)
-                        normalizeLegacyBasename(reference)?.let { normalizedName ->
-                            stableKeysByNormalizedName.getOrPut(
-                                normalizedName
-                            ) {
-                                linkedSetOf()
-                            }.add(stableKey)
-                        }
+            val availableColumns = tableColumnNames(db, "downloaded_song_catalog")
+            val projectionColumns = LEGACY_CATALOG_LOOKUP_COLUMNS.filter {
+                it in availableColumns
+            }
+            if (projectionColumns.isEmpty()) {
+                return LegacyCatalogLookup(emptyMap(), emptyMap())
+            }
+            val projection = projectionColumns.joinToString(", ") { "`$it`" }
+            forEachLegacyBatch(
+                db = db,
+                tableName = "downloaded_song_catalog",
+                projection = projection
+            ) { cursor, _ ->
+                val stableKey = cursorString(cursor, "stable_key")
+                    ?: deriveCatalogStableKey(cursor)
+                    ?: return@forEachLegacyBatch
+                listOfNotNull(
+                    cursorString(cursor, "file_path"),
+                    cursorString(cursor, "media_uri"),
+                    cursorString(cursor, "catalog_key")
+                ).forEach { rawReference ->
+                    val reference = rawReference.trim().takeIf(String::isNotBlank)
+                        ?: return@forEach
+                    stableKeysByReference.getOrPut(reference) { linkedSetOf() }
+                        .add(stableKey)
+                    normalizeLegacyBasename(reference)?.let { normalizedName ->
+                        stableKeysByNormalizedName.getOrPut(
+                            normalizedName
+                        ) {
+                            linkedSetOf()
+                        }.add(stableKey)
                     }
                 }
             }
@@ -1576,6 +1719,18 @@ internal abstract class NeriUserDataDatabase : RoomDatabase() {
             "download_snapshot_entry",
             "download_snapshot_metadata",
             "managed_download_artifact"
+        )
+
+        private const val LEGACY_MIGRATION_BATCH_SIZE = 64
+        private const val LEGACY_PAYLOAD_UPSERT_BATCH_SIZE = 48
+        private const val LEGACY_ROW_ID_ALIAS = "__neriplayer_migration_rowid"
+
+        private val LEGACY_CATALOG_LOOKUP_COLUMNS = listOf(
+            "stable_key",
+            "id",
+            "file_path",
+            "media_uri",
+            "catalog_key"
         )
 
         private fun addIntegerColumnIfMissing(

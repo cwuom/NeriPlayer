@@ -28,6 +28,40 @@ import org.mockito.Mockito.`when`
 
 class LocalMediaSupportTest {
     @Test
+    fun `document children cache stays bounded for large libraries`() {
+        assertTrue(isDocumentChildrenCacheSizeAllowed(8_192))
+        assertFalse(isDocumentChildrenCacheSizeAllowed(8_193))
+        assertFalse(isDocumentChildrenCacheSizeAllowed(-1))
+        assertTrue(isDocumentChildrenCacheTotalWithinBudget(65_536))
+        assertFalse(isDocumentChildrenCacheTotalWithinBudget(65_537))
+    }
+
+    @Test
+    fun `staged replacement requires an exact copied byte count`() {
+        assertTrue(
+            LocalMediaSupport.isStagedReplacementComplete(
+                expectedBytes = 128L,
+                copiedBytes = 128L,
+                providerBytes = null
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.isStagedReplacementComplete(
+                expectedBytes = 128L,
+                copiedBytes = 127L,
+                providerBytes = null
+            )
+        )
+        assertFalse(
+            LocalMediaSupport.isStagedReplacementComplete(
+                expectedBytes = 128L,
+                copiedBytes = 128L,
+                providerBytes = 127L
+            )
+        )
+    }
+
+    @Test
     fun `document sidecar mutation requires the exact source document id`() {
         val children = listOf("primary:Music/other.mp3")
         assertFalse(
@@ -755,6 +789,37 @@ class LocalMediaSupportTest {
     }
 
     @Test
+    fun `findNearbyCover sees a lowercase covers directory created after a cached miss`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-lowercase-late")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+
+        assertNull(LocalMediaSupport.findNearbyCover(audioFile))
+
+        val coversDir = File(sourceDir, "covers").apply { mkdirs() }
+        val specific = File(coversDir, "song.jpg").apply { writeText("specific") }
+
+        assertEquals(
+            specific.canonicalPath,
+            LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath
+        )
+    }
+
+    @Test
+    fun `findNearbyCover keeps a noncanonical cover discoverable in a large directory`() {
+        val sourceDir = tempFolder.newFolder("nearby-cover-large-directory")
+        val audioFile = File(sourceDir, "song.flac").apply { writeText("audio") }
+        repeat(8_300) { index ->
+            File(sourceDir, "filler-$index.txt").writeText("")
+        }
+        val expected = File(sourceDir, "song-deadbeef.jpg").apply { writeText("cover") }
+
+        assertEquals(
+            expected.canonicalPath,
+            LocalMediaSupport.findNearbyCover(audioFile)?.canonicalPath
+        )
+    }
+
+    @Test
     fun `invalid local cover reference is rejected so fallback can continue`() {
         val invalidCover = tempFolder.newFile("song.jpg").apply {
             writeText("not an image")
@@ -764,6 +829,30 @@ class LocalMediaSupportTest {
             isUsableCoverReference(
                 context = mock(Context::class.java),
                 reference = invalidCover.toURI().toString()
+            )
+        )
+    }
+
+    @Test
+    fun `missing local cover bytes are rejected without provider fallback`() {
+        val missingCover = File(tempFolder.root, "missing-cover.jpg")
+
+        assertNull(
+            LocalMediaSupport.readEditableCoverBytes(
+                context = mock(Context::class.java),
+                reference = missingCover.absolutePath
+            )
+        )
+    }
+
+    @Test
+    fun `empty local cover bytes are rejected`() {
+        val emptyCover = tempFolder.newFile("empty-cover.jpg")
+
+        assertNull(
+            LocalMediaSupport.readEditableCoverBytes(
+                context = mock(Context::class.java),
+                reference = emptyCover.absolutePath
             )
         )
     }
@@ -1435,7 +1524,7 @@ class LocalMediaSupportTest {
         mockStatic(Uri::class.java, CALLS_REAL_METHODS).use { uriMock ->
             uriMock.`when`<Uri> { Uri.parse(sourceUri.toString()) }.thenReturn(sourceUri)
             mockStatic(DocumentsContract::class.java, CALLS_REAL_METHODS).use {
-                // revoked tree permission must only degrade the optional sidecar read
+                // 撤销目录授权时只能降级可选的侧载读取
                 it.`when`<String> {
                     DocumentsContract.getTreeDocumentId(sourceUri)
                 }.thenThrow(permissionError)

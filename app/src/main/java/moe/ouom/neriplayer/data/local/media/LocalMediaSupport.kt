@@ -47,6 +47,8 @@ import com.kyant.taglib.PropertyMap
 import com.kyant.taglib.TagLib
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -100,10 +102,16 @@ private const val SHARED_LOCAL_MEDIA_DIR = "shared_media_exports"
 private const val LOCAL_COVER_LOOKUP_CACHE_LIMIT = 768
 private const val NEARBY_COVER_LOOKUP_CACHE_LIMIT = 2048
 private const val DIRECTORY_COVER_LOOKUP_CACHE_LIMIT = 256
+private const val DIRECTORY_FILE_INDEX_CACHE_LIMIT = 256
+private const val DIRECTORY_FILE_INDEX_CACHE_TTL_MS = 1_000L
+private const val DIRECTORY_FILE_INDEX_MAX_CHILDREN = 8_192
 private const val LOCAL_LYRICS_LOOKUP_CACHE_LIMIT = 768
 private const val LOCAL_LYRICS_CACHE_TTL_MS = 750L
-private const val DOCUMENT_CHILDREN_CACHE_LIMIT = 512
+private const val DOCUMENT_CHILDREN_CACHE_LIMIT = 256
 private const val DOCUMENT_CHILDREN_CACHE_TTL_MS = 750L
+private const val DOCUMENT_CHILDREN_INCOMPLETE_CACHE_TTL_MS = 5_000L
+private const val DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN = 8_192
+private const val DOCUMENT_CHILDREN_CACHE_MAX_TOTAL_CHILDREN = 65_536
 private const val EMPTY_DOCUMENT_REFRESH_CONFIRMATION_COUNT = 2
 private const val SAF_CHILDREN_QUERY_RETRY_COUNT = 3
 private const val SAF_WRITE_READBACK_RETRY_COUNT = 3
@@ -126,6 +134,73 @@ private const val EDITABLE_METADATA_WRITE_BUDGET_MS = 3_000L
 private val SAF_WRITE_READBACK_DELAYS_MS = longArrayOf(0L, 8L, 24L)
 private const val LOCAL_METADATA_SUFFIX = ".npmeta.json"
 private const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
+
+internal fun isDocumentChildrenCacheSizeAllowed(childCount: Int): Boolean {
+    return childCount in 0..DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN
+}
+
+internal fun isDocumentChildrenCacheTotalWithinBudget(totalChildren: Int): Boolean {
+    return totalChildren in 0..DOCUMENT_CHILDREN_CACHE_MAX_TOTAL_CHILDREN
+}
+
+private fun logEditableMetadataFailure(
+    stage: String,
+    sourceUri: Uri,
+    error: Throwable,
+    metrics: String? = null
+) {
+    val causes = buildList {
+        var current: Throwable? = error
+        var depth = 0
+        while (current != null && depth < 6) {
+            add(
+                "${current.javaClass.simpleName}:" +
+                    (current.message?.take(240) ?: "<no-message>")
+            )
+            current = current.cause
+            depth++
+        }
+    }.joinToString(" <- ")
+    val metricSuffix = metrics?.let { ", $it" }.orEmpty()
+    NPLogger.w(
+        LOCAL_MEDIA_SHARE_TAG,
+        "本地音频元数据回写失败: stage=$stage, uri=$sourceUri, " +
+            "causes=$causes$metricSuffix",
+        error
+    )
+}
+
+private fun redactCoverReference(reference: String): String {
+    val uri = runCatching { reference.toUri() }.getOrNull()
+    val scheme = uri?.scheme?.lowercase(Locale.ROOT) ?: "path"
+    val authorityHash = uri?.authority
+        ?.let { Integer.toHexString(it.hashCode()) }
+        ?: "-"
+    val referenceHash = Integer.toHexString(reference.hashCode())
+    return "$scheme/$authorityHash#$referenceHash"
+}
+
+private fun redactCoverError(error: Throwable): String {
+    val message = error.message
+        ?.replace(Regex("(?:content|file|https?)://\\S+"), "<uri>")
+        ?.replace(Regex("/(?:storage|sdcard|data)/\\S+"), "<path>")
+        ?.take(160)
+        ?: "<no-message>"
+    return "${error.javaClass.simpleName}:$message"
+}
+
+private fun logEditableCoverReadFailure(
+    stage: String,
+    reference: String,
+    error: Throwable
+) {
+    NPLogger.w(
+        LOCAL_MEDIA_SHARE_TAG,
+        "本地封面读取失败: stage=$stage, ref=${redactCoverReference(reference)}, " +
+            "error=${redactCoverError(error)}"
+    )
+}
+
 private val LOCAL_METADATA_PLACEHOLDERS = setOf(
     "<unknown>",
     "<unknown artist>",
@@ -370,7 +445,7 @@ internal enum class CoverReferenceValidation {
 }
 
 /**
- * checks that a local cover reference still points to readable image data
+ * 检查本地封面引用是否仍然指向可读取的图片数据
  */
 internal fun isUsableCoverReference(context: Context, reference: String): Boolean {
     return validateCoverReference(context, reference) == CoverReferenceValidation.USABLE
@@ -621,6 +696,7 @@ private fun buildShareableFileUri(context: Context, sourceFile: File): Uri? {
 
 object LocalMediaSupport {
     private const val TAG = "LocalMediaSupport"
+    private const val CONSECUTIVE_EMPTY_REFRESH_CACHE_LIMIT = 512
     private val localLyricsPerfLogCount = AtomicInteger()
     private val lyricExtensions = listOf("lrc", "txt")
     private val coverFileNames = listOf("cover", "folder", "front")
@@ -646,7 +722,16 @@ object LocalMediaSupport {
         val children: List<DocumentChild>,
         val cachedAtMs: Long,
         val isComplete: Boolean
-    )
+    ) {
+        fun isFresh(nowMs: Long): Boolean {
+            val ttlMs = if (isComplete) {
+                DOCUMENT_CHILDREN_CACHE_TTL_MS
+            } else {
+                DOCUMENT_CHILDREN_INCOMPLETE_CACHE_TTL_MS
+            }
+            return nowMs - cachedAtMs <= ttlMs
+        }
+    }
     private val documentChildrenCache = object : LinkedHashMap<String, DocumentChildrenCacheEntry>(
         DOCUMENT_CHILDREN_CACHE_LIMIT,
         0.75f,
@@ -699,6 +784,23 @@ object LocalMediaSupport {
     ) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String?>): Boolean {
             return size > DIRECTORY_COVER_LOOKUP_CACHE_LIMIT
+        }
+    }
+    private data class DirectoryFileIndex(
+        val directoryLastModifiedMs: Long,
+        val cachedAtElapsedMs: Long,
+        val files: List<File>,
+        val directories: List<File>
+    )
+    private val directoryFileIndexCache = object : LinkedHashMap<String, DirectoryFileIndex>(
+        DIRECTORY_FILE_INDEX_CACHE_LIMIT,
+        0.75f,
+        true
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, DirectoryFileIndex>
+        ): Boolean {
+            return size > DIRECTORY_FILE_INDEX_CACHE_LIMIT
         }
     }
     private val mediaStoreAlbumArtCache = object : LinkedHashMap<String, String?>(
@@ -899,6 +1001,33 @@ object LocalMediaSupport {
         coverReference: String? = song.customCoverUrl,
         writeCover: Boolean = coverReference != null,
         writeLyrics: Boolean = false
+    ): LocalMediaMetadataWriteOutcome {
+        return try {
+            writeEditableMetadataInternal(
+                context = context,
+                song = song,
+                coverReference = coverReference,
+                writeCover = writeCover,
+                writeLyrics = writeLyrics
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logEditableMetadataFailure(
+                "unhandled",
+                song.localMediaUri() ?: Uri.EMPTY,
+                error
+            )
+            LocalMediaMetadataWriteOutcome.FAILED
+        }
+    }
+
+    private suspend fun writeEditableMetadataInternal(
+        context: Context,
+        song: SongItem,
+        coverReference: String? = song.customCoverUrl,
+        writeCover: Boolean = coverReference != null,
+        writeLyrics: Boolean = false
     ): LocalMediaMetadataWriteOutcome = withContext(Dispatchers.IO) {
         val startedAtMs = SystemClock.elapsedRealtime()
         val candidates = editableLocalMediaUriCandidates(context, song)
@@ -908,6 +1037,7 @@ object LocalMediaSupport {
 
         var fallbackOutcome = LocalMediaMetadataWriteOutcome.NOT_WRITABLE
         candidates.forEach { sourceUri ->
+            currentCoroutineContext().ensureActive()
             val directTransaction = writeEditableMetadataDirectTransaction(
                 context = context,
                 song = song,
@@ -917,6 +1047,7 @@ object LocalMediaSupport {
                 writeLyrics = writeLyrics
             )
             val directOutcome = directTransaction.outcome
+            currentCoroutineContext().ensureActive()
             val stagedAttempted = shouldAttemptStagedContentMetadataWrite(sourceUri, song, directOutcome)
             val outcome = if (stagedAttempted) {
                 writeEditableMetadataThroughStagedContentCopy(
@@ -946,6 +1077,7 @@ object LocalMediaSupport {
                 displayName = displayName
             )
             val lyricsSidecarWritten = if (writeLyrics) {
+                currentCoroutineContext().ensureActive()
                 writeLocalLyricsSidecars(
                     context = context,
                     sourceUri = sourceUri,
@@ -958,6 +1090,7 @@ object LocalMediaSupport {
                 true
             }
             val coverSidecarWritten = if (writeCover) {
+                currentCoroutineContext().ensureActive()
                 writeLocalCoverSidecar(
                     context = context,
                     sourceUri = sourceUri,
@@ -1054,6 +1187,7 @@ object LocalMediaSupport {
         val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) return@withContext false
         val written = candidates.any { sourceUri ->
+            currentCoroutineContext().ensureActive()
             val file = resolveEditableSidecarFile(context, sourceUri)
             writeLocalLyricsSidecars(
                 context = context,
@@ -1087,6 +1221,7 @@ object LocalMediaSupport {
         val candidates = editableLocalMediaUriCandidates(context, song)
         if (candidates.isEmpty()) return@withContext false
         val written = candidates.any { sourceUri ->
+            currentCoroutineContext().ensureActive()
             val file = resolveEditableSidecarFile(context, sourceUri)
             val displayName = song.localFileName
                 ?.takeIf(String::isNotBlank)
@@ -1506,7 +1641,7 @@ object LocalMediaSupport {
                     LyricKind.ROMANIZED -> nearby.romanized
                 }?.takeIf(::isInTargetDirectory)
                 if (content == null) {
-                    // null means the caller did not change this lyric field
+                    // null 表示调用方没有修改这一种歌词
                     return@mapNotNull null
                 }
                 val contentValue = content
@@ -1579,7 +1714,7 @@ object LocalMediaSupport {
             var invalidPlan = false
             val plans = contents.mapNotNull { (kind, content) ->
                 if (content == null) {
-                    // null means the caller did not change this lyric field
+                    // null 表示调用方没有修改这一种歌词
                     return@mapNotNull null
                 }
                 val contentValue = content
@@ -1808,6 +1943,8 @@ object LocalMediaSupport {
                 }
             } catch (error: SecurityException) {
                 throw error
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 lastError = error
                 false
@@ -1839,13 +1976,15 @@ object LocalMediaSupport {
                 if (output == null) {
                     false
                 } else {
-                    output.use {
-                        it.write(bytes)
-                        it.flush()
+                    output.use { stream ->
+                        stream.write(bytes)
+                        stream.flush()
                     }
                     readBytesContentMatchesWithRetry(context, reference, bytes)
                 }
             } catch (error: SecurityException) {
+                throw error
+            } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 lastError = error
@@ -1990,10 +2129,8 @@ object LocalMediaSupport {
         // 当媒体同时有可读绝对路径和 MediaStore content URI 时，绝对路径才是
         // Lyrics/Covers 的权威来源。跳过一次昂贵的 provider 查询，也避免权限
         // 变化让编辑入口错误地读到旧的媒体索引
-        // content URIs cannot expose a reliable filesystem timestamp. Keep a
-        // short cache instead of rescanning the provider twice per frame; the
-        // TTL is deliberately small so external edits/deletes become visible
-        // on the next playback/editor interaction
+        // content URI 没有可靠的文件时间戳，因此只保留很短的缓存
+        // 避免每帧重复扫描 Provider，同时让外部编辑或删除在下一次交互时可见
         val cacheable = knownSidecarReferences == null
         val cacheKey = buildLocalLyricsCacheKey(
             song = song,
@@ -2373,6 +2510,11 @@ object LocalMediaSupport {
             song.localFilePath.orEmpty()
         ).filter(String::isNotBlank)
         if (keyParts.isEmpty()) return
+        val localParentPath = song.localFilePath
+            ?.takeIf(String::isNotBlank)
+            ?.let(::File)
+            ?.parentFile
+            ?.absolutePath
         synchronized(localLyricsLookupCache) {
             localLyricsLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
         }
@@ -2383,7 +2525,16 @@ object LocalMediaSupport {
             nearbyCoverLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
         }
         synchronized(directoryCoverLookupCache) {
-            directoryCoverLookupCache.keys.removeAll { key -> keyParts.any(key::contains) }
+            directoryCoverLookupCache.keys.removeAll { key ->
+                keyParts.any(key::contains) ||
+                    localParentPath?.let { key.startsWith("$it|") } == true
+            }
+        }
+        synchronized(directoryFileIndexCache) {
+            directoryFileIndexCache.keys.removeAll { key ->
+                keyParts.any(key::contains) ||
+                    localParentPath?.let { key == it } == true
+            }
         }
     }
 
@@ -2396,6 +2547,9 @@ object LocalMediaSupport {
         }
         synchronized(directoryCoverLookupCache) {
             directoryCoverLookupCache.clear()
+        }
+        synchronized(directoryFileIndexCache) {
+            directoryFileIndexCache.clear()
         }
         synchronized(mediaStoreAlbumArtCache) {
             mediaStoreAlbumArtCache.clear()
@@ -2578,7 +2732,7 @@ object LocalMediaSupport {
                 allowDescriptorFallback = true
             )
         }.getOrElse { error ->
-            NPLogger.w(TAG, "resolve writable local metadata failed for $sourceUri: ${error.message}")
+            logEditableMetadataFailure("resolve", sourceUri, error)
             return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
         }
         val metadataSnapshot = openTagLibDescriptor(
@@ -2630,11 +2784,23 @@ object LocalMediaSupport {
                 writesLyrics = writeLyrics,
                 clearsMissingLyrics = writeLyrics
             )
-        } ?: return EditableMetadataWriteTransaction(
-            LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
-        )
+        } ?: run {
+            logEditableMetadataFailure(
+                "taglib_read",
+                sourceUri,
+                IllegalStateException("TagLib metadata unavailable")
+            )
+            return EditableMetadataWriteTransaction(
+                LocalMediaMetadataWriteOutcome.UNSUPPORTED_OR_UNREADABLE
+            )
+        }
 
         if (metadataSnapshot.picturePlan == EditableCoverWritePlan.Unreadable) {
+            NPLogger.w(
+                TAG,
+                "本地封面不可读，跳过嵌入封面并保留侧载恢复: " +
+                    "stage=cover_read, uri=$sourceUri"
+            )
             return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
         }
 
@@ -2653,7 +2819,7 @@ object LocalMediaSupport {
                     )
                     true
                 }.getOrElse { error ->
-                    NPLogger.w(TAG, "rollback local metadata properties failed: ${error.message}")
+                    logEditableMetadataFailure("rollback_properties", sourceUri, error)
                     false
                 }
                 val picturesRestored = when (val picturePlan = metadataSnapshot.picturePlan) {
@@ -2664,7 +2830,7 @@ object LocalMediaSupport {
                         )
                         true
                     }.getOrElse { error ->
-                        NPLogger.w(TAG, "rollback local cover failed: ${error.message}")
+                        logEditableMetadataFailure("rollback_cover", sourceUri, error)
                         false
                     }
                     else -> true
@@ -2693,7 +2859,7 @@ object LocalMediaSupport {
                 runCatching {
                     TagLib.savePropertyMap(target.dup().detachFd(), metadataSnapshot.updatedProperties)
                 }.getOrElse { error ->
-                    NPLogger.w(TAG, "write local metadata failed for $sourceUri: ${error.message}")
+                    logEditableMetadataFailure("property_write", sourceUri, error)
                     false
                 }
             } ?: false
@@ -2715,7 +2881,7 @@ object LocalMediaSupport {
                     runCatching {
                         TagLib.savePictures(target.dup().detachFd(), picturePlan.pictures)
                     }.getOrElse { error ->
-                        NPLogger.w(TAG, "write local cover failed for $sourceUri: ${error.message}")
+                        logEditableMetadataFailure("cover_write", sourceUri, error)
                         false
                     }
                 } ?: false
@@ -2738,6 +2904,11 @@ object LocalMediaSupport {
             metadataSnapshot = metadataSnapshot
         )
         if (!verified) {
+            logEditableMetadataFailure(
+                "readback",
+                sourceUri,
+                IllegalStateException("required metadata readback mismatch")
+            )
             rollbackEmbeddedMetadata()
             return EditableMetadataWriteTransaction(LocalMediaMetadataWriteOutcome.FAILED)
         }
@@ -2797,7 +2968,7 @@ object LocalMediaSupport {
                         val pictures = runCatching {
                             TagLib.getPictures(target.dup().detachFd())
                         }.getOrElse { error ->
-                            NPLogger.w(TAG, "verify local cover failed for $sourceUri: ${error.message}")
+                            logEditableMetadataFailure("readback_cover", sourceUri, error)
                             return@use false
                         }
                         hasExpectedEditableCover(
@@ -2851,19 +3022,35 @@ object LocalMediaSupport {
         }.getOrNull() ?: return directOutcome
         val updated = runCatching {
             File.createTempFile("metadata-updated-", ".${extension}", stagingDirectory)
-        }.getOrNull()
-        if (updated == null) {
+        }.getOrNull() ?: run {
             backup.delete()
             return directOutcome
         }
         try {
+            val sourceExpectedBytes = queryContentInfo(context, sourceUri).sizeBytes
             val copied = context.contentResolver.openInputStream(sourceUri)?.use { input ->
                 backup.outputStream().use { output ->
-                    input.copyTo(output)
+                    val copiedBytes = input.copyTo(output)
+                    if (copiedBytes <= 0L) {
+                        throw IOException("staged source copy is empty")
+                    }
+                    if (sourceExpectedBytes != null &&
+                        sourceExpectedBytes > 0L &&
+                        copiedBytes < sourceExpectedBytes
+                    ) {
+                        throw IOException(
+                            "staged source copy is truncated: $copiedBytes/$sourceExpectedBytes"
+                        )
+                    }
                 }
                 backup.length() > 0L
             } ?: false
             if (!copied) {
+                NPLogger.w(
+                    TAG,
+                    "暂存元数据写入源音频为空或不可读: " +
+                        "stage=staged_copy, uri=$sourceUri"
+                )
                 return directOutcome
             }
             backup.copyTo(updated, overwrite = true)
@@ -2881,6 +3068,11 @@ object LocalMediaSupport {
                 writeLyrics = writeLyrics
             )
             if (stagedOutcome != LocalMediaMetadataWriteOutcome.SUCCESS) {
+                NPLogger.w(
+                    TAG,
+                    "暂存 TagLib 回写未确认，保留原音频并等待重试: " +
+                        "stage=staged_taglib, uri=$sourceUri, outcome=$stagedOutcome"
+                )
                 return directOutcome
             }
             val replaceStartedAtMs = SystemClock.elapsedRealtime()
@@ -2914,7 +3106,7 @@ object LocalMediaSupport {
             }
             return LocalMediaMetadataWriteOutcome.SUCCESS
         } catch (error: Exception) {
-            NPLogger.w(TAG, "staged metadata write failed for $sourceUri: ${error.message}")
+            logEditableMetadataFailure("staged_copy", sourceUri, error)
             return directOutcome
         } finally {
             if (backup.exists() && !backup.delete()) {
@@ -2927,23 +3119,85 @@ object LocalMediaSupport {
     }
 
     private fun replaceContentUriWithFile(context: Context, uri: Uri, source: File): Boolean {
+        val expectedBytes = source.length().takeIf { it > 0L }
+            ?: run {
+                NPLogger.w(
+                    TAG,
+                    "替换 SAF 音频失败: stage=staged_replace, uri=$uri, " +
+                        "reason=source_empty"
+                )
+                return false
+            }
+        val openFailures = mutableListOf<Throwable>()
         val output = runCatching {
             context.contentResolver.openOutputStream(uri, "rwt")
-        }.getOrNull() ?: runCatching {
+        }.onFailure(openFailures::add).getOrNull() ?: runCatching {
             context.contentResolver.openOutputStream(uri, "wt")
-        }.getOrNull() ?: return false
+        }.onFailure(openFailures::add).getOrNull()
+        if (output == null) {
+            logEditableMetadataFailure(
+                "staged_replace_open",
+                uri,
+                openFailures.lastOrNull() ?: IOException("SAF output stream unavailable")
+            )
+            return false
+        }
         return runCatching {
-            output.use { target ->
+            val copiedBytes = output.use { target ->
                 source.inputStream().use { input ->
                     input.copyTo(target)
+                }.also {
+                    target.flush()
                 }
-                target.flush()
             }
+            if (!isStagedReplacementComplete(
+                    expectedBytes = expectedBytes,
+                    copiedBytes = copiedBytes,
+                    providerBytes = null
+                )
+            ) {
+                throw IOException(
+                    "staged replacement byte count mismatch: $copiedBytes/$expectedBytes"
+                )
+            }
+            val providerBytes = queryContentInfo(context, uri).sizeBytes
+            if (!isStagedReplacementComplete(
+                    expectedBytes = expectedBytes,
+                    copiedBytes = copiedBytes,
+                    providerBytes = providerBytes
+                )
+            ) {
+                throw IOException(
+                    "staged replacement provider size mismatch: $providerBytes/$expectedBytes"
+                )
+            }
+            NPLogger.d(
+                TAG,
+                "SAF 元数据替换已确认: uri=$uri, bytes=$copiedBytes, " +
+                    "providerBytes=${providerBytes ?: -1L}"
+            )
             true
         }.getOrElse { error ->
-            NPLogger.w(TAG, "replace content metadata source failed for $uri: ${error.message}")
+            NPLogger.w(
+                TAG,
+                "replace content metadata source failed: stage=staged_replace, " +
+                    "uri=$uri, expectedBytes=$expectedBytes, " +
+                    "error=${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
             false
         }
+    }
+
+    internal fun isStagedReplacementComplete(
+        expectedBytes: Long,
+        copiedBytes: Long,
+        providerBytes: Long?
+    ): Boolean {
+        if (expectedBytes <= 0L || copiedBytes != expectedBytes) {
+            return false
+        }
+        return providerBytes == null || providerBytes <= 0L || providerBytes == expectedBytes
     }
 
     private fun restoreContentUriFromFile(context: Context, uri: Uri, backup: File) {
@@ -2984,7 +3238,7 @@ object LocalMediaSupport {
     }
 
     /**
-     * reads only the duration exposed by the provider or audio track header
+     * 只读取 Provider 或音频轨头暴露的时长
      */
     fun resolveDurationFast(context: Context, uri: Uri): Long {
         val queriedDuration = runCatching {
@@ -3002,18 +3256,21 @@ object LocalMediaSupport {
         context: Context,
         sources: List<Uri>
     ): Map<String, Long> {
-        val sourcesByCollection = sources.asSequence()
-            .filter(::isMediaStoreUri)
-            .mapNotNull { source ->
-                val id = source.lastPathSegment
-                    ?.toLongOrNull()
-                    ?.takeIf { it > 0L }
-                    ?: return@mapNotNull null
-                val collectionUri = source.mediaStoreAudioCollectionUri() ?: return@mapNotNull null
-                collectionUri to (id to source.toString())
-            }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, entries) -> entries.toMap() }
+        val sourcesByCollection = (
+            sources.asSequence()
+                .filter(::isMediaStoreUri)
+                .mapNotNull { source ->
+                    val id = source.lastPathSegment
+                        ?.toLongOrNull()
+                        ?.takeIf { it > 0L }
+                        ?: return@mapNotNull null
+                    val collectionUri = source.mediaStoreAudioCollectionUri()
+                        ?: return@mapNotNull null
+                    collectionUri to (id to source.toString())
+                }
+                .groupBy({ it.first }, { it.second })
+                .mapValues { (_, entries) -> entries.toMap() }
+        )
         if (sourcesByCollection.isEmpty()) return emptyMap()
 
         val result = HashMap<String, Long>(sourcesByCollection.values.sumOf { it.size })
@@ -3531,8 +3788,7 @@ object LocalMediaSupport {
     }
 
     private fun resolveNearbyCoverUriInternal(context: Context, song: SongItem): String? {
-        // metadata sidecar keeps the authoritative SAF cover reference even when
-        // MediaStore cannot expose the sibling Covers directory directly
+        // 即使 MediaStore 无法直接暴露同级 Covers 目录，元数据侧载仍保存权威的 SAF 封面引用
         runCatching {
             readLocalMetadataSidecarFast(context = context, song = song)
                 ?.coverPath
@@ -3590,9 +3846,8 @@ object LocalMediaSupport {
     }
 
     /**
-     * MediaStore can expose the already indexed album artwork without opening
-     * the audio container. This is only a fast hint; sidecar and embedded
-     * cover resolution remain the authoritative fallbacks.
+     * MediaStore 可以直接提供已经索引的专辑图片，不必打开音频容器
+     * 这里只作为快速提示，侧载和内嵌封面仍然是最终依据
      */
     fun peekMediaStoreAlbumArtUri(context: Context, song: SongItem): String? {
         val source = song.localMediaUri() ?: return null
@@ -3604,9 +3859,10 @@ object LocalMediaSupport {
             return null
         }
         val cacheKey = source.toString()
-        synchronized(mediaStoreAlbumArtCache) {
-            mediaStoreAlbumArtCache[cacheKey]?.let { return it }
+        val cachedCoverUri = synchronized(mediaStoreAlbumArtCache) {
+            mediaStoreAlbumArtCache[cacheKey]
         }
+        if (cachedCoverUri != null) return cachedCoverUri
         val coverUri = runCatching {
             context.contentResolver.query(
                 source,
@@ -3689,8 +3945,7 @@ object LocalMediaSupport {
             cachedLocalCoverLookup(context, cacheKey)?.let { cached ->
                 cached.coverUri?.let { return it }
 
-                // Do not retain an empty nearby-cover result. A user can add artwork
-                // beside an unchanged audio file without restarting the app.
+                // 不要缓存空的邻近封面结果，用户可以在不重启应用的情况下补入同目录封面
                 findNearbyCoverReference(
                     context = context,
                     uri = uri,
@@ -3901,12 +4156,11 @@ object LocalMediaSupport {
             ) ?: containerMetadata?.discNumber
 
             val embeddedPicture = retriever.embeddedPicture
-            val embeddedCover = embeddedPicture != null && embeddedPicture.isNotEmpty()
-            val embeddedCoverUri = if (embeddedCover) {
-                saveEmbeddedCover(context, resolvedPath ?: uri.toString(), embeddedPicture)
-            } else {
-                null
-            }
+            val embeddedCoverUri = embeddedPicture
+                ?.takeIf(ByteArray::isNotEmpty)
+                ?.let { picture ->
+                    saveEmbeddedCover(context, resolvedPath ?: uri.toString(), picture)
+                }
             val tagLibCoverUri = if (embeddedCoverUri == null) {
                 tagLibMetadata?.coverBytes
                     ?.takeIf { it.isNotEmpty() }
@@ -3972,7 +4226,7 @@ object LocalMediaSupport {
                     ?: localMetadata?.customArtist.takeMeaningfulLocalMetadata()
                     ?: localMetadata?.artist.takeMeaningfulLocalMetadata()
                     ?: artist,
-                embeddedCover = embeddedCover || tagLibCoverUri != null,
+                embeddedCover = embeddedCoverUri != null || tagLibCoverUri != null,
                 sourceStableKey = tagLibMetadata?.sourceStableKey
             )
         } catch (error: Exception) {
@@ -4357,7 +4611,7 @@ object LocalMediaSupport {
             ?.let { raw -> parseLocalMetadataSidecar(reference, raw) }
             ?.let { return it }
 
-        // SAF 文件可能同时暴露出不可直接读取的绝对路径, 失败后重新走文档树
+        // SAF 文件可能同时暴露出不可直接读取的绝对路径，失败后重新走文档树
         if (sourceUri.scheme.equals("content", ignoreCase = true) && file != null) {
             val documentReference = resolveLocalMetadataReference(
                 context = context,
@@ -4380,9 +4634,11 @@ object LocalMediaSupport {
         metadataReference: String? = null
     ): LocalMetadataSidecar? {
         return try {
-            val explicitReference = metadataReference
-                ?.trim()
-                ?.takeIf(String::isNotBlank)
+            val explicitReference = (
+                metadataReference
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+            )
             if (explicitReference != null && !isMediaStoreSidecarReference(explicitReference)) {
                 readTextContent(context, explicitReference)
                     ?.let { raw -> parseLocalMetadataSidecar(explicitReference, raw) }
@@ -4886,11 +5142,13 @@ object LocalMediaSupport {
                     displayName = metadataName
                 )?.uri
         }
-        return documentReference ?: if (!isMediaStoreUri(sourceUri)) localFile?.let { resolvedFile ->
-                resolvedFile.parentFile
-                    ?.let { parent -> File(parent, resolvedFile.name + LOCAL_METADATA_SUFFIX) }
-                    ?.absolutePath
-            } else null
+        if (documentReference != null) return documentReference
+        if (isMediaStoreUri(sourceUri)) return null
+        return localFile?.let { resolvedFile ->
+            resolvedFile.parentFile
+                ?.let { parent -> File(parent, resolvedFile.name + LOCAL_METADATA_SUFFIX) }
+                ?.absolutePath
+        }
     }
 
     private fun writeLocalMetadataReference(
@@ -4990,9 +5248,8 @@ object LocalMediaSupport {
     }
 
     /**
-     * MediaStore hides sibling files from the audio URI. Re-enter the
-     * persisted external-storage tree using RELATIVE_PATH so Lyrics/Covers
-     * and metadata sidecars remain addressable after scoped-storage changes
+     * MediaStore 不会从音频 URI 暴露同级文件，使用 RELATIVE_PATH 回到已保存的外部存储树
+     * 让 scoped storage 变化后仍能找到 Lyrics、Covers 和元数据侧载
      */
     private fun resolveMediaStoreDocumentNavigation(
         context: Context,
@@ -5753,7 +6010,12 @@ object LocalMediaSupport {
         val existingPictures = runCatching {
             TagLib.getPictures(descriptor.dup().detachFd())
         }.getOrElse { error ->
-            NPLogger.w(TAG, "read local cover failed: ${error.message}")
+            NPLogger.w(
+                TAG,
+                "本地封面读取失败: stage=cover_read, error=" +
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
             return EditableCoverWritePlan.Unreadable
         }
         if (mutation == EditableCoverMutation.CLEAR) {
@@ -5784,7 +6046,15 @@ object LocalMediaSupport {
             reference = replacementReference,
             audioExtension = audioExtension
         )
-            ?: return EditableCoverWritePlan.Unreadable
+            ?: run {
+                NPLogger.w(
+                    TAG,
+                    "本地封面引用不可读，保留现有嵌入封面并继续属性写入: " +
+                        "stage=cover_read, ref=${redactCoverReference(replacementReference)}"
+                )
+                // 封面嵌入失败不影响旁车保存，旁车仍会记录这次变更并等待重试
+                return EditableCoverWritePlan.Unchanged
+            }
         val updatedPictures = replaceEditableCoverPictures(
             existingPictures = existingPictures,
             replacementPicture = replacementPicture,
@@ -5887,28 +6157,64 @@ object LocalMediaSupport {
                 ?.path
                 ?.let(::File)
         }
-        if (localFile?.isFile == true) {
+        if (localFile != null) {
+            if (!localFile.isFile) {
+                logEditableCoverReadFailure(
+                    stage = "local_missing",
+                    reference = reference,
+                    error = FileNotFoundException("cover file is missing")
+                )
+                return null
+            }
             return runCatching {
                 localFile.inputStream().use { input ->
-                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
+                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES).also { bytes ->
+                        if (bytes.isEmpty()) {
+                            throw IOException("cover bytes are empty")
+                        }
+                    }
                 }
+            }.onFailure { error ->
+                logEditableCoverReadFailure(
+                    stage = "local_read",
+                    reference = reference,
+                    error = error
+                )
             }.getOrNull()
         }
-        return uri?.let { coverUri ->
-            runCatching {
-                context.contentResolver.openInputStream(coverUri)?.use { input ->
-                    input.readBytesLimited(MAX_EDITABLE_COVER_BYTES)
-                }
-            }.getOrNull()
+        val coverUri = uri ?: run {
+            logEditableCoverReadFailure(
+                stage = "reference_parse",
+                reference = reference,
+                error = IllegalArgumentException("invalid cover reference")
+            )
+            return null
         }
+        return runCatching {
+            val stream = context.contentResolver.openInputStream(coverUri)
+                ?: throw IOException("content resolver returned no input stream")
+            stream.use { input ->
+                input.readBytesLimited(MAX_EDITABLE_COVER_BYTES).also { bytes ->
+                    if (bytes.isEmpty()) {
+                        throw IOException("cover bytes are empty")
+                    }
+                }
+            }
+        }.onFailure { error ->
+            logEditableCoverReadFailure(
+                stage = "content_read",
+                reference = reference,
+                error = error
+            )
+        }.getOrNull()
     }
 
     private fun readRemoteEditableCoverBytes(reference: String): ByteArray? {
+        val request = Request.Builder()
+            .url(reference)
+            .header("Accept", "image/*")
+            .build()
         return runCatching {
-            val request = Request.Builder()
-                .url(reference)
-                .header("Accept", "image/*")
-                .build()
             AppContainer.sharedOkHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
                     NPLogger.w(TAG, "download editable cover failed: HTTP ${response.code}")
@@ -6109,7 +6415,9 @@ object LocalMediaSupport {
         if (header.readAscii(0, 3) != "ID3") return null
 
         val tagSize = header.readSynchsafeInt(6)
-        if (tagSize <= 0) return null
+        if (tagSize <= 0) {
+            return null
+        }
         val readableSize = minOf(
             raf.length(),
             10L + tagSize.toLong(),
@@ -6134,13 +6442,14 @@ object LocalMediaSupport {
             .takeIf { it == 0.toByte() }
             ?.let { tag[126].toInt() and 0xFF }
             ?.takeIf { it > 0 }
-        return ContainerMetadata(
+        val metadata = ContainerMetadata(
             title = tag.copyOfRange(3, 33).decodeContainerText(),
             artist = tag.copyOfRange(33, 63).decodeContainerText(),
             album = tag.copyOfRange(63, 93).decodeContainerText(),
             year = tag.copyOfRange(93, 97).decodeContainerText()?.extractYear(),
             trackNumber = trackNumber
-        ).takeIf { it.hasAnyValue() }
+        )
+        return metadata.takeIf { it.hasAnyValue() }
     }
 
     internal fun parseWaveMetadata(file: File): ContainerMetadata? {
@@ -6741,8 +7050,8 @@ object LocalMediaSupport {
     private fun resolveContentSidecarReferences(
         context: Context,
         sourceUri: Uri,
-        file: File? = null,
-        displayName: String
+        displayName: String,
+        file: File? = null
     ): ContentSidecarReferences {
         val localFile = file.takeUnless {
             shouldUseDocumentSidecarMutation(sourceUri)
@@ -7069,8 +7378,10 @@ object LocalMediaSupport {
             actualName.endsWith(".txt", ignoreCase = true)
         ) {
             val providerNameWithoutTextExtension = actualName.dropLast(".txt".length)
-            return canonicalSafName(providerNameWithoutTextExtension) == canonicalSafName(canonicalName) ||
+            val matches = canonicalSafName(providerNameWithoutTextExtension) ==
+                canonicalSafName(canonicalName) ||
                 numberedSidecarNameMatches(providerNameWithoutTextExtension, canonicalName)
+            return matches
         }
         return false
     }
@@ -7197,7 +7508,7 @@ object LocalMediaSupport {
         return synchronized(documentChildrenCache) {
             documentChildrenCache[cacheKey]
                 ?.takeIf { entry ->
-                    System.currentTimeMillis() - entry.cachedAtMs <= DOCUMENT_CHILDREN_CACHE_TTL_MS
+                    entry.isFresh(System.currentTimeMillis())
                 }
                 ?.children
                 .orEmpty()
@@ -7217,12 +7528,49 @@ object LocalMediaSupport {
                 .orEmpty()
                 .forEach { cached -> childrenByUri[cached.uri] = cached }
             childrenByUri[child.uri] = child
-            documentChildrenCache[cacheKey] = DocumentChildrenCacheEntry(
+            if (!isDocumentChildrenCacheSizeAllowed(childrenByUri.size)) {
+                documentChildrenCache.remove(cacheKey)
+                return
+            }
+            rememberDocumentChildrenCacheEntryLocked(
+                cacheKey = cacheKey,
                 children = childrenByUri.values.toList(),
                 cachedAtMs = System.currentTimeMillis(),
                 isComplete = documentChildrenCache[cacheKey]?.isComplete ?: false
             )
         }
+    }
+
+    /** 大目录只保留有界的热缓存，避免扫描歌曲越多内存和 GC 越来越高 */
+    private fun rememberDocumentChildrenCacheEntryLocked(
+        cacheKey: String,
+        children: List<DocumentChild>,
+        cachedAtMs: Long,
+        isComplete: Boolean
+    ) {
+        if (!isDocumentChildrenCacheSizeAllowed(children.size)) {
+            documentChildrenCache.remove(cacheKey)
+            return
+        }
+        documentChildrenCache[cacheKey] = DocumentChildrenCacheEntry(
+            children = children,
+            cachedAtMs = cachedAtMs,
+            isComplete = isComplete
+        )
+        while (!isDocumentChildrenCacheTotalWithinBudget(documentChildrenCacheTotalChildren())) {
+            val victim = documentChildrenCache.entries
+                .firstOrNull { entry -> entry.key != cacheKey }
+                ?.key
+                ?: break
+            documentChildrenCache.remove(victim)
+        }
+        if (!isDocumentChildrenCacheTotalWithinBudget(documentChildrenCacheTotalChildren())) {
+            documentChildrenCache.remove(cacheKey)
+        }
+    }
+
+    private fun documentChildrenCacheTotalChildren(): Int {
+        return documentChildrenCache.values.sumOf { entry -> entry.children.size }
     }
 
     private fun queryDocumentChildrenForMutation(
@@ -7515,7 +7863,7 @@ object LocalMediaSupport {
                 val cacheKey = documentParentCacheKey(baseUri, resolvedParentId)
                 synchronized(documentChildrenCache) {
                     documentChildrenCache[cacheKey]?.let { cached ->
-                        if (System.currentTimeMillis() - cached.cachedAtMs <= DOCUMENT_CHILDREN_CACHE_TTL_MS) {
+                        if (cached.isFresh(System.currentTimeMillis())) {
                             return@read cached.children
                         }
                         documentChildrenCache.remove(cacheKey)
@@ -7639,8 +7987,14 @@ object LocalMediaSupport {
                 if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
                     return@use null
                 }
+                var truncated = false
                 val children = buildList {
                     while (cursor.moveToNext()) {
+                        if (size >= DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN) {
+                            // 巨型目录只保留有界预览，后续按需路径仍可继续查询
+                            truncated = true
+                            break
+                        }
                         val childId = cursor.getString(idIndex)
                         if (childId.isNullOrBlank()) continue
                         val childName = cursor.getString(nameIndex)
@@ -7661,7 +8015,7 @@ object LocalMediaSupport {
                 val providerError = extras?.getString(DocumentsContract.EXTRA_ERROR)
                 DocumentChildrenQueryResult(
                     children = children,
-                    isComplete = !loading && providerError.isNullOrBlank()
+                    isComplete = !loading && providerError.isNullOrBlank() && !truncated
                 )
             }
         } catch (error: SecurityException) {
@@ -7695,6 +8049,7 @@ object LocalMediaSupport {
         }
         val count = consecutiveEmptyDocumentRefreshes.merge(cacheKey, 1) { current, _ -> current + 1 }
             ?: 1
+        trimConsecutiveEmptyDocumentRefreshes(cacheKey)
         if (count < EMPTY_DOCUMENT_REFRESH_CONFIRMATION_COUNT) {
             return DocumentChildrenQueryResult(
                 children = previous,
@@ -7703,6 +8058,20 @@ object LocalMediaSupport {
         }
         consecutiveEmptyDocumentRefreshes.remove(cacheKey)
         return result
+    }
+
+    private fun trimConsecutiveEmptyDocumentRefreshes(keepKey: String) {
+        val excess = consecutiveEmptyDocumentRefreshes.size -
+            CONSECUTIVE_EMPTY_REFRESH_CACHE_LIMIT
+        if (excess <= 0) return
+        var removed = 0
+        consecutiveEmptyDocumentRefreshes.keys.forEach { key ->
+            if (removed >= excess) return@forEach
+            if (key == keepKey) return@forEach
+            if (consecutiveEmptyDocumentRefreshes.remove(key) != null) {
+                removed++
+            }
+        }
     }
 
     private fun mergeDocumentChildren(
@@ -7730,7 +8099,13 @@ object LocalMediaSupport {
             } else {
                 mergeDocumentChildren(oldEntry?.children.orEmpty(), children)
             }
-            documentChildrenCache[cacheKey] = DocumentChildrenCacheEntry(
+            if (!isDocumentChildrenCacheSizeAllowed(mergedChildren.size)) {
+                // 巨型目录只保留本轮结果，避免把整棵目录长期复制到内存
+                documentChildrenCache.remove(cacheKey)
+                return
+            }
+            rememberDocumentChildrenCacheEntryLocked(
+                cacheKey = cacheKey,
                 children = mergedChildren,
                 cachedAtMs = System.currentTimeMillis(),
                 isComplete = isComplete
@@ -7751,8 +8126,8 @@ object LocalMediaSupport {
             null
         } ?: return emptyList()
         val parent = try {
-            // buildDocumentReferenceUri returns a document URI for a child id
-            // fromTreeUri on that URI performs a wrong parent-path probe on some providers
+            // buildDocumentReferenceUri 返回子文档 ID 对应的文档 URI
+            // 某些 Provider 对这个 URI 调用 fromTreeUri 会错误探测父路径
             if (DocumentsContract.isTreeUri(parentUri)) {
                 DocumentFile.fromTreeUri(context, parentUri)
             } else {
@@ -7764,7 +8139,7 @@ object LocalMediaSupport {
             null
         } ?: return emptyList()
         return try {
-            parent.listFiles().mapNotNull { child ->
+            parent.listFiles().asSequence().take(DOCUMENT_CHILDREN_CACHE_MAX_CHILDREN).mapNotNull { child ->
                 val name = child.name?.takeIf(String::isNotBlank) ?: return@mapNotNull null
                 val documentId = try {
                     DocumentsContract.getDocumentId(child.uri)
@@ -7779,7 +8154,7 @@ object LocalMediaSupport {
                     isDirectory = child.isDirectory,
                     uri = child.uri.toString()
                 )
-            }
+            }.toList()
         } catch (error: SecurityException) {
             throw error
         } catch (_: Exception) {
@@ -7890,27 +8265,81 @@ object LocalMediaSupport {
     }
 
     private fun findCoverSidecarInDirectory(directory: File, baseName: String): File? {
-        val children = directory.listFiles()?.filter(File::isFile).orEmpty()
+        // 常用封面名先直接探测，避免大目录里每首歌都触发一次完整遍历
         imageExtensions.forEach { extension ->
-            children.firstOrNull { child ->
-                child.name.equals("$baseName.$extension", ignoreCase = true)
-            }?.let { return it }
+            File(directory, "$baseName.$extension")
+                .takeIf(File::isFile)
+                ?.let { return it }
         }
+        val children = directoryFileIndex(directory).files
         return children
             .filter { child ->
+                child.isFile &&
                 imageExtensions.any { extension ->
                     coverSidecarNameMatches(child.name, baseName, extension)
                 }
-            }.minByOrNull { child -> child.name }
+            }
+            .minByOrNull { child -> child.name }
+            ?.takeIf(File::isFile)
     }
 
     private fun findCoversDirectory(parent: File): File? {
         val canonical = File(parent, "Covers")
         if (canonical.isDirectory) return canonical
-        return parent.listFiles()
-            ?.firstOrNull { child ->
-                child.isDirectory && child.name.equals("Covers", ignoreCase = true)
+        // 大小写目录名都兼容，刚创建的旁车目录可以马上被发现
+        File(parent, "covers").takeIf(File::isDirectory)?.let { return it }
+        return directoryFileIndex(parent).directories.firstOrNull { child ->
+            child.isDirectory && child.name.equals("Covers", ignoreCase = true)
+        }
+    }
+
+    private fun directoryFileIndex(directory: File): DirectoryFileIndex {
+        val cacheKey = directory.absolutePath
+        val directoryLastModifiedMs = directory.lastModified()
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        synchronized(directoryFileIndexCache) {
+            directoryFileIndexCache[cacheKey]?.let { cached ->
+                val fresh = cached.directoryLastModifiedMs == directoryLastModifiedMs &&
+                    nowElapsedMs - cached.cachedAtElapsedMs <= DIRECTORY_FILE_INDEX_CACHE_TTL_MS
+                if (fresh) return cached
             }
+        }
+
+        // 列举失败通常是暂时的权限或文件系统问题，空结果不能写进缓存
+        // 这里只为封面和 Covers 目录建立索引，不把同目录的音频对象复制到内存
+        val listedChildren = directory.listFiles { child ->
+            child.isDirectory && child.name.equals("Covers", ignoreCase = true) ||
+                child.isFile && imageExtensions.any { extension ->
+                    child.name.substringAfterLast('.', "")
+                        .equals(extension, ignoreCase = true)
+                }
+        }?.take(DIRECTORY_FILE_INDEX_MAX_CHILDREN)?.toList()
+            ?: return DirectoryFileIndex(
+                directoryLastModifiedMs = directoryLastModifiedMs,
+                cachedAtElapsedMs = nowElapsedMs,
+                files = emptyList(),
+                directories = emptyList()
+            )
+        val indexedFiles = ArrayList<File>()
+        val indexedDirectories = ArrayList<File>()
+        listedChildren.forEach { child ->
+            if (child.isDirectory) {
+                indexedDirectories += child
+            } else if (child.isFile) {
+                indexedFiles += child
+            }
+        }
+        val entry = DirectoryFileIndex(
+            directoryLastModifiedMs = directoryLastModifiedMs,
+            cachedAtElapsedMs = nowElapsedMs,
+            files = indexedFiles,
+            directories = indexedDirectories
+        )
+        // 大目录只缓存封面候选，避免每首歌再次遍历整个目录
+        synchronized(directoryFileIndexCache) {
+            directoryFileIndexCache[cacheKey] = entry
+        }
+        return entry
     }
 
     private fun findDirectoryCover(parent: File): File? {

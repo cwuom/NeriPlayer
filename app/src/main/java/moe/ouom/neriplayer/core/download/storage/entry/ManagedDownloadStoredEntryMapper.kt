@@ -30,7 +30,8 @@ internal object ManagedDownloadStoredEntryMapper {
             documentReference = child.documentUri.toString(),
             sizeBytes = child.sizeBytes ?: 0L,
             lastModifiedMs = child.lastModifiedMs,
-            isDirectory = child.isDirectory
+            isDirectory = child.isDirectory,
+            sizeKnown = child.sizeBytes != null
         )
     }
 
@@ -39,7 +40,8 @@ internal object ManagedDownloadStoredEntryMapper {
         documentReference: String,
         sizeBytes: Long,
         lastModifiedMs: Long,
-        isDirectory: Boolean
+        isDirectory: Boolean,
+        sizeKnown: Boolean = true
     ): ManagedDownloadStorage.StoredEntry {
         return ManagedDownloadStorage.StoredEntry(
             name = name,
@@ -48,6 +50,7 @@ internal object ManagedDownloadStoredEntryMapper {
             localFilePath = null,
             sizeBytes = sizeBytes,
             lastModifiedMs = lastModifiedMs,
+            sizeKnown = sizeKnown,
             isDirectory = isDirectory
         )
     }
@@ -67,6 +70,7 @@ internal object ManagedDownloadStoredEntryMapper {
             localFilePath = null,
             sizeBytes = knownSizeBytes ?: documentFile.length(),
             lastModifiedMs = knownLastModifiedMs ?: documentFile.lastModified(),
+            sizeKnown = knownSizeBytes != null,
             isDirectory = knownIsDirectory ?: documentFile.isDirectory
         )
     }

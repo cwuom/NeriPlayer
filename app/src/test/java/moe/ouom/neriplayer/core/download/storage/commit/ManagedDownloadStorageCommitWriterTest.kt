@@ -10,8 +10,10 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationRepla
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -122,6 +124,64 @@ class ManagedDownloadStorageCommitWriterTest {
         assertTrue(!resolved.createdNew)
         assertEquals(source.name, resolved.entry.name)
         verifyNoInteractions(registry)
+    }
+
+    @Test
+    fun `cached SAF write hint selects only exact non directory child`() {
+        val directory = QueriedTreeChild(
+            name = "song.mp3.npmeta.json",
+            documentUri = mock(Uri::class.java),
+            sizeBytes = null,
+            lastModifiedMs = 1L,
+            isDirectory = true
+        )
+        val target = directory.copy(
+            documentUri = mock(Uri::class.java),
+            sizeBytes = 12L,
+            isDirectory = false
+        )
+
+        assertEquals(
+            target,
+            selectCachedSafWriteChild(
+                displayName = target.name,
+                cachedChildren = listOf(directory, target)
+            )
+        )
+        assertNull(selectCachedSafWriteChild("missing.json", listOf(target)))
+        assertNull(selectCachedSafWriteChild(target.name, null))
+    }
+
+    @Test
+    fun `provider size drift is accepted only when copied bytes read back`() {
+        assertTrue(
+            isSafProviderSizeDriftRecoverable(
+                copiedBytes = 128L,
+                reportedBytes = 64L,
+                countedBytes = 128L
+            )
+        )
+        assertTrue(
+            isSafProviderSizeDriftRecoverable(
+                copiedBytes = 128L,
+                reportedBytes = null,
+                countedBytes = null
+            )
+        )
+        assertFalse(
+            isSafProviderSizeDriftRecoverable(
+                copiedBytes = 128L,
+                reportedBytes = 64L,
+                countedBytes = 127L
+            )
+        )
+        assertFalse(
+            isSafProviderSizeDriftRecoverable(
+                copiedBytes = -1L,
+                reportedBytes = 64L,
+                countedBytes = 64L
+            )
+        )
     }
 
     @Test

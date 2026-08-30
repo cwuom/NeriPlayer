@@ -8,8 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * locks down the startup handoff so slow SAF recovery cannot delay the first
- * directory publication
+ * 固定启动交接行为，避免缓慢的 SAF 恢复阻塞首次目录发布
  */
 class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     @Test
@@ -46,7 +45,7 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
-    fun `migration recovery is gated before legacy upgrade and every startup root operation`() {
+    fun `migration recovery is gated before startup root operations and legacy scheduling`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
@@ -57,8 +56,8 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val migrationResume = initializeBody.indexOf(
             "ManagedDownloadMigrationWorker.resumePersistedRequestIfNeeded(appContext)"
         )
-        val legacyUpgrade = initializeBody.indexOf(
-            "LegacyJsonCleanupScheduler.runDownloadUpgradeOnce(appContext)"
+        val legacySchedule = initializeBody.indexOf(
+            "LegacyJsonCleanupScheduler.schedule(appContext, \"download-startup\")"
         )
         val pendingRecovery = initializeBody.indexOf("recoverPendingDownloadsForStartup(appContext)")
         val coverRepair = initializeBody.indexOf("repairFinalizedDownloadedCoversFromRoot(appContext)")
@@ -66,10 +65,11 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
 
         assertTrue(migrationProbe >= 0)
         assertTrue(migrationResume > migrationProbe)
-        assertTrue(legacyUpgrade > migrationResume)
-        assertTrue(pendingRecovery > legacyUpgrade)
+        assertTrue(legacySchedule > migrationResume)
+        assertTrue(pendingRecovery < legacySchedule)
         assertTrue(coverRepair > pendingRecovery)
         assertTrue(initialScan > coverRepair)
+        assertFalse(initializeBody.contains("runDownloadUpgradeOnce(appContext)"))
 
         val recoveryFailure = initializeBody.indexOf("迁移恢复凭据检查失败")
         assertTrue(recoveryFailure >= 0)
@@ -237,6 +237,29 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(helperBody.contains("pendingMetadataJson"))
         assertTrue(storageSource.contains("pendingMetadataJson: String?"))
         assertTrue(saveCall.contains("pendingMetadataJson = pendingMetadata"))
+    }
+
+    @Test
+    fun `new pending audio and metadata writes stay under the dedicated tmp child`() {
+        val storageSource = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        ).readText()
+        val saveBody = methodBody(storageSource, "saveAudioFromTempBlocking")
+        val pendingMetadataBody = methodBody(storageSource, "writePendingAudioMetadata")
+
+        assertTrue(saveBody.contains("resolveTemporaryRoot("))
+        assertTrue(saveBody.contains("FileStorageBackend(temporaryRoot.dir)"))
+        assertTrue(saveBody.contains("pendingTarget = File(temporaryRoot.dir, pendingName)"))
+        assertTrue(saveBody.contains("parent = temporaryRoot.tree"))
+        assertFalse(saveBody.contains("FileStorageBackend(root.dir)"))
+
+        assertTrue(pendingMetadataBody.contains("resolveTemporaryRoot("))
+        assertTrue(pendingMetadataBody.contains("root = temporaryRoot"))
+        assertTrue(
+            pendingMetadataBody.contains(
+                "displayName = \"\$audioName\$PENDING_METADATA_SUFFIX\""
+            )
+        )
     }
 
     @Test

@@ -33,9 +33,12 @@ import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadParsedMetadataEn
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadPendingArtifactCleanupPlanner
 import moe.ouom.neriplayer.core.download.cleanup.ManagedDownloadUnfinalizedCleanupPlanner
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
+import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
 import moe.ouom.neriplayer.core.download.storage.FILE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.LYRIC_SUBDIRECTORY
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
+import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER
 import moe.ouom.neriplayer.core.download.storage.MANAGED_LIBRARY_MANIFEST_FILE_NAME
@@ -202,6 +205,16 @@ internal object ManagedDownloadStorage {
     private const val FAST_LYRICS_SLOW_LOG_MS = 120L
     private const val FAST_INDEX_MANIFEST_LOCK_SHARD = "__manifest__"
     private const val METADATA_SCAN_PARALLELISM = 4
+    private val KNOWN_TRANSIENT_PENDING_ARTIFACT_STATES = setOf(
+        "PENDING_QUEUE",
+        "QUEUED",
+        "DOWNLOADING",
+        "VERIFYING",
+        "RETRYABLE",
+        "FAILED_RETRYABLE",
+        "CANCELLED"
+    )
+    private const val TERMINAL_TEMPORARY_WRITE_CLEANUP_MAX_REBASE_ATTEMPTS = 3
 
     private val snapshotBuildLock = Any()
     private val sidecarRefreshLock = Any()
@@ -424,7 +437,7 @@ internal object ManagedDownloadStorage {
     private val migrationProgressSession = ManagedDownloadMigrationProgressSession()
     val migrationProgressFlow: StateFlow<MigrationProgress?> = migrationProgressSession.flow
 
-    /** binds the process-wide progress stream before a Worker starts collecting it */
+    /** 在 Worker 开始收集前绑定进程级进度流 */
     internal fun beginMigrationProgressSession(
         ownerWorkId: String,
         persistedProgress: MigrationProgress?
@@ -442,8 +455,7 @@ internal object ManagedDownloadStorage {
 
     fun initialize(context: Context) {
         val appContext = context.applicationContext
-        // hydrate the last durable snapshot before the background cleanup gate;
-        // the UI can show the real migration position while WorkManager starts
+        // 先恢复最后一份持久快照，WorkManager 启动时界面就能显示真实迁移位置
         restorePersistedMigrationProgress(appContext, includeJournal = false)
         snapshotScope.launch {
             restorePersistedMigrationProgress(appContext, includeJournal = true)
@@ -591,10 +603,68 @@ internal object ManagedDownloadStorage {
 
     internal data class StartupRecoveryResult(
         val cleanedCount: Int = 0,
-        val failedCount: Int = 0
+        val failedCount: Int = 0,
+        /** 已跨过核心提交边界的 pending，不属于清空失败或待重试项 */
+        val protectedCount: Int = 0,
+        /** 本轮已确认属于持久核心的引用，供清空快照复用，避免再次读取 SAF 元数据 */
+        val protectedReferences: Set<String> = emptySet(),
+        /** 仅返回实际删除失败所对应的歌曲，不能用所有输入 operation 代替 */
+        val failedStableKeys: Set<String> = emptySet()
     ) {
         val hasRecoveredEntries: Boolean
             get() = cleanedCount > 0 || failedCount > 0
+    }
+
+    /** 只把实际删除失败的引用归属到歌曲，避免把整批 operation 误报成残留 */
+    internal fun resolveFailedStableKeys(
+        referencesByStableKey: Map<String, Set<String>>,
+        failedReferences: Set<String>
+    ): Set<String> {
+        if (referencesByStableKey.isEmpty() || failedReferences.isEmpty()) {
+            return emptySet()
+        }
+        return referencesByStableKey
+            .asSequence()
+            .filter { (_, references) -> references.any(failedReferences::contains) }
+            .mapTo(linkedSetOf()) { (stableKey, _) -> stableKey }
+    }
+
+    /**
+     * metadata 读取失败时不能把同名 pending 音频当作无主临时文件删除
+     * 让清空流程把这类引用保留为阻塞项，等下一轮恢复或人工处理
+     */
+    internal fun resolveUnreadablePendingArtifactReferences(
+        pendingEntries: Collection<StoredEntry>,
+        metadataEntries: Collection<StoredEntry>,
+        unreadableMetadataReferences: Set<String>
+    ): Set<String> {
+        if (
+            pendingEntries.isEmpty() ||
+            metadataEntries.isEmpty() ||
+            unreadableMetadataReferences.isEmpty()
+        ) {
+            return emptySet()
+        }
+        val unreadableAudioNames = metadataEntries
+            .asSequence()
+            .filter { it.reference in unreadableMetadataReferences }
+            .mapNotNull { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+            }
+            .toSet()
+        if (unreadableAudioNames.isEmpty()) return emptySet()
+        return pendingEntries
+            .asSequence()
+            .filter { entry ->
+                val logicalName = if (entry.isPendingAudioWrite) {
+                    entry.logicalName
+                } else {
+                    ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                }
+                entry.reference in unreadableMetadataReferences ||
+                    logicalName != null && logicalName in unreadableAudioNames
+            }
+            .mapTo(linkedSetOf(), StoredEntry::reference)
     }
 
     internal data class PendingResumableDownload(
@@ -639,13 +709,16 @@ internal object ManagedDownloadStorage {
         val localFilePath: String?,
         val sizeBytes: Long,
         val lastModifiedMs: Long,
+        /** Provider 没有返回可信大小时为 false */
+        val sizeKnown: Boolean = true,
         val isDirectory: Boolean = false
     ) {
         val isPendingAudioWrite: Boolean
-            get() = name.contains(PENDING_AUDIO_WRITE_MARKER)
+            get() = ManagedDownloadPendingAudioWriteNames.isArtifactName(name)
 
         val logicalName: String
-            get() = name.substringBefore(PENDING_AUDIO_WRITE_MARKER, name)
+            get() = name.takeUnless { isPendingAudioWrite }
+                ?: name.substringBefore(PENDING_AUDIO_WRITE_MARKER, name)
 
         val extension: String
             get() = if (isPendingAudioWrite) {
@@ -662,6 +735,176 @@ internal object ManagedDownloadStorage {
 
         val displayName: String
             get() = logicalName
+    }
+
+    private data class TemporaryDirectoryEntries(
+        val entries: List<StoredEntry>,
+        val isComplete: Boolean,
+        val exists: Boolean
+    )
+
+    /** 返回应用自己的临时目录；读取路径不会因不存在目录而创建副作用 */
+    private fun resolveTemporaryRoot(
+        context: Context,
+        root: RootHandle,
+        create: Boolean
+    ): RootHandle? {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val directory = File(root.dir, DOWNLOAD_TEMPORARY_DIR_NAME)
+                if (!create && !directory.isDirectory) {
+                    null
+                } else {
+                    if (directory.exists() && !directory.isDirectory) {
+                        throw IOException("下载临时路径不是目录: ${directory.absolutePath}")
+                    }
+                    if (create && !directory.isDirectory &&
+                        !directory.mkdirs() && !directory.isDirectory
+                    ) {
+                        throw IOException("无法创建下载临时目录: ${directory.absolutePath}")
+                    }
+                    if (directory.isDirectory) {
+                        treeDirectories.ensureManagedMediaScanIsolation(
+                            DOWNLOAD_TEMPORARY_DIR_NAME,
+                            directory
+                        )
+                        RootHandle.FileRoot(directory)
+                    } else {
+                        null
+                    }
+                }
+            }
+
+            is RootHandle.TreeRoot -> {
+                val directory = if (create) {
+                    treeDirectories.findOrCreateDirectory(
+                        context = context,
+                        parent = root.tree,
+                        displayName = DOWNLOAD_TEMPORARY_DIR_NAME
+                    )
+                } else {
+                    findExistingTemporaryTreeDirectory(
+                        context = context,
+                        root = root,
+                        forceRefresh = false
+                    ).first
+                }
+                directory?.also {
+                    treeDirectories.ensureManagedMediaScanIsolation(
+                        context = context,
+                        subdirectory = DOWNLOAD_TEMPORARY_DIR_NAME,
+                        directory = it
+                    )
+                }?.let(RootHandle::TreeRoot)
+            }
+        }
+    }
+
+    private fun findExistingTemporaryTreeDirectory(
+        context: Context,
+        root: RootHandle.TreeRoot,
+        forceRefresh: Boolean
+    ): Pair<DocumentFile?, Boolean> {
+        val refresh = if (forceRefresh) {
+            treeChildRegistry.refreshTreeChildrenWithStatus(context, root.tree)
+        } else {
+            val cached = treeChildRegistry.cachedTreeChildrenIfFresh(
+                parent = root.tree,
+                maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+            )
+            cached?.let {
+                ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(
+                    children = it.toList(),
+                    isComplete = true
+                )
+            } ?: treeChildRegistry.refreshTreeChildrenWithStatus(context, root.tree)
+        }
+        val child = refresh.children
+            .asSequence()
+            .filter(QueriedTreeChild::isDirectory)
+            .filter { candidate ->
+                ManagedDownloadTreeNaming.matchesManagedSubdirectoryName(
+                    candidate.name,
+                    DOWNLOAD_TEMPORARY_DIR_NAME
+                )
+            }
+            .sortedWith(
+                compareBy<QueriedTreeChild>(
+                    { if (it.name == DOWNLOAD_TEMPORARY_DIR_NAME) 0 else 1 },
+                    { it.name }
+                )
+            )
+            .firstOrNull()
+        val directory = child?.let {
+            treeChildRegistry.toDocumentFile(context, root.tree, it)
+        }
+        return directory to (refresh.isComplete && (child == null || directory != null))
+    }
+
+    private fun readTemporaryDirectoryEntries(
+        context: Context,
+        root: RootHandle,
+        forceRefresh: Boolean,
+        rootAlreadyRefreshed: Boolean = false
+    ): TemporaryDirectoryEntries {
+        return when (root) {
+            is RootHandle.FileRoot -> {
+                val directory = File(root.dir, DOWNLOAD_TEMPORARY_DIR_NAME)
+                if (!directory.exists()) {
+                    TemporaryDirectoryEntries(emptyList(), isComplete = true, exists = false)
+                } else if (!directory.isDirectory) {
+                    TemporaryDirectoryEntries(emptyList(), isComplete = false, exists = true)
+                } else {
+                    val children = directory.listFiles()
+                    if (children == null) {
+                        TemporaryDirectoryEntries(emptyList(), isComplete = false, exists = true)
+                    } else {
+                        TemporaryDirectoryEntries(
+                            entries = children.map(ManagedDownloadStoredEntryMapper::fromFile),
+                            isComplete = true,
+                            exists = true
+                        )
+                    }
+                }
+            }
+
+            is RootHandle.TreeRoot -> {
+                val (directory, rootComplete) = findExistingTemporaryTreeDirectory(
+                    context = context,
+                    root = root,
+                    // 调用方刚完成根目录列举，要求刷新时只重新读取 .tmp 子目录
+                    forceRefresh = forceRefresh && !rootAlreadyRefreshed
+                )
+                if (directory == null) {
+                    TemporaryDirectoryEntries(
+                        entries = emptyList(),
+                        isComplete = rootComplete,
+                        exists = false
+                    )
+                } else {
+                    val childRefresh = if (forceRefresh) {
+                        treeChildRegistry.refreshTreeChildrenWithStatus(context, directory)
+                    } else {
+                        val cached = treeChildRegistry.cachedTreeChildrenIfFresh(
+                            parent = directory,
+                            maxCacheAgeMs = TREE_CHILDREN_CACHE_VALIDATE_INTERVAL_MS
+                        )
+                        cached?.let {
+                            ManagedDownloadTreeChildRegistry.TreeChildrenRefresh(
+                                children = it.toList(),
+                                isComplete = true
+                            )
+                        } ?: treeChildRegistry.refreshTreeChildrenWithStatus(context, directory)
+                    }
+                    TemporaryDirectoryEntries(
+                        entries = childRefresh.children
+                            .map(ManagedDownloadStoredEntryMapper::fromTreeChild),
+                        isComplete = rootComplete && childRefresh.isComplete,
+                        exists = true
+                    )
+                }
+            }
+        }
     }
 
     data class FinalizedPendingAudioPromotion(
@@ -1174,6 +1417,14 @@ internal object ManagedDownloadStorage {
                 return@withContext MigrationResult(movedFiles = 0, skippedFiles = 0)
             }
 
+            // pending 音频和 metadata 不是可迁移的正式媒体，旧版本可能把
+            // 它们写在根目录，新版本写在 .tmp；在源目录仍有这些产物时先
+            // 让恢复流程收敛，避免迁移后释放旧授权导致半成品永久失联
+            requireMigrationSourceHasNoPendingArtifacts(
+                context = context,
+                sourceRoot = sourceRoot
+            )
+
             val journalTargetNames = mergePersistedMigrationTargetNames(
                 buildList {
                     persistedReplacementJournal?.let { journal ->
@@ -1215,9 +1466,8 @@ internal object ManagedDownloadStorage {
                     sourceEntryCount = entries.size
                 )
             }
-            // only a complete provider enumeration can establish that a source
-            // disappeared; the persisted-manifest fast path must defer to the
-            // copy worker, which can distinguish missing from permission errors
+            // 只有完整的 Provider 列举才能确认源文件消失，清单快路径把判断交给
+            // 复制 Worker，那里可以区分文件缺失和权限错误
             val deletedSourceRecoveryPlan = if (
                 !usePersistedManifest &&
                 upgradedPersistedJournal != null &&
@@ -1348,8 +1598,7 @@ internal object ManagedDownloadStorage {
                 )
             )
             val validatedCopyReceipts = receiptValidation.receipts
-            // refresh manifest fingerprints once so resumed progress and copy
-            // decisions use current provider facts instead of journal values
+            // 只刷新一次清单指纹，让恢复进度和复制判断使用当前 Provider 事实
             val migrationEntries = entries.map { entry ->
                 val current = receiptValidation.sourceEntriesByReference[entry.entry.reference]
                 if (current == null) {
@@ -1552,8 +1801,7 @@ internal object ManagedDownloadStorage {
                 entriesChannel.close()
                 workers.awaitAll().flatten()
             }
-            // successful copies must be durable before any metadata rewrite or
-            // source cleanup can make the target authoritative
+            // 复制结果落盘后才能改写元数据或清理源文件，让目标成为权威副本
             onCopyReceiptsFlush()
             val currentCopyReceipts = copyResults.mapNotNull { result ->
                 result.copiedEntry?.toCopyReceipt()
@@ -1781,13 +2029,7 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    /**
-     * applies the durable missing-source plan after a complete source scan
-     *
-     * copy receipts are intentionally retained until the updated journal is
-     * persisted by the caller. That ordering makes each action idempotent when
-     * the process is killed between target mutation and checkpoint cleanup
-     */
+    /** 完整扫描源目录后应用缺失源文件计划，更新日志落盘前保留复制凭据以支持幂等恢复 */
     private suspend fun applyDeletedSourceCopyReceiptRecoveryPlan(
         context: Context,
         targetRoot: RootHandle,
@@ -1828,8 +2070,7 @@ internal object ManagedDownloadStorage {
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
                 ?.let { return it }
-            // metadata may have been rewritten after the copy receipt was
-            // flushed, so its pre-rewrite source digest is not target evidence
+            // 复制凭据落盘后元数据可能已经改写，改写前的源摘要不能证明目标内容
             return receipt.sourceDigest
                 ?.trim()
                 ?.takeIf(String::isNotBlank)
@@ -1961,8 +2202,7 @@ internal object ManagedDownloadStorage {
         }
 
         plan.rollbackCandidates.forEach { receipt ->
-            // a missing target is already rolled back. If it still exists,
-            // identity and (when available) digest checks protect user files.
+            // 目标不存在时已经完成回滚，仍存在时用身份和摘要保护用户文件
             val targetResolution = resolveTarget(receipt)
             if (targetResolution.alreadyRestored) {
                 return@forEach
@@ -2042,9 +2282,7 @@ internal object ManagedDownloadStorage {
             journal.cleanupComplete &&
             hasCompleteMigrationCleanupReceipts(journal)
         ) {
-            // cleanupComplete is written only after every replacement backup
-            // delete has been confirmed; reopening those targets needs no tree
-            // enumeration
+            // 所有替换备份都确认删除后才写入 cleanupComplete，重新打开目标无需再列举目录
             return
         }
         val targetIndex = buildMigrationTargetIndex(context, targetRoot)
@@ -2078,8 +2316,7 @@ internal object ManagedDownloadStorage {
                     ?: copied.sourceDigest?.takeIf(String::isNotBlank)
                     ?: readMigrationTargetDigest(context, copied.copiedEntry)
             } else {
-                // metadata references are rewritten after the source digest is
-                // calculated, so only the final target bytes are authoritative
+            // 元数据引用在计算源摘要后才会改写，因此只有最终目标字节才是权威内容
                 readMigrationTargetDigest(context, copied.copiedEntry)
             }
             ManagedMigrationCleanupReceipt(
@@ -2209,10 +2446,7 @@ internal object ManagedDownloadStorage {
         return expectedSafIdentity != null && expectedSafIdentity == actualSafIdentity
     }
 
-    /**
-     * recognizes a replacement backup that was already renamed back to its
-     * target name before the recovery journal was flushed
-     */
+    /** 识别恢复日志落盘前已经改回目标名称的替换备份 */
     internal fun isRestoredMigrationReplacementTarget(
         expectedTarget: StoredEntry,
         actualTarget: StoredEntry,
@@ -2254,10 +2488,7 @@ internal object ManagedDownloadStorage {
             !targetDigest.equals(expectedTargetDigest, ignoreCase = true)
     }
 
-    /**
-     * merges receipts produced by the current copy pass over stale persisted
-     * rows so a refreshed copy remains the recovery authority
-     */
+    /** 用本轮复制凭据覆盖旧记录，让重新复制的结果继续作为恢复依据 */
     internal fun mergeMigrationCopyReceiptsForRecovery(
         persisted: Map<String, ManagedMigrationCopyReceipt>,
         current: Iterable<ManagedMigrationCopyReceipt>
@@ -2850,8 +3081,7 @@ internal object ManagedDownloadStorage {
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: return false
-        // provider document IDs are opaque values. A slash or colon is data,
-        // not evidence that one document is below another document
+        // Provider 文档 ID 是不透明值，其中的斜线和冒号都是数据，不能拿来推断层级
         return normalizedDocumentId == normalizedTreeDocumentId
     }
 
@@ -2960,9 +3190,7 @@ internal object ManagedDownloadStorage {
             .takeIf(String::isNotBlank)
     }
 
-    /**
-     * 优先读取 provider 的真实 display name, 避免把 opaque document ID 当成文件名
-     */
+    /** 优先读取 Provider 返回的真实显示名，避免把不透明文档 ID 当成文件名 */
     internal fun resolveManagedAudioDisplayName(
         context: Context,
         song: SongItem
@@ -3062,8 +3290,8 @@ internal object ManagedDownloadStorage {
                 hasCachedSnapshot = cachedSnapshot != null
             )
         ) {
-            // playback only needs the sidecar directories refreshed; reparsing every
-            // audio metadata row here blocks rapid song switches on large SAF trees
+            // 播放侧只需刷新歌词和封面目录，不要在大 SAF 目录上重新解析每条音频元数据
+            // 这样切歌时不会被整棵目录拖慢
             val snapshotForRefresh = cachedSnapshot ?: return@withContext null
             val refreshedSnapshot = refreshDownloadSidecarSnapshotBlocking(
                 context = context,
@@ -3167,11 +3395,119 @@ internal object ManagedDownloadStorage {
             NPLogger.w(TAG, "pending 音频枚举不完整，跳过恢复: root=${root.javaClass.simpleName}")
             return@withContext emptyList()
         }
-        refresh.entries
+        val temporary = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = forceRefresh,
+            rootAlreadyRefreshed = true
+        )
+        if (!temporary.isComplete && forceRefresh) {
+            NPLogger.w(TAG, "下载 .tmp 目录枚举不完整，跳过 pending 恢复")
+            return@withContext emptyList()
+        }
+        (refresh.entries + temporary.entries)
             .asSequence()
             .filterNot(StoredEntry::isDirectory)
             .filter(StoredEntry::isPendingAudioWrite)
+            .distinctBy(StoredEntry::reference)
             .toList()
+    }
+
+    internal data class PendingArtifactScanResult(
+        val count: Int,
+        val isComplete: Boolean,
+        /** 已确认属于核心音频的 pending 项，不应阻塞清空收敛 */
+        val protectedCount: Int = 0
+    ) {
+        val blockingCount: Int
+            get() = (count - protectedCount.coerceAtLeast(0)).coerceAtLeast(0)
+    }
+
+    /** 清空前使用一次完整快照确认没有遗留 pending，避免无凭据时误放行栅栏 */
+    internal suspend fun scanPendingDownloadArtifacts(
+        context: Context,
+        protectedReferences: Set<String> = emptySet()
+    ): PendingArtifactScanResult = withContext(Dispatchers.IO) {
+        val normalizedProtectedReferences = protectedReferences
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        val root = resolveRootBlocking(context)
+        val refresh = treeDirectories.refreshRootEntries(context, root)
+        if (!refresh.isComplete) {
+            return@withContext PendingArtifactScanResult(0, isComplete = false)
+        }
+        val temporary = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = true,
+            rootAlreadyRefreshed = true
+        )
+        if (!temporary.isComplete) {
+            return@withContext PendingArtifactScanResult(0, isComplete = false)
+        }
+        val pendingEntries = (refresh.entries + temporary.entries)
+            .asSequence()
+            .filterNot(StoredEntry::isDirectory)
+            .filter { entry ->
+                entry.isPendingAudioWrite ||
+                    entry.name.contains(PENDING_AUDIO_WRITE_MARKER) ||
+                    entry.name.contains(PENDING_METADATA_SUFFIX, ignoreCase = true)
+            }
+            .toList()
+        val count = pendingEntries.size
+        val cachedDurableAudioNames = snapshotCacheStore
+            .cachedSnapshot(context, restorePersisted = false)
+            ?.pendingMetadataByAudioName
+            .orEmpty()
+            .filterValues(::isDurableCoreMetadata)
+            .keys
+        val cachedProtectedReferences = pendingEntries
+            .asSequence()
+            .filter { entry ->
+                pendingArtifactLogicalName(entry) in cachedDurableAudioNames
+            }
+            .mapTo(linkedSetOf(), StoredEntry::reference)
+        val allProtectedReferences = normalizedProtectedReferences + cachedProtectedReferences
+        val protectedCount = pendingEntries.count { entry ->
+            entry.reference in allProtectedReferences
+        }
+        PendingArtifactScanResult(
+            count = count,
+            isComplete = true,
+            protectedCount = protectedCount
+        )
+    }
+
+    private fun pendingArtifactLogicalName(entry: StoredEntry): String? {
+        return if (entry.isPendingAudioWrite) {
+            entry.logicalName
+        } else {
+            ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+        }
+    }
+
+    private fun isDurableCoreMetadata(metadata: DownloadedAudioMetadata): Boolean {
+        if (metadata.downloadFinalized == true) {
+            return true
+        }
+        return isDurableCoreArtifactState(
+            metadata.artifactState
+                ?.trim()
+                ?.uppercase(Locale.ROOT)
+        )
+    }
+
+    /** 清空时只有明确属于临时状态的条目才允许删除 */
+    internal fun isKnownTransientPendingMetadata(
+        metadata: DownloadedAudioMetadata
+    ): Boolean {
+        if (metadata.downloadFinalized == true) return false
+        val state = metadata.artifactState
+            ?.trim()
+            ?.uppercase(Locale.ROOT)
+            ?: return false
+        return state in KNOWN_TRANSIENT_PENDING_ARTIFACT_STATES
     }
 
     internal suspend fun findDownloadedAudioByCandidateBaseNames(
@@ -3795,7 +4131,7 @@ internal object ManagedDownloadStorage {
     }
 
     internal fun shouldPersistFastIndex(snapshot: DownloadLibrarySnapshot): Boolean {
-        // incomplete metadata is not evidence that the corresponding shard is empty
+        // 元数据不完整不能说明对应分片为空
         return snapshot.rootEntriesComplete &&
             snapshot.sidecarEntriesComplete &&
             snapshot.audioEntriesWithoutMetadata.isEmpty()
@@ -3873,6 +4209,7 @@ internal object ManagedDownloadStorage {
                 localFilePath = currentReference.takeIf { it.startsWith("/") },
                 sizeBytes = 0L,
                 lastModifiedMs = entry.updatedAtMs,
+                sizeKnown = false,
                 isDirectory = false
             )
         }
@@ -4054,13 +4391,23 @@ internal object ManagedDownloadStorage {
 
         val libraryRefresh = treeDirectories.refreshDownloadLibraryEntries(context, root)
         val rootEntries = libraryRefresh.rootEntries.filterNot(StoredEntry::isDirectory)
-        val pendingAudioEntries = rootEntries.filter(StoredEntry::isPendingAudioWrite)
+        val temporaryEntries = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = forceRefresh,
+            rootAlreadyRefreshed = true
+        )
+        val pendingAudioEntries = (rootEntries + temporaryEntries.entries)
+            .filter(StoredEntry::isPendingAudioWrite)
+            .distinctBy(StoredEntry::reference)
         val pendingAudioLogicalNames = pendingAudioEntries
             .mapTo(hashSetOf(), StoredEntry::logicalName)
         val audioEntries = rootEntries.filter {
             !it.isPendingAudioWrite && it.extension in audioExtensions
         }
-        val metadataEntries = rootEntries.filter { entry ->
+        val metadataEntries = (rootEntries + temporaryEntries.entries.filter { entry ->
+            entry.name.contains(PENDING_METADATA_SUFFIX, ignoreCase = true)
+        }).filter { entry ->
             if (!ManagedDownloadTreeNaming.isMetadataName(entry.name)) {
                 return@filter false
             }
@@ -4206,7 +4553,7 @@ internal object ManagedDownloadStorage {
             metadataByAudioName = metadataByAudioName,
             coverEntries = coverEntries,
             lyricEntries = lyricEntries,
-            rootEntriesComplete = libraryRefresh.rootEntriesComplete,
+            rootEntriesComplete = libraryRefresh.rootEntriesComplete && temporaryEntries.isComplete,
             sidecarEntriesComplete = libraryRefresh.sidecarEntriesComplete,
             pendingAudioEntries = pendingAudioEntries,
             pendingMetadataByAudioName = pendingMetadataByAudioName
@@ -4404,58 +4751,87 @@ internal object ManagedDownloadStorage {
         val logicalAudioName = audio.logicalName
         val metadataName = "$logicalAudioName$METADATA_SUFFIX"
         val pendingMetadataName = "$logicalAudioName$PENDING_METADATA_SUFFIX"
-        return when (val root = resolveRootBlocking(context)) {
-            is RootHandle.FileRoot -> {
-                val metadataFile = File(root.dir, metadataName)
-                if (metadataFile.exists() && metadataFile.isFile) {
-                    metadataFile.toStoredEntry()
-                } else {
-                    val pendingFile = File(root.dir, pendingMetadataName)
-                    if (pendingFile.exists() && pendingFile.isFile) {
-                        pendingFile.toStoredEntry()
+        val root = resolveRootBlocking(context)
+
+        fun findInRoot(candidateRoot: RootHandle): StoredEntry? {
+            return when (candidateRoot) {
+                is RootHandle.FileRoot -> {
+                    val metadataFile = File(candidateRoot.dir, metadataName)
+                    if (metadataFile.exists() && metadataFile.isFile) {
+                        metadataFile.toStoredEntry()
                     } else {
-                    root.dir.listFiles()
-                        ?.asSequence()
-                        ?.filter { file ->
-                            ManagedDownloadTreeNaming.metadataNameOrdinal(file.name, audio.name) != null
+                        val pendingFile = File(candidateRoot.dir, pendingMetadataName)
+                        if (pendingFile.exists() && pendingFile.isFile) {
+                            pendingFile.toStoredEntry()
+                        } else {
+                            candidateRoot.dir.listFiles()
+                                ?.asSequence()
+                                ?.filter { file ->
+                                    ManagedDownloadTreeNaming.metadataNameOrdinal(
+                                        file.name,
+                                        audio.name
+                                    ) != null
+                                }
+                                ?.minWithOrNull(
+                                    compareBy<File>(
+                                        {
+                                            ManagedDownloadTreeNaming.metadataNameOrdinal(
+                                                it.name,
+                                                audio.name
+                                            ) ?: Int.MAX_VALUE
+                                        },
+                                        { it.name }
+                                    )
+                                )
+                                ?.takeIf(File::isFile)
+                                ?.toStoredEntry()
                         }
-                        ?.minWithOrNull(
-                            compareBy<File>(
-                                { ManagedDownloadTreeNaming.metadataNameOrdinal(it.name, audio.name) ?: Int.MAX_VALUE },
-                                { it.name }
-                            )
-                        )
-                        ?.takeIf(File::isFile)
-                        ?.toStoredEntry()
                     }
                 }
-            }
-            is RootHandle.TreeRoot -> {
-                val children = treeChildRegistry.cachedTreeChildren(
-                    context = context,
-                    parent = root.tree,
-                    // 写入路径优先复用已确认的目录快照, 避免每次回写都重新枚举 SAF
-                    maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
-                )
-                children.asSequence()
-                    .filterNot(QueriedTreeChild::isDirectory)
-                    .filter { child -> child.name == metadataName }
-                    .firstOrNull()
-                    ?.toStoredEntry()
-                    ?: children.asSequence()
-                    .filterNot(QueriedTreeChild::isDirectory)
-                    .filter { child ->
-                        ManagedDownloadTreeNaming.metadataNameOrdinal(child.name, audio.name) != null
-                    }
-                    .minWithOrNull(
-                        compareBy<QueriedTreeChild>(
-                            { ManagedDownloadTreeNaming.metadataNameOrdinal(it.name, audio.name) ?: Int.MAX_VALUE },
-                            { it.name }
-                        )
+
+                is RootHandle.TreeRoot -> {
+                    val children = treeChildRegistry.cachedTreeChildren(
+                        context = context,
+                        parent = candidateRoot.tree,
+                        // 写入路径优先复用已确认的目录快照，避免每次回写都重新枚举 SAF
+                        maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
                     )
+                    children.asSequence()
+                        .filterNot(QueriedTreeChild::isDirectory)
+                        .filter { child -> child.name == metadataName }
+                        .firstOrNull()
                         ?.toStoredEntry()
+                        ?: children.asSequence()
+                            .filterNot(QueriedTreeChild::isDirectory)
+                            .filter { child ->
+                                ManagedDownloadTreeNaming.metadataNameOrdinal(
+                                    child.name,
+                                    audio.name
+                                ) != null
+                            }
+                            .minWithOrNull(
+                                compareBy<QueriedTreeChild>(
+                                    {
+                                        ManagedDownloadTreeNaming.metadataNameOrdinal(
+                                            it.name,
+                                            audio.name
+                                        ) ?: Int.MAX_VALUE
+                                    },
+                                    { it.name }
+                                )
+                            )
+                            ?.toStoredEntry()
+                }
             }
         }
+
+        // 正式 metadata 仍在根目录，先查根以兼容旧版本和已提交音频
+        findInRoot(root)?.let { return it }
+        if (!audio.isPendingAudioWrite) return null
+
+        // 新版本 pending 音频和 pending metadata 同处 .tmp，避免根目录污染
+        val temporaryRoot = resolveTemporaryRoot(context, root, create = false)
+        return temporaryRoot?.let(::findInRoot)
     }
 
     suspend fun saveMetadata(context: Context, audio: StoredEntry, json: String): Boolean = withContext(Dispatchers.IO) {
@@ -4498,10 +4874,14 @@ internal object ManagedDownloadStorage {
     ): Boolean = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val root = resolveRootBlocking(appContext)
-        ensureManagedLibraryManifestForRoot(appContext, root)
-        val backendResult = writeTextThroughBackend(
+        val temporaryRoot = resolveTemporaryRoot(
             context = appContext,
             root = root,
+            create = true
+        ) ?: throw IOException("无法准备下载 .tmp 目录")
+        val backendResult = writeTextThroughBackend(
+            context = appContext,
+            root = temporaryRoot,
             displayName = "$audioName$PENDING_METADATA_SUFFIX",
             content = json,
             temporaryWriteOwnerName = temporaryWriteOwnerNameForOperation(
@@ -4511,7 +4891,7 @@ internal object ManagedDownloadStorage {
         )
         val written = when (backendResult) {
             is StorageWriteResult.Written -> backendResult.stat.toStoredEntryForBackend(
-                fileRoot = (root as? RootHandle.FileRoot)?.dir
+                fileRoot = (temporaryRoot as? RootHandle.FileRoot)?.dir
             )
             StorageWriteResult.Missing -> {
                 NPLogger.w(TAG, "pending metadata target is missing; refusing raw writer fallback")
@@ -4659,19 +5039,33 @@ internal object ManagedDownloadStorage {
         val pendingName = buildPendingAudioWriteName(audio.logicalName)
         val demoted = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
+                val temporaryRoot = resolveTemporaryRoot(
+                    context = context,
+                    root = root,
+                    create = true
+                ) as? RootHandle.FileRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
                 demotePublishedFileAudio(
                     root = root.dir,
                     publishedName = audio.name,
-                    pendingName = pendingName
+                    pendingName = pendingName,
+                    pendingRoot = temporaryRoot.dir
                 )?.toStoredEntry()
             }
 
             is RootHandle.TreeRoot -> {
-                demotePublishedTreeAudio(
+                val temporaryRoot = resolveTemporaryRoot(
+                    context = context,
+                    root = root,
+                    create = true
+                ) as? RootHandle.TreeRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
+                demotePublishedTreeAudioToTemporary(
                     context = context,
                     root = root,
                     audio = audio,
-                    pendingName = pendingName
+                    pendingName = pendingName,
+                    temporaryRoot = temporaryRoot
                 )
             }
         }
@@ -4692,9 +5086,7 @@ internal object ManagedDownloadStorage {
         deletePendingAudioMetadataBlocking(context, root, normalizedName)
     }
 
-    /**
-     * removes only a pre-commit pending pair that is proven to belong to one cancelled operation
-     */
+    /** 只删除已确认属于某个已取消 operation 的提交前待处理文件对 */
     internal suspend fun cleanupCancelledPendingDownloadArtifacts(
         context: Context,
         stableKey: String,
@@ -4704,9 +5096,8 @@ internal object ManagedDownloadStorage {
         operations = listOf(CancelledPendingDownloadOperation(stableKey, operationId))
     )
 
-    /**
-     * resolves all operation-owned pending pairs from one complete root snapshot so clear-all
-     * cleanup does not enumerate the same SAF directory once per song
+    /** 清空全部任务时基于一次完整根目录快照解析所有 operation 的待处理文件对
+     * 避免按歌曲重复扫描 SAF
      */
     internal suspend fun cleanupCancelledPendingDownloadArtifacts(
         context: Context,
@@ -4738,9 +5129,8 @@ internal object ManagedDownloadStorage {
         }
         try {
             val root = resolveRootBlocking(context)
-            // 清空期间优先复用完整根缓存，缓存缺失时才向 provider 发起一次枚举
-            val refresh = treeDirectories.cachedRootEntries(root)
-                ?: treeDirectories.refreshRootEntries(context, root)
+            // 清空是破坏性操作，不能依赖可能遗漏刚写入 pending 的旧缓存
+            val refresh = treeDirectories.refreshRootEntries(context, root)
             if (!refresh.isComplete) {
                 NPLogger.w(
                     TAG,
@@ -4750,29 +5140,90 @@ internal object ManagedDownloadStorage {
                     failedCount = normalizedOperations.size
                 )
             }
-            val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
-            val parsedPendingMetadataEntries = rootEntries
+            val temporary = readTemporaryDirectoryEntries(
+                context = context,
+                root = root,
+                forceRefresh = true,
+                rootAlreadyRefreshed = true
+            )
+            if (!temporary.isComplete) {
+                NPLogger.w(
+                    TAG,
+                    "取消清理跳过不完整 .tmp 目录枚举: operations=${normalizedOperations.size}"
+                )
+                return@withContext StartupRecoveryResult(
+                    failedCount = normalizedOperations.size
+                )
+            }
+            val rootEntries = (refresh.entries + temporary.entries)
+                .filterNot(StoredEntry::isDirectory)
+            // 先读取正式和待提交元数据。核心提交后的种子元数据已经在根目录
+            // 而待提交音频仍在 .tmp，只读待提交元数据
+            // 会把这对可恢复音频误判为普通取消残留
+            val parsedMetadataEntries = rootEntries
                 .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
                 .mapNotNull { entry ->
-                    val audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                    ManagedDownloadTreeNaming.metadataAudioName(entry.name)
                         ?: return@mapNotNull null
-                    if (!ManagedDownloadTreeNaming.isPendingMetadataName(entry.name, audioName)) {
-                        return@mapNotNull null
-                    }
                     parseDownloadedAudioMetadata(context, entry)
                         ?.let { metadata -> ManagedDownloadParsedMetadataEntry(entry, metadata) }
                 }
-            val referencesToDelete = normalizedOperations.flatMapTo(linkedSetOf<String>()) { operation ->
-                ManagedDownloadPendingArtifactCleanupPlanner.planCancelledOperationReferences(
+            val cleanupPlans = normalizedOperations.map { operation ->
+                operation to ManagedDownloadPendingArtifactCleanupPlanner.planCancelledOperation(
                     rootEntries = rootEntries,
-                    parsedMetadataEntries = parsedPendingMetadataEntries,
+                    parsedMetadataEntries = parsedMetadataEntries,
                     stableKey = operation.stableKey,
                     operationId = operation.operationId
                 )
             }
+            val referencesToDelete = cleanupPlans.flatMapTo(linkedSetOf<String>()) { (_, plan) ->
+                plan.referencesToDelete
+            }
+            val protectedPendingReferences = cleanupPlans.flatMapTo(linkedSetOf<String>()) { (_, plan) ->
+                plan.protectedReferences
+            }
+            val deleteReferencesByStableKey = cleanupPlans
+                .groupBy({ (operation, _) -> operation.stableKey }, { (_, plan) -> plan })
+                .mapValues { (_, plans) ->
+                    plans.flatMapTo(linkedSetOf()) { plan -> plan.referencesToDelete }
+                }
+            val isPendingArtifact: (StoredEntry) -> Boolean = { entry ->
+                entry.isPendingAudioWrite ||
+                    entry.name.contains(PENDING_AUDIO_WRITE_MARKER) ||
+                    entry.name.contains(PENDING_METADATA_SUFFIX, ignoreCase = true) ||
+                    ManagedDownloadTreeNaming.isPendingMetadataName(
+                        entry.name,
+                        ManagedDownloadTreeNaming.metadataAudioName(entry.name)
+                            ?: ""
+                    )
+            }
+            val protectedPendingEntryCount = rootEntries
+                .asSequence()
+                .filter(isPendingArtifact)
+                .count { entry -> entry.reference in protectedPendingReferences }
             if (referencesToDelete.isEmpty()) {
+                val unresolvedPendingEntries = rootEntries
+                    .filter(isPendingArtifact)
+                    .filterNot { entry -> entry.reference in protectedPendingReferences }
+                if (unresolvedPendingEntries.isNotEmpty()) {
+                    NPLogger.w(
+                        TAG,
+                        "取消清理发现无法证明归属的 pending，保留证据并等待恢复: " +
+                            "operations=${normalizedOperations.size}, " +
+                            "entries=${unresolvedPendingEntries.size}"
+                    )
+                    reportProgress(0, unresolvedPendingEntries.size)
+                    return@withContext StartupRecoveryResult(
+                        failedCount = unresolvedPendingEntries.size,
+                        protectedCount = protectedPendingEntryCount,
+                        protectedReferences = protectedPendingReferences
+                    )
+                }
                 reportProgress(0, 0)
-                return@withContext StartupRecoveryResult()
+                return@withContext StartupRecoveryResult(
+                    protectedCount = protectedPendingEntryCount,
+                    protectedReferences = protectedPendingReferences
+                )
             }
             reportProgress(0, referencesToDelete.size)
             val entriesToDelete = rootEntries.filter { entry ->
@@ -4781,12 +5232,21 @@ internal object ManagedDownloadStorage {
             val terminalTemporaryWriteTargets =
                 terminalTemporaryWriteCleanupTargets(
                     entries = entriesToDelete,
-                    temporaryWriteIdentityByMetadataReference =
-                        parsedPendingMetadataEntries.associate { parsed ->
-                            parsed.entry.reference to terminalTemporaryWriteIdentity(
-                                parsed.metadata
-                            )
-                        }
+                        temporaryWriteIdentityByMetadataReference =
+                        parsedMetadataEntries
+                            .filter { parsed ->
+                                ManagedDownloadTreeNaming.isPendingMetadataName(
+                                    actualName = parsed.entry.name,
+                                    audioName = ManagedDownloadTreeNaming.metadataAudioName(
+                                        parsed.entry.name
+                                    ) ?: ""
+                                )
+                            }
+                            .associate { parsed ->
+                                parsed.entry.reference to terminalTemporaryWriteIdentity(
+                                    parsed.metadata
+                                )
+                            }
                 )
             val recordedTerminalCleanup = terminalTemporaryWriteTargets.isEmpty() ||
                 recordTerminalTemporaryWriteCleanup(
@@ -4831,17 +5291,24 @@ internal object ManagedDownloadStorage {
                 else -> cleanupPersistedTerminalTemporaryWriteArtifacts(context)
             }
             reportProgress(referencesToDelete.size, referencesToDelete.size)
-            val failedCount =
-                referencesToDelete.size - deletedReferences.size + temporaryCleanup.failedCount
+            val failedReferences = referencesToDelete - deletedReferences
+            val failedStableKeys = resolveFailedStableKeys(
+                referencesByStableKey = deleteReferencesByStableKey,
+                failedReferences = failedReferences
+            )
+            val failedCount = failedReferences.size + temporaryCleanup.failedCount
             NPLogger.d(
                 TAG,
                 "取消下载 pending 半成品清理完成: operations=${normalizedOperations.size}, " +
                     "cleaned=${deletedReferences.size + temporaryCleanup.cleanedCount}, " +
-                    "failed=$failedCount"
+                    "failed=$failedCount, protected=$protectedPendingEntryCount"
             )
             StartupRecoveryResult(
                 cleanedCount = deletedReferences.size + temporaryCleanup.cleanedCount,
-                failedCount = failedCount
+                failedCount = failedCount,
+                protectedCount = protectedPendingEntryCount,
+                protectedReferences = protectedPendingReferences,
+                failedStableKeys = failedStableKeys
             )
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
@@ -4871,8 +5338,174 @@ internal object ManagedDownloadStorage {
     }
 
     /**
-     * replays every persisted terminal cleanup against the root captured at enqueue time
+     * 清空任务时收敛没有 operation 凭据的临时文件
+     *
+     * 新版本的下载 staging 全部位于 .tmp，该目录只承载可恢复的中间产物
+     * 在用户明确执行清空后，未跨过 core commit 的 .tmp 项可以安全删除
+     * 已跨过 core commit 的项仍按 metadata 和调用方快照保护，根目录旧版本
+     * 产物只有在 metadata 可解析且明确不是 durable core 时才删除，避免误伤
+     * 用户已有的正式音频
      */
+    internal suspend fun cleanupUnownedPendingDownloadArtifactsForClear(
+        context: Context,
+        protectedReferences: Set<String> = emptySet(),
+        onProgress: (completedItems: Int, totalItems: Int) -> Unit = { _, _ -> }
+    ): StartupRecoveryResult = withContext(Dispatchers.IO) {
+        fun reportProgress(completedItems: Int, totalItems: Int) {
+            try {
+                onProgress(
+                    completedItems.coerceAtLeast(0),
+                    totalItems.coerceAtLeast(0)
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                NPLogger.w(TAG, "孤儿 pending 清理进度回调失败: ${error.message}")
+            }
+        }
+
+        val root = try {
+            resolveRootBlocking(context)
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            NPLogger.w(TAG, "清空时无法解析下载根目录，保留临时文件: ${error.message}", error)
+            return@withContext StartupRecoveryResult(failedCount = 1)
+        }
+        val refresh = try {
+            treeDirectories.refreshRootEntries(context, root)
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            NPLogger.w(TAG, "清空时无法枚举下载根目录，保留临时文件: ${error.message}", error)
+            return@withContext StartupRecoveryResult(failedCount = 1)
+        }
+        if (!refresh.isComplete) {
+            NPLogger.w(TAG, "清空时根目录枚举不完整，保留 pending 证据")
+            return@withContext StartupRecoveryResult(failedCount = 1)
+        }
+        val temporary = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = true,
+            rootAlreadyRefreshed = true
+        )
+        if (!temporary.isComplete) {
+            NPLogger.w(TAG, "清空时 .tmp 枚举不完整，保留 pending 证据")
+            return@withContext StartupRecoveryResult(failedCount = 1)
+        }
+
+        val normalizedProtected = protectedReferences
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+        val temporaryReferences = temporary.entries
+            .asSequence()
+            .filterNot(StoredEntry::isDirectory)
+            .mapTo(linkedSetOf(), StoredEntry::reference)
+        val allEntries = (refresh.entries + temporary.entries)
+            .filterNot(StoredEntry::isDirectory)
+            .distinctBy(StoredEntry::reference)
+        val isPendingArtifact: (StoredEntry) -> Boolean = { entry ->
+            entry.isPendingAudioWrite ||
+                entry.name.contains(PENDING_AUDIO_WRITE_MARKER) ||
+                entry.name.contains(PENDING_METADATA_SUFFIX, ignoreCase = true) ||
+                ManagedDownloadTreeNaming.isPendingMetadataName(
+                    actualName = entry.name,
+                    audioName = ManagedDownloadTreeNaming.metadataAudioName(entry.name) ?: ""
+                )
+        }
+        val metadataEntries = allEntries.filter { entry ->
+            ManagedDownloadTreeNaming.isMetadataName(entry.name)
+        }
+        val pendingEntries = allEntries.filter(isPendingArtifact)
+        if (pendingEntries.isEmpty()) {
+            return@withContext StartupRecoveryResult()
+        }
+        val parsedMetadataByReference = linkedMapOf<String, DownloadedAudioMetadata>()
+        val unreadableMetadataReferences = linkedSetOf<String>()
+        metadataEntries.forEach { entry ->
+            val metadata = try {
+                parseDownloadedAudioMetadata(context, entry)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(
+                    TAG,
+                    "清空时读取 metadata 异常，保留同名 pending: " +
+                        "name=${entry.name}, error=${error.message}"
+                )
+                null
+            }
+            if (metadata == null) {
+                unreadableMetadataReferences += entry.reference
+            } else {
+                parsedMetadataByReference[entry.reference] = metadata
+            }
+        }
+        val entryByReference = allEntries.associateBy(StoredEntry::reference)
+        val orphanPlan = ManagedDownloadPendingArtifactCleanupPlanner
+            .planUnownedForExplicitClear(
+                entries = allEntries,
+                temporaryReferences = temporaryReferences,
+                parsedMetadataEntries = parsedMetadataByReference.mapNotNull {
+                    (reference, metadata) ->
+                    entryByReference[reference]?.let { entry ->
+                        ManagedDownloadParsedMetadataEntry(entry, metadata)
+                    }
+                },
+                unreadableMetadataReferences = unreadableMetadataReferences,
+                protectedReferences = normalizedProtected
+            )
+        val protectedPendingReferences = orphanPlan.protectedReferences
+        val referencesToDelete = orphanPlan.referencesToDelete
+
+        val unresolvedCount = pendingEntries.count { entry ->
+            entry.reference !in protectedPendingReferences &&
+                entry.reference !in referencesToDelete
+        }
+        val deletePolicy = buildManagedDeletePolicy(
+            context = context,
+            allowedRoot = root,
+            trustedReferences = referencesToDelete
+        )
+        val trustedReferences = resolveTrustedManagedReferences(
+            references = referencesToDelete,
+            deletePolicy = deletePolicy
+        )
+        reportProgress(0, trustedReferences.size + unresolvedCount)
+        val completed = AtomicInteger(0)
+        val deletedReferences = deleteReferencesInternalConcurrently(
+            context = context,
+            references = trustedReferences,
+            deletePolicy = deletePolicy,
+            invalidateSnapshot = true,
+            onDeleteAttemptFinished = { _, _ ->
+                reportProgress(
+                    completedItems = completed.incrementAndGet(),
+                    totalItems = trustedReferences.size + unresolvedCount
+                )
+            }
+        )
+        val failedCount = (trustedReferences.size - deletedReferences.size) + unresolvedCount
+        reportProgress(
+            completedItems = trustedReferences.size + unresolvedCount,
+            totalItems = trustedReferences.size + unresolvedCount
+        )
+        NPLogger.d(
+            TAG,
+            "清空孤儿 pending 临时文件收敛完成: pending=${pendingEntries.size}, " +
+                "deleted=${deletedReferences.size}, protected=${protectedPendingReferences.size}, " +
+                "blocked=${pendingEntries.count { it.reference in unreadableMetadataReferences }}, " +
+                "unresolved=$unresolvedCount, failed=$failedCount"
+        )
+        StartupRecoveryResult(
+            cleanedCount = deletedReferences.size,
+            failedCount = failedCount,
+            protectedCount = pendingEntries.count { it.reference in protectedPendingReferences },
+            protectedReferences = protectedPendingReferences
+        )
+    }
+
+    /** 按入队时记录的根目录回放所有持久终态清理 */
     internal suspend fun cleanupPersistedTerminalTemporaryWriteArtifacts(
         context: Context
     ): StartupRecoveryResult = withContext(Dispatchers.IO) {
@@ -4902,40 +5535,13 @@ internal object ManagedDownloadStorage {
                         )
                         return@forEach
                     }
-                    val recovery = try {
-                        cleanupTerminalTemporaryWriteArtifactsBlocking(
-                            context = context,
-                            root = root,
-                            targets = entry.targets
-                        )
-                    } catch (error: kotlinx.coroutines.CancellationException) {
-                        throw error
-                    } catch (error: SecurityException) {
-                        NPLogger.w(
-                            TAG,
-                            "终态临时写入清理缺少权限，保留等待恢复: ${error.message}"
-                        )
-                        StartupRecoveryResult(failedCount = entry.targetNames.size)
-                    } catch (error: Exception) {
-                        NPLogger.w(
-                            TAG,
-                            "终态临时写入清理失败，保留等待恢复: ${error.message}",
-                            error
-                        )
-                        StartupRecoveryResult(failedCount = entry.targetNames.size)
-                    }
+                    val recovery = cleanupPersistedTerminalTemporaryWriteEntry(
+                        context = context,
+                        entry = entry,
+                        root = root
+                    )
                     cleanedCount += recovery.cleanedCount
                     failedCount += recovery.failedCount
-                    if (recovery.failedCount == 0 &&
-                        !PersistentTerminalTemporaryWriteCleanupJournal.consume(context, entry)
-                    ) {
-                        failedCount += entry.targetNames.size
-                        NPLogger.w(
-                            TAG,
-                            "终态临时写入清理已完成但记录未确认消费，保留等待恢复: " +
-                                "targets=${entry.targetNames.size}"
-                        )
-                    }
                 }
                 StartupRecoveryResult(
                     cleanedCount = cleanedCount,
@@ -4947,6 +5553,128 @@ internal object ManagedDownloadStorage {
             cleanedCount = preparationRecovery.cleanedCount + terminalRecovery.cleanedCount,
             failedCount = preparationRecovery.failedCount + terminalRecovery.failedCount
         )
+    }
+
+    /** 清理一条终态记录，只消费后端操作后重新校验过的目录代次
+     * 收尾回调可能在列举父目录时再次加入同一目标，此时保留新代次并交给下一轮恢复
+     */
+    private suspend fun cleanupPersistedTerminalTemporaryWriteEntry(
+        context: Context,
+        entry: TerminalTemporaryWriteCleanupJournalEntry,
+        root: RootHandle
+    ): StartupRecoveryResult {
+        var cleanedCount = 0
+        var failedCount = 0
+        var currentEntry = entry
+        var currentRoot = root
+
+        fun aggregate(extraFailedCount: Int = 0): StartupRecoveryResult {
+            return StartupRecoveryResult(
+                cleanedCount = cleanedCount,
+                failedCount = failedCount + extraFailedCount
+            )
+        }
+
+        for (attempt in 0 until TERMINAL_TEMPORARY_WRITE_CLEANUP_MAX_REBASE_ATTEMPTS) {
+            val recovery = try {
+                cleanupTerminalTemporaryWriteArtifactsBlocking(
+                    context = context,
+                    root = currentRoot,
+                    targets = currentEntry.targets
+                )
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: SecurityException) {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理缺少权限，保留等待恢复: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}, error=${error.message}"
+                )
+                StartupRecoveryResult(failedCount = currentEntry.targetNames.size)
+            } catch (error: Exception) {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理失败，保留等待恢复: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}, error=${error.message}",
+                    error
+                )
+                StartupRecoveryResult(failedCount = currentEntry.targetNames.size)
+            }
+            cleanedCount += recovery.cleanedCount
+            failedCount += recovery.failedCount
+            if (recovery.failedCount > 0) {
+                return aggregate()
+            }
+
+            if (PersistentTerminalTemporaryWriteCleanupJournal.consume(context, currentEntry)) {
+                return aggregate()
+            }
+
+            // 当前记录缺失通常表示另一个清理 Worker 已经消费它，目标集合变化或日志不可读
+            // 仍属于失败，必须留给下一轮恢复
+            val rebasedEntry =
+                PersistentTerminalTemporaryWriteCleanupJournal.currentEntryIfTargetsMatch(
+                    context = context,
+                    entry = currentEntry
+                )
+            if (rebasedEntry == null) {
+                if (PersistentTerminalTemporaryWriteCleanupJournal.consume(context, currentEntry)) {
+                    return aggregate()
+                }
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理已完成但记录未确认消费，保留等待恢复: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}, " +
+                        "attempt=${attempt + 1}/" +
+                        TERMINAL_TEMPORARY_WRITE_CLEANUP_MAX_REBASE_ATTEMPTS
+                )
+                return aggregate(currentEntry.targetNames.size)
+            }
+            if (rebasedEntry.generationId == currentEntry.generationId) {
+                // 目录代次没有变化时再次列举 SAF 不能提高比较安全性，保留记录等待持久重试
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理记录消费写入失败，保留等待恢复: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}"
+                )
+                return aggregate(currentEntry.targetNames.size)
+            }
+            if (attempt + 1 >= TERMINAL_TEMPORARY_WRITE_CLEANUP_MAX_REBASE_ATTEMPTS) {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理代际持续变化，保留等待恢复: " +
+                        "root=${currentEntry.root.identity}, " +
+                        "targets=${currentEntry.targetNames.size}, " +
+                        "attempts=${attempt + 1}"
+                )
+                return aggregate(currentEntry.targetNames.size)
+            }
+            val rebasedRoot = resolveTerminalTemporaryWriteCleanupRoot(context, rebasedEntry)
+            if (rebasedRoot == null) {
+                NPLogger.w(
+                    TAG,
+                    "终态临时写入清理代际已刷新但目录不可恢复，保留等待恢复: " +
+                        "root=${rebasedEntry.root.identity}, " +
+                        "targets=${rebasedEntry.targetNames.size}"
+                )
+                return aggregate(rebasedEntry.targetNames.size)
+            }
+            NPLogger.d(
+                TAG,
+                "终态临时写入清理检测到同目标代际刷新，重新验证后消费: " +
+                    "root=${rebasedEntry.root.identity}, " +
+                    "targets=${rebasedEntry.targetNames.size}, " +
+                    "attempt=${attempt + 2}/" +
+                    TERMINAL_TEMPORARY_WRITE_CLEANUP_MAX_REBASE_ATTEMPTS
+            )
+            currentEntry = rebasedEntry
+            currentRoot = rebasedRoot
+        }
+        return aggregate(entry.targetNames.size)
     }
 
     private fun recordTerminalTemporaryWriteCleanup(
@@ -5578,7 +6306,7 @@ internal object ManagedDownloadStorage {
         root: RootHandle,
         audioName: String
     ): Boolean {
-        val entries = when (root) {
+        val rootEntries = when (root) {
             is RootHandle.FileRoot -> {
                 root.dir.listFiles()?.map(ManagedDownloadStoredEntryMapper::fromFile)
                     ?: return false
@@ -5594,6 +6322,14 @@ internal object ManagedDownloadStorage {
                 refresh.children.map(ManagedDownloadStoredEntryMapper::fromTreeChild)
             }
         }
+        val temporary = readTemporaryDirectoryEntries(
+            context = context,
+            root = root,
+            forceRefresh = true,
+            rootAlreadyRefreshed = true
+        )
+        if (!temporary.isComplete) return false
+        val entries = rootEntries + temporary.entries
         val pendingNames = pendingMetadataEntryNames(
             audioName = audioName,
             candidateNames = entries.filterNot(StoredEntry::isDirectory).map(StoredEntry::name)
@@ -5688,11 +6424,9 @@ internal object ManagedDownloadStorage {
         return probeStorageRoot(context) is ManagedDownloadRootProbeResult.Accessible
     }
 
-    /**
-     * 当前配置目录对应的稳定 root 标识 ("tree:<identity>" 或 "file:<path>")
-     * 用于判定一次扫描的 root 是否与既有 catalog 所属 root 一致: 切换/重置下载目录后 root 会改变
-     * 据此可把"换目录后的真空"与"同目录瞬时空列举失败"区分开; 等价 URI 归一到同一 identity
-     * 因此对同一底层目录的重新选择仍视为同 root
+    /** 返回当前配置目录的稳定根标识
+     * 用来区分换目录后的真实空结果和同目录的瞬时列举失败
+     * 等价 URI 会归一到同一身份，因此重新选择同一目录仍视为同一根
      */
     suspend fun currentSnapshotRootKey(context: Context): String = withContext(Dispatchers.IO) {
         resolveSnapshotCacheKey(context)
@@ -5809,12 +6543,18 @@ internal object ManagedDownloadStorage {
         val boundedFileName = boundManagedDownloadFileName(fileName)
         val storedEntry = when (val root = resolveRootBlocking(context)) {
             is RootHandle.FileRoot -> {
+                val temporaryRoot = resolveTemporaryRoot(
+                    context = context,
+                    root = root,
+                    create = true
+                ) as? RootHandle.FileRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
                 val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
                 val reservedFinalName = existingAudio == null
                 val finalName = existingAudio?.name
                     ?: treeChildRegistry.reserveUniqueFileChildName(root.dir, boundedFileName)
                 val pendingName = buildPendingAudioWriteName(finalName)
-                val pendingTarget = File(root.dir, pendingName)
+                val pendingTarget = File(temporaryRoot.dir, pendingName)
                 val audioEntry = try {
                     writeCollisionPendingMetadata(
                         context = context,
@@ -5824,7 +6564,7 @@ internal object ManagedDownloadStorage {
                         pendingMetadataJson = pendingMetadataJson
                     )
                     val writeResult = runBlocking(Dispatchers.IO) {
-                        FileStorageBackend(root.dir).writeRecoverable(
+                        FileStorageBackend(temporaryRoot.dir).writeRecoverable(
                             target = StorageTarget.FileTarget(pendingName)
                         ) { output ->
                             tempFile.inputStream().use { input ->
@@ -5834,7 +6574,7 @@ internal object ManagedDownloadStorage {
                     }
                     val stored = when (writeResult) {
                         is StorageWriteResult.Written -> {
-                            writeResult.stat.toStoredEntryForBackend(root.dir)
+                            writeResult.stat.toStoredEntryForBackend(temporaryRoot.dir)
                         }
                         StorageWriteResult.Missing -> throw IOException(
                             "pending 音频写入目标不存在: $pendingName"
@@ -5883,6 +6623,12 @@ internal object ManagedDownloadStorage {
             }
 
             is RootHandle.TreeRoot -> {
+                val temporaryRoot = resolveTemporaryRoot(
+                    context = context,
+                    root = root,
+                    create = true
+                ) as? RootHandle.TreeRoot
+                    ?: throw IOException("无法准备下载 .tmp 目录")
                 val existingAudio = findExistingAudioForSeedStableKey(context, seedMetadataJson)
                 val reservedFinalName = existingAudio == null
                 val finalName = existingAudio?.name
@@ -5898,17 +6644,17 @@ internal object ManagedDownloadStorage {
                     )
                     val entry = writeSafFileThroughBackend(
                         context = context,
-                        parent = root.tree,
+                        parent = temporaryRoot.tree,
                         displayName = createdPendingName,
                         mimeType = mimeTypeFromName(finalName, mimeType),
                         expectedSizeBytes = actualSizeBytes,
                         sourceFile = tempFile
                     )
-                    treeChildRegistry.rememberTreeChild(root.tree, entry)
+                    treeChildRegistry.rememberTreeChild(temporaryRoot.tree, entry)
                     entry
                 } catch (error: Throwable) {
                     treeChildRegistry.forgetTreeChildName(
-                        root.tree,
+                        temporaryRoot.tree,
                         createdPendingName
                     )
                     if (reservedFinalName) {
@@ -6016,11 +6762,12 @@ internal object ManagedDownloadStorage {
     internal suspend fun promotePendingFileAudio(
         root: File,
         pendingName: String,
-        finalName: String
+        finalName: String,
+        pendingRoot: File = root
     ): File? {
         val target = File(root, finalName)
         return FileStorageMutationLocks.withTargetLock(target) {
-            val pending = File(root, pendingName)
+            val pending = File(pendingRoot, pendingName)
                 .takeIf { it.isFile }
                 ?: return@withTargetLock null
             when {
@@ -6047,14 +6794,15 @@ internal object ManagedDownloadStorage {
     internal suspend fun demotePublishedFileAudio(
         root: File,
         publishedName: String,
-        pendingName: String
+        pendingName: String,
+        pendingRoot: File = root
     ): File? {
         val published = File(root, publishedName)
         return FileStorageMutationLocks.withTargetLock(published) {
             val source = published.takeIf { it.isFile && it.length() > 0L }
                 ?: return@withTargetLock null
             val sourceLength = source.length()
-            val pending = File(root, pendingName)
+            val pending = File(pendingRoot, pendingName)
             if (pending.exists() || pending == source) {
                 return@withTargetLock null
             }
@@ -6145,10 +6893,15 @@ internal object ManagedDownloadStorage {
         val finalName = audio.logicalName.takeIf(String::isNotBlank) ?: return null
         return when (root) {
             is RootHandle.FileRoot -> {
+                val pendingFile = File(audio.reference)
+                val pendingRoot = pendingFile.parentFile
+                    ?.takeIf { it.isDirectory }
+                    ?: root.dir
                 promotePendingFileAudio(
                     root = root.dir,
                     pendingName = audio.name,
-                    finalName = finalName
+                    finalName = finalName,
+                    pendingRoot = pendingRoot
                 )?.toStoredEntry()
             }
 
@@ -6157,15 +6910,32 @@ internal object ManagedDownloadStorage {
                 val pendingBackend = SafStorageBackend(context)
                 val initialPendingReference = StorageReference.SafRef(pendingUri)
                 val pendingStat = pendingBackend.stat(initialPendingReference)
+                val rootChildren = treeChildRegistry.cachedTreeChildren(
+                    context = context,
+                    parent = root.tree,
+                    maxCacheAgeMs = 0L
+                )
+                val pendingIsDirectRootChild = rootChildren.any { child ->
+                    !child.isDirectory && sameTreeDocument(child.documentUri, pendingUri)
+                }
                 val pending = when (pendingStat) {
                     is StorageLookupResult.Found -> pendingStat.value
                         .takeUnless(StorageStat::isDirectory)
                         ?.let {
-                            resolvePendingTreeDocument(
-                                context = context,
-                                parent = root.tree,
-                                uri = pendingUri
-                            )
+                            if (pendingIsDirectRootChild) {
+                                resolvePendingTreeDocument(
+                                    context = context,
+                                    parent = root.tree,
+                                    uri = pendingUri
+                                )
+                            } else {
+                                resolvePendingTemporaryTreeDocument(
+                                    context = context,
+                                    root = root,
+                                    pendingUri = pendingUri,
+                                    pendingName = audio.name
+                                )
+                            }
                         }
                     StorageLookupResult.Missing -> null
                     StorageLookupResult.PermissionLost -> throw SecurityException(
@@ -6201,39 +6971,25 @@ internal object ManagedDownloadStorage {
                     reportedSizeBytes = pendingReportedSizeBytes,
                     description = audio.name
                 )
-                val treePending = treeChildRegistry.toTreeDocumentFile(
-                    context = context,
-                    parent = root.tree,
-                    child = pending
-                ) ?: treeChildRegistry.cachedTreeChildForWrite(
-                    context = context,
-                    parent = root.tree,
-                    childName = audio.name
-                )?.let { cachedChild ->
-                    val cachedDocument = treeChildRegistry.toDocumentFile(
+                val treePending = if (pendingIsDirectRootChild) {
+                    treeChildRegistry.toTreeDocumentFile(
                         context = context,
                         parent = root.tree,
-                        child = cachedChild
+                        child = pending
                     )
-                    cachedDocument?.let { document ->
-                        treeChildRegistry.toTreeDocumentFile(
-                            context = context,
-                            parent = root.tree,
-                            child = document
-                        )
-                    }
-                }?.takeIf { found ->
-                    runCatching {
-                        DocumentsContract.getDocumentId(found.uri) ==
-                            DocumentsContract.getDocumentId(pending.uri)
-                    }.getOrDefault(false)
+                } else {
+                    pending
                 }
-                val renamedDocument = renameTreeDocumentWithoutReplacing(
-                    context = context,
-                    parent = root.tree,
-                    document = treePending,
-                    finalName = finalName
-                )
+                val renamedDocument = if (pendingIsDirectRootChild) {
+                    renameTreeDocumentWithoutReplacing(
+                        context = context,
+                        parent = root.tree,
+                        document = treePending,
+                        finalName = finalName
+                    )
+                } else {
+                    null
+                }
                 if (renamedDocument != null) {
                     val renamedTarget = treeChildRegistry.toTreeDocumentFileOrEnumerated(
                         context = context,
@@ -6259,7 +7015,13 @@ internal object ManagedDownloadStorage {
                     pendingName = audio.name,
                     finalName = finalName,
                     expectedSizeBytes = expectedSizeBytes,
-                    fallbackLastModifiedMs = committedAtMs
+                    fallbackLastModifiedMs = committedAtMs,
+                    pendingParent = if (pendingIsDirectRootChild) {
+                        root.tree
+                    } else {
+                        (resolveTemporaryRoot(context, root, create = false)
+                            as? RootHandle.TreeRoot)?.tree
+                    }
                 )
             }
         }
@@ -6271,6 +7033,37 @@ internal object ManagedDownloadStorage {
     ): Long? {
         return countedSizeBytes?.takeIf { size -> size > 0L }
             ?: reportedSizeBytes?.takeIf { size -> size > 0L }
+    }
+
+    /** 通过受管目录缓存解析 pending 文档 */
+    private fun resolvePendingTemporaryTreeDocument(
+        context: Context,
+        root: RootHandle.TreeRoot,
+        pendingUri: android.net.Uri,
+        pendingName: String
+    ): DocumentFile? {
+        val temporaryRoot = resolveTemporaryRoot(
+            context = context,
+            root = root,
+            create = false
+        ) as? RootHandle.TreeRoot ?: return null
+        val cached = treeChildRegistry.cachedTreeChildren(
+            context = context,
+            parent = temporaryRoot.tree,
+            maxCacheAgeMs = 0L
+        )
+        val child = cached.firstOrNull { candidate ->
+            !candidate.isDirectory &&
+                candidate.name == pendingName &&
+                sameTreeDocument(candidate.documentUri, pendingUri)
+        } ?: cached.firstOrNull { candidate ->
+            !candidate.isDirectory && sameTreeDocument(candidate.documentUri, pendingUri)
+        } ?: return null
+        return treeChildRegistry.toDocumentFile(
+            context = context,
+            parent = temporaryRoot.tree,
+            child = child
+        )
     }
 
     private suspend fun resolveCurrentTreePendingAudioSize(
@@ -6315,61 +7108,78 @@ internal object ManagedDownloadStorage {
         return expectedSizeBytes
     }
 
-    private suspend fun demotePublishedTreeAudio(
+    private suspend fun demotePublishedTreeAudioToTemporary(
         context: Context,
         root: RootHandle.TreeRoot,
         audio: StoredEntry,
-        pendingName: String
+        pendingName: String,
+        temporaryRoot: RootHandle.TreeRoot
     ): StoredEntry? {
         val sourceUri = runCatching { audio.reference.toUri() }.getOrNull() ?: return null
         val backend = SafStorageBackend(context)
-        val sourceStat = backend.stat(StorageReference.SafRef(sourceUri))
-        val source = when (sourceStat) {
-            is StorageLookupResult.Found -> sourceStat.value
-                .takeUnless(StorageStat::isDirectory)
-                ?.let {
-                    resolvePendingTreeDocument(
-                        context = context,
-                        parent = root.tree,
-                        uri = sourceUri
-                    )
-                }
-            StorageLookupResult.Missing -> null
-            StorageLookupResult.PermissionLost -> throw SecurityException(
-                "SAF 已发布音频权限丢失: ${audio.name}"
-            )
-            is StorageLookupResult.ProviderFailure -> throw sourceStat.error
-            StorageLookupResult.OutOfScope,
-            is StorageLookupResult.Unsupported -> null
-        } ?: return null
-        val expectedSizeBytes = (sourceStat as? StorageLookupResult.Found)
-            ?.value
-            ?.sizeBytes
-            ?.takeIf { it > 0L }
-            ?: audio.sizeBytes.takeIf { it > 0L }
-            ?: return null
-        val renamedDocument = renameTreeDocumentWithoutReplacing(
-            context = context,
-            parent = root.tree,
-            document = source,
-            finalName = pendingName
-        ) ?: return null
-        val renamedTarget = treeChildRegistry.toTreeDocumentFileOrEnumerated(
-            context = context,
-            parent = root.tree,
-            child = renamedDocument
-        ) ?: renamedDocument
-        return verifiedTreeStoredEntry(
-            context = context,
-            target = renamedTarget,
-            expectedName = pendingName,
-            expectedSizeBytes = expectedSizeBytes,
-            fallbackLastModifiedMs = audio.lastModifiedMs,
-            description = pendingName
-        ).also { demoted ->
-            treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
-            treeChildRegistry.rememberTreeChild(root.tree, demoted)
+        val copied = backend.read(StorageReference.SafRef(sourceUri)) { input ->
+            val result = backend.writeRecoverable(
+                target = StorageTarget.SafTarget(
+                    parent = StorageReference.SafRef(temporaryRoot.tree.uri),
+                    displayName = pendingName,
+                    mimeType = mimeTypeFromName(pendingName, null)
+                )
+            ) { output ->
+                input.copyTo(output, STREAM_COPY_BUFFER_SIZE_BYTES)
+            }
+            when (result) {
+                is StorageWriteResult.Written -> result.stat.toStoredEntryForBackend(null)
+                StorageWriteResult.Missing -> throw IOException(
+                    "SAF 已发布音频复制源不存在: ${audio.name}"
+                )
+                StorageWriteResult.OutOfScope -> throw IOException(
+                    "SAF 已发布音频复制目标越界: ${audio.name}"
+                )
+                StorageWriteResult.PermissionLost -> throw SecurityException(
+                    "SAF 已发布音频复制权限丢失: ${audio.name}"
+                )
+                is StorageWriteResult.ProviderFailure -> throw IOException(
+                    "SAF 已发布音频复制失败: ${audio.name}",
+                    result.error
+                )
+                is StorageWriteResult.Unsupported -> throw IOException(
+                    "SAF 已发布音频复制不支持: ${audio.name}"
+                )
+            }
         }
+        val copiedEntry = when (copied) {
+            is StorageLookupResult.Found -> copied.value
+            StorageLookupResult.Missing -> return null
+            StorageLookupResult.PermissionLost -> throw SecurityException(
+                "SAF 已发布音频读权限丢失: ${audio.name}"
+            )
+            is StorageLookupResult.ProviderFailure -> throw IOException(
+                "SAF 已发布音频读取失败: ${audio.name}",
+                copied.error
+            )
+            StorageLookupResult.OutOfScope,
+            is StorageLookupResult.Unsupported -> return null
+        }
+        val deleted = deleteTrustedReference(
+            context,
+            TrustedManagedRef(
+                reference = StorageReference.SafRef(sourceUri),
+                externalReference = sourceUri.toString()
+            )
+        ).isConfirmedStorageMutation()
+        if (!deleted) {
+            deleteTrustedReference(
+                context,
+                TrustedManagedRef(
+                    reference = StorageReference.SafRef(copiedEntry.reference.toUri()),
+                    externalReference = copiedEntry.reference
+                )
+            )
+            throw IOException("SAF 已发布音频回退后源清理未确认: ${audio.name}")
+        }
+        treeChildRegistry.forgetTreeChildName(root.tree, audio.name)
+        treeChildRegistry.rememberTreeChild(temporaryRoot.tree, copiedEntry)
+        return copiedEntry
     }
 
     private suspend fun copyPendingTreeAudioWithoutReplacing(
@@ -6379,7 +7189,8 @@ internal object ManagedDownloadStorage {
         pendingName: String,
         finalName: String,
         expectedSizeBytes: Long,
-        fallbackLastModifiedMs: Long
+        fallbackLastModifiedMs: Long,
+        pendingParent: DocumentFile? = null
     ): StoredEntry? {
         val backend = SafStorageBackend(context)
         val copied = backend.read(StorageReference.SafRef(pending.uri)) { source ->
@@ -6480,7 +7291,10 @@ internal object ManagedDownloadStorage {
                         )
                     ).isConfirmedStorageMutation()
                     if (pendingDeleted) {
-                        treeChildRegistry.forgetTreeChildName(root.tree, pendingName)
+                        treeChildRegistry.forgetTreeChildName(
+                            pendingParent ?: root.tree,
+                            pendingName
+                        )
                     } else {
                         NPLogger.w(TAG, "音频已提升但 pending 文件清理失败: $pendingName")
                     }
@@ -6607,9 +7421,14 @@ internal object ManagedDownloadStorage {
     ) {
         val content = pendingMetadataJson?.takeIf(String::isNotBlank) ?: return
         if (requestedAudioName == actualAudioName) return
-        val metadataEntry = writeRootText(
+        val temporaryRoot = resolveTemporaryRoot(
             context = context,
             root = root,
+            create = true
+        ) ?: throw IOException("无法准备下载 .tmp 目录")
+        val metadataEntry = writeRootText(
+            context = context,
+            root = temporaryRoot,
             displayName = "$actualAudioName$PENDING_METADATA_SUFFIX",
             content = content
         )
@@ -7173,9 +7992,7 @@ internal object ManagedDownloadStorage {
         return result
     }
 
-    /**
-     * catalog 恢复早于 SAF 设置恢复时, 从歌曲自身的 tree/document URI 找到真实根目录
-     */
+    /** catalog 早于 SAF 设置恢复时，从歌曲自身的 tree 或 document URI 找到真实根目录 */
     private fun resolveSourceTreeRootFast(
         context: Context,
         song: SongItem
@@ -8094,10 +8911,9 @@ internal object ManagedDownloadStorage {
                 { it.sourceReference }
             )
         )
-        // the persisted manifest is a structural recovery hint, not proof that
-        // every source still exists. The copy worker performs the source read
-        // and classifies Missing, PermissionLost, and ProviderFailure without a
-        // second full SAF enumeration on restart
+        // 持久清单只是结构恢复线索，不能证明所有源文件仍存在
+        // 复制 Worker 会读取源文件并区分 Missing、PermissionLost 和 ProviderFailure
+        // 重启时不再完整扫描 SAF
         val entries = sourceEntries.map { sourceEntry ->
             val reference = sourceEntry.sourceReference.trim()
             ManagedMigrationEntry(
@@ -8173,10 +8989,8 @@ internal object ManagedDownloadStorage {
         }
     }
 
-    /**
-     * restores a target index from durable receipt references after process
-     * death. A complete direct probe avoids a recovery-time directory walk;
-     * uncertain receipt evidence falls back to the bounded managed snapshot
+    /** 进程终止后根据持久复制凭据恢复目标索引
+     * 直接探测完整时无需遍历目录，凭据不确定时退回有界快照
      */
     private suspend fun buildMigrationTargetIndexFromReceipts(
         context: Context,
@@ -8245,9 +9059,8 @@ internal object ManagedDownloadStorage {
             buildIndex(actualEntries.filterNotNull())?.let { return@coroutineScope it }
         }
 
-        // A failed direct probe cannot establish the managed subdirectory layout.
-        // Preserve the complete fallback scan; final verification still owns the
-        // authoritative Covers/Lyrics placement and temporary-file cleanup.
+        // 直接探测失败时无法确认受管子目录结构，保留完整回退扫描
+        // 最终校验负责确认 Covers 和 Lyrics 位置并清理临时文件
         val snapshot = try {
             treeDirectories.refreshManagedMigrationEntries(context, targetRoot)
         } catch (error: CancellationException) {
@@ -8312,9 +9125,8 @@ internal object ManagedDownloadStorage {
             )
         }
 
-        // A complete source snapshot is useful for a fresh migration, while a
-        // persisted manifest can validate only the recorded receipts directly
-        // and avoid repeating a full SAF traversal after process death.
+        // 新迁移可以使用完整源快照，进程终止后的恢复只需直接校验持久凭据
+        // 不必再次遍历整棵 SAF 目录
         val snapshot = if (preferDirectStats) {
             null
         } else {
@@ -8363,8 +9175,7 @@ internal object ManagedDownloadStorage {
                 ?: return@mapNotNull null
             async(Dispatchers.IO) {
                 statLimiter.withPermit {
-                    // the manifest stat only proves that the source existed while
-                    // the journal was opened; receipt reuse needs a fresh probe
+                    // 清单中的 stat 只证明打开日志时源文件存在，复用凭据前仍要重新探测
                     val statResult = statMigrationReceiptSource(
                         context = context,
                         sourceRoot = sourceRoot,
@@ -8382,7 +9193,8 @@ internal object ManagedDownloadStorage {
                             sourceEntry.entry.reference to (receipt to sourceEntry.entry.copy(
                                 sizeBytes = it.sizeBytes ?: sourceEntry.entry.sizeBytes,
                                 lastModifiedMs = it.lastModifiedMs
-                                    ?: sourceEntry.entry.lastModifiedMs
+                                    ?: sourceEntry.entry.lastModifiedMs,
+                                sizeKnown = it.sizeBytes != null || sourceEntry.entry.sizeKnown
                             ))
                         }
                     } else {
@@ -8496,6 +9308,66 @@ internal object ManagedDownloadStorage {
         }
         throw ManagedDownloadMigrationException.transient(
             "迁移目录枚举不完整: root=${root.javaClass.simpleName}"
+        )
+    }
+
+    private fun requireMigrationSourceHasNoPendingArtifacts(
+        context: Context,
+        sourceRoot: RootHandle
+    ) {
+        val rootRefresh = try {
+            treeDirectories.refreshRootEntries(context, sourceRoot)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移前无法检查源目录临时文件",
+                error
+            )
+        }
+        if (!rootRefresh.isComplete) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移前源目录枚举不完整，暂缓处理临时文件"
+            )
+        }
+        val temporary = try {
+            readTemporaryDirectoryEntries(
+                context = context,
+                root = sourceRoot,
+                forceRefresh = true,
+                rootAlreadyRefreshed = true
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移前无法检查源目录 .tmp",
+                error
+            )
+        }
+        if (!temporary.isComplete) {
+            throw ManagedDownloadMigrationException.transient(
+                "迁移前源目录 .tmp 枚举不完整，暂缓处理临时文件"
+            )
+        }
+        val pendingNames = ManagedDownloadMigrationEntryCollector.pendingArtifactNames(
+            rootEntries = rootRefresh.entries,
+            temporaryEntries = temporary.entries
+        )
+        if (pendingNames.isEmpty()) {
+            return
+        }
+        val sample = pendingNames.take(MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE)
+            .joinToString(separator = "|")
+        NPLogger.w(
+            TAG,
+            "迁移前发现未收敛下载临时文件，保留源目录并等待恢复: " +
+                "count=${pendingNames.size}, sample=$sample"
+        )
+        throw ManagedDownloadMigrationException.transient(
+            "[$MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE] " +
+                "迁移源目录存在未完成下载临时文件，等待恢复: " +
+                "count=${pendingNames.size}"
         )
     }
 
@@ -8645,39 +9517,47 @@ internal object ManagedDownloadStorage {
                 NPLogger.w(TAG, "下载目录枚举不完整，跳过待提交音频清理")
                 return StartupRecoveryResult(failedCount = 1)
             }
-            val rootEntries = refresh.entries.filterNot(StoredEntry::isDirectory)
+            val temporary = readTemporaryDirectoryEntries(
+                context = context,
+                root = root,
+                forceRefresh = true,
+                rootAlreadyRefreshed = true
+            )
+            if (!temporary.isComplete) {
+                NPLogger.w(TAG, "下载 .tmp 目录枚举不完整，跳过待提交音频清理")
+                return StartupRecoveryResult(failedCount = 1)
+            }
+            val rootEntries = (refresh.entries + temporary.entries)
+                .filterNot(StoredEntry::isDirectory)
             val metadataNames = rootEntries.mapTo(linkedSetOf(), StoredEntry::name)
-            val referencesToDelete = rootEntries
-                .filter { entry -> pendingAudioWriteNames.isPendingAudioWriteName(entry.name) }
-                .filterNot { entry ->
-                    val logicalName = pendingAudioWriteNames.logicalAudioName(entry.name)
-                    metadataNames.any { candidate ->
-                        candidate == "$logicalName$METADATA_SUFFIX" ||
-                            ManagedDownloadTreeNaming.isPendingMetadataName(
-                                actualName = candidate,
-                                audioName = logicalName
-                            )
-                    }
+            val pendingEntries = rootEntries.filter { entry ->
+                entry.isPendingAudioWrite ||
+                    entry.name.contains(PENDING_AUDIO_WRITE_MARKER)
+            }
+            val unresolvedEntries = pendingEntries.filterNot { entry ->
+                val logicalName = pendingAudioWriteNames.logicalAudioName(entry.name)
+                metadataNames.any { candidate ->
+                    candidate == "$logicalName$METADATA_SUFFIX" ||
+                        ManagedDownloadTreeNaming.isPendingMetadataName(
+                            actualName = candidate,
+                            audioName = logicalName
+                        )
                 }
-                .mapTo(linkedSetOf(), StoredEntry::reference)
-            if (referencesToDelete.isEmpty()) {
+            }
+            if (unresolvedEntries.isNotEmpty()) {
+                NPLogger.w(
+                    TAG,
+                    "待提交音频缺少可验证 metadata，保留 payload 等待恢复: " +
+                        "count=${unresolvedEntries.size}"
+                )
+            }
+            // 没有 owner/终态凭据时不能猜测删除。已完成的 pending 会由
+            // recoverPendingAudioWritesFromRoot 先提升，取消项由 operation planner 清理
+            if (pendingEntries.isEmpty()) {
                 return StartupRecoveryResult()
             }
-            val deletedReferences = deleteReferencesInternal(
-                context = context,
-                references = referencesToDelete,
-                allowedRoot = root,
-                trustedReferences = referencesToDelete,
-                invalidateSnapshot = true
-            )
-            val failedCount = referencesToDelete.size - deletedReferences.size
-            NPLogger.d(
-                TAG,
-                "清理下载提交残留完成: cleaned=${deletedReferences.size}, failed=$failedCount"
-            )
             StartupRecoveryResult(
-                cleanedCount = deletedReferences.size,
-                failedCount = failedCount
+                failedCount = unresolvedEntries.size
             )
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
@@ -8691,6 +9571,33 @@ internal object ManagedDownloadStorage {
         }
     }
 
+    /**
+     * 迁移释放目录栅栏后收敛旧版本和新版本的待提交凭据
+     *
+     * 该入口只在迁移 Worker 完成后调用，避免把迁移期间的临时音频误删
+     */
+    internal suspend fun reconcilePendingArtifactsAfterStorageMutation(
+        context: Context
+    ): StartupRecoveryResult = withContext(Dispatchers.IO) {
+        val pending = cleanupPendingAudioWrites(context)
+        val unfinalized = cleanupUnfinalizedDownloadArtifacts(context)
+        val terminal = cleanupPersistedTerminalTemporaryWriteArtifacts(context)
+        StartupRecoveryResult(
+            cleanedCount = pending.cleanedCount +
+                unfinalized.cleanedCount +
+                terminal.cleanedCount,
+            failedCount = pending.failedCount +
+                unfinalized.failedCount +
+                terminal.failedCount,
+            protectedCount = pending.protectedCount +
+                unfinalized.protectedCount +
+                terminal.protectedCount,
+            protectedReferences = pending.protectedReferences +
+                unfinalized.protectedReferences +
+                terminal.protectedReferences
+        )
+    }
+
     internal fun cleanupUnfinalizedDownloadArtifacts(context: Context): StartupRecoveryResult {
         return try {
             val root = resolveRootBlocking(context)
@@ -8699,7 +9606,18 @@ internal object ManagedDownloadStorage {
                 NPLogger.w(TAG, "下载目录枚举不完整，跳过未完成半成品清理")
                 return StartupRecoveryResult(failedCount = 1)
             }
-            val rootEntries = refresh.rootEntries.filterNot(StoredEntry::isDirectory)
+            val temporary = readTemporaryDirectoryEntries(
+                context = context,
+                root = root,
+                forceRefresh = true,
+                rootAlreadyRefreshed = true
+            )
+            if (!temporary.isComplete) {
+                NPLogger.w(TAG, "下载 .tmp 目录枚举不完整，跳过未完成半成品清理")
+                return StartupRecoveryResult(failedCount = 1)
+            }
+            val rootEntries = (refresh.rootEntries + temporary.entries)
+                .filterNot(StoredEntry::isDirectory)
             val parsedMetadataEntries = rootEntries
                 .filter { entry -> ManagedDownloadTreeNaming.isMetadataName(entry.name) }
                 .mapNotNull { entry ->
@@ -9136,6 +10054,7 @@ internal object ManagedDownloadStorage {
             localFilePath = localPath,
             sizeBytes = sizeBytes ?: 0L,
             lastModifiedMs = lastModifiedMs ?: 0L,
+            sizeKnown = sizeBytes != null,
             isDirectory = isDirectory
         )
     }
@@ -9173,7 +10092,7 @@ internal object ManagedDownloadStorage {
             ?.takeIf(File::exists)
             ?.setLastModified(lastModifiedMs)
             ?.let { return }
-        // saf providers own the physical timestamp; preserve source time in metadata
+        // SAF Provider 决定物理时间，来源时间保存在元数据中
     }
 
     private fun migrationMimeTypeFor(entry: ManagedMigrationEntry): String {
@@ -9257,7 +10176,18 @@ internal object ManagedDownloadStorage {
                 throw SecurityException("storage permission lost: $reference")
             }
             is StorageLookupResult.ProviderFailure -> {
-                throw ManagedDownloadRootProviderException(reference, result.error)
+                // DocumentsProvider 可能把已经删除的 child 包装成
+                // IllegalArgumentException。它不是 root 故障，不能让一次陈旧
+                // sidecar 读取升级为未捕获异常或阻塞整批扫描
+                if (ManagedDownloadReferenceIo.isMissingDocumentFailure(result.error)) {
+                    NPLogger.d(
+                        TAG,
+                        "读取托管文本时确认文件已不存在，按缺失处理: reference=$reference"
+                    )
+                    null
+                } else {
+                    throw ManagedDownloadRootProviderException(reference, result.error)
+                }
             }
             StorageLookupResult.OutOfScope,
             is StorageLookupResult.Unsupported -> null
@@ -9412,8 +10342,7 @@ internal object ManagedDownloadStorage {
         reference: TrustedManagedRef,
         root: RootHandle
     ): StorageMutationResult {
-        // enumerate and delete as one short transaction; concurrent cleanup must not
-        // invalidate the evidence another worker is using
+        // 在一次短事务内完成列举和删除，避免并发清理让另一个 Worker 使用失效凭据
         return migrationCleanupTrustLock.withLock {
             val trustedReferences = try {
                 enumerateCompleteRootReferences(context, root)
@@ -9587,8 +10516,8 @@ internal object ManagedDownloadStorage {
         context: Context,
         root: RootHandle
     ): Set<TrustedManagedRef>? {
-        // migration cleanup must trust one complete root-plus-sidecar enumeration;
-        // a root-only listing would leave nested Covers/Lyrics files behind
+        // 迁移清理必须依赖一次完整的根目录和侧载目录列举
+        // 只列根目录会把嵌套的 Covers 和 Lyrics 文件遗留下来
         val refresh = treeDirectories.refreshManagedMigrationEntries(context, root)
         if (!refresh.isComplete) {
             return null

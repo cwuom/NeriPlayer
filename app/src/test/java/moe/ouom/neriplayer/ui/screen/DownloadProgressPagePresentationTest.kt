@@ -1,9 +1,39 @@
 package moe.ouom.neriplayer.ui.screen
 
+import moe.ouom.neriplayer.core.download.DownloadClearVisibility
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadProgressPagePresentationTest {
+
+    @Test
+    fun `detached clear is considered logically complete before provider cleanup`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            totalSteps = 4,
+            affectedItemCount = 539,
+            totalItemCount = 0
+        )
+
+        assertTrue(isLogicalDownloadTaskClearComplete(progress))
+    }
+
+    @Test
+    fun `clear with unresolved artifacts remains visible until cleanup settles`() {
+        val progress = DownloadClearVisibility.ClearProgress(
+            phase = DownloadClearVisibility.ClearPhase.CLEANING,
+            completedSteps = 2,
+            totalSteps = 4,
+            affectedItemCount = 539,
+            failedItemCount = 1,
+            totalItemCount = 1
+        )
+
+        assertFalse(isLogicalDownloadTaskClearComplete(progress))
+    }
 
     @Test
     fun `cold task store keeps progress page loading instead of showing empty`() {

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.tree
 
 import android.net.Uri
 import moe.ouom.neriplayer.core.download.storage.COVER_SUBDIRECTORY
+import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_TEMPORARY_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.METADATA_SUFFIX
 import moe.ouom.neriplayer.core.download.storage.PENDING_METADATA_SUFFIX
 import java.text.Normalizer
@@ -61,7 +62,8 @@ internal object ManagedDownloadTreeNaming {
     }
 
     fun shouldCreateNoMediaMarker(subdirectory: String): Boolean {
-        return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true)
+        return subdirectory.equals(COVER_SUBDIRECTORY, ignoreCase = true) ||
+            subdirectory.equals(DOWNLOAD_TEMPORARY_DIR_NAME, ignoreCase = true)
     }
 
     fun matchesManagedSubdirectoryName(actualName: String, desiredName: String): Boolean {

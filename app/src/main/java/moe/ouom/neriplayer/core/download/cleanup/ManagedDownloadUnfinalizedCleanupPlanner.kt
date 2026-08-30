@@ -1,10 +1,12 @@
 package moe.ouom.neriplayer.core.download.cleanup
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.isDurableCoreArtifactState
 import moe.ouom.neriplayer.core.download.isFinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.isUnfinalizedDownloadedMetadata
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
+import java.util.Locale
 
 internal data class ManagedDownloadParsedMetadataEntry(
     val entry: ManagedDownloadStorage.StoredEntry,
@@ -35,10 +37,19 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
 
         return linkedSetOf<String>().apply {
             unfinalizedMetadataEntries.forEach { parsed ->
+                // core 已跨过提交边界时，downloadFinalized 可能仍为 false
+                // 例如标签收尾尚未完成，此时不能把未知大小的 SAF 条目当空文件删除
+                if (isDurableCoreMetadata(parsed.metadata)) {
+                    return@forEach
+                }
                 val audioEntries = ManagedDownloadTreeNaming.metadataAudioName(parsed.entry.name)
                     ?.let(audioEntriesByLogicalName::get)
                     .orEmpty()
-                if (audioEntries.any { audio -> audio.sizeBytes > 0L }) {
+                // SAF 可能不提供大小，未知大小不能当成空文件，留到下一轮确认
+                if (audioEntries.any { audio ->
+                        !audio.sizeKnown || audio.sizeBytes > 0L
+                    }
+                ) {
                     return@forEach
                 }
 
@@ -58,6 +69,19 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
                 audioEntriesByLogicalName = audioEntriesByLogicalName
             ).forEach(::add)
         }
+    }
+
+    private fun isDurableCoreMetadata(
+        metadata: ManagedDownloadStorage.DownloadedAudioMetadata
+    ): Boolean {
+        if (metadata.downloadFinalized == true) {
+            return true
+        }
+        return isDurableCoreArtifactState(
+            metadata.artifactState
+                ?.trim()
+                ?.uppercase(Locale.ROOT)
+        )
     }
 
     private fun collisionOrphanPendingMetadataReferences(
@@ -91,6 +115,7 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
                     .orEmpty()
                     .firstOrNull { audio ->
                         !audio.isPendingAudioWrite &&
+                            audio.sizeKnown &&
                             audio.sizeBytes > 0L &&
                             metadata.audioFileName?.trim() == audio.logicalName
                     }
@@ -117,6 +142,7 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
                     audioName = candidate.audioName
                 )
             }
+            .filterNot { candidate -> isDurableCoreMetadata(candidate.parsed.metadata) }
             .filter { candidate -> candidate.audioName !in pendingAudioLogicalNames }
             .mapNotNull { candidate ->
                 val metadata = candidate.parsed.metadata
@@ -162,7 +188,10 @@ internal object ManagedDownloadUnfinalizedCleanupPlanner {
     ): Set<String> {
         return parsedMetadataEntries
             .asSequence()
-            .filterNot { parsed -> isUnfinalizedDownloadedMetadata(parsed.metadata) }
+            .filter { parsed ->
+                !isUnfinalizedDownloadedMetadata(parsed.metadata) ||
+                    isDurableCoreMetadata(parsed.metadata)
+            }
             .flatMap { parsed -> sidecarReferences(parsed.metadata, managedSidecarReferences).asSequence() }
             .toSet()
     }

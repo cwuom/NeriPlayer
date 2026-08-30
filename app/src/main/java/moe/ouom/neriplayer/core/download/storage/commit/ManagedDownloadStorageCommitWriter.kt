@@ -7,6 +7,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -17,7 +18,10 @@ import moe.ouom.neriplayer.core.download.storage.migration.StoredWriteResult
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeChildRegistry
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeDirectories
+import moe.ouom.neriplayer.core.download.storage.tree.cache.QueriedTreeChild
+import moe.ouom.neriplayer.core.download.storage.TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
 import moe.ouom.neriplayer.core.download.storage.backend.FileStorageBackend
+import moe.ouom.neriplayer.core.download.storage.backend.FileStorageMutationLocks
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend
 import moe.ouom.neriplayer.core.download.storage.backend.SafParentDocumentCache
 import moe.ouom.neriplayer.core.download.storage.backend.SafStorageBackend.SafQueryResult
@@ -30,6 +34,7 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageWriteResult
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationException
 import moe.ouom.neriplayer.core.download.storage.migration.CopiedMigrationEntry
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementPlan
+import moe.ouom.neriplayer.core.logging.NPLogger
 
 internal class ManagedDownloadStorageCommitWriter(
     private val treeChildRegistry: ManagedDownloadTreeChildRegistry,
@@ -42,10 +47,7 @@ internal class ManagedDownloadStorageCommitWriter(
         tag = tag
     )
 
-    /**
-     * Restores a preserved target when verification fails. A missing backup is
-     * treated as already restored so retries stay idempotent.
-     */
+    /** 校验失败时恢复保留的目标文件，备份已不存在时视为已经恢复以保持重试幂等 */
     fun restoreMigrationReplacement(
         context: Context,
         root: ManagedDownloadRootHandle,
@@ -60,41 +62,45 @@ internal class ManagedDownloadStorageCommitWriter(
                 val targetFile = File(parent, copied.copiedEntry.name)
                 val backupFile = backup.localFilePath?.let(::File)
                     ?: backup.reference.takeIf { it.startsWith("/") }?.let(::File)
-                val targetEntry = targetFile.takeIf(File::exists)?.let(
-                    ManagedDownloadStoredEntryMapper::fromFile
-                )
-                if (isRestoredMigrationReplacementTarget(
-                        expectedTarget = copied.copiedEntry,
-                        replacementBackup = backup,
-                        actualTarget = targetEntry
+                val safeBackupFile = backupFile?.takeIf { isFileEntryInParent(it, parent) }
+                    ?: return false
+                FileStorageMutationLocks.withTargetLocksBlocking(targetFile, safeBackupFile) {
+                    val targetEntry = targetFile.takeIf(File::exists)?.let(
+                        ManagedDownloadStoredEntryMapper::fromFile
                     )
-                ) {
-                    return true
-                }
-                if (backupFile == null || !isFileEntryInParent(backupFile, parent)) {
-                    return false
-                }
-                if (!backupFile.exists()) {
-                    return targetEntry != null && sameManagedMigrationStoredEntryIdentity(
-                        copied.copiedEntry,
-                        targetEntry
-                    )
-                }
-                val actualBackup = ManagedDownloadStoredEntryMapper.fromFile(backupFile)
-                if (!sameManagedMigrationStoredEntryIdentity(backup, actualBackup)) {
-                    return false
-                }
-                if (targetFile.exists()) {
-                    val actualTarget = ManagedDownloadStoredEntryMapper.fromFile(targetFile)
-                    if (!sameManagedMigrationStoredEntryIdentity(copied.copiedEntry, actualTarget)) {
-                        return false
+                    if (isRestoredMigrationReplacementTarget(
+                            expectedTarget = copied.copiedEntry,
+                            replacementBackup = backup,
+                            actualTarget = targetEntry
+                        )
+                    ) {
+                        return@withTargetLocksBlocking true
                     }
-                    if (!targetFile.delete() && targetFile.exists()) return false
+                    if (!safeBackupFile.exists()) {
+                        return@withTargetLocksBlocking targetEntry != null &&
+                            sameManagedMigrationStoredEntryIdentity(
+                                copied.copiedEntry,
+                                targetEntry
+                            )
+                    }
+                    val actualBackup = ManagedDownloadStoredEntryMapper.fromFile(safeBackupFile)
+                    if (!sameManagedMigrationStoredEntryIdentity(backup, actualBackup)) {
+                        return@withTargetLocksBlocking false
+                    }
+                    if (targetFile.exists()) {
+                        val actualTarget = ManagedDownloadStoredEntryMapper.fromFile(targetFile)
+                        if (!sameManagedMigrationStoredEntryIdentity(copied.copiedEntry, actualTarget)) {
+                            return@withTargetLocksBlocking false
+                        }
+                        if (!targetFile.delete() && targetFile.exists()) {
+                            return@withTargetLocksBlocking false
+                        }
+                    }
+                    runCatching {
+                        java.nio.file.Files.move(safeBackupFile.toPath(), targetFile.toPath())
+                        targetFile.exists()
+                    }.getOrDefault(false)
                 }
-                runCatching {
-                    java.nio.file.Files.move(backupFile.toPath(), targetFile.toPath())
-                    targetFile.exists()
-                }.getOrDefault(false)
             }
 
             is ManagedDownloadRootHandle.TreeRoot -> {
@@ -175,10 +181,8 @@ internal class ManagedDownloadStorageCommitWriter(
         }
     }
 
-    /**
-     * Uses the opaque document references recorded in the receipt before any
-     * directory-name lookup. This keeps restart recovery independent of
-     * provider numbering such as Covers (1).
+    /** 优先使用凭据中的不透明文档引用，不依赖 Provider 对目录的编号
+     * 这样重启恢复不会受 Covers 等目录编号变化影响
      */
     private fun restoreSafMigrationReplacementDirect(
         context: Context,
@@ -436,6 +440,26 @@ internal class ManagedDownloadStorageCommitWriter(
 
             is ManagedDownloadRootHandle.TreeRoot -> {
                 val encoded = content.toByteArray(Charsets.UTF_8)
+                // 扫描已确认的根目录快照时复用目标 URI，可省去一次大目录查询
+                // 缓存不完整或过期时仍走原有安全路径
+                val cachedTargetEntry = if (knownTargetEntry == null && !expectedAbsent) {
+                    selectCachedSafWriteChild(
+                        displayName = displayName,
+                        cachedChildren = treeChildRegistry.cachedTreeChildrenIfFresh(
+                            parent = root.tree,
+                            maxCacheAgeMs = TREE_CHILDREN_WRITE_CACHE_VALIDATE_INTERVAL_MS
+                        )
+                    )
+                        ?.let(ManagedDownloadStoredEntryMapper::fromTreeChild)
+                        ?.takeIf { entry ->
+                            safDocumentUri(entry)?.let { uri ->
+                                isSafReferenceBoundToRoot(root.tree.uri, uri)
+                            } == true
+                        }
+                } else {
+                    null
+                }
+                val effectiveKnownTarget = knownTargetEntry ?: cachedTargetEntry
                 writeSafEntry(
                     context = context,
                     parent = root.tree,
@@ -443,7 +467,9 @@ internal class ManagedDownloadStorageCommitWriter(
                     mimeType = "application/json",
                     expectedSizeBytes = encoded.size.toLong(),
                     expectedAbsent = expectedAbsent,
-                    knownExistingReference = knownTargetEntry?.reference
+                    knownExistingReference = effectiveKnownTarget?.reference,
+                    // 外部文件管理器可能在缓存有效期内改名，失败时回退完整查找
+                    fallbackOnOptimisticCommitFailure = cachedTargetEntry != null
                 ) { output -> output.write(encoded) }
             }
         }
@@ -640,6 +666,7 @@ internal class ManagedDownloadStorageCommitWriter(
                 sourceAuthoritative = true
             )
         }
+        var copiedBytes = 0L
         val result = runBlocking(Dispatchers.IO) {
             backend.writeCreateOnlyRecoverable(
                 target = StorageTarget.SafTarget(
@@ -648,7 +675,7 @@ internal class ManagedDownloadStorageCommitWriter(
                     mimeType = mimeType
                 )
             ) { output ->
-                ManagedDownloadCommitIo.copyStreamWithProgress(
+                copiedBytes = ManagedDownloadCommitIo.copyStreamWithProgress(
                     input = input,
                     output = output,
                     bufferSizeBytes = STREAM_COPY_BUFFER_SIZE_BYTES,
@@ -683,15 +710,14 @@ internal class ManagedDownloadStorageCommitWriter(
                 "SAF Provider 不支持迁移替换写入: ${result.operation}"
             )
         }
-        val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L }
-            ?: stat.sizeBytes
-            ?: 0L
-        val actualSize = stat.sizeBytes ?: expectedSize
-        if (actualSize != expectedSize) {
-            throw ManagedDownloadMigrationException.transient(
-                "SAF 迁移替换大小不匹配: $displayName, expected=$expectedSize, actual=$actualSize"
-            )
-        }
+        val actualSize = verifySafCommittedSize(
+            backend = backend,
+            stat = stat,
+            expectedSizeBytes = sourceEntry.sizeBytes.takeIf { it > 0L },
+            writtenBytes = copiedBytes,
+            displayName = displayName,
+            allowSourceSizeDrift = true
+        )
         val entry = stat.toStoredEntry().copy(sizeBytes = actualSize)
         treeChildRegistry.rememberTreeChild(parent, entry)
         return StoredWriteResult(
@@ -770,6 +796,15 @@ internal class ManagedDownloadStorageCommitWriter(
             context,
             parentDocumentCache = safParentDocumentCache
         )
+        var writtenBytes = 0L
+
+        suspend fun writeCounting(output: OutputStream) {
+            val countingOutput = CountingOutputStream(output)
+            writer(countingOutput)
+            countingOutput.flush()
+            writtenBytes = countingOutput.count
+        }
+
         val result = runBlocking(Dispatchers.IO) {
             val target = StorageTarget.SafTarget(
                 parent = StorageReference.SafRef(parent.uri),
@@ -777,17 +812,17 @@ internal class ManagedDownloadStorageCommitWriter(
                 mimeType = mimeType
             )
             val optimisticResult = if (expectedAbsent) {
-                backend.writeCreateOnlyRecoverable(target = target, writer = writer)
+                backend.writeCreateOnlyRecoverable(target = target, writer = ::writeCounting)
             } else if (!knownExistingReference.isNullOrBlank()) {
                 backend.replaceKnownRecoverable(
                     target = target,
                     existingReference = StorageReference.SafRef(
                         knownExistingReference.toUri()
                     ),
-                    writer = writer
+                    writer = ::writeCounting
                 )
             } else {
-                backend.writeRecoverable(target = target, writer = writer)
+                backend.writeRecoverable(target = target, writer = ::writeCounting)
             }
             if (
                 fallbackOnOptimisticCommitFailure &&
@@ -797,7 +832,7 @@ internal class ManagedDownloadStorageCommitWriter(
                         result = optimisticResult
                     )
             ) {
-                backend.writeRecoverable(target = target, writer = writer)
+                backend.writeRecoverable(target = target, writer = ::writeCounting)
             } else {
                 optimisticResult
             }
@@ -815,31 +850,101 @@ internal class ManagedDownloadStorageCommitWriter(
                 "SAF 不支持写入: $displayName (${result.operation})"
             )
         }
-        val verifiedSize = expectedSizeBytes?.let { expected ->
-            val measured = stat.sizeBytes ?: runBlocking(Dispatchers.IO) {
-                val measuredResult = backend.read(stat.reference) { input ->
+        val verifiedSize = verifySafCommittedSize(
+            backend = backend,
+            stat = stat,
+            expectedSizeBytes = expectedSizeBytes,
+            writtenBytes = writtenBytes,
+            displayName = displayName,
+            allowSourceSizeDrift = false
+        )
+        val entry = stat.toStoredEntry().copy(sizeBytes = verifiedSize)
+        treeChildRegistry.rememberTreeChild(parent, entry)
+        return entry
+    }
+
+    /**
+     * SAF 的 COLUMN_SIZE 可能在写入刚完成时仍是旧值，以输出计数为主
+     * 只有报告值漂移时才读回一次，避免把 Provider 延迟误判为截断
+     */
+    private fun verifySafCommittedSize(
+        backend: SafStorageBackend,
+        stat: StorageStat,
+        expectedSizeBytes: Long?,
+        writtenBytes: Long,
+        displayName: String,
+        allowSourceSizeDrift: Boolean
+    ): Long {
+        if (writtenBytes < 0L) {
+            throw IOException("SAF 写入字节计数无效: $displayName")
+        }
+        val expected = expectedSizeBytes?.takeIf { it >= 0L }
+        if (!allowSourceSizeDrift && expected != null && writtenBytes != expected) {
+            throw IOException(
+                "SAF 写入源字节不匹配: $displayName, expected=$expected, actual=$writtenBytes"
+            )
+        }
+        val reported = stat.sizeBytes?.takeIf { it >= 0L }
+        if (reported != null && reported != writtenBytes) {
+            val counted = runBlocking(Dispatchers.IO) {
+                when (val measured = backend.read(stat.reference) { input ->
                     ManagedDownloadCommitIo.countInputStreamBytes(
                         input,
                         STREAM_COPY_BUFFER_SIZE_BYTES
                     )
-                }
-                when (measuredResult) {
+                }) {
                     is moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult.Found -> {
-                        measuredResult.value
+                        measured.value
                     }
                     else -> null
                 }
             }
-            if (measured != null && measured != expected) {
+            if (!isSafProviderSizeDriftRecoverable(
+                    copiedBytes = writtenBytes,
+                    reportedBytes = reported,
+                    countedBytes = counted
+                )
+            ) {
                 throw IOException(
-                    "SAF 写入大小不匹配: $displayName, expected=$expected, actual=$measured"
+                    "SAF 写入读回字节不匹配: $displayName, " +
+                        "written=$writtenBytes, reported=$reported, counted=${counted ?: -1L}"
                 )
             }
-            measured ?: expected
+            NPLogger.w(
+                tag,
+                "SAF Provider 大小报告延迟，使用已读回字节: " +
+                    "file=$displayName, reported=$reported, counted=$counted"
+            )
         }
-        val entry = stat.toStoredEntry().copy(sizeBytes = verifiedSize ?: stat.sizeBytes ?: 0L)
-        treeChildRegistry.rememberTreeChild(parent, entry)
-        return entry
+        if (allowSourceSizeDrift && expected != null && writtenBytes != expected) {
+            NPLogger.w(
+                tag,
+                "迁移源大小提示与实际读取不一致，交由摘要校验: " +
+                    "file=$displayName, source=$expected, copied=$writtenBytes"
+            )
+        }
+        return writtenBytes
+    }
+
+    private class CountingOutputStream(
+        private val delegate: OutputStream
+    ) : OutputStream() {
+        var count: Long = 0L
+            private set
+
+        override fun write(value: Int) {
+            delegate.write(value)
+            count++
+        }
+
+        override fun write(buffer: ByteArray, offset: Int, length: Int) {
+            delegate.write(buffer, offset, length)
+            count += length.toLong()
+        }
+
+        override fun flush() {
+            delegate.flush()
+        }
     }
 
     private fun shouldFallbackAfterOptimisticCommitFailure(
@@ -868,6 +973,7 @@ internal class ManagedDownloadStorageCommitWriter(
             localFilePath = localPath,
             sizeBytes = sizeBytes ?: 0L,
             lastModifiedMs = lastModifiedMs ?: 0L,
+            sizeKnown = sizeBytes != null,
             isDirectory = isDirectory
         )
     }
@@ -1079,15 +1185,17 @@ internal class ManagedDownloadStorageCommitWriter(
                 "SAF 不支持迁移写入: $finalName (${result.operation})"
             )
         }
-        val expectedSize = sourceEntry.sizeBytes.takeIf { it > 0L } ?: copiedBytes
-        if (stat.sizeBytes != null && stat.sizeBytes != expectedSize) {
-            throw IOException(
-                "SAF 迁移大小不匹配: $description, expected=$expectedSize, actual=${stat.sizeBytes}"
-            )
-        }
+        val verifiedSize = verifySafCommittedSize(
+            backend = backend,
+            stat = stat,
+            expectedSizeBytes = sourceEntry.sizeBytes.takeIf { it > 0L },
+            writtenBytes = copiedBytes,
+            displayName = description,
+            allowSourceSizeDrift = true
+        )
         val entry = stat.toStoredEntry().copy(
-            sizeBytes = stat.sizeBytes ?: copiedBytes,
-            // saf providers own the physical timestamp; source time stays in metadata
+            sizeBytes = verifiedSize,
+            // SAF Provider 决定物理时间，来源时间保存在元数据中
             lastModifiedMs = stat.lastModifiedMs ?: sourceEntry.lastModifiedMs
         )
         treeChildRegistry.rememberTreeChild(parent, entry)
@@ -1110,6 +1218,27 @@ internal class ManagedDownloadStorageCommitWriter(
         }
     }
 
+}
+
+internal fun isSafProviderSizeDriftRecoverable(
+    copiedBytes: Long,
+    reportedBytes: Long?,
+    countedBytes: Long?
+): Boolean {
+    if (copiedBytes < 0L) return false
+    if (reportedBytes == null || reportedBytes <= 0L || reportedBytes == copiedBytes) {
+        return true
+    }
+    return countedBytes == copiedBytes
+}
+
+internal fun selectCachedSafWriteChild(
+    displayName: String,
+    cachedChildren: Collection<QueriedTreeChild>?
+): QueriedTreeChild? {
+    return cachedChildren?.firstOrNull { child ->
+        child.name == displayName && !child.isDirectory
+    }
 }
 
 internal fun sameManagedMigrationStoredEntryIdentity(
@@ -1183,8 +1312,7 @@ internal fun isRestoredMigrationReplacementTarget(
         .mapNotNull { value -> value.trim().takeIf(String::isNotBlank) }
         .any { value -> value.substringBefore(':').equals("content", ignoreCase = true) }
     if (hasSafReference) {
-        // SAF document IDs are the only stable identity accepted for provider
-        // entries; equal size and timestamp are insufficient
+        // SAF 文档 ID 才是 Provider 条目的稳定身份，大小和时间相同仍然不够
         return backupIdentity
     }
     return backupIdentity || (

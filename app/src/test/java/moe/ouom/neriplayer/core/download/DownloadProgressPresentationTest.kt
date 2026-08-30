@@ -409,6 +409,68 @@ class DownloadProgressPresentationTest {
     }
 
     @Test
+    fun `pending working progress prefers operation and falls back to stable song key`() {
+        val snapshot = buildPendingWorkingProgressSnapshot(
+            listOf(
+                PendingWorkingProgressRecord(
+                    operationId = "op-a",
+                    stableKey = "song-a",
+                    bytesWritten = 40L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-a",
+                    stableKey = "song-a",
+                    bytesWritten = 70L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-b",
+                    stableKey = "song-a",
+                    bytesWritten = 90L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = null,
+                    stableKey = "song-a",
+                    bytesWritten = 80L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-a",
+                    stableKey = "song-b",
+                    bytesWritten = 100L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-conflict",
+                    stableKey = "song-c",
+                    bytesWritten = 33L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-conflict",
+                    stableKey = "song-d",
+                    bytesWritten = 44L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-zero",
+                    stableKey = "song-zero",
+                    bytesWritten = 0L
+                ),
+                PendingWorkingProgressRecord(
+                    operationId = "op-negative",
+                    stableKey = "song-negative",
+                    bytesWritten = -1L
+                )
+            )
+        )
+
+        assertEquals(70L, snapshot.workingFileBytes("op-a", "song-a"))
+        assertEquals(90L, snapshot.workingFileBytes("missing", "song-a"))
+        assertEquals(90L, snapshot.workingFileBytes(null, "song-a"))
+        assertEquals(100L, snapshot.workingFileBytes("op-a", "song-b"))
+        assertEquals(33L, snapshot.workingFileBytes("op-conflict", "song-c"))
+        assertEquals(44L, snapshot.workingFileBytes("op-conflict", "song-d"))
+        assertEquals(0L, snapshot.workingFileBytes("op-zero", "song-zero"))
+        assertEquals(0L, snapshot.workingFileBytes("op-negative", "song-negative"))
+    }
+
+    @Test
     fun `transfer presentation includes percent sizes and byte based speed`() {
         val mebibyte = 1024L * 1024L
         val text = formatDownloadTransferProgress(

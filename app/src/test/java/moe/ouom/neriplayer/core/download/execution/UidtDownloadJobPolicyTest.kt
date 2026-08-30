@@ -88,8 +88,8 @@ class UidtDownloadJobPolicyTest {
     }
 
     @Test
-    fun `user requested process exit reasons are recognized`() {
-        assertTrue(isUserRequestedProcessExitReason(ApplicationExitInfo.REASON_USER_REQUESTED))
+    fun `removing app from recents remains recoverable`() {
+        assertFalse(isUserRequestedProcessExitReason(ApplicationExitInfo.REASON_USER_REQUESTED))
         assertTrue(isUserRequestedProcessExitReason(ApplicationExitInfo.REASON_USER_STOPPED))
         assertFalse(isUserRequestedProcessExitReason(ApplicationExitInfo.REASON_CRASH))
     }

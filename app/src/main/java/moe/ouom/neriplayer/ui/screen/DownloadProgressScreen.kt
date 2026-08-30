@@ -105,6 +105,16 @@ internal enum class DownloadProgressInitialProbeState {
     UNAVAILABLE
 }
 
+/** 快速清空先移除任务展示，Provider 清理在后台继续 */
+internal fun isLogicalDownloadTaskClearComplete(
+    progress: DownloadClearVisibility.ClearProgress?
+): Boolean {
+    return progress?.phase == DownloadClearVisibility.ClearPhase.CLEANING &&
+        progress.completedSteps >= 2 &&
+        progress.totalItemCount == 0 &&
+        progress.failedItemCount == 0
+}
+
 internal fun resolveDownloadProgressPagePresentation(
     initialProbeState: DownloadProgressInitialProbeState,
     hasVisibleContent: Boolean,
@@ -279,13 +289,13 @@ fun DownloadProgressScreen(
         DownloadProgressBootstrapProbeResult.Unavailable ->
             DownloadProgressInitialProbeState.UNAVAILABLE
     }
-    val effectiveIsClearing = isClearingDownloadTasks ||
+    val clearFenceActive = isClearingDownloadTasks ||
         bootstrapState?.clearFenceActive == true
     // 进程在清空期间被杀时，内存进度会丢失，但持久化栅栏仍然有效
     // 先显示可确定的零阶段进度，避免页面退回无进度的无限加载状态
     val effectiveClearProgress = downloadClearProgress
         ?: bootstrapState?.clearProgress
-        ?: if (effectiveIsClearing) {
+        ?: if (clearFenceActive) {
             DownloadClearVisibility.ClearProgress(
                 phase = DownloadClearVisibility.ClearPhase.PREPARING,
                 completedSteps = 0,
@@ -295,13 +305,22 @@ fun DownloadProgressScreen(
         } else {
             null
         }
+    val logicalClearComplete = isLogicalDownloadTaskClearComplete(effectiveClearProgress)
+    val effectiveIsClearing = clearFenceActive && !logicalClearComplete
+    val effectivePresentationCleared = isDownloadTaskClearPresentationCleared ||
+        logicalClearComplete
     val shouldRecheckBootstrap = shouldRecheckDownloadProgressBootstrap(
         initialProbeState = initialProbeState,
         clearFenceActive = bootstrapState?.clearFenceActive == true,
         isClearing = isClearingDownloadTasks,
-        isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+        isClearPresentationCleared = effectivePresentationCleared
     )
-    LaunchedEffect(context, taskPresenceKey, shouldRecheckBootstrap) {
+    LaunchedEffect(
+        context,
+        taskPresenceKey,
+        shouldRecheckBootstrap,
+        effectivePresentationCleared
+    ) {
         if (!shouldRecheckBootstrap) {
             return@LaunchedEffect
         }
@@ -326,7 +345,7 @@ fun DownloadProgressScreen(
                     },
                     clearFenceActive = nextBootstrapState?.clearFenceActive == true,
                     isClearing = isClearingDownloadTasks,
-                    isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+                    isClearPresentationCleared = effectivePresentationCleared
                 )
             ) {
                 return@LaunchedEffect
@@ -345,9 +364,9 @@ fun DownloadProgressScreen(
         taskPresenceKey,
         bootstrapProbeResult,
         explicitResumeSongKeys,
-        isDownloadTaskClearPresentationCleared
+        effectivePresentationCleared
     ) {
-        if (isDownloadTaskClearPresentationCleared) {
+        if (effectivePresentationCleared) {
             0
         } else {
             (taskPresenceKey +
@@ -356,9 +375,9 @@ fun DownloadProgressScreen(
         }
     }
     val visibleBatchProgress = batchDownloadProgress?.takeUnless {
-        isDownloadTaskClearPresentationCleared
+        effectivePresentationCleared
     }
-    val visibleTasks = if (isDownloadTaskClearPresentationCleared) {
+    val visibleTasks = if (effectivePresentationCleared) {
         emptyList()
     } else {
         visibleDownloadProgressTasks(downloadTasks)
@@ -371,7 +390,7 @@ fun DownloadProgressScreen(
             explicitResumeCandidates.isNotEmpty(),
         hasKnownPendingTasks = pendingTaskCount > 0,
         isClearing = effectiveIsClearing,
-        isClearPresentationCleared = isDownloadTaskClearPresentationCleared
+        isClearPresentationCleared = effectivePresentationCleared
     )
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     var showClearDialog by remember { mutableStateOf(false) }
@@ -424,6 +443,9 @@ fun DownloadProgressScreen(
 
                             pagePresentation == DownloadProgressPagePresentation.UNAVAILABLE ->
                                 stringResource(R.string.download_loading_tasks_recovering)
+
+                            logicalClearComplete ->
+                                stringResource(R.string.download_clear_background_cleanup)
 
                             effectiveIsClearing -> effectiveClearProgress?.let { progress ->
                                 stringResource(

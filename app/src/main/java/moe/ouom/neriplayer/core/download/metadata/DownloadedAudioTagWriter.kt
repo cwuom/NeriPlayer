@@ -28,6 +28,7 @@ import moe.ouom.neriplayer.util.media.standardLyricsMetadataKeys
 import moe.ouom.neriplayer.util.media.translatedLyricsMetadataKeys
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 
 /** 音频内嵌标签写入结果, 用于区分"可重试的失败"与"容器天生不支持标签" */
@@ -63,6 +64,34 @@ internal object DownloadedAudioTagWriter {
     private val LRC_TIMED_LINE_REGEX = Regex("""^\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?]""")
     private val LRC_METADATA_LINE_REGEX = Regex("""^\[[A-Za-z][A-Za-z0-9_]*:.*]$""")
 
+    private fun logWriteFailure(
+        stage: String,
+        audio: ManagedDownloadStorage.StoredEntry,
+        error: Throwable,
+        metrics: String? = null
+    ) {
+        val causes = buildList {
+            var current: Throwable? = error
+            var depth = 0
+            while (current != null && depth < 6) {
+                add(
+                    "${current.javaClass.simpleName}:" +
+                        (current.message?.take(240) ?: "<no-message>")
+                )
+                current = current.cause
+                depth++
+            }
+        }.joinToString(" <- ")
+        val metricSuffix = metrics?.let { ", $it" }.orEmpty()
+        NPLogger.w(
+            TAG,
+            "音频元数据回写失败: stage=$stage, file=${audio.name}, " +
+                "reference=${audio.reference}, sizeBytes=${audio.sizeBytes}, " +
+                "causes=$causes$metricSuffix",
+            error
+        )
+    }
+
     /** 判断该文件名对应的容器能否承载内嵌标签 */
     internal fun supportsEmbeddedTags(fileName: String): Boolean {
         val extension = fileName.substringAfterLast('.', "").lowercase(Locale.US)
@@ -82,13 +111,31 @@ internal object DownloadedAudioTagWriter {
             return@withContext DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
         }
         val descriptor = openWritableDescriptor(context, audio)
-            ?: return@withContext DownloadedAudioTagWriteOutcome.FAILED
-        descriptor.use { target ->
+            ?: run {
+                logWriteFailure(
+                    stage = "open_descriptor",
+                    audio = audio,
+                    error = IOException("writable descriptor unavailable")
+                )
+                return@withContext DownloadedAudioTagWriteOutcome.FAILED
+            }
+        return@withContext try {
+            descriptor.use { target ->
             // 没有封面侧载时不读取已有图片, 避免 SAF 上载入大封面
             val existingTagMetadata = loadExistingTagMetadata(
                 descriptor = target,
-                includePictures = shouldLoadEmbeddedPictures(sidecarReferences)
+                includePictures = shouldLoadEmbeddedPictures(
+                    sidecarReferences = sidecarReferences,
+                    audioExtension = audio.logicalName.substringAfterLast('.', "")
+                )
             )
+            if (existingTagMetadata == null) {
+                logWriteFailure(
+                    stage = "taglib_read",
+                    audio = audio,
+                    error = IllegalStateException("TagLib metadata unavailable")
+                )
+            }
             val existingPropertyMap = existingTagMetadata?.propertyMap
             val metadataReadMs = elapsedMs(startedAtNs)
             val (propertyMap, coverPictures) = coroutineScope {
@@ -121,7 +168,7 @@ internal object DownloadedAudioTagWriter {
                 runCatching {
                     TagLib.savePictures(target.dup().detachFd(), pictures)
                 }.getOrElse {
-                    NPLogger.w(TAG, "写入封面标签失败: ${audio.name}, ${it.message}")
+                    logWriteFailure("cover_write", audio, it)
                     false
                 }
             } ?: true
@@ -133,7 +180,7 @@ internal object DownloadedAudioTagWriter {
                 runCatching {
                     TagLib.savePropertyMap(target.dup().detachFd(), propertyMap)
                 }.getOrElse {
-                    NPLogger.w(TAG, "写入标签属性失败: ${audio.name}, ${it.message}")
+                    logWriteFailure("property_write", audio, it)
                     false
                 }
             } else {
@@ -148,7 +195,15 @@ internal object DownloadedAudioTagWriter {
                     propertyChanged = propertyChanged,
                     coverChanged = coverPictures != null,
                     song = song
-                ) || verifyRequiredEmbeddedMetadata(target, song)
+                ) || verifyRequiredEmbeddedMetadata(target, song).also { verified ->
+                    if (!verified) {
+                        logWriteFailure(
+                            stage = "readback",
+                            audio = audio,
+                            error = IllegalStateException("required metadata readback mismatch")
+                        )
+                    }
+                }
             } else {
                 false
             }
@@ -164,17 +219,30 @@ internal object DownloadedAudioTagWriter {
 
             // TagLib 连既有标签都读不出来, 说明这个容器它根本不认识, 重试无意义
             if (!propertySaved && existingPropertyMap == null) {
-                NPLogger.w(
-                    TAG,
-                    "TagLib 无法解析该音频容器，跳过内嵌标签: file=${audio.name}"
+                logWriteFailure(
+                    stage = "taglib_read",
+                    audio = audio,
+                    error = IllegalStateException("TagLib metadata unavailable")
                 )
                 return@use DownloadedAudioTagWriteOutcome.UNSUPPORTED_CONTAINER
             }
 
-            NPLogger.w(
-                TAG,
-                "音频内嵌标签写入未完成: file=${audio.name}, propertySaved=$propertySaved, coverSaved=$coverSaved, metadataVerified=$metadataVerified, metadataReadMs=$metadataReadMs, preparationMs=$preparationMs, writeMs=$writeMs, verifyMs=$verifyMs, totalMs=${elapsedMs(startedAtNs)}"
+            logWriteFailure(
+                stage = "write_incomplete",
+                audio = audio,
+                error = IllegalStateException(
+                    "propertySaved=$propertySaved, coverSaved=$coverSaved, " +
+                        "metadataVerified=$metadataVerified"
+                ),
+                metrics = "metadataReadMs=$metadataReadMs, preparationMs=$preparationMs, " +
+                    "writeMs=$writeMs, verifyMs=$verifyMs, totalMs=${elapsedMs(startedAtNs)}"
             )
+            DownloadedAudioTagWriteOutcome.FAILED
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            logWriteFailure("unexpected", audio, error, "totalMs=${elapsedMs(startedAtNs)}")
             DownloadedAudioTagWriteOutcome.FAILED
         }
     }
@@ -195,6 +263,11 @@ internal object DownloadedAudioTagWriter {
                 sidecarReferences?.lyricReference,
                 sidecarReferences?.translatedLyricReference,
                 sidecarReferences?.romanizedLyricReference
+            ),
+            cachedContents = listOf(
+                sidecarReferences?.lyricContent,
+                sidecarReferences?.translatedLyricContent,
+                sidecarReferences?.romanizedLyricContent
             ),
             fallbacks = listOf(
                 song.matchedLyric ?: song.originalLyric,
@@ -247,10 +320,12 @@ internal object DownloadedAudioTagWriter {
     private suspend fun resolveEmbeddedLyrics(
         context: Context,
         explicitReferences: List<String?>,
+        cachedContents: List<String?>,
         fallbacks: List<String?>
     ): List<String?> {
         val referencesToRead = explicitReferences.indices.map { index ->
             explicitReferences.getOrNull(index).takeIf {
+                cachedContents.getOrNull(index).isNullOrBlank() &&
                 shouldReadEmbeddedLyricReference(
                     reference = it,
                     fallback = fallbacks.getOrNull(index)
@@ -270,7 +345,16 @@ internal object DownloadedAudioTagWriter {
             }
         }
         return explicitReferences.indices.map { index ->
-            resolved.getOrNull(index) ?: fallbacks.getOrNull(index)
+            cachedContents.getOrNull(index)
+                ?.takeIf { content ->
+                    content.isNotBlank() &&
+                        shouldReadEmbeddedLyricReference(
+                            reference = explicitReferences.getOrNull(index),
+                            fallback = fallbacks.getOrNull(index)
+                        )
+                }
+                ?: resolved.getOrNull(index)
+                ?: fallbacks.getOrNull(index)
         }
     }
 
@@ -349,9 +433,15 @@ internal object DownloadedAudioTagWriter {
     }
 
     internal fun shouldLoadEmbeddedPictures(
-        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?
+        sidecarReferences: AudioDownloadManager.DownloadedSidecarReferences?,
+        audioExtension: String? = null
     ): Boolean {
-        return !sidecarReferences?.coverReference.isNullOrBlank()
+        if (sidecarReferences?.coverReference.isNullOrBlank()) {
+            return false
+        }
+        // 没有 role 的 covr 容器会整体替换图片列表，不必为读取旧图片增加额外开销
+        return audioExtension.isNullOrBlank() ||
+            !usesRolelessCoverPictures(audioExtension)
     }
 
     internal fun canSkipEmbeddedMetadataVerification(
@@ -473,12 +563,26 @@ internal object DownloadedAudioTagWriter {
         audioExtension: String
     ): Array<Picture>? {
         val coverReference = sidecarReferences?.coverReference ?: return null
-        val coverBytes = readReferenceBytes(context, coverReference) ?: return null
+        val coverBytes = readReferenceBytes(context, coverReference) ?: run {
+            NPLogger.w(
+                TAG,
+                "封面侧载不可读，跳过嵌入但保留 sidecar: " +
+                    "stage=cover_read, reference=$coverReference"
+            )
+            return null
+        }
         val normalizedCover = LocalMediaSupport.normalizeEmbeddedCoverForContainer(
             sourceBytes = coverBytes,
             sourceMimeType = detectPictureMimeType(coverBytes),
             audioExtension = audioExtension
-        ) ?: return null
+        ) ?: run {
+            NPLogger.w(
+                TAG,
+                "封面格式不适合当前容器，跳过嵌入但保留 sidecar: " +
+                    "stage=cover_normalize, extension=$audioExtension, bytes=${coverBytes.size}"
+            )
+            return null
+        }
         val replacementPicture = Picture(
             data = normalizedCover.first,
             description = "",
@@ -593,13 +697,31 @@ internal object DownloadedAudioTagWriter {
         if (localFile != null && localFile.exists()) {
             return runCatching {
                 localFile.inputStream().use { it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES) }
+            }.onFailure {
+                NPLogger.w(
+                    TAG,
+                    "读取本地封面侧载失败: stage=cover_read, reference=$reference",
+                    it
+                )
             }.getOrNull()
         }
-        val uri = runCatching { reference.toUri() }.getOrNull() ?: return null
+        val uri = runCatching { reference.toUri() }.onFailure {
+            NPLogger.w(
+                TAG,
+                "解析封面侧载引用失败: stage=cover_reference, reference=$reference",
+                it
+            )
+        }.getOrNull() ?: return null
         return runCatching {
             context.contentResolver.openInputStream(uri)?.use {
                 it.readBytesLimited(MAX_EMBEDDED_COVER_BYTES)
             }
+        }.onFailure {
+            NPLogger.w(
+                TAG,
+                "读取 SAF 封面侧载失败: stage=cover_read, uri=$uri",
+                it
+            )
         }.getOrNull()
     }
 

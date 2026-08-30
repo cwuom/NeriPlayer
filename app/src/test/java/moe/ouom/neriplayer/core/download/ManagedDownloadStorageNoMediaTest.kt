@@ -15,9 +15,10 @@ class ManagedDownloadStorageNoMediaTest {
     val tempFolder = TemporaryFolder()
 
     @Test
-    fun `shouldCreateNoMediaMarker only targets cover directory`() {
+    fun `shouldCreateNoMediaMarker targets cover and temporary directories`() {
         assertTrue(ManagedDownloadStorage.shouldCreateNoMediaMarker("Covers"))
         assertTrue(ManagedDownloadStorage.shouldCreateNoMediaMarker("covers"))
+        assertTrue(ManagedDownloadStorage.shouldCreateNoMediaMarker(".tmp"))
         assertFalse(ManagedDownloadStorage.shouldCreateNoMediaMarker("Lyrics"))
     }
 
@@ -37,6 +38,15 @@ class ManagedDownloadStorageNoMediaTest {
         ensureManagedMediaScanIsolation("Lyrics", lyricDirectory)
 
         assertFalse(File(lyricDirectory, ".nomedia").exists())
+    }
+
+    @Test
+    fun `file directory isolation creates nomedia marker for temporary directory`() {
+        val temporaryDirectory = tempFolder.newFolder(".tmp")
+
+        ensureManagedMediaScanIsolation(".tmp", temporaryDirectory)
+
+        assertTrue(File(temporaryDirectory, ".nomedia").exists())
     }
 
     private fun ensureManagedMediaScanIsolation(subdirectory: String, directory: File) {

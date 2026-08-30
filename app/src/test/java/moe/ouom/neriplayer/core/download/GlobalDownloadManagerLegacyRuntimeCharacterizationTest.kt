@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * locks down the remaining manager call-graph work before the runtime cleanup
+ * 固定运行时清理前下载管理器调用链的关键行为
  */
 class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     @Test
@@ -156,6 +156,42 @@ class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
                     "\"ASSETS_ENRICHING\"\\s*->\\s*" +
                     "return\\s+DownloadExecutionResult\\.Retry"
             ).containsMatchIn(resultBody)
+        )
+    }
+
+    @Test
+    fun `post core enrichment failures expose completed task and keep retry handoff`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
+        val unsupportedBody = methodBody(source, "preserveUnsupportedMetadataEmbedding")
+        val settleBody = methodBody(source, "settlePostCoreEnrichmentFailure")
+
+        assertTrue(coreBody.contains("settlePostCoreEnrichmentFailure"))
+        assertTrue(enrichmentBody.contains("settlePostCoreEnrichmentFailure"))
+        assertTrue(unsupportedBody.contains("settlePostCoreEnrichmentFailure"))
+        assertTrue(settleBody.contains("resolvePostCoreEnrichmentTaskStatus"))
+        assertTrue(settleBody.contains("schedulePostCoreEnrichmentRetry"))
+        assertFalse(enrichmentBody.contains("DownloadStatus.FAILED"))
+        assertFalse(unsupportedBody.contains("DownloadStatus.FAILED"))
+    }
+
+    @Test
+    fun `final metadata keeps the durable operation identity for restart recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val enrichmentBody = methodBody(source, "enrichCoreCommittedDownload")
+        val finalizedIndex = enrichmentBody.indexOf("downloadFinalized = true")
+        val nextCallEnd = enrichmentBody.indexOf("\n                )", finalizedIndex)
+
+        assertTrue(finalizedIndex >= 0)
+        assertTrue(nextCallEnd > finalizedIndex)
+        assertTrue(
+            enrichmentBody.substring(finalizedIndex, nextCallEnd)
+                .contains("operationId = operationId")
         )
     }
 

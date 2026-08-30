@@ -34,6 +34,48 @@ class LocalAudioImportManagerTest {
     val tempFolder = TemporaryFolder()
 
     @Test
+    fun `large media store directory keeps audio priority within cache bound`() {
+        val children = buildList {
+            repeat(20) { index ->
+                add(
+                    QueriedFolderChild(
+                        documentUri = mock(Uri::class.java),
+                        displayName = "cover-$index.jpg",
+                        mimeType = "image/jpeg",
+                        isDirectory = false
+                    )
+                )
+            }
+            repeat(20) { index ->
+                add(
+                    QueriedFolderChild(
+                        documentUri = mock(Uri::class.java),
+                        displayName = "audio-$index.mp3",
+                        mimeType = "audio/mpeg",
+                        isDirectory = false
+                    )
+                )
+            }
+        }
+
+        val bounded = boundMediaStoreSidecarChildrenForCache(
+            children = children,
+            maxEntries = 20
+        )
+
+        assertEquals(20, bounded.size)
+        assertTrue(bounded.any { child -> child.displayName.endsWith(".mp3") })
+        assertTrue(bounded.none { child -> child.displayName.endsWith(".txt") })
+    }
+
+    @Test
+    fun `large scans defer expensive container metadata after bounded threshold`() {
+        assertFalse(shouldDeferExpensiveScanMetadata(songCount = 256))
+        assertTrue(shouldDeferExpensiveScanMetadata(songCount = 257))
+        assertFalse(shouldDeferExpensiveScanMetadata(songCount = 0))
+    }
+
+    @Test
     fun `metadata sidecar lookup reuses provider numbered metadata`() {
         val audioName = "言って。 - Neri - 言って。 - netease.mp3"
         val numberedName = "$audioName.npmeta (2).json"
@@ -208,7 +250,7 @@ class LocalAudioImportManagerTest {
     }
 
     @Test
-    fun `stale media store rows are kept only with a real or provider-readable source`() {
+    fun `media store rows require a resolved or readable source`() {
         assertTrue(
             shouldKeepMediaStoreAudioRow(
                 hasResolvedFile = true,
@@ -235,6 +277,38 @@ class LocalAudioImportManagerTest {
                 hasResolvedFile = false,
                 hasProviderAudioReference = false,
                 hasReadableMediaStoreReference = false
+            )
+        )
+        assertFalse(
+            shouldKeepMediaStoreAudioRow(
+                hasResolvedFile = false,
+                hasProviderAudioReference = false,
+                hasReadableMediaStoreReference = false
+            )
+        )
+    }
+
+    @Test
+    fun `large media store scans bound expensive readability probes`() {
+        assertTrue(
+            shouldProbeMediaStoreContentReference(
+                rowOrdinal = 1,
+                hasResolvedFile = false,
+                probeLimit = 256
+            )
+        )
+        assertFalse(
+            shouldProbeMediaStoreContentReference(
+                rowOrdinal = 257,
+                hasResolvedFile = false,
+                probeLimit = 256
+            )
+        )
+        assertTrue(
+            shouldProbeMediaStoreContentReference(
+                rowOrdinal = 10_000,
+                hasResolvedFile = true,
+                probeLimit = 256
             )
         )
     }
@@ -763,6 +837,62 @@ class LocalAudioImportManagerTest {
         assertEquals(
             listOf(second, first),
             listOf(first, second).sortedWith(localSongNewestFirstComparator())
+        )
+    }
+
+    @Test
+    fun `source ordering keeps provider order for unknown timestamps in a mixed batch`() {
+        fun song(
+            id: Long,
+            sourceTime: Long?,
+            confidence: String?,
+            legacyAddedAt: Long,
+            stableKey: String
+        ) = SongItem(
+            id = id,
+            name = "song-$id",
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "/music/song-$id.mp3",
+            sourceStableKey = stableKey,
+            addedAt = legacyAddedAt,
+            logicalCreatedAtMs = sourceTime,
+            createdAtConfidence = confidence
+        )
+
+        val input = buildList {
+            repeat(1_000) { index ->
+                val known = index % 4 == 0
+                add(
+                    song(
+                        id = index.toLong(),
+                        sourceTime = if (known) {
+                            2_000_000L - ((index / 4) % 10) * 1_000L
+                        } else {
+                            null
+                        },
+                        confidence = if (known) "PROVIDER_REPORTED" else "UNKNOWN",
+                        legacyAddedAt = 9_000_000L - index,
+                        stableKey = "stable-${index.toString().padStart(4, '0')}"
+                    )
+                )
+            }
+        }
+        val ordered = input.sortedWith(localSongSourceCreationComparator())
+        val knownInput = input.filter { it.logicalCreatedAtMs != null }
+        val unknownInput = input.filter { it.createdAtConfidence == "UNKNOWN" }
+        val knownExpected = knownInput.sortedWith(
+            compareByDescending<SongItem> { it.logicalCreatedAtMs }
+                .thenBy { it.sourceStableKey.orEmpty() }
+        )
+
+        assertEquals(knownExpected, ordered.take(knownExpected.size))
+        assertEquals(
+            unknownInput.map { it.id },
+            ordered.drop(knownExpected.size).map { it.id }
         )
     }
 
@@ -1373,6 +1503,31 @@ class LocalAudioImportManagerTest {
         assertEquals("file:///private/original-cover.jpg", merged.originalCoverUrl)
         assertEquals("[00:01.00]original", merged.originalLyric)
         assertEquals("[00:01.00]原文", merged.originalTranslatedLyric)
+    }
+
+    @Test
+    fun `persisted local ordering prefers membership time over old source creation`() {
+        fun song(id: Long, sourceTime: Long, membershipTime: Long) = SongItem(
+            id = id,
+            name = "song-$id",
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 1_000L,
+            coverUrl = null,
+            mediaUri = "/music/song-$id.mp3",
+            localFilePath = "/music/song-$id.mp3",
+            logicalCreatedAtMs = sourceTime,
+            addedAt = sourceTime,
+            membershipAddedAtMs = membershipTime
+        )
+        val old = song(id = 1L, sourceTime = 100L, membershipTime = 100L)
+        val newlyAdded = song(id = 2L, sourceTime = 10L, membershipTime = 1_000L)
+
+        assertEquals(
+            listOf(newlyAdded, old),
+            listOf(old, newlyAdded).sortedWith(localSongNewestFirstComparator())
+        )
     }
 
     private fun managedAudioEntry(

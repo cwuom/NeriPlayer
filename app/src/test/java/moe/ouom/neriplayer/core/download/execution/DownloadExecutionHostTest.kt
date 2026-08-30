@@ -397,6 +397,23 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `temporary UIDT scheduling failure keeps fallback armed`() {
+        val actions = mutableListOf<String>()
+
+        val scheduled = scheduleUidtKeepingFallback(
+            scheduleFallback = { actions += "fallback" },
+            scheduleUidt = {
+                actions += "uidt"
+                error("binder unavailable")
+            },
+            cancelFallback = { actions += "cancel" }
+        )
+
+        assertFalse(scheduled)
+        assertEquals(listOf("fallback", "uidt"), actions)
+    }
+
+    @Test
     fun `terminal operation pruning is bounded and honors cutoff`() {
         val context = mockContext()
         val store = DownloadExecutionOperationStore { testJournal }

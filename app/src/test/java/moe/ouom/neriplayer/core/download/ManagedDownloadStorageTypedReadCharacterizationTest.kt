@@ -152,6 +152,23 @@ class ManagedDownloadStorageTypedReadCharacterizationTest {
         }
     }
 
+    @Test
+    fun `text reader does not promote a missing sidecar to root provider failure`() {
+        val source = readSource()
+        val reader = source
+            .substringAfter("private suspend fun readTextInternalSuspending")
+            .substringBefore("private fun inspectStorageReference")
+
+        assertTrue(
+            "missing SAF child must be treated as an absent optional sidecar",
+            reader.contains("ManagedDownloadReferenceIo.isMissingDocumentFailure")
+        )
+        assertTrue(
+            "arbitrary provider failures must retain the root failure signal",
+            reader.contains("ManagedDownloadRootProviderException(reference, result.error)")
+        )
+    }
+
     private fun readSource(): String {
         val relativePath =
             "src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"

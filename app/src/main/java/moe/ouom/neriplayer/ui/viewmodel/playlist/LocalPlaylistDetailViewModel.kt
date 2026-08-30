@@ -49,6 +49,7 @@ import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportResult
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanPhase
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioScanProgress
+import moe.ouom.neriplayer.data.local.audioimport.localSongSourceCreationComparator
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.model.LocalPlaylist
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
@@ -184,6 +185,11 @@ internal fun applyHydratedSongsToScanPreview(
     }
 
     val updatedSongs = state.songs.toMutableList()
+    // 批量回填时用稳定键索引，避免每首歌都线性扫描整个预览列表
+    val songIndexByStableKey = HashMap<String, Int>(updatedSongs.size)
+    updatedSongs.forEachIndexed { index, song ->
+        songIndexByStableKey.putIfAbsent(song.stableKey(), index)
+    }
     var selectedKeys = state.selectedKeys
     var existingLocalPlaylistKeys = state.existingLocalPlaylistKeys
     var duplicateMetadataKeys = state.duplicateMetadataKeys
@@ -191,7 +197,7 @@ internal fun applyHydratedSongsToScanPreview(
     hydratedSongs.forEachIndexed { index, hydratedSong ->
         val targetIndex = targetKeys
             ?.getOrNull(index)
-            ?.let { key -> updatedSongs.indexOfFirst { it.stableKey() == key } }
+            ?.let(songIndexByStableKey::get)
             ?.takeIf { it >= 0 }
             ?: (startIndex + index)
         if (hydratedSong == null || targetIndex !in updatedSongs.indices) {
@@ -199,6 +205,12 @@ internal fun applyHydratedSongsToScanPreview(
         }
         val previousSong = updatedSongs[targetIndex]
         updatedSongs[targetIndex] = hydratedSong
+        val previousKey = previousSong.stableKey()
+        val hydratedKey = hydratedSong.stableKey()
+        if (songIndexByStableKey[previousKey] == targetIndex) {
+            songIndexByStableKey.remove(previousKey)
+        }
+        songIndexByStableKey.putIfAbsent(hydratedKey, targetIndex)
         selectedKeys = remapScanPreviewKeySet(selectedKeys, previousSong, hydratedSong)
         existingLocalPlaylistKeys = remapScanPreviewKeySet(
             existingLocalPlaylistKeys,
@@ -240,8 +252,7 @@ internal fun applyHydratedSongsToScanPreview(
 }
 
 internal fun sortScannedSongsBySourceTime(songs: List<SongItem>): List<SongItem> {
-    // sortedWith 保持相同时间的扫描顺序, 避免时间精度不足时跳来跳去
-    return songs.sortedWith(compareByDescending<SongItem> { it.addedAt.coerceAtLeast(0L) })
+    return songs.sortedWith(localSongSourceCreationComparator())
 }
 
 private data class LocalScanMetadataFingerprint(

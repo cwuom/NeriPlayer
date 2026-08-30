@@ -90,7 +90,7 @@ internal object DownloadExecutionRoomStore {
                     operationId = request.operationId,
                     stableKey = song.stableKey(),
                     libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(context),
-                    // rescheduling an existing operation must never roll its durable state back
+                    // 重新排队不能把已有 operation 的持久状态倒退
                     state = if (restartForNewAttempt) state else existing?.state ?: state,
                     queueOrder = if (queueOrder == 0) existing?.queueOrder ?: 0 else queueOrder,
                     sourceHintJson = requestToJson(persistedRequest).toString(),
@@ -166,13 +166,11 @@ internal object DownloadExecutionRoomStore {
         val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
         val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return false
         val normalizedTotalBytes = totalBytes?.takeIf { it > 0L }
-        val libraryId = currentLibraryId(context)
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val entity = dao.find(operationId) ?: return@withTransaction false
             if (
-                entity.libraryId != libraryId ||
-                    entity.stableKey != normalizedKey ||
+                entity.stableKey != normalizedKey ||
                     entity.state !in PROGRESS_CHECKPOINT_OPERATION_STATES ||
                     entity.stopRequestedByUser
             ) {
@@ -185,9 +183,8 @@ internal object DownloadExecutionRoomStore {
             ) {
                 return@withTransaction false
             }
-            dao.updateProgressCheckpoint(
+            dao.updateProgressCheckpointAnyLibrary(
                 operationId = operationId,
-                libraryId = libraryId,
                 stableKey = normalizedKey,
                 bytesWritten = bytesWritten.coerceAtLeast(0L),
                 totalBytes = normalizedTotalBytes,
@@ -207,8 +204,7 @@ internal object DownloadExecutionRoomStore {
         val normalizedAttemptId = attemptId?.takeIf { it > 0L } ?: return null
         val entity = database.downloadOperationDao().find(operationId) ?: return null
         if (
-            entity.libraryId != currentLibraryId(context) ||
-                entity.stableKey != normalizedKey ||
+            entity.stableKey != normalizedKey ||
                 entity.state !in PROGRESS_CHECKPOINT_OPERATION_STATES
         ) {
             return null
@@ -284,7 +280,7 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * 目录切换或进程重启后仍需看到旧 root 的 durable operation
+     * 目录切换或进程重启后仍需看到旧根目录中的持久 operation
      * 分页读取避免一次性把大量历史行装入内存
      */
     suspend fun listByStatesAnyLibrary(
@@ -326,7 +322,7 @@ internal object DownloadExecutionRoomStore {
         return entries
     }
 
-    /** fast existence check used by connectivity callbacks without loading rows */
+    /** 供网络回调快速判断是否有任务，不加载整批记录 */
     fun hasAnyByStatesAnyLibrary(
         context: Context,
         states: List<String>,
@@ -335,7 +331,7 @@ internal object DownloadExecutionRoomStore {
         return states.isNotEmpty() && database.downloadOperationDao().hasAnyByStates(states)
     }
 
-    /** moves only resumable/live rows to the current root in one Room statement */
+    /** 用一条 Room 语句把可恢复和活动记录切到当前存储根目录 */
     suspend fun rehomeActiveOperationsToCurrentLibrary(
         context: Context,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
@@ -391,7 +387,7 @@ internal object DownloadExecutionRoomStore {
         return entries
     }
 
-    /** reads progress checkpoints across roots so a just-completed migration cannot hide cards */
+    /** 跨存储根读取进度检查点，避免刚完成迁移就把任务卡片隐藏 */
     suspend fun listProgressEntriesAnyLibrary(
         context: Context,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
@@ -429,7 +425,7 @@ internal object DownloadExecutionRoomStore {
         return entries
     }
 
-    /** rebinds a live operation after the migration fence is open without touching payload bytes */
+    /** 迁移栅栏打开后重新绑定活动 operation，不改动其载荷内容 */
     suspend fun rehomeOperationToCurrentLibrary(
         context: Context,
         operationId: String,
@@ -576,6 +572,19 @@ internal object DownloadExecutionRoomStore {
             stableKeys = entities.mapTo(linkedSetOf(), DownloadOperationEntity::stableKey),
             requestedAtMs = requestedAtMs
         )
+    }
+
+    /** 用户清空的快速阶段，用集合更新写入取消栅栏，详细凭据由恢复流程收集 */
+    suspend fun requestCancelAllFast(
+        context: Context,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): Int {
+        val requestedAtMs = System.currentTimeMillis()
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            dao.requestAllCancellationsFast(requestedAtMs) +
+                dao.requestAllCommitBoundaryCancellationsFast(requestedAtMs)
+        }
     }
 
     suspend fun finalizeRequestedCancellations(
@@ -799,8 +808,7 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * restores a reusable journal row only when the caller has supplied a fresh
-     * song payload for the same stable key
+     * 只有调用方提供同一稳定键的新歌曲载荷时，才恢复可复用的日志记录
      */
     suspend fun rehydrateMalformedReusableOperation(
         context: Context,
@@ -916,10 +924,8 @@ internal object DownloadExecutionRoomStore {
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
     ): Boolean {
         val normalizedKey = stableKey.trim().takeIf(String::isNotBlank) ?: return false
-        val libraryId = currentLibraryId(context)
-        return database.downloadOperationDao().isExecutionOwned(
+        return database.downloadOperationDao().isExecutionOwnedAnyLibrary(
             operationId = operationId,
-            libraryId = libraryId,
             stableKey = normalizedKey
         )
     }
@@ -994,8 +1000,7 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * promotes a user intent only after the caller has observed that storage mutation
-     * and the clear fence are both settled
+     * 调用方确认存储变更和清空栅栏都已收敛后，才提升用户意图
      */
     suspend fun promoteWaitingStorageMutation(
         context: Context,
@@ -1057,7 +1062,7 @@ internal object DownloadExecutionRoomStore {
         }
     }
 
-    /** persists a generated attempt id for legacy rows that predate progress identity */
+    /** 为没有进度身份的旧记录持久化新生成的尝试编号 */
     suspend fun ensureAttemptId(
         context: Context,
         operationId: String,
@@ -1303,7 +1308,7 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * removes a clear snapshot only after its host and commit work have fully stopped
+     * 只有宿主和提交工作都完全停止后，才删除清空快照
      */
     suspend fun purgeFullyClearedOperations(
         context: Context,
@@ -1315,8 +1320,7 @@ internal object DownloadExecutionRoomStore {
     }
 
     /**
-     * reserves one OS-host handoff slot for this process without treating every
-     * durable queued operation as active work
+     * 为当前进程预留一个系统宿主交接槽位，不把所有持久排队记录都当成活动任务
      */
     suspend fun tryAcquireHostAdmission(
         context: Context,
@@ -1328,8 +1332,7 @@ internal object DownloadExecutionRoomStore {
         if (capacity <= 0 || operationId.isBlank()) return false
         return database.withTransaction {
             val dao = database.downloadOperationDao()
-            // Room is restricted to the main app process, so entries from another
-            // token are leftovers from a process that can no longer own an OS host
+            // Room 只在主进程使用，其他令牌留下的记录已经无法继续拥有系统宿主
             dao.deleteHostAdmissionsFromOtherProcesses(HOST_ADMISSION_PROCESS_TOKEN)
             dao.deleteExpiredHostAdmissions(
                 processToken = HOST_ADMISSION_PROCESS_TOKEN,
@@ -1429,7 +1432,7 @@ internal object DownloadExecutionRoomStore {
             ) > 0
     }
 
-    /** marks all user initiated rows in one transaction before the exit marker advances */
+    /** 在退出标记推进前，用一笔事务标记所有用户主动停止的记录 */
     suspend fun markUserRequestedProcessExitOperations(
         context: Context,
         entries: Collection<StateEntry>,
@@ -1463,11 +1466,9 @@ internal object DownloadExecutionRoomStore {
         val keys = stableKeys.map(String::trim).filter(String::isNotBlank).distinct()
         if (keys.isEmpty()) return false
         val dao = NeriUserDataDatabase.getInstance(context).downloadOperationDao()
-        val libraryId = currentLibraryId(context)
         val updatedAtMs = System.currentTimeMillis()
         return keys.chunked(SQLITE_IN_QUERY_CHUNK_SIZE).sumOf { chunk ->
-            dao.clearUserStopForStableKeys(
-                libraryId = libraryId,
+            dao.clearUserStopForStableKeysAnyLibrary(
                 stableKeys = chunk,
                 updatedAtMs = updatedAtMs
             )
@@ -1498,7 +1499,7 @@ internal object DownloadExecutionRoomStore {
         if (normalizedKeys.isEmpty()) return 0
         return database.withTransaction {
             val dao = database.downloadOperationDao()
-            dao.findUserStoppedInLibrary(currentLibraryId(context))
+            dao.findUserStopped()
                 .filter { entity -> entity.stableKey in normalizedKeys }
                 .sumOf { entity ->
                     dao.prepareExplicitResume(
@@ -1564,7 +1565,7 @@ internal object DownloadExecutionRoomStore {
                     operationId = request.operationId
                 )
             )
-            // persist the identity used by the entity, not only optional source metadata
+            // 持久化实体真正使用的身份，不能只保存可选的来源元数据
             put("sourceStableKey", request.song.stableKey())
             put("preserveStaging", request.preserveStaging)
             put("requiresWifiNetwork", request.requiresWifiNetwork)
@@ -1759,11 +1760,6 @@ internal object DownloadExecutionRoomStore {
     private const val SQLITE_IN_QUERY_CHUNK_SIZE = 900
     internal const val HOST_ADMISSION_HANDOFF_LEASE_MS = 30_000L
     private val HOST_ADMISSION_PROCESS_TOKEN = UUID.randomUUID().toString()
-    private val HOST_ADMISSION_HANDOFF_STATES = listOf(
-        "PENDING_QUEUE",
-        "QUEUED",
-        "RETRYABLE"
-    )
     private val TERMINAL_STATES = listOf("COMPLETED", "CANCELLED", "INVALID")
     private val ACTIVE_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
@@ -1790,6 +1786,9 @@ internal object DownloadExecutionRoomStore {
         "ASSETS_ENRICHING",
         "DEGRADED_COMPLETE"
     )
+    /** 旧宿主消失后可交给新进程接管的状态，进程死亡可能让持久日志领先于内存调度器 */
+    internal val HOST_ADMISSION_HANDOFF_STATES = REUSABLE_OPERATION_STATES +
+        IN_FLIGHT_OPERATION_STATES
     internal val PROGRESS_CHECKPOINT_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",

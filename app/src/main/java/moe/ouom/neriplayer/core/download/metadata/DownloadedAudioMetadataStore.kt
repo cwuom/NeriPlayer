@@ -486,7 +486,10 @@ internal class DownloadedAudioMetadataStore(
                 coverReference = sidecarReferences?.coverReference,
                 lyricReference = sidecarReferences?.lyricReference,
                 translatedLyricReference = sidecarReferences?.translatedLyricReference,
-                romanizedLyricReference = sidecarReferences?.romanizedLyricReference
+                romanizedLyricReference = sidecarReferences?.romanizedLyricReference,
+                lyricContent = sidecarReferences?.lyricContent,
+                translatedLyricContent = sidecarReferences?.translatedLyricContent,
+                romanizedLyricContent = sidecarReferences?.romanizedLyricContent
             )
         }
 
@@ -545,7 +548,10 @@ internal class DownloadedAudioMetadataStore(
                     context = context,
                     songId = song.id,
                     candidateBaseNames = candidateBaseNames
-                )
+                ),
+            lyricContent = sidecarReferences?.lyricContent,
+            translatedLyricContent = sidecarReferences?.translatedLyricContent,
+            romanizedLyricContent = sidecarReferences?.romanizedLyricContent
         )
     }
 
@@ -558,9 +564,15 @@ internal class DownloadedAudioMetadataStore(
     ): RestorableSidecarLyrics {
         val values = readRestorableSidecarLyricsConcurrently(
             references = listOf(
-                sidecars.lyricReference.takeIf { readOriginal },
-                sidecars.translatedLyricReference.takeIf { readTranslated },
-                sidecars.romanizedLyricReference.takeIf { readRomanized }
+                sidecars.lyricReference.takeIf {
+                    readOriginal && sidecars.lyricContent.isNullOrBlank()
+                },
+                sidecars.translatedLyricReference.takeIf {
+                    readTranslated && sidecars.translatedLyricContent.isNullOrBlank()
+                },
+                sidecars.romanizedLyricReference.takeIf {
+                    readRomanized && sidecars.romanizedLyricContent.isNullOrBlank()
+                }
             ),
             parallelism = SIDECAR_READ_PARALLELISM
         ) { normalized ->
@@ -582,9 +594,12 @@ internal class DownloadedAudioMetadataStore(
             }
         }
         return RestorableSidecarLyrics(
-            original = values.getOrNull(0),
-            translated = values.getOrNull(1),
-            romanized = values.getOrNull(2)
+            original = sidecars.lyricContent?.takeIf { readOriginal }
+                ?: values.getOrNull(0),
+            translated = sidecars.translatedLyricContent?.takeIf { readTranslated }
+                ?: values.getOrNull(1),
+            romanized = sidecars.romanizedLyricContent?.takeIf { readRomanized }
+                ?: values.getOrNull(2)
         )
     }
 
@@ -722,7 +737,10 @@ internal class DownloadedAudioMetadataStore(
         val coverReference: String?,
         val lyricReference: String?,
         val translatedLyricReference: String?,
-        val romanizedLyricReference: String?
+        val romanizedLyricReference: String?,
+        val lyricContent: String? = null,
+        val translatedLyricContent: String? = null,
+        val romanizedLyricContent: String? = null
     )
 
     private data class RestorableSidecarLyrics(
@@ -745,7 +763,7 @@ internal fun mergeRestorableOverrides(
         null
     }
     return previous.copy(
-        // null means the user restored the baseline; do not resurrect the old override
+        // null 表示用户恢复了基线，不要把旧的覆盖值重新带回来
         title = if (clearRestorableOverrides.title) null else {
             song.customName ?: previous.title
         },
@@ -968,7 +986,7 @@ internal fun mergeRestorableBaseline(
         title = current.title ?: song.originalName ?: song.name,
         artist = current.artist ?: song.originalArtist ?: song.artist,
         album = current.album ?: song.album,
-        // the first write must capture the source cover, never the current override
+        // 第一次写入要记录来源封面，不能误用当前的覆盖封面
         coverReference = current.coverReference
             ?: song.originalCoverUrl
             ?: song.coverUrl.takeUnless { cover ->

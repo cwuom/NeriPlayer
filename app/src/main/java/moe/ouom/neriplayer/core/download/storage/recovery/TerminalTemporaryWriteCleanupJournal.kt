@@ -42,10 +42,9 @@ internal data class TerminalTemporaryWriteCleanupJournalEntry(
 }
 
 /**
- * keeps a durable ownership record while a pending audio name is being promoted
+ * 待提交音频改名期间保留持久所有权记录
  *
- * A preparation is deliberately not eligible for temporary-file deletion. It is
- * converted to a terminal record only after the rename has succeeded.
+ * 准备记录不能直接参与临时文件清理，只有改名成功后才会转成终态记录
  */
 internal data class TerminalTemporaryWriteCleanupFinalizationPreparation(
     val root: TerminalTemporaryWriteCleanupRoot,
@@ -226,6 +225,26 @@ internal class TerminalTemporaryWriteCleanupJournal(
             }
         )
         store.write(encodeOrNull(updated))
+    }
+
+    /** 并发入队只刷新代次且目标集合未变时返回当前记录
+     * 调用方消费前必须重新校验存储，本方法不修改日志，新增目标仍受 consume 的代次检查保护
+     */
+    fun currentEntryIfTargetsMatch(
+        entry: TerminalTemporaryWriteCleanupJournalEntry
+    ): TerminalTemporaryWriteCleanupJournalEntry? = synchronized(lock) {
+        val normalizedRoot = entry.root.normalizedOrNull() ?: return@synchronized null
+        val normalizedTargets = entry.targets
+            .mapNotNull { target -> target.normalizedOrNull() }
+            .distinct()
+            .sortedWith(terminalTemporaryWriteCleanupTargetComparator)
+        if (normalizedTargets.isEmpty()) {
+            return@synchronized null
+        }
+        val current = readStateLocked() ?: return@synchronized null
+        current.terminalEntries.firstOrNull { candidate ->
+            candidate.root == normalizedRoot && candidate.targets == normalizedTargets
+        }
     }
 
     fun completeFinalization(
@@ -585,6 +604,15 @@ internal object PersistentTerminalTemporaryWriteCleanupJournal {
         runCatching {
             journal(context).consume(entry)
         }.getOrDefault(false)
+    }
+
+    fun currentEntryIfTargetsMatch(
+        context: Context,
+        entry: TerminalTemporaryWriteCleanupJournalEntry
+    ): TerminalTemporaryWriteCleanupJournalEntry? = synchronized(lock) {
+        runCatching {
+            journal(context).currentEntryIfTargetsMatch(entry)
+        }.getOrNull()
     }
 
     fun prepareFinalization(

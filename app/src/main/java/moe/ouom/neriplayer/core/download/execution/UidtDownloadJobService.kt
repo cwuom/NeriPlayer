@@ -11,6 +11,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import android.os.SystemClock
 import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CancellationException
@@ -28,8 +29,8 @@ import moe.ouom.neriplayer.core.logging.NPLogger
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
-/** bridges API 34 user initiated jobs to the shared download host */
-// job ids stay in a host-owned range because WorkManager uses its own range
+ /** 把 API 34 的用户发起任务接入共享下载宿主 */
+ // 任务编号保留在宿主专用范围，WorkManager 使用另一段编号
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class UidtDownloadJobService : JobService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -44,6 +45,7 @@ class UidtDownloadJobService : JobService() {
             jobFinished(params, false)
             return false
         }
+        markJobStarted(operationId, params.jobId)
         NPLogger.d(TAG, "UIDT 下载任务开始: operationId=$operationId, jobId=${params.jobId}")
         try {
             setNotification(
@@ -70,6 +72,7 @@ class UidtDownloadJobService : JobService() {
                     withContext(NonCancellable + Dispatchers.Main) {
                         runningJobs.remove(params.jobId, failureJob)
                         completionGates.remove(params.jobId, completionGate)
+                        markJobFinished(operationId, params.jobId)
                         if (completionGate.shouldReportCompletion()) {
                             jobFinished(params, true)
                         }
@@ -116,6 +119,7 @@ class UidtDownloadJobService : JobService() {
                 withContext(NonCancellable + Dispatchers.Main) {
                     runningJobs.remove(params.jobId, job)
                     completionGates.remove(params.jobId, completionGate)
+                    markJobFinished(operationId, params.jobId)
                     if (completionGate.shouldReportCompletion()) {
                         jobFinished(params, wantsReschedule)
                     }
@@ -148,6 +152,7 @@ class UidtDownloadJobService : JobService() {
         }
         completionGates[params.jobId]?.markSchedulerStopped()
         runningJobs.remove(params.jobId)?.cancel(CancellationException("UIDT job stopped"))
+        operationId?.let { markJobFinished(it, params.jobId) }
         if (operationId != null) {
             if (stopAction == UidtStopAction.STOP_AND_CANCEL_BACKENDS) {
                 ForegroundDownloadWorker.cancelFallback(
@@ -208,6 +213,129 @@ class UidtDownloadJobService : JobService() {
         internal const val UIDT_JOB_ID_MIN = 100_000
         internal const val UIDT_JOB_ID_MAX = 900_099_999
         private val scheduleLock = Any()
+        /** JobScheduler.allPendingJobs 需要 Binder 往返，短期进程缓存可避免大批歌曲重复列举
+         * 缓存保留所有已占用 ID，包括附加数据损坏的任务，真正调度前仍会做最后碰撞检查
+         */
+        private const val PENDING_JOB_INDEX_TTL_MS = 500L
+        private data class PendingJobIndex(
+            val jobIdsByOperation: Map<String, Set<Int>> = emptyMap(),
+            val occupiedJobIds: Set<Int> = emptySet()
+        )
+
+        private var pendingJobIndexAtElapsedMs: Long? = null
+        private var pendingJobIndexSnapshot = PendingJobIndex()
+        private val reservedJobIdsByOperation = mutableMapOf<String, MutableSet<Int>>()
+        private val reservedJobIds = linkedSetOf<Int>()
+
+        private fun pendingJobIndex(
+            scheduler: JobScheduler,
+            component: ComponentName,
+            forceRefresh: Boolean = false
+        ): PendingJobIndex {
+            val nowElapsedMs = SystemClock.elapsedRealtime()
+            val capturedAtElapsedMs = pendingJobIndexAtElapsedMs
+            if (
+                !forceRefresh &&
+                    capturedAtElapsedMs != null &&
+                    nowElapsedMs >= capturedAtElapsedMs &&
+                    nowElapsedMs - capturedAtElapsedMs <= PENDING_JOB_INDEX_TTL_MS
+            ) {
+                return pendingJobIndexSnapshot
+            }
+            val idsByOperation = linkedMapOf<String, MutableSet<Int>>()
+            val occupiedIds = linkedSetOf<Int>()
+            val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
+                .getOrElse { error ->
+                    NPLogger.w(
+                        TAG,
+                        "读取 UIDT pending jobs 失败，交给 fallback: ${error.message}",
+                        error
+                    )
+                    throw error
+                }
+            pendingJobs.forEach { job ->
+                occupiedIds += job.id
+                if (job.service == component) {
+                    job.extras.getString(OPERATION_ID_KEY)
+                        ?.let(::normalizeDownloadOperationId)
+                        ?.let { operationId ->
+                            idsByOperation.getOrPut(operationId) { linkedSetOf() } += job.id
+                        }
+                }
+            }
+            occupiedIds += reservedJobIds
+            pendingJobIndexSnapshot = PendingJobIndex(
+                jobIdsByOperation = idsByOperation.mapValues { (_, ids) -> ids.toSet() },
+                occupiedJobIds = occupiedIds.toSet()
+            )
+            pendingJobIndexAtElapsedMs = nowElapsedMs
+            return pendingJobIndexSnapshot
+        }
+
+        private fun invalidatePendingJobIndex() {
+            pendingJobIndexAtElapsedMs = null
+        }
+
+        private fun matchesPendingJob(
+            scheduler: JobScheduler,
+            component: ComponentName,
+            jobId: Int,
+            operationId: String
+        ): Boolean {
+            return runCatching { scheduler.getPendingJob(jobId) }
+                .getOrNull()
+                ?.let { job ->
+                    job.service == component &&
+                        job.extras.getString(OPERATION_ID_KEY)
+                            ?.let(::normalizeDownloadOperationId) == operationId
+                } == true
+        }
+
+        private fun rememberScheduledJob(operationId: String, jobId: Int) {
+            reservedJobIdsByOperation
+                .getOrPut(operationId) { linkedSetOf() }
+                .add(jobId)
+            reservedJobIds += jobId
+            val idsByOperation = pendingJobIndexSnapshot.jobIdsByOperation.toMutableMap()
+            idsByOperation[operationId] =
+                idsByOperation[operationId].orEmpty() + jobId
+            pendingJobIndexSnapshot = PendingJobIndex(
+                jobIdsByOperation = idsByOperation,
+                occupiedJobIds = pendingJobIndexSnapshot.occupiedJobIds + jobId
+            )
+            pendingJobIndexAtElapsedMs = SystemClock.elapsedRealtime()
+        }
+
+        private fun forgetScheduledJob(operationId: String, jobId: Int? = null) {
+            if (jobId == null) {
+                reservedJobIdsByOperation.remove(operationId)?.let { rememberedJobIds ->
+                    reservedJobIds.removeAll(rememberedJobIds)
+                }
+            } else {
+                val rememberedJobIds = reservedJobIdsByOperation[operationId]
+                if (rememberedJobIds?.remove(jobId) == true) {
+                    reservedJobIds.remove(jobId)
+                    if (rememberedJobIds.isEmpty()) {
+                        reservedJobIdsByOperation.remove(operationId)
+                    }
+                }
+            }
+            invalidatePendingJobIndex()
+        }
+
+        internal fun markJobStarted(operationId: String, jobId: Int) {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+            synchronized(scheduleLock) {
+                rememberScheduledJob(normalizedId, jobId)
+            }
+        }
+
+        internal fun markJobFinished(operationId: String, jobId: Int) {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return
+            synchronized(scheduleLock) {
+                forgetScheduledJob(normalizedId, jobId)
+            }
+        }
 
         fun schedule(
             context: Context,
@@ -222,34 +350,88 @@ class UidtDownloadJobService : JobService() {
                 },
                 scheduleUidt = {
                     synchronized(scheduleLock) {
-                        val pendingJobs = scheduler.allPendingJobs
-                        val existingJob = pendingJobs.firstOrNull { job ->
-                            job.service == component &&
-                                job.extras.getString(OPERATION_ID_KEY) == normalizedId
+                        if (reservedJobIdsByOperation[normalizedId].orEmpty().isNotEmpty()) {
+                            val stillScheduled = reservedJobIdsByOperation[normalizedId]
+                                .orEmpty()
+                                .any { jobId ->
+                                    matchesPendingJob(
+                                        scheduler = scheduler,
+                                        component = component,
+                                        jobId = jobId,
+                                        operationId = normalizedId
+                                    )
+                                }
+                            if (stillScheduled) return@synchronized true
+                            forgetScheduledJob(normalizedId)
                         }
-                        if (existingJob != null) {
+                        var pendingIndex = pendingJobIndex(scheduler, component)
+                        fun hasIndexedJob(): Boolean {
+                            return pendingIndex.jobIdsByOperation[normalizedId]
+                                .orEmpty()
+                                .any { jobId ->
+                                    matchesPendingJob(
+                                        scheduler = scheduler,
+                                        component = component,
+                                        jobId = jobId,
+                                        operationId = normalizedId
+                                    )
+                                }
+                        }
+                        if (hasIndexedJob()) {
                             return@synchronized true
                         }
-                        val occupiedJobIds = pendingJobs
-                            .asSequence()
-                            .filter { job -> job.service == component }
-                            .mapTo(linkedSetOf()) { job -> job.id }
-                        val selectedJobId = selectAvailableUidtJobId(
-                            normalizedId,
-                            occupiedJobIds
-                        ) ?: return@synchronized false
-                        val jobInfo = buildJobInfo(
-                            jobId = selectedJobId,
-                            component = component,
-                            operationId = normalizedId
-                        )
-                        val scheduled = runCatching {
-                            scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
-                        }.getOrDefault(false)
-                        if (!scheduled) {
-                            scheduler.cancel(selectedJobId)
+                        if (pendingIndex.jobIdsByOperation[normalizedId].orEmpty().isNotEmpty()) {
+                            pendingIndex = pendingJobIndex(
+                                scheduler = scheduler,
+                                component = component,
+                                forceRefresh = true
+                            )
+                            if (hasIndexedJob()) {
+                                return@synchronized true
+                            }
                         }
-                        scheduled
+                        val collisionJobIds = linkedSetOf<Int>()
+                        repeat(4) {
+                            val occupiedJobIds = pendingIndex.occupiedJobIds +
+                                reservedJobIds + collisionJobIds
+                            val selectedJobId = selectAvailableUidtJobId(
+                                normalizedId,
+                                occupiedJobIds
+                            ) ?: return@repeat
+                            if (
+                                selectedJobId in reservedJobIds ||
+                                    runCatching { scheduler.getPendingJob(selectedJobId) }
+                                        .getOrNull() != null
+                            ) {
+                                collisionJobIds += selectedJobId
+                                pendingIndex = pendingJobIndex(
+                                    scheduler = scheduler,
+                                    component = component,
+                                    forceRefresh = true
+                                )
+                                return@repeat
+                            }
+                            val jobInfo = buildJobInfo(
+                                jobId = selectedJobId,
+                                component = component,
+                                operationId = normalizedId
+                            )
+                            rememberScheduledJob(normalizedId, selectedJobId)
+                            val scheduled = runCatching {
+                                scheduler.schedule(jobInfo) == JobScheduler.RESULT_SUCCESS
+                            }.getOrDefault(false)
+                            if (scheduled) {
+                                return@synchronized true
+                            }
+                            forgetScheduledJob(normalizedId, selectedJobId)
+                            invalidatePendingJobIndex()
+                            pendingIndex = pendingJobIndex(
+                                scheduler = scheduler,
+                                component = component,
+                                forceRefresh = true
+                            )
+                        }
+                        false
                     }
                 },
                 cancelFallback = {
@@ -284,18 +466,55 @@ class UidtDownloadJobService : JobService() {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            scheduler.allPendingJobs
+            val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
+                .getOrElse { error ->
+                    NPLogger.w(TAG, "取消 UIDT 任务读取 pending 失败: ${error.message}", error)
+                    emptyList()
+                }
+            pendingJobs
                 .filter { job ->
                     job.service == component &&
-                        job.extras.getString(OPERATION_ID_KEY) == normalizedId
+                        job.extras.getString(OPERATION_ID_KEY)
+                            ?.let(::normalizeDownloadOperationId) == normalizedId
                 }
-                .forEach { job -> scheduler.cancel(job.id) }
-            val legacyJob = scheduler.getPendingJob(jobIdFor(normalizedId))
+                .forEach { job ->
+                    runCatching { scheduler.cancel(job.id) }
+                        .onFailure { error ->
+                            NPLogger.w(
+                                TAG,
+                                "取消 UIDT 任务失败: operationId=$normalizedId, " +
+                                    "jobId=${job.id}, error=${error.message}",
+                                error
+                            )
+                        }
+                }
+            synchronized(scheduleLock) {
+                forgetScheduledJob(normalizedId)
+            }
+            val legacyJob = runCatching {
+                scheduler.getPendingJob(jobIdFor(normalizedId))
+            }.onFailure { error ->
+                NPLogger.w(
+                    TAG,
+                    "读取 UIDT 兼容任务失败: operationId=$normalizedId, " +
+                        "error=${error.message}",
+                    error
+                )
+            }.getOrNull()
             if (
                 legacyJob?.service == component &&
-                    legacyJob.extras.getString(OPERATION_ID_KEY) == normalizedId
+                    legacyJob.extras.getString(OPERATION_ID_KEY)
+                        ?.let(::normalizeDownloadOperationId) == normalizedId
             ) {
-                scheduler.cancel(legacyJob.id)
+                runCatching { scheduler.cancel(legacyJob.id) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "取消 UIDT 兼容任务失败: operationId=$normalizedId, " +
+                                "jobId=${legacyJob.id}, error=${error.message}",
+                            error
+                        )
+                    }
             }
         }
 
@@ -307,22 +526,60 @@ class UidtDownloadJobService : JobService() {
             if (normalizedIds.isEmpty()) return
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            scheduler.allPendingJobs
+            val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
+                .getOrElse { error ->
+                    NPLogger.w(TAG, "批量取消 UIDT 任务读取 pending 失败: ${error.message}", error)
+                    emptyList()
+                }
+            pendingJobs
                 .asSequence()
                 .filter { job ->
                     job.service == component &&
-                        job.extras.getString(OPERATION_ID_KEY) in normalizedIds
+                        job.extras.getString(OPERATION_ID_KEY)
+                            ?.let(::normalizeDownloadOperationId) in normalizedIds
                 }
-                .forEach { job -> scheduler.cancel(job.id) }
+                .forEach { job ->
+                    runCatching { scheduler.cancel(job.id) }
+                        .onFailure { error ->
+                            NPLogger.w(
+                                TAG,
+                                "批量取消 UIDT 任务失败: jobId=${job.id}, " +
+                                    "error=${error.message}",
+                                error
+                            )
+                        }
+                }
+            synchronized(scheduleLock) {
+                normalizedIds.forEach { operationId -> forgetScheduledJob(operationId) }
+            }
         }
 
         fun cancelAllOwned(context: Context) {
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            scheduler.allPendingJobs
+            val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
+                .getOrElse { error ->
+                    NPLogger.w(TAG, "清空 UIDT 任务读取 pending 失败: ${error.message}", error)
+                    emptyList()
+                }
+            pendingJobs
                 .asSequence()
                 .filter { job -> job.service == component }
-                .forEach { job -> scheduler.cancel(job.id) }
+                .forEach { job ->
+                    runCatching { scheduler.cancel(job.id) }
+                        .onFailure { error ->
+                            NPLogger.w(
+                                TAG,
+                                "清空 UIDT 任务失败: jobId=${job.id}, error=${error.message}",
+                                error
+                            )
+                        }
+                }
+            synchronized(scheduleLock) {
+                reservedJobIdsByOperation.clear()
+                reservedJobIds.clear()
+                invalidatePendingJobIndex()
+            }
         }
 
         fun hasPendingJob(
@@ -332,10 +589,58 @@ class UidtDownloadJobService : JobService() {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            return scheduler.allPendingJobs.any { job ->
-                job.service == component &&
-                    job.extras.getString(OPERATION_ID_KEY) == normalizedId
-            }
+            return runCatching {
+                synchronized(scheduleLock) {
+                    val reservedIds = reservedJobIdsByOperation[normalizedId].orEmpty()
+                    if (reservedIds.any { jobId ->
+                            matchesPendingJob(
+                                scheduler = scheduler,
+                                component = component,
+                                jobId = jobId,
+                                operationId = normalizedId
+                            )
+                        }) {
+                        return@synchronized true
+                    }
+                    if (reservedIds.isNotEmpty()) {
+                        forgetScheduledJob(normalizedId)
+                    }
+                    var indexed = pendingJobIndex(scheduler, component)
+                    fun hasIndexedJob(): Boolean {
+                        return indexed.jobIdsByOperation[normalizedId]
+                            .orEmpty()
+                            .any { jobId ->
+                                matchesPendingJob(
+                                    scheduler = scheduler,
+                                    component = component,
+                                    jobId = jobId,
+                                    operationId = normalizedId
+                                )
+                            }
+                    }
+                    if (hasIndexedJob()) {
+                        return@synchronized true
+                    }
+                    if (indexed.jobIdsByOperation[normalizedId].orEmpty().isNotEmpty()) {
+                        indexed = pendingJobIndex(
+                            scheduler = scheduler,
+                            component = component,
+                            forceRefresh = true
+                        )
+                        if (hasIndexedJob()) {
+                            return@synchronized true
+                        }
+                    }
+                    false
+                }
+            }.onFailure { error ->
+                NPLogger.w(
+                    TAG,
+                    "检查 UIDT pending 任务失败，交给持久化恢复: " +
+                        "operationId=$normalizedId, error=${error.message}",
+                    error
+                )
+            }.getOrDefault(false)
         }
 
         internal fun jobIdFor(operationId: String): Int {
@@ -372,7 +677,17 @@ internal fun scheduleUidtKeepingFallback(
     cancelFallback: () -> Unit
 ): Boolean {
     scheduleFallback()
-    val scheduled = scheduleUidt()
+    val scheduled = try {
+        scheduleUidt()
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        NPLogger.w(
+            "NERI-DownloadUidt",
+            "UIDT 调度暂时失败，保留 fallback: ${error.message}",
+            error
+        )
+        return false
+    }
     if (!scheduled) {
         cancelFallback()
     }
@@ -394,7 +709,7 @@ internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boo
     }
 }
 
-/** keeps a fallback owner alive, but retires stale work after a terminal UIDT result */
+/** 保留回退宿主的所有权，UIDT 进入终态后结束过期任务 */
 internal fun shouldCancelUidtFallback(
     result: DownloadExecutionResult,
     fallbackExecuting: Boolean

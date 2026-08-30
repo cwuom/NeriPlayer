@@ -73,10 +73,11 @@ class SettingsDownloadDirectoryFlowContractTest {
     fun `worker progress restores after the settings process is recreated`() {
         val source = settingsSource()
 
+        assertTrue(source.contains("migrationProgressFromWorkData(work.progress)"))
         assertTrue(
-            Regex("persistedMigrationProgress = migrationProgressFromWorkData")
-                .findAll(source)
-                .count() >= 2
+            source.contains(
+                "persistedMigrationProgress = migrationProgressFromWorkData(workInfo.progress)"
+            )
         )
         assertTrue(
             source.contains(
@@ -88,6 +89,24 @@ class SettingsDownloadDirectoryFlowContractTest {
         assertTrue(source.contains("ManagedLibraryProcessingDetailsCard("))
         assertTrue(source.contains("val stageText = when (migrationProgress?.stage)"))
         assertTrue(source.contains("val currentFileSummary = migrationProgress?.currentFileName"))
+    }
+
+    @Test
+    fun `settings reads durable migration checkpoint before clearing finished work`() {
+        val source = settingsSource()
+        val startup = source.substringAfter("LaunchedEffect(Unit) {")
+            .substringBefore("LaunchedEffect(activeMigrationWorkId)")
+        val finishedBranch = source.substringAfter("if (workInfo == null || workInfo.state.isFinished)")
+
+        assertTrue(startup.contains("readPersistedMigrationUiSnapshot(context)"))
+        assertTrue(startup.contains("applyPersistedMigrationSnapshot"))
+        assertTrue(startup.contains("if (snapshot == null)"))
+        assertTrue(startup.contains("MIGRATION_CHECKPOINT_RETRY_DELAY_MS"))
+        assertTrue(finishedBranch.contains("readPersistedMigrationUiSnapshot(context)"))
+        assertTrue(finishedBranch.contains("durableSnapshot.shouldPreserveUi"))
+        assertTrue(finishedBranch.contains("if (durableSnapshot == null)"))
+        assertTrue(finishedBranch.contains("activeMigrationWorkId == previousWorkId"))
+        assertTrue(source.contains("resumePersistedRequestIfNeeded(context)"))
     }
 
     @Test

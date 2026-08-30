@@ -150,7 +150,13 @@ import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrat
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadDirectoryChangeDecision
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationWorker
 import moe.ouom.neriplayer.core.download.storage.migration.ManagedDownloadMigrationCheckpointStore
+import moe.ouom.neriplayer.core.download.storage.migration.ManagedMigrationReplacementJournalPhase
+import moe.ouom.neriplayer.core.download.storage.migration.mergeMigrationProgressFloor
+import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressCheckpointIds
 import moe.ouom.neriplayer.core.download.storage.migration.selectActiveMigrationWorkInfo
+import moe.ouom.neriplayer.core.download.storage.migration.selectMigrationProgressCheckpoint
+import moe.ouom.neriplayer.core.download.storage.migration.shouldPreserveMigrationUiAfterWorkInfo
+import moe.ouom.neriplayer.core.download.storage.migration.shouldResumePersistedMigrationAfterWorkInfo
 import moe.ouom.neriplayer.core.download.storage.migration.migrationProgressFromWorkData
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.data.auth.common.SavedCookieAuthState
@@ -263,13 +269,14 @@ import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 internal const val DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L
+private const val MIGRATION_CHECKPOINT_RETRY_DELAY_MS = 1_000L
 
 private val downloadDirectoryPreflightScope =
     CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 /**
- * runs a read-only directory probe in a detached IO child so a slow DocumentsProvider
- * cannot hold the settings coroutine past the user-facing deadline
+ * 在独立的 IO 子协程执行只读目录探测，避免缓慢的 DocumentsProvider
+ * 把设置协程拖过界面可接受的等待时间
  */
 internal suspend fun <T> runDownloadDirectoryPreflight(
     timeoutMs: Long = DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS,
@@ -330,8 +337,7 @@ private enum class DownloadDirectoryPreparationResult {
 }
 
 /**
- * keeps the settings surface from presenting a second modal while the shared
- * processing banner owns the same directory operation
+ * 共享处理横幅已经接管目录操作时，设置页不再弹出第二个模态窗口
  */
 internal data class DownloadDirectoryProcessingPresentation(
     val showPreparation: Boolean,
@@ -360,6 +366,82 @@ internal sealed interface DownloadDirectoryAvailability {
     data class ProviderFailure(
         val error: ManagedDownloadRootProviderException
     ) : DownloadDirectoryAvailability
+}
+
+private data class PersistedMigrationUiSnapshot(
+    val activeWorkId: String?,
+    val activeWorkState: WorkInfo.State?,
+    val progress: ManagedDownloadStorage.MigrationProgress?,
+    val requestAutoResume: Boolean,
+    val journalPhase: ManagedMigrationReplacementJournalPhase?,
+    val checkpointReadFailed: Boolean
+) {
+    val shouldPreserveUi: Boolean
+        get() = shouldPreserveMigrationUiAfterWorkInfo(
+            workInfoState = activeWorkState,
+            requestAutoResume = requestAutoResume,
+            journalPhase = journalPhase,
+            checkpointReadFailed = checkpointReadFailed
+        )
+
+    val shouldResume: Boolean
+        get() = shouldResumePersistedMigrationAfterWorkInfo(
+            workInfoState = activeWorkState,
+            requestAutoResume = requestAutoResume,
+            journalPhase = journalPhase,
+            checkpointReadFailed = checkpointReadFailed
+        )
+}
+
+/** 同时读取 WorkManager 和持久检查点，避免缺少任务行时抹掉界面状态 */
+private fun readPersistedMigrationUiSnapshot(context: Context): PersistedMigrationUiSnapshot {
+    val appContext = context.applicationContext
+    val checkpointStore = ManagedDownloadMigrationCheckpointStore(appContext)
+    val requestResult = runCatching { checkpointStore.readRequest() }
+    val journalResult = runCatching { checkpointStore.readReplacementJournal() }
+    val request = requestResult.getOrNull()
+    val journal = journalResult.getOrNull()
+    val workInfoResult = runCatching {
+        WorkManager.getInstance(appContext)
+            .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
+            .get()
+    }
+    val workInfos = workInfoResult.getOrElse { emptyList() }
+    val activeWork = selectActiveMigrationWorkInfo(
+        workInfos = workInfos,
+        preferredWorkId = request?.workId,
+        fallbackWorkId = request?.checkpointWorkId ?: journal?.workId
+    )
+    val currentWorkId = activeWork?.id?.toString()
+        ?: request?.workId
+        ?: journal?.workId
+        ?: ""
+    val progress = selectMigrationProgressCheckpoint(
+        checkpointIds = migrationProgressCheckpointIds(
+            currentWorkId = currentWorkId,
+            inputCheckpointWorkId = request?.checkpointWorkId,
+            persistedRequest = request,
+            persistedJournal = journal
+        ),
+        readProgress = checkpointStore::readProgress
+    )
+    val progressWithWorkInfo = activeWork?.let { work ->
+        migrationProgressFromWorkData(work.progress)
+    }?.let { workProgress ->
+        progress?.let { durable ->
+            mergeMigrationProgressFloor(floor = durable, current = workProgress)
+        } ?: workProgress
+    } ?: progress
+    return PersistedMigrationUiSnapshot(
+        activeWorkId = activeWork?.id?.toString(),
+        activeWorkState = activeWork?.state,
+        progress = progressWithWorkInfo,
+        requestAutoResume = request?.autoResume == true,
+        journalPhase = journal?.phase,
+        checkpointReadFailed = requestResult.isFailure ||
+            journalResult.isFailure ||
+            workInfoResult.isFailure
+    )
 }
 
 private data class PendingSettingsSearchNavigation(
@@ -2859,6 +2941,53 @@ private fun rememberDownloadDirectorySettingsController(
     var persistedMigrationProgress by persistedMigrationProgressState
     var currentSummary by currentSummaryState
 
+    suspend fun applyPersistedMigrationSnapshot(
+        snapshot: PersistedMigrationUiSnapshot,
+        fallbackProgress: ManagedDownloadStorage.MigrationProgress? = null
+    ): Boolean {
+        val restoredProgress = snapshot.progress
+            ?: fallbackProgress
+            ?: persistedMigrationProgress
+        restoredProgress?.let { progress -> persistedMigrationProgress = progress }
+        val activeWorkId = snapshot.activeWorkId
+        val activeWorkState = snapshot.activeWorkState
+        if (activeWorkId != null && activeWorkState != null && !activeWorkState.isFinished) {
+            activeMigrationWorkId = activeWorkId
+            isMigrating = true
+            return true
+        }
+        if (!snapshot.shouldPreserveUi) return false
+        if (
+            isMigrating ||
+                persistedMigrationProgress != null ||
+                snapshot.activeWorkId != null ||
+                snapshot.requestAutoResume ||
+                snapshot.journalPhase != null
+        ) {
+            isMigrating = true
+        }
+        if (!snapshot.shouldResume) {
+            NPLogger.w(
+                "ManagedDownloadMigrationSettings",
+                "迁移 checkpoint 读取暂不可恢复，保留进度等待下次检查"
+            )
+            return true
+        }
+        val resumedWorkId = runCatching {
+            ManagedDownloadMigrationWorker.resumePersistedRequestIfNeeded(context)
+        }.onFailure { error ->
+            NPLogger.w(
+                "ManagedDownloadMigrationSettings",
+                "设置页恢复持久迁移请求失败，保留进度: ${error.message}",
+                error
+            )
+        }.getOrNull()
+        if (resumedWorkId != null) {
+            activeMigrationWorkId = resumedWorkId
+        }
+        return true
+    }
+
     LaunchedEffect(downloadDirectoryUri) {
         permissionLost = resolveDownloadDirectoryPermissionLost(
             directoryUri = downloadDirectoryUri,
@@ -2867,21 +2996,33 @@ private fun rememberDownloadDirectorySettingsController(
     }
 
     LaunchedEffect(Unit) {
-        val runningWork = withContext(Dispatchers.IO) {
-            runCatching {
-                val request = ManagedDownloadMigrationCheckpointStore(context).readRequest()
-                selectActiveMigrationWorkInfo(
-                    workInfos = WorkManager.getInstance(context)
-                        .getWorkInfosForUniqueWork(ManagedDownloadMigrationWorker.WORK_NAME)
-                        .get(),
-                    preferredWorkId = request?.workId
-                )
-            }.getOrNull()
-        }
-        if (runningWork != null) {
-            persistedMigrationProgress = migrationProgressFromWorkData(runningWork.progress)
-            activeMigrationWorkId = runningWork.id.toString()
-            isMigrating = true
+        while (true) {
+            val snapshot = withContext(Dispatchers.IO) {
+                runCatching { readPersistedMigrationUiSnapshot(context) }
+                    .onFailure { error ->
+                        NPLogger.w(
+                            "ManagedDownloadMigrationSettings",
+                            "读取迁移 WorkManager/checkpoint 快照失败，保留现有界面: " +
+                                error.message,
+                            error
+                        )
+                    }
+                    .getOrNull()
+            }
+            if (snapshot == null) {
+                delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
+                continue
+            }
+            applyPersistedMigrationSnapshot(snapshot)
+            if (
+                snapshot.activeWorkId == null &&
+                    activeMigrationWorkId == null &&
+                    (snapshot.shouldResume || snapshot.checkpointReadFailed)
+            ) {
+                delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
+                continue
+            }
+            break
         }
     }
 
@@ -2894,6 +3035,42 @@ private fun rememberDownloadDirectorySettingsController(
                         .getWorkInfoById(java.util.UUID.fromString(workId))
                         .get()
                 }.getOrNull()
+            }
+            if (workInfo == null || workInfo.state.isFinished) {
+                val durableSnapshot = withContext(Dispatchers.IO) {
+                    runCatching { readPersistedMigrationUiSnapshot(context) }
+                        .onFailure { error ->
+                            NPLogger.w(
+                                "ManagedDownloadMigrationSettings",
+                                "迁移任务结束后读取持久 checkpoint 失败: ${error.message}",
+                                error
+                            )
+                        }
+                        .getOrNull()
+                }
+                if (durableSnapshot == null) {
+                    delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
+                    continue
+                }
+                if (durableSnapshot.shouldPreserveUi) {
+                    val previousWorkId = activeMigrationWorkId
+                    applyPersistedMigrationSnapshot(
+                        snapshot = durableSnapshot,
+                        fallbackProgress = workInfo?.let {
+                            migrationProgressFromWorkData(it.progress)
+                        }
+                    )
+                    if (
+                        durableSnapshot.activeWorkId == null &&
+                            activeMigrationWorkId == previousWorkId &&
+                            (durableSnapshot.shouldResume ||
+                                durableSnapshot.checkpointReadFailed)
+                    ) {
+                        delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
+                        continue
+                    }
+                    break
+                }
             }
             if (workInfo == null) {
                 persistedMigrationProgress = null
@@ -3022,7 +3199,7 @@ private fun rememberDownloadDirectorySettingsController(
         previousUri: String?,
         shouldReleasePreviousPermission: Boolean
     ) {
-        // the shared coordinator is the only progress owner once the scan starts
+        // 扫描开始后由共享协调器统一持有进度状态
         isPreparing = false
         val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
             context = context,

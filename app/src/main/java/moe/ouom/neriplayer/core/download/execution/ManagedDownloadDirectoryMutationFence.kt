@@ -31,7 +31,7 @@ internal fun shouldFenceDownloadForDirectoryMutation(
 }
 
 /**
- * linearizes download root commits against migration source collection
+ * 让下载根目录提交和迁移源收集按顺序执行
  */
 internal class ManagedDownloadDirectoryMutationGate {
     internal inner class DownloadLease internal constructor() : AutoCloseable {
@@ -146,6 +146,27 @@ internal object ManagedDownloadDirectoryMutationFence {
     private const val TAG = "DirectoryMutationFence"
     private val gate = ManagedDownloadDirectoryMutationGate()
 
+    /** 同步解析播放 URI 时快速检查内存闸门和已恢复的持久闸门 */
+    fun isActiveFast(context: Context): Boolean {
+        if (gate.isClosed()) {
+            return true
+        }
+        return runCatching {
+            shouldFenceDownloadForDirectoryMutation(
+                state = ManagedLibraryProcessingCoordinator.restoreImmediately(
+                    context.applicationContext
+                ),
+                inMemoryGateClosed = false
+            )
+        }.getOrElse { error ->
+            NPLogger.w(
+                TAG,
+                "同步读取目录迁移状态失败，保守阻止旧播放引用: ${error.message}"
+            )
+            true
+        }
+    }
+
     suspend fun isActive(context: Context): Boolean {
         if (gate.isClosed()) {
             return true
@@ -219,7 +240,7 @@ internal object ManagedDownloadDirectoryMutationFence {
     suspend fun closeAndDrain(): AutoCloseable = gate.closeAndDrain()
 
     /**
-     * serializes destructive library deletion with a directory migration
+     * 让破坏性库删除和目录迁移互斥执行
      */
     suspend fun acquireDeleteLeaseOrNull(context: Context): AutoCloseable? {
         if (isActive(context)) {

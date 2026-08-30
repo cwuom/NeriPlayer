@@ -370,6 +370,16 @@ internal interface DownloadOperationDao {
     )
     suspend fun requestCancellations(operationIds: List<String>, updatedAtMs: Long): Int
 
+    /** 直接批量标记可取消 operation，不先把所有行加载到内存 */
+    @Query(
+        "UPDATE download_operation SET state = 'CANCEL_REQUESTED', " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE ((state IN ('PENDING_QUEUE', 'QUEUED', " +
+            "'WAITING_STORAGE_MUTATION', 'RUNNING', 'RETRYABLE') " +
+            "AND stop_requested_by_user = 0) OR state = 'STOPPED')"
+    )
+    suspend fun requestAllCancellationsFast(updatedAtMs: Long): Int
+
     @Query(
         "UPDATE download_operation SET stop_requested_by_user = 1, " +
             "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
@@ -381,6 +391,15 @@ internal interface DownloadOperationDao {
         operationIds: List<String>,
         updatedAtMs: Long
     ): Int
+
+    /** 不读取请求 JSON 就记录跨过提交边界的取消 */
+    @Query(
+        "UPDATE download_operation SET stop_requested_by_user = 1, " +
+            "updated_at_ms = :updatedAtMs, last_error_code = 'USER_CANCELLED' " +
+            "WHERE state IN ('COMMITTING', 'CORE_COMMITTED', 'ASSETS_ENRICHING', " +
+            "'DEGRADED_COMPLETE') AND stop_requested_by_user = 0"
+    )
+    suspend fun requestAllCommitBoundaryCancellationsFast(updatedAtMs: Long): Int
 
     @Query(
         "UPDATE download_operation SET state = 'CANCELLED', " +

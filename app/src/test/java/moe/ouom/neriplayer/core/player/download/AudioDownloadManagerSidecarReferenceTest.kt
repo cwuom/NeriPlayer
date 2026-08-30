@@ -209,6 +209,47 @@ class AudioDownloadManagerSidecarReferenceTest {
     }
 
     @Test
+    fun `sidecar lyric content follows its reference and avoids stale reuse`() {
+        val existing = AudioDownloadManager.DownloadedSidecarReferences(
+            lyricReference = "content://lyrics/old.lrc",
+            lyricContent = "old"
+        )
+        val changed = AudioDownloadManager.mergeDownloadedSidecarReferences(
+            existing = existing,
+            incoming = AudioDownloadManager.DownloadedSidecarReferences(
+                lyricReference = "content://lyrics/new.lrc"
+            )
+        )
+        assertEquals("content://lyrics/new.lrc", changed.lyricReference)
+        assertNull(changed.lyricContent)
+
+        val same = AudioDownloadManager.mergeDownloadedSidecarReferences(
+            existing = existing,
+            incoming = AudioDownloadManager.DownloadedSidecarReferences(
+                lyricReference = "content://lyrics/old.lrc"
+            )
+        )
+        assertEquals("old", same.lyricContent)
+    }
+
+    @Test
+    fun `retainCreatedOnly keeps inline lyric content only for created sidecar`() {
+        val created = AudioDownloadManager.DownloadedSidecarReferences(
+            lyricReference = "content://lyrics/song.lrc",
+            createdLyric = true,
+            lyricContent = "[00:01.00]hello"
+        )
+        assertEquals("[00:01.00]hello", created.retainCreatedOnly().lyricContent)
+
+        val existing = AudioDownloadManager.DownloadedSidecarReferences(
+            lyricReference = "content://lyrics/song.lrc",
+            createdLyric = false,
+            lyricContent = "must not leak"
+        )
+        assertNull(existing.retainCreatedOnly().lyricContent)
+    }
+
+    @Test
     fun `completed audio reference is consumed once`() {
         val songKey = "song-key"
         AudioDownloadManager.consumeCompletedAudioReference(songKey)

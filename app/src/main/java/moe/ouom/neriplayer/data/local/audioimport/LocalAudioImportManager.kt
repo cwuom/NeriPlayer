@@ -169,11 +169,28 @@ internal fun shouldKeepMediaStoreAudioRow(
     hasProviderAudioReference: Boolean,
     hasReadableMediaStoreReference: Boolean
 ): Boolean {
-    return hasResolvedFile || hasProviderAudioReference || hasReadableMediaStoreReference
+    return hasResolvedFile ||
+        hasProviderAudioReference ||
+        hasReadableMediaStoreReference
 }
 
 internal fun shouldFallbackToDocumentFileAfterTraversalFailure(error: Throwable): Boolean {
     return error !is CancellationException
+}
+
+internal fun shouldProbeMediaStoreContentReference(
+    rowOrdinal: Int,
+    hasResolvedFile: Boolean,
+    probeLimit: Int = 256
+): Boolean {
+    return hasResolvedFile || rowOrdinal in 1..probeLimit
+}
+
+internal fun shouldDeferExpensiveScanMetadata(
+    songCount: Int,
+    threshold: Int = 256
+): Boolean {
+    return songCount > threshold
 }
 
 internal fun shouldHydrateLocalSongFastIdentity(
@@ -262,19 +279,92 @@ internal fun resolveFilesystemCreationObservation(file: File): FilesystemCreatio
     }.getOrNull()
 }
 
+private fun validSongTimestamp(timestamp: Long?): Long {
+    return timestamp?.takeIf { it > 0L } ?: Long.MIN_VALUE
+}
+
+private fun songSourceTimestamp(song: SongItem): Long {
+    return validSongTimestamp(song.logicalCreatedAtMs ?: song.addedAt)
+}
+
+private fun songCreationConfidence(song: SongItem): Int {
+    return when (song.createdAtConfidence?.uppercase(Locale.ROOT)) {
+        "EXACT" -> 3
+        "PROVIDER_REPORTED" -> 2
+        "INFERRED" -> 1
+        else -> 0
+    }
+}
+
+private fun hasStableSongCreationEvidence(song: SongItem): Boolean {
+    if (song.logicalCreatedAtMs?.let { validSongTimestamp(it) != Long.MIN_VALUE } == true) {
+        return true
+    }
+    if (songCreationConfidence(song) >= 2) {
+        return true
+    }
+    // 旧版本没有可信度字段，只能把已有 addedAt 当作旧数据回退时间
+    // 显式 UNKNOWN 或 INFERRED 的记录不能借此伪造创建时间
+    return song.createdAtConfidence == null &&
+        validSongTimestamp(song.addedAt) != Long.MIN_VALUE
+}
+
+private fun hasDeterministicSongCreationEvidence(song: SongItem): Boolean {
+    return (song.logicalCreatedAtMs?.let {
+        validSongTimestamp(it) != Long.MIN_VALUE
+    } == true) || songCreationConfidence(song) >= 2
+}
+
+/** 扫描预览按来源时间排序，不使用本次歌单加入时间 */
+internal fun localSongSourceCreationComparator(): Comparator<SongItem> {
+    return Comparator { left, right ->
+        val leftHasStableCreation = hasStableSongCreationEvidence(left)
+        val rightHasStableCreation = hasStableSongCreationEvidence(right)
+        if (leftHasStableCreation != rightHasStableCreation) {
+            return@Comparator if (leftHasStableCreation) -1 else 1
+        }
+        if (!leftHasStableCreation) {
+            // DocumentsProvider 没有可靠创建时间时，利用稳定排序保留 Provider 发现顺序
+            // 不要用 addedAt 或文件名重排这些歌曲
+            return@Comparator 0
+        }
+
+        val timestampComparison = validSongTimestamp(right.logicalCreatedAtMs ?: right.addedAt)
+            .compareTo(validSongTimestamp(left.logicalCreatedAtMs ?: left.addedAt))
+        if (timestampComparison != 0) {
+            return@Comparator timestampComparison
+        }
+
+        val confidenceComparison = songCreationConfidence(right)
+            .compareTo(songCreationConfidence(left))
+        if (confidenceComparison != 0) {
+            return@Comparator confidenceComparison
+        }
+
+        if (!hasDeterministicSongCreationEvidence(left) ||
+            !hasDeterministicSongCreationEvidence(right)
+        ) {
+            return@Comparator 0
+        }
+
+        compareValuesBy(
+            left,
+            right,
+            { it.sourceStableKey.orEmpty() },
+            { it.mediaUri.orEmpty() },
+            { it.localFileName.orEmpty() }
+        )
+    }
+}
+
+/** 已加入本地歌单的歌曲优先按加入时间，同一批次再看来源创建时间 */
 internal fun localSongNewestFirstComparator(): Comparator<SongItem> {
     return compareByDescending<SongItem> { song ->
-        (song.logicalCreatedAtMs ?: song.addedAt)
-            .takeIf { timestamp -> timestamp > 0L }
-            ?: Long.MIN_VALUE
+        validSongTimestamp(song.membershipAddedAtMs)
     }
+        .thenByDescending(::songSourceTimestamp)
         .thenByDescending { song ->
-            when (song.createdAtConfidence?.uppercase(Locale.ROOT)) {
-                "EXACT" -> 3
-                "PROVIDER_REPORTED" -> 2
-                "INFERRED" -> 1
-                else -> 0
-            }
+            songCreationConfidence(song)
         }
         .thenBy { it.sourceStableKey.orEmpty() }
         .thenBy { it.mediaUri.orEmpty() }
@@ -340,7 +430,7 @@ internal data class LocalCoverHydrationResult(
 )
 
 /**
- * a stale SAF reference from the quick scan must not hide a newer detailed cover
+ * 快速扫描留下的旧 SAF 引用不能覆盖后续详细扫描得到的新封面
  */
 internal fun selectMergedImportedCoverReference(
     quickCover: String?,
@@ -502,7 +592,7 @@ internal data class ExternalStorageFolderMediaStoreScope(
     val relativePath: String
 )
 
-private data class QueriedFolderChild(
+internal data class QueriedFolderChild(
     val documentUri: Uri,
     val displayName: String,
     val mimeType: String,
@@ -511,14 +601,102 @@ private data class QueriedFolderChild(
     val durationMs: Long? = null
 )
 
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY = 8_192
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL = 65_536
+private const val MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES = 512
+private const val MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES = 8_192
+private val LOCAL_AUDIO_FILE_EXTENSIONS = setOf(
+    "aac",
+    "aif",
+    "aiff",
+    "alac",
+    "amr",
+    "ape",
+    "flac",
+    "m4a",
+    "m4b",
+    "m4p",
+    "mid",
+    "midi",
+    "mka",
+    "mp3",
+    "oga",
+    "ogg",
+    "opus",
+    "wav",
+    "wma"
+)
+private val MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS = setOf(
+    "lrc",
+    "txt",
+    "json",
+    "jpg",
+    "jpeg",
+    "png",
+    "webp"
+)
+
+private fun isAudioDocumentChild(child: QueriedFolderChild): Boolean {
+    if (child.mimeType.startsWith("audio/", ignoreCase = true)) return true
+    return child.displayName.substringAfterLast('.', "")
+        .lowercase(Locale.ROOT) in LOCAL_AUDIO_FILE_EXTENSIONS
+}
+
+/**
+ * 大目录只保留解析旁车真正需要的条目，避免一次扫描把整个目录复制到长期缓存
+ */
+internal fun boundMediaStoreSidecarChildrenForCache(
+    children: List<QueriedFolderChild>,
+    maxEntries: Int = MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY
+): List<QueriedFolderChild> {
+    if (maxEntries <= 0 || children.isEmpty()) return emptyList()
+    if (children.size <= maxEntries) return children
+
+    fun isEssential(child: QueriedFolderChild): Boolean {
+        return child.isDirectory || isAudioDocumentChild(child)
+    }
+
+    fun isSidecar(child: QueriedFolderChild): Boolean {
+        return !child.isDirectory &&
+            child.displayName.substringAfterLast('.', "")
+                .lowercase(Locale.ROOT) in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS
+    }
+
+    val prioritized = children.asSequence()
+        .filter(::isEssential)
+        .take(maxEntries)
+        .toList()
+    if (prioritized.size == maxEntries) return prioritized
+
+    val sidecars = children.asSequence()
+        .filter { child -> !isEssential(child) && isSidecar(child) }
+        .take(maxEntries - prioritized.size)
+        .toList()
+    if (prioritized.size + sidecars.size == maxEntries) {
+        return prioritized + sidecars
+    }
+
+    val remaining = maxEntries - prioritized.size - sidecars.size
+    return prioritized + sidecars + children.asSequence()
+        .filter { child -> !isEssential(child) && !isSidecar(child) }
+        .take(remaining)
+        .toList()
+}
+
 private class MediaStoreSidecarResolver(
     private val context: Context,
     private val folderUri: Uri,
     selectedRelativePath: String
 ) {
+    private data class SidecarChildrenQueryResult(
+        val children: List<QueriedFolderChild>,
+        val truncated: Boolean
+    )
+
     private val selectedPath = selectedRelativePath
     private val selectedSegments = splitStoragePath(selectedRelativePath)
     private val childrenCache = HashMap<String, List<QueriedFolderChild>>()
+    private var cachedChildrenCount = 0
     private val directoryCache = HashMap<String, DirectorySidecarIndex?>()
     private val rootLyricsIndex: Map<String, String> by lazy {
         val root = directoryIndex(emptyList()) ?: return@lazy emptyMap()
@@ -550,39 +728,8 @@ private class MediaStoreSidecarResolver(
         relativePath: String?,
         displayName: String
     ): String? {
-        if (directoryFor(relativePath) == null) return null
-        val expectedName = displayName.lowercase(Locale.ROOT)
-        return childrenFor(relativePath)
-            .firstOrNull { child ->
-                !child.isDirectory &&
-                    child.displayName.lowercase(Locale.ROOT) == expectedName &&
-                    isAudioChild(child)
-            }
-            ?.documentUri
-            ?.toString()
-    }
-
-    private fun childrenFor(relativePath: String?): List<QueriedFolderChild> {
-        val rowSegments = splitStoragePath(relativePath ?: selectedPath)
-        if (rowSegments.size < selectedSegments.size ||
-            rowSegments.take(selectedSegments.size) != selectedSegments
-        ) {
-            return emptyList()
-        }
-        var directoryUri = folderUri
-        rowSegments.drop(selectedSegments.size).forEach { segment ->
-            val child = children(directoryUri).firstOrNull {
-                it.isDirectory && it.displayName.equals(segment, ignoreCase = true)
-            } ?: return emptyList()
-            directoryUri = child.documentUri
-        }
-        return children(directoryUri)
-    }
-
-    private fun isAudioChild(child: QueriedFolderChild): Boolean {
-        if (child.mimeType.startsWith("audio/", ignoreCase = true)) return true
-        return child.displayName.substringAfterLast('.', "")
-            .lowercase(Locale.ROOT) in supportedAudioExtensions
+        val directory = directoryFor(relativePath) ?: return null
+        return directory.audioIndex[displayName.lowercase(Locale.ROOT)]
     }
 
     fun resolveNearbyCoverReference(
@@ -664,6 +811,21 @@ private class MediaStoreSidecarResolver(
     ): Map<String, String> {
         return children.asSequence()
             .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child ->
+                child.displayName.substringAfterLast('.', "")
+                    .lowercase(Locale.ROOT) in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS
+            }
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
+            .map { child -> child.displayName.lowercase(Locale.ROOT) to child.documentUri.toString() }
+            .toMap()
+    }
+
+    private fun buildDocumentAudioIndex(
+        children: Collection<QueriedFolderChild>
+    ): Map<String, String> {
+        return children.asSequence()
+            .filter(::isAudioDocumentChild)
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
             .map { child -> child.displayName.lowercase(Locale.ROOT) to child.documentUri.toString() }
             .toMap()
     }
@@ -678,7 +840,9 @@ private class MediaStoreSidecarResolver(
                 it.isDirectory && it.displayName.equals(segment, ignoreCase = true)
             }
             if (child == null) {
-                directoryCache[cacheKey] = null
+                if (directoryCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES) {
+                    directoryCache[cacheKey] = null
+                }
                 return null
             }
             directoryUri = child.documentUri
@@ -693,12 +857,17 @@ private class MediaStoreSidecarResolver(
             it.isDirectory && it.displayName.equals("Covers", ignoreCase = true)
         }
         val coversChildren = coversDirectory?.let { children(it.documentUri) }.orEmpty()
-        return DirectorySidecarIndex(
+        val resolved = DirectorySidecarIndex(
             directIndex = buildDocumentNameIndex(directChildren),
             lyricsIndex = buildDocumentNameIndex(lyricsChildren),
             coverIndex = buildDocumentNameIndex(coversChildren),
-            metadataIndex = buildDocumentMetadataIndex(directChildren)
-        ).also { directoryCache[cacheKey] = it }
+            metadataIndex = buildDocumentMetadataIndex(directChildren),
+            audioIndex = buildDocumentAudioIndex(directChildren)
+        )
+        if (directoryCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES) {
+            directoryCache[cacheKey] = resolved
+        }
+        return resolved
     }
 
     private fun buildDocumentMetadataIndex(
@@ -707,6 +876,7 @@ private class MediaStoreSidecarResolver(
         val best = HashMap<String, Pair<Int, String>>()
         children.asSequence()
             .filterNot(QueriedFolderChild::isDirectory)
+            .take(MEDIA_STORE_SIDECAR_INDEX_MAX_ENTRIES)
             .forEach { child ->
                 val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
                     ?: return@forEach
@@ -736,7 +906,7 @@ private class MediaStoreSidecarResolver(
         val childrenUri = runCatching {
             DocumentsContract.buildChildDocumentsUriUsingTree(parentUri, documentId)
         }.getOrNull() ?: return emptyList()
-        val result = runCatching {
+        val queryResult = runCatching {
             context.contentResolver.query(
                 childrenUri,
                 arrayOf(
@@ -758,38 +928,120 @@ private class MediaStoreSidecarResolver(
                     DocumentsContract.Document.COLUMN_MIME_TYPE
                 )
                 if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
-                    emptyList()
-                } else {
-                    buildList {
-                        while (cursor.moveToNext()) {
-                            val childId = cursor.getString(idIndex)
-                                ?.takeIf(String::isNotBlank)
-                                ?: continue
-                            val childName = cursor.getString(nameIndex)
-                                ?.takeIf(String::isNotBlank)
-                                ?: continue
-                            val mimeType = cursor.getString(mimeIndex).orEmpty()
-                            add(
-                                QueriedFolderChild(
-                                    documentUri = DocumentsContract.buildDocumentUriUsingTree(
-                                        parentUri,
-                                        childId
-                                    ),
-                                    displayName = childName,
-                                    mimeType = mimeType,
-                                    isDirectory = mimeType ==
-                                        DocumentsContract.Document.MIME_TYPE_DIR
-                                )
-                            )
+                    error("DocumentsProvider returned an incomplete child projection")
+                }
+                var truncated = false
+                val result = buildList<QueriedFolderChild> {
+                    while (cursor.moveToNext()) {
+                        if (size >= MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY) {
+                            // 旁车索引只服务于快速首屏，巨型目录交给后续按需解析
+                            truncated = true
+                            break
                         }
+                        val childId = cursor.getString(idIndex)
+                            ?.takeIf(String::isNotBlank)
+                            ?: continue
+                        val childName = cursor.getString(nameIndex)
+                            ?.takeIf(String::isNotBlank)
+                            ?: continue
+                        val mimeType = cursor.getString(mimeIndex).orEmpty()
+                        val isDirectory = mimeType ==
+                            DocumentsContract.Document.MIME_TYPE_DIR
+                        val extension = childName.substringAfterLast('.', "")
+                            .lowercase(Locale.ROOT)
+                        if (!isDirectory &&
+                            extension !in MEDIA_STORE_SIDECAR_PRIORITY_EXTENSIONS &&
+                            !mimeType.startsWith("audio/", ignoreCase = true) &&
+                            extension !in LOCAL_AUDIO_FILE_EXTENSIONS
+                        ) {
+                            continue
+                        }
+                        add(
+                            QueriedFolderChild(
+                                documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                                    parentUri,
+                                    childId
+                                ),
+                                displayName = childName,
+                                mimeType = mimeType,
+                                isDirectory = isDirectory
+                            )
+                        )
                     }
                 }
-            }.orEmpty()
-        }.getOrElse { error ->
-            NPLogger.d(TAG, "MediaStore sidecar index unavailable: ${error.message}")
-            emptyList()
+                if (truncated) {
+                    NPLogger.d(
+                        TAG,
+                        "MediaStore sidecar directory query truncated at " +
+                            "$MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY: uri=$key"
+                    )
+                }
+                SidecarChildrenQueryResult(
+                    children = result,
+                    truncated = truncated
+                )
+            }
+        }
+        if (queryResult.isFailure) {
+            val error = queryResult.exceptionOrNull()
+            NPLogger.d(TAG, "MediaStore sidecar index unavailable: ${error?.message}")
+            return emptyList()
+        }
+        val queried = queryResult.getOrNull() ?: run {
+            NPLogger.d(TAG, "MediaStore sidecar index unavailable: null cursor")
+            return emptyList()
+        }
+        val result = queried.children
+        if (queried.truncated) {
+            // 截断结果只作为本次解析的有界快照缓存，避免每首歌重复触发 Binder
+            // 查询，完整性仍保持未知，后续刷新会重新建立索引
+            val remainingCapacity = (
+                MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL - cachedChildrenCount
+            ).coerceAtLeast(0)
+            if (childrenCache.size < MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES &&
+                result.size <= remainingCapacity
+            ) {
+                childrenCache[key] = result
+                cachedChildrenCount += result.size
+            }
+            return result
+        }
+        val previousSize = childrenCache[key]?.size ?: 0
+        if (key !in childrenCache &&
+            childrenCache.size >= MEDIA_STORE_SIDECAR_CACHE_MAX_DIRECTORIES
+        ) {
+            NPLogger.d(
+                TAG,
+                "MediaStore sidecar directory cache limit reached: " +
+                    "directories=${childrenCache.size}, uri=$key"
+            )
+            return result
+        }
+        val remainingCapacity = (
+            MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_TOTAL -
+                cachedChildrenCount + previousSize
+            ).coerceAtLeast(0)
+        val bounded = boundMediaStoreSidecarChildrenForCache(
+            children = result,
+            maxEntries = minOf(
+                MEDIA_STORE_SIDECAR_CACHE_MAX_CHILDREN_PER_DIRECTORY,
+                remainingCapacity
+            )
+        )
+        if (bounded.size < result.size) {
+            NPLogger.d(
+                TAG,
+                "MediaStore sidecar directory cache bounded: " +
+                    "uri=$key, children=${result.size}, cached=${bounded.size}"
+            )
+        }
+        if (bounded.size < result.size) {
+            // 裁剪结果只能用于判断是否值得缓存，不能作为真实目录结果返回
+            // 否则未命中的音频会被误判为不存在
+            return result
         }
         childrenCache[key] = result
+        cachedChildrenCount += result.size - previousSize
         return result
     }
 
@@ -797,16 +1049,12 @@ private class MediaStoreSidecarResolver(
         val directIndex: Map<String, String>,
         val lyricsIndex: Map<String, String>,
         val coverIndex: Map<String, String>,
-        val metadataIndex: Map<String, String>
+        val metadataIndex: Map<String, String>,
+        val audioIndex: Map<String, String>
     )
 
     private companion object {
         const val TAG = "LocalAudioImport"
-        val supportedAudioExtensions = setOf(
-            "aac", "aif", "aiff", "alac", "amr", "ape", "flac", "m4a", "m4b", "m4p",
-            "mid", "midi", "mka", "mp3", "oga", "ogg", "opus", "wav", "wma"
-        )
-
         fun splitStoragePath(path: String): List<String> {
             return Uri.decode(path)
                 .split('/')
@@ -1017,34 +1265,30 @@ object LocalAudioImportManager {
     private const val SCAN_PROGRESS_LOG_INTERVAL = 200
     private const val SLOW_SCAN_ITEM_THRESHOLD_MS = 120L
     private const val COMPLETE_SCAN_PARALLELISM = 24
-    private const val COMPLETE_SCAN_CONTENT_PROBE_LIMIT = 512
+    // 限制协程和临时结果数量，避免超大曲库放大内存占用
+    private const val COMPLETE_SCAN_BATCH_SIZE = COMPLETE_SCAN_PARALLELISM * 4
+    // SAF 在几百首规模就可能因逐首容器解析超过刷新预算，超过阈值先返回
+    // 目录行和侧车元数据，嵌入标签在后台或详情页按需读取
+    // 对没有 _data 的 MediaStore 行做有界可读性确认，覆盖常见千首目录
+    // 超出上限的行不会直接发布，后续刷新会继续验证，避免出现不可播放条目
+    private const val COMPLETE_SCAN_CONTENT_PROBE_LIMIT = 4_096
+    // 超过小批量后不在刷新路径解析音频容器，避免大曲库拖慢首屏和扫描
+    private const val COMPLETE_SCAN_METADATA_DEFER_THRESHOLD = 256
+    private const val LOCAL_SIDECAR_INDEX_MAX_ENTRIES = 8_192
     private const val LEGACY_DOWNLOAD_ROOT = "/storage/emulated/0/neriplayer-download"
     private const val MAX_EXTERNAL_IMPORT_COUNT = 500
     private const val MAX_EXTERNAL_IMPORT_BYTES = 2L * 1024L * 1024L * 1024L
-    private val audioExtensions = setOf(
-        "aac",
-        "aif",
-        "aiff",
-        "alac",
-        "amr",
-        "ape",
-        "flac",
-        "m4a",
-        "m4b",
-        "m4p",
-        "mid",
-        "midi",
-        "mka",
-        "mp3",
-        "oga",
-        "ogg",
-        "opus",
-        "wav",
-        "wma"
-    )
+    private val audioExtensions = LOCAL_AUDIO_FILE_EXTENSIONS
     private val lyricExtensions = listOf("lrc", "txt")
     private val imageExtensions = listOf("jpg", "jpeg", "png", "webp")
     private val coverNames = listOf("cover", "folder", "front")
+
+    private fun isLocalSidecarIndexCandidate(name: String): Boolean {
+        val extension = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return extension in lyricExtensions ||
+            extension in imageExtensions ||
+            extension == "json"
+    }
     private val quickMetadataPlaceholders = setOf(
         "<unknown>",
         "<unknown artist>",
@@ -1172,7 +1416,7 @@ object LocalAudioImportManager {
         }
 
         LocalAudioImportResult(
-            songs = orderScannedSongs(songs.distinctBy { it.identity() }),
+            songs = orderScannedSongs(songs),
             failedCount = failedCount,
             completed = true,
             metadataDeferred = false
@@ -1305,15 +1549,17 @@ object LocalAudioImportManager {
                 )
             }
         }
-        val completion = completeScannedSongs(
-            context = context,
-            songs = orderScannedSongs(quickSongs),
-            progress = progress,
-            visitedDirectories = traversalResult.visitedDirectoryCount,
-            knownSidecarReferences = traversalResult.candidates.associate {
-                it.uri.toString() to it.knownSidecarReferences
-            }
-        )
+        val completion = run {
+            completeScannedSongs(
+                context = context,
+                songs = orderScannedSongs(quickSongs),
+                progress = progress,
+                visitedDirectories = traversalResult.visitedDirectoryCount,
+                knownSidecarReferences = traversalResult.candidates.associate {
+                    it.uri.toString() to it.knownSidecarReferences
+                }
+            )
+        }
         val songs = completion.songs
         val failed = traversalResult.failedCount + (candidateCount - quickSongs.size)
         val totalElapsedMs = SystemClock.elapsedRealtime() - scanStartedAt
@@ -1332,7 +1578,11 @@ object LocalAudioImportManager {
         )
 
         return LocalAudioImportResult(
-            songs = orderScannedSongs(songs).distinctBy { it.identity() },
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(songs)
+            } else {
+                orderScannedSongs(songs)
+            },
             failedCount = failed,
             completed = true,
             metadataDeferred = completion.metadataDeferred
@@ -1458,36 +1708,44 @@ object LocalAudioImportManager {
             songs = songs,
             knownSidecarReferences = knownSidecarReferences
         )
-        if (total > COMPLETE_SCAN_CONTENT_PROBE_LIMIT) {
+        if (shouldDeferExpensiveScanMetadata(
+                songCount = total,
+                threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
+            )
+        ) {
             // 大批量扫描先读取轻量 metadata 侧车, 音频容器解析放到播放或编辑时
             val dispatcher = Dispatchers.IO.limitedParallelism(COMPLETE_SCAN_PARALLELISM)
             val sidecarHydrated = coroutineScope {
-                val pending = songs.map { song ->
-                    val metadataReference = song.mediaUri
-                        ?.let(indexedSidecarReferences::get)
-                        ?.metadata
-                    // 大目录首屏只消费目录行和已经建立的侧车索引。
-                    // 没有侧车时探测 SAF 音频本身会退化为每首一次
-                    // DocumentsProvider query, 将嵌入元信息留到后续详情页。
-                    val canHydrateWithoutAudioProbe = metadataReference != null ||
-                        !song.localFilePath.isNullOrBlank()
-                    if (!canHydrateWithoutAudioProbe ||
-                        !shouldHydrateLocalSongFastIdentity(song, metadataReference)
-                    ) {
-                        null
-                    } else {
+                val hydrated = ArrayList<SongItem>(total)
+                // 不要为数万首歌曲同时保留 Deferred，分批仍保持输入顺序
+                // 并让取消在批次边界及时生效
+                songs.chunked(COMPLETE_SCAN_BATCH_SIZE).forEach { batch ->
+                    val hydratedBatch = batch.map { song ->
                         async(dispatcher) {
-                            hydrateLocalSongFastIdentity(
-                                context = context,
-                                song = song,
-                                metadataReference = metadataReference
-                            )
+                            val metadataReference = song.mediaUri
+                                ?.let(indexedSidecarReferences::get)
+                                ?.metadata
+                            // 大目录首屏只消费目录行和已经建立的侧车索引
+                            // 没有侧车时探测 SAF 音频本身会退化为每首一次
+                            // DocumentsProvider 查询，将嵌入元信息留到后续详情页
+                            val canHydrateWithoutAudioProbe = metadataReference != null ||
+                                !song.localFilePath.isNullOrBlank()
+                            if (!canHydrateWithoutAudioProbe ||
+                                !shouldHydrateLocalSongFastIdentity(song, metadataReference)
+                            ) {
+                                song
+                            } else {
+                                hydrateLocalSongFastIdentity(
+                                    context = context,
+                                    song = song,
+                                    metadataReference = metadataReference
+                                )
+                            }
                         }
-                    }
+                    }.awaitAll()
+                    hydrated += hydratedBatch
                 }
-                pending.mapIndexed { index, deferred ->
-                    deferred?.await() ?: songs[index]
-                }
+                hydrated
             }
             progress.emit(
                 phase = LocalAudioScanPhase.HYDRATING_METADATA,
@@ -1502,7 +1760,10 @@ object LocalAudioImportManager {
                 metadataDeferred = true
             )
         }
-        val allowExpensiveFallback = total <= COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+        val allowExpensiveFallback = !shouldDeferExpensiveScanMetadata(
+            songCount = total,
+            threshold = COMPLETE_SCAN_METADATA_DEFER_THRESHOLD
+        )
         progress.emit(
             phase = LocalAudioScanPhase.HYDRATING_METADATA,
             processed = 0,
@@ -1595,10 +1856,12 @@ object LocalAudioImportManager {
         fun index(directory: File): LocalSidecarDirectoryIndex {
             val key = directory.absolutePath
             return directoryIndexes.getOrPut(key) {
-                val filesByName = directory.listFiles()
+                val filesByName = directory.listFiles { file ->
+                    file.isFile && isLocalSidecarIndexCandidate(file.name)
+                }
+                    ?.asSequence()
+                    ?.take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
                     .orEmpty()
-                    .asSequence()
-                    .filter(File::isFile)
                     .mapNotNull { file ->
                         file.name.takeIf(String::isNotBlank)?.let { name ->
                             name.lowercase(Locale.ROOT) to file.absolutePath
@@ -1694,7 +1957,12 @@ object LocalAudioImportManager {
     private fun orderScannedSongs(songs: List<SongItem>): List<SongItem> {
         return songs
             .distinctBy { it.identity() }
-            .sortedWith(localSongNewestFirstComparator())
+            .sortedWith(localSongSourceCreationComparator())
+    }
+
+    /** 去重不再重复排序，供已经按来源时间排序的扫描结果使用 */
+    private fun distinctSongsPreservingOrder(songs: List<SongItem>): List<SongItem> {
+        return songs.distinctBy { it.identity() }
     }
 
     private suspend fun scanExternalStorageFolderWithMediaStore(
@@ -1706,8 +1974,8 @@ object LocalAudioImportManager {
             return null
         }
         val scope = resolveExternalStorageFolderMediaStoreScope(context, folderUri) ?: return null
-        // an empty relative path represents the volume root, not a safe MediaStore
-        // folder query. Let the DocumentsContract traversal prove the exact scope
+        // 空的相对路径表示整个存储卷，不能当作安全的 MediaStore 子目录查询
+        // 交给 DocumentsContract 遍历来确认准确范围
         if (scope.relativePath.isBlank()) return null
         val audioUri = MediaStore.Audio.Media.getContentUri(scope.volumeName)
         val projection = arrayOf(
@@ -1742,9 +2010,12 @@ object LocalAudioImportManager {
             selectedRelativePath = scope.relativePath
         )
         var processedRows = 0
+        var scannedRowCount = 0
         var acceptedRows = 0
         var skippedStaleRows = 0
         var withheldManagedRows = 0
+        var safAudioFallbackRows = 0
+        var mediaStoreQueryTotalCount = 0
 
         val rawResult = try {
             context.contentResolver.query(
@@ -1755,6 +2026,7 @@ object LocalAudioImportManager {
                 null
             )?.use { cursor ->
                 val totalCount = cursor.count
+                mediaStoreQueryTotalCount = totalCount.coerceAtLeast(0)
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -1776,13 +2048,21 @@ object LocalAudioImportManager {
                 progress.emit(
                     phase = LocalAudioScanPhase.BUILDING_ENTRIES,
                     processed = 0,
-                    total = 0,
+                    total = totalCount.coerceAtLeast(0),
                     discoveredSongs = 0,
                     visitedDirectories = 0,
                     force = true
                 )
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
+                    scannedRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = scannedRowCount,
+                        total = totalCount.coerceAtLeast(scannedRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
                     val rowStartedAt = SystemClock.elapsedRealtime()
                     val contentUri = Uri.withAppendedPath(
                         audioUri,
@@ -1816,6 +2096,8 @@ object LocalAudioImportManager {
                     if (resolvedFile != null) {
                         resolvedPathCount++
                     }
+                    // MediaStore 的 _data 或 content URI 可能在切换存储权限后暂时失效
+                    // 目录索引中的同名音频文档作为有界 SAF 回退，避免出现不可播放条目
                     val safAudioReference = sidecarResolver.resolveAudioReference(
                         relativePath = rowRelativePath,
                         displayName = displayName
@@ -1844,10 +2126,16 @@ object LocalAudioImportManager {
                         relativePath = rowRelativePath,
                         displayName = displayName
                     )
+                    val hasReadableMediaStoreReference = resolvedFile != null ||
+                        (shouldProbeMediaStoreContentReference(
+                            rowOrdinal = scannedRowCount,
+                            hasResolvedFile = false,
+                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                        ) && probeReadableContentReference(context, contentUri))
                     if (!shouldKeepMediaStoreAudioRow(
                             hasResolvedFile = resolvedFile != null,
                             hasProviderAudioReference = !safAudioReference.isNullOrBlank(),
-                            hasReadableMediaStoreReference = false
+                            hasReadableMediaStoreReference = hasReadableMediaStoreReference
                         )
                     ) {
                         skippedStaleRows++
@@ -1858,7 +2146,18 @@ object LocalAudioImportManager {
                         relativePath = rowRelativePath,
                         displayName = displayName
                     )
-                    val sourceReference = safAudioReference ?: contentUri.toString()
+                    val sourceReference = if (
+                        resolvedFile == null &&
+                            !hasReadableMediaStoreReference &&
+                            !safAudioReference.isNullOrBlank()
+                    ) {
+                        safAudioReference
+                    } else {
+                        contentUri.toString()
+                    }
+                    if (sourceReference == safAudioReference) {
+                        safAudioFallbackRows++
+                    }
                     sidecarReferences?.let { references ->
                         knownSidecarReferences[sourceReference] = references
                         if (sourceReference != contentUri.toString()) {
@@ -1873,10 +2172,12 @@ object LocalAudioImportManager {
                         ?.let(cursor::getLong)
                     val filesystemCreation = resolvedFile
                         ?.let(::resolveFilesystemCreationObservation)
-                    val mediaStoreSourceAddedAt = resolveMediaStoreSourceAddedAt(
-                        dateAddedSeconds = dateAddedSeconds,
-                        dateModifiedSeconds = dateModifiedSeconds
-                    )
+                    val mediaStoreSourceAddedAt = run {
+                        resolveMediaStoreSourceAddedAt(
+                            dateAddedSeconds = dateAddedSeconds,
+                            dateModifiedSeconds = dateModifiedSeconds
+                        )
+                    }
                     val sourceAddedAt = resolveScannedSourceAddedAt(
                         preferredTimestampMs = filesystemCreation?.timestampMs,
                         fallbackTimestampMs = mediaStoreSourceAddedAt
@@ -1887,11 +2188,13 @@ object LocalAudioImportManager {
                         dateModifiedSeconds?.let { it > 0L } == true -> "MEDIASTORE_DATE_MODIFIED"
                         else -> "UNKNOWN"
                     }
-                    val sourceAddedAtConfidence = when (sourceAddedAtSource) {
-                        "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
-                        "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
-                        "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
-                        else -> "UNKNOWN"
+                    val sourceAddedAtConfidence = run {
+                        when (sourceAddedAtSource) {
+                            "FILESYSTEM_BIRTH" -> filesystemCreation?.confidence ?: "EXACT"
+                            "MEDIASTORE_DATE_ADDED" -> "PROVIDER_REPORTED"
+                            "MEDIASTORE_DATE_MODIFIED" -> "INFERRED"
+                            else -> "UNKNOWN"
+                        }
                     }
                     songs += buildQuickImportedSong(
                         seed = QuickImportedSongSeed(
@@ -1932,11 +2235,10 @@ object LocalAudioImportManager {
                     }
                     progress.emit(
                         phase = LocalAudioScanPhase.BUILDING_ENTRIES,
-                        processed = processedRows,
-                        total = acceptedRows,
+                        processed = scannedRowCount,
+                        total = totalCount.coerceAtLeast(scannedRowCount),
                         discoveredSongs = songs.size,
-                        visitedDirectories = 0,
-                        force = true
+                        visitedDirectories = 0
                     )
                 }
                 NPLogger.d(
@@ -1947,12 +2249,13 @@ object LocalAudioImportManager {
                         "resolvedPaths=$resolvedPathCount, " +
                         "skippedStaleRows=$skippedStaleRows, " +
                         "withheldManagedRows=$withheldManagedRows, " +
+                        "safAudioFallbackRows=$safAudioFallbackRows, " +
                         "mediaStoreCoverHits=$mediaStoreCoverHitCount, " +
                         "slowRows=$slowRowCount, elapsed=" +
                         "${SystemClock.elapsedRealtime() - startedAt}ms"
                 )
                 LocalAudioImportResult(
-                    songs = songs.distinctBy { it.identity() },
+                    songs = orderScannedSongs(songs),
                     failedCount = 0,
                     completed = true,
                     metadataDeferred = false
@@ -1978,14 +2281,18 @@ object LocalAudioImportManager {
         val completedSongs = completion.songs
         progress.emit(
             phase = LocalAudioScanPhase.COMPLETED,
-            processed = acceptedRows.takeIf { it > 0 } ?: completedSongs.size,
-            total = acceptedRows.takeIf { it > 0 } ?: completedSongs.size,
+            processed = maxOf(mediaStoreQueryTotalCount, acceptedRows),
+            total = maxOf(mediaStoreQueryTotalCount, acceptedRows),
             discoveredSongs = completedSongs.size,
             visitedDirectories = 0,
             force = true
         )
         return rawResult.copy(
-            songs = orderScannedSongs(completedSongs),
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(completedSongs)
+            } else {
+                orderScannedSongs(completedSongs)
+            },
             metadataDeferred = completion.metadataDeferred
         )
     }
@@ -2089,6 +2396,7 @@ object LocalAudioImportManager {
         var slowItemCount = 0
         var mediaStoreCoverHitCount = 0
         var withheldManagedRowCount = 0
+        var mediaStoreQueryTotalCount = 0
         val managedSidecarIndex = ManagedMediaStoreSidecarIndex(
             snapshot = loadManagedDownloadSnapshotForScan(context),
             treeDocumentId = configuredManagedDownloadTreeDocumentId()
@@ -2116,6 +2424,7 @@ object LocalAudioImportManager {
 
         runCatching {
             context.contentResolver.query(audioUri, projection, selection, null, null)?.use { cursor ->
+                mediaStoreQueryTotalCount = cursor.count.coerceAtLeast(0)
                 val idxId = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
                 val idxTitle = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
                 val idxArtist = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
@@ -2131,10 +2440,25 @@ object LocalAudioImportManager {
                 val idxDateAdded = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_ADDED)
                 val idxDateModified = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
                 val idxData = cursor.getColumnIndex("_data")
+                progress.emit(
+                    phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                    processed = 0,
+                    total = mediaStoreQueryTotalCount,
+                    discoveredSongs = 0,
+                    visitedDirectories = 0,
+                    force = true
+                )
                 while (cursor.moveToNext()) {
                     coroutineContext.ensureActive()
                     val itemStartedAt = SystemClock.elapsedRealtime()
                     rawRowCount++
+                    progress.emit(
+                        phase = LocalAudioScanPhase.BUILDING_ENTRIES,
+                        processed = rawRowCount,
+                        total = mediaStoreQueryTotalCount.coerceAtLeast(rawRowCount),
+                        discoveredSongs = songs.size,
+                        visitedDirectories = 0
+                    )
                     val id = cursor.getLong(idxId)
                     val duration = cursor.getLong(idxDuration)
                     val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
@@ -2146,7 +2470,7 @@ object LocalAudioImportManager {
                         relativePath = relativePath,
                         displayName = idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                     )
-                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::exists)
+                    val resolvedFile = resolvedPath?.let(::File)?.takeIf(File::isFile)
                     val displayName = resolvedFile?.name
                         ?: idxDisplayName.takeIf { it >= 0 }?.let(cursor::getString)
                         ?: contentUri.lastPathSegment
@@ -2166,7 +2490,11 @@ object LocalAudioImportManager {
                         continue
                     }
                     val hasReadableMediaStoreReference = resolvedFile != null ||
-                        probeReadableContentReference(context, contentUri)
+                        (shouldProbeMediaStoreContentReference(
+                            rowOrdinal = rawRowCount,
+                            hasResolvedFile = false,
+                            probeLimit = COMPLETE_SCAN_CONTENT_PROBE_LIMIT
+                        ) && probeReadableContentReference(context, contentUri))
                     if (!shouldKeepMediaStoreAudioRow(
                             hasResolvedFile = resolvedFile != null,
                             hasProviderAudioReference = false,
@@ -2179,11 +2507,10 @@ object LocalAudioImportManager {
                     acceptedRowCount++
                     progress.emit(
                         phase = LocalAudioScanPhase.BUILDING_ENTRIES,
-                        processed = acceptedRowCount,
-                        total = acceptedRowCount,
+                        processed = rawRowCount,
+                        total = mediaStoreQueryTotalCount.coerceAtLeast(rawRowCount),
                         discoveredSongs = songs.size,
-                        visitedDirectories = 0,
-                        force = true
+                        visitedDirectories = 0
                     )
                     val mediaStoreCoverUri = idxAlbumId
                         .takeIf { it >= 0 && !cursor.isNull(it) }
@@ -2272,7 +2599,7 @@ object LocalAudioImportManager {
             ) + indexedManagedSidecarReferences
             completeScannedSongs(
                 context = context,
-                songs = orderScannedSongs(songs.distinctBy { it.identity() }),
+                songs = orderScannedSongs(songs),
                 progress = progress,
                 visitedDirectories = 0,
                 knownSidecarReferences = knownSidecarReferences
@@ -2286,8 +2613,8 @@ object LocalAudioImportManager {
         val completedSongs = completion.songs
         progress.emit(
             phase = LocalAudioScanPhase.COMPLETED,
-            processed = acceptedRowCount,
-            total = acceptedRowCount,
+            processed = maxOf(mediaStoreQueryTotalCount, rawRowCount),
+            total = maxOf(mediaStoreQueryTotalCount, rawRowCount),
             discoveredSongs = completedSongs.size,
             visitedDirectories = 0,
             force = true
@@ -2304,7 +2631,11 @@ object LocalAudioImportManager {
         )
 
         LocalAudioImportResult(
-            songs = orderScannedSongs(completedSongs.distinctBy { it.identity() }),
+            songs = if (completion.metadataDeferred) {
+                distinctSongsPreservingOrder(completedSongs)
+            } else {
+                orderScannedSongs(completedSongs)
+            },
             failedCount = failed,
             completed = completed,
             metadataDeferred = completion.metadataDeferred
@@ -3121,7 +3452,7 @@ object LocalAudioImportManager {
 
     private fun buildFolderScannedSong(context: Context, uri: Uri): SongItem {
         val details = LocalMediaSupport.inspectForScan(context, uri)
-        val localFile = details.filePath?.let(::File)?.takeIf(File::exists)
+        val localFile = details.filePath?.let(::File)?.takeIf(File::isFile)
         val filesystemCreation = localFile?.let(::resolveFilesystemCreationObservation)
         val sourceAddedAt = filesystemCreation?.timestampMs ?: details.lastModifiedMs
         val sourceAddedAtSource = when {
@@ -3312,16 +3643,17 @@ object LocalAudioImportManager {
             val document: DocumentFile,
             val isInsideManagedRoot: Boolean
         )
+        val rootIsInsideManagedRoot = isManagedDownloadDocumentDirectory(
+            context = context,
+            documentUri = root.uri,
+            treeDocumentId = treeDocumentId,
+            displayName = root.name
+        )
         val pendingDirectories = ArrayDeque<PendingDirectory>().apply {
             add(
                 PendingDirectory(
                     document = root,
-                    isInsideManagedRoot = isManagedDownloadDocumentDirectory(
-                        context = context,
-                        documentUri = root.uri,
-                        treeDocumentId = treeDocumentId,
-                        displayName = root.name
-                    )
+                    isInsideManagedRoot = rootIsInsideManagedRoot
                 )
             )
         }
@@ -3495,12 +3827,22 @@ object LocalAudioImportManager {
                         val childDocumentId = cursor.getString(idIndex) ?: continue
                         val childDisplayName = cursor.getString(nameIndex) ?: continue
                         val childMimeType = cursor.getString(mimeTypeIndex).orEmpty()
+                        val isDirectory = childMimeType ==
+                            DocumentsContract.Document.MIME_TYPE_DIR
+                        val extension = childDisplayName.substringAfterLast('.', "")
+                            .lowercase(Locale.ROOT)
+                        val isAudio = childMimeType.startsWith("audio/", ignoreCase = true) ||
+                            extension in audioExtensions
+                        val isSidecar = extension in lyricExtensions ||
+                            extension in imageExtensions ||
+                            extension == "json"
+                        if (!isDirectory && !isAudio && !isSidecar) continue
                         add(
                             QueriedFolderChild(
                                 documentUri = DocumentsContract.buildDocumentUriUsingTree(parentUri, childDocumentId),
                                 displayName = childDisplayName,
                                 mimeType = childMimeType,
-                                isDirectory = childMimeType == DocumentsContract.Document.MIME_TYPE_DIR,
+                                isDirectory = isDirectory,
                                 lastModifiedMs = lastModifiedIndex
                                     .takeIf { it >= 0 && !cursor.isNull(it) }
                                     ?.let(cursor::getLong),
@@ -3548,10 +3890,12 @@ object LocalAudioImportManager {
         if (ManagedDownloadStorage.isManagedDownloadRelativePath(displayName, treeDocumentId)) {
             return true
         }
-        val configuredTreeDocumentId = treeDocumentId
-            ?.trim()
-            ?.takeIf(String::isNotBlank)
-            ?: return false
+        val configuredTreeDocumentId = (
+            treeDocumentId
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+                ?: return false
+            )
         val documentId = resolveDocumentId(documentUri)
         if (documentId != null && ManagedDownloadStorage.isKnownManagedDownloadDocumentId(
                 documentId = documentId,
@@ -3596,31 +3940,49 @@ object LocalAudioImportManager {
     private fun buildDocumentCoverIndex(
         children: Collection<QueriedFolderChild>
     ): Map<String, String> {
-        return children.asSequence()
-            .filterNot(QueriedFolderChild::isDirectory)
-            .mapNotNull { child ->
-                child.displayName
+        val index = HashMap<String, String>(children.size.coerceAtMost(4_096))
+        children.asSequence()
+            .filter { child -> !child.isDirectory }
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val name = child.displayName
                     .takeIf(String::isNotBlank)
-                    ?.lowercase()
-                    ?.let { name -> name to child.documentUri.toString() }
+                    ?.lowercase(Locale.ROOT)
+                    ?: return@forEach
+                if (imageExtensions.none { extension ->
+                    name.substringAfterLast('.', "").equals(extension, ignoreCase = true)
+                    }
+                ) {
+                    return@forEach
+                }
+                index.putIfAbsent(name, child.documentUri.toString())
             }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, references) -> references.first() }
+        return index
     }
 
     private fun buildSafCoverIndex(
         children: Collection<DocumentFile>
     ): Map<String, String> {
-        return children.asSequence()
+        val index = HashMap<String, String>(children.size.coerceAtMost(4_096))
+        children.asSequence()
             .filter(DocumentFile::isFile)
-            .mapNotNull { child ->
-                child.name
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
+            .forEach { child ->
+                val name = child.name
                     ?.takeIf(String::isNotBlank)
-                    ?.lowercase()
-                    ?.let { name -> name to child.uri.toString() }
+                    ?.lowercase(Locale.ROOT)
+                    ?: return@forEach
+                if (imageExtensions.none { extension ->
+                    name.substringAfterLast('.', "").equals(extension, ignoreCase = true)
+                    }
+                ) {
+                    return@forEach
+                }
+                index.putIfAbsent(name, child.uri.toString())
             }
-            .groupBy({ it.first }, { it.second })
-            .mapValues { (_, references) -> references.first() }
+        return index
     }
 
     private fun buildDocumentNameIndex(
@@ -3628,6 +3990,8 @@ object LocalAudioImportManager {
     ): Map<String, String> {
         return children.asSequence()
             .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
             .map { child -> child.displayName.lowercase() to child.documentUri.toString() }
             .toMap()
     }
@@ -3638,6 +4002,8 @@ object LocalAudioImportManager {
         val best = HashMap<String, Pair<Int, String>>()
         children.asSequence()
             .filterNot(QueriedFolderChild::isDirectory)
+            .filter { child -> isLocalSidecarIndexCandidate(child.displayName) }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
             .forEach { child ->
                 val audioName = ManagedDownloadTreeNaming.metadataAudioName(child.displayName)
                     ?: return@forEach
@@ -3661,6 +4027,8 @@ object LocalAudioImportManager {
     ): Map<String, String> {
         return children.asSequence()
             .filter(DocumentFile::isFile)
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
             .mapNotNull { child ->
                 child.name
                     ?.takeIf(String::isNotBlank)
@@ -3676,6 +4044,8 @@ object LocalAudioImportManager {
         val best = HashMap<String, Pair<Int, String>>()
         children.asSequence()
             .filter(DocumentFile::isFile)
+            .filter { child -> child.name?.let(::isLocalSidecarIndexCandidate) == true }
+            .take(LOCAL_SIDECAR_INDEX_MAX_ENTRIES)
             .forEach { child ->
                 val displayName = child.name ?: return@forEach
                 val audioName = ManagedDownloadTreeNaming.metadataAudioName(displayName)
@@ -4295,7 +4665,7 @@ object LocalAudioImportManager {
 
     private fun resolveSourceFile(context: Context, uri: Uri): File? {
         if (uri.scheme.equals("file", ignoreCase = true)) {
-            return uri.path?.let(::File)?.takeIf(File::exists)
+            return uri.path?.let(::File)?.takeIf(File::isFile)
         }
 
         val dataPath = try {
@@ -4322,13 +4692,13 @@ object LocalAudioImportManager {
         }
 
         if (!dataPath.isNullOrBlank()) {
-            return File(dataPath).takeIf(File::exists)
+            return File(dataPath).takeIf(File::isFile)
         }
 
         return try {
             context.contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
                 Os.readlink("/proc/self/fd/${descriptor.fd}")
-                    .takeIf { it.startsWith("/") && File(it).exists() }
+                    .takeIf { it.startsWith("/") && File(it).isFile }
                     ?.let(::File)
             }
         } catch (error: CancellationException) {
@@ -4345,7 +4715,7 @@ object LocalAudioImportManager {
     ): String? {
         val normalizedRawPath = rawPath
             ?.substringBefore(" (deleted)")
-            ?.takeIf { it.startsWith("/") && File(it).exists() }
+            ?.takeIf { it.startsWith("/") && File(it).isFile }
         if (normalizedRawPath != null) {
             return normalizedRawPath
         }
@@ -4354,12 +4724,15 @@ object LocalAudioImportManager {
         val safeDisplayName = displayName?.takeIf { it.isNotBlank() } ?: return null
         val reconstructed = File(Environment.getExternalStorageDirectory(), safeRelativePath)
             .resolve(safeDisplayName)
-        return reconstructed.absolutePath.takeIf { reconstructed.exists() }
+        return reconstructed.absolutePath.takeIf { reconstructed.isFile }
     }
 
     private fun probeReadableContentReference(context: Context, uri: Uri): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { input -> input.read() != -1 } == true
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+                // MediaStore 存在性探测不读取音频内容，避免大曲库产生逐首读放大
+                descriptor.length != 0L
+            } == true
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

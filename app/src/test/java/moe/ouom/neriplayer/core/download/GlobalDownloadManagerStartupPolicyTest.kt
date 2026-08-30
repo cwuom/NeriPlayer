@@ -27,6 +27,152 @@ import moe.ouom.neriplayer.data.model.SongItem
 class GlobalDownloadManagerStartupPolicyTest {
 
     @Test
+    fun `complete pending scan replaces stale task total`() {
+        assertEquals(
+            50,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = 696,
+                artifactTotalItemCount = 50,
+                scanComplete = true
+            )
+        )
+    }
+
+    @Test
+    fun `incomplete pending scan retains the larger durable watermark`() {
+        assertEquals(
+            696,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = 696,
+                artifactTotalItemCount = 50,
+                scanComplete = false
+            )
+        )
+        assertEquals(
+            50,
+            resolveDownloadClearRetainedTotalItemCount(
+                currentTotalItemCount = null,
+                artifactTotalItemCount = 50,
+                scanComplete = false
+            )
+        )
+    }
+
+    @Test
+    fun `protected pending artifacts do not block a complete clear`() {
+        assertFalse(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = true,
+                blockingArtifactCount = 0
+            )
+        )
+        assertTrue(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = true,
+                blockingArtifactCount = 1
+            )
+        )
+        assertTrue(
+            shouldBlockDownloadClearForPendingArtifacts(
+                scanComplete = false,
+                blockingArtifactCount = 0
+            )
+        )
+    }
+
+    @Test
+    fun `clear visibility remains while durable cleanup still needs recovery`() {
+        assertTrue(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = true,
+                durableFenceActive = false
+            )
+        )
+        assertTrue(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = false,
+                durableFenceActive = true
+            )
+        )
+        assertFalse(
+            shouldRetainDownloadClearVisibility(
+                retainInMemoryState = false,
+                durableFenceActive = false
+            )
+        )
+    }
+
+    @Test
+    fun `clear convergence defers only after its bounded round budget`() {
+        assertFalse(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS - 1
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterConvergenceRound(
+                round = DOWNLOAD_CLEAR_MAX_CONVERGENCE_ROUNDS + 1
+            )
+        )
+    }
+
+    @Test
+    fun `durable clear retries are bounded before a later recovery`() {
+        assertFalse(
+            shouldDeferDownloadClearAfterDurableRetry(
+                round = DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS - 1
+            )
+        )
+        assertTrue(
+            shouldDeferDownloadClearAfterDurableRetry(
+                round = DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS
+            )
+        )
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val releaseBody = source.substringAfter(
+            "private suspend fun clearDownloadClearFence"
+        ).substringBefore("private suspend fun requestAllDownloadOperationCancellation")
+        val cancellationBody = source.substringAfter(
+            "private suspend fun requestAllDownloadOperationCancellation"
+        ).substringBefore("fun interruptDownloadsForWifiDisconnected")
+        assertFalse(releaseBody.contains("while (true)"))
+        assertFalse(cancellationBody.contains("while (true)"))
+        assertTrue(source.contains("DOWNLOAD_CLEAR_MAX_DURABLE_RETRY_ROUNDS"))
+        assertTrue(source.contains("private suspend fun activateDownloadClearFence(context: Context): Boolean"))
+        assertTrue(source.contains("下载清空栅栏未能持久化，未删除任务或文件并等待下次恢复"))
+    }
+
+    @Test
+    fun `clear convergence exhaustion keeps the durable fence for a later retry`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val deferIndex = clearBody.indexOf("deferClearForRetry(")
+        val deferredBranchIndex = clearBody.indexOf("if (clearDeferredForRetry)")
+        val deferredReturnIndex = clearBody.indexOf("return@launch", deferredBranchIndex)
+        val fenceReleaseIndex = clearBody.indexOf("clearDownloadClearFence(")
+
+        assertTrue(deferIndex >= 0)
+        assertTrue(deferredBranchIndex > deferIndex)
+        assertTrue(deferredReturnIndex > deferIndex)
+        assertTrue(fenceReleaseIndex > deferredReturnIndex)
+        assertTrue(
+            clearBody.substring(deferredBranchIndex, fenceReleaseIndex)
+                .contains("持久栅栏保持生效")
+        )
+    }
+
+    @Test
     fun `empty scan coverage reuses snapshot references instead of probing each song`() {
         val audio = ManagedDownloadStorage.StoredEntry(
             name = "song.mp3",
@@ -498,6 +644,66 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `missing optional network cover can finalize as degraded`() {
+        assertTrue(
+            shouldFinalizeDownloadedSidecars(
+                hasNetworkCoverCandidate = true,
+                coverReference = null,
+                coverAccessible = false,
+                allowMissingOptionalCover = true
+            )
+        )
+    }
+
+    @Test
+    fun `post core enrichment failure remains completed when audio is committed`() {
+        assertEquals(
+            DownloadStatus.COMPLETED,
+            resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = true)
+        )
+        assertEquals(
+            DownloadStatus.FAILED,
+            resolvePostCoreEnrichmentTaskStatus(coreAudioCommitted = false)
+        )
+    }
+
+    @Test
+    fun `degraded core retry skips explicit metadata action and stopped operations`() {
+        assertTrue(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = false,
+                userStopped = false
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = true,
+                userStopped = false
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "DEGRADED_COMPLETE",
+                metadataActionRequired = false,
+                userStopped = true
+            )
+        )
+        assertFalse(
+            shouldSchedulePostCoreEnrichmentRetry(
+                coreAudioCommitted = true,
+                operationState = "ASSETS_ENRICHING",
+                metadataActionRequired = false,
+                userStopped = false
+            )
+        )
+    }
+
+    @Test
     fun `runNonCancellableDownloadRollback still completes after coroutine cancellation`() = runBlocking {
         var executed = false
         var rollbackResult: String? = null
@@ -626,7 +832,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         assertTrue(
             screenSource.contains(
-                "val visibleTasks = if (isDownloadTaskClearPresentationCleared)"
+                "val visibleTasks = if (effectivePresentationCleared)"
             )
         )
         assertFalse(screenSource.contains("val visibleTasks = if (isClearingDownloadTasks)"))
@@ -651,18 +857,38 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
-    fun `legacy download backfill precedes unfinalized startup recovery`() {
+    fun `legacy download backfill is scheduled after startup catalog recovery`() {
         val managerSource = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
         ).readText()
         val initializeBody = managerSource.substringAfter("fun initialize(context: Context)")
             .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
 
+        val catalogRestoreIndex = initializeBody.indexOf(
+            "val restoredCatalog = restorePersistedDownloadedSongs(appContext)"
+        )
+        val pendingRecoveryIndex = initializeBody.indexOf(
+            "recoverPendingDownloadsForStartup(appContext)"
+        )
+        val coverRepairIndex = initializeBody.indexOf(
+            "repairFinalizedDownloadedCoversFromRoot(appContext)"
+        )
+        val scheduleIndex = initializeBody.indexOf(
+            "LegacyJsonCleanupScheduler.schedule(appContext, \"download-startup\")"
+        )
+
+        assertTrue(catalogRestoreIndex >= 0)
+        assertTrue(pendingRecoveryIndex > catalogRestoreIndex)
+        assertTrue(coverRepairIndex > pendingRecoveryIndex)
+        assertTrue(scheduleIndex > coverRepairIndex)
+        assertFalse(initializeBody.contains("runDownloadUpgradeOnce(appContext)"))
         assertTrue(
-            initializeBody.indexOf("runDownloadUpgradeOnce(appContext)") <
-                initializeBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(appContext)")
+            initializeBody.contains("旧下载数据库回填不得阻塞首屏")
         )
         assertTrue(initializeBody.contains("startupRecoveryMutex.withLock"))
+        assertTrue(initializeBody.contains("STARTUP_INITIAL_SCAN_WAIT_TIMEOUT_MS"))
+        assertTrue(initializeBody.contains("启动目录扫描超过交互等待预算"))
+        assertTrue(initializeBody.contains("scheduleCatalogReconcile(appContext, forceRefresh = true)"))
         assertTrue(
             managerSource.contains(
                 "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
@@ -690,6 +916,9 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         val clearVisibilityIndex = clearAllBody.indexOf("downloadClearVisibility.begin(clearToken)")
         val activateIndex = clearAllBody.indexOf("activateDownloadClearFence(appContext)")
+        val durableActivateIndex = clearAllBody.indexOf(
+            "PersistentDownloadClearFenceStore.activate(appContext)"
+        )
         val presentationClearedIndex = clearAllBody.indexOf(
             "downloadClearVisibility.markFencePersisted(clearToken)"
         )
@@ -706,12 +935,13 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(clearRequestIndex >= 0)
         assertTrue(clearRequestIndex > clearAllBody.indexOf("downloadAdmissionGate.beginClear()"))
         assertTrue(clearVisibilityIndex > clearRequestIndex)
+        assertTrue(durableActivateIndex > clearRequestIndex)
+        assertTrue(clearVisibilityIndex > durableActivateIndex)
         assertTrue(activateIndex > clearVisibilityIndex)
-        assertTrue(presentationClearedIndex > activateIndex)
-        assertTrue(firstTaskClearIndex > activateIndex)
-        assertTrue(firstTaskClearIndex > presentationClearedIndex)
-        assertTrue(clearAllBody.indexOf("taskStore.currentTasks()") > activateIndex)
-        assertTrue(clearAllBody.indexOf("clearBatchDownloadPresentation()") > activateIndex)
+        assertTrue(presentationClearedIndex > durableActivateIndex)
+        assertTrue(firstTaskClearIndex > durableActivateIndex)
+        assertTrue(clearAllBody.indexOf("taskStore.currentTasks()") > durableActivateIndex)
+        assertTrue(clearAllBody.indexOf("clearBatchDownloadPresentation()") > durableActivateIndex)
         assertTrue(immediateStopIndex > journalIndex)
         assertTrue(journalIndex > firstTaskClearIndex)
         assertTrue(clearFenceIndex > journalIndex)
@@ -725,6 +955,8 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(source.contains("private suspend fun activateDownloadClearFence"))
         assertTrue(source.contains("private fun stopDownloadExecutionImmediately"))
         assertTrue(source.contains("private suspend fun clearDownloadClearFence"))
+        assertTrue(source.contains("DOWNLOAD_CLEAR_PRESENTATION_BUDGET_MS = 500L"))
+        assertTrue(clearAllBody.contains("CoroutineStart.UNDISPATCHED"))
         assertTrue(source.contains("if (isDownloadClearFenceActive(appContext))"))
         assertFalse(clearAllBody.contains("beginAndActivate"))
         assertTrue(clearAllBody.contains("while (true)"))

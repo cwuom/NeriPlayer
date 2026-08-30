@@ -92,6 +92,36 @@ class ManagedDownloadReferenceDeleteExecutorTest {
     }
 
     @Test
+    fun `confirmed synchronous saf delete skips redundant gone probe`() {
+        val reference = TrustedManagedRef(
+            reference = StorageReference.SafRef(mock(Uri::class.java)),
+            externalReference = "content://documents.test/document/confirmed"
+        )
+        val goneProbeCalls = AtomicInteger(0)
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, maxAttempts, retryDelayMs ->
+                assertEquals(SAF_DELETE_MAX_ATTEMPTS, maxAttempts)
+                assertEquals(SAF_DELETE_RETRY_DELAY_MS, retryDelayMs)
+                StorageMutationResult.Deleted
+            },
+            contentReferenceGoneOperation = { _, _ ->
+                goneProbeCalls.incrementAndGet()
+                ManagedDownloadReferenceIo.AccessResult.Accessible
+            }
+        )
+
+        val result = executor.deleteTrustedContentReference(
+            context = mock(Context::class.java),
+            reference = reference
+        )
+
+        assertEquals(StorageMutationResult.Deleted, result)
+        assertEquals(0, goneProbeCalls.get())
+    }
+
+    @Test
     fun `delete boundary accepts trusted managed references`() = runBlocking {
         val references = listOf(
             TrustedManagedRef(
@@ -318,6 +348,42 @@ class ManagedDownloadReferenceDeleteExecutorTest {
 
         assertTrue(result.deletedReferences.isEmpty())
         assertEquals(0, deleteCalls.get())
+    }
+
+    @Test
+    fun `duplicate external references are deleted only once`() = runBlocking {
+        val externalReference = "content://documents.test/document/duplicate"
+        val first = TrustedManagedRef(
+            reference = StorageReference.SafRef(mock(Uri::class.java)),
+            externalReference = externalReference
+        )
+        val second = TrustedManagedRef(
+            reference = StorageReference.SafRef(mock(Uri::class.java)),
+            externalReference = externalReference
+        )
+        val deleteCalls = AtomicInteger(0)
+        val executor = ManagedDownloadReferenceDeleteExecutor(
+            tag = "ManagedDownloadReferenceDeleteExecutorTest",
+            isReferenceAllowed = { _, _, _, _ -> true },
+            contentReferenceDeleteOperation = { _, _, _, _ ->
+                deleteCalls.incrementAndGet()
+                StorageMutationResult.Deleted
+            }
+        )
+
+        val result = executor.deleteReferencesConcurrently(
+            context = mock(Context::class.java),
+            references = listOf(first, second),
+            deletePolicy = ManagedDownloadDeletePolicy(
+                managedFileRoots = emptyList(),
+                managedTreeRoots = emptyList(),
+                trustedReferences = setOf(first)
+            )
+        )
+
+        assertEquals(listOf(externalReference), result.requestedReferences)
+        assertEquals(setOf(externalReference), result.deletedReferences)
+        assertEquals(1, deleteCalls.get())
     }
 
     @Test

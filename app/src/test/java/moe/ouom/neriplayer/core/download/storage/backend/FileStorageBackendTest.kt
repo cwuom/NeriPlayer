@@ -218,6 +218,89 @@ class FileStorageBackendTest {
     }
 
     @Test
+    fun `file delete waits for an in-flight write of the same target`() {
+        runBlocking {
+            val root = Files.createTempDirectory("neriplayer-storage-backend").toFile()
+            try {
+                val backend = FileStorageBackend(root)
+                val writerEntered = CompletableDeferred<Unit>()
+                val releaseWriter = CompletableDeferred<Unit>()
+                val writer = async(Dispatchers.Default) {
+                    backend.writeRecoverable(StorageTarget.FileTarget("song.mp3")) { output ->
+                        output.write("audio".toByteArray())
+                        writerEntered.complete(Unit)
+                        releaseWriter.await()
+                    }
+                }
+                withTimeout(5_000L) { writerEntered.await() }
+
+                val deleteStarted = CompletableDeferred<Unit>()
+                val delete = async(Dispatchers.Default) {
+                    deleteStarted.complete(Unit)
+                    backend.delete(
+                        TrustedManagedRef(StorageReference.FileRef("song.mp3"))
+                    )
+                }
+                withTimeout(5_000L) { deleteStarted.await() }
+                delay(100L)
+                assertFalse(delete.isCompleted)
+
+                releaseWriter.complete(Unit)
+                assertTrue(withTimeout(5_000L) { writer.await() } is StorageWriteResult.Written)
+                assertEquals(
+                    StorageMutationResult.Deleted,
+                    withTimeout(5_000L) { delete.await() }
+                )
+                assertFalse(root.resolve("song.mp3").exists())
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
+    fun `file rename waits for an in-flight write of the source target`() {
+        runBlocking {
+            val root = Files.createTempDirectory("neriplayer-storage-backend").toFile()
+            try {
+                val backend = FileStorageBackend(root)
+                val writerEntered = CompletableDeferred<Unit>()
+                val releaseWriter = CompletableDeferred<Unit>()
+                val writer = async(Dispatchers.Default) {
+                    backend.writeRecoverable(StorageTarget.FileTarget("song.mp3")) { output ->
+                        output.write("audio".toByteArray())
+                        writerEntered.complete(Unit)
+                        releaseWriter.await()
+                    }
+                }
+                withTimeout(5_000L) { writerEntered.await() }
+
+                val renameStarted = CompletableDeferred<Unit>()
+                val rename = async(Dispatchers.Default) {
+                    renameStarted.complete(Unit)
+                    backend.rename(
+                        TrustedManagedRef(StorageReference.FileRef("song.mp3")),
+                        "renamed.mp3"
+                    )
+                }
+                withTimeout(5_000L) { renameStarted.await() }
+                delay(100L)
+                assertFalse(rename.isCompleted)
+
+                releaseWriter.complete(Unit)
+                assertTrue(withTimeout(5_000L) { writer.await() } is StorageWriteResult.Written)
+                assertTrue(
+                    withTimeout(5_000L) { rename.await() } is StorageRenameResult.Renamed
+                )
+                assertTrue(root.resolve("renamed.mp3").isFile)
+                assertFalse(root.resolve("song.mp3").exists())
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun `many concurrent file targets complete without pending file buildup`() {
         runBlocking {
             val root = Files.createTempDirectory("neriplayer-storage-backend").toFile()

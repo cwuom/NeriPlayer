@@ -13,6 +13,7 @@
     <string name="download_loading_tasks">Reading download tasks…</string>
     <string name="download_loading_tasks_recovering">Unable to read download tasks. Retrying…</string>
     <string name="download_clearing_tasks">Stopping and clearing download tasks…</string>
+    <string name="download_clear_background_cleanup">Download tasks cleared; temporary files are being cleaned in the background…</string>
     <string name="download_clearing_tasks_with_progress">Clearing download tasks: %1$d%% (%2$d items)</string>
     <string name="download_clear_phase_preparing">Preparing</string>
     <string name="download_clear_phase_cancelling">Stopping downloads</string>

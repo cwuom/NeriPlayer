@@ -29,7 +29,7 @@ internal fun selectActiveMigrationWorkInfo(
     findById(preferredWorkId)?.let { return it }
     findById(fallbackWorkId)?.let { return it }
 
-    // workmanager does not guarantee the order of rows returned for a unique name
+    // WorkManager 不保证同一唯一名称返回记录的顺序
     return active.minWithOrNull(
         compareBy<WorkInfo>(
             { migrationWorkStatePriority(it.state) },
@@ -38,6 +38,35 @@ internal fun selectActiveMigrationWorkInfo(
             { it.id.toString().lowercase(Locale.ROOT) }
         )
     )
+}
+
+/** WorkManager 行丢失或结束时仍保留迁移横幅 */
+internal fun shouldPreserveMigrationUiAfterWorkInfo(
+    workInfoState: WorkInfo.State?,
+    requestAutoResume: Boolean,
+    journalPhase: ManagedMigrationReplacementJournalPhase?,
+    checkpointReadFailed: Boolean = false
+): Boolean {
+    if (checkpointReadFailed) return true
+    if (workInfoState != null && !workInfoState.isFinished) return true
+    return requestAutoResume || (
+        journalPhase != null &&
+            journalPhase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+        )
+}
+
+internal fun shouldResumePersistedMigrationAfterWorkInfo(
+    workInfoState: WorkInfo.State?,
+    requestAutoResume: Boolean,
+    journalPhase: ManagedMigrationReplacementJournalPhase?,
+    checkpointReadFailed: Boolean = false
+): Boolean {
+    if (workInfoState != null && !workInfoState.isFinished) return false
+    if (checkpointReadFailed && !requestAutoResume && journalPhase == null) return false
+    return requestAutoResume || (
+        journalPhase != null &&
+            journalPhase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+        )
 }
 
 internal fun migrationWorkIdsEqual(left: String?, right: String?): Boolean {
@@ -87,7 +116,7 @@ internal fun migrationProgressForSharedProcessing(
     }
 }
 
-/** merges every durable checkpoint so a resumed worker never moves the UI backwards */
+/** 合并所有持久检查点，恢复后的 Worker 不让界面进度倒退 */
 internal fun selectMigrationProgressCheckpoint(
     checkpointIds: Iterable<String>,
     readProgress: (String) -> ManagedDownloadStorage.MigrationProgress?

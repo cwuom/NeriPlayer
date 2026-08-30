@@ -159,6 +159,7 @@ internal object ManagedDownloadSnapshotRoomMapper {
             localFilePath = localFilePath,
             sizeBytes = sizeBytes,
             lastModifiedMs = lastModifiedMs,
+            sizeKnown = sizeBytes > 0L,
             isDirectory = isDirectory
         )
     }

@@ -13,6 +13,7 @@
     <string name="download_loading_tasks">正在读取下载任务…</string>
     <string name="download_loading_tasks_recovering">暂时无法读取下载任务，正在重试…</string>
     <string name="download_clearing_tasks">正在停止并清空下载任务…</string>
+    <string name="download_clear_background_cleanup">下载任务已清空，后台正在清理临时文件…</string>
     <string name="download_clearing_tasks_with_progress">正在清空下载任务: %1$d%% (%2$d 项)</string>
     <string name="download_clear_phase_preparing">准备中</string>
     <string name="download_clear_phase_cancelling">停止下载中</string>

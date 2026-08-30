@@ -4,6 +4,8 @@ internal const val ROOT_DIR_NAME = "NeriPlayer"
 internal const val COVER_SUBDIRECTORY = "Covers"
 internal const val LYRIC_SUBDIRECTORY = "Lyrics"
 internal const val DOWNLOAD_STAGING_DIR_NAME = "download_staging"
+/** 应用级下载提交凭据统一放在隐藏临时目录，避免污染媒体根目录 */
+internal const val DOWNLOAD_TEMPORARY_DIR_NAME = ".tmp"
 internal const val DOWNLOAD_STAGING_FILE_PREFIX = "npdl_"
 internal const val DOWNLOAD_STAGING_FILE_SUFFIX = ".download"
 internal const val DOWNLOAD_STAGING_HLS_CHECKPOINT_SUFFIX = ".hls.json"
@@ -34,7 +36,12 @@ internal const val MIGRATION_TREE_COPY_PARALLELISM = 2
 internal const val MIGRATION_REWRITE_PARALLELISM = 4
 internal const val MIGRATION_TREE_REWRITE_PARALLELISM = 2
 internal const val MIGRATION_DELETE_PARALLELISM = 8
-internal const val MIGRATION_TREE_DELETE_PARALLELISM = 2
+// SAF 删除是独立文档操作，使用与普通引用删除相同的有界并发
+internal const val MIGRATION_TREE_DELETE_PARALLELISM = 8
+internal const val MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE = 4
+/** 迁移被未收敛下载临时文件阻断时使用的稳定原因标识 */
+internal const val MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE =
+    "MIGRATION_PENDING_ARTIFACT_BLOCKED"
 internal const val MIGRATION_IO_MAX_ATTEMPTS = 3
 internal const val MIGRATION_IO_RETRY_DELAY_MS = 150L
 internal const val SAF_DELETE_MAX_ATTEMPTS = 3

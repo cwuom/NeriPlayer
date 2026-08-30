@@ -93,6 +93,31 @@ class LocalScanPreviewHydrationStateTest {
     }
 
     @Test
+    fun `hydration target keys resolve without scanning the preview for every song`() {
+        val firstSong = localSong(id = 111L, name = "First")
+        val secondSong = localSong(id = 112L, name = "Second")
+        val state = LocalScanPreviewState(
+            visible = true,
+            songs = listOf(firstSong, secondSong),
+            metadataPendingKeys = setOf(firstSong.stableKey(), secondSong.stableKey())
+        )
+
+        val updated = applyHydratedSongsToScanPreview(
+            state = state,
+            hydratedSongs = listOf(
+                secondSong.copy(album = "Second album"),
+                firstSong.copy(album = "First album")
+            ),
+            progress = state.scanProgress,
+            targetKeys = listOf(secondSong.stableKey(), firstSong.stableKey())
+        )
+
+        assertEquals("First album", updated.songs[0].album)
+        assertEquals("Second album", updated.songs[1].album)
+        assertEquals(emptySet<String>(), updated.metadataPendingKeys)
+    }
+
+    @Test
     fun `metadata only drops selection when hydration finds no meaningful metadata`() {
         val quickSong = localSong(
             id = 13L,
@@ -209,6 +234,46 @@ class LocalScanPreviewHydrationStateTest {
         assertEquals(
             listOf(firstSong, secondSong),
             sortScannedSongsBySourceTime(listOf(firstSong, secondSong))
+        )
+    }
+
+    @Test
+    fun `scan preview uses logical creation time instead of membership time`() {
+        val oldSource = localSong(id = 17L, name = "old").copy(
+            addedAt = 900L,
+            logicalCreatedAtMs = 100L,
+            membershipAddedAtMs = 900L
+        )
+        val newSource = localSong(id = 18L, name = "new").copy(
+            addedAt = 100L,
+            logicalCreatedAtMs = 300L,
+            membershipAddedAtMs = 100L
+        )
+
+        assertEquals(
+            listOf(newSource, oldSource),
+            sortScannedSongsBySourceTime(listOf(oldSource, newSource))
+        )
+    }
+
+    @Test
+    fun `scan preview gives deterministic order when provider returns reverse ties`() {
+        val first = localSong(id = 20L, name = "first").copy(
+            addedAt = 1_000L,
+            logicalCreatedAtMs = 1_000L,
+            createdAtConfidence = "PROVIDER_REPORTED",
+            sourceStableKey = "source-20"
+        )
+        val second = localSong(id = 19L, name = "second").copy(
+            addedAt = 1_000L,
+            logicalCreatedAtMs = 1_000L,
+            createdAtConfidence = "PROVIDER_REPORTED",
+            sourceStableKey = "source-19"
+        )
+
+        assertEquals(
+            listOf(second, first),
+            sortScannedSongsBySourceTime(listOf(first, second))
         )
     }
 

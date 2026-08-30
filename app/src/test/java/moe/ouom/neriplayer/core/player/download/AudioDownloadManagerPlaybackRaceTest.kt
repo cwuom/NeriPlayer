@@ -175,6 +175,8 @@ class AudioDownloadManagerPlaybackRaceTest {
         assertTrue(body.contains("rawEvidence == ManagedDownloadReferenceLookup.Result.Missing"))
         assertTrue(source.contains("forceRefresh = true"))
         assertTrue(source.contains("MANAGED_PLAYBACK_REBIND_COOLDOWN_MS"))
+        assertTrue(body.contains("ManagedDownloadDirectoryMutationFence.isActive"))
+        assertTrue(body.contains("ManagedDownloadDirectoryMutationFence.awaitOpen"))
     }
 
     @Test
@@ -234,6 +236,51 @@ class AudioDownloadManagerPlaybackRaceTest {
     }
 
     @Test
+    fun `managed aliases prefer current saf over stale private path`() {
+        val currentRoot =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+        val currentDocument =
+            "content://com.android.externalstorage.documents/document/" +
+                "primary%3AMusic%2FSong.flac"
+
+        assertEquals(
+            currentDocument,
+            selectManagedPlaybackReferenceForConfiguredSaf(
+                references = listOf(
+                    "/storage/emulated/0/Android/data/app/files/Song.flac",
+                    currentDocument
+                ),
+                configuredDirectoryUri = currentRoot
+            )
+        )
+        assertNull(
+            selectManagedPlaybackReferenceForConfiguredSaf(
+                references = listOf(
+                    "/storage/emulated/0/Android/data/app/files/Song.flac",
+                    "file:///storage/emulated/0/Android/data/app/files/Song.flac"
+                ),
+                configuredDirectoryUri = currentRoot
+            )
+        )
+    }
+
+    @Test
+    fun `raw managed playback source filters references from a previous saf root`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "resolvePermittedLocalPlayback")
+
+        assertTrue(body.contains("rawReferenceCompatible"))
+        assertTrue(body.contains("isManagedPlaybackReferenceCompatibleWithConfiguredSaf"))
+        assertTrue(
+            body.indexOf("rawReferenceCompatible") <
+                body.indexOf("ManagedDownloadReferenceLookup.inspect")
+        )
+    }
+
+    @Test
     fun `completed bridge does not reject when no saf root is configured`() {
         assertFalse(
             shouldDiscardCompletedReferenceForConfiguredSaf(
@@ -241,6 +288,40 @@ class AudioDownloadManagerPlaybackRaceTest {
                 configuredDirectoryUri = null
             )
         )
+    }
+
+    @Test
+    fun `managed playback waits for an active directory mutation`() {
+        assertTrue(
+            shouldWaitForManagedPlaybackDirectoryMutation(
+                isManagedDownload = true,
+                mutationActive = true
+            )
+        )
+        assertFalse(
+            shouldWaitForManagedPlaybackDirectoryMutation(
+                isManagedDownload = true,
+                mutationActive = false
+            )
+        )
+        assertFalse(
+            shouldWaitForManagedPlaybackDirectoryMutation(
+                isManagedDownload = false,
+                mutationActive = true
+            )
+        )
+    }
+
+    @Test
+    fun `synchronous playback lookup consults the fast directory mutation gate`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/" +
+                "AudioDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "getLocalPlaybackUri")
+
+        assertTrue(body.contains("ManagedDownloadDirectoryMutationFence.isActiveFast"))
+        assertTrue(body.contains("shouldWaitForManagedPlaybackDirectoryMutation"))
     }
 
     @Test

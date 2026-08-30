@@ -194,6 +194,11 @@ internal class ManagedDownloadReferenceDeleteExecutor(
                 )
                 val providerDeleted = providerResult.isConfirmedMutation()
                 deletedByProvider = deletedByProvider || providerDeleted
+                if (providerDeleted) {
+                    // 删除接口已经返回确认结果，再做一次 stat 只会增加延迟并引入刷新竞态
+                    confirmed = StorageMutationResult.Deleted
+                    break
+                }
                 confirmed = when {
                     isReferenceGone(
                         context,
@@ -276,10 +281,13 @@ internal class ManagedDownloadReferenceDeleteExecutor(
         references: List<TrustedManagedRef>,
         deletePolicy: ManagedDownloadDeletePolicy
     ): List<TrustedManagedRef> {
-        return references.mapNotNull { reference ->
-            val enumerated = deletePolicy.trustedReferences.firstOrNull {
-                it.externalReference == reference.externalReference
+        val trustedByExternalReference = buildMap {
+            deletePolicy.trustedReferences.forEach { trusted ->
+                putIfAbsent(trusted.externalReference, trusted)
             }
+        }
+        return references.mapNotNull { reference ->
+            val enumerated = trustedByExternalReference[reference.externalReference]
             val trusted = enumerated ?: reference
                 .takeIf { it.reference is StorageReference.FileRef }
                 ?.let { fileReference ->

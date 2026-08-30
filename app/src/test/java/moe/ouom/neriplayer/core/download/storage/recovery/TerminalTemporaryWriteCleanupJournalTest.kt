@@ -63,6 +63,42 @@ class TerminalTemporaryWriteCleanupJournalTest {
     }
 
     @Test
+    fun `current entry can be rebased after an identical target refresh`() {
+        val store = InMemoryJournalStore()
+        val journal = TerminalTemporaryWriteCleanupJournal(store)
+        val root = fileRoot("/storage/emulated/0/Downloads")
+
+        assertTrue(journal.enqueue(root, listOf("same.mp3")))
+        val staleSnapshot = journal.availableEntries().single()
+        assertTrue(journal.enqueue(root, listOf("same.mp3")))
+
+        val current = journal.currentEntryIfTargetsMatch(staleSnapshot)
+
+        assertEquals(listOf("same.mp3"), current?.targetNames)
+        assertFalse(current?.generationId == staleSnapshot.generationId)
+        assertTrue(journal.consume(requireNotNull(current)))
+        assertTrue(journal.availableEntries().isEmpty())
+    }
+
+    @Test
+    fun `current entry rebase rejects a concurrently added target`() {
+        val store = InMemoryJournalStore()
+        val journal = TerminalTemporaryWriteCleanupJournal(store)
+        val root = fileRoot("/storage/emulated/0/Downloads")
+
+        assertTrue(journal.enqueue(root, listOf("first.mp3")))
+        val staleSnapshot = journal.availableEntries().single()
+        assertTrue(journal.enqueue(root, listOf("second.mp3")))
+
+        assertEquals(null, journal.currentEntryIfTargetsMatch(staleSnapshot))
+        assertFalse(journal.consume(staleSnapshot))
+        assertEquals(
+            listOf("first.mp3", "second.mp3"),
+            journal.availableEntries().single().targetNames
+        )
+    }
+
+    @Test
     fun `prepared finalization is not terminal until promotion completion is persisted`() {
         val store = InMemoryJournalStore()
         val journal = TerminalTemporaryWriteCleanupJournal(store)

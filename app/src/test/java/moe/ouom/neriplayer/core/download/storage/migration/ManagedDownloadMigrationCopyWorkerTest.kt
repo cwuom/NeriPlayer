@@ -717,7 +717,7 @@ class ManagedDownloadMigrationCopyWorkerTest {
     }
 
     @Test
-    fun `SAF target layout rejects duplicate canonical names before source cleanup`() {
+    fun `SAF target layout allows unrelated duplicate canonical names`() {
         val expected = listOf(
             ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target")
         )
@@ -728,7 +728,22 @@ class ManagedDownloadMigrationCopyWorkerTest {
 
         val detail = validateMigrationTargetLayout(expected, observed)
 
-        assertTrue(requireNotNull(detail).contains("名称不唯一"))
+        assertNull(detail)
+    }
+
+    @Test
+    fun `SAF target layout rejects the planned identity appearing twice`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "Song.mp3", "provider\u0000target"),
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000target")
+        )
+
+        val detail = validateMigrationTargetLayout(expected, observed)
+
+        assertTrue(requireNotNull(detail).contains("多个相同文档"))
     }
 
     @Test
@@ -739,6 +754,20 @@ class ManagedDownloadMigrationCopyWorkerTest {
         )
         val observed = listOf(
             ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000first")
+        )
+
+        val detail = validateMigrationTargetLayout(expected, observed)
+
+        assertTrue(requireNotNull(detail).contains("多个目标文档"))
+    }
+
+    @Test
+    fun `SAF target layout rejects a planned name without a document identity`() {
+        val expected = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "")
+        )
+        val observed = listOf(
+            ManagedMigrationTargetLayoutEntry(null, "song.mp3", "provider\u0000target")
         )
 
         val detail = validateMigrationTargetLayout(expected, observed)

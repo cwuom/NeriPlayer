@@ -594,6 +594,140 @@ class ManagedDownloadMigrationCheckpointStoreTest {
     }
 
     @Test
+    fun `conditional request write accepts equivalent work id casing and whitespace`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val workId = "22222222-2222-2222-2222-222222222222"
+        val current = ManagedMigrationRequest(
+            workId = workId.uppercase(),
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+        store.recordRequest(current)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        clearInvocations(editor)
+        `when`(preferences.getString(key, null)).thenReturn(payloadCaptor.value)
+
+        assertTrue(
+            store.recordRequestIfCurrent(
+                expectedWorkId = "  $workId  ",
+                request = current.copy(workId = workId)
+            )
+        )
+        verify(editor).putString(eq(key), anyString())
+    }
+
+    @Test
+    fun `terminal update accepts equivalent work id casing and whitespace`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val workId = "33333333-3333-3333-3333-333333333333"
+        val request = ManagedMigrationRequest(
+            workId = workId.uppercase(),
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+        store.recordRequest(request)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        clearInvocations(editor)
+        `when`(preferences.getString(key, null)).thenReturn(payloadCaptor.value)
+
+        assertTrue(store.markRequestTerminal("  $workId  "))
+        verify(editor).putString(eq(key), anyString())
+    }
+
+    @Test
+    fun `retryable update restores auto resume while retaining request`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val workId = "55555555-5555-5555-5555-555555555555"
+        val requestPayload = JSONObject().apply {
+            put("version", ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION)
+            put("workId", workId.uppercase())
+            put("toDirectoryUri", "content://target")
+            put("targetLabel", "target")
+            put("releasePreviousPermission", false)
+            put("minimumSourceEntryCount", 3)
+            put("autoResume", false)
+        }.toString()
+        `when`(preferences.getString(key, null)).thenReturn(requestPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+
+        assertTrue(store.markRequestRetryable("  $workId  "))
+
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        assertTrue(JSONObject(payloadCaptor.value).getBoolean("autoResume"))
+        assertEquals(3, JSONObject(payloadCaptor.value).getInt("minimumSourceEntryCount"))
+    }
+
+    @Test
+    fun `completion clear removes equivalent active request and journal`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val requestKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val journalKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY
+        val workId = "44444444-4444-4444-4444-444444444444"
+        val requestPayload = JSONObject().apply {
+            put("version", ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION)
+            put("workId", workId.uppercase())
+            put("toDirectoryUri", "content://target")
+            put("targetLabel", "target")
+            put("releasePreviousPermission", false)
+            put("minimumSourceEntryCount", 0)
+            put("autoResume", true)
+        }.toString()
+        val journalPayload = JSONObject().apply {
+            put(
+                "version",
+                CURRENT_MANAGED_MIGRATION_REPLACEMENT_JOURNAL_VERSION
+            )
+            put("workId", workId.uppercase())
+            put("phase", ManagedMigrationReplacementJournalPhase.PLANNED.name)
+            put("replacements", org.json.JSONArray())
+        }.toString()
+        `when`(preferences.getString(requestKey, null)).thenReturn(requestPayload)
+        `when`(preferences.getString(journalKey, null)).thenReturn(journalPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.remove(anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+
+        assertTrue(
+            store.clearCompletedIfCurrent(
+                ownerWorkId = "  $workId  ".lowercase(),
+                workIds = listOf(workId.lowercase())
+            ) == true
+        )
+        verify(editor).remove(eq(requestKey))
+        verify(editor).remove(eq(journalKey))
+        verify(editor).commit()
+    }
+
+    @Test
     fun `stale worker cannot resurrect migration checkpoints`() {
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java)

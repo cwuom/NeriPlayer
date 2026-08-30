@@ -22,7 +22,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** owns durable scheduling and operation identity for user initiated downloads */
+/** 管理用户下载的持久调度和 operation 身份 */
 interface DownloadExecutionHost {
     fun schedule(
         context: Context,
@@ -105,7 +105,7 @@ data class DownloadExecutionRequest(
 sealed interface DownloadExecutionSchedule {
     data class Scheduled(val backend: Backend) : DownloadExecutionSchedule
 
-    /** operation remains durable and will be retried when a bounded host slot opens */
+    /** operation 保持持久状态，取得有限宿主槽位后再重试 */
     data class Deferred(val reason: String) : DownloadExecutionSchedule
 
     data class Rejected(
@@ -182,7 +182,7 @@ class DefaultDownloadExecutionHost(
         ) {
             runCatching {
                 val songKey = request.song.stableKey()
-                // room journal owns root-scoped scheduling, memory may survive a root switch
+                // Room 日志负责按根目录调度，内存状态可能跨目录切换残留
                 val existingOperationId = operationStore.findOperationIdForSong(
                     appContext,
                     songKey
@@ -443,7 +443,7 @@ class DefaultDownloadExecutionHost(
             operationStore.markStopped(appContext, normalizedId)
             false
         } else {
-            // make the paused operation the one queue refresh can resume
+            // 让暂停的 operation 成为队列刷新时唯一可恢复的任务
             operationStore.updateState(
                 context = appContext,
                 operationId = normalizedId,
@@ -520,6 +520,8 @@ class DefaultDownloadExecutionHost(
         val activityManager = context.getSystemService(ActivityManager::class.java)
             ?: return emptySet()
         val latestExit = latestProcessExit(activityManager, context.packageName) ?: return emptySet()
+        // 从最近任务移除和强行停止都可能报告 REASON_USER_REQUESTED，这属于进程生命周期
+        // 变化而不是取消下载，持久 operation 要等下次打开应用后恢复
         if (!isUserRequestedProcessExitReason(latestExit.reason)) {
             return emptySet()
         }
@@ -902,7 +904,7 @@ internal fun shouldHandleHostStop(operationState: String?): Boolean {
         operationState in INTERRUPTED_DOWNLOAD_OPERATION_STATES
 }
 
-/** re-enqueue the same durable operation after an OS host disappears */
+/** 宿主被系统回收后重新排入同一个持久 operation */
 internal fun canScheduleDownloadOperation(currentState: String?): Boolean {
     return currentState == null ||
         currentState in setOf("PENDING_QUEUE", "QUEUED", "RETRYABLE") ||
@@ -963,8 +965,7 @@ private fun latestProcessExit(
 
 @RequiresApi(Build.VERSION_CODES.R)
 internal fun isUserRequestedProcessExitReason(reason: Int): Boolean {
-    return reason == ApplicationExitInfo.REASON_USER_REQUESTED ||
-        reason == ApplicationExitInfo.REASON_USER_STOPPED
+    return reason == ApplicationExitInfo.REASON_USER_STOPPED
 }
 
 private const val PROCESS_EXIT_PREFERENCES = "download_execution_host"

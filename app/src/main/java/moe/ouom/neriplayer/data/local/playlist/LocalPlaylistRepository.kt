@@ -51,6 +51,7 @@ import moe.ouom.neriplayer.core.api.netease.NeteaseClient
 import moe.ouom.neriplayer.core.api.search.MusicPlatform
 import moe.ouom.neriplayer.data.local.audioimport.LocalAudioImportManager
 import moe.ouom.neriplayer.data.local.audioimport.localSongNewestFirstComparator
+import moe.ouom.neriplayer.data.local.audioimport.localSongSourceCreationComparator
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomShadowImportStatus
 import moe.ouom.neriplayer.data.local.database.store.LocalPlaylistRoomStore
@@ -244,10 +245,7 @@ class LocalPlaylistRepository private constructor(
         return initialLoadFailure == null
     }
 
-    /**
-     * reads only the requested playlist for first paint; authoritative state still comes from
-     * the normal initialization flow
-     */
+    /** 首帧只读取当前歌单，权威状态仍由正常初始化流程提供 */
     internal suspend fun readFastPlaylist(playlistId: Long): LocalPlaylist? = withContext(Dispatchers.IO) {
         runCatching {
             roomStore?.readPlaylistIfRoomPrimary(playlistId)
@@ -699,8 +697,9 @@ class LocalPlaylistRepository private constructor(
         songs: List<SongItem>
     ): MutableList<SongItem> {
         return if (isLocalFilesPlaylist(playlist.id, playlist.name)) {
-            songs.sortedWith(localSongNewestFirstComparator())
-                .toMutableList()
+            // 当前版本的列表顺序就是用户可见顺序，创建时间只用于首次
+            // 导入和旧数据迁移，加载时再次排序会覆盖用户手动拖动
+            songs.toMutableList()
         } else {
             sortSongsByAddedAtForDisplay(songs)
         }
@@ -1079,14 +1078,24 @@ class LocalPlaylistRepository private constructor(
     ): List<SongItem> {
         if (songs.isEmpty()) return emptyList()
 
-        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songs.size)
-        check(membershipTokens.size == songs.size) {
-            "Expected ${songs.size} sync membership tokens, got ${membershipTokens.size}"
+        // 同一批本地文件按来源创建时间排列，单首加入仍由 membershipAddedAtMs 决定
+        val songsForInsert = if (
+            songs.size > 1 && songs.any { LocalSongSupport.isLocalSong(it, context) }
+                && !preserveScannedSourceAddedAt
+        ) {
+            songs.sortedWith(localSongSourceCreationComparator())
+        } else {
+            songs
         }
-        return songs.mapIndexed { index, song ->
+
+        val membershipTokens = syncMutationStore.nextSyncCausalTokens(songsForInsert.size)
+        check(membershipTokens.size == songsForInsert.size) {
+            "Expected ${songsForInsert.size} sync membership tokens, got ${membershipTokens.size}"
+        }
+        return songsForInsert.mapIndexed { index, song ->
             val membershipAddedAt = (addedAt - index).coerceAtLeast(1L)
             song.copy(
-                // membership time records when NeriPlayer imported the song
+                // membership 时间记录 NeriPlayer 导入歌曲的时刻
                 addedAt = resolvePlaylistSongAddedAt(
                     song = song,
                     membershipAddedAt = addedAt,
@@ -1112,8 +1121,11 @@ class LocalPlaylistRepository private constructor(
     }
 
     private fun nextPlaylistSongAddedAt(playlist: LocalPlaylist, now: Long): Long {
-        val latestExistingAddedAt = playlist.songs.maxOfOrNull { it.addedAt } ?: 0L
-        return maxOf(now, latestExistingAddedAt + 1L)
+        val latestExistingMembershipAt = playlist.songs.maxOfOrNull { song ->
+            maxOf(song.membershipAddedAtMs ?: 0L, song.addedAt)
+        } ?: 0L
+        // membership 时间必须单调递增，即使两次导入落在同一毫秒也不能让新歌沉底
+        return maxOf(now, latestExistingMembershipAt + 1L)
     }
 
     private fun stampSongsForDisplayOrder(
@@ -1132,9 +1144,37 @@ class LocalPlaylistRepository private constructor(
         return (newSongs + existingSongs).toMutableList()
     }
 
-    private fun orderLocalFilesSongs(songs: List<SongItem>): List<SongItem> {
-        return songs.distinctBy { it.identity() }
-            .sortedWith(localSongNewestFirstComparator())
+    private fun mergeLocalFilesScanPreservingDisplayOrder(
+        existingSongs: List<SongItem>,
+        scannedSongs: List<SongItem>
+    ): MutableList<SongItem> {
+        if (existingSongs.isEmpty()) {
+            return scannedSongs.toMutableList()
+        }
+        if (scannedSongs.isEmpty()) {
+            return mutableListOf()
+        }
+        val scannedIndex = SongMatchIndex(
+            songs = scannedSongs,
+            includeLocalMetadataFallback = true
+        )
+        val retained = existingSongs.mapNotNull { existingSong ->
+            scannedIndex.firstMatch(existingSong)?.let { scannedSong ->
+                mergeSongMetadataForPersistence(existingSong, scannedSong)
+            }
+        }
+        val retainedIndex = SongDuplicateIndex(includeLocalMetadataFallback = true).apply {
+            retained.forEach(::add)
+        }
+        val newSongs = scannedSongs.filter { scannedSong ->
+            if (retainedIndex.contains(scannedSong)) {
+                false
+            } else {
+                retainedIndex.add(scannedSong)
+                true
+            }
+        }
+        return (newSongs + retained).toMutableList()
     }
 
     private fun mergeLocalTemporalMetadata(
@@ -1142,14 +1182,13 @@ class LocalPlaylistRepository private constructor(
         scannedSongs: List<SongItem>
     ): List<SongItem> {
         if (existingSongs.isEmpty() || scannedSongs.isEmpty()) return scannedSongs
+        val existingSongIndex = SongMatchIndex(
+            songs = existingSongs,
+            includeLocalMetadataFallback = true
+        )
         return scannedSongs.map { scannedSong ->
-            val existingSong = existingSongs.firstOrNull { existing ->
-                hasExistingSong(
-                    existingSongs = listOf(existing),
-                    candidate = scannedSong,
-                    includeLocalMetadataFallback = true
-                )
-            } ?: return@map scannedSong
+            val existingSong = existingSongIndex.firstMatch(scannedSong)
+                ?: return@map scannedSong
             scannedSong.copy(
                 addedAt = if (scannedSong.logicalCreatedAtMs != null) {
                     scannedSong.addedAt
@@ -1238,11 +1277,16 @@ class LocalPlaylistRepository private constructor(
 
         return coroutineScope {
             val hydrateDispatcher = Dispatchers.IO.limitedParallelism(4)
-            songs.map { song ->
-                async(hydrateDispatcher) {
-                    LocalAudioImportManager.hydrateLocalSongMetadata(context, song)
-                }
-            }.awaitAll()
+            val hydrated = ArrayList<SongItem>(songs.size)
+            // 大歌单按批次调度，避免数万首歌曲同时保留 Deferred 和结果对象
+            songs.chunked(LOCAL_METADATA_HYDRATE_BATCH_SIZE).forEach { batch ->
+                hydrated += batch.map { song ->
+                    async(hydrateDispatcher) {
+                        LocalAudioImportManager.hydrateLocalSongMetadata(context, song)
+                    }
+                }.awaitAll()
+            }
+            hydrated
         }
     }
 
@@ -1308,6 +1352,41 @@ class LocalPlaylistRepository private constructor(
             if (song.identity() in identities) return true
             val keys = LocalSongSupport.localDuplicateKeys(song, includeLocalMetadataFallback)
             return keys.any(localKeys::contains)
+        }
+    }
+
+    /** 按来源列表顺序匹配歌曲，避免每个候选都重新扫描整张列表 */
+    private class SongMatchIndex(
+        private val songs: List<SongItem>,
+        private val includeLocalMetadataFallback: Boolean
+    ) {
+        private val identityToIndex = HashMap<SongIdentity, Int>()
+        private val localKeyToIndex = HashMap<String, Int>()
+
+        init {
+            songs.forEachIndexed { index, song ->
+                identityToIndex.putIfAbsent(song.identity(), index)
+                LocalSongSupport.localDuplicateKeys(
+                    song = song,
+                    includeMetadataFallback = includeLocalMetadataFallback
+                ).forEach { key ->
+                    localKeyToIndex.putIfAbsent(key, index)
+                }
+            }
+        }
+
+        fun firstMatch(candidate: SongItem): SongItem? {
+            var matchIndex = identityToIndex[candidate.identity()] ?: Int.MAX_VALUE
+            LocalSongSupport.localDuplicateKeys(
+                song = candidate,
+                includeMetadataFallback = includeLocalMetadataFallback
+            ).forEach { key ->
+                val index = localKeyToIndex[key] ?: return@forEach
+                if (index < matchIndex) {
+                    matchIndex = index
+                }
+            }
+            return songs.getOrNull(matchIndex)
         }
     }
 
@@ -1786,9 +1865,15 @@ class LocalPlaylistRepository private constructor(
                     if (playlist.id != playlistId) return@map playlist
                     val byIdentity = playlist.songs.associateBy { it.identity() }
                     val ordered = newOrder.mapNotNull { byIdentity[it] }.toMutableList()
+                    val orderedIndex = SongDuplicateIndex(
+                        includeLocalMetadataFallback = false
+                    ).apply {
+                        ordered.forEach(::add)
+                    }
                     playlist.songs.forEach { song ->
-                        if (ordered.none { it.sameIdentityAs(song) }) {
+                        if (!orderedIndex.contains(song)) {
                             ordered += song
+                            orderedIndex.add(song)
                         }
                     }
                     val modifiedAt = System.currentTimeMillis()
@@ -1948,11 +2033,13 @@ class LocalPlaylistRepository private constructor(
             )
             commitPlaylistMutation {
                 val currentLocalFiles = LocalFilesPlaylist.firstOrNull(_playlists.value, context)
-                val normalizedSongs = orderLocalFilesSongs(
-                    mergeLocalTemporalMetadata(
-                        existingSongs = currentLocalFiles?.songs.orEmpty(),
-                        scannedSongs = scannedSongs
-                    )
+                val mergedScannedSongs = mergeLocalTemporalMetadata(
+                    existingSongs = currentLocalFiles?.songs.orEmpty(),
+                    scannedSongs = scannedSongs
+                )
+                val normalizedSongs = mergeLocalFilesScanPreservingDisplayOrder(
+                    existingSongs = currentLocalFiles?.songs.orEmpty(),
+                    scannedSongs = mergedScannedSongs
                 )
                 if (
                     normalizedSongs.isEmpty() &&
@@ -2035,9 +2122,8 @@ class LocalPlaylistRepository private constructor(
                         includeLocalMetadataFallback = true
                     )
                     if (newSongs.isEmpty()) {
-                        val normalizedSongs = orderLocalFilesSongs(existingSongs)
-                        if (normalizedSongs == playlist.songs) playlist else playlist.copy(
-                            songs = normalizedSongs.toMutableList(),
+                        if (existingSongs == playlist.songs) playlist else playlist.copy(
+                            songs = existingSongs,
                             modifiedAt = now,
                             songOrderVersion = DISPLAY_ORDER_SONG_ORDER_VERSION
                         )
@@ -2048,7 +2134,9 @@ class LocalPlaylistRepository private constructor(
                             preserveScannedSourceAddedAt = preserveScannedSourceAddedAt
                         )
                         addedSongs = toAdd
-                        val normalizedSongs = orderLocalFilesSongs(existingSongs + toAdd)
+                        // 扫描结果已经按用户看到的顺序排列，新歌置于歌单最前
+                        // 既保留批次顺序，也不重排用户已经手动调整的旧歌
+                        val normalizedSongs = mergeNewSongsFirst(existingSongs, toAdd)
                         playlist.copy(
                             songs = normalizedSongs.toMutableList(),
                             modifiedAt = now,
@@ -2069,14 +2157,13 @@ class LocalPlaylistRepository private constructor(
         if (existingSongs.isEmpty() || scannedSongs.isEmpty()) {
             return existingSongs.toMutableList()
         }
+        val scannedSongIndex = SongMatchIndex(
+            songs = scannedSongs,
+            includeLocalMetadataFallback = true
+        )
         return existingSongs.mapTo(mutableListOf()) existingSong@{ existingSong ->
-            val scannedSong = scannedSongs.firstOrNull { candidate ->
-                hasExistingSong(
-                    existingSongs = listOf(existingSong),
-                    candidate = candidate,
-                    includeLocalMetadataFallback = true
-                )
-            } ?: return@existingSong existingSong
+            val scannedSong = scannedSongIndex.firstMatch(existingSong)
+                ?: return@existingSong existingSong
             mergeSongMetadataForPersistence(existingSong, scannedSong)
         }
     }
@@ -3533,6 +3620,7 @@ class LocalPlaylistRepository private constructor(
 
     companion object {
         const val MAX_PLAYLIST_NAME_LENGTH = 10
+        private const val LOCAL_METADATA_HYDRATE_BATCH_SIZE = 48
         private const val LOCAL_METADATA_REFRESH_BATCH_SIZE = 48
         private const val LOCAL_METADATA_REFRESH_PARALLELISM = 4
         private const val LOCAL_DURATION_REFRESH_BATCH_SIZE = 64

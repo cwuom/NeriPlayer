@@ -48,6 +48,57 @@ import kotlin.system.measureTimeMillis
 
 class ManagedDownloadStorageMigrationCompatTest {
 
+    @Test
+    fun `migration pending artifact detector accepts legacy root and tmp names`() {
+        fun entry(name: String) = ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/downloads/$name",
+            mediaUri = "file:///downloads/$name",
+            localFilePath = "/downloads/$name",
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+
+        val legacyPendingAudio = entry("song.mp3.npdl_pending.legacy.pending")
+        val temporaryPendingMetadata = entry("song.mp3.npmeta.pending.json")
+        val formalMetadata = entry("song.mp3.npmeta.json")
+        val names = ManagedDownloadMigrationEntryCollector.pendingArtifactNames(
+            rootEntries = listOf(legacyPendingAudio, formalMetadata),
+            temporaryEntries = listOf(temporaryPendingMetadata)
+        )
+
+        assertEquals(
+            listOf(legacyPendingAudio.name, temporaryPendingMetadata.name),
+            names
+        )
+        assertTrue(
+            ManagedDownloadMigrationEntryCollector.hasPendingArtifacts(
+                rootEntries = listOf(legacyPendingAudio),
+                temporaryEntries = emptyList()
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationEntryCollector.hasPendingArtifacts(
+                rootEntries = listOf(formalMetadata),
+                temporaryEntries = emptyList()
+            )
+        )
+    }
+
+    @Test
+    fun `migration pending artifact detector ignores ordinary names containing marker`() {
+        val ordinary = ManagedDownloadStorage.StoredEntry(
+            name = "marker.npdl_pending.mp3",
+            reference = "/downloads/marker.npdl_pending.mp3",
+            mediaUri = "file:///downloads/marker.npdl_pending.mp3",
+            localFilePath = "/downloads/marker.npdl_pending.mp3",
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+
+        assertFalse(ManagedDownloadMigrationEntryCollector.isPendingArtifact(ordinary))
+    }
+
     private fun deleteFile(reference: TrustedManagedRef): StorageMutationResult {
         val fileReference = reference.reference as? StorageReference.FileRef
             ?: return StorageMutationResult.Unsupported("file reference required")
@@ -110,6 +161,25 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertNotEquals(beforeRestart, afterRestart)
         assertTrue(beforeRestart.endsWith(".pending"))
         assertTrue(afterRestart.endsWith(".pending"))
+    }
+
+    @Test
+    fun `song title containing pending marker is not treated as an artifact`() {
+        val names = ManagedDownloadPendingAudioWriteNames()
+        val title = "marker${moe.ouom.neriplayer.core.download.storage.PENDING_AUDIO_WRITE_MARKER}.mp3"
+
+        assertFalse(names.isPendingAudioWriteName(title))
+        assertEquals(title, names.logicalAudioName(title))
+        assertFalse(
+            ManagedDownloadStorage.StoredEntry(
+                name = title,
+                reference = "/downloads/$title",
+                mediaUri = "file:///downloads/$title",
+                localFilePath = "/downloads/$title",
+                sizeBytes = 1L,
+                lastModifiedMs = 1L
+            ).isPendingAudioWrite
+        )
     }
 
     @Test

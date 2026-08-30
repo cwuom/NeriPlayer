@@ -1477,6 +1477,49 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
+    fun `scanned metadata merge keeps the first matching scanned alias`() = runTest {
+        val existing = legacyLocalSong(index = 720, name = "same")
+        val firstAlias = legacyLocalSong(index = 721, name = "same").copy(
+            customName = "first alias"
+        )
+        val secondAlias = legacyLocalSong(index = 720, name = "same").copy(
+            customName = "identity alias"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "scanned_metadata_alias_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+        assertEquals(
+            1,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(existing))
+        )
+
+        assertEquals(
+            0,
+            repository.addScannedSongsToLocalFilesPlaylistAndCount(
+                listOf(firstAlias, secondAlias)
+            )
+        )
+
+        val stored = repository.playlists.value
+            .single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+            .songs
+            .single()
+        assertEquals("first alias", stored.customName)
+    }
+
+    @Test
     fun `scanned local song keeps source creation time and records membership time`() = runTest {
         val sourceSong = localSong(index = 703, name = "old source").copy(
             addedAt = 1L,
@@ -1527,7 +1570,7 @@ class LocalPlaylistRepositoryTest {
     }
 
     @Test
-    fun `local files playlist orders manually added songs by logical creation time`() = runTest {
+    fun `scanned local files preserve the visible discovery order`() = runTest {
         val older = localSong(index = 705, name = "older").copy(
             addedAt = 10L,
             logicalCreatedAtMs = 10L,
@@ -1557,7 +1600,84 @@ class LocalPlaylistRepositoryTest {
         repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
 
         assertEquals(
-            listOf(newer.id, older.id),
+            listOf(older.id, newer.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `single local import is placed first even when source file is old`() = runTest {
+        val old = localSong(index = 709, name = "old").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newlyImported = localSong(index = 710, name = "new").copy(
+            addedAt = 1L,
+            logicalCreatedAtMs = 1L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_single_import_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(old))
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(newlyImported))
+
+        assertEquals(
+            listOf(newlyImported.id, old.id),
+            repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
+                .songs
+                .map { it.id }
+        )
+    }
+
+    @Test
+    fun `batch scanned local import preserves discovery order`() = runTest {
+        val older = localSong(index = 711, name = "older").copy(
+            addedAt = 10L,
+            logicalCreatedAtMs = 10L,
+            createdAtConfidence = "EXACT"
+        )
+        val newer = localSong(index = 712, name = "newer").copy(
+            addedAt = 20L,
+            logicalCreatedAtMs = 20L,
+            createdAtConfidence = "EXACT"
+        )
+        val repository = LocalPlaylistRepository.createForTest(
+            context = mockContext(),
+            file = File(tempFolder.root, "local_files_batch_import_order.json"),
+            normalizePlaylists = { playlists ->
+                if (playlists.any { it.id == LocalFilesPlaylist.SYSTEM_ID }) {
+                    playlists
+                } else {
+                    playlists + LocalPlaylist(
+                        id = LocalFilesPlaylist.SYSTEM_ID,
+                        name = "Local Files"
+                    )
+                }
+            },
+            autoSyncEnabled = false
+        )
+
+        repository.addScannedSongsToLocalFilesPlaylistAndCount(listOf(older, newer))
+
+        assertEquals(
+            listOf(older.id, newer.id),
             repository.playlists.value.single { it.id == LocalFilesPlaylist.SYSTEM_ID }
                 .songs
                 .map { it.id }
@@ -1780,6 +1900,20 @@ class LocalPlaylistRepositoryTest {
             coverUrl = null,
             mediaUri = path,
             localFilePath = path
+        )
+    }
+
+    private fun legacyLocalSong(index: Long, name: String): SongItem {
+        return SongItem(
+            id = index,
+            name = name,
+            artist = "artist",
+            album = LocalSongSupport.LOCAL_ALBUM_IDENTITY,
+            albumId = 0L,
+            durationMs = 269_000L,
+            coverUrl = null,
+            localFileName = "$name.mp3",
+            channelId = "local"
         )
     }
 

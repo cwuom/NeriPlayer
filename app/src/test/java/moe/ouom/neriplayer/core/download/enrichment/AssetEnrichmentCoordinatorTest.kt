@@ -5,12 +5,16 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -151,6 +155,30 @@ class AssetEnrichmentCoordinatorTest {
     }
 
     @Test
+    fun `active flow remains true until enrichment completion`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 1)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val job = coordinator.enqueue("active-flow") {
+            started.complete(Unit)
+            release.await()
+        }
+
+        withTimeout(2_000L) { started.await() }
+        assertTrue(coordinator.hasActiveJobs.value)
+        release.complete(Unit)
+        withTimeout(2_000L) { job.join() }
+        withTimeout(2_000L) {
+            while (coordinator.hasActiveJobs.value) {
+                delay(10L)
+            }
+        }
+        assertTrue(!coordinator.hasActiveJobs.value)
+        scope.cancel()
+    }
+
+    @Test
     fun `completion hook releases ownership once for every terminal outcome`() = runBlocking {
         val ignoredFailures = AtomicInteger(0)
         val exceptionHandler = CoroutineExceptionHandler { _, _ ->
@@ -197,6 +225,70 @@ class AssetEnrichmentCoordinatorTest {
         withTimeout(2_000L) { cancelledJob.join() }
         assertEquals(1, cancellationReleases.get())
         assertEquals(1, ignoredFailures.get())
+        scope.cancel()
+    }
+
+    @Test
+    fun `cancelAll stops every active enrichment and exposes active operation ids`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val jobs = listOf("cancel-one", "cancel-two").map { operationId ->
+            coordinator.enqueue(operationId) {
+                started.complete(Unit)
+                release.await()
+            }
+        }
+
+        withTimeout(2_000L) {
+            while (coordinator.activeOperationIds().size != 2) {
+                delay(10L)
+            }
+        }
+        assertEquals(setOf("cancel-one", "cancel-two"), coordinator.activeOperationIds())
+        assertEquals(2, coordinator.cancelAll("clear requested"))
+        jobs.forEach { job -> job.cancelAndJoin() }
+        withTimeout(2_000L) {
+            while (coordinator.activeCount() != 0) {
+                delay(10L)
+            }
+        }
+        assertTrue(coordinator.activeOperationIds().isEmpty())
+        release.cancel()
+        started.cancel()
+        scope.cancel()
+    }
+
+    @Test
+    fun `cancelAllAndJoin waits until every enrichment releases file ownership`() = runBlocking {
+        val scope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val coordinator = AssetEnrichmentCoordinator(scope, parallelism = 2)
+        val started = AtomicInteger(0)
+        val jobs = listOf("join-one", "join-two").map { operationId ->
+            coordinator.enqueue(operationId) {
+                started.incrementAndGet()
+                try {
+                    awaitCancellation()
+                } finally {
+                    withContext(NonCancellable) { delay(20L) }
+                }
+            }
+        }
+
+        withTimeout(2_000L) {
+            while (started.get() != jobs.size) {
+                delay(10L)
+            }
+        }
+        assertTrue(
+            coordinator.cancelAllAndJoin(
+                reason = "clear requested",
+                timeoutMs = 2_000L
+            )
+        )
+        assertTrue(jobs.all(Job::isCompleted))
+        assertTrue(coordinator.activeOperationIds().isEmpty())
         scope.cancel()
     }
 }

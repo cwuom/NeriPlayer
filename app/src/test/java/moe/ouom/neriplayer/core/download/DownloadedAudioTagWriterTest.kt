@@ -204,6 +204,38 @@ class DownloadedAudioTagWriterTest {
     }
 
     @Test
+    fun `roleless covr containers skip loading existing pictures`() {
+        val sidecars = AudioDownloadManager.DownloadedSidecarReferences(
+            coverReference = "content://covers/song.jpg"
+        )
+
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "m4a"
+            )
+        )
+        assertFalse(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "M4B"
+            )
+        )
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars,
+                audioExtension = "flac"
+            )
+        )
+        // 未知扩展名继续采用历史上的保守处理
+        assertTrue(
+            MetadataDownloadedAudioTagWriter.shouldLoadEmbeddedPictures(
+                sidecarReferences = sidecars
+            )
+        )
+    }
+
+    @Test
     fun `unchanged verified tags do not require a second TagLib parse`() {
         val song = testSong(name = "Song", artist = "Artist")
         val propertyMap: PropertyMap = hashMapOf(

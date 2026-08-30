@@ -127,7 +127,46 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `terminal request does not let an incomplete journal block startup`() {
+    fun `settings preserves migration ui after missing or finished work row`() {
+        assertTrue(
+            shouldPreserveMigrationUiAfterWorkInfo(
+                workInfoState = null,
+                requestAutoResume = true,
+                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+            )
+        )
+        assertTrue(
+            shouldPreserveMigrationUiAfterWorkInfo(
+                workInfoState = androidx.work.WorkInfo.State.SUCCEEDED,
+                requestAutoResume = false,
+                journalPhase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED
+            )
+        )
+        assertFalse(
+            shouldPreserveMigrationUiAfterWorkInfo(
+                workInfoState = androidx.work.WorkInfo.State.FAILED,
+                requestAutoResume = false,
+                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+            )
+        )
+        assertTrue(
+            shouldResumePersistedMigrationAfterWorkInfo(
+                workInfoState = androidx.work.WorkInfo.State.FAILED,
+                requestAutoResume = false,
+                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED
+            )
+        )
+        assertFalse(
+            shouldResumePersistedMigrationAfterWorkInfo(
+                workInfoState = androidx.work.WorkInfo.State.RUNNING,
+                requestAutoResume = true,
+                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED
+            )
+        )
+    }
+
+    @Test
+    fun `terminal request with incomplete journal remains recoverable`() {
         val request = ManagedMigrationRequest(
             workId = "terminal-work",
             fromDirectoryUri = "content://source",
@@ -156,7 +195,22 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
             )
         )
 
-        assertFalse(shouldBlockStartupForMigrationRecovery(request, journal))
+        assertTrue(shouldBlockStartupForMigrationRecovery(request, journal))
+    }
+
+    @Test
+    fun `terminal request without a journal remains stopped`() {
+        val request = ManagedMigrationRequest(
+            workId = "terminal-work",
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1,
+            autoResume = false
+        )
+
+        assertFalse(shouldBlockStartupForMigrationRecovery(request, null))
     }
 
     @Test
@@ -236,6 +290,27 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 persisted = null,
                 fallback = fallback,
                 activeWorkId = "other-work"
+            )
+        )
+    }
+
+    @Test
+    fun `active work binding accepts uuid case and surrounding whitespace`() {
+        val workId = "22222222-2222-2222-2222-222222222222"
+        val persisted = ManagedMigrationRequest(
+            workId = workId,
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+
+        assertTrue(
+            shouldBindMigrationRequestToActiveWork(
+                persisted = persisted,
+                fallback = null,
+                activeWorkId = "  ${workId.uppercase()}  "
             )
         )
     }

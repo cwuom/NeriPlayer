@@ -25,7 +25,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * returns the complete migration input that was committed before enqueue
+     * 返回入队前已经持久化的完整迁移输入
      */
     fun readRequest(): ManagedMigrationRequest? {
         val raw = runCatching {
@@ -43,7 +43,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         }
     }
 
-    // commit is intentional because the process may die before WorkManager enqueue
+    // 这里必须同步提交，因为进程可能在 WorkManager 入队前被终止
     @SuppressLint("UseKtx")
     fun recordRequest(request: ManagedMigrationRequest): ManagedMigrationRequest {
         return synchronized(requestMutationLock) {
@@ -52,9 +52,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * writes a request only when the request read by the caller is still
-     * current. This prevents a replaced WorkManager worker from restoring its
-     * old id over the new durable request
+     * 只有调用方读到的请求仍然是当前请求时才写回
+     * 避免被替换的 WorkManager Worker 用旧编号覆盖新的持久请求
      */
     @SuppressLint("UseKtx")
     fun recordRequestIfCurrent(
@@ -66,7 +65,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             val expected = expectedWorkId?.trim()?.takeIf(String::isNotBlank)
             if (
                 (expected == null && current != null) ||
-                (expected != null && current?.workId != expected)
+                (expected != null && !migrationWorkIdsEqual(current?.workId, expected))
             ) {
                 return@synchronized false
             }
@@ -76,14 +75,23 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * terminal failure must not be restarted forever, while its journal remains
-     * available for an explicit retry from the settings screen
+     * 终态失败不能无限自动重启，但要保留日志供设置页明确重试
      */
     fun markRequestTerminal(workId: String): Boolean {
         return synchronized(requestMutationLock) {
             val current = readRequest() ?: return@synchronized false
-            if (current.workId != workId) return@synchronized false
+            if (!migrationWorkIdsEqual(current.workId, workId)) return@synchronized false
             writeRequestLocked(current.copy(autoResume = false))
+            true
+        }
+    }
+
+    /** 让失败的迁移请求可以被启动流程和设置界面继续恢复 */
+    fun markRequestRetryable(workId: String): Boolean {
+        return synchronized(requestMutationLock) {
+            val current = readRequest() ?: return@synchronized false
+            if (!migrationWorkIdsEqual(current.workId, workId)) return@synchronized false
+            writeRequestLocked(current.copy(autoResume = true))
             true
         }
     }
@@ -93,15 +101,19 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         return synchronized(requestMutationLock) {
             if (workId != null) {
                 val current = readRequest()
-                if (current != null && current.workId != workId) return@synchronized true
+                if (
+                    current != null &&
+                        !migrationWorkIdsEqual(current.workId, workId)
+                ) {
+                    return@synchronized true
+                }
             }
             preferences.edit().remove(ACTIVE_REQUEST_KEY).commit()
         }
     }
 
     /**
-     * clears all migration credentials in one SharedPreferences commit after the
-     * target has been verified and the catalog scan has been published
+     * 目标校验完成且 catalog 扫描发布后，用一次 SharedPreferences 提交清除迁移凭据
      */
     @SuppressLint("UseKtx")
     fun clearCompleted(workIds: Collection<String>): Boolean {
@@ -111,7 +123,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * clears migration credentials only while the caller still owns the active request
+     * 只有调用方仍拥有活动请求时才清除迁移凭据
      */
     @SuppressLint("UseKtx")
     fun clearCompletedIfCurrent(
@@ -125,10 +137,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * performs the final side effect while the completion owner is still held
+     * 在完成所有权仍被持有时执行最后的副作用
      *
-     * A replacement request cannot be committed between the ownership check,
-     * releasing the old tree grant, and clearing the completed checkpoint
+     * 所有权检查、释放旧目录授权和清除已完成检查点之间不能插入替代请求
      */
     @SuppressLint("UseKtx")
     fun clearCompletedAndRunIfCurrent(
@@ -157,15 +168,20 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                 copyReceiptKeysFor(workId).forEach(editor::remove)
                 editor.remove(copyReceiptIndexKeyFor(workId))
             }
-            // only the worker that owns the active request may clear it.
-            // checkpointWorkId deliberately remains addressable for old
-            // progress and receipt cleanup, but is not an ownership token
-            if (currentRequest == null || currentRequest.workId in normalizedIds) {
+            // 只有拥有活动请求的 Worker 可以清除它
+            // checkpointWorkId 仍保留给旧进度和凭据清理使用，但不能当作所有权令牌
+            if (
+                currentRequest == null ||
+                    containsEquivalentWorkId(currentRequest.workId, normalizedIds)
+            ) {
                 editor.remove(ACTIVE_REQUEST_KEY)
             }
             // 只清理属于本次已验证迁移的替换事务，不能让并发或旧事务的
             // journal 在另一项迁移完成时被误删
-            if (currentJournal == null || currentJournal.workId in normalizedIds) {
+            if (
+                currentJournal == null ||
+                    containsEquivalentWorkId(currentJournal.workId, normalizedIds)
+            ) {
                 editor.remove(ACTIVE_REPLACEMENT_JOURNAL_KEY)
             }
             return editor.commit()
@@ -180,7 +196,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * persists a source count only while this worker still owns the request
+     * 只有当前 Worker 仍拥有请求时才持久化源文件数量
      */
     @SuppressLint("UseKtx")
     fun recordMinimumAudioCountIfCurrent(
@@ -194,7 +210,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         }
     }
 
-    // KTX edit discards commit's boolean result, which is required for retry decisions
+    // KTX 的 edit 会丢掉 commit 返回值，而重试判断需要这个结果
     @SuppressLint("UseKtx")
     fun recordMinimumAudioCount(workId: String, minimumAudioCount: Int): Int {
         return synchronized(requestMutationLock) {
@@ -278,8 +294,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * reads the last durable migration progress snapshot. A missing or malformed
-     * optional progress record must not invalidate the file migration journal
+     * 读取最后一份持久迁移进度快照，缺失或损坏的可选进度记录不能使文件迁移日志失效
      */
     fun readProgress(workId: String): ManagedDownloadStorage.MigrationProgress? {
         val raw = runCatching {
@@ -291,8 +306,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * persists a complete progress snapshot so a restarted worker can explain
-     * its current phase before it touches either storage root
+     * 持久化完整进度快照，让重启后的 Worker 在访问任一存储根前就能恢复当前阶段
      */
     @SuppressLint("UseKtx")
     fun recordProgress(
@@ -338,7 +352,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * returns copy receipts that survived a process restart
+     * 返回进程重启后仍然保留的复制凭据
      */
     fun readCopyReceipts(workId: String): List<ManagedMigrationCopyReceipt> {
         val normalizedWorkId = workId.trim()
@@ -353,8 +367,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                 indexedSuffixes != null &&
                     indexedReceipts?.size == indexedSuffixes.size
             ) {
-                // an empty, valid index is authoritative; scanning all preferences
-                // here would make every completed migration pay a global lookup
+                // 有效的空索引本身就是权威结果，这里再扫描所有偏好会让每次完成迁移都付出全局查找成本
                 indexedReceipts.orEmpty()
             } else {
                 scanCopyReceiptKeys(normalizedWorkId)
@@ -396,9 +409,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * commits a bounded batch of receipts with one index rewrite. The receipt
-     * payloads remain individually addressable so an interrupted batch loses
-     * at most the current batch, never an already committed entry
+     * 用一次索引改写提交有界批次的复制凭据
+     * 凭据载荷仍可逐项读取，批次中断时最多丢失当前批次，不会影响已提交条目
      */
     @SuppressLint("UseKtx")
     fun recordCopyReceipts(
@@ -510,9 +522,8 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * Returns the active replacement journal, if one was durably written.
-     * Unknown fields are ignored so journals written by a newer build remain
-     * readable after a rollback.
+     * 返回已经持久化的活动替换日志
+     * 忽略未知字段，让新版本写入的日志在回滚版本中仍可读取
      */
     fun readReplacementJournal(): ManagedMigrationReplacementJournal? {
         val raw = runCatching {
@@ -530,7 +541,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         }
     }
 
-    // commit is intentional because a killed worker must leave a complete plan
+    // 这里必须同步提交，被终止的 Worker 也要留下完整计划
     @SuppressLint("UseKtx")
     fun recordReplacementJournal(
         journal: ManagedMigrationReplacementJournal
@@ -568,7 +579,16 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
 
     private fun isRequestCurrentLocked(workId: String): Boolean {
         val normalizedWorkId = workId.trim().takeIf(String::isNotBlank) ?: return false
-        return readRequest()?.workId == normalizedWorkId
+        return migrationWorkIdsEqual(readRequest()?.workId, normalizedWorkId)
+    }
+
+    private fun containsEquivalentWorkId(
+        workId: String?,
+        candidates: Collection<String>
+    ): Boolean {
+        return candidates.any { candidate ->
+            migrationWorkIdsEqual(workId, candidate)
+        }
     }
 
     @SuppressLint("UseKtx")
@@ -644,7 +664,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         ) {
             return indexedKeys
         }
-        // an absent or incomplete index can only be recovered by the legacy scan
+        // 缺失或不完整的索引只能交给兼容扫描恢复
         return indexedKeys + scanCopyReceiptKeys(normalizedWorkId)
     }
 
@@ -689,8 +709,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     /**
-     * returns null for an absent or malformed index so old receipt keys remain
-     * recoverable through the compatibility scan
+     * 索引缺失或损坏时返回 null，让旧凭据键继续通过兼容扫描恢复
      */
     private fun readIndexedCopyReceiptSuffixes(workId: String): Set<String>? {
         val raw = runCatching {
@@ -1055,8 +1074,7 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         val sourceEntriesComplete = if (root.has("sourceEntriesComplete")) {
             root.optBoolean("sourceEntriesComplete", false)
         } else {
-            // v2 journals written before the explicit marker can still infer
-            // completeness when they contain a non-empty manifest
+            // 显式标记出现前写入的 v2 日志，只要清单非空仍可推断为完整
             sourceEntryCount > 0 || sourceEntries.isNotEmpty() || deletedSourceAudioCount > 0
         }
         return ManagedMigrationReplacementJournal(

@@ -32,7 +32,7 @@ sealed interface StorageReference {
     data class SafRef(val uri: Uri) : StorageReference
 }
 
-/** marks a reference whose identity came from a managed root operation */
+ /** 标记身份来自受管根目录 operation 的引用 */
 class TrustedManagedRef internal constructor(
     val reference: StorageReference,
     val externalReference: String = reference.externalReference()
@@ -344,9 +344,11 @@ internal class FileStorageBackend(
             ?: return@withContext StorageMutationResult.Unsupported("file reference required")
         val file = resolve(fileReference)
             ?: return@withContext StorageMutationResult.OutOfScope
-        if (!file.exists()) StorageMutationResult.Missing
-        else if (file.deleteRecursively()) StorageMutationResult.Deleted
-        else StorageMutationResult.ProviderFailure(IllegalStateException("delete failed"))
+        FileStorageMutationLocks.withTargetLock(file) {
+            if (!file.exists()) StorageMutationResult.Missing
+            else if (file.deleteRecursively()) StorageMutationResult.Deleted
+            else StorageMutationResult.ProviderFailure(IllegalStateException("delete failed"))
+        }
     }
 
     override suspend fun rename(
@@ -360,27 +362,31 @@ internal class FileStorageBackend(
         }
         val source = resolve(fileReference)
             ?: return@withContext StorageRenameResult.OutOfScope
-        if (!source.exists()) return@withContext StorageRenameResult.Missing
         val target = File(source.parentFile, displayName)
-        return@withContext try {
-            if (target.exists() && target.canonicalFile != source.canonicalFile) {
-                return@withContext StorageRenameResult.ProviderFailure(
-                    IllegalStateException("rename target already exists")
-                )
+        return@withContext FileStorageMutationLocks.withTargetLocks(source, target) {
+            try {
+                if (!source.exists()) {
+                    return@withTargetLocks StorageRenameResult.Missing
+                }
+                if (target.exists() && target.canonicalFile != source.canonicalFile) {
+                    return@withTargetLocks StorageRenameResult.ProviderFailure(
+                        IllegalStateException("rename target already exists")
+                    )
+                }
+                if (!source.renameTo(target)) {
+                    StorageRenameResult.ProviderFailure(
+                        IllegalStateException("file rename was not confirmed")
+                    )
+                } else {
+                    StorageRenameResult.Renamed(toStat(target))
+                }
+            } catch (_: SecurityException) {
+                StorageRenameResult.PermissionLost
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                StorageRenameResult.ProviderFailure(error)
             }
-            if (!source.renameTo(target)) {
-                StorageRenameResult.ProviderFailure(
-                    IllegalStateException("file rename was not confirmed")
-                )
-            } else {
-                StorageRenameResult.Renamed(toStat(target))
-            }
-        } catch (_: SecurityException) {
-            StorageRenameResult.PermissionLost
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Throwable) {
-            StorageRenameResult.ProviderFailure(error)
         }
     }
 
@@ -463,12 +469,11 @@ internal class FileStorageBackend(
 
 internal object FileStorageMutationLocks {
     private const val STRIPE_COUNT = 64
+    private const val BLOCKING_LOCK_TIMEOUT_NS = 2_000_000_000L
     private val locks = Array(STRIPE_COUNT) { Mutex() }
 
     fun forTarget(target: File): Mutex {
-        val key = runCatching { target.canonicalPath }
-            .getOrElse { target.absolutePath }
-        return locks[Math.floorMod(key.hashCode(), STRIPE_COUNT)]
+        return locks[stripeFor(target)]
     }
 
     suspend fun <T> withTargetLock(
@@ -476,6 +481,76 @@ internal object FileStorageMutationLocks {
         block: suspend () -> T
     ): T {
         return forTarget(target).withLock { block() }
+    }
+
+    suspend fun <T> withTargetLocks(
+        first: File,
+        second: File,
+        block: suspend () -> T
+    ): T {
+        val firstStripe = stripeFor(first)
+        val secondStripe = stripeFor(second)
+        if (firstStripe == secondStripe) {
+            return withTargetLock(first, block)
+        }
+        val (lower, higher) = if (firstStripe < secondStripe) {
+            first to second
+        } else {
+            second to first
+        }
+        return withTargetLock(lower) {
+            withTargetLock(higher, block)
+        }
+    }
+
+    fun <T> withTargetLockBlocking(
+        target: File,
+        block: () -> T
+    ): T {
+        val lock = forTarget(target)
+        val deadline = System.nanoTime() + BLOCKING_LOCK_TIMEOUT_NS
+        var parkNanos = 1_000L
+        while (!lock.tryLock()) {
+            if (Thread.currentThread().isInterrupted) {
+                throw InterruptedException("文件目标锁等待被中断: ${target.name}")
+            }
+            if (System.nanoTime() >= deadline) {
+                throw IllegalStateException("文件目标锁等待超时: ${target.name}")
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(parkNanos)
+            parkNanos = (parkNanos shl 1).coerceAtMost(1_000_000L)
+        }
+        return try {
+            block()
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    fun <T> withTargetLocksBlocking(
+        first: File,
+        second: File,
+        block: () -> T
+    ): T {
+        val firstStripe = stripeFor(first)
+        val secondStripe = stripeFor(second)
+        if (firstStripe == secondStripe) {
+            return withTargetLockBlocking(first, block)
+        }
+        val (lower, higher) = if (firstStripe < secondStripe) {
+            first to second
+        } else {
+            second to first
+        }
+        return withTargetLockBlocking(lower) {
+            withTargetLockBlocking(higher, block)
+        }
+    }
+
+    private fun stripeFor(target: File): Int {
+        val key = runCatching { target.canonicalPath }
+            .getOrElse { target.absolutePath }
+        return Math.floorMod(key.hashCode(), STRIPE_COUNT)
     }
 
 }
@@ -1943,7 +2018,7 @@ internal class SafStorageBackend(
 }
 
 /**
- * short-lived cache for successful parent-directory probes during write bursts
+ * 在连续写入期间暂存成功的父目录探测结果，缓存只保留很短时间
  */
 internal class SafParentDocumentCache<T>(
     private val validateIntervalMs: Long = SAF_PARENT_DOCUMENT_CACHE_VALIDATE_INTERVAL_MS,

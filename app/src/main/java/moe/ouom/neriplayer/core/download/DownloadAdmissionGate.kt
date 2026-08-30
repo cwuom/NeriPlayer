@@ -110,6 +110,23 @@ internal class DownloadAdmissionGate {
         }
     }
 
+    /** 调用方确认持久栅栏未激活后，只释放内存闸门让下一次重试取得新的所有者令牌 */
+    fun releaseFailedClear(token: ClearToken): Boolean {
+        require(token.ownsClear) { "clear token does not own the active clear" }
+        val released = synchronized(stateLock) {
+            if (activeClear === token.completion && generation == token.generation) {
+                activeClear = null
+                true
+            } else {
+                false
+            }
+        }
+        if (released) {
+            token.completion.complete(Unit)
+        }
+        return released
+    }
+
     private fun snapshot(): GateSnapshot = synchronized(stateLock) {
         GateSnapshot(
             completion = activeClear,
@@ -168,6 +185,35 @@ internal class DownloadClearVisibility {
 
         val displayFraction: Float
             get() = displayPercentage / 100f
+    }
+
+    /** 扫描结果中的条目都已检查，仍存在的条目计为待重试失败项 */
+    internal data class ArtifactProgress(
+        val completedItemCount: Int,
+        val totalItemCount: Int,
+        val failedItemCount: Int
+    )
+
+    internal fun resolveArtifactProgress(
+        artifactCount: Int,
+        scanComplete: Boolean,
+        cleanupFailed: Boolean = false
+    ): ArtifactProgress {
+        val normalizedCount = artifactCount.coerceAtLeast(0)
+        val resultComplete = scanComplete && !(cleanupFailed && normalizedCount == 0)
+        if (!resultComplete) {
+            val unknownCount = normalizedCount.coerceAtLeast(1)
+            return ArtifactProgress(
+                completedItemCount = 0,
+                totalItemCount = unknownCount,
+                failedItemCount = unknownCount
+            )
+        }
+        return ArtifactProgress(
+            completedItemCount = normalizedCount,
+            totalItemCount = normalizedCount,
+            failedItemCount = normalizedCount
+        )
     }
 
     private val stateLock = Any()
@@ -233,7 +279,8 @@ internal class DownloadClearVisibility {
         affectedItemCount: Int,
         failedItemCount: Int = 0,
         completedItemCount: Int? = null,
-        totalItemCount: Int? = null
+        totalItemCount: Int? = null,
+        resetItemWatermark: Boolean = false
     ) {
         synchronized(stateLock) {
             if (activeGeneration != token.generation) return
@@ -243,7 +290,8 @@ internal class DownloadClearVisibility {
                 affectedItemCount = affectedItemCount,
                 failedItemCount = failedItemCount,
                 completedItemCount = completedItemCount,
-                totalItemCount = totalItemCount
+                totalItemCount = totalItemCount,
+                resetItemWatermark = resetItemWatermark
             )
         }
     }
@@ -265,15 +313,30 @@ internal class DownloadClearVisibility {
         affectedItemCount: Int,
         failedItemCount: Int = 0,
         completedItemCount: Int? = null,
-        totalItemCount: Int? = null
+        totalItemCount: Int? = null,
+        resetItemWatermark: Boolean = false
     ) {
         val previous = _progress.value
-        val effectiveTotalItems = (totalItemCount ?: previous?.totalItemCount ?: 0)
+        val requestedTotalItems = (totalItemCount ?: previous?.totalItemCount ?: 0)
             .coerceAtLeast(0)
-        val effectiveCompletedItems = (completedItemCount
+        // 不完整的 Provider 扫描沿用旧分母，完整扫描才可以把分母收敛到残留数量
+        val keepItemWatermark = !resetItemWatermark && previous?.phase == phase
+        val previousTotalItems = previous?.totalItemCount ?: 0
+        val effectiveTotalItems = if (keepItemWatermark) {
+            maxOf(previousTotalItems, requestedTotalItems)
+        } else {
+            requestedTotalItems
+        }
+        val requestedCompletedItems = (completedItemCount
             ?: previous?.completedItemCount
             ?: 0)
             .coerceAtLeast(0)
+        val previousCompletedItems = previous?.completedItemCount ?: 0
+        val effectiveCompletedItems = (if (keepItemWatermark) {
+            maxOf(previousCompletedItems, requestedCompletedItems)
+        } else {
+            requestedCompletedItems
+        })
             .let { completed ->
                 if (effectiveTotalItems > 0) {
                     completed.coerceAtMost(effectiveTotalItems)
