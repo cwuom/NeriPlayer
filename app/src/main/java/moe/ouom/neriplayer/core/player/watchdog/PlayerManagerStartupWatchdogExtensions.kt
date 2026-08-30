@@ -45,6 +45,7 @@ internal fun PlayerManager.configureActivePlaybackCandidates(
     activePlaybackCommandSource = commandSource
     if (resetRecoveryAttempts) {
         startupStallRecoveryAttempts = 0
+        resetPlaybackRuntimeWatchdog(reason = "playback_candidates_configured")
     }
     resetPlaybackProgressAdvanceBaseline(activePlaybackResumePositionMs)
 }
@@ -55,6 +56,7 @@ internal fun PlayerManager.clearActivePlaybackCandidates() {
     activePlaybackResumePositionMs = 0L
     activePlaybackCommandSource = PlaybackCommandSource.LOCAL
     startupStallRecoveryAttempts = 0
+    resetPlaybackRuntimeWatchdog(reason = "playback_candidates_cleared")
     resetPlaybackProgressAdvanceBaseline(0L)
 }
 
@@ -265,7 +267,8 @@ private fun PlayerManager.recoverPlaybackStartupStall(requestToken: Long) {
     if (
         trySwitchToNextPlaybackCandidateForRecovery(
             reason = "startup_stall",
-            invalidateCurrentCache = false
+            invalidateCurrentCache = false,
+            expectedRequestToken = requestToken
         )
     ) {
         return
@@ -313,6 +316,7 @@ private fun PlayerManager.tryRecoverUsbExclusiveStartupStall(requestToken: Long)
     if (!isPlayerInitialized() || requestToken != playbackRequestToken) return false
     if (startupStallRecoveryAttempts > STARTUP_STALL_MAX_RECOVERY_ATTEMPTS) return false
     val positionMs = player.currentPosition.coerceAtLeast(0L)
+    resetPlaybackRuntimeWatchdog(reason = "usb_startup_recovery")
     resetPlaybackProgressAdvanceBaseline(positionMs)
     val scheduledRecovery = recoverUsbExclusivePlaybackIfUnhealthy(
         reason = "startup_zero_progress",
@@ -356,16 +360,17 @@ private fun PlayerManager.tryRestartSystemFallbackSinkForStartupStall(requestTok
 
 internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(
     reason: String,
-    invalidateCurrentCache: Boolean
+    invalidateCurrentCache: Boolean,
+    expectedRequestToken: Long = playbackRequestToken
 ): Boolean {
+    if (expectedRequestToken != playbackRequestToken) return false
     val nextIndex = activePlaybackUrlIndex + 1
     val candidate = activePlaybackCandidates.getOrNull(nextIndex) ?: return false
-    val requestToken = playbackRequestToken
-    if (requestToken != playbackRequestToken) return false
 
     val staleCacheKey = currentPlaybackCacheKeyForRecovery()
+    val resumePositionMs = player.currentPosition.coerceAtLeast(0L)
     activePlaybackUrlIndex = nextIndex
-    activePlaybackResumePositionMs = player.currentPosition.coerceAtLeast(0L)
+    activePlaybackResumePositionMs = resumePositionMs
     NPLogger.w(
         "NERI-PlayerManager",
         "switch playback candidate: reason=$reason, index=$nextIndex/${activePlaybackCandidates.size}, url=${candidate.url}"
@@ -373,8 +378,8 @@ internal fun PlayerManager.trySwitchToNextPlaybackCandidateForRecovery(
     mainScope.launch {
         applyPlaybackCandidate(
             candidate = candidate,
-            resumePositionMs = activePlaybackResumePositionMs,
-            requestToken = requestToken,
+            resumePositionMs = resumePositionMs,
+            requestToken = expectedRequestToken,
             staleCacheKey = staleCacheKey,
             invalidateCurrentCache = invalidateCurrentCache,
             recoveryReason = reason
@@ -440,6 +445,9 @@ private suspend fun PlayerManager.applyPlaybackCandidate(
     if (resumePositionMs > 0L) {
         player.seekTo(resumePositionMs)
         _playbackPositionMs.value = resumePositionMs
+    }
+    if (!recoveryReason.startsWith("runtime_stall")) {
+        resetPlaybackRuntimeWatchdog(reason = "candidate_applied")
     }
     resetPlaybackProgressAdvanceBaseline(resumePositionMs)
     clearPendingSeekPosition()

@@ -11,6 +11,8 @@ import moe.ouom.neriplayer.data.traffic.TrafficByteAccumulator
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.traffic.TrafficStatsRepository
 import moe.ouom.neriplayer.data.traffic.TrafficUsageSource
+import moe.ouom.neriplayer.core.player.resolver.netease.shouldUseNeteaseFlacResumableRange
+import java.io.IOException
 
 @UnstableApi
 internal class TrafficCountingHttpDataSource(
@@ -31,7 +33,12 @@ internal class TrafficCountingHttpDataSource(
 
     override fun open(dataSpec: DataSpec): Long {
         val nextAccumulator = newAccumulator()
-        val length = delegate.open(dataSpec)
+        val length = try {
+            delegate.open(dataSpec)
+        } catch (error: IOException) {
+            logNeteaseFlacOpenFailure(dataSpec, error)
+            throw error
+        }
         val diagnostic = buildNeteaseFlacDiagnostic(dataSpec, length)
         synchronized(trafficLock) {
             accumulator.flush()
@@ -47,7 +54,17 @@ internal class TrafficCountingHttpDataSource(
         val readAccumulator = synchronized(trafficLock) {
             accumulator.takeIf { active }
         }
-        val read = delegate.read(buffer, offset, length)
+        val read = try {
+            delegate.read(buffer, offset, length)
+        } catch (error: IOException) {
+            val diagnostic = synchronized(trafficLock) {
+                neteaseFlacDiagnostic
+                    ?.takeUnless { it.readFailureLogged }
+                    ?.also { it.readFailureLogged = true }
+            }
+            diagnostic?.let { logNeteaseFlacReadFailure(it, error) }
+            throw error
+        }
         if (readAccumulator != null && read > 0) {
             val signatureToLog = synchronized(trafficLock) {
                 readAccumulator.add(read.toLong())
@@ -156,6 +173,38 @@ internal class TrafficCountingHttpDataSource(
         )
     }
 
+    private fun logNeteaseFlacOpenFailure(dataSpec: DataSpec, error: IOException) {
+        if (!shouldUseNeteaseFlacResumableRange(dataSpec.uri)) return
+        NPLogger.w(
+            "NERI-PlaybackHttp",
+            "Netease FLAC stream open failed: host=${dataSpec.uri.host}, " +
+                "position=${dataSpec.position}, requestedLength=${dataSpec.length}, " +
+                "responseCode=${runCatching { delegate.responseCode }.getOrDefault(-1)}, " +
+                "errorType=${error::class.java.simpleName}, message=${errorMessage(error)}"
+        )
+    }
+
+    private fun logNeteaseFlacReadFailure(
+        diagnostic: NeteaseFlacStreamDiagnostic,
+        error: IOException
+    ) {
+        NPLogger.w(
+            "NERI-PlaybackHttp",
+            "Netease FLAC stream read failed: host=${diagnostic.host}, " +
+                "position=${diagnostic.requestPosition}, bytesRead=${diagnostic.bytesRead}, " +
+                "responseCode=${diagnostic.responseCode}, " +
+                "errorType=${error::class.java.simpleName}, message=${errorMessage(error)}"
+        )
+    }
+
+    private fun errorMessage(error: IOException): String {
+        return error.message
+            ?.replace(Regex("https?://\\S+"), "<redacted-url>")
+            ?.replace('\n', ' ')
+            ?.take(240)
+            .orEmpty()
+    }
+
     private fun logNeteaseFlacPayloadSignature(diagnostic: NeteaseFlacStreamDiagnostic) {
         NPLogger.d(
             "NERI-PlaybackHttp",
@@ -196,7 +245,8 @@ private data class NeteaseFlacStreamDiagnostic(
     var bytesRead: Long = 0L,
     var firstPayloadSignature: String? = null,
     var firstPayloadSignatureLogged: Boolean = false,
-    var endOfInputLogged: Boolean = false
+    var endOfInputLogged: Boolean = false,
+    var readFailureLogged: Boolean = false
 )
 
 private fun flacPayloadSignature(buffer: ByteArray, offset: Int, length: Int): String {
