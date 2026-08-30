@@ -11,8 +11,8 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.ByteArrayOutputStream
 import java.io.IOException
-import moe.ouom.neriplayer.core.player.resolver.youtube.ConditionalChunkedHttpDataSource
-import moe.ouom.neriplayer.core.player.resolver.youtube.shouldUseResumableChunkedHttpRange
+import moe.ouom.neriplayer.core.player.engine.datasource.ResumableChunkedHttpDataSource
+import moe.ouom.neriplayer.core.player.engine.datasource.shouldUseResumableChunkedHttpRange
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +57,43 @@ class NeteasePlaybackRangeSupportTest {
             .javaClass
             .simpleName
         assertTrue(firstExtractorName.contains("Flac", ignoreCase = true))
+    }
+
+    @Test
+    fun neteaseFlacDoesNotMaskAnHtmlErrorResponseAsAudio() {
+        val uri = Uri.parse("https://m701.music.126.net/audio/track.flac")
+        val headers = mapOf("Content-Type" to listOf("text/html; charset=utf-8"))
+
+        assertEquals(
+            headers,
+            normalizeNeteaseFlacResponseContentType(uri, headers)
+        )
+    }
+
+    @Test
+    fun neteaseRangeRejectsMissingOrMisalignedContentRange() {
+        val uri = Uri.parse("https://m701.music.126.net/audio/track.flac")
+        val missingHeaderFailure = runCatching {
+            validateNeteaseFlacRangeResponse(
+                uri = uri,
+                responseCode = 206,
+                responseHeaders = emptyMap(),
+                requestedStartPosition = 128L
+            )
+        }.exceptionOrNull()
+        val misalignedHeaderFailure = runCatching {
+            validateNeteaseFlacRangeResponse(
+                uri = uri,
+                responseCode = 206,
+                responseHeaders = mapOf(
+                    "Content-Range" to listOf("bytes 0-255/1024")
+                ),
+                requestedStartPosition = 128L
+            )
+        }.exceptionOrNull()
+
+        assertTrue(missingHeaderFailure is IOException)
+        assertTrue(misalignedHeaderFailure is IOException)
     }
 
     @Test
@@ -179,7 +216,7 @@ class NeteasePlaybackRangeSupportTest {
     }
 
     private fun createDataSource(fixture: RangeFixture): HttpDataSource {
-        return ConditionalChunkedHttpDataSource(
+        return ResumableChunkedHttpDataSource(
             upstreamFactory = FixtureHttpDataSourceFactory(fixture),
             transformDataSpec = { it }
         )

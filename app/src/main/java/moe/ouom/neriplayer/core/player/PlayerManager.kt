@@ -322,6 +322,9 @@ object PlayerManager {
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
     internal var progressJob: Job? = null
+    internal var playbackRuntimeWatchdogJob: Job? = null
+    @Volatile
+    internal var playbackRuntimeWatchdogToken = 0L
     private val lyriconUpdateCoordinator = LyriconUpdateCoordinator()
     internal var externalBluetoothLyricsLoadJob: Job? = null
     internal var externalBluetoothTranslationLoadJob: Job? = null
@@ -672,6 +675,9 @@ object PlayerManager {
     internal var startupStallRecoveryAttempts = 0
     internal var playbackProgressBaselinePositionMs = 0L
     internal var playbackProgressAdvanceReported = false
+    internal var playbackRuntimeStallRecoveryAttempts = 0
+    internal var playbackRuntimeLastProgressPositionMs = 0L
+    internal var playbackRuntimeLastProgressAtElapsedRealtimeMs = 0L
     internal var lastHandledTrackEndKey: String? = null
     internal var lastTrackEndHandledAtMs = 0L
     val audioLevelFlow get() = AudioReactive.level
