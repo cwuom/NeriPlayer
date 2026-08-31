@@ -167,27 +167,46 @@ internal fun playlistModernSearchVisibilityProgress(
         ),
         label = label
     )
-    return progress.coerceIn(0f, 1f)
+    return resolvePlaylistProgressTarget(progress)
 }
 
+internal fun resolvePlaylistProgressTarget(progress: Float): Float {
+    return when {
+        progress.isNaN() -> 0f
+        progress < 0f -> 0f
+        progress > 1f -> 1f
+        else -> progress
+    }
+}
+
+@Composable
+internal fun playlistModernAnimatedScrollProgress(
+    targetProgress: Float,
+    label: String
+): Float = resolvePlaylistProgressTarget(targetProgress)
+
 internal fun resolvePlaylistEasedProgress(progress: Float): Float {
-    return FastOutSlowInEasing.transform(progress.coerceIn(0f, 1f))
+    return FastOutSlowInEasing.transform(resolvePlaylistProgressTarget(progress))
 }
 
 internal fun resolvePlaylistDockedSearchSlotProgress(
     searchVisibilityProgress: Float,
     dockedRevealProgress: Float
 ): Float {
-    return searchVisibilityProgress.coerceIn(0f, 1f) *
-        resolvePlaylistEasedProgress(dockedRevealProgress)
+    return resolvePlaylistProgressTarget(
+        resolvePlaylistProgressTarget(searchVisibilityProgress) *
+            resolvePlaylistEasedProgress(dockedRevealProgress)
+    )
 }
 
 internal fun resolvePlaylistHeaderSearchAlpha(
     searchVisibilityProgress: Float,
     chromeCollapseProgress: Float
 ): Float {
-    return resolvePlaylistEasedProgress(searchVisibilityProgress) *
-        (1f - resolvePlaylistEasedProgress(chromeCollapseProgress))
+    return resolvePlaylistProgressTarget(
+        resolvePlaylistEasedProgress(searchVisibilityProgress) *
+            (1f - resolvePlaylistEasedProgress(chromeCollapseProgress))
+    )
 }
 
 internal fun resolvePlaylistSearchDockedProgress(
@@ -197,8 +216,9 @@ internal fun resolvePlaylistSearchDockedProgress(
 ): Float {
     if (firstVisibleItemIndex > 0) return 1f
     if (expandedOffsetPx <= 0) return 0f
-    return (firstVisibleItemScrollOffsetPx.toFloat() / expandedOffsetPx)
-        .coerceIn(0f, 1f)
+    return resolvePlaylistProgressTarget(
+        firstVisibleItemScrollOffsetPx.toFloat() / expandedOffsetPx
+    )
 }
 
 internal fun resolvePlaylistDockedSearchRevealProgress(
@@ -209,8 +229,9 @@ internal fun resolvePlaylistDockedSearchRevealProgress(
     if (firstVisibleItemIndex <= 1) return 0f
     if (firstVisibleItemIndex > 2) return 1f
     if (revealDistancePx <= 0) return 1f
-    return (firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx)
-        .coerceIn(0f, 1f)
+    return resolvePlaylistProgressTarget(
+        firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx
+    )
 }
 
 internal fun resolvePlaylistDockedSearchGlassColor(
@@ -247,8 +268,9 @@ internal fun resolvePlaylistSearchListTopPaddingPx(
     if (firstVisibleItemIndex <= 1) return 0
     if (firstVisibleItemIndex > 2) return safeDockedSlotHeight
     if (revealDistancePx <= 0) return safeDockedSlotHeight
-    val progress = (firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx)
-        .coerceIn(0f, 1f)
+    val progress = resolvePlaylistProgressTarget(
+        firstVisibleItemScrollOffsetPx.toFloat() / revealDistancePx
+    )
     return (safeDockedSlotHeight * progress).toInt()
 }
 
@@ -478,8 +500,9 @@ internal fun resolvePlaylistChromeCollapseProgress(
 ): Float {
     if (firstVisibleItemIndex > 0) return 1f
     if (expandedHeroHeightPx <= 0) return 0f
-    return (firstVisibleItemScrollOffsetPx.toFloat() / expandedHeroHeightPx)
-        .coerceIn(0f, 1f)
+    return resolvePlaylistProgressTarget(
+        firstVisibleItemScrollOffsetPx.toFloat() / expandedHeroHeightPx
+    )
 }
 
 internal fun interpolatePlaylistDp(

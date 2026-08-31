@@ -52,8 +52,11 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -96,6 +99,7 @@ import moe.ouom.neriplayer.ui.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.rememberMainTabDetailVisibilityState
 import moe.ouom.neriplayer.ui.screen.BiliVideoSkipIntervalsSheet
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
+import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
@@ -112,6 +116,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.sameIdentityAs
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticFloatingActionButton
+import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.util.format.formatDurationSec
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -121,7 +126,45 @@ import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.core.player.PlayerManager
 import androidx.compose.runtime.saveable.rememberSaveable
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlin.random.Random
+
+private enum class BiliPlaylistCompleteAction {
+    DOWNLOAD_ALL,
+    SHUFFLE_PLAY,
+    PLAY_IN_ORDER,
+    ENTER_MULTI_SELECT,
+    EXPORT_ALL
+}
+
+private const val BILI_MAX_AUTOMATIC_LOAD_REQUESTS = 512
+
+private suspend fun loadBiliPlaylistCompletely(
+    viewModel: BiliPlaylistDetailViewModel,
+    onProgress: (loadedCount: Int, totalCount: Int) -> Unit
+): Boolean {
+    var state = viewModel.uiState.value
+    var requestCount = 0
+    while (state.hasMore) {
+        val previousCount = state.videos.size
+        if (!state.loadingMore) {
+            if (requestCount >= BILI_MAX_AUTOMATIC_LOAD_REQUESTS) return false
+            viewModel.loadMoreVideos()
+            requestCount += 1
+        }
+        state = viewModel.uiState
+            .filter { current -> !current.loadingMore }
+            .first()
+        val totalCount = state.header?.count?.coerceAtLeast(state.videos.size)
+            ?: state.videos.size
+        onProgress(state.videos.size, totalCount)
+        if (state.hasMore && state.videos.size <= previousCount) return false
+    }
+    return true
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -216,6 +259,15 @@ fun BiliPlaylistDetailScreen(
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
+    var pendingDownloadSongs by remember { mutableStateOf<List<SongItem>?>(null) }
+    var pendingCompleteAction by remember {
+        mutableStateOf<BiliPlaylistCompleteAction?>(null)
+    }
+    var showCompleteLoadDialog by remember { mutableStateOf(false) }
+    var completeLoadInProgress by remember { mutableStateOf(false) }
+    var completeLoadJob by remember { mutableStateOf<Job?>(null) }
+    var completeLoadLoadedCount by remember { mutableIntStateOf(0) }
+    var completeLoadTotalCount by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val favoriteAddedText = stringResource(R.string.favorite_added)
     val favoriteRemovedText = stringResource(R.string.favorite_removed)
@@ -256,6 +308,121 @@ fun BiliPlaylistDetailScreen(
     fun clearSelection() { selectedIds = emptySet() }
     fun selectAll() { selectedIds = ui.videos.map { it.bvid }.toSet() }
     fun exitSelection() { selectionMode = false; clearSelection() }
+
+    fun requestBatchDownload(songs: List<SongItem>) {
+        if (songs.isNotEmpty()) pendingDownloadSongs = songs
+    }
+
+    fun startPendingDownload() {
+        val songs = pendingDownloadSongs ?: return
+        pendingDownloadSongs = null
+        showDownloadManager = true
+        GlobalDownloadManager.startBatchDownload(context, songs)
+    }
+
+    fun playBiliPlaylist(
+        shuffle: Boolean,
+        videos: List<BiliVideoItem> = ui.videos
+    ) {
+        val startIndex = resolvePlaylistPlaybackStartIndex(
+            songCount = videos.size,
+            shuffleEnabled = shuffle,
+            randomIndex = if (videos.isEmpty()) 0 else Random.nextInt(videos.size)
+        )
+        if (startIndex < 0) return
+        PlayerManager.setShuffle(shuffle)
+        onPlayAudio(videos, startIndex)
+    }
+
+    fun executeCompletePlaylistAction(action: BiliPlaylistCompleteAction) {
+        val currentState = vm.uiState.value
+        if (currentState.hasMore) {
+            pendingCompleteAction = action
+            completeLoadLoadedCount = currentState.videos.size
+            completeLoadTotalCount = currentState.header?.count
+                ?.coerceAtLeast(currentState.videos.size)
+                ?: currentState.videos.size
+            showCompleteLoadDialog = true
+            return
+        }
+        when (action) {
+            BiliPlaylistCompleteAction.DOWNLOAD_ALL -> {
+                requestBatchDownload(currentState.videos.map { it.toSongItem() })
+            }
+
+            BiliPlaylistCompleteAction.SHUFFLE_PLAY -> {
+                playBiliPlaylist(shuffle = true, videos = currentState.videos)
+            }
+
+            BiliPlaylistCompleteAction.PLAY_IN_ORDER -> {
+                playBiliPlaylist(shuffle = false, videos = currentState.videos)
+            }
+
+            BiliPlaylistCompleteAction.ENTER_MULTI_SELECT -> {
+                selectedIds = emptySet()
+                selectionMode = true
+            }
+
+            BiliPlaylistCompleteAction.EXPORT_ALL -> {
+                showExportAllSheet = true
+            }
+        }
+    }
+
+    fun requestCompletePlaylistAction(action: BiliPlaylistCompleteAction) {
+        if (completeLoadInProgress) return
+        val currentState = vm.uiState.value
+        if (!currentState.hasMore) {
+            executeCompletePlaylistAction(action)
+            return
+        }
+        pendingCompleteAction = action
+        completeLoadLoadedCount = currentState.videos.size
+        completeLoadTotalCount = currentState.header?.count
+            ?.coerceAtLeast(currentState.videos.size)
+            ?: currentState.videos.size
+        showCompleteLoadDialog = true
+    }
+
+    fun startCompletePlaylistLoad() {
+        val action = pendingCompleteAction ?: return
+        if (completeLoadInProgress) return
+        pendingCompleteAction = null
+        showCompleteLoadDialog = false
+        completeLoadInProgress = true
+        completeLoadJob = scope.launch {
+            try {
+                val complete = loadBiliPlaylistCompletely(vm) { loadedCount, totalCount ->
+                    completeLoadLoadedCount = loadedCount
+                    completeLoadTotalCount = totalCount
+                }
+                if (complete) {
+                    executeCompletePlaylistAction(action)
+                } else {
+                    snackbarHostState.showNeriSnackbar(
+                        composeResources.getString(R.string.bili_playlist_load_all_failed)
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.e("BiliPlaylistDetail", "load complete playlist failed", error)
+                snackbarHostState.showNeriSnackbar(
+                    composeResources.getString(R.string.bili_playlist_load_all_failed)
+                )
+            } finally {
+                completeLoadInProgress = false
+                completeLoadJob = null
+            }
+        }
+    }
+
+    fun cancelCompletePlaylistLoad() {
+        completeLoadJob?.cancel()
+        completeLoadJob = null
+        completeLoadInProgress = false
+        pendingCompleteAction = null
+    }
 
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -307,7 +474,7 @@ fun BiliPlaylistDetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
-    val playlistChromeCollapseProgress by remember(
+    val playlistChromeCollapseTarget by remember(
         listState,
         density,
         playlistHeroHeight
@@ -322,10 +489,14 @@ fun BiliPlaylistDetailScreen(
             )
         }
     }
+    val playlistChromeCollapseProgress = playlistModernAnimatedScrollProgress(
+        targetProgress = playlistChromeCollapseTarget,
+        label = "bili-playlist-chrome-collapse"
+    )
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealTarget by remember(listState, density) {
         derivedStateOf {
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
@@ -336,6 +507,10 @@ fun BiliPlaylistDetailScreen(
             )
         }
     }
+    val dockedSearchRevealProgress = playlistModernAnimatedScrollProgress(
+        targetProgress = dockedSearchRevealTarget,
+        label = "bili-playlist-docked-search-reveal"
+    )
     val searchDockedVisualProgress = resolvePlaylistEasedProgress(
         dockedSearchRevealProgress
     )
@@ -408,17 +583,6 @@ fun BiliPlaylistDetailScreen(
         searchFocusRequester.requestFocus()
         keyboardController?.show()
     }
-    fun playBiliPlaylist(shuffle: Boolean) {
-        val startIndex = resolvePlaylistPlaybackStartIndex(
-            songCount = ui.videos.size,
-            shuffleEnabled = shuffle,
-            randomIndex = if (ui.videos.isEmpty()) 0 else Random.nextInt(ui.videos.size)
-        )
-        if (startIndex < 0) return
-        PlayerManager.setShuffle(shuffle)
-        onPlayAudio(ui.videos, startIndex)
-    }
-
     val detailVisibilityState = rememberMainTabDetailVisibilityState(
         detailKey = playlist.mediaId,
         initiallyVisible = suppressVisibilityTransition
@@ -504,15 +668,47 @@ fun BiliPlaylistDetailScreen(
                                 )
                             }
 
-                            if (hasDownloadManagerEntry) {
-                                HapticIconButton(onClick = { showDownloadManager = true }) {
-                                    Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.download_manager),
-                                        tint = playlistTopBarContentColor
+                            PlaylistMoreMenuButton(
+                                tint = playlistTopBarContentColor,
+                                actions = listOf(
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.download_to_local),
+                                        icon = Icons.Outlined.Download,
+                                        enabled = ui.videos.isNotEmpty() && !completeLoadInProgress,
+                                        onClick = {
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.DOWNLOAD_ALL
+                                            )
+                                        }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.cd_shuffle),
+                                        icon = Icons.Outlined.Shuffle,
+                                        enabled = ui.videos.isNotEmpty() && !completeLoadInProgress,
+                                        onClick = {
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.SHUFFLE_PLAY
+                                            )
+                                        }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.action_enter_multi_select),
+                                        icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                        enabled = ui.videos.isNotEmpty() && !completeLoadInProgress,
+                                        onClick = {
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.ENTER_MULTI_SELECT
+                                            )
+                                        }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.download_manager),
+                                        icon = Icons.Outlined.DownloadDone,
+                                        enabled = hasDownloadManagerEntry,
+                                        onClick = { showDownloadManager = true }
                                     )
-                                }
-                            }
+                                )
+                            )
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -547,28 +743,34 @@ fun BiliPlaylistDetailScreen(
                                     contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
                                 )
                             }
-                            HapticIconButton(
-                                onClick = { if (selectedIds.isNotEmpty()) showExportSheet = true },
-                                enabled = selectedIds.isNotEmpty()
-                            ) {
-                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = stringResource(R.string.explore_export_to_playlist))
-                            }
-                            HapticIconButton(
-                                onClick = {
-                                    if (selectedIds.isNotEmpty()) {
-                                        val selectedSongs = ui.videos
-                                            .filter { it.bvid in selectedIds }
-                                            .map { it.toSongItem() }
-
-                                        showDownloadManager = true
-                                        GlobalDownloadManager.startBatchDownload(context, selectedSongs)
-                                        exitSelection()
-                                    }
-                                },
-                                enabled = selectedIds.isNotEmpty()
-                            ) {
-                                Icon(Icons.Outlined.Download, contentDescription = stringResource(R.string.download_selected_videos))
-                            }
+                            PlaylistMoreMenuButton(
+                                tint = playlistSelectionTopBarContentColor,
+                                actions = listOf(
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.explore_export_to_playlist),
+                                        icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        enabled = selectedIds.isNotEmpty(),
+                                        onClick = { showExportSheet = true }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.download_selected_videos),
+                                        icon = Icons.Outlined.Download,
+                                        enabled = selectedIds.isNotEmpty(),
+                                        onClick = {
+                                            requestBatchDownload(
+                                                ui.videos
+                                                    .filter { it.bvid in selectedIds }
+                                                    .map { it.toSongItem() }
+                                            )
+                                        }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.action_exit_multi_select),
+                                        icon = Icons.Outlined.Close,
+                                        onClick = ::exitSelection
+                                    )
+                                )
+                            )
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -669,8 +871,16 @@ fun BiliPlaylistDetailScreen(
                                         songCount = ui.videos.size,
                                         shuffleEnabled = shuffleEnabled,
                                         repeatMode = repeatMode,
-                                        onPlayInOrder = { playBiliPlaylist(shuffle = false) },
-                                        onShufflePlay = { playBiliPlaylist(shuffle = true) },
+                                        onPlayInOrder = {
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.PLAY_IN_ORDER
+                                            )
+                                        },
+                                        onShufflePlay = {
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.SHUFFLE_PLAY
+                                            )
+                                        },
                                         onToggleShuffle = {
                                             PlayerManager.setShuffle(!shuffleEnabled)
                                         },
@@ -678,7 +888,9 @@ fun BiliPlaylistDetailScreen(
                                             PlayerManager.cycleRepeatMode()
                                         },
                                         onExportToLocalPlaylist = {
-                                            showExportAllSheet = true
+                                            requestCompletePlaylistAction(
+                                                BiliPlaylistCompleteAction.EXPORT_ALL
+                                            )
                                         }
                                     )
                             }
@@ -804,7 +1016,7 @@ fun BiliPlaylistDetailScreen(
                                         ) {
                                             TextButton(
                                                 onClick = vm::loadMoreVideos,
-                                                enabled = !ui.loadingMore,
+                                                enabled = !ui.loadingMore && !completeLoadInProgress,
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 if (ui.loadingMore) {
@@ -967,6 +1179,83 @@ fun BiliPlaylistDetailScreen(
                             }
                             showExportAllSheet = false
                         }
+                )
+            }
+
+            if (showCompleteLoadDialog && !completeLoadInProgress) {
+                DensityScaledAlertDialog(
+                    onDismissRequest = {
+                        showCompleteLoadDialog = false
+                        pendingCompleteAction = null
+                    },
+                    title = {
+                        Text(stringResource(R.string.bili_playlist_load_all_title))
+                    },
+                    text = {
+                        Text(
+                            stringResource(
+                                R.string.bili_playlist_load_all_message,
+                                completeLoadLoadedCount,
+                                completeLoadTotalCount
+                            )
+                        )
+                    },
+                    confirmButton = {
+                        HapticTextButton(onClick = ::startCompletePlaylistLoad) {
+                            Text(stringResource(R.string.bili_playlist_load_all_confirm))
+                        }
+                    },
+                    dismissButton = {
+                        HapticTextButton(
+                            onClick = {
+                                showCompleteLoadDialog = false
+                                pendingCompleteAction = null
+                            }
+                        ) {
+                            Text(stringResource(R.string.action_cancel))
+                        }
+                    }
+                )
+            }
+
+            if (completeLoadInProgress) {
+                DensityScaledAlertDialog(
+                    onDismissRequest = ::cancelCompletePlaylistLoad,
+                    title = {
+                        Text(stringResource(R.string.bili_playlist_load_all_title))
+                    },
+                    text = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                stringResource(
+                                    R.string.bili_playlist_load_all_progress,
+                                    completeLoadLoadedCount,
+                                    completeLoadTotalCount
+                                )
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        HapticTextButton(onClick = ::cancelCompletePlaylistLoad) {
+                            Text(stringResource(R.string.action_cancel))
+                        }
+                    }
+                )
+            }
+
+            pendingDownloadSongs?.let { songs ->
+                PlaylistDownloadConfirmationDialog(
+                    songCount = songs.size,
+                    onConfirm = {
+                        startPendingDownload()
+                        if (selectionMode) exitSelection()
+                    },
+                    onDismiss = { pendingDownloadSongs = null }
                 )
             }
 

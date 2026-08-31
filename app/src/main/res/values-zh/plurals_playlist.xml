@@ -10,4 +10,10 @@
     <plurals name="playlist_batch_export_success">
         <item quantity="other">已导出 %1$d 首歌曲到「%2$s」</item>
     </plurals>
+    <plurals name="playlist_download_confirm_message">
+        <item quantity="other">将下载 %1$d 首歌曲，是否继续？</item>
+    </plurals>
+    <plurals name="playlist_insert_at_selected">
+        <item quantity="other">已选择 %1$d 首歌曲</item>
+    </plurals>
 </resources>

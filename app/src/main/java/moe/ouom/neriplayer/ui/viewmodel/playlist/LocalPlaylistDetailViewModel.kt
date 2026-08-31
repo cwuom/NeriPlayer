@@ -818,8 +818,17 @@ class LocalPlaylistDetailViewModel(application: Application) : AndroidViewModel(
         launchPlaylistMutation("moveSong") { repo.moveSong(playlistId, from, to) }
     }
 
-    fun reorderSongs(newOrder: List<SongIdentity>) {
-        launchPlaylistMutation("reorderSongs") { repo.reorderSongs(playlistId, newOrder) }
+    fun reorderSongs(
+        newOrder: List<SongIdentity>,
+        onResult: (Result<Unit>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            onResult(
+                runLocalPlaylistMutationSafely("reorderSongs") {
+                    repo.reorderSongs(playlistId, newOrder)
+                }
+            )
+        }
     }
 
     fun removeSong(songId: Long) {

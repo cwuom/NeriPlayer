@@ -31,7 +31,10 @@ import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -75,6 +78,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.media.displayAlbum
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -103,6 +107,7 @@ import moe.ouom.neriplayer.util.format.formatTotalDuration
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.util.search.playlistSearchValues
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import kotlin.random.Random
 
 private fun hasCachedLocalArtistDownload(song: SongItem): Boolean {
     return GlobalDownloadManager.hasDownloadedSongCached(song)
@@ -235,6 +240,9 @@ fun LocalArtistDetailScreen(
     var selectedKeys by remember(artistKey) { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember(artistKey) { mutableStateOf(false) }
     var showDownloadManager by remember(artistKey) { mutableStateOf(false) }
+    var pendingDownloadSongs by remember(artistKey) {
+        mutableStateOf<List<SongItem>?>(null)
+    }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
     val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsState()
@@ -256,6 +264,27 @@ fun LocalArtistDetailScreen(
     fun exitSelectionMode() {
         selectionMode = false
         selectedKeys = emptySet()
+    }
+
+    fun requestBatchDownload(songsToDownload: List<SongItem>) {
+        songsToDownload.toList().takeIf { it.isNotEmpty() }?.let {
+            pendingDownloadSongs = it
+        }
+    }
+
+    fun startPendingDownload() {
+        val songsToDownload = pendingDownloadSongs ?: return
+        pendingDownloadSongs = null
+        showDownloadManager = true
+        GlobalDownloadManager.startBatchDownload(context, songsToDownload)
+        if (selectionMode) exitSelectionMode()
+    }
+
+    fun playArtist(shuffle: Boolean) {
+        if (songs.isEmpty()) return
+        val index = if (shuffle) Random.nextInt(songs.size) else 0
+        PlayerManager.setShuffle(shuffle)
+        onSongClick(songs, index)
     }
 
     fun closeSearch() {
@@ -351,15 +380,6 @@ fun LocalArtistDetailScreen(
                                     contentDescription = stringResource(R.string.cd_search_songs)
                                 )
                             }
-                            if (hasDownloadManagerEntry) {
-                                HapticIconButton(onClick = { showDownloadManager = true }) {
-                                    Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.cd_download_manager),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
                             HapticIconButton(
                                 enabled = displayedSongs.isNotEmpty(),
                                 onClick = {
@@ -373,6 +393,35 @@ fun LocalArtistDetailScreen(
                                     contentDescription = stringResource(R.string.cd_play_all)
                                 )
                             }
+                            PlaylistMoreMenuButton(
+                                tint = MaterialTheme.colorScheme.primary,
+                                actions = listOf(
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.download_to_local),
+                                        icon = Icons.Outlined.Download,
+                                        enabled = songs.isNotEmpty(),
+                                        onClick = { requestBatchDownload(songs) }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.playlist_random_play),
+                                        icon = Icons.Outlined.Shuffle,
+                                        enabled = songs.isNotEmpty(),
+                                        onClick = { playArtist(shuffle = true) }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.action_enter_multi_select),
+                                        icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        enabled = songs.isNotEmpty(),
+                                        onClick = { selectionMode = true }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.cd_download_manager),
+                                        icon = Icons.Outlined.DownloadDone,
+                                        enabled = hasDownloadManagerEntry,
+                                        onClick = { showDownloadManager = true }
+                                    )
+                                )
+                            )
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -426,38 +475,30 @@ fun LocalArtistDetailScreen(
                                     }
                                 )
                             }
-                            HapticIconButton(
-                                onClick = {
-                                    if (selectedKeys.isNotEmpty()) {
-                                        showExportSheet = true
-                                    }
-                                },
-                                enabled = selectedKeys.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                    contentDescription = stringResource(R.string.cd_export_playlist)
+                            PlaylistMoreMenuButton(
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                actions = listOf(
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.cd_export_playlist),
+                                        icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                        enabled = selectedKeys.isNotEmpty(),
+                                        onClick = { showExportSheet = true }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.cd_download_selected),
+                                        icon = Icons.Outlined.Download,
+                                        enabled = selectedSongsForAction.isNotEmpty(),
+                                        onClick = {
+                                            requestBatchDownload(selectedSongsForAction)
+                                        }
+                                    ),
+                                    PlaylistMoreMenuAction(
+                                        label = stringResource(R.string.action_exit_multi_select),
+                                        icon = Icons.Outlined.Close,
+                                        onClick = ::exitSelectionMode
+                                    )
                                 )
-                            }
-                            HapticIconButton(
-                                onClick = {
-                                    val selectedSongs = selectedSongsForAction
-                                    if (selectedSongs.isNotEmpty()) {
-                                        showDownloadManager = true
-                                        exitSelectionMode()
-                                        GlobalDownloadManager.startBatchDownload(
-                                            context,
-                                            selectedSongs
-                                        )
-                                    }
-                                },
-                                enabled = selectedSongsForAction.isNotEmpty()
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Download,
-                                    contentDescription = stringResource(R.string.cd_download_selected)
-                                )
-                            }
+                            )
                         },
                         windowInsets = WindowInsets.statusBars,
                         colors = TopAppBarDefaults.topAppBarColors(
@@ -625,6 +666,14 @@ fun LocalArtistDetailScreen(
             BatchDownloadManagerSheet(
                 downloadTasks = downloadTasks,
                 onDismiss = { showDownloadManager = false }
+            )
+        }
+
+        pendingDownloadSongs?.let { songsToDownload ->
+            PlaylistDownloadConfirmationDialog(
+                songCount = songsToDownload.size,
+                onConfirm = ::startPendingDownload,
+                onDismiss = { pendingDownloadSongs = null }
             )
         }
 

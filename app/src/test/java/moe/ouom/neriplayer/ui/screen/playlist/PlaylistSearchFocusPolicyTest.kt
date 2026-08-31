@@ -364,6 +364,74 @@ class PlaylistSearchFocusPolicyTest {
     }
 
     @Test
+    fun clampsScrollProgressTargetsWhenOffsetsAreOutsideTheViewport() {
+        assertEquals(
+            0f,
+            resolvePlaylistDockedSearchRevealProgress(
+                firstVisibleItemIndex = 2,
+                firstVisibleItemScrollOffsetPx = -24,
+                revealDistancePx = 68
+            ),
+            0.001f
+        )
+        assertEquals(
+            1f,
+            resolvePlaylistDockedSearchRevealProgress(
+                firstVisibleItemIndex = 2,
+                firstVisibleItemScrollOffsetPx = 240,
+                revealDistancePx = 68
+            ),
+            0.001f
+        )
+        assertEquals(
+            0f,
+            resolvePlaylistChromeCollapseProgress(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffsetPx = -24,
+                expandedHeroHeightPx = 190
+            ),
+            0.001f
+        )
+        assertEquals(
+            1f,
+            resolvePlaylistChromeCollapseProgress(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffsetPx = 480,
+                expandedHeroHeightPx = 190
+            ),
+            0.001f
+        )
+    }
+
+    @Test
+    fun sanitizesInvalidAnimationTargetsWithoutAllowingNaNToReachCompose() {
+        assertEquals(0f, resolvePlaylistProgressTarget(Float.NaN), 0.001f)
+        assertEquals(0f, resolvePlaylistProgressTarget(Float.NEGATIVE_INFINITY), 0.001f)
+        assertEquals(1f, resolvePlaylistProgressTarget(Float.POSITIVE_INFINITY), 0.001f)
+        assertEquals(0f, resolvePlaylistProgressTarget(-0.5f), 0.001f)
+        assertEquals(1f, resolvePlaylistProgressTarget(1.5f), 0.001f)
+    }
+
+    @Test
+    fun keepsBoundaryJumpAsAnOrderedAnimationTargetWhenFlingSkipsIndexTwo() {
+        val beforeBoundary = resolvePlaylistDockedSearchRevealProgress(
+            firstVisibleItemIndex = 1,
+            firstVisibleItemScrollOffsetPx = 0,
+            revealDistancePx = 68
+        )
+        val afterBoundary = resolvePlaylistDockedSearchRevealProgress(
+            firstVisibleItemIndex = 3,
+            firstVisibleItemScrollOffsetPx = 0,
+            revealDistancePx = 68
+        )
+
+        assertEquals(0f, beforeBoundary, 0.001f)
+        assertEquals(1f, afterBoundary, 0.001f)
+        assertTrue(afterBoundary > beforeBoundary)
+        assertEquals(1f, resolvePlaylistProgressTarget(afterBoundary), 0.001f)
+    }
+
+    @Test
     fun adaptsDockedSearchGlassColorForLightAndDarkSurfaces() {
         assertEquals(
             Color.White.copy(alpha = 0.42f).toArgb(),

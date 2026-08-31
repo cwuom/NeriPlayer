@@ -28,6 +28,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -92,7 +93,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -114,6 +117,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
@@ -150,6 +156,11 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.util.rememberPlaylistDisplayCoverUrl
+import moe.ouom.neriplayer.ui.screen.playlist.gateReorderScrollDelta
+import moe.ouom.neriplayer.ui.screen.playlist.rememberReorderOverscrollEffect
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderAutoScrollDelta
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderDraggingItemTop
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderOffscreenContinuation
 import moe.ouom.neriplayer.util.media.fastScrollableImageRequest
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -163,6 +174,7 @@ import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import org.burnoutcrew.reorderable.ItemPosition
 import org.burnoutcrew.reorderable.ReorderableItem
+import org.burnoutcrew.reorderable.ReorderableLazyListState
 import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
@@ -186,8 +198,106 @@ private const val LOCAL_CATEGORY_PLAYLIST = 0
 private const val LOCAL_CATEGORY_ARTIST = 1
 private const val LIBRARY_UI_PREFS = "library_ui_preferences"
 private const val KEY_LOCAL_ARTIST_SORT_MODE = "local_artist_sort_mode"
+private const val REORDER_OFFSCREEN_GRACE_FRAMES = 36
 private val LibraryPrimaryTabShape = RoundedCornerShape(20.dp)
 private val LibrarySearchFieldShape = RoundedCornerShape(16.dp)
+
+@Composable
+private fun LibraryReorderAutoScrollEffect(
+    reorderState: ReorderableLazyListState,
+    enabled: Boolean
+) {
+    val listState = reorderState.listState
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val edgeDistancePx = with(density) { 112.dp.toPx() }
+    val maxPerFramePx = with(density) { 18.dp.toPx() }
+    LaunchedEffect(reorderState, enabled) {
+        if (!enabled) return@LaunchedEffect
+        snapshotFlow { reorderState.draggingItemIndex != null }
+            .distinctUntilChanged()
+            .collectLatest { isDragging ->
+                if (!isDragging) return@collectLatest
+                var lastStableEdgeDelta = 0f
+                var offscreenFrames = 0
+                while (isActive && reorderState.draggingItemIndex != null) {
+                    withFrameNanos { }
+                    val layoutInfo = listState.layoutInfo
+                    val draggingKey = reorderState.draggingItemKey
+                    val currentDraggingIndex = reorderState.draggingItemIndex
+                    val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                        info.key == draggingKey || info.index == currentDraggingIndex
+                    }
+                    val delta = itemInfo?.let { info ->
+                        offscreenFrames = 0
+                        val draggingItemTop = resolveReorderDraggingItemTop(
+                            itemOffset = info.offset,
+                            itemHeight = info.size,
+                            viewportHeight = layoutInfo.viewportSize.height,
+                            draggingOffset = reorderState.draggingItemTop,
+                            reverseLayout = layoutInfo.reverseLayout
+                        )
+                        val edgeDelta = resolveReorderAutoScrollDelta(
+                            draggingItemTop = draggingItemTop,
+                            draggingItemHeight = info.size,
+                            viewportStart = layoutInfo.viewportStartOffset,
+                            viewportEnd = layoutInfo.viewportEndOffset,
+                            edgeDistance = edgeDistancePx,
+                            maxPerFrame = maxPerFramePx
+                        )
+                        val gatedDelta = gateReorderScrollDelta(
+                            delta = edgeDelta,
+                            reverseLayout = layoutInfo.reverseLayout,
+                            canScrollForward = listState.canScrollForward,
+                            canScrollBackward = listState.canScrollBackward
+                        )
+                        if (gatedDelta != 0f) {
+                            lastStableEdgeDelta = gatedDelta
+                        } else {
+                            lastStableEdgeDelta = 0f
+                        }
+                        gatedDelta
+                    } ?: run {
+                        offscreenFrames += 1
+                        if (offscreenFrames > REORDER_OFFSCREEN_GRACE_FRAMES) {
+                            lastStableEdgeDelta = 0f
+                            0f
+                        } else {
+                            val continuation = resolveReorderOffscreenContinuation(
+                                lastDelta = lastStableEdgeDelta,
+                                maxPerFrame = maxPerFramePx
+                            )
+                            val gatedContinuation = gateReorderScrollDelta(
+                                delta = continuation,
+                                reverseLayout = layoutInfo.reverseLayout,
+                                canScrollForward = listState.canScrollForward,
+                                canScrollBackward = listState.canScrollBackward
+                            )
+                            if (gatedContinuation != 0f) {
+                                gatedContinuation
+                            } else {
+                                lastStableEdgeDelta = 0f
+                                0f
+                            }
+                        }
+                    }
+                    if (delta != 0f) {
+                        val scrollArgument = if (layoutInfo.reverseLayout) -delta else delta
+                        var consumed = 0f
+                        listState.scroll(MutatePriority.UserInput) {
+                            consumed = scrollBy(scrollArgument)
+                        }
+                        if (
+                            consumed == 0f ||
+                                kotlin.math.abs(consumed) + 0.5f <
+                                kotlin.math.abs(scrollArgument)
+                        ) {
+                            lastStableEdgeDelta = 0f
+                        }
+                    }
+                }
+            }
+    }
+}
 
 private val HotPlaylistPeriods = listOf(
     PlaybackStatsPeriod.WEEK,
@@ -1156,6 +1266,9 @@ private fun LocalPlaylistList(
     val localFilesPlaylist = playlists.firstOrNull { LocalFilesPlaylist.isSystemPlaylist(it, context) }
     val reorderState = rememberReorderableLazyListState(
         listState = listState,
+        // the library still supplies drop-target bookkeeping; this screen owns
+        // the visible-edge velocity so the two loops cannot add up
+        maxScrollPerFrame = 0.dp,
         onMove = { from: ItemPosition, to: ItemPosition ->
             if (!selectionMode) return@rememberReorderableLazyListState
             val fromId = from.key as? Long ?: return@rememberReorderableLazyListState
@@ -1174,6 +1287,13 @@ private fun LocalPlaylistList(
                 onReorder(reorderablePlaylists.map { it.id })
             }
         }
+    )
+    LibraryReorderAutoScrollEffect(
+        reorderState = reorderState,
+        enabled = selectionMode
+    )
+    val reorderOverscrollEffect = rememberReorderOverscrollEffect(
+        isDragging = reorderState.draggingItemIndex != null
     )
 
     val displayedFavoritesPlaylist = favoritesPlaylist
@@ -1196,6 +1316,7 @@ private fun LocalPlaylistList(
 
     LazyColumn(
         state = reorderState.listState,
+        overscrollEffect = reorderOverscrollEffect,
         contentPadding = PaddingValues(
             start = 8.dp,
             end = 8.dp,
@@ -2927,6 +3048,9 @@ private fun FavoritePlaylistList(
 
     val reorderState = rememberReorderableLazyListState(
         listState = listState,
+        // the library still supplies drop-target bookkeeping; this screen owns
+        // the visible-edge velocity so the two loops cannot add up
+        maxScrollPerFrame = 0.dp,
         onMove = { from: ItemPosition, to: ItemPosition ->
             if (!sortMode) return@rememberReorderableLazyListState
             val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
@@ -2948,9 +3072,17 @@ private fun FavoritePlaylistList(
             }
         }
     )
+    LibraryReorderAutoScrollEffect(
+        reorderState = reorderState,
+        enabled = sortMode && !isHotCategory
+    )
+    val reorderOverscrollEffect = rememberReorderOverscrollEffect(
+        isDragging = reorderState.draggingItemIndex != null
+    )
 
     LazyColumn(
         state = reorderState.listState,
+        overscrollEffect = reorderOverscrollEffect,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp + miniPlayerHeight),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier

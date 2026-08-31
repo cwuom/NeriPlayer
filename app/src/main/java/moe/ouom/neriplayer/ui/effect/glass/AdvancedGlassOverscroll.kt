@@ -119,23 +119,14 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
         performFling: suspend (Velocity) -> Velocity
     ) {
         animationJob?.cancel()
-
-        var flingVelocity = velocity
-        val hadActiveOverscroll = abs(offsetY) > OFFSET_THRESHOLD_PX && velocity.y != 0f
-        if (hadActiveOverscroll) {
-            startReturnAnimation(velocity.y)
-            flingVelocity = if (sign(velocity.y) == sign(offsetY)) {
-                Velocity(velocity.x, 0f)
-            } else {
-                Velocity(velocity.x, velocity.y / REVERSE_FLING_ATTENUATION)
+        runAdvancedGlassOverscrollFling(
+            velocity = velocity,
+            offsetY = offsetY,
+            performFling = performFling,
+            startReturnAnimation = { returnVelocity ->
+                startReturnAnimation(returnVelocity)
             }
-        }
-
-        val consumed = performFling(flingVelocity)
-        val remaining = flingVelocity - consumed
-        if (!hadActiveOverscroll) {
-            startReturnAnimation(remaining.y / POST_FLING_ATTENUATION)
-        }
+        )
     }
 
     fun attach(
@@ -216,6 +207,36 @@ private class AdvancedGlassOverscrollEffect : OverscrollEffect {
     private fun resetOffset() {
         offsetY = 0f
         rawDragY = 0f
+    }
+}
+
+/**
+ * runs the fling handoff in a deterministic order so list motion cannot race the return spring
+ */
+internal suspend fun runAdvancedGlassOverscrollFling(
+    velocity: Velocity,
+    offsetY: Float,
+    performFling: suspend (Velocity) -> Velocity,
+    startReturnAnimation: (Float) -> Unit
+) {
+    val flingVelocity = resolveAdvancedGlassOverscrollFlingVelocity(
+        velocity = velocity,
+        offsetY = offsetY
+    )
+    val consumed = performFling(flingVelocity)
+    val remaining = flingVelocity - consumed
+    startReturnAnimation(remaining.y / POST_FLING_ATTENUATION)
+}
+
+internal fun resolveAdvancedGlassOverscrollFlingVelocity(
+    velocity: Velocity,
+    offsetY: Float
+): Velocity {
+    if (abs(offsetY) <= OFFSET_THRESHOLD_PX || velocity.y == 0f) return velocity
+    return if (sign(velocity.y) == sign(offsetY)) {
+        Velocity(velocity.x, 0f)
+    } else {
+        Velocity(velocity.x, velocity.y / REVERSE_FLING_ATTENUATION)
     }
 }
 

@@ -61,6 +61,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -171,7 +172,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -212,8 +215,10 @@ import coil.compose.AsyncImagePainter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.min
@@ -315,6 +320,11 @@ import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
+import moe.ouom.neriplayer.ui.screen.playlist.gateReorderScrollDelta
+import moe.ouom.neriplayer.ui.screen.playlist.rememberReorderOverscrollEffect
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderAutoScrollDelta
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderDraggingItemTop
+import moe.ouom.neriplayer.ui.screen.playlist.resolveReorderOffscreenContinuation
 import moe.ouom.neriplayer.ui.component.lyrics.parseNeteaseLyricsAuto
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricEdgeFadeHeight
@@ -366,7 +376,6 @@ private const val NowPlayingCoverFrameCacheLimit = 3
 private const val NowPlayingCoverBitmapMaxDimensionPx = 512
 private const val NowPlayingCoverNullGraceMs = 500L
 private const val QueueSheetMaxHeightFraction = 0.9f
-internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
 private val QueueReorderDragCancelStiffness = Spring.StiffnessMediumLow
 private const val QueueReorderDraggedItemScale = 1.01f
 private const val HighUiDensityScaleThreshold = 1.1f
@@ -1804,11 +1813,107 @@ internal fun NowPlayingQueueSheet(
             )
             queueOrderDirty = false
         },
-        maxScrollPerFrame = NowPlayingQueueReorderAutoScrollMaxPerFrame,
+        maxScrollPerFrame = 0.dp,
         dragCancelledAnimation = SpringDragCancelledAnimation(
             stiffness = QueueReorderDragCancelStiffness
         )
     )
+
+    val queueReorderEnabled = isNowPlayingQueueReorderEnabled(
+        selectionMode = selectionMode,
+        allowQueueReorder = allowQueueReorder
+    )
+    val queueReorderDensity = LocalDensity.current
+    val queueReorderAutoScrollEdgePx = with(queueReorderDensity) { 112.dp.toPx() }
+    val queueReorderAutoScrollMaxPx = with(queueReorderDensity) { 18.dp.toPx() }
+    val queueReorderOffscreenGraceFrames = 36
+    val queueReorderIsDragging = reorderState.draggingItemIndex != null
+    val queueReorderOverscrollEffect = rememberReorderOverscrollEffect(
+        isDragging = queueReorderIsDragging
+    )
+    LaunchedEffect(reorderState, queueReorderEnabled) {
+        if (!queueReorderEnabled) return@LaunchedEffect
+        snapshotFlow { reorderState.draggingItemIndex != null }
+            .distinctUntilChanged()
+            .collectLatest { isDragging ->
+                if (!isDragging) return@collectLatest
+                var lastStableEdgeDelta = 0f
+                var offscreenFrames = 0
+                while (isActive && reorderState.draggingItemIndex != null) {
+                    withFrameNanos { }
+                    val layoutInfo = reorderState.listState.layoutInfo
+                    val draggingKey = reorderState.draggingItemKey
+                    val currentDraggingIndex = reorderState.draggingItemIndex
+                    val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                        info.key == draggingKey || info.index == currentDraggingIndex
+                    }
+                    val delta = itemInfo?.let { info ->
+                        offscreenFrames = 0
+                        val draggingItemTop = resolveReorderDraggingItemTop(
+                            itemOffset = info.offset,
+                            itemHeight = info.size,
+                            viewportHeight = layoutInfo.viewportSize.height,
+                            draggingOffset = reorderState.draggingItemTop,
+                            reverseLayout = layoutInfo.reverseLayout
+                        )
+                        val edgeDelta = resolveReorderAutoScrollDelta(
+                            draggingItemTop = draggingItemTop,
+                            draggingItemHeight = info.size,
+                            viewportStart = layoutInfo.viewportStartOffset,
+                            viewportEnd = layoutInfo.viewportEndOffset,
+                            edgeDistance = queueReorderAutoScrollEdgePx,
+                            maxPerFrame = queueReorderAutoScrollMaxPx
+                        )
+                        val gatedDelta = gateReorderScrollDelta(
+                            delta = edgeDelta,
+                            reverseLayout = layoutInfo.reverseLayout,
+                            canScrollForward = reorderState.listState.canScrollForward,
+                            canScrollBackward = reorderState.listState.canScrollBackward
+                        )
+                        if (gatedDelta != 0f) {
+                            lastStableEdgeDelta = gatedDelta
+                        } else {
+                            lastStableEdgeDelta = 0f
+                        }
+                        gatedDelta
+                    } ?: run {
+                        offscreenFrames += 1
+                        if (offscreenFrames > queueReorderOffscreenGraceFrames) {
+                            lastStableEdgeDelta = 0f
+                            0f
+                        } else {
+                            val continuation = resolveReorderOffscreenContinuation(
+                                lastDelta = lastStableEdgeDelta,
+                                maxPerFrame = queueReorderAutoScrollMaxPx
+                            )
+                            val gatedContinuation = gateReorderScrollDelta(
+                                delta = continuation,
+                                reverseLayout = layoutInfo.reverseLayout,
+                                canScrollForward = reorderState.listState.canScrollForward,
+                                canScrollBackward = reorderState.listState.canScrollBackward
+                            )
+                            if (gatedContinuation != 0f) {
+                                gatedContinuation
+                            } else {
+                                lastStableEdgeDelta = 0f
+                                0f
+                            }
+                        }
+                    }
+                    if (delta != 0f) {
+                        val scrollArgument = if (layoutInfo.reverseLayout) -delta else delta
+                        val consumed = reorderState.listState.scrollBy(scrollArgument)
+                        if (
+                            consumed == 0f ||
+                                kotlin.math.abs(consumed) + 0.5f <
+                                kotlin.math.abs(scrollArgument)
+                        ) {
+                            lastStableEdgeDelta = 0f
+                        }
+                    }
+                }
+            }
+    }
 
     fun exitSelection() {
         selectionMode = false
@@ -2028,6 +2133,7 @@ internal fun NowPlayingQueueSheet(
 
                 LazyColumn(
                     state = reorderState.listState,
+                    overscrollEffect = queueReorderOverscrollEffect,
                     modifier = Modifier
                         .weight(1f)
                         .then(

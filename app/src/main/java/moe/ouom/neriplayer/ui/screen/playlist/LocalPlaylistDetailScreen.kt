@@ -46,6 +46,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -74,6 +75,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
+import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -84,11 +86,15 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Sync
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Checkbox
@@ -106,6 +112,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -160,8 +168,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.withFrameNanos
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -595,6 +606,11 @@ fun LocalPlaylistDetailScreen(
             var showDeleteMultiConfirm by remember { mutableStateOf(false) }
             var showExportSheet by remember { mutableStateOf(false) }
             var showExportAllSheet by remember { mutableStateOf(false) }
+            var pendingDownloadSongs by remember { mutableStateOf<List<SongItem>?>(null) }
+            var pendingDownloadExitSelection by remember { mutableStateOf(false) }
+            var showInsertAtDialog by remember { mutableStateOf(false) }
+            var insertAtSongs by remember { mutableStateOf<List<SongItem>>(emptyList()) }
+            var insertAtSelectedIndices by remember { mutableStateOf<Set<Int>>(emptySet()) }
             var detailSong by remember { mutableStateOf<SongItem?>(null) }
             var pendingSyncConfirmAction by remember { mutableStateOf<(() -> Unit)?>(null) }
             var pendingSyncConfirmLabel by remember { mutableStateOf("") }
@@ -867,6 +883,55 @@ fun LocalPlaylistDetailScreen(
             // 阻断 VM->UI 同步; 同时用 pendingOrderIdentities 兼容重排和批删
             var blockSync by remember(playlistId) { mutableStateOf(false) }
             var pendingOrderIdentities by remember(playlistId) { mutableStateOf<List<SongIdentity>?>(null) }
+            var reorderBeforeDrag by remember(playlistId) {
+                mutableStateOf<List<SongItem>?>(null)
+            }
+            var reorderMutationGeneration by remember(playlistId) {
+                mutableIntStateOf(0)
+            }
+
+            fun repositoryPlaylistSongsSnapshot(): List<SongItem>? {
+                return repo.playlists.value
+                    .firstOrNull { it.id == playlistId }
+                    ?.songs
+                    ?.toList()
+            }
+
+            fun beginLocalPlaylistMutation(expectedSongs: List<SongItem>): Int {
+                val generation = reorderMutationGeneration + 1
+                reorderMutationGeneration = generation
+                pendingOrderIdentities = expectedSongs.map { it.identity() }
+                blockSync = true
+                return generation
+            }
+
+            fun settleLocalPlaylistMutation(
+                generation: Int,
+                expectedOrder: List<SongIdentity>,
+                previousSongs: List<SongItem>? = null,
+                restorePreviousWhenRepositoryUnavailable: Boolean = false
+            ): List<SongItem> {
+                if (generation != reorderMutationGeneration) return localSongs.toList()
+                val repositorySongs = repositoryPlaylistSongsSnapshot()
+                if (repositorySongs != null) {
+                    localSongs.clear()
+                    localSongs.addAll(repositorySongs)
+                } else if (
+                    restorePreviousWhenRepositoryUnavailable &&
+                        previousSongs != null &&
+                        canUndoPlaylistReorder(
+                            currentOrder = localSongs.map { it.identity() },
+                            appliedOrder = expectedOrder
+                        )
+                ) {
+                    localSongs.clear()
+                    localSongs.addAll(previousSongs)
+                }
+                pendingOrderIdentities = null
+                blockSync = false
+                return localSongs.toList()
+            }
+
             LaunchedEffect(playlist.songs, blockSync, pendingOrderIdentities) {
                 val repoIdentities = playlist.songs.map { it.identity() }
                 val wanted = pendingOrderIdentities
@@ -883,14 +948,24 @@ fun LocalPlaylistDetailScreen(
 
             fun handleLocalSongDeleteResult(
                 previousSongs: List<SongItem>,
+                expectedSongs: List<SongItem>,
+                mutationGeneration: Int,
                 result: Result<List<LocalPlaylistSongDeleteResult>>
             ) {
+                if (mutationGeneration != reorderMutationGeneration) return
                 val deleteResults = result.getOrNull().orEmpty()
                 if (result.isFailure || deleteResults.isEmpty()) {
-                    localSongs.clear()
-                    localSongs.addAll(previousSongs)
-                    pendingOrderIdentities = null
-                    blockSync = false
+                    settleLocalPlaylistMutation(
+                        generation = mutationGeneration,
+                        expectedOrder = expectedSongs.map { it.identity() },
+                        previousSongs = previousSongs,
+                        restorePreviousWhenRepositoryUnavailable = true
+                    )
+                } else {
+                    settleLocalPlaylistMutation(
+                        generation = mutationGeneration,
+                        expectedOrder = expectedSongs.map { it.identity() }
+                    )
                 }
                 scope.showPlaylistSongDeleteResult(
                     context = context,
@@ -947,6 +1022,9 @@ fun LocalPlaylistDetailScreen(
                     song.copy(addedAt = (now - index).coerceAtLeast(1L))
                 }
                 if (additions.isNotEmpty()) {
+                    reorderMutationGeneration += 1
+                    pendingOrderIdentities = null
+                    blockSync = false
                     localSongs.addAll(0, additions)
                 }
             }
@@ -1146,9 +1224,15 @@ fun LocalPlaylistDetailScreen(
             val canReorderCurrentSongsState = rememberUpdatedState(canReorderCurrentSongs)
 
             val reorderState = rememberReorderableLazyListState(
+                // the library still supplies drop-target bookkeeping; this screen owns
+                // the visible-edge velocity so the two loops cannot add up
+                maxScrollPerFrame = 0.dp,
                 onMove = { from: ItemPosition, to: ItemPosition ->
                     if (!canReorderCurrentSongsState.value) {
                         return@rememberReorderableLazyListState
+                    }
+                    if (reorderBeforeDrag == null) {
+                        reorderBeforeDrag = localSongs.toList()
                     }
                     if (!blockSync) blockSync = true
                     val fromKey = from.key as? String ?: return@rememberReorderableLazyListState
@@ -1168,19 +1252,137 @@ fun LocalPlaylistDetailScreen(
                         return@rememberReorderableLazyListState
                     }
                     val newOrder = localSongs.map { it.identity() }
-                    pendingOrderIdentities = newOrder
-                    blockSync = true
-                    scope.launch {
-                        vm.reorderSongs(newOrder)
+                    val previousSongs = reorderBeforeDrag
+                    reorderBeforeDrag = null
+                    val mutationGeneration = beginLocalPlaylistMutation(localSongs.toList())
+                    vm.reorderSongs(newOrder) { result ->
+                        if (mutationGeneration != reorderMutationGeneration) return@reorderSongs
+                        if (result.isFailure) {
+                            settleLocalPlaylistMutation(
+                                generation = mutationGeneration,
+                                expectedOrder = newOrder,
+                                previousSongs = previousSongs,
+                                restorePreviousWhenRepositoryUnavailable = true
+                            )
+                            scope.launch {
+                                snackbarHostState.showNeriSnackbar(
+                                    composeResources.getString(R.string.playlist_reorder_failed)
+                                )
+                            }
+                        }
                     }
                 }
             )
+
+            LaunchedEffect(reorderState) {
+                snapshotFlow { reorderState.draggingItemIndex }
+                    .distinctUntilChanged()
+                    .collect { draggingIndex ->
+                        if (draggingIndex != null && reorderBeforeDrag == null) {
+                            reorderBeforeDrag = localSongs.toList()
+                        }
+                    }
+            }
 
             // 记住滚动位置, 避免切换页面后回到顶部 (用稳定 key 防止列表变动导致错位)
             val savedListKey = rememberSaveable(playlistId) { mutableStateOf<String?>(null) }
             var savedListOffset by rememberSaveable(playlistId) { mutableIntStateOf(0) }
             val hasRestoredScroll = rememberSaveable(playlistId) { mutableStateOf(false) }
             val listState = reorderState.listState
+            val reorderDensity = LocalDensity.current
+            val reorderAutoScrollEdgePx = with(reorderDensity) { 112.dp.toPx() }
+            val reorderAutoScrollMaxPx = with(reorderDensity) { 18.dp.toPx() }
+            val reorderOffscreenGraceFrames = 36
+            val reorderIsDragging = reorderState.draggingItemIndex != null
+            val reorderOverscrollEffect = rememberReorderOverscrollEffect(
+                isDragging = reorderIsDragging
+            )
+            LaunchedEffect(reorderState, canReorderCurrentSongs) {
+                if (!canReorderCurrentSongs) return@LaunchedEffect
+                snapshotFlow { reorderState.draggingItemIndex != null }
+                    .distinctUntilChanged()
+                    .collectLatest { isDragging ->
+                        if (!isDragging) return@collectLatest
+                        var lastStableEdgeDelta = 0f
+                        var offscreenFrames = 0
+                        while (isActive && reorderState.draggingItemIndex != null) {
+                            withFrameNanos { }
+                            val layoutInfo = listState.layoutInfo
+                            val draggingKey = reorderState.draggingItemKey
+                            val currentDraggingIndex = reorderState.draggingItemIndex
+                            val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                                info.key == draggingKey || info.index == currentDraggingIndex
+                            }
+                            val delta = itemInfo?.let { info ->
+                                offscreenFrames = 0
+                                val draggingItemTop = resolveReorderDraggingItemTop(
+                                    itemOffset = info.offset,
+                                    itemHeight = info.size,
+                                    viewportHeight = layoutInfo.viewportSize.height,
+                                    draggingOffset = reorderState.draggingItemTop,
+                                    reverseLayout = layoutInfo.reverseLayout
+                                )
+                                val edgeDelta = resolveReorderAutoScrollDelta(
+                                    draggingItemTop = draggingItemTop,
+                                    draggingItemHeight = info.size,
+                                    viewportStart = layoutInfo.viewportStartOffset,
+                                    viewportEnd = layoutInfo.viewportEndOffset,
+                                    edgeDistance = reorderAutoScrollEdgePx,
+                                    maxPerFrame = reorderAutoScrollMaxPx
+                                )
+                                val gatedDelta = gateReorderScrollDelta(
+                                    delta = edgeDelta,
+                                    reverseLayout = layoutInfo.reverseLayout,
+                                    canScrollForward = listState.canScrollForward,
+                                    canScrollBackward = listState.canScrollBackward
+                                )
+                                if (gatedDelta != 0f) {
+                                    lastStableEdgeDelta = gatedDelta
+                                } else {
+                                    lastStableEdgeDelta = 0f
+                                }
+                                gatedDelta
+                            } ?: run {
+                                offscreenFrames += 1
+                                if (offscreenFrames > reorderOffscreenGraceFrames) {
+                                    lastStableEdgeDelta = 0f
+                                    0f
+                                } else {
+                                    val continuation = resolveReorderOffscreenContinuation(
+                                        lastDelta = lastStableEdgeDelta,
+                                        maxPerFrame = reorderAutoScrollMaxPx
+                                    )
+                                    val gatedContinuation = gateReorderScrollDelta(
+                                        delta = continuation,
+                                        reverseLayout = layoutInfo.reverseLayout,
+                                        canScrollForward = listState.canScrollForward,
+                                        canScrollBackward = listState.canScrollBackward
+                                    )
+                                    if (gatedContinuation != 0f) {
+                                        gatedContinuation
+                                    } else {
+                                        lastStableEdgeDelta = 0f
+                                        0f
+                                    }
+                                }
+                            }
+                            if (delta != 0f) {
+                                val scrollArgument = if (layoutInfo.reverseLayout) -delta else delta
+                                var consumed = 0f
+                                listState.scroll(MutatePriority.UserInput) {
+                                    consumed = scrollBy(scrollArgument)
+                                }
+                                if (
+                                    consumed == 0f ||
+                                        kotlin.math.abs(consumed) + 0.5f <
+                                        kotlin.math.abs(scrollArgument)
+                                ) {
+                                    lastStableEdgeDelta = 0f
+                                }
+                            }
+                        }
+                    }
+            }
             val isListScrolling by remember(listState) {
                 derivedStateOf { listState.isScrollInProgress }
             }
@@ -1219,6 +1421,16 @@ fun LocalPlaylistDetailScreen(
                 )
             } else {
                 baseQueue
+            }
+            LaunchedEffect(tabSongs) {
+                val validKeys = tabSongs.map { it.stableKey() }.toSet()
+                val retainedKeys = selectedKeysState.value.intersect(validKeys)
+                if (retainedKeys != selectedKeysState.value) {
+                    selectedKeysState.value = retainedKeys
+                }
+                if (selectionMode && retainedKeys.isEmpty()) {
+                    selectionMode = false
+                }
             }
             val queueIndexBySongKey by remember(tabSongs) {
                 derivedStateOf {
@@ -1465,6 +1677,185 @@ fun LocalPlaylistDetailScreen(
                 }
             }
 
+            fun requestBatchDownload(
+                songs: List<SongItem>,
+                exitSelectionAfterConfirm: Boolean = false
+            ) {
+                val snapshot = songs.toList()
+                if (snapshot.isEmpty()) return
+                pendingDownloadSongs = snapshot
+                pendingDownloadExitSelection = exitSelectionAfterConfirm
+            }
+
+            fun startPendingDownload() {
+                val songs = pendingDownloadSongs ?: return
+                pendingDownloadSongs = null
+                showDownloadManager = true
+                GlobalDownloadManager.startBatchDownload(context, songs)
+                if (pendingDownloadExitSelection) {
+                    pendingDownloadExitSelection = false
+                    exitSelectionMode()
+                }
+            }
+
+            fun openInsertAtDialog() {
+                if (!canReorderCurrentSongs || selectedSongsForAction.isEmpty()) return
+                val snapshot = tabSongs.toList()
+                val selectedIndices = snapshot.mapIndexedNotNull { index, song ->
+                    index.takeIf { song.stableKey() in selectedKeysState.value }
+                }.toSet()
+                if (selectedIndices.isEmpty()) return
+                insertAtSongs = snapshot
+                insertAtSelectedIndices = selectedIndices
+                showInsertAtDialog = true
+            }
+
+            fun applyInsertAtPosition(position: Int) {
+                val source = insertAtSongs
+                val selectedIndices = insertAtSelectedIndices
+                val currentSource = tabSongs
+                if (
+                    pendingOrderIdentities != null ||
+                        source.map { it.identity() } != currentSource.map { it.identity() } ||
+                        repositoryPlaylistSongsSnapshot()?.map { it.identity() } !=
+                        source.map { it.identity() }
+                ) {
+                    showInsertAtDialog = false
+                    insertAtSongs = emptyList()
+                    insertAtSelectedIndices = emptySet()
+                    scope.launch {
+                        snackbarHostState.showNeriSnackbar(
+                            composeResources.getString(R.string.playlist_insert_at_stale)
+                        )
+                    }
+                    return
+                }
+                val currentSongByIdentity = currentSource.associateBy { it.identity() }
+                val currentItems = source.map { song ->
+                    currentSongByIdentity[song.identity()] ?: song
+                }
+                val reordered = moveSelectedItemsToOneBasedPosition(
+                    items = currentItems,
+                    selectedIndices = selectedIndices,
+                    requestedPosition = position
+                ) ?: return
+                val previousSongs = localSongs.toList()
+                localSongs.clear()
+                localSongs.addAll(reordered)
+                val mutationGeneration = beginLocalPlaylistMutation(reordered)
+                showInsertAtDialog = false
+                insertAtSongs = emptyList()
+                insertAtSelectedIndices = emptySet()
+                exitSelectionMode()
+                vm.reorderSongs(reordered.map { it.identity() }) { result ->
+                    if (mutationGeneration != reorderMutationGeneration) return@reorderSongs
+                    if (result.isFailure) {
+                        settleLocalPlaylistMutation(
+                            generation = mutationGeneration,
+                            expectedOrder = reordered.map { it.identity() },
+                            previousSongs = previousSongs,
+                            restorePreviousWhenRepositoryUnavailable = true
+                        )
+                        scope.launch {
+                            snackbarHostState.showNeriSnackbar(
+                                composeResources.getString(R.string.playlist_reorder_failed)
+                            )
+                        }
+                    } else {
+                        val appliedSongs = settleLocalPlaylistMutation(
+                            generation = mutationGeneration,
+                            expectedOrder = reordered.map { it.identity() }
+                        )
+                        val appliedOrder = appliedSongs.map { it.identity() }
+                        scope.launch {
+                            val snackbarResult = snackbarHostState.showNeriSnackbar(
+                                message = composeResources.getString(
+                                    R.string.playlist_insert_at_applied
+                                ),
+                                actionLabel = composeResources.getString(
+                                    R.string.playlist_insert_at_undo
+                                ),
+                                withDismissAction = true,
+                                duration = SnackbarDuration.Long
+                            )
+                            if (snackbarResult != SnackbarResult.ActionPerformed) return@launch
+                            if (mutationGeneration != reorderMutationGeneration) return@launch
+                            if (!canUndoPlaylistReorder(
+                                    currentOrder = localSongs.map { it.identity() },
+                                    appliedOrder = appliedOrder
+                                ) ||
+                                repositoryPlaylistSongsSnapshot()?.map { it.identity() } !=
+                                    appliedOrder
+                            ) {
+                                snackbarHostState.showNeriSnackbar(
+                                    composeResources.getString(
+                                        R.string.playlist_insert_at_undo_unavailable
+                                    )
+                                )
+                                return@launch
+                            }
+                            localSongs.clear()
+                            localSongs.addAll(previousSongs)
+                            val undoGeneration = beginLocalPlaylistMutation(previousSongs)
+                            vm.reorderSongs(previousSongs.map { it.identity() }) { undoResult ->
+                                if (undoGeneration != reorderMutationGeneration) return@reorderSongs
+                                if (undoResult.isSuccess) {
+                                    settleLocalPlaylistMutation(
+                                        generation = undoGeneration,
+                                        expectedOrder = previousSongs.map { it.identity() }
+                                    )
+                                    scope.launch {
+                                        snackbarHostState.showNeriSnackbar(
+                                            composeResources.getString(
+                                                R.string.playlist_insert_at_undone
+                                            )
+                                        )
+                                    }
+                                } else {
+                                    settleLocalPlaylistMutation(
+                                        generation = undoGeneration,
+                                        expectedOrder = previousSongs.map { it.identity() },
+                                        previousSongs = appliedSongs,
+                                        restorePreviousWhenRepositoryUnavailable = true
+                                    )
+                                    scope.launch {
+                                        snackbarHostState.showNeriSnackbar(
+                                            composeResources.getString(
+                                                R.string.playlist_insert_at_undo_failed
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                val insertedIndex = (position - 1).coerceAtMost(reordered.lastIndex)
+                val insertedSongKey = reordered.getOrNull(insertedIndex)?.stableKey()
+                val displayedAfterInsert = if (searchQuery.isBlank()) {
+                    reordered
+                } else {
+                    SearchTextMatcher.filterAndRank(
+                        query = searchQuery,
+                        items = reordered,
+                        tokens = { song -> song.playlistSearchValues(context) }
+                    )
+                }
+                val displayedInsertedIndex = insertedSongKey?.let { key ->
+                    displayedAfterInsert.indexOfFirst { it.stableKey() == key }
+                } ?: -1
+                if (displayedInsertedIndex >= 0) {
+                    scope.launch {
+                        listState.animateScrollToItem(
+                            resolveLocalPlaylistSongListIndex(
+                                songIndex = displayedInsertedIndex,
+                                metadataProcessingVisible = metadataProcessingVisible
+                            )
+                        )
+                    }
+                }
+            }
+
             LaunchedEffect(scanPreviewState.visible) {
                 if (scanPreviewState.visible) {
                     snackbarHostState.dismissCurrentNeriSnackbar()
@@ -1616,7 +2007,7 @@ fun LocalPlaylistDetailScreen(
                 )
                 val searchSlotProgress = searchVisibilityProgress.coerceIn(0f, 1f)
                 val searchVisibilityEased = FastOutSlowInEasing.transform(searchSlotProgress)
-                val searchDockedRevealProgress by remember(
+                val searchDockedRevealTarget by remember(
                     reorderState.listState,
                     density
                 ) {
@@ -1631,6 +2022,10 @@ fun LocalPlaylistDetailScreen(
                         )
                     }
                 }
+                val searchDockedRevealProgress = playlistModernAnimatedScrollProgress(
+                    targetProgress = searchDockedRevealTarget,
+                    label = "playlist-docked-search-reveal"
+                )
                 val searchDockedVisualProgress = FastOutSlowInEasing.transform(
                     searchDockedRevealProgress
                 )
@@ -1653,7 +2048,7 @@ fun LocalPlaylistDetailScreen(
                     end = PlaylistModernHeroSearchHeight,
                     fraction = searchVisibilityEased
                 )
-                val playlistChromeCollapseProgress by remember(
+                val playlistChromeCollapseTarget by remember(
                     reorderState.listState,
                     density,
                     playlistHeroHeight
@@ -1669,6 +2064,10 @@ fun LocalPlaylistDetailScreen(
                         )
                     }
                 }
+                val playlistChromeCollapseProgress = playlistModernAnimatedScrollProgress(
+                    targetProgress = playlistChromeCollapseTarget,
+                    label = "playlist-chrome-collapse"
+                )
                 val playlistChromeVisualProgress =
                     FastOutSlowInEasing.transform(playlistChromeCollapseProgress)
                 val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
@@ -1770,18 +2169,6 @@ fun LocalPlaylistDetailScreen(
                                     showSearch = openingSearch
                                 }) { Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.cd_search_songs)) }
                                 
-                                if (hasDownloadManagerEntry) {
-                                    HapticIconButton(
-                                        onClick = { showDownloadManager = true }
-                                    ) {
-                                        Icon(
-                                            Icons.Outlined.Download,
-                                            contentDescription = stringResource(R.string.cd_download_manager),
-                                            tint = playlistTopBarContentColor
-                                        )
-                                    }
-                                }
-                                
                                 if (
                                     isLocalFilesPlaylist &&
                                     selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
@@ -1795,42 +2182,78 @@ fun LocalPlaylistDetailScreen(
                                         )
                                     }
                                 }
-                                if (isFavorites) {
-                                    HapticIconButton(
-                                        onClick = { requestNeteaseSync() },
-                                        enabled = !syncInProgress
-                                    ) {
-                                        if (syncInProgress) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp
+                                PlaylistMoreMenuButton(
+                                    tint = playlistTopBarContentColor,
+                                    actions = buildList {
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.download_to_local),
+                                                icon = Icons.Outlined.Download,
+                                                enabled = tabSongs.isNotEmpty(),
+                                                onClick = { requestBatchDownload(tabSongs) }
                                             )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Sync,
-                                                contentDescription = stringResource(R.string.local_playlist_sync_netease_liked)
+                                        )
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.playlist_random_play),
+                                                icon = Icons.Outlined.Shuffle,
+                                                enabled = tabSongs.isNotEmpty(),
+                                                onClick = { playPlaylist(shuffle = true) }
+                                            )
+                                        )
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.action_enter_multi_select),
+                                                icon = Icons.AutoMirrored.Outlined.QueueMusic,
+                                                enabled = tabSongs.isNotEmpty(),
+                                                onClick = { selectionMode = true }
+                                            )
+                                        )
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.cd_download_manager),
+                                                icon = Icons.Outlined.DownloadDone,
+                                                enabled = hasDownloadManagerEntry,
+                                                onClick = { showDownloadManager = true }
+                                            )
+                                        )
+                                        if (isFavorites) {
+                                            add(
+                                                PlaylistMoreMenuAction(
+                                                    label = stringResource(
+                                                        R.string.local_playlist_sync_netease_liked
+                                                    ),
+                                                    icon = Icons.Outlined.Sync,
+                                                    enabled = !syncInProgress,
+                                                    onClick = { requestNeteaseSync() }
+                                                )
+                                            )
+                                        }
+                                        if (!isSystemPlaylist) {
+                                            add(
+                                                PlaylistMoreMenuAction(
+                                                    label = stringResource(R.string.local_playlist_rename),
+                                                    icon = Icons.Filled.Edit,
+                                                    onClick = {
+                                                        renameText = playlistNameFieldValue(
+                                                            playlist.name,
+                                                            maxNameLength
+                                                        )
+                                                        renameError = null
+                                                        showRename = true
+                                                    }
+                                                )
+                                            )
+                                            add(
+                                                PlaylistMoreMenuAction(
+                                                    label = stringResource(R.string.local_playlist_delete),
+                                                    icon = Icons.Filled.Delete,
+                                                    onClick = { showDeletePlaylistConfirm = true }
+                                                )
                                             )
                                         }
                                     }
-                                }
-                                
-                                if (!isSystemPlaylist) {
-                                    HapticIconButton(onClick = {
-                                        renameText = playlistNameFieldValue(playlist.name, maxNameLength)
-                                        renameError = null
-                                        showRename = true
-                                    }) {
-                                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.local_playlist_rename))
-                                    }
-                                    HapticIconButton(onClick = {
-                                        showDeletePlaylistConfirm = true
-                                    }) {
-                                        Icon(
-                                            Icons.Filled.Delete,
-                                            contentDescription = stringResource(R.string.local_playlist_delete)
-                                        )
-                                    }
-                                }
+                                )
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -1852,8 +2275,8 @@ fun LocalPlaylistDetailScreen(
                                 Text(
                                     pluralStringResource(
                                         R.plurals.common_selected_count,
-                                        selectedKeysState.value.size,
-                                        selectedKeysState.value.size
+                                        selectedSongsForAction.size,
+                                        selectedSongsForAction.size
                                     ),
                                     style = MaterialTheme.typography.titleMedium,
                                     maxLines = 1,
@@ -1883,59 +2306,77 @@ fun LocalPlaylistDetailScreen(
                                         contentDescription = if (allSelected) stringResource(R.string.action_deselect_all) else stringResource(R.string.action_select_all)
                                     )
                                 }
-                                HapticIconButton(
-                                    onClick = { openNeteaseRemotePlaylistPicker() },
-                                    enabled = selectedKeysState.value.isNotEmpty() && !syncInProgress
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Sync,
-                                        contentDescription = stringResource(
-                                            R.string.local_playlist_sync_netease_playlist
+                                PlaylistMoreMenuButton(
+                                    tint = playlistSelectionTopBarContentColor,
+                                    actions = buildList {
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(
+                                                    R.string.local_playlist_sync_netease_playlist
+                                                ),
+                                                icon = Icons.Outlined.Sync,
+                                                enabled = selectedKeysState.value.isNotEmpty() &&
+                                                    !syncInProgress,
+                                                onClick = { openNeteaseRemotePlaylistPicker() }
+                                            )
                                         )
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
-                                        if (selectedKeysState.value.isNotEmpty()) {
-                                            showExportSheet = true
-                                        }
-                                    },
-                                    enabled = selectedKeysState.value.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                        contentDescription = stringResource(R.string.cd_export_playlist)
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
-                                        val selectedSongs = selectedSongsForAction
-                                        if (selectedSongs.isNotEmpty()) {
-                                            showDownloadManager = true
-                                            exitSelectionMode()
-                                            GlobalDownloadManager.startBatchDownload(
-                                                context,
-                                                selectedSongs
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.cd_export_playlist),
+                                                icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                                enabled = selectedKeysState.value.isNotEmpty(),
+                                                onClick = { showExportSheet = true }
+                                            )
+                                        )
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.cd_download_selected),
+                                                icon = Icons.Outlined.Download,
+                                                enabled = selectedSongsForAction.isNotEmpty(),
+                                                onClick = {
+                                                    requestBatchDownload(
+                                                        selectedSongsForAction,
+                                                        exitSelectionAfterConfirm = true
+                                                    )
+                                                }
+                                            )
+                                        )
+                                        if (canReorderCurrentSongs) {
+                                            add(
+                                                PlaylistMoreMenuAction(
+                                                    label = stringResource(
+                                                        R.string.playlist_insert_at_title
+                                                    ),
+                                                    icon = Icons.Outlined.SwapVert,
+                                                    enabled = selectedSongsForAction.isNotEmpty(),
+                                                    onClick = ::openInsertAtDialog
+                                                )
                                             )
                                         }
-                                    },
-                                    enabled = selectedSongsForAction.isNotEmpty()
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.Download,
-                                        contentDescription = stringResource(R.string.cd_download_selected)
-                                    )
-                                }
-                                HapticIconButton(
-                                    onClick = {
-                                        if (selectedKeysState.value.isNotEmpty()) {
-                                            showDeleteMultiConfirm = true
-                                        }
-                                    },
-                                    enabled = selectedKeysState.value.isNotEmpty()
-                                ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete_selected))
-                                }
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.common_delete_selected),
+                                                icon = Icons.Filled.Delete,
+                                                enabled = if (
+                                                    isLocalFilesPlaylist &&
+                                                        selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED
+                                                ) {
+                                                    selectedDownloadedSongsForAction.isNotEmpty()
+                                                } else {
+                                                    selectedSongsForAction.isNotEmpty()
+                                                },
+                                                onClick = { showDeleteMultiConfirm = true }
+                                            )
+                                        )
+                                        add(
+                                            PlaylistMoreMenuAction(
+                                                label = stringResource(R.string.action_exit_multi_select),
+                                                icon = Icons.Outlined.Close,
+                                                onClick = ::exitSelectionMode
+                                            )
+                                        )
+                                    }
+                                )
                             },
                             windowInsets = WindowInsets.statusBars,
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -1995,6 +2436,7 @@ fun LocalPlaylistDetailScreen(
                             ) {
                                 LazyColumn(
                                     state = reorderState.listState,
+	                                    overscrollEffect = reorderOverscrollEffect,
 	                                    contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
 	                                    modifier = Modifier
 	                                        .fillMaxSize()
@@ -2476,9 +2918,13 @@ fun LocalPlaylistDetailScreen(
 
                 // 多选删除确认
                 if (showDeleteMultiConfirm) {
-                    val count = selectedKeysState.value.size
                     val deletesDownloadedSongs = isLocalFilesPlaylist &&
                         selectedLocalFilesTab == LocalFilesSongTab.DOWNLOADED
+                    val count = if (deletesDownloadedSongs) {
+                        selectedDownloadedSongsForAction.size
+                    } else {
+                        selectedSongsForAction.size
+                    }
                     AlertDialog(
                         onDismissRequest = { showDeleteMultiConfirm = false },
                         title = {
@@ -2557,21 +3003,29 @@ fun LocalPlaylistDetailScreen(
                                     val removeIdentities = songsToRemove.map { it.identity() }.toSet()
                                     localSongs.filterNot { it.identity() in removeIdentities }
                                 }
-                                pendingOrderIdentities = expectedSongs.map { it.identity() }
-                                blockSync = true
-
                                 localSongs.clear()
                                 localSongs.addAll(expectedSongs)
+                                val mutationGeneration = beginLocalPlaylistMutation(expectedSongs)
                                 showDeleteMultiConfirm = false
                                 exitSelectionMode()
 
                                 if (removeAll) {
                                     vm.clearSongs { result ->
-                                        handleLocalSongDeleteResult(previousSongs, result)
+                                        handleLocalSongDeleteResult(
+                                            previousSongs = previousSongs,
+                                            expectedSongs = expectedSongs,
+                                            mutationGeneration = mutationGeneration,
+                                            result = result
+                                        )
                                     }
                                 } else {
                                     vm.removeSongs(songsToRemove) { result ->
-                                        handleLocalSongDeleteResult(previousSongs, result)
+                                        handleLocalSongDeleteResult(
+                                            previousSongs = previousSongs,
+                                            expectedSongs = expectedSongs,
+                                            mutationGeneration = mutationGeneration,
+                                            result = result
+                                        )
                                     }
                                 }
                             }) { Text(stringResource(R.string.local_playlist_delete_count, count)) }
@@ -2712,6 +3166,56 @@ fun LocalPlaylistDetailScreen(
                         errorMessage = neteaseRemotePlaylistsError,
                         onPlaylistClick = ::selectNeteaseRemotePlaylist,
                         onDismissRequest = ::dismissNeteaseRemotePlaylistPicker
+                    )
+                }
+
+                pendingDownloadSongs?.let { songs ->
+                    PlaylistDownloadConfirmationDialog(
+                        songCount = songs.size,
+                        onConfirm = { startPendingDownload() },
+                        onDismiss = {
+                            pendingDownloadSongs = null
+                            pendingDownloadExitSelection = false
+                        }
+                    )
+                }
+
+                if (showInsertAtDialog) {
+                    PlaylistInsertAtDialog(
+                        itemCount = insertAtSongs.size,
+                        selectedCount = insertAtSelectedIndices.size,
+                        previewForPosition = { position ->
+                            val preview = moveSelectedItemsToOneBasedPosition(
+                                items = insertAtSongs,
+                                selectedIndices = insertAtSelectedIndices,
+                                requestedPosition = position
+                            ).orEmpty()
+                            if (preview.isEmpty()) {
+                                emptyList()
+                            } else {
+                                val first = (position - 1).coerceIn(0, preview.lastIndex)
+                                val start = (first - 2).coerceAtLeast(0)
+                                val end = (first + insertAtSelectedIndices.size + 2)
+                                    .coerceAtMost(preview.size)
+                                preview.subList(start, end).mapIndexed { offset, song ->
+                                    val index = start + offset + 1
+                                    PlaylistInsertPreviewRow(
+                                        position = index,
+                                        title = song.displayName(),
+                                        subtitle = song.displayArtist(),
+                                        isMoved = index in (
+                                            first + 1
+                                        )..(first + insertAtSelectedIndices.size)
+                                    )
+                                }
+                            }
+                        },
+                        onConfirm = ::applyInsertAtPosition,
+                        onDismiss = {
+                            showInsertAtDialog = false
+                            insertAtSongs = emptyList()
+                            insertAtSelectedIndices = emptySet()
+                        }
                     )
                 }
 

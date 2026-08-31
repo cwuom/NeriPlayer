@@ -21,4 +21,9 @@
     <string name="bili_downloading_current">正在下载: %s</string>
     <string name="bili_overall_progress">总体进度: %d%%</string>
     <string name="bili_current_file_progress" formatted="false">当前文件: %d%% (%d KB/s)</string>
+    <string name="bili_playlist_load_all_title">加载完整歌单</string>
+    <string name="bili_playlist_load_all_message">当前仅加载 %1$d / %2$d 首。此操作需要完整列表，是否继续加载？</string>
+    <string name="bili_playlist_load_all_confirm">加载全部</string>
+    <string name="bili_playlist_load_all_progress">正在加载全部歌曲… %1$d / %2$d</string>
+    <string name="bili_playlist_load_all_failed">未能加载完整歌单，请稍后重试</string>
 </resources>

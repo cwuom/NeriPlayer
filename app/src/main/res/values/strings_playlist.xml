@@ -57,6 +57,25 @@
     <string name="playlist_play_count_format" formatted="false">播放量 %1$s · %2$d 首</string>
     <string name="collection_track_count_format" formatted="false">%d 首</string>
     <string name="playlist_loading_content">正在加载歌单内容…</string>
+    <string name="playlist_download_confirm_title">确认下载</string>
+    <string name="playlist_random_play">随机播放</string>
+    <string name="playlist_insert_at_title">插入到指定位置</string>
+    <string name="playlist_insert_at_position">目标索引</string>
+    <string name="playlist_insert_at_range">可输入 %1$d 到 %2$d</string>
+    <string name="playlist_insert_at_unavailable">当前没有可用的插入位置</string>
+    <string name="playlist_insert_at_preview_title">预览排序</string>
+    <string name="playlist_insert_at_preview_button">预览顺序</string>
+    <string name="playlist_insert_at_confirm_button">确认排序</string>
+    <string name="playlist_insert_at_adjust_button">调整位置</string>
+    <string name="playlist_insert_at_preview_note">这是确认后歌单顺序的局部预览，可修改索引后再次查看</string>
+    <string name="playlist_insert_at_selected_marker">将移动</string>
+    <string name="playlist_insert_at_applied">已完成排序</string>
+    <string name="playlist_insert_at_undo">撤销排序</string>
+    <string name="playlist_insert_at_undone">已撤销排序</string>
+    <string name="playlist_insert_at_undo_unavailable">歌单顺序已变化，无法撤销</string>
+    <string name="playlist_insert_at_undo_failed">撤销排序失败</string>
+    <string name="playlist_insert_at_stale">歌单内容已更新，请重新选择歌曲后再试</string>
+    <string name="playlist_reorder_failed">保存排序失败，已恢复原顺序</string>
     <string name="youtube_music_playlist_partial_loaded">歌单还有内容没加载完，已先显示当前已获取的歌曲</string>
     <string name="youtube_music_playlist_wait_full_load">歌单还没完整加载，稍后再试或点刷新重试</string>
     <string name="youtube_music_playlist_tracks_unavailable">暂时未能获取歌单歌曲，请刷新重试</string>

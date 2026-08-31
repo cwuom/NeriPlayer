@@ -59,8 +59,11 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -218,6 +221,18 @@ fun YouTubeMusicPlaylistDetailScreen(
     var showDownloadManager by remember { mutableStateOf(false) }
     val downloadTaskSummary by GlobalDownloadManager.downloadTaskSummary.collectAsState()
     val hasDownloadManagerEntry = downloadTaskSummary.hasDownloadManagerEntry
+    var pendingDownloadSongs by remember { mutableStateOf<List<SongItem>?>(null) }
+
+    fun requestBatchDownload(songs: List<SongItem>) {
+        if (songs.isNotEmpty()) pendingDownloadSongs = songs
+    }
+
+    fun startPendingDownload() {
+        val songs = pendingDownloadSongs ?: return
+        pendingDownloadSongs = null
+        showDownloadManager = true
+        GlobalDownloadManager.startBatchDownload(context, songs)
+    }
 
     var showExportSheet by remember { mutableStateOf(false) }
     var showExportAllSheet by remember { mutableStateOf(false) }
@@ -296,7 +311,7 @@ fun YouTubeMusicPlaylistDetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
-    val playlistChromeCollapseProgress by remember(
+    val playlistChromeCollapseTarget by remember(
         listState,
         density,
         playlistHeroHeight
@@ -311,10 +326,14 @@ fun YouTubeMusicPlaylistDetailScreen(
             )
         }
     }
+    val playlistChromeCollapseProgress = playlistModernAnimatedScrollProgress(
+        targetProgress = playlistChromeCollapseTarget,
+        label = "youtube-music-playlist-chrome-collapse"
+    )
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealTarget by remember(listState, density) {
         derivedStateOf {
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
@@ -325,6 +344,10 @@ fun YouTubeMusicPlaylistDetailScreen(
             )
         }
     }
+    val dockedSearchRevealProgress = playlistModernAnimatedScrollProgress(
+        targetProgress = dockedSearchRevealTarget,
+        label = "youtube-music-playlist-docked-search-reveal"
+    )
     val searchDockedVisualProgress = resolvePlaylistEasedProgress(
         dockedSearchRevealProgress
     )
@@ -533,15 +556,53 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 tint = playlistTopBarContentColor
                             )
                         }
-                        if (hasDownloadManagerEntry) {
-                            HapticIconButton(onClick = { showDownloadManager = true }) {
-                                Icon(
-                                    Icons.Outlined.Download,
-                                    contentDescription = stringResource(R.string.cd_download_manager),
-                                    tint = playlistTopBarContentColor
+                        PlaylistMoreMenuButton(
+                            tint = playlistTopBarContentColor,
+                            actions = listOf(
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.download_to_local),
+                                    icon = Icons.Outlined.Download,
+                                    enabled = visibleTracks.isNotEmpty(),
+                                    onClick = {
+                                        if (requestedAllTracksLoaded) {
+                                            requestBatchDownload(visibleTracks)
+                                        } else {
+                                            showWaitForFullLoadMessage()
+                                        }
+                                    }
+                                ),
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.cd_shuffle),
+                                    icon = Icons.Outlined.Shuffle,
+                                    enabled = requestedAllTracksLoaded && visibleTracks.isNotEmpty(),
+                                    onClick = {
+                                        if (requestedAllTracksLoaded) {
+                                            playYouTubeMusicPlaylist(shuffle = true)
+                                        } else {
+                                            showWaitForFullLoadMessage()
+                                        }
+                                    }
+                                ),
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.action_enter_multi_select),
+                                    icon = Icons.AutoMirrored.Outlined.PlaylistPlay,
+                                    enabled = requestedAllTracksLoaded && visibleTracks.isNotEmpty(),
+                                    onClick = {
+                                        if (requestedAllTracksLoaded) {
+                                            selectionMode = true
+                                        } else {
+                                            showWaitForFullLoadMessage()
+                                        }
+                                    }
+                                ),
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.cd_download_manager),
+                                    icon = Icons.Outlined.DownloadDone,
+                                    enabled = hasDownloadManagerEntry,
+                                    onClick = { showDownloadManager = true }
                                 )
-                            }
-                        }
+                            )
+                        )
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -589,33 +650,32 @@ fun YouTubeMusicPlaylistDetailScreen(
                                 }
                             )
                         }
-                        HapticIconButton(
-                            onClick = {
-                                if (selectedKeys.isNotEmpty()) showExportSheet = true
-                            },
-                            enabled = selectedKeys.isNotEmpty()
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.PlaylistAdd,
-                                contentDescription = stringResource(R.string.cd_export_playlist)
+                        PlaylistMoreMenuButton(
+                            tint = playlistSelectionTopBarContentColor,
+                            actions = listOf(
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.cd_export_playlist),
+                                    icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+                                    enabled = selectedKeys.isNotEmpty(),
+                                    onClick = { showExportSheet = true }
+                                ),
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.cd_download_selected),
+                                    icon = Icons.Outlined.Download,
+                                    enabled = selectedKeys.isNotEmpty(),
+                                    onClick = {
+                                        requestBatchDownload(
+                                            visibleTracks.filter { it.stableKey() in selectedKeys }
+                                        )
+                                    }
+                                ),
+                                PlaylistMoreMenuAction(
+                                    label = stringResource(R.string.action_exit_multi_select),
+                                    icon = Icons.Outlined.Close,
+                                    onClick = ::exitSelection
+                                )
                             )
-                        }
-                        HapticIconButton(
-                            onClick = {
-                                if (selectedKeys.isNotEmpty()) {
-                                    val selectedSongs = visibleTracks.filter { it.stableKey() in selectedKeys }
-                                    showDownloadManager = true
-                                    GlobalDownloadManager.startBatchDownload(context, selectedSongs)
-                                    exitSelection()
-                                }
-                            },
-                            enabled = selectedKeys.isNotEmpty()
-                        ) {
-                            Icon(
-                                Icons.Outlined.Download,
-                                contentDescription = stringResource(R.string.cd_download_selected)
-                            )
-                        }
+                        )
                     },
                     windowInsets = WindowInsets.statusBars,
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -975,6 +1035,17 @@ fun YouTubeMusicPlaylistDetailScreen(
                     }
                     showExportAllSheet = false
                 }
+            )
+        }
+
+        pendingDownloadSongs?.let { songs ->
+            PlaylistDownloadConfirmationDialog(
+                songCount = songs.size,
+                onConfirm = {
+                    startPendingDownload()
+                    if (selectionMode) exitSelection()
+                },
+                onDismiss = { pendingDownloadSongs = null }
             )
         }
         

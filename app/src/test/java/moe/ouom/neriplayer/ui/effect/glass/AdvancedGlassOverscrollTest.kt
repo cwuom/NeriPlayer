@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.effect.glass
 
+import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -129,5 +132,114 @@ class AdvancedGlassOverscrollTest {
 
         assertTrue(longDrag > shortDrag)
         assertTrue(longDrag <= 0.62f)
+    }
+
+    @Test
+    fun flingWaitsForTheListBeforeStartingTheReturnSpring() = runBlocking {
+        val events = mutableListOf<String>()
+        var receivedVelocity = Velocity.Zero
+        var returnVelocity = Float.NaN
+
+        runAdvancedGlassOverscrollFling(
+            velocity = Velocity(7f, -1_200f),
+            offsetY = 48f,
+            performFling = { incoming ->
+                events += "perform-start"
+                receivedVelocity = incoming
+                yield()
+                events += "perform-end"
+                Velocity(2f, -300f)
+            },
+            startReturnAnimation = { velocity ->
+                events += "return"
+                returnVelocity = velocity
+            }
+        )
+
+        assertEquals(
+            listOf("perform-start", "perform-end", "return"),
+            events
+        )
+        assertEquals(
+            resolveAdvancedGlassOverscrollFlingVelocity(
+                velocity = Velocity(7f, -1_200f),
+                offsetY = 48f
+            ),
+            receivedVelocity
+        )
+        assertEquals(
+            (receivedVelocity.y - (-300f)) / 1.53333f,
+            returnVelocity,
+            0.01f
+        )
+    }
+
+    @Test
+    fun activeOverscrollKeepsTheListFlingDirectionSafeForBothEdges() = runBlocking {
+        listOf(
+            48f to -1_000f,
+            -48f to 1_000f
+        ).forEach { (offset, inputVelocity) ->
+            var receivedVelocity = Velocity.Zero
+            var calls = 0
+
+            runAdvancedGlassOverscrollFling(
+                velocity = Velocity.Zero.copy(y = inputVelocity),
+                offsetY = offset,
+                performFling = { incoming ->
+                    calls += 1
+                    receivedVelocity = incoming
+                    Velocity.Zero
+                },
+                startReturnAnimation = {}
+            )
+
+            assertEquals(1, calls)
+            assertTrue(receivedVelocity.y * offset < 0f)
+            assertTrue(kotlin.math.abs(receivedVelocity.y) < kotlin.math.abs(inputVelocity))
+        }
+    }
+
+    @Test
+    fun activeOverscrollDoesNotPassTowardEdgeVelocityToTheList() = runBlocking {
+        listOf(
+            48f to 1_000f,
+            -48f to -1_000f
+        ).forEach { (offset, inputVelocity) ->
+            var receivedVelocity = Velocity.Zero
+
+            runAdvancedGlassOverscrollFling(
+                velocity = Velocity.Zero.copy(y = inputVelocity),
+                offsetY = offset,
+                performFling = { incoming ->
+                    receivedVelocity = incoming
+                    Velocity.Zero
+                },
+                startReturnAnimation = {}
+            )
+
+            assertEquals(0f, receivedVelocity.y, 0.001f)
+        }
+    }
+
+    @Test
+    fun returnSpringReceivesExactlyTheUnconsumedVelocity() = runBlocking {
+        val input = Velocity(11f, 900f)
+        val consumed = Velocity(4f, 250f)
+        var receivedVelocity = Velocity.Zero
+        var returnVelocity = Float.NaN
+
+        runAdvancedGlassOverscrollFling(
+            velocity = input,
+            offsetY = 0f,
+            performFling = { incoming ->
+                receivedVelocity = incoming
+                consumed
+            },
+            startReturnAnimation = { velocity -> returnVelocity = velocity }
+        )
+
+        assertEquals(input, receivedVelocity)
+        assertEquals((input.y - consumed.y) / 1.53333f, returnVelocity, 0.01f)
     }
 }

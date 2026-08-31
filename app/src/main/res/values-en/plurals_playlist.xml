@@ -13,4 +13,12 @@
         <item quantity="one">Exported %1$d song to "%2$s"</item>
         <item quantity="other">Exported %1$d songs to "%2$s"</item>
     </plurals>
+    <plurals name="playlist_download_confirm_message">
+        <item quantity="one">Download %1$d song?</item>
+        <item quantity="other">Download %1$d songs?</item>
+    </plurals>
+    <plurals name="playlist_insert_at_selected">
+        <item quantity="one">%1$d song selected</item>
+        <item quantity="other">%1$d songs selected</item>
+    </plurals>
 </resources>

@@ -1025,11 +1025,6 @@ class NowPlayingScreenTest {
     }
 
     @Test
-    fun `queue reorder autoscroll uses gentle per frame step`() {
-        assertEquals(2.dp, NowPlayingQueueReorderAutoScrollMaxPerFrame)
-    }
-
-    @Test
     fun `queue index input resolves one based numbers`() {
         assertEquals(0, resolveNowPlayingQueueIndexInput("1", queueSize = 10))
         assertEquals(9, resolveNowPlayingQueueIndexInput("10", queueSize = 10))

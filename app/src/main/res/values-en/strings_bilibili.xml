@@ -21,4 +21,9 @@
     <string name="bili_downloading_current">Downloading: %s</string>
     <string name="bili_overall_progress">Overall progress: %d%%</string>
     <string name="bili_current_file_progress" formatted="false">Current file: %d%% (%d KB/s)</string>
+    <string name="bili_playlist_load_all_title">Load full playlist</string>
+    <string name="bili_playlist_load_all_message">Only %1$d of %2$d tracks are loaded. This action needs the complete list. Continue loading?</string>
+    <string name="bili_playlist_load_all_confirm">Load all</string>
+    <string name="bili_playlist_load_all_progress">Loading all tracks… %1$d / %2$d</string>
+    <string name="bili_playlist_load_all_failed">Could not load the full playlist. Try again later.</string>
 </resources>
