@@ -2332,6 +2332,7 @@ object AudioDownloadManager {
                 var storedAudio: ManagedDownloadStorage.StoredEntry? = null
                 var tempFile: File? = null
                 val coreCommitTracker = DownloadCoreCommitTracker()
+                var cancellationCleanupAttempted = false
                 beginSongDownloadOperation(songKey)
                 clearPartialSidecarReferences(songKey)
                 try {
@@ -2611,19 +2612,18 @@ object AudioDownloadManager {
                                     !preserveArtifacts &&
                                     shouldRollbackCancelledAudio(coreCommitTracker.phase)
                                 ) {
-                                    runCatching {
-                                        ManagedDownloadStorage
-                                            .cleanupCancelledPendingDownloadArtifacts(
-                                                context = context,
-                                                stableKey = songKey,
-                                                operationId = effectiveOperationId
-                                            )
-                                    }.onFailure { cleanupError ->
+                                    cancellationCleanupAttempted = true
+                                    val cleanupResult =
+                                        cleanupCancelledPendingArtifactsWithLease(
+                                            context = context,
+                                            songKey = songKey,
+                                            operationId = effectiveOperationId
+                                        )
+                                    if (cleanupResult.failedCount > 0) {
                                         NPLogger.w(
                                             TAG,
-                                            "取消下载 pending 半成品清理失败: " +
-                                                "song=${song.name}, ${cleanupError.message}",
-                                            cleanupError
+                                            "取消下载 pending 半成品暂未完全清理，保留恢复凭据: " +
+                                                "song=${song.name}, failed=${cleanupResult.failedCount}"
                                         )
                                     }
                                     if (storedAudio != null || partialSidecarReferences?.isEmpty == false) {
@@ -2753,19 +2753,21 @@ object AudioDownloadManager {
                             !preserveArtifacts &&
                             shouldRollbackCancelledAudio(coreCommitTracker.phase)
                         ) {
-                            runCatching {
-                                ManagedDownloadStorage.cleanupCancelledPendingDownloadArtifacts(
-                                    context = context,
-                                    stableKey = songKey,
-                                    operationId = effectiveOperationId
-                                )
-                            }.onFailure { cleanupError ->
-                                NPLogger.w(
-                                    TAG,
-                                    "取消下载 pending 半成品清理失败: " +
-                                        "song=${song.name}, ${cleanupError.message}",
-                                    cleanupError
-                                )
+                            if (!cancellationCleanupAttempted) {
+                                cancellationCleanupAttempted = true
+                                val cleanupResult =
+                                    cleanupCancelledPendingArtifactsWithLease(
+                                        context = context,
+                                        songKey = songKey,
+                                        operationId = effectiveOperationId
+                                    )
+                                if (cleanupResult.failedCount > 0) {
+                                    NPLogger.w(
+                                        TAG,
+                                        "取消下载 pending 半成品暂未完全清理，保留恢复凭据: " +
+                                            "song=${song.name}, failed=${cleanupResult.failedCount}"
+                                    )
+                                }
                             }
                             if (storedAudio != null || partialSidecarReferences?.isEmpty == false) {
                                 runCatching {
@@ -2813,6 +2815,61 @@ object AudioDownloadManager {
                     clearPublishedProgress(songKey)
                     endSongDownloadOperation(songKey)
                 }
+    }
+
+    private suspend fun cleanupCancelledPendingArtifactsWithLease(
+        context: Context,
+        songKey: String,
+        operationId: String
+    ): ManagedDownloadStorage.StartupRecoveryResult = withContext(NonCancellable) {
+        val appContext = context.applicationContext
+        val deleteLease = try {
+            ManagedDownloadDirectoryMutationFence.acquireDeleteLeaseOrNull(appContext)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 清理获取目录租约失败，保留恢复凭据: " +
+                    "songKey=$songKey, operationId=$operationId, " +
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
+            return@withContext ManagedDownloadStorage.StartupRecoveryResult(
+                failedCount = 1
+            )
+        } ?: run {
+            // 目录迁移期间拿不到删除租约是正常的并发结果，凭据会由恢复任务继续处理
+            NPLogger.d(
+                TAG,
+                "目录迁移或其他目录变更进行中，延后取消下载 pending 清理: " +
+                    "songKey=$songKey, operationId=$operationId"
+            )
+            return@withContext ManagedDownloadStorage.StartupRecoveryResult(
+                failedCount = 1
+            )
+        }
+
+        try {
+            ManagedDownloadStorage.cleanupCancelledPendingDownloadArtifacts(
+                context = appContext,
+                stableKey = songKey,
+                operationId = operationId
+            )
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "取消下载 pending 半成品清理失败，保留恢复凭据: " +
+                    "songKey=$songKey, operationId=$operationId, " +
+                    "${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
+            ManagedDownloadStorage.StartupRecoveryResult(failedCount = 1)
+        } finally {
+            deleteLease.close()
+        }
     }
 
     private suspend fun downloadPayloadForTransport(

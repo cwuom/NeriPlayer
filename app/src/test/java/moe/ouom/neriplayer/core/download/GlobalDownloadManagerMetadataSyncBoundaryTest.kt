@@ -5,8 +5,10 @@ import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.DownloadedAudioMetadata
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage.StoredEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GlobalDownloadManagerMetadataSyncBoundaryTest {
@@ -77,6 +79,44 @@ class GlobalDownloadManagerMetadataSyncBoundaryTest {
         )
 
         assertSame(failure, observed)
+    }
+
+    @Test
+    fun `startup recovery retries a transient failure within the attempt budget`(): Unit = runBlocking {
+        var attempts = 0
+        var failures = 0
+
+        val recovered = runDownloadStartupRecoverySafely(
+            block = {
+                attempts++
+                if (attempts < 3) {
+                    throw IllegalStateException("transient provider failure")
+                }
+            },
+            onFailure = { failures++ },
+            maxAttempts = 3
+        )
+
+        assertTrue(recovered)
+        assertEquals(3, attempts)
+        assertEquals(2, failures)
+    }
+
+    @Test
+    fun `startup recovery reports exhaustion without swallowing cancellation`(): Unit = runBlocking {
+        var attempts = 0
+
+        val recovered = runDownloadStartupRecoverySafely(
+            block = {
+                attempts++
+                throw IllegalStateException("persistent provider failure")
+            },
+            onFailure = {},
+            maxAttempts = 2
+        )
+
+        assertFalse(recovered)
+        assertEquals(2, attempts)
     }
 
     @Test(expected = CancellationException::class)

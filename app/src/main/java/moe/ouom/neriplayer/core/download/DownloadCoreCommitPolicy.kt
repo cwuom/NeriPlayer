@@ -64,6 +64,14 @@ internal fun shouldPublishCoreCommit(
     return metadataAlreadyCoreCommitted || metadataWriteSucceeded
 }
 
+internal fun shouldAcceptOrphanCoreCommit(
+    allowMissingTask: Boolean,
+    operationState: String?,
+    coreMetadataDurable: Boolean
+): Boolean {
+    return allowMissingTask && operationState == null && coreMetadataDurable
+}
+
 internal fun isDurableCoreArtifactState(state: String?): Boolean {
     return state in setOf(
         "CORE_COMMITTED",

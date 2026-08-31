@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.UUID
 
 internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     private val preferences: SharedPreferences
@@ -71,6 +72,77 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             }
             writeRequestLocked(request)
             true
+        }
+    }
+
+    /**
+     * 目录方向改变时把旧活动凭据归档，再原子切换到新的请求
+     * 旧 work 的按编号检查点不改动，仍可用于故障取证和手动恢复
+     */
+    @SuppressLint("UseKtx")
+    fun replaceActiveRequestForDifferentRoots(
+        request: ManagedMigrationRequest
+    ): ManagedMigrationRequest {
+        return synchronized(requestMutationLock) {
+            val normalized = request.normalized()
+            val currentRaw = runCatching {
+                preferences.getString(ACTIVE_REQUEST_KEY, null)
+            }.getOrNull()?.takeIf(String::isNotBlank)
+            val current = currentRaw?.let { raw ->
+                runCatching { decodeRequest(JSONObject(raw)) }.getOrNull()
+            }
+            val journalRaw = runCatching {
+                preferences.getString(ACTIVE_REPLACEMENT_JOURNAL_KEY, null)
+            }.getOrNull()?.takeIf(String::isNotBlank)
+            val journal = journalRaw?.let { raw ->
+                runCatching { decodeReplacementJournal(JSONObject(raw)) }.getOrNull()
+            }
+            val rootsChanged = when {
+                current == null && currentRaw != null -> true
+                current != null && migrationRootsDiffer(
+                    current.fromDirectoryUri,
+                    current.toDirectoryUri,
+                    normalized.fromDirectoryUri,
+                    normalized.toDirectoryUri
+                ) -> true
+                current == null && journalRaw != null -> true
+                journalRaw != null && journal == null -> true
+                journal != null && migrationRootsDiffer(
+                    journal.fromDirectoryUri,
+                    journal.toDirectoryUri,
+                    normalized.fromDirectoryUri,
+                    normalized.toDirectoryUri
+                ) -> true
+                else -> false
+            }
+            if (!rootsChanged) {
+                return@synchronized writeRequestLocked(normalized)
+            }
+
+            val archiveId = UUID.randomUUID().toString()
+            val editor = preferences.edit()
+            val archivedRequest = currentRaw ?: current?.let(::encodeRequest)?.toString()
+            archivedRequest?.let { raw ->
+                editor.putString(
+                    archivedRequestKeyFor(archiveId),
+                    raw
+                )
+            }
+            editor
+                .putString(
+                    ACTIVE_REQUEST_KEY,
+                    encodeRequest(normalized).toString()
+                )
+                .remove(ACTIVE_REPLACEMENT_JOURNAL_KEY)
+            journalRaw?.let { raw ->
+                editor.putString(archivedJournalKeyFor(archiveId), raw)
+            }
+            if (!editor.commit()) {
+                throw ManagedDownloadMigrationException.transient(
+                    "无法原子替换迁移请求，等待恢复"
+                )
+            }
+            normalized
         }
     }
 
@@ -610,6 +682,29 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     }
 
     private fun keyFor(workId: String): String = "$KEY_PREFIX$workId"
+
+    private fun migrationRootsDiffer(
+        currentFromDirectoryUri: String?,
+        currentToDirectoryUri: String?,
+        requestedFromDirectoryUri: String?,
+        requestedToDirectoryUri: String?
+    ): Boolean {
+        return !ManagedDownloadStorage.areEquivalentDirectoryUris(
+            currentFromDirectoryUri,
+            requestedFromDirectoryUri
+        ) || !ManagedDownloadStorage.areEquivalentDirectoryUris(
+            currentToDirectoryUri,
+            requestedToDirectoryUri
+        )
+    }
+
+    private fun archivedRequestKeyFor(archiveId: String): String {
+        return "$ARCHIVED_REQUEST_KEY_PREFIX$archiveId"
+    }
+
+    private fun archivedJournalKeyFor(archiveId: String): String {
+        return "$ARCHIVED_REPLACEMENT_JOURNAL_KEY_PREFIX$archiveId"
+    }
 
     @SuppressLint("UseKtx")
     private fun writeRequestLocked(request: ManagedMigrationRequest): ManagedMigrationRequest {
@@ -1356,6 +1451,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         internal const val COPY_RECEIPT_INDEX_KEY_PREFIX = "copy_receipt_index:"
         internal const val ACTIVE_REQUEST_KEY = "request:active"
         internal const val ACTIVE_REPLACEMENT_JOURNAL_KEY = "replacement_journal:active"
+        internal const val ARCHIVED_REQUEST_KEY_PREFIX = "request:archive:"
+        internal const val ARCHIVED_REPLACEMENT_JOURNAL_KEY_PREFIX =
+            "replacement_journal:archive:"
         internal const val CURRENT_MIGRATION_REQUEST_VERSION = 1
         internal const val CURRENT_MIGRATION_PROGRESS_VERSION = 1
         internal const val CURRENT_MIGRATION_COPY_RECEIPT_VERSION = 1

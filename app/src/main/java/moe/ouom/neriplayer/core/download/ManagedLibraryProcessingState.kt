@@ -495,6 +495,29 @@ object ManagedLibraryProcessingCoordinator {
         }
     }
 
+    /** 在迁移预检前持久化等待态，进程被杀后仍能复用同一个 operation */
+    suspend fun ensureWaitingForRetry(
+        context: Context,
+        reason: ManagedLibraryProcessingReason,
+        phase: ManagedLibraryProcessingPhase = ManagedLibraryProcessingPhase.WAITING_FOR_RETRY
+    ): String? = mutex.withLock {
+        persistenceContext = context.applicationContext
+        val current = mutableState.value
+        if (current != ManagedLibraryProcessingState.Idle) {
+            return@withLock current.operationId
+                ?.takeIf { current.reason == reason && current is ManagedLibraryProcessingState.WaitingForRetry }
+        }
+        val next = ManagedLibraryProcessingState.WaitingForRetry(
+            operationId = UUID.randomUUID().toString(),
+            reason = reason,
+            phase = phase
+        )
+        persist(context.applicationContext, next)
+        mutableState.value = next
+        resetProgressPersistence(next)
+        next.operationId
+    }
+
     suspend fun complete(context: Context, operationId: String) = mutex.withLock {
         val current = mutableState.value
         val next = ManagedLibraryProcessingStateMachine.complete(current, operationId)

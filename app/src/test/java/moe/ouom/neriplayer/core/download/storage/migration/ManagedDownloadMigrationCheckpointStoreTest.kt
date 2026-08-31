@@ -561,6 +561,141 @@ class ManagedDownloadMigrationCheckpointStoreTest {
     }
 
     @Test
+    fun `different directory roots archive old active evidence before replacement`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val requestKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val journalKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY
+        val oldRequestPayload = JSONObject().apply {
+            put("version", ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION)
+            put("workId", "old-work")
+            put(
+                "fromDirectoryUri",
+                "content://com.android.externalstorage.documents/tree/primary%3AOld"
+            )
+            put("toDirectoryUri", null)
+            put("targetLabel", "old")
+            put("releasePreviousPermission", false)
+            put("minimumSourceEntryCount", 7)
+            put("autoResume", true)
+        }.toString()
+        val oldJournalPayload = "{\"workId\":\"old-work\",\"phase\":\"PLANNED\"}"
+        `when`(preferences.getString(requestKey, null)).thenReturn(oldRequestPayload)
+        `when`(preferences.getString(journalKey, null)).thenReturn(oldJournalPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(anyString(), anyString())).thenReturn(editor)
+        `when`(editor.remove(anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val requested = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = null,
+            toDirectoryUri =
+                "content://com.android.externalstorage.documents/tree/primary%3ANew",
+            targetLabel = "new",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 2
+        )
+
+        assertEquals(requested, store.replaceActiveRequestForDifferentRoots(requested))
+
+        val keyCaptor = ArgumentCaptor.forClass(String::class.java)
+        val valueCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor, times(3)).putString(keyCaptor.capture(), valueCaptor.capture())
+        val writes = keyCaptor.allValues.zip(valueCaptor.allValues).toMap()
+        val archivedRequestKey = writes.keys.single { key ->
+            key.startsWith(ManagedDownloadMigrationCheckpointStore.ARCHIVED_REQUEST_KEY_PREFIX)
+        }
+        val archivedJournalKey = writes.keys.single { key ->
+            key.startsWith(
+                ManagedDownloadMigrationCheckpointStore.ARCHIVED_REPLACEMENT_JOURNAL_KEY_PREFIX
+            )
+        }
+        assertEquals(oldRequestPayload, writes.getValue(archivedRequestKey))
+        assertEquals(oldJournalPayload, writes.getValue(archivedJournalKey))
+        assertTrue(writes.containsKey(requestKey))
+        val removeCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).remove(removeCaptor.capture())
+        assertEquals(journalKey, removeCaptor.value)
+    }
+
+    @Test
+    fun `malformed active request is archived instead of being silently discarded`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val requestKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val journalKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY
+        val malformedPayload = "{\"version\":999,\"workId\":\"old-work\"}"
+        `when`(preferences.getString(requestKey, null)).thenReturn(malformedPayload)
+        `when`(preferences.getString(journalKey, null)).thenReturn(null)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(anyString(), anyString())).thenReturn(editor)
+        `when`(editor.remove(anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val requested = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = "content://tree/new-source",
+            toDirectoryUri = "content://tree/new-target",
+            targetLabel = "new",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+
+        store.replaceActiveRequestForDifferentRoots(requested)
+
+        val keyCaptor = ArgumentCaptor.forClass(String::class.java)
+        val valueCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor, times(2)).putString(keyCaptor.capture(), valueCaptor.capture())
+        val writes = keyCaptor.allValues.zip(valueCaptor.allValues).toMap()
+        val archivedKey = writes.keys.single { key ->
+            key.startsWith(ManagedDownloadMigrationCheckpointStore.ARCHIVED_REQUEST_KEY_PREFIX)
+        }
+        assertEquals(malformedPayload, writes.getValue(archivedKey))
+        assertTrue(writes.containsKey(requestKey))
+        verify(editor).remove(journalKey)
+    }
+
+    @Test
+    fun `stale replacement journal without active request is archived before new request`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val requestKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val journalKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REPLACEMENT_JOURNAL_KEY
+        val staleJournalPayload = "{\"workId\":\"old-work\",\"phase\":\"PLANNED\"}"
+        `when`(preferences.getString(requestKey, null)).thenReturn(null)
+        `when`(preferences.getString(journalKey, null)).thenReturn(staleJournalPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(anyString(), anyString())).thenReturn(editor)
+        `when`(editor.remove(anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        val requested = ManagedMigrationRequest(
+            workId = "new-work",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://tree/new-target",
+            targetLabel = "new",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0
+        )
+
+        assertEquals(requested, store.replaceActiveRequestForDifferentRoots(requested))
+
+        val keyCaptor = ArgumentCaptor.forClass(String::class.java)
+        val valueCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor, times(2)).putString(keyCaptor.capture(), valueCaptor.capture())
+        val writes = keyCaptor.allValues.zip(valueCaptor.allValues).toMap()
+        val archivedJournalKey = writes.keys.single { key ->
+            key.startsWith(
+                ManagedDownloadMigrationCheckpointStore.ARCHIVED_REPLACEMENT_JOURNAL_KEY_PREFIX
+            )
+        }
+        assertEquals(staleJournalPayload, writes.getValue(archivedJournalKey))
+        assertTrue(writes.containsKey(requestKey))
+        verify(editor).remove(journalKey)
+    }
+
+    @Test
     fun `conditional request write refuses a stale worker`() {
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java)

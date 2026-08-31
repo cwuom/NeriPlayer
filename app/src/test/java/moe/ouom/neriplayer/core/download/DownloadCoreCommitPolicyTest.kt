@@ -102,6 +102,46 @@ class DownloadCoreCommitPolicyTest {
     }
 
     @Test
+    fun `missing operation may publish only a durable recovery artifact`() {
+        assertTrue(
+            shouldAcceptOrphanCoreCommit(
+                allowMissingTask = true,
+                operationState = null,
+                coreMetadataDurable = true
+            )
+        )
+        assertFalse(
+            shouldAcceptOrphanCoreCommit(
+                allowMissingTask = false,
+                operationState = null,
+                coreMetadataDurable = true
+            )
+        )
+        assertFalse(
+            shouldAcceptOrphanCoreCommit(
+                allowMissingTask = true,
+                operationState = null,
+                coreMetadataDurable = false
+            )
+        )
+        listOf(
+            "CANCEL_REQUESTED",
+            "CANCELLED",
+            "STOPPED",
+            "WAITING_STORAGE_MUTATION",
+            "RETRYABLE"
+        ).forEach { state ->
+            assertFalse(
+                shouldAcceptOrphanCoreCommit(
+                    allowMissingTask = true,
+                    operationState = state,
+                    coreMetadataDurable = true
+                )
+            )
+        }
+    }
+
+    @Test
     fun `provider failure and permission loss are never missing evidence`() {
         assertFalse(
             ManagedDownloadReferenceLookup.canMarkMissing(

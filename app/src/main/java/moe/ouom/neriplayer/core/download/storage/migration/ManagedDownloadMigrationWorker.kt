@@ -35,8 +35,10 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingCoordinator
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingPhase
 import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingReason
+import moe.ouom.neriplayer.core.download.ManagedLibraryProcessingState
 import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.execution.ManagedDownloadDirectoryMutationFence
+import moe.ouom.neriplayer.core.download.execution.DownloadStorageMutationDeferredException
 import moe.ouom.neriplayer.core.download.execution.PersistentDownloadClearFenceStore
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -228,6 +230,18 @@ internal fun shouldRetryMigrationFailure(
     }
 }
 
+/** pending 凭据是目录迁移的硬阻塞条件，不能因为 WorkManager 预算耗尽而丢入口 */
+internal fun shouldRetainMigrationPendingRetry(error: Throwable): Boolean {
+    return generateSequence(error) { it.cause }
+        .filterIsInstance<ManagedDownloadMigrationException>()
+        .any { candidate ->
+            candidate.retryable &&
+                candidate.message?.contains(
+                    MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
+                ) == true
+        }
+}
+
 internal fun shouldRetryMigrationAttempt(
     runAttemptCount: Int,
     maxRetryAttempts: Int
@@ -239,12 +253,14 @@ internal fun shouldRearmMigrationWorkOnStartup(
     state: androidx.work.WorkInfo.State,
     runAttemptCount: Int,
     retryAttemptOffset: Int,
-    maxRetryAttempts: Int
+    maxRetryAttempts: Int,
+    forceRecovery: Boolean = false
 ): Boolean {
     // 进程被杀后重试中的 WorkManager 行可能带着很长退避，新请求可以直接复用持久迁移日志
     // 历史尝试次数仍保存在持久请求中，替换请求不能借机重置终态重试上限
-    return state == androidx.work.WorkInfo.State.ENQUEUED &&
-        runAttemptCount > 0 &&
+    if (state != androidx.work.WorkInfo.State.ENQUEUED) return false
+    if (forceRecovery) return true
+    return runAttemptCount > 0 &&
         migrationRetryAttemptCount(retryAttemptOffset, runAttemptCount) < maxRetryAttempts
 }
 
@@ -562,6 +578,7 @@ class ManagedDownloadMigrationWorker(
         }
         var processingOperationId: String? = null
         var directoryMutationLease: AutoCloseable? = null
+        var sourceDirectoryUriForRecovery: String? = null
         var logicalRetryAttemptCount = migrationRetryAttemptCount(
             retryAttemptOffset = 0,
             runAttemptCount = runAttemptCount
@@ -597,6 +614,7 @@ class ManagedDownloadMigrationWorker(
                 input = inputRequest,
                 inputKeys = inputData.keyValueMap.keys
             )
+            sourceDirectoryUriForRecovery = effectiveRequest.fromDirectoryUri
             logicalRetryAttemptCount = migrationRetryAttemptCount(
                 retryAttemptOffset = effectiveRequest.retryAttemptOffset,
                 runAttemptCount = runAttemptCount
@@ -621,6 +639,42 @@ class ManagedDownloadMigrationWorker(
                 )
                 return Result.retry()
             }
+            // 从 pending 预检开始就持有目录租约，避免预检与实际迁移之间又产生新文件
+            directoryMutationLease = ManagedDownloadDirectoryMutationFence.closeAndDrain()
+            // 旧进程可能在 Provider 调用中被杀，恢复后把同一迁移重新放入等待态
+            val restoredProcessingState = ManagedLibraryProcessingCoordinator.restore(
+                applicationContext
+            )
+            if (
+                restoredProcessingState is ManagedLibraryProcessingState.Running &&
+                    restoredProcessingState.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+            ) {
+                ManagedLibraryProcessingCoordinator.waitingForRetry(
+                    context = applicationContext,
+                    operationId = restoredProcessingState.operationId
+                )
+            }
+            val preflightOperationId =
+                ManagedLibraryProcessingCoordinator.ensureWaitingForRetry(
+                    context = applicationContext,
+                    reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE
+                )
+            processingOperationId = preflightOperationId
+            val pendingRecovery =
+                GlobalDownloadManager.reconcilePendingDownloadsBeforeMigrationDetailed(
+                    context = applicationContext,
+                    sourceDirectoryUri = effectiveRequest.fromDirectoryUri,
+                    directoryMutationLeaseOwned = true
+                )
+            if (!pendingRecovery.isConverged) {
+                throw ManagedDownloadMigrationException.transient(
+                    "[$MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE] " +
+                        "迁移前 pending 尚未收敛: " +
+                        "remaining=${pendingRecovery.remainingArtifactCount}, " +
+                        "initialComplete=${pendingRecovery.initialScanComplete}, " +
+                        "pendingComplete=${pendingRecovery.pendingScanComplete}"
+                )
+            }
             ManagedLibraryProcessingCoordinator.restore(applicationContext)
             val operationId = ManagedLibraryProcessingCoordinator.tryBeginExclusive(
                 context = applicationContext,
@@ -641,8 +695,6 @@ class ManagedDownloadMigrationWorker(
                 )
                 return Result.retry()
             }
-            directoryMutationLease =
-                ManagedDownloadDirectoryMutationFence.closeAndDrain()
             val fromDirectoryUri = effectiveRequest.fromDirectoryUri
             val toDirectoryUri = effectiveRequest.toDirectoryUri
             val activeReplacementJournal = checkpointStore.readReplacementJournal()
@@ -787,7 +839,9 @@ class ManagedDownloadMigrationWorker(
                         sourceReference = sourceReference
                     )
                 },
-                onCopyReceiptsFlush = receiptBatcher::flush
+                onCopyReceiptsFlush = receiptBatcher::flush,
+                // 预检和复制期间共用同一目录租约，避免 SAF 大目录被重复枚举
+                pendingArtifactsPreflightVerified = true
             )
             if (!checkpointStore.isRequestCurrent(migrationWorkId)) {
                 NPLogger.i(
@@ -926,6 +980,35 @@ class ManagedDownloadMigrationWorker(
                     KEY_VERIFIED_MINIMUM_AUDIO_COUNT to verifiedMinimumAudioCount
                 )
             )
+        } catch (error: DownloadStorageMutationDeferredException) {
+            // deferred 表示目录租约期间 pending 提交未完成，释放租约后需要旁路收敛
+            pendingArtifactPreflightBlocked = true
+            withContext(NonCancellable) {
+                processingOperationId?.let { operationId ->
+                    transitionProcessingState(
+                        operationId = operationId,
+                        waitForRetry = true,
+                        cause = error
+                    )
+                }
+                runCatching {
+                    checkpointStore.markRequestRetryable(migrationWorkId)
+                }.onFailure { stateError ->
+                    error.addSuppressed(stateError)
+                    NPLogger.w(
+                        TAG,
+                        "目录变更期间无法持久化迁移重试凭据，保留原始错误: " +
+                            stateError.message,
+                        stateError
+                    )
+                }
+            }
+            NPLogger.i(
+                TAG,
+                "目录变更期间提交被延后，迁移保留请求等待重试: " +
+                    "workId=$migrationWorkId, operationId=${error.message}"
+            )
+            return Result.retry()
         } catch (error: CancellationException) {
             processingOperationId?.let { operationId ->
                 withContext(NonCancellable) {
@@ -941,20 +1024,42 @@ class ManagedDownloadMigrationWorker(
             throw error
         } catch (error: Exception) {
             pendingArtifactPreflightBlocked = isPendingArtifactPreflightFailure(error)
-            val retry = shouldRetryMigrationFailure(
-                error = error,
-                runAttemptCount = logicalRetryAttemptCount,
-                maxRetryAttempts = MAX_RETRY_ATTEMPTS
-            )
-            processingOperationId?.let { operationId ->
-                transitionProcessingState(
-                    operationId = operationId,
-                    waitForRetry = retry,
-                    cause = error
+            val retry = pendingArtifactPreflightBlocked ||
+                shouldRetryMigrationFailure(
+                    error = error,
+                    runAttemptCount = logicalRetryAttemptCount,
+                    maxRetryAttempts = MAX_RETRY_ATTEMPTS
                 )
-            }
-            if (!retry) {
-                checkpointStore.markRequestRetryable(migrationWorkId)
+            withContext(NonCancellable) {
+                processingOperationId?.let { operationId ->
+                    transitionProcessingState(
+                        operationId = operationId,
+                        waitForRetry = retry,
+                        cause = error
+                    )
+                }
+                if (!retry) {
+                    // pending 或 Provider 故障都要保留可恢复请求，不能把未完成文件
+                    // 标成终态后让后续启动失去迁移入口
+                    if (pendingArtifactPreflightBlocked) {
+                        NPLogger.i(
+                            TAG,
+                            "迁移 pending 仍未收敛，达到本轮重试上限但保留请求等待外部恢复: " +
+                                "workId=$migrationWorkId"
+                        )
+                    }
+                    runCatching {
+                        checkpointStore.markRequestRetryable(migrationWorkId)
+                    }.onFailure { stateError ->
+                        error.addSuppressed(stateError)
+                        NPLogger.w(
+                            TAG,
+                            "迁移失败后无法持久化重试凭据，保留原始错误: " +
+                                stateError.message,
+                            stateError
+                        )
+                    }
+                }
             }
             return if (retry) {
                 Result.retry()
@@ -984,10 +1089,15 @@ class ManagedDownloadMigrationWorker(
                             )
                         }
                         .isSuccess
-                    if (leaseClosed && pendingArtifactPreflightBlocked) {
+                    if (
+                        leaseClosed &&
+                            pendingArtifactPreflightBlocked &&
+                            checkpointStore.isRequestCurrent(migrationWorkId)
+                    ) {
                         runCatching {
                             GlobalDownloadManager.reconcilePendingDownloadsAfterMigrationBlocked(
-                                applicationContext
+                                context = applicationContext,
+                                sourceDirectoryUri = sourceDirectoryUriForRecovery
                             )
                         }.onFailure { error ->
                             NPLogger.w(
@@ -1009,14 +1119,7 @@ class ManagedDownloadMigrationWorker(
     }
 
     private fun isPendingArtifactPreflightFailure(error: Throwable): Boolean {
-        return generateSequence(error) { it.cause }
-            .filterIsInstance<ManagedDownloadMigrationException>()
-            .any { candidate ->
-                candidate.retryable &&
-                    candidate.message?.contains(
-                        MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
-                    ) == true
-            }
+        return shouldRetainMigrationPendingRetry(error)
     }
 
     private suspend fun transitionProcessingState(
@@ -1158,8 +1261,23 @@ class ManagedDownloadMigrationWorker(
                     releasePreviousPermission = releasePreviousPermission,
                     minimumSourceEntryCount = minimumSourceEntryCount
                 )
-                val persisted = checkpointStore.readRequest()
-                val durableRequest = if (persisted?.autoResume == true) {
+                val persistedRead = runCatching { checkpointStore.readRequest() }
+                val persisted = persistedRead.getOrElse { error ->
+                    NPLogger.w(
+                        TAG,
+                        "读取旧迁移请求失败，新目录请求将归档旧凭据后接管: ${error.message}",
+                        error
+                    )
+                    null
+                }
+                val rootsChanged = persistedRead.isFailure ||
+                    shouldSupersedePersistedMigrationRequest(
+                        persistedRequest = persisted,
+                        requestedRequest = requested
+                    )
+                val durableRequest = if (rootsChanged) {
+                    requested
+                } else if (persisted?.autoResume == true) {
                     persisted.copy(
                         minimumSourceEntryCount = maxOf(
                             persisted.minimumSourceEntryCount,
@@ -1169,6 +1287,10 @@ class ManagedDownloadMigrationWorker(
                 } else {
                     requested
                 }
+                if (rootsChanged) {
+                    // 新目录必须接管活动请求，旧 Worker 的回写会因所有权变化被丢弃
+                    checkpointStore.replaceActiveRequestForDifferentRoots(durableRequest)
+                }
                 val workManager = WorkManager.getInstance(appContext)
                 val active = activeMigrationWorkInfo(
                     workManager = workManager,
@@ -1176,8 +1298,13 @@ class ManagedDownloadMigrationWorker(
                     fallbackWorkId = durableRequest.checkpointWorkId
                 )
                 if (active != null) {
-                    if (shouldReplaceActiveMigrationWork(durableRequest, active.id.toString())) {
-                        checkpointStore.recordRequest(durableRequest)
+                    if (
+                        rootsChanged ||
+                            shouldReplaceActiveMigrationWork(durableRequest, active.id.toString())
+                    ) {
+                        if (!rootsChanged) {
+                            checkpointStore.recordRequest(durableRequest)
+                        }
                         return@withLock enqueueDurableRequestLocked(
                             workManager = workManager,
                             checkpointStore = checkpointStore,
@@ -1193,7 +1320,9 @@ class ManagedDownloadMigrationWorker(
                     return@withLock active.id.toString()
                 }
                 // 入队前立即写入意图，入队失败时启动流程可以不打开目录就重试
-                checkpointStore.recordRequest(durableRequest)
+                if (!rootsChanged) {
+                    checkpointStore.recordRequest(durableRequest)
+                }
                 enqueueDurableRequestLocked(
                     workManager = workManager,
                     checkpointStore = checkpointStore,
@@ -1216,6 +1345,20 @@ class ManagedDownloadMigrationWorker(
                         preferredWorkId = persisted?.workId,
                         fallbackWorkId = persisted?.checkpointWorkId
                     )
+                    val persistedProcessingState = runCatching {
+                        // 只读取小型状态凭据，不触碰目录，避免冷启动被 SAF 扫描拖住
+                        ManagedLibraryProcessingCoordinator.restoreImmediately(appContext)
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "启动读取迁移处理状态失败，继续使用检查点恢复: ${error.message}",
+                            error
+                        )
+                    }.getOrNull()
+                    val processingNeedsRecovery =
+                        persistedProcessingState is ManagedLibraryProcessingState.WaitingForRetry &&
+                            persistedProcessingState.reason ==
+                                ManagedLibraryProcessingReason.DIRECTORY_CHANGE
                     if (active != null) {
                         if (shouldReplaceActiveMigrationWork(persisted, active.id.toString())) {
                             val resumed = persisted!!.copy(
@@ -1239,15 +1382,17 @@ class ManagedDownloadMigrationWorker(
                             phase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
                         } == true
                         if (
-                            persisted != null &&
+                                persisted != null &&
                                 (persisted.autoResume || journalNeedsRecovery) &&
                                 shouldRearmMigrationWorkOnStartup(
                                     state = active.state,
                                     runAttemptCount = active.runAttemptCount,
                                     retryAttemptOffset = persisted.retryAttemptOffset,
-                                    maxRetryAttempts = MAX_RETRY_ATTEMPTS
+                                    maxRetryAttempts = MAX_RETRY_ATTEMPTS,
+                                    // pending 收敛和未完成替换不能继续等待旧的指数退避
+                                    forceRecovery = journalNeedsRecovery || processingNeedsRecovery
                                 )
-                        ) {
+                            ) {
                             val resumed = persisted.copy(
                                 workId = UUID.randomUUID().toString(),
                                 checkpointWorkId = active.id.toString(),

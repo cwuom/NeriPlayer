@@ -115,6 +115,20 @@ internal interface DownloadOperationDao {
         offset: Int
     ): List<DownloadOperationEntity>
 
+    /** 用不可变 operation_id 做游标，避免更新 updated_at_ms 时分页漂移 */
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE library_id = :libraryId AND state IN (:states) " +
+            "AND operation_id > :afterOperationId " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findByStatesInLibraryAfterOperationId(
+        libraryId: String,
+        states: List<String>,
+        afterOperationId: String,
+        limit: Int
+    ): List<DownloadOperationEntity>
+
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE state IN (:states) " +
@@ -125,6 +139,18 @@ internal interface DownloadOperationDao {
         states: List<String>,
         limit: Int,
         offset: Int
+    ): List<DownloadOperationEntity>
+
+    /** 跨目录恢复也必须使用稳定游标，不能依赖会变化的更新时间排序 */
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE state IN (:states) AND operation_id > :afterOperationId " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findByStatesAfterOperationId(
+        states: List<String>,
+        afterOperationId: String,
+        limit: Int
     ): List<DownloadOperationEntity>
 
     @Query(
@@ -178,6 +204,16 @@ internal interface DownloadOperationDao {
     suspend fun findAllOperationIdentitiesPage(
         limit: Int,
         offset: Int
+    ): List<DownloadOperationIdentityRow>
+
+    @Query(
+        "SELECT operation_id, stable_key FROM download_operation " +
+            "WHERE operation_id > :afterOperationId " +
+            "ORDER BY operation_id ASC LIMIT :limit"
+    )
+    suspend fun findAllOperationIdentitiesAfterOperationId(
+        afterOperationId: String,
+        limit: Int
     ): List<DownloadOperationIdentityRow>
 
     @Query(

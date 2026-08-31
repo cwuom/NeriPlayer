@@ -55,6 +55,19 @@ class ManagedDownloadMigrationRecoveryTest {
     }
 
     @Test
+    fun `source deletion recovery does not discard unresolved orphan replacements`() {
+        val storage = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/ManagedDownloadStorage.kt"
+        ).readText()
+        val recoveryBlock = storage
+            .substringAfter("val deletedSourceReferences = copyResults")
+            .substringBefore("val newlyCopiedEntries = try")
+
+        assertTrue(recoveryBlock.contains("filterNot(unresolvedOrphanReferences::contains)"))
+        assertTrue(recoveryBlock.contains("迁移孤儿替换尚未收敛"))
+    }
+
+    @Test
     fun `tree root accepts standard child document ids but not sibling ids`() {
         assertTrue(
             isMigrationDocumentIdWithinTree(
@@ -949,6 +962,46 @@ class ManagedDownloadMigrationRecoveryTest {
         }
 
         assertTrue(failure.retryable)
+    }
+
+    @Test
+    fun `orphan replacement is selected when source is explicitly missing without receipt`() {
+        val replacement = replacementFor(groupIdentity = "stable:song")
+        val journal = journalFor(replacement).copy(
+            sourceEntryCount = 1,
+            sourceEntries = listOf(
+                ManagedMigrationSourceEntry(
+                    sourceReference = replacement.sourceReference,
+                    sourceName = "track.mp3",
+                    sourceSubdirectory = null,
+                    sizeBytes = 12L,
+                    lastModifiedMs = 1L
+                )
+            ),
+            sourceEntriesComplete = true
+        )
+
+        val selected = selectOrphanedMigrationReplacementPlans(
+            journal = journal,
+            missingSourceReferences = listOf(replacement.sourceReference),
+            persistedCopyReceiptReferences = emptyList()
+        )
+
+        assertEquals(listOf(replacement), selected)
+    }
+
+    @Test
+    fun `orphan replacement with a copy receipt is left to receipt recovery`() {
+        val replacement = replacementFor(groupIdentity = "stable:song")
+        val journal = journalFor(replacement)
+
+        val selected = selectOrphanedMigrationReplacementPlans(
+            journal = journal,
+            missingSourceReferences = listOf(replacement.sourceReference),
+            persistedCopyReceiptReferences = listOf(replacement.sourceReference)
+        )
+
+        assertTrue(selected.isEmpty())
     }
 
     @Test

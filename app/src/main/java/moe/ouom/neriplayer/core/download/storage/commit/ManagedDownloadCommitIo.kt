@@ -8,8 +8,10 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import moe.ouom.neriplayer.core.download.storage.backend.ManagedTemporaryWriteArtifacts
 import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
@@ -43,7 +45,19 @@ internal object ManagedDownloadCommitIo {
                     "迁移替换目标或备份不是普通文件: $targetName"
                 )
             }
-            return ReplacementFileWrite(target = target, backup = backup, copiedBytes = -1L)
+            val copiedBytes = copyFileAtomically(
+                parent = parent,
+                targetName = targetName,
+                input = input,
+                bufferSizeBytes = bufferSizeBytes,
+                onProgress = onProgress,
+                replaceExistingTarget = true
+            )
+            return ReplacementFileWrite(
+                target = target,
+                backup = backup,
+                copiedBytes = copiedBytes
+            )
         }
         var backupCreated = false
         if (target.exists()) {
@@ -89,13 +103,16 @@ internal object ManagedDownloadCommitIo {
         input: InputStream,
         bufferSizeBytes: Int,
         onProgress: ((Long) -> Unit)? = null,
-        outputDigest: MessageDigest? = null
+        outputDigest: MessageDigest? = null,
+        replaceExistingTarget: Boolean = false
     ): Long {
         val target = File(parent, targetName)
         if (target.exists()) {
-            throw ManagedDownloadMigrationException.targetChanged(
-                "迁移目标在提交前已出现: $targetName"
-            )
+            if (!replaceExistingTarget || !target.isFile) {
+                throw ManagedDownloadMigrationException.targetChanged(
+                    "迁移目标在提交前已出现: $targetName"
+                )
+            }
         }
         val storageTarget = StorageTarget.FileTarget(target.absolutePath)
         val temporaryLease = ManagedTemporaryWriteArtifacts.acquire(
@@ -129,7 +146,11 @@ internal object ManagedDownloadCommitIo {
                 copied
             }
             try {
-                Files.move(partial.toPath(), target.toPath())
+                if (replaceExistingTarget) {
+                    replaceFileAtomically(partial, target)
+                } else {
+                    Files.move(partial.toPath(), target.toPath())
+                }
             } catch (error: FileAlreadyExistsException) {
                 throw ManagedDownloadMigrationException.targetChanged(
                     "迁移目标在最终提交时已出现: $targetName",
@@ -172,6 +193,23 @@ internal object ManagedDownloadCommitIo {
             )
             partial.exists() -> IOException("迁移临时文件删除后仍存在: ${partial.name}")
             else -> null
+        }
+    }
+
+    private fun replaceFileAtomically(source: File, target: File) {
+        try {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(
+                source.toPath(),
+                target.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
         }
     }
 

@@ -36,8 +36,39 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
     internal fun beginClear(
         purpose: DownloadClearPurpose = DownloadClearPurpose.TASK_PROGRESS
     ): Long {
-        requestedPurpose = purpose
-        return clearRequestEpoch.incrementAndGet()
+        return synchronized(schedulingLock) {
+            val currentEpoch = clearRequestEpoch.get()
+            if (currentEpoch > clearedRequestEpoch.get()) {
+                // 同一进程内已有清空请求时复用它，避免旧恢复任务被新 epoch
+                // 覆盖后误清理另一轮的进度
+                if (purpose == DownloadClearPurpose.FULL_LIBRARY_DELETE) {
+                    requestedPurpose = purpose
+                }
+                return@synchronized currentEpoch
+            }
+            requestedPurpose = purpose
+            clearRequestEpoch.incrementAndGet()
+        }
+    }
+
+    /** 激活持久栅栏失败且确认未写入时，回收内存请求避免永久阻塞下载 */
+    internal fun abandonUnpersistedRequestIfCurrent(
+        context: Context,
+        expectedEpoch: Long
+    ): Boolean {
+        return synchronized(schedulingLock) {
+            if (clearRequestEpoch.get() != expectedEpoch ||
+                clearedRequestEpoch.get() >= expectedEpoch ||
+                isPersistedFenceActive(context) ||
+                PersistentDownloadedSongDeleteIntentStore.hasPending(context)
+            ) {
+                return@synchronized false
+            }
+            clearedRequestEpoch.accumulateAndGet(expectedEpoch) { current, candidate ->
+                maxOf(current, candidate)
+            }
+            true
+        }
     }
 
     internal fun activePurpose(context: Context): DownloadClearPurpose {

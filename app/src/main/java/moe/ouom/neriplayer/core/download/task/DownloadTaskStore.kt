@@ -28,16 +28,26 @@ internal class DownloadTaskStore(
     scope: CoroutineScope,
     private val progressEmitIntervalNs: Long
 ) {
+    internal data class ClearPresentationToken(
+        val generation: Long,
+        val visibleTasks: List<DownloadTask>
+    )
+
     private val mutationLock = Any()
     private val attemptIdGenerator = AtomicLong(0L)
     private val progressPublishStates = ConcurrentHashMap<String, TaskProgressPublishState>()
     private val _isSingleDownloading = MutableStateFlow(false)
     private val _downloadTasks = MutableStateFlow<List<DownloadTask>>(emptyList())
+    private val _isClearPresentationActive = MutableStateFlow(false)
     private val _activeBatchDownloadJobCount = MutableStateFlow(0)
     private var activeDownloadTransferCount = 0
+    private var clearPresentationGeneration = 0L
+    private var activeClearPresentation: ClearPresentationToken? = null
     @Volatile private var songKeyIndex = emptyMap<String, Int>()
 
     val downloadTasks: StateFlow<List<DownloadTask>> = _downloadTasks.asStateFlow()
+    val isClearPresentationActive: StateFlow<Boolean> =
+        _isClearPresentationActive.asStateFlow()
 
     private val rawDownloadTaskSummary: StateFlow<DownloadTaskSummary> = _downloadTasks
         .map(::buildDownloadTaskSummary)
@@ -116,6 +126,48 @@ internal class DownloadTaskStore(
         return _downloadTasks.value
     }
 
+    /** 清空开始时一次性摘取并隐藏任务快照，旧回调不能在清理期间重新建卡片 */
+    fun beginClearPresentation(): ClearPresentationToken {
+        return synchronized(mutationLock) {
+            activeClearPresentation?.let { token ->
+                return@synchronized token
+            }
+            val token = ClearPresentationToken(
+                generation = ++clearPresentationGeneration,
+                visibleTasks = _downloadTasks.value.toList()
+            )
+            activeClearPresentation = token
+            // 先发布隐藏标记，让界面不会在任务快照清空和清空横幅之间闪回旧数据
+            _isClearPresentationActive.value = true
+            _downloadTasks.value = emptyList()
+            songKeyIndex = emptyMap()
+            progressPublishStates.clear()
+            token
+        }
+    }
+
+    /** 持久清空栅栏确认释放后才允许任务展示恢复 */
+    fun finishClearPresentation(
+        token: ClearPresentationToken,
+        canRelease: () -> Boolean = { true }
+    ): Boolean {
+        return synchronized(mutationLock) {
+            if (activeClearPresentation?.generation != token.generation) {
+                return@synchronized false
+            }
+            if (!canRelease()) {
+                return@synchronized false
+            }
+            activeClearPresentation = null
+            _isClearPresentationActive.value = false
+            true
+        }
+    }
+
+    fun currentClearPresentationToken(): ClearPresentationToken? {
+        return synchronized(mutationLock) { activeClearPresentation }
+    }
+
     fun findTask(songKey: String): DownloadTask? {
         val tasks = _downloadTasks.value
         val idx = songKeyIndex[songKey]
@@ -136,6 +188,7 @@ internal class DownloadTaskStore(
 
     fun updateProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
         return synchronized(mutationLock) {
+            if (activeClearPresentation != null) return@synchronized false
             val tasks = _downloadTasks.value
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
             if (taskIndex < 0) return@synchronized false
@@ -173,6 +226,7 @@ internal class DownloadTaskStore(
      */
     fun restoreProgress(progress: AudioDownloadManager.DownloadProgress): Boolean {
         return synchronized(mutationLock) {
+            if (activeClearPresentation != null) return@synchronized false
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
             if (taskIndex < 0) return@synchronized false
             val currentTask = _downloadTasks.value[taskIndex]
@@ -211,6 +265,7 @@ internal class DownloadTaskStore(
     ): Int {
         if (progresses.isEmpty()) return 0
         return synchronized(mutationLock) {
+            if (activeClearPresentation != null) return@synchronized 0
             val currentTasks = _downloadTasks.value
             val updatedTasks = currentTasks.toMutableList()
             var acceptedCount = 0
@@ -245,7 +300,7 @@ internal class DownloadTaskStore(
     }
 
     fun removeObsoleteWaitingNetworkTasks(recoveryCandidateKeys: Set<String>) {
-        mutate { tasks ->
+        mutate(allowDuringClear = true) { tasks ->
             tasks.filterNot { task ->
                 task.status == DownloadStatus.WAITING_NETWORK &&
                     task.song.stableKey() !in recoveryCandidateKeys
@@ -465,7 +520,7 @@ internal class DownloadTaskStore(
     }
 
     fun removeDownloadTask(songKey: String, expectedAttemptId: Long? = null) {
-        mutate { tasks ->
+        mutate(allowDuringClear = true) { tasks ->
             val taskIndex = songKeyIndex[songKey] ?: -1
             if (taskIndex < 0) {
                 return@mutate tasks
@@ -484,7 +539,7 @@ internal class DownloadTaskStore(
             return
         }
         val removedSongKeys = mutableSetOf<String>()
-        mutate { tasks ->
+        mutate(allowDuringClear = true) { tasks ->
             tasks.filterNot { task ->
                 val songKey = task.song.stableKey()
                 val expectedAttemptId = expectedAttemptIdsBySongKey[songKey]
@@ -507,11 +562,12 @@ internal class DownloadTaskStore(
     }
 
     fun clearAllTasks() {
-        mutate { emptyList() }
+        mutate(allowDuringClear = true) { emptyList() }
         progressPublishStates.clear()
     }
 
     fun isDownloadAttemptCurrent(songKey: String, attemptId: Long?): Boolean {
+        if (isClearPresentationActive()) return false
         if (attemptId == null) {
             return true
         }
@@ -583,10 +639,14 @@ internal class DownloadTaskStore(
     }
 
     private inline fun mutate(
+        allowDuringClear: Boolean = false,
         transform: (List<DownloadTask>) -> List<DownloadTask>
     ): List<DownloadTask> {
         synchronized(mutationLock) {
             val currentTasks = _downloadTasks.value
+            if (!allowDuringClear && activeClearPresentation != null) {
+                return currentTasks
+            }
             val updatedTasks = transform(currentTasks)
             if (updatedTasks != currentTasks) {
                 _downloadTasks.value = updatedTasks
@@ -616,10 +676,11 @@ internal class DownloadTaskStore(
     private inline fun updateTask(
         songKey: String,
         expectedAttemptId: Long? = null,
+        allowDuringClear: Boolean = false,
         transform: (DownloadTask) -> DownloadTask
     ): Boolean {
         var applied = false
-        mutate { tasks ->
+        mutate(allowDuringClear = allowDuringClear) { tasks ->
             val taskIndex = songKeyIndex[songKey] ?: -1
             if (taskIndex < 0) {
                 return@mutate tasks
@@ -636,6 +697,10 @@ internal class DownloadTaskStore(
             tasks.replaceAt(taskIndex, updatedTask)
         }
         return applied
+    }
+
+    private fun isClearPresentationActive(): Boolean {
+        return synchronized(mutationLock) { activeClearPresentation != null }
     }
 
     private fun List<DownloadTask>.replaceAt(

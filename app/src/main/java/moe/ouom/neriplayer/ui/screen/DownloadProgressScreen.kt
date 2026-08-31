@@ -236,6 +236,9 @@ fun DownloadProgressScreen(
     val downloadTasks by GlobalDownloadManager.downloadTasks.collectAsStateWithLifecycle()
     val isClearingDownloadTasks by GlobalDownloadManager.isClearingDownloadTasks
         .collectAsStateWithLifecycle()
+    val isDownloadTaskClearPresentationActive by
+        GlobalDownloadManager.isDownloadTaskClearPresentationActive
+            .collectAsStateWithLifecycle()
     val isDownloadTaskClearPresentationCleared by
         GlobalDownloadManager.isDownloadTaskClearPresentationCleared
             .collectAsStateWithLifecycle()
@@ -261,9 +264,14 @@ fun DownloadProgressScreen(
         context,
         taskPresenceKey,
         isClearingDownloadTasks,
+        isDownloadTaskClearPresentationActive,
         isDownloadTaskClearPresentationCleared
     ) {
-        if (isClearingDownloadTasks || isDownloadTaskClearPresentationCleared) {
+        if (
+            isClearingDownloadTasks ||
+                isDownloadTaskClearPresentationActive ||
+                isDownloadTaskClearPresentationCleared
+        ) {
             bootstrapProbeResult = DownloadProgressBootstrapProbeResult.Resolved(
                 DownloadProgressBootstrapState()
             )
@@ -290,6 +298,7 @@ fun DownloadProgressScreen(
             DownloadProgressInitialProbeState.UNAVAILABLE
     }
     val clearFenceActive = isClearingDownloadTasks ||
+        isDownloadTaskClearPresentationActive ||
         bootstrapState?.clearFenceActive == true
     // 进程在清空期间被杀时，内存进度会丢失，但持久化栅栏仍然有效
     // 先显示可确定的零阶段进度，避免页面退回无进度的无限加载状态
@@ -307,19 +316,21 @@ fun DownloadProgressScreen(
         }
     val logicalClearComplete = isLogicalDownloadTaskClearComplete(effectiveClearProgress)
     val effectiveIsClearing = clearFenceActive && !logicalClearComplete
-    val effectivePresentationCleared = isDownloadTaskClearPresentationCleared ||
+    val effectivePresentationCleared = isDownloadTaskClearPresentationActive ||
+        isDownloadTaskClearPresentationCleared ||
         logicalClearComplete
     val shouldRecheckBootstrap = shouldRecheckDownloadProgressBootstrap(
         initialProbeState = initialProbeState,
         clearFenceActive = bootstrapState?.clearFenceActive == true,
-        isClearing = isClearingDownloadTasks,
+        isClearing = isClearingDownloadTasks || isDownloadTaskClearPresentationActive,
         isClearPresentationCleared = effectivePresentationCleared
     )
     LaunchedEffect(
         context,
         taskPresenceKey,
         shouldRecheckBootstrap,
-        effectivePresentationCleared
+        effectivePresentationCleared,
+        isDownloadTaskClearPresentationActive
     ) {
         if (!shouldRecheckBootstrap) {
             return@LaunchedEffect
@@ -344,7 +355,8 @@ fun DownloadProgressScreen(
                             DownloadProgressInitialProbeState.UNAVAILABLE
                     },
                     clearFenceActive = nextBootstrapState?.clearFenceActive == true,
-                    isClearing = isClearingDownloadTasks,
+                    isClearing = isClearingDownloadTasks ||
+                        isDownloadTaskClearPresentationActive,
                     isClearPresentationCleared = effectivePresentationCleared
                 )
             ) {
@@ -488,7 +500,7 @@ fun DownloadProgressScreen(
             ),
             actions = {
                 IconButton(
-                    enabled = !effectiveIsClearing,
+                    enabled = !clearFenceActive,
                     onClick = {
                         context.performHapticFeedback()
                         showClearDialog = true

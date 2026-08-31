@@ -254,10 +254,14 @@ internal class ManagedDownloadArtifactCoordinator {
 
     suspend fun currentLeaseId(
         context: Context,
-        song: SongItem
+        song: SongItem,
+        rootKeyOverride: String? = null
     ): String? {
         val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return null
-        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
+        val rootKey = rootKeyOverride
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: ManagedDownloadStorage.currentSnapshotRootKey(context.applicationContext)
         return database(context.applicationContext).managedDownloadArtifactDao()
             .find(rootKey, stableKey)
             ?.leaseId
@@ -279,13 +283,18 @@ internal class ManagedDownloadArtifactCoordinator {
         context: Context,
         song: SongItem,
         storedAudio: ManagedDownloadStorage.StoredEntry,
-        expectedLeaseId: String? = null
-    ) {
+        expectedLeaseId: String? = null,
+        rootKeyOverride: String? = null
+    ): Boolean {
         val appContext = context.applicationContext
-        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return
-        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val stableKey = song.stableKey().trim().takeIf(String::isNotBlank) ?: return false
+        val rootKey = rootKeyOverride
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: ManagedDownloadStorage.currentSnapshotRootKey(appContext)
         val database = database(appContext)
         val nowMs = System.currentTimeMillis()
+        var committed = false
         database.withTransaction {
             val dao = database.managedDownloadArtifactDao()
             val current = dao.find(rootKey, stableKey)
@@ -312,7 +321,9 @@ internal class ManagedDownloadArtifactCoordinator {
                     lastErrorCode = null
                 )
             )
+            committed = true
         }
+        return committed
     }
 
     suspend fun markAssetsEnriching(

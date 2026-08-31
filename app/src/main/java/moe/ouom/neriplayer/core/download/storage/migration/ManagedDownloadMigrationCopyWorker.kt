@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_MAX_ATTEMPTS
 import moe.ouom.neriplayer.core.download.storage.MIGRATION_IO_RETRY_DELAY_MS
 import moe.ouom.neriplayer.core.download.storage.backend.StorageLookupResult
+import moe.ouom.neriplayer.core.download.storage.commit.sameMigrationReplacementBackupIdentity
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 import moe.ouom.neriplayer.core.logging.NPLogger
@@ -271,6 +272,62 @@ internal class ManagedDownloadMigrationCopyWorker(
                     reusedFromReceipt = true
                 )
             }
+            val interruptedReplacement = replacementPlan?.let { plan ->
+                val backupEntry = targetIndex.entryFor(
+                    migrationEntry.subdirectory,
+                    plan.backupName
+                )
+                val currentTarget = receiptTarget
+                if (backupEntry == null || currentTarget == null) {
+                    null
+                } else {
+                    if (!sameMigrationReplacementBackupIdentity(
+                            expectedTarget = plan.targetEntry,
+                            actualBackup = backupEntry,
+                            expectedBackupName = plan.backupName
+                        )
+                    ) {
+                        throw ManagedDownloadMigrationException.targetChanged(
+                            "迁移替换备份身份无法确认: ${plan.backupName}"
+                        )
+                    }
+                    val sourceDigest = readSourceOrThrow(
+                        context = context,
+                        entry = migrationEntry.entry,
+                        operation = "无法读取源文件以恢复未落盘的迁移替换"
+                    ) { input ->
+                        sha256MigrationContent(input)
+                    }
+                    val targetDigest = entryReader.readOrThrow(
+                        context = context,
+                        entry = currentTarget,
+                        operation = "无法读取迁移替换目标以恢复未落盘状态"
+                    ) { input ->
+                        sha256MigrationContent(input)
+                    }
+                    if (sourceDigest != targetDigest) {
+                        throw ManagedDownloadMigrationException.targetChanged(
+                            "迁移替换目标内容无法确认，保留外部文件: " +
+                                migrationEntry.entry.name
+                        )
+                    }
+                    progressTracker?.onCopyProgress(
+                        migrationEntry,
+                        migrationEntry.entry.sizeBytes.coerceAtLeast(0L)
+                    )
+                    WrittenMigrationEntry(
+                        result = StoredWriteResult(
+                            entry = currentTarget,
+                            createdNew = false,
+                            replacementBackup = backupEntry,
+                            sourceAuthoritative = true
+                        ),
+                        sourceDigest = sourceDigest,
+                        verifiedTargetDigest = targetDigest,
+                        reusedFromReceipt = true
+                    )
+                }
+            }
             val reusedEntry = if (replacementPlan == null) {
                 namePlan.reusedTargetFor(migrationEntry.toRef())?.let { existingEntry ->
                 if (!ManagedDownloadTreeNaming.isMetadataName(migrationEntry.entry.name)) {
@@ -343,7 +400,7 @@ internal class ManagedDownloadMigrationCopyWorker(
             } else {
                 null
             }
-            reusedEntry ?: readSourceOrThrow(
+            interruptedReplacement ?: reusedEntry ?: readSourceOrThrow(
                 context = context,
                 entry = migrationEntry.entry,
                 operation = "无法读取源下载文件"

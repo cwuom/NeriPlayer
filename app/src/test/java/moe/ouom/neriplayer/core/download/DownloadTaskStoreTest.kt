@@ -510,6 +510,76 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `clear presentation gate hides snapshot and rejects late task mutations`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(7L)
+            val attemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            val visibleTask = requireNotNull(store.findTask(downloadSong.stableKey()))
+            val clearToken = store.beginClearPresentation()
+
+            assertEquals(listOf(visibleTask), clearToken.visibleTasks)
+            assertTrue(store.isClearPresentationActive.value)
+            assertTrue(store.currentTasks().isEmpty())
+            assertTrue(store.currentClearPresentationToken() === clearToken)
+            assertTrue(store.prepareDownloadTask(downloadSong) == null)
+            assertTrue(store.prepareDownloadTasks(listOf(downloadSong)).isEmpty())
+            assertTrue(store.ensureDownloadTasks(listOf(downloadSong)).isEmpty())
+            assertFalse(store.updateProgress(progress(downloadSong, attemptId, 32L)))
+            assertFalse(store.restoreProgress(progress(downloadSong, attemptId, 64L)))
+            assertEquals(
+                0,
+                store.restoreProgressBatch(listOf(progress(downloadSong, attemptId, 96L)))
+            )
+            assertFalse(
+                store.updateTaskStatus(
+                    songKey = downloadSong.stableKey(),
+                    status = DownloadStatus.QUEUED,
+                    expectedAttemptId = attemptId
+                )
+            )
+            store.registerActiveDownloadTask(downloadSong, attemptId)
+            assertTrue(store.currentTasks().isEmpty())
+
+            assertTrue(store.finishClearPresentation(clearToken))
+            assertTrue(store.currentClearPresentationToken() == null)
+            assertFalse(store.isClearPresentationActive.value)
+            assertTrue(store.prepareDownloadTask(downloadSong) != null)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `stale clear presentation token cannot release a newer clear`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val firstToken = store.beginClearPresentation()
+            assertTrue(store.finishClearPresentation(firstToken))
+            val secondToken = store.beginClearPresentation()
+
+            assertFalse(store.finishClearPresentation(firstToken))
+            assertTrue(store.currentClearPresentationToken() === secondToken)
+            assertTrue(store.prepareDownloadTask(song(8L)) == null)
+            assertFalse(store.finishClearPresentation(secondToken) { false })
+            assertTrue(store.currentClearPresentationToken() === secondToken)
+            assertTrue(store.finishClearPresentation(secondToken))
+            assertTrue(store.prepareDownloadTask(song(8L)) != null)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `failed task remains a cancellation candidate until durable retry is cancelled`() {
         val failedTask = DownloadTask(
             song = song(91L),

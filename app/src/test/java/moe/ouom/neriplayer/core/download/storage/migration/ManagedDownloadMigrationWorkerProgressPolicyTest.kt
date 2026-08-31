@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshOutcome
 import moe.ouom.neriplayer.core.download.ManagedLibraryRefreshPreserveReason
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
+import moe.ouom.neriplayer.core.download.storage.MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -499,6 +500,43 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
+    fun `pending preflight remains retryable after the normal budget`() {
+        val error = ManagedDownloadMigrationException.transient(
+            "[$MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE] pending remains"
+        )
+
+        assertTrue(shouldRetainMigrationPendingRetry(error))
+        assertFalse(
+            shouldRetryMigrationFailure(
+                error = error,
+                runAttemptCount = 2,
+                maxRetryAttempts = 2
+            )
+        )
+    }
+
+    @Test
+    fun `worker reopens stale directory processing state after acquiring the lease`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("private suspend fun runMigration(): Result")
+            .substringBefore("private fun createForegroundInfo(")
+
+        val lease = body.indexOf("directoryMutationLease =")
+        val restore = body.indexOf("val restoredProcessingState =")
+        val waiting = body.indexOf("ManagedLibraryProcessingCoordinator.waitingForRetry(")
+        val preflight = body.indexOf("ensureWaitingForRetry(")
+
+        assertTrue(lease >= 0)
+        assertTrue(restore > lease)
+        assertTrue(waiting > restore)
+        assertTrue(preflight > waiting)
+        assertTrue(body.contains("ManagedLibraryProcessingState.Running"))
+    }
+
+    @Test
     fun `retryable migration outcomes become terminal after the retry budget`() {
         assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 0, maxRetryAttempts = 2))
         assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 1, maxRetryAttempts = 2))
@@ -539,6 +577,28 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 runAttemptCount = 1,
                 retryAttemptOffset = 1,
                 maxRetryAttempts = 2
+            )
+        )
+    }
+
+    @Test
+    fun `startup force recovery bypasses stale backoff without changing normal policy`() {
+        assertTrue(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 0,
+                retryAttemptOffset = 8,
+                maxRetryAttempts = 2,
+                forceRecovery = true
+            )
+        )
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.RUNNING,
+                runAttemptCount = 8,
+                retryAttemptOffset = 8,
+                maxRetryAttempts = 2,
+                forceRecovery = true
             )
         )
     }
@@ -585,6 +645,109 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
                 newWorkId.lowercase()
             )
         )
+    }
+
+    @Test
+    fun `new directory roots supersede an auto resume request`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "old-work",
+            fromDirectoryUri =
+                "content://com.android.externalstorage.documents/tree/primary%3AOld",
+            toDirectoryUri = null,
+            targetLabel = "old",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 3,
+            autoResume = true
+        )
+        val requested = persisted.copy(
+            workId = "new-work",
+            fromDirectoryUri = null,
+            toDirectoryUri =
+                "content://com.android.externalstorage.documents/tree/primary%3ANew",
+            targetLabel = "new"
+        )
+
+        assertTrue(shouldSupersedePersistedMigrationRequest(persisted, requested))
+        assertFalse(
+            shouldSupersedePersistedMigrationRequest(
+                persistedRequest = persisted,
+                requestedRequest = requested.copy(
+                    fromDirectoryUri = persisted.fromDirectoryUri,
+                    toDirectoryUri = persisted.toDirectoryUri
+                )
+            )
+        )
+        assertFalse(
+            shouldSupersedePersistedMigrationRequest(
+                persistedRequest = null,
+                requestedRequest = requested
+            )
+        )
+    }
+
+    @Test
+    fun `superseded worker does not run pending recovery after ownership changes`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("private suspend fun runMigration(): Result")
+            .substringBefore("private fun isPendingArtifactPreflightFailure")
+        val pendingRecovery = body.indexOf(
+            "GlobalDownloadManager.reconcilePendingDownloadsAfterMigrationBlocked"
+        )
+        val ownerCheck = body.indexOf("checkpointStore.isRequestCurrent(migrationWorkId)")
+
+        assertTrue(pendingRecovery >= 0)
+        assertTrue(ownerCheck >= 0)
+        assertTrue(ownerCheck < pendingRecovery)
+    }
+
+    @Test
+    fun `directory mutation deferral is retried before coroutine cancellation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("private suspend fun runMigration(): Result")
+            .substringBefore("private suspend fun transitionProcessingState")
+        val deferredCatch = body.indexOf(
+            "catch (error: DownloadStorageMutationDeferredException)"
+        )
+        val cancellationCatch = body.indexOf("catch (error: CancellationException)")
+
+        assertTrue(deferredCatch >= 0)
+        assertTrue(cancellationCatch > deferredCatch)
+        val deferredBody = body.substring(deferredCatch, cancellationCatch)
+        assertTrue(deferredBody.contains("pendingArtifactPreflightBlocked = true"))
+        assertTrue(deferredBody.contains("withContext(NonCancellable)"))
+        assertTrue(deferredBody.contains("markRequestRetryable"))
+        assertTrue(deferredBody.contains("Result.retry()"))
+    }
+
+    @Test
+    fun `generic migration failure persists recovery state without cancellation`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("private suspend fun runMigration(): Result")
+            .substringBefore("private fun isPendingArtifactPreflightFailure")
+        val genericCatch = body.indexOf("catch (error: Exception)")
+        val finallyBlock = body.indexOf("} finally {", genericCatch)
+
+        assertTrue(genericCatch >= 0)
+        assertTrue(finallyBlock > genericCatch)
+        val genericBody = body.substring(genericCatch, finallyBlock)
+        val nonCancellable = genericBody.indexOf("withContext(NonCancellable)")
+        val transition = genericBody.indexOf("transitionProcessingState(")
+        val retryPersistence = genericBody.indexOf(
+            "checkpointStore.markRequestRetryable(migrationWorkId)"
+        )
+
+        assertTrue(nonCancellable >= 0)
+        assertTrue(transition > nonCancellable)
+        assertTrue(retryPersistence > nonCancellable)
     }
 
     @Test
@@ -1079,5 +1242,15 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
             cleanupFilesProcessed = 0,
             cleanupFilesTotal = 0
         )
+    }
+
+    private fun locateProjectFile(relativePath: String): java.io.File {
+        var directory = java.io.File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = java.io.File(directory, relativePath)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $relativePath")
     }
 }

@@ -88,6 +88,20 @@ internal fun shouldReplaceActiveMigrationWork(
         !migrationWorkIdsEqual(persistedId, activeWorkId)
 }
 
+internal fun shouldSupersedePersistedMigrationRequest(
+    persistedRequest: ManagedMigrationRequest?,
+    requestedRequest: ManagedMigrationRequest
+): Boolean {
+    persistedRequest ?: return false
+    return !ManagedDownloadStorage.areEquivalentDirectoryUris(
+        persistedRequest.fromDirectoryUri,
+        requestedRequest.fromDirectoryUri
+    ) || !ManagedDownloadStorage.areEquivalentDirectoryUris(
+        persistedRequest.toDirectoryUri,
+        requestedRequest.toDirectoryUri
+    )
+}
+
 private fun migrationWorkStatePriority(state: WorkInfo.State): Int {
     return when (state) {
         WorkInfo.State.RUNNING -> 0

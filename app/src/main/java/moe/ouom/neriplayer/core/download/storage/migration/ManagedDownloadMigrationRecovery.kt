@@ -562,17 +562,6 @@ internal fun mergePersistedMigrationReplacementPlan(
                 replacements[sourceReference] = persisted
                 return@forEach
             } else {
-                if (
-                    persistedJournal.sourceEntryCountKnown &&
-                    persistedJournal.sourceEntries.none { entry ->
-                        entry.sourceReference == sourceReference
-                    }
-                ) {
-                    // the complete source scan no longer contains this entry.
-                    // It was deleted by the user before it reached the copy
-                    // stage; leave no stale replacement plan to block retry
-                    return@forEach
-                }
                 throw ManagedDownloadMigrationException.transient(
                     "迁移替换事务源条目暂时缺失: $sourceReference"
                 )
@@ -599,6 +588,47 @@ internal fun mergePersistedMigrationReplacementPlan(
         replacements[sourceReference] = current.copy(backupName = persisted.backupName)
     }
     return generatedPlan.copy(replacementPlansByReference = replacements)
+}
+
+/**
+ * 找出没有复制凭据但仍在替换日志中的源条目
+ *
+ * 这类条目可能已经把目标改成新内容后才被进程终止，不能因为源扫描暂时看不到
+ * 就直接丢弃替换计划
+ */
+internal fun selectOrphanedMigrationReplacementPlans(
+    journal: ManagedMigrationReplacementJournal,
+    missingSourceReferences: Iterable<String>,
+    persistedCopyReceiptReferences: Iterable<String>
+): List<ManagedMigrationReplacementPlan> {
+    val missing = missingSourceReferences
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+    if (missing.isEmpty()) return emptyList()
+    val receiptReferences = persistedCopyReceiptReferences
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .toSet()
+    val cleanupReferences = journal.cleanupReceipts
+        .mapTo(HashSet(), ManagedMigrationCleanupReceipt::sourceReference)
+    return journal.replacements
+        .asSequence()
+        .onEach(::validatePersistedMigrationReplacement)
+        .filter { replacement ->
+            val reference = replacement.sourceReference.trim()
+            reference in missing &&
+                reference !in receiptReferences &&
+                reference !in cleanupReferences
+        }
+        .sortedWith(
+            compareBy<ManagedMigrationReplacementPlan>(
+                { it.subdirectory.orEmpty() },
+                { it.targetName },
+                { it.sourceReference }
+            )
+        )
+        .toList()
 }
 
 internal fun isSafeMigrationPlanName(name: String): Boolean {

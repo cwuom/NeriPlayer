@@ -363,6 +363,44 @@ class ManagedDownloadStorageCommitWriterTest {
         }
     }
 
+    @Test
+    fun `SAF restore never bypasses target identity when a backup is present`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/commit/" +
+                "ManagedDownloadStorageCommitWriter.kt"
+        ).readText()
+        val restoreBody = source
+            .substringAfter("fun restoreMigrationReplacement(")
+            .substringBefore("private fun safDocumentUri(")
+        val normalizedBody = restoreBody.replace(Regex("\\s+"), " ")
+
+        assertTrue(
+            normalizedBody.contains(
+                "isSafeReplacementTargetIdentity("
+            )
+        )
+        assertTrue(
+            normalizedBody.contains(
+                "expectedBackupName = backup.name"
+            )
+        )
+        assertTrue(normalizedBody.contains("if (targetDocument == null) return null"))
+    }
+
+    @Test
+    fun `replacement backup name mismatch is never accepted by an identical document`() {
+        val target = safEntry(name = "song.mp3", documentId = "same")
+        val renamed = target.copy(name = "foreign.mp3")
+
+        assertFalse(
+            sameMigrationReplacementBackupIdentity(
+                expectedTarget = target,
+                actualBackup = renamed,
+                expectedBackupName = ".np-migration-backup-song"
+            )
+        )
+    }
+
     private fun safEntry(
         name: String,
         documentId: String,
@@ -383,5 +421,15 @@ class ManagedDownloadStorageCommitWriterTest {
             sizeBytes = sizeBytes,
             lastModifiedMs = lastModifiedMs
         )
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 }

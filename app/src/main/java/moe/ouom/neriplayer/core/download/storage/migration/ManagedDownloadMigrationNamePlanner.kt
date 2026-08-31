@@ -21,6 +21,12 @@ internal data class ManagedMigrationTargetIndex(
     val lyricEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap()
 ) {
+    private val rootEntriesByCanonicalName:
+        Map<String, List<ManagedDownloadStorage.StoredEntry>> by lazy {
+            rootEntriesByName.values.groupBy { entry ->
+                ManagedDownloadStorageNaming.canonicalNameKey(entry.name)
+            }
+        }
     private val entriesByReference: Map<String, ManagedDownloadStorage.StoredEntry> by lazy {
         buildMap {
             sequenceOf(rootEntriesByName, coverEntriesByName, lyricEntriesByName)
@@ -63,6 +69,17 @@ internal data class ManagedMigrationTargetIndex(
             LYRIC_SUBDIRECTORY -> lyricEntriesByName[name]
             else -> null
         }
+    }
+
+    fun uniqueEntryForCanonicalName(
+        subdirectory: String?,
+        name: String
+    ): ManagedDownloadStorage.StoredEntry? {
+        val canonicalName = ManagedDownloadStorageNaming.canonicalNameKey(name)
+        return when (subdirectory) {
+            null -> rootEntriesByCanonicalName[canonicalName]
+            else -> null
+        }?.singleOrNull()
     }
 
     fun entryByReference(reference: String?): ManagedDownloadStorage.StoredEntry? {
@@ -147,44 +164,87 @@ internal object ManagedDownloadMigrationNamePlanner {
                 val identityMatch = sourceMetadata?.let { metadata ->
                     targetIdentityIndex.matchFor(metadata)
                 }
-                val duplicateTarget = identityMatch?.target
-                val replacementTargetReserved = duplicateTarget?.let { target ->
-                    replacementTargetNamesBySubdirectory
-                        .getOrPut(null) { hashSetOf() }
-                        .add(ManagedDownloadStorageNaming.canonicalNameKey(target.name))
-                } == true
-                if (duplicateTarget != null && replacementTargetReserved) {
+                val managedNameMatch = sourceMetadata?.let {
+                    managedSameNameMatch(
+                        sourceEntry = audioEntry.entry,
+                        targetIndex = targetIndex
+                    )
+                }
+                val sameNameMatch = sameNameMatch(
+                    sourceEntry = audioEntry.entry,
+                    targetIndex = targetIndex
+                )
+                val replacementMatch = sequenceOf(
+                    identityMatch,
+                    managedNameMatch,
+                    sameNameMatch
+                )
+                    .filterNotNull()
+                    .firstOrNull { candidate ->
+                        replacementTargetNamesBySubdirectory
+                            .getOrPut(null) { hashSetOf() }
+                            .add(
+                                ManagedDownloadStorageNaming.canonicalNameKey(
+                                    candidate.target.name
+                                )
+                            )
+                }
+                val duplicateTarget = replacementMatch?.target
+                if (duplicateTarget != null) {
                     plannedNames[audioEntry.entry.reference] = duplicateTarget.name
                     replacementPlans[audioEntry.entry.reference] = replacementPlanFor(
                         sourceEntry = audioEntry.entry,
                         targetEntry = duplicateTarget,
                         subdirectory = null,
-                        groupIdentity = identityMatch.identity,
+                        groupIdentity = replacementMatch.identity,
                         backupNamespace = replacementBackupNamespace
                     )
                     sourceMetadataEntriesByAudioName[audioEntry.entry.name]?.let { metadataEntry ->
-                        targetIndex.metadataEntryForAudioName(duplicateTarget.name)
-                            ?.let { targetMetadataEntry ->
-                            plannedNames[metadataEntry.entry.reference] = targetMetadataEntry.name
+                        val targetMetadataEntry = targetIndex.metadataEntryForAudioName(
+                            duplicateTarget.name
+                        )
+                        val metadataReplacementTarget = targetMetadataEntry
+                            ?.takeUnless(ManagedDownloadStorage.StoredEntry::isDirectory)
+                            ?.takeUnless { target ->
+                                isEquivalentMigrationTarget(metadataEntry.entry, target)
+                            }
+                            ?.takeIf { target ->
+                                replacementTargetNamesBySubdirectory
+                                    .getOrPut(null) { hashSetOf() }
+                                    .add(
+                                        ManagedDownloadStorageNaming.canonicalNameKey(
+                                            target.name
+                                        )
+                                    )
+                            }
+                        if (metadataReplacementTarget != null) {
+                            plannedNames[metadataEntry.entry.reference] =
+                                metadataReplacementTarget.name
                             replacementPlans[metadataEntry.entry.reference] = replacementPlanFor(
                                 sourceEntry = metadataEntry.entry,
-                                targetEntry = targetMetadataEntry,
+                                targetEntry = metadataReplacementTarget,
                                 subdirectory = null,
-                                groupIdentity = identityMatch.identity,
+                                groupIdentity = replacementMatch.identity,
                                 backupNamespace = replacementBackupNamespace
+                            )
+                        } else {
+                            plannedNames[metadataEntry.entry.reference] = rootReservations.reserve(
+                                duplicateTarget.name + METADATA_SUFFIX
                             )
                         }
                     }
-                    reserveDuplicateSidecars(
-                        sourceMetadata = sourceMetadata,
-                        targetMetadata = targetIndex.metadataByAudioName[duplicateTarget.name],
-                        sourceSidecarIndex = sourceSidecarIndex,
-                        targetIndex = targetIndex,
-                        plannedNames = plannedNames,
-                        replacementPlans = replacementPlans,
-                        groupIdentity = identityMatch.identity,
-                        backupNamespace = replacementBackupNamespace
-                    )
+                    sourceMetadata?.let { replacementMetadata ->
+                        reserveDuplicateSidecars(
+                            sourceMetadata = replacementMetadata,
+                            targetMetadata = targetIndex.metadataByAudioName[duplicateTarget.name],
+                            sourceSidecarIndex = sourceSidecarIndex,
+                            targetIndex = targetIndex,
+                            plannedNames = plannedNames,
+                            replacementPlans = replacementPlans,
+                            groupIdentity = replacementMatch.identity,
+                            backupNamespace = replacementBackupNamespace
+                        )
+                    }
                     return@forEach
                 }
                 val targetName = resolvePlannedMigrationName(
@@ -195,8 +255,35 @@ internal object ManagedDownloadMigrationNamePlanner {
                 )
                 plannedNames[audioEntry.entry.reference] = targetName
                 sourceMetadataEntriesByAudioName[audioEntry.entry.name]?.let { metadataEntry ->
-                    val metadataTargetName = rootReservations.reserve(targetName + METADATA_SUFFIX)
-                    plannedNames[metadataEntry.entry.reference] = metadataTargetName
+                    val targetMetadataEntry = targetIndex.metadataEntryForAudioName(targetName)
+                    val metadataReplacementTarget = targetMetadataEntry
+                        ?.takeUnless(ManagedDownloadStorage.StoredEntry::isDirectory)
+                        ?.takeUnless { target ->
+                            isEquivalentMigrationTarget(metadataEntry.entry, target)
+                        }
+                        ?.takeIf { target ->
+                            replacementTargetNamesBySubdirectory
+                                .getOrPut(null) { hashSetOf() }
+                                .add(
+                                    ManagedDownloadStorageNaming.canonicalNameKey(
+                                        target.name
+                                    )
+                                )
+                        }
+                    if (metadataReplacementTarget != null) {
+                        plannedNames[metadataEntry.entry.reference] =
+                            metadataReplacementTarget.name
+                        replacementPlans[metadataEntry.entry.reference] = replacementPlanFor(
+                            sourceEntry = metadataEntry.entry,
+                            targetEntry = metadataReplacementTarget,
+                            subdirectory = null,
+                            groupIdentity = sameNameMatchIdentity(metadataReplacementTarget),
+                            backupNamespace = replacementBackupNamespace
+                        )
+                    } else {
+                        val metadataTargetName = rootReservations.reserve(targetName + METADATA_SUFFIX)
+                        plannedNames[metadataEntry.entry.reference] = metadataTargetName
+                    }
                 }
             }
 
@@ -211,7 +298,29 @@ internal object ManagedDownloadMigrationNamePlanner {
                 val audioName = ManagedDownloadTreeNaming.metadataAudioName(metadataEntry.entry.name)
                     ?: return@forEach
                 val existingMetadata = targetIndex.metadataEntryForAudioName(audioName)
-                if (existingMetadata != null) {
+                val replacementTarget = sameNameReplacementTarget(
+                    sourceEntry = metadataEntry.entry,
+                    subdirectory = null,
+                    targetIndex = targetIndex
+                )
+                val replacementReserved = replacementTarget
+                    ?.let { target ->
+                        replacementTargetNamesBySubdirectory
+                            .getOrPut(null) { hashSetOf() }
+                            .add(
+                                ManagedDownloadStorageNaming.canonicalNameKey(target.name)
+                            )
+                    } == true
+                if (replacementTarget != null && replacementReserved) {
+                    plannedNames[metadataEntry.entry.reference] = replacementTarget.name
+                    replacementPlans[metadataEntry.entry.reference] = replacementPlanFor(
+                        sourceEntry = metadataEntry.entry,
+                        targetEntry = replacementTarget,
+                        subdirectory = null,
+                        groupIdentity = sameNameMatchIdentity(replacementTarget),
+                        backupNamespace = replacementBackupNamespace
+                    )
+                } else if (existingMetadata != null && !existingMetadata.isDirectory) {
                     plannedNames[metadataEntry.entry.reference] = existingMetadata.name
                     reusedTargets[metadataEntry.entry.reference] = existingMetadata
                 } else {
@@ -234,15 +343,39 @@ internal object ManagedDownloadMigrationNamePlanner {
                 )
             )
             .forEach { entry ->
-                plannedNames[entry.entry.reference] = resolvePlannedMigrationName(
-                    desiredName = entry.entry.name,
+                val replacementTarget = sameNameReplacementTarget(
                     sourceEntry = entry.entry,
-                    targetEntry = targetIndex.entryFor(
-                        entry.subdirectory,
-                        entry.entry.name
-                    ),
-                    reservations = reservationsFor(entry.subdirectory)
+                    subdirectory = entry.subdirectory,
+                    targetIndex = targetIndex
                 )
+                val replacementReserved = replacementTarget
+                    ?.let { target ->
+                        replacementTargetNamesBySubdirectory
+                            .getOrPut(entry.subdirectory) { hashSetOf() }
+                            .add(
+                                ManagedDownloadStorageNaming.canonicalNameKey(target.name)
+                            )
+                    } == true
+                if (replacementTarget != null && replacementReserved) {
+                    plannedNames[entry.entry.reference] = replacementTarget.name
+                    replacementPlans[entry.entry.reference] = replacementPlanFor(
+                        sourceEntry = entry.entry,
+                        targetEntry = replacementTarget,
+                        subdirectory = entry.subdirectory,
+                        groupIdentity = sameNameMatchIdentity(replacementTarget),
+                        backupNamespace = replacementBackupNamespace
+                    )
+                } else {
+                    plannedNames[entry.entry.reference] = resolvePlannedMigrationName(
+                        desiredName = entry.entry.name,
+                        sourceEntry = entry.entry,
+                        targetEntry = targetIndex.entryFor(
+                            entry.subdirectory,
+                            entry.entry.name
+                        ),
+                        reservations = reservationsFor(entry.subdirectory)
+                    )
+                }
             }
 
         return ManagedMigrationNamePlan(
@@ -259,18 +392,30 @@ internal object ManagedDownloadMigrationNamePlanner {
         generatedPlan: ManagedMigrationNamePlan,
         persistedTargetNames: Map<String, String>
     ): ManagedMigrationNamePlan? {
+        val changedPersistedReferences = changedPersistedTargetReferences(
+            entries = entries,
+            targetIndex = targetIndex,
+            persistedTargetNames = persistedTargetNames
+        )
+        val resumePlan = detachChangedPersistedReplacements(
+            entries = entries,
+            targetIndex = targetIndex,
+            generatedPlan = generatedPlan,
+            changedPersistedReferences = changedPersistedReferences
+        )
         val restoredTargetNames = collectRestorableTargetNames(
             entries = entries,
             targetIndex = targetIndex,
             persistedTargetNames = persistedTargetNames,
-            replacementReferences = generatedPlan.replacementPlansByReference.keys
         )
-        if (restoredTargetNames.isEmpty()) return null
+        if (restoredTargetNames.isEmpty()) {
+            return resumePlan.takeIf { changedPersistedReferences.isNotEmpty() }
+        }
 
         val mergedTargetNames = mergeGeneratedTargetNames(
             entries = entries,
             targetIndex = targetIndex,
-            generatedPlan = generatedPlan,
+            generatedPlan = resumePlan,
             restoredTargetNames = restoredTargetNames
         )
         val entriesByReference = entries.associateBy { entry -> entry.entry.reference }
@@ -280,27 +425,93 @@ internal object ManagedDownloadMigrationNamePlanner {
                 reference to targetEntry
             }
         }.toMap()
-        val generatedReusedTargets = generatedPlan.reusedTargetsByReference.filter { (reference, target) ->
+        val generatedReusedTargets = resumePlan.reusedTargetsByReference.filter { (reference, target) ->
             reference !in restoredTargetNames && mergedTargetNames[reference] == target.name
         }
         val entryReferences = entries.mapTo(HashSet()) { entry -> entry.entry.reference }
-        val resumableReplacements = generatedPlan.replacementPlansByReference
+        val resumableReplacements = resumePlan.replacementPlansByReference
             .filter { (reference, replacement) ->
                 reference in entryReferences &&
                     mergedTargetNames[reference] == replacement.targetName
             }
-        return generatedPlan.copy(
+        return resumePlan.copy(
             targetNamesByReference = mergedTargetNames,
             reusedTargetsByReference = generatedReusedTargets + resumableTargets,
             replacementPlansByReference = resumableReplacements
         )
     }
 
+    private fun changedPersistedTargetReferences(
+        entries: List<ManagedMigrationEntryRef>,
+        targetIndex: ManagedMigrationTargetIndex,
+        persistedTargetNames: Map<String, String>
+    ): Set<String> {
+        return buildSet {
+            entries.forEach { entry ->
+                val persistedName = persistedTargetNames[entry.entry.reference]
+                    ?: return@forEach
+                val targetEntry = targetIndex.entryFor(entry.subdirectory, persistedName)
+                    ?: return@forEach
+                if (hasDefinitePersistedTargetMismatch(entry, targetEntry)) {
+                    add(entry.entry.reference)
+                }
+            }
+        }
+    }
+
+    private fun detachChangedPersistedReplacements(
+        entries: List<ManagedMigrationEntryRef>,
+        targetIndex: ManagedMigrationTargetIndex,
+        generatedPlan: ManagedMigrationNamePlan,
+        changedPersistedReferences: Set<String>
+    ): ManagedMigrationNamePlan {
+        if (changedPersistedReferences.isEmpty()) return generatedPlan
+        val replacementGroups = generatedPlan.replacementPlansByReference
+            .filterKeys(changedPersistedReferences::contains)
+            .values
+            .mapTo(HashSet(), ManagedMigrationReplacementPlan::groupIdentity)
+        val affectedReferences = generatedPlan.replacementPlansByReference
+            .filterValues { replacement -> replacement.groupIdentity in replacementGroups }
+            .keys + changedPersistedReferences
+        val unaffectedNamesBySubdirectory = entries
+            .filter { entry -> entry.entry.reference !in affectedReferences }
+            .mapNotNull { entry ->
+                generatedPlan.targetNamesByReference[entry.entry.reference]
+                    ?.let { targetName -> entry.subdirectory to targetName }
+            }
+            .groupBy({ (subdirectory, _) -> subdirectory }, { (_, name) -> name })
+        val reservationsBySubdirectory = mutableMapOf<String?, ManagedMigrationNameReservations>()
+        fun reservationsFor(subdirectory: String?): ManagedMigrationNameReservations {
+            return reservationsBySubdirectory.getOrPut(subdirectory) {
+                ManagedMigrationNameReservations(
+                    targetIndex.namesFor(subdirectory) +
+                        unaffectedNamesBySubdirectory[subdirectory].orEmpty()
+                )
+            }
+        }
+        val targetNames = generatedPlan.targetNamesByReference.toMutableMap()
+        val reusedTargets = generatedPlan.reusedTargetsByReference.toMutableMap()
+        val replacementPlans = generatedPlan.replacementPlansByReference.toMutableMap()
+        entries.asSequence()
+            .filter { entry -> entry.entry.reference in affectedReferences }
+            .sortedWith(migrationEntryRefComparator)
+            .forEach { entry ->
+                targetNames[entry.entry.reference] = reservationsFor(entry.subdirectory)
+                    .reserve(entry.entry.name)
+                reusedTargets.remove(entry.entry.reference)
+                replacementPlans.remove(entry.entry.reference)
+            }
+        return generatedPlan.copy(
+            targetNamesByReference = targetNames,
+            reusedTargetsByReference = reusedTargets,
+            replacementPlansByReference = replacementPlans
+        )
+    }
+
     private fun collectRestorableTargetNames(
         entries: List<ManagedMigrationEntryRef>,
         targetIndex: ManagedMigrationTargetIndex,
-        persistedTargetNames: Map<String, String>,
-        replacementReferences: Set<String> = emptySet()
+        persistedTargetNames: Map<String, String>
     ): Map<String, String> {
         val reservedNamesBySubdirectory = mutableMapOf<String?, MutableSet<String>>()
         return buildMap {
@@ -311,7 +522,6 @@ internal object ManagedDownloadMigrationNamePlanner {
                 val targetEntry = targetIndex.entryFor(entry.subdirectory, targetName)
                 if (
                     targetEntry != null &&
-                    reference !in replacementReferences &&
                     hasDefinitePersistedTargetMismatch(entry, targetEntry)
                 ) {
                     return@forEach
@@ -463,6 +673,65 @@ internal object ManagedDownloadMigrationNamePlanner {
                     )
                 }
             }
+    }
+
+    private fun managedSameNameMatch(
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        targetIndex: ManagedMigrationTargetIndex
+    ): ManagedMigrationIdentityMatch? {
+        val target = targetIndex.uniqueEntryForCanonicalName(null, sourceEntry.name)
+            ?: return null
+        if (isEquivalentMigrationTarget(sourceEntry, target)) return null
+        if (target.isDirectory) return null
+        if (targetIndex.metadataByAudioName[target.name] == null) return null
+        val nameIdentity = ManagedDownloadStorageNaming.stableKeySuffix(
+            ManagedDownloadStorageNaming.canonicalNameKey(target.name)
+        ).take(24)
+        return ManagedMigrationIdentityMatch(
+            target = target,
+            identity = "managedName:$nameIdentity"
+        )
+    }
+
+    private fun sameNameMatch(
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        targetIndex: ManagedMigrationTargetIndex
+    ): ManagedMigrationIdentityMatch? {
+        val target = sameNameReplacementTarget(
+            sourceEntry = sourceEntry,
+            subdirectory = null,
+            targetIndex = targetIndex
+        ) ?: return null
+        return ManagedMigrationIdentityMatch(
+            target = target,
+            identity = sameNameMatchIdentity(target)
+        )
+    }
+
+    private fun sameNameReplacementTarget(
+        sourceEntry: ManagedDownloadStorage.StoredEntry,
+        subdirectory: String?,
+        targetIndex: ManagedMigrationTargetIndex
+    ): ManagedDownloadStorage.StoredEntry? {
+        val target = if (subdirectory == null) {
+            targetIndex.uniqueEntryForCanonicalName(null, sourceEntry.name)
+        } else {
+            targetIndex.entryFor(subdirectory, sourceEntry.name)
+        }
+        return target
+            ?.takeUnless(ManagedDownloadStorage.StoredEntry::isDirectory)
+            ?.takeUnless { candidate ->
+                isEquivalentMigrationTarget(sourceEntry, candidate)
+            }
+    }
+
+    private fun sameNameMatchIdentity(
+        target: ManagedDownloadStorage.StoredEntry
+    ): String {
+        val nameIdentity = ManagedDownloadStorageNaming.stableKeySuffix(
+            ManagedDownloadStorageNaming.canonicalNameKey(target.name)
+        ).take(24)
+        return "name:$nameIdentity"
     }
 
     private fun sidecarPaths(metadata: ManagedDownloadStorage.DownloadedAudioMetadata?): Set<String> {

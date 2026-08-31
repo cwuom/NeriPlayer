@@ -10,6 +10,86 @@ import org.junit.Test
  */
 class GlobalDownloadManagerLegacyRuntimeCharacterizationTest {
     @Test
+    fun `artifact commit result gates every core publication side effect`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val artifactCallIndex = body.indexOf(
+            "managedDownloadArtifactCoordinator.markCoreCommitted("
+        )
+        val artifactResultIndex = body.lastIndexOf(
+            "val artifactCommitted",
+            artifactCallIndex
+        )
+        val rejectionIndex = body.indexOf("if (!artifactCommitted)", artifactResultIndex)
+        val bridgeIndex = body.indexOf(
+            "AudioDownloadManager.rememberCompletedAudioReference(",
+            rejectionIndex
+        )
+        val catalogIndex = body.indexOf(
+            "publishOptimisticDownloadedSongs(",
+            rejectionIndex
+        )
+        val completionIndex = body.indexOf(
+            "status = DownloadStatus.COMPLETED",
+            rejectionIndex
+        )
+        val enrichmentIndex = body.indexOf("assetEnrichmentCoordinator.enqueue(", rejectionIndex)
+
+        assertTrue(artifactResultIndex >= 0)
+        assertTrue(rejectionIndex > artifactResultIndex)
+        assertTrue(
+            body.substring(artifactResultIndex, rejectionIndex).contains("getOrElse")
+        )
+        assertTrue(bridgeIndex > rejectionIndex)
+        assertTrue(catalogIndex > rejectionIndex)
+        assertTrue(completionIndex > rejectionIndex)
+        assertTrue(enrichmentIndex > rejectionIndex)
+        val rejectionBody = body.substring(rejectionIndex, bridgeIndex)
+        assertTrue(rejectionBody.contains("ensureCoreRecoveryOperation"))
+        assertTrue(rejectionBody.contains("return"))
+        assertFalse(rejectionBody.contains("DownloadStatus.FAILED"))
+        assertFalse(rejectionBody.contains("markDownloadArtifactRepairRequired"))
+    }
+
+    @Test
+    fun `migration core artifact commit uses the source root identity`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val sourceRootIndex = body.indexOf(
+            "val sourceArtifactRootKey = if (directoryMutationLeaseOwned)"
+        )
+        val snapshotIndex = body.indexOf(
+            "ManagedDownloadStorage.snapshotRootKeyForOperation(",
+            sourceRootIndex
+        )
+        val currentLeaseIndex = body.indexOf(
+            "managedDownloadArtifactCoordinator.currentLeaseId(",
+            snapshotIndex
+        )
+        val artifactCallIndex = body.indexOf(
+            "managedDownloadArtifactCoordinator.markCoreCommitted(",
+            sourceRootIndex
+        )
+
+        assertTrue(sourceRootIndex >= 0)
+        assertTrue(snapshotIndex > sourceRootIndex)
+        assertTrue(currentLeaseIndex > snapshotIndex)
+        assertTrue(artifactCallIndex > currentLeaseIndex)
+        val sourceRootBody = body.substring(sourceRootIndex, artifactCallIndex)
+        assertTrue(sourceRootBody.contains("directoryUri = directoryUri"))
+        assertTrue(sourceRootBody.contains("useDefaultRootWhenDirectoryUriMissing = true"))
+        val artifactBody = body.substring(artifactCallIndex, body.indexOf(
+            "        if (!artifactCommitted)",
+            artifactCallIndex
+        ))
+        assertTrue(artifactBody.contains("rootKeyOverride = sourceArtifactRootKey"))
+    }
+
+    @Test
     fun `core commit publishes operation journal linearization points`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"

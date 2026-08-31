@@ -31,6 +31,19 @@ internal object DownloadExecutionRoomStore {
         val state: String
     )
 
+    internal data class CoreCommitJournalRecovery(
+        val outcome: Outcome,
+        val state: String?,
+        val stopRequestedByUser: Boolean
+    ) {
+        internal enum class Outcome {
+            COMMITTED,
+            PREPARED,
+            MISSING,
+            BLOCKED
+        }
+    }
+
     internal data class CancellationSnapshot(
         val entries: List<StateEntry>,
         val operationIds: List<String>,
@@ -54,7 +67,8 @@ internal object DownloadExecutionRoomStore {
         val bytesWritten: Long,
         val totalBytes: Long?,
         val stopRequestedByUser: Boolean,
-        val updatedAtMs: Long
+        val updatedAtMs: Long,
+        val queueOrder: Int = 0
     )
 
     suspend fun upsert(
@@ -245,13 +259,13 @@ internal object DownloadExecutionRoomStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<StateEntry>()
         val malformedEntities = mutableListOf<DownloadOperationEntity>()
-        var offset = 0
+        var afterOperationId = ""
         while (true) {
-            val page = dao.findByStatesInLibraryPage(
+            val page = dao.findByStatesInLibraryAfterOperationId(
                 libraryId = libraryId,
                 states = states,
+                afterOperationId = afterOperationId,
                 limit = OPERATION_QUERY_PAGE_SIZE,
-                offset = offset
             )
             if (page.isEmpty()) {
                 break
@@ -270,12 +284,21 @@ internal object DownloadExecutionRoomStore {
                     )
                 }
             }
-            offset += page.size
+            val nextOperationId = page.last().operationId
+            if (nextOperationId <= afterOperationId) {
+                break
+            }
+            afterOperationId = nextOperationId
             if (page.size < OPERATION_QUERY_PAGE_SIZE) {
                 break
             }
         }
         malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        entries.sortWith(
+            compareBy<StateEntry> { it.queueOrder }
+                .thenBy { it.updatedAtMs }
+                .thenBy { it.request.operationId }
+        )
         return entries
     }
 
@@ -293,12 +316,12 @@ internal object DownloadExecutionRoomStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<StateEntry>()
         val malformedEntities = mutableListOf<DownloadOperationEntity>()
-        var offset = 0
+        var afterOperationId = ""
         while (true) {
-            val page = dao.findByStatesPage(
+            val page = dao.findByStatesAfterOperationId(
                 states = states,
+                afterOperationId = afterOperationId,
                 limit = OPERATION_QUERY_PAGE_SIZE,
-                offset = offset
             )
             if (page.isEmpty()) break
             page.forEach { entity ->
@@ -315,10 +338,19 @@ internal object DownloadExecutionRoomStore {
                     )
                 }
             }
-            offset += page.size
+            val nextOperationId = page.last().operationId
+            if (nextOperationId <= afterOperationId) {
+                break
+            }
+            afterOperationId = nextOperationId
             if (page.size < OPERATION_QUERY_PAGE_SIZE) break
         }
         malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        entries.sortWith(
+            compareBy<StateEntry> { it.queueOrder }
+                .thenBy { it.updatedAtMs }
+                .thenBy { it.request.operationId }
+        )
         return entries
     }
 
@@ -356,13 +388,13 @@ internal object DownloadExecutionRoomStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<ProgressEntry>()
         val malformedEntities = mutableListOf<DownloadOperationEntity>()
-        var offset = 0
+        var afterOperationId = ""
         while (true) {
-            val page = dao.findByStatesInLibraryPage(
+            val page = dao.findByStatesInLibraryAfterOperationId(
                 libraryId = libraryId,
                 states = PROGRESS_CHECKPOINT_OPERATION_STATES,
+                afterOperationId = afterOperationId,
                 limit = OPERATION_QUERY_PAGE_SIZE,
-                offset = offset
             )
             if (page.isEmpty()) break
             page.forEach { entity ->
@@ -376,14 +408,24 @@ internal object DownloadExecutionRoomStore {
                         bytesWritten = entity.bytesWritten.coerceAtLeast(0L),
                         totalBytes = entity.totalBytes?.takeIf { it > 0L },
                         stopRequestedByUser = entity.stopRequestedByUser,
-                        updatedAtMs = entity.updatedAtMs
+                        updatedAtMs = entity.updatedAtMs,
+                        queueOrder = entity.queueOrder
                     )
                 }
             }
-            offset += page.size
+            val nextOperationId = page.last().operationId
+            if (nextOperationId <= afterOperationId) {
+                break
+            }
+            afterOperationId = nextOperationId
             if (page.size < OPERATION_QUERY_PAGE_SIZE) break
         }
         malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        entries.sortWith(
+            compareBy<ProgressEntry> { it.queueOrder }
+                .thenBy { it.updatedAtMs }
+                .thenBy { it.request.operationId }
+        )
         return entries
     }
 
@@ -395,12 +437,12 @@ internal object DownloadExecutionRoomStore {
         val dao = database.downloadOperationDao()
         val entries = mutableListOf<ProgressEntry>()
         val malformedEntities = mutableListOf<DownloadOperationEntity>()
-        var offset = 0
+        var afterOperationId = ""
         while (true) {
-            val page = dao.findByStatesPage(
+            val page = dao.findByStatesAfterOperationId(
                 states = PROGRESS_CHECKPOINT_OPERATION_STATES,
+                afterOperationId = afterOperationId,
                 limit = OPERATION_QUERY_PAGE_SIZE,
-                offset = offset
             )
             if (page.isEmpty()) break
             page.forEach { entity ->
@@ -414,14 +456,24 @@ internal object DownloadExecutionRoomStore {
                         bytesWritten = entity.bytesWritten.coerceAtLeast(0L),
                         totalBytes = entity.totalBytes?.takeIf { it > 0L },
                         stopRequestedByUser = entity.stopRequestedByUser,
-                        updatedAtMs = entity.updatedAtMs
+                        updatedAtMs = entity.updatedAtMs,
+                        queueOrder = entity.queueOrder
                     )
                 }
             }
-            offset += page.size
+            val nextOperationId = page.last().operationId
+            if (nextOperationId <= afterOperationId) {
+                break
+            }
+            afterOperationId = nextOperationId
             if (page.size < OPERATION_QUERY_PAGE_SIZE) break
         }
         malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        entries.sortWith(
+            compareBy<ProgressEntry> { it.queueOrder }
+                .thenBy { it.updatedAtMs }
+                .thenBy { it.request.operationId }
+        )
         return entries
     }
 
@@ -493,11 +545,11 @@ internal object DownloadExecutionRoomStore {
     ): List<OperationIdentity> {
         val dao = database.downloadOperationDao()
         val identities = mutableListOf<OperationIdentity>()
-        var offset = 0
+        var afterOperationId = ""
         while (true) {
-            val page = dao.findAllOperationIdentitiesPage(
+            val page = dao.findAllOperationIdentitiesAfterOperationId(
+                afterOperationId = afterOperationId,
                 limit = OPERATION_QUERY_PAGE_SIZE,
-                offset = offset
             )
             if (page.isEmpty()) {
                 break
@@ -508,7 +560,11 @@ internal object DownloadExecutionRoomStore {
                     stableKey = row.stableKey
                 )
             }
-            offset += page.size
+            val nextOperationId = page.last().operationId
+            if (nextOperationId <= afterOperationId) {
+                break
+            }
+            afterOperationId = nextOperationId
             if (page.size < OPERATION_QUERY_PAGE_SIZE) {
                 break
             }
@@ -1414,6 +1470,160 @@ internal object DownloadExecutionRoomStore {
         return dao.find(operationId)?.state in CORE_COMMITTED_STATES
     }
 
+    /** 失败重试时重新确认提交边界，不把取消或停止的 operation 重新变成可执行任务 */
+    suspend fun reconcileCoreCommitJournal(
+        context: Context,
+        operationId: String,
+        stableKey: String? = null,
+        expectedAttemptId: Long? = null,
+        coreMetadataDurable: Boolean = false,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): CoreCommitJournalRecovery {
+        val normalizedOperationId = operationId.trim().takeIf(String::isNotBlank)
+            ?: return CoreCommitJournalRecovery(
+                outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                state = null,
+                stopRequestedByUser = false
+            )
+        val normalizedStableKey = stableKey?.trim()?.takeIf(String::isNotBlank)
+        val normalizedAttemptId = expectedAttemptId?.takeIf { it > 0L }
+        return database.withTransaction {
+            val dao = database.downloadOperationDao()
+            var current = dao.find(normalizedOperationId)
+                ?: return@withTransaction CoreCommitJournalRecovery(
+                    outcome = CoreCommitJournalRecovery.Outcome.MISSING,
+                    state = null,
+                    stopRequestedByUser = false
+                )
+            repeat(2) {
+                if (
+                    normalizedStableKey != null &&
+                        current.stableKey != normalizedStableKey
+                ) {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                }
+                val request = requestFromEntity(current)
+                    ?: return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                val requestStableKey = request.song.stableKey()
+                if (
+                    requestStableKey != current.stableKey ||
+                        normalizedStableKey != null && requestStableKey != normalizedStableKey ||
+                        normalizedAttemptId != null &&
+                            request.attemptId != null &&
+                            request.attemptId != normalizedAttemptId
+                ) {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                }
+                if (current.state in CORE_COMMITTED_STATES) {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                }
+                if (current.state in CORE_COMMIT_BLOCKED_STATES) {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                }
+                if (
+                    current.stopRequestedByUser &&
+                        current.state != "COMMITTING"
+                ) {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = true
+                    )
+                }
+                if (current.state == "COMMITTING") {
+                    if (!coreMetadataDurable) {
+                        return@withTransaction CoreCommitJournalRecovery(
+                            outcome = CoreCommitJournalRecovery.Outcome.PREPARED,
+                            state = current.state,
+                            stopRequestedByUser = current.stopRequestedByUser
+                        )
+                    }
+                    if (
+                        dao.markCoreCommitted(
+                            operationId = normalizedOperationId,
+                            expectedStates = CORE_COMMIT_SOURCE_STATES,
+                            updatedAtMs = System.currentTimeMillis()
+                        ) > 0
+                    ) {
+                        return@withTransaction CoreCommitJournalRecovery(
+                            outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
+                            state = "CORE_COMMITTED",
+                            stopRequestedByUser = current.stopRequestedByUser
+                        )
+                    }
+                } else if (current.state in CORE_COMMIT_RECOVERY_SOURCE_STATES) {
+                    if (
+                        dao.transitionState(
+                            operationId = normalizedOperationId,
+                            expectedStates = listOf(current.state),
+                            state = "COMMITTING",
+                            updatedAtMs = System.currentTimeMillis(),
+                            errorCode = "CORE_COMMIT_RECOVERY"
+                        ) > 0
+                    ) {
+                        if (!coreMetadataDurable) {
+                            return@withTransaction CoreCommitJournalRecovery(
+                                outcome = CoreCommitJournalRecovery.Outcome.PREPARED,
+                                state = "COMMITTING",
+                                stopRequestedByUser = current.stopRequestedByUser
+                            )
+                        }
+                        if (
+                            dao.markCoreCommitted(
+                                operationId = normalizedOperationId,
+                                expectedStates = CORE_COMMIT_SOURCE_STATES,
+                                updatedAtMs = System.currentTimeMillis()
+                            ) > 0
+                        ) {
+                            return@withTransaction CoreCommitJournalRecovery(
+                                outcome = CoreCommitJournalRecovery.Outcome.COMMITTED,
+                                state = "CORE_COMMITTED",
+                                stopRequestedByUser = current.stopRequestedByUser
+                            )
+                        }
+                    }
+                } else {
+                    return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                        state = current.state,
+                        stopRequestedByUser = current.stopRequestedByUser
+                    )
+                }
+                current = dao.find(normalizedOperationId)
+                    ?: return@withTransaction CoreCommitJournalRecovery(
+                        outcome = CoreCommitJournalRecovery.Outcome.MISSING,
+                        state = null,
+                        stopRequestedByUser = false
+                    )
+            }
+            CoreCommitJournalRecovery(
+                outcome = CoreCommitJournalRecovery.Outcome.BLOCKED,
+                state = current.state,
+                stopRequestedByUser = current.stopRequestedByUser
+            )
+        }
+    }
+
     suspend fun markCommitting(context: Context, operationId: String): Boolean {
         return transitionStateAtomically(
             context = context,
@@ -1849,6 +2059,15 @@ internal object DownloadExecutionRoomStore {
         "FINALIZED",
         "DEGRADED_COMPLETE",
         "COMPLETED"
+    )
+    private val CORE_COMMIT_BLOCKED_STATES = setOf(
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "STOPPED"
+    )
+    private val CORE_COMMIT_RECOVERY_SOURCE_STATES = setOf(
+        WAITING_STORAGE_MUTATION_OPERATION_STATE,
+        "RETRYABLE"
     )
     private val COMMIT_SOURCE_STATES = listOf(
         "PENDING_QUEUE",
