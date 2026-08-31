@@ -18,6 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.policy.shouldRequireExplicitResume
+import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
@@ -171,7 +173,9 @@ class DefaultDownloadExecutionHost(
         DownloadExecutionOperationStore(),
     private val entryPoint: DownloadOperationEntryPoint =
         ExistingDownloadOperationEntryPoint,
-    private val sdkInt: Int = Build.VERSION.SDK_INT
+    private val sdkInt: Int = Build.VERSION.SDK_INT,
+    private val downloadParallelismProvider: (Context) -> Int =
+        ::currentDownloadParallelism
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
@@ -222,7 +226,13 @@ class DefaultDownloadExecutionHost(
                     )
                 }
                 operationStore.save(appContext, request)
-                if (!tryAcquireHostAdmission(appContext, request.operationId)) {
+                val configuredParallelism = configuredDownloadParallelism(appContext)
+                if (!tryAcquireHostAdmission(
+                        context = appContext,
+                        operationId = request.operationId,
+                        capacity = configuredParallelism
+                    )
+                ) {
                     enqueueDeferredSchedule(appContext, request)
                     return@runCatching DownloadExecutionSchedule.Deferred(
                         "download host admission window is full"
@@ -234,7 +244,14 @@ class DefaultDownloadExecutionHost(
                 )
                 val scheduledBackend = when (selectedBackend) {
                     DownloadExecutionSchedule.Backend.UIDT_JOB -> {
-                        if (scheduleUidtIfSupported(appContext, request.operationId, sdkInt)) {
+                        if (
+                            scheduleUidtIfSupported(
+                                context = appContext,
+                                operationId = request.operationId,
+                                sdkInt = sdkInt,
+                                pendingJobLimit = configuredParallelism
+                            )
+                        ) {
                             DownloadExecutionSchedule.Backend.UIDT_JOB
                         } else if (ForegroundDownloadWorker.schedule(appContext, request.operationId)) {
                             DownloadExecutionSchedule.Backend.FOREGROUND_WORK
@@ -272,7 +289,6 @@ class DefaultDownloadExecutionHost(
     }
 
     private companion object {
-        private const val HOST_ADMISSION_CAPACITY = 6
         private const val PUMP_QUERY_LIMIT = 64
         private const val PUMP_MAX_BATCHES_PER_RUN = 256
         private val SCHEDULABLE_OPERATION_STATES = setOf(
@@ -823,24 +839,33 @@ class DefaultDownloadExecutionHost(
     ): DownloadExecutionPumpResult = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         var completedBatches = 0
+        var sawRetry = false
+        val attemptedOperationIds = mutableSetOf<String>()
         while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
+            val configuredParallelism = configuredDownloadParallelism(appContext)
             val requests = operationStore.listSchedulableForPump(
                 context = appContext,
                 limit = PUMP_QUERY_LIMIT
             )
             if (requests.isEmpty()) {
-                return@withContext DownloadExecutionPumpResult.Completed
+                return@withContext if (sawRetry) {
+                    DownloadExecutionPumpResult.Retry
+                } else {
+                    DownloadExecutionPumpResult.Completed
+                }
             }
             val candidates = requests
                 .asSequence()
                 .distinctBy(DownloadExecutionRequest::operationId)
+                .filterNot { request -> request.operationId in attemptedOperationIds }
                 .filterNot { request -> shouldLeaveForPendingUidt(appContext, request) }
-                .take(HOST_ADMISSION_CAPACITY)
+                .take(configuredParallelism)
                 .toList()
             if (candidates.isEmpty()) {
-                // UIDT 仍在系统队列时先让系统执行，延迟重试可覆盖任务意外丢失
+                // 已尝试的 operation 或仍在 UIDT 队列的 operation 需要下一轮重新评估
                 return@withContext DownloadExecutionPumpResult.Retry
             }
+            attemptedOperationIds += candidates.map(DownloadExecutionRequest::operationId)
             val results = coroutineScope {
                 candidates.map { request ->
                     async(Dispatchers.IO) {
@@ -849,9 +874,7 @@ class DefaultDownloadExecutionHost(
                 }.awaitAll()
             }
             completedBatches++
-            if (results.any(::requiresPumpRetry)) {
-                return@withContext DownloadExecutionPumpResult.Retry
-            }
+            sawRetry = sawRetry || results.any(::requiresPumpRetry)
         }
         DownloadExecutionPumpResult.Retry
     }
@@ -870,12 +893,20 @@ class DefaultDownloadExecutionHost(
         return UidtDownloadJobService.hasPendingJob(context, request.operationId)
     }
 
-    private fun tryAcquireHostAdmission(context: Context, operationId: String): Boolean {
+    private fun tryAcquireHostAdmission(
+        context: Context,
+        operationId: String,
+        capacity: Int = configuredDownloadParallelism(context)
+    ): Boolean {
         return operationStore.tryAcquireHostAdmission(
             context = context,
             operationId = operationId,
-            capacity = HOST_ADMISSION_CAPACITY
+            capacity = capacity
         )
+    }
+
+    private fun configuredDownloadParallelism(context: Context): Int {
+        return downloadParallelismProvider(context).coerceIn(1, MAX_DOWNLOAD_PARALLELISM)
     }
 
     private fun enqueueDeferredSchedule(
@@ -1093,9 +1124,14 @@ object DownloadExecutionHosts {
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 private fun scheduleUidt(
     context: Context,
-    operationId: String
+    operationId: String,
+    pendingJobLimit: Int
 ): Boolean {
-    return UidtDownloadJobService.schedule(context, operationId)
+    return UidtDownloadJobService.schedule(
+        context = context,
+        operationId = operationId,
+        pendingJobLimit = pendingJobLimit
+    )
 }
 
 internal fun selectDownloadExecutionBackend(
@@ -1115,7 +1151,8 @@ internal fun selectDownloadExecutionBackend(
 private fun scheduleUidtIfSupported(
     context: Context,
     operationId: String,
-    sdkInt: Int
+    sdkInt: Int,
+    pendingJobLimit: Int
 ): Boolean {
     if (
         sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
@@ -1123,7 +1160,7 @@ private fun scheduleUidtIfSupported(
     ) {
         return false
     }
-    return scheduleUidt(context, operationId)
+    return scheduleUidt(context, operationId, pendingJobLimit)
 }
 
 private const val TERMINAL_OPERATION_RETENTION_MS = 7L * 24L * 60L * 60L * 1_000L

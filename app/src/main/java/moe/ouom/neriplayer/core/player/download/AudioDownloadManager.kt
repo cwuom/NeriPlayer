@@ -683,13 +683,47 @@ object AudioDownloadManager {
         } else 0
     }
 
-    private data class PublishedProgressState(
+    internal data class PublishedProgressState(
+        val attemptId: Long?,
         val bytesRead: Long,
         val totalBytes: Long,
         val percentage: Int,
         val stage: DownloadStage,
         val emittedAtNs: Long
     )
+
+    internal fun shouldPublishAudioDownloadProgress(
+        previous: PublishedProgressState?,
+        progress: DownloadProgress,
+        nowNs: Long,
+        force: Boolean = false
+    ): Boolean {
+        if (force || previous == null) {
+            return true
+        }
+        if (previous.attemptId != progress.attemptId) {
+            return true
+        }
+        val enoughTimeElapsed = nowNs - previous.emittedAtNs >= PROGRESS_EMIT_INTERVAL_NS
+        val completedTransfer = progress.stage != DownloadStage.TRANSFERRING ||
+            (progress.totalBytes > 0L && progress.bytesRead >= progress.totalBytes)
+        if (progress.stage != previous.stage || completedTransfer) {
+            return true
+        }
+        if (!enoughTimeElapsed) {
+            return false
+        }
+        if (progress.totalBytes != previous.totalBytes) {
+            return true
+        }
+        if (progress.totalBytes <= 0L) {
+            return progress.bytesRead > previous.bytesRead
+        }
+        val bytesDelta = progress.bytesRead - previous.bytesRead
+        val absoluteBytesDelta = if (bytesDelta >= 0L) bytesDelta else -bytesDelta
+        return progress.percentage != previous.percentage ||
+            absoluteBytesDelta >= PROGRESS_EMIT_MIN_BYTES_DELTA
+    }
 
     internal data class DownloadedSidecarReferences(
         val coverReference: String? = null,
@@ -1557,25 +1591,16 @@ object AudioDownloadManager {
         val nowNs = System.nanoTime()
         val shouldEmit = synchronized(progressPublishLock) {
             val previous = lastPublishedProgressBySongKey[progress.songKey]
-            val bytesDelta = previous?.let { published ->
-                val delta = progress.bytesRead - published.bytesRead
-                if (delta >= 0L) delta else -delta
-            } ?: Long.MAX_VALUE
-            val enoughTimeElapsed = previous == null || nowNs - previous.emittedAtNs >= PROGRESS_EMIT_INTERVAL_NS
-            val completedTransfer = progress.stage != DownloadStage.TRANSFERRING ||
-                (progress.totalBytes > 0L && progress.bytesRead >= progress.totalBytes)
-            val shouldPublishNow = force ||
-                previous == null ||
-                progress.stage != previous.stage ||
-                completedTransfer ||
-                (enoughTimeElapsed && (
-                    progress.percentage != previous.percentage ||
-                        progress.totalBytes != previous.totalBytes ||
-                        bytesDelta >= PROGRESS_EMIT_MIN_BYTES_DELTA
-                    ))
+            val shouldPublishNow = shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = progress,
+                nowNs = nowNs,
+                force = force
+            )
 
             if (shouldPublishNow) {
                 lastPublishedProgressBySongKey[progress.songKey] = PublishedProgressState(
+                    attemptId = progress.attemptId,
                     bytesRead = progress.bytesRead,
                     totalBytes = progress.totalBytes,
                     percentage = progress.percentage,
@@ -4145,14 +4170,7 @@ object AudioDownloadManager {
     }
 
     internal suspend fun resolveConfiguredDownloadParallelism(context: Context): Int {
-        val setting = AutoSettingsSchema.download.downloadParallelism
-        val configuredValue = runCatching {
-            context.applicationContext.autoSettingFlow(setting).first()
-        }.getOrElse { error ->
-            NPLogger.w(TAG, "读取下载线程数量失败，按默认值处理: ${error.message}")
-            setting.defaultValue
-        }
-        return normalizeDownloadParallelism(configuredValue)
+        return currentDownloadParallelism(context)
     }
 
     internal fun resolveBatchDownloadWorkerCount(

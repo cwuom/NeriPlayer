@@ -67,7 +67,7 @@ class PendingDownloadRecoveryPolicyTest {
         assertTrue(runBody.contains("reconcilePendingDownloadsBeforeMigrationDetailed("))
         assertTrue(runBody.contains("MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE"))
         assertTrue(runBody.contains("markRequestRetryable(migrationWorkId)"))
-        assertFalse(runBody.contains("markRequestTerminal(migrationWorkId)"))
+        assertTrue(runBody.contains("markRequestTerminal(migrationWorkId)"))
     }
 
     @Test

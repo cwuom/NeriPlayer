@@ -59,7 +59,9 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
     @SuppressLint("UseKtx")
     fun recordRequestIfCurrent(
         expectedWorkId: String?,
-        request: ManagedMigrationRequest
+        request: ManagedMigrationRequest,
+        expectedAutoResume: Boolean? = null,
+        expectedRequest: ManagedMigrationRequest? = null
     ): Boolean {
         return synchronized(requestMutationLock) {
             val current = readRequest()
@@ -68,6 +70,12 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
                 (expected == null && current != null) ||
                 (expected != null && !migrationWorkIdsEqual(current?.workId, expected))
             ) {
+                return@synchronized false
+            }
+            if (expectedAutoResume != null && current?.autoResume != expectedAutoResume) {
+                return@synchronized false
+            }
+            if (expectedRequest != null && !migrationRequestsEqual(current, expectedRequest)) {
                 return@synchronized false
             }
             writeRequestLocked(request)
@@ -158,12 +166,25 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
         }
     }
 
-    /** 让失败的迁移请求可以被启动流程和设置界面继续恢复 */
-    fun markRequestRetryable(workId: String): Boolean {
+    /** 让仍处于可恢复状态的迁移请求可以被启动流程继续恢复 */
+    fun markRequestRetryable(
+        workId: String,
+        retryAttemptOffset: Int? = null
+    ): Boolean {
         return synchronized(requestMutationLock) {
             val current = readRequest() ?: return@synchronized false
             if (!migrationWorkIdsEqual(current.workId, workId)) return@synchronized false
-            writeRequestLocked(current.copy(autoResume = true))
+            if (!current.autoResume) return@synchronized false
+            val nextRetryAttemptOffset = maxOf(
+                current.retryAttemptOffset,
+                retryAttemptOffset?.coerceAtLeast(0) ?: 0
+            )
+            writeRequestLocked(
+                current.copy(
+                    autoResume = true,
+                    retryAttemptOffset = nextRetryAttemptOffset
+                )
+            )
             true
         }
     }
@@ -696,6 +717,45 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             currentToDirectoryUri,
             requestedToDirectoryUri
         )
+    }
+
+    private fun migrationRequestsEqual(
+        current: ManagedMigrationRequest?,
+        expected: ManagedMigrationRequest
+    ): Boolean {
+        current ?: return false
+        val normalizedCurrent = current.normalized()
+        val normalizedExpected = expected.normalized()
+        return migrationWorkIdsEqual(
+            normalizedCurrent.workId,
+            normalizedExpected.workId
+        ) &&
+            ManagedDownloadStorage.areEquivalentDirectoryUris(
+                normalizedCurrent.fromDirectoryUri,
+                normalizedExpected.fromDirectoryUri
+            ) &&
+            ManagedDownloadStorage.areEquivalentDirectoryUris(
+                normalizedCurrent.toDirectoryUri,
+                normalizedExpected.toDirectoryUri
+            ) &&
+            normalizedCurrent.targetLabel == normalizedExpected.targetLabel &&
+            normalizedCurrent.releasePreviousPermission ==
+                normalizedExpected.releasePreviousPermission &&
+            normalizedCurrent.minimumSourceEntryCount ==
+                normalizedExpected.minimumSourceEntryCount &&
+            nullableMigrationWorkIdsEqual(
+                normalizedCurrent.checkpointWorkId,
+                normalizedExpected.checkpointWorkId
+            ) &&
+            normalizedCurrent.autoResume == normalizedExpected.autoResume &&
+            normalizedCurrent.retryAttemptOffset == normalizedExpected.retryAttemptOffset
+    }
+
+    private fun nullableMigrationWorkIdsEqual(
+        left: String?,
+        right: String?
+    ): Boolean {
+        return left == null && right == null || migrationWorkIdsEqual(left, right)
     }
 
     private fun archivedRequestKeyFor(archiveId: String): String {

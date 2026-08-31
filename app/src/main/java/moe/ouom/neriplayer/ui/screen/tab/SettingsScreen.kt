@@ -373,6 +373,7 @@ private data class PersistedMigrationUiSnapshot(
     val activeWorkState: WorkInfo.State?,
     val progress: ManagedDownloadStorage.MigrationProgress?,
     val requestAutoResume: Boolean,
+    val hasPersistedRequest: Boolean,
     val journalPhase: ManagedMigrationReplacementJournalPhase?,
     val checkpointReadFailed: Boolean
 ) {
@@ -381,6 +382,7 @@ private data class PersistedMigrationUiSnapshot(
             workInfoState = activeWorkState,
             requestAutoResume = requestAutoResume,
             journalPhase = journalPhase,
+            hasPersistedRequest = hasPersistedRequest,
             checkpointReadFailed = checkpointReadFailed
         )
 
@@ -389,6 +391,7 @@ private data class PersistedMigrationUiSnapshot(
             workInfoState = activeWorkState,
             requestAutoResume = requestAutoResume,
             journalPhase = journalPhase,
+            hasPersistedRequest = hasPersistedRequest,
             checkpointReadFailed = checkpointReadFailed
         )
 }
@@ -437,6 +440,7 @@ private fun readPersistedMigrationUiSnapshot(context: Context): PersistedMigrati
         activeWorkState = activeWork?.state,
         progress = progressWithWorkInfo,
         requestAutoResume = request?.autoResume == true,
+        hasPersistedRequest = request != null,
         journalPhase = journal?.phase,
         checkpointReadFailed = requestResult.isFailure ||
             journalResult.isFailure ||
@@ -2945,6 +2949,14 @@ private fun rememberDownloadDirectorySettingsController(
         snapshot: PersistedMigrationUiSnapshot,
         fallbackProgress: ManagedDownloadStorage.MigrationProgress? = null
     ): Boolean {
+        val shouldPreserveUi = snapshot.shouldPreserveUi
+        if (!shouldPreserveUi) {
+            // 终态请求不再保留旧进度，避免冷启动残留迁移弹窗
+            persistedMigrationProgress = null
+            isMigrating = false
+            activeMigrationWorkId = null
+            return false
+        }
         val restoredProgress = snapshot.progress
             ?: fallbackProgress
             ?: persistedMigrationProgress
@@ -2956,7 +2968,6 @@ private fun rememberDownloadDirectorySettingsController(
             isMigrating = true
             return true
         }
-        if (!snapshot.shouldPreserveUi) return false
         if (
             isMigrating ||
                 persistedMigrationProgress != null ||

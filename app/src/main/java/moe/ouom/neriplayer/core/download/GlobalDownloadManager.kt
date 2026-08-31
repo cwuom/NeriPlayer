@@ -9451,11 +9451,14 @@ object GlobalDownloadManager {
                     )
                 }
                 earlyRequests.forEach { request ->
-                    schedulePendingBatchDownload(
+                    val admitted = schedulePendingBatchDownload(
                         session = session,
                         request = request,
                         pendingAttemptIds = mapOf(request.song.stableKey() to request.attemptId)
                     )
+                    if (!admitted) {
+                        return
+                    }
                 }
             }
         }
@@ -10015,11 +10018,14 @@ object GlobalDownloadManager {
         requests: List<QueuedDownloadRequest> = session.pendingSongs
     ) {
         for (request in requests) {
-            schedulePendingBatchDownload(
+            val admitted = schedulePendingBatchDownload(
                 session = session,
                 request = request,
                 pendingAttemptIds = pendingAttemptIds
             )
+            if (!admitted) {
+                break
+            }
         }
     }
 
@@ -10027,11 +10033,11 @@ object GlobalDownloadManager {
         session: BatchDownloadSession,
         request: QueuedDownloadRequest,
         pendingAttemptIds: Map<String, Long>
-    ) {
+    ): Boolean {
         val song = request.song
         val songKey = song.stableKey()
         if (!session.scheduledSongKeys.add(songKey)) {
-            return
+            return true
         }
         try {
             val admitted = downloadAdmissionGate.admit(session.admissionTicket) scheduleAdmission@{
@@ -10162,6 +10168,7 @@ object GlobalDownloadManager {
                     "跳过过期批量宿主调度: song=${song.name}, " +
                         "operationId=${request.operationId}"
                 )
+                return false
             }
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -10182,7 +10189,7 @@ object GlobalDownloadManager {
                     "批量下载单项异常时 operation 已被接管: " +
                         "song=${song.name}, operationId=${request.operationId}"
                 )
-                return
+                return true
             }
             handleBatchDownloadScheduleFailure(
                 context = session.context,
@@ -10196,6 +10203,7 @@ object GlobalDownloadManager {
                 error
             )
         }
+        return true
     }
 
     private fun recoverInFlightDownloadOperations(
@@ -11601,6 +11609,11 @@ object GlobalDownloadManager {
         val fenceActivatedImmediately = clearToken.ownsClear &&
             PersistentDownloadClearFenceStore.activate(appContext)
         downloadClearVisibility.begin(clearToken)
+        if (fenceActivatedImmediately && !hadPersistedClearFence) {
+            // fence 已经落盘，先发布取消阶段，避免等待下载互斥锁时停在 0%
+            downloadClearVisibility.markFencePersisted(clearToken)
+            persistDownloadClearProgress(appContext, clearToken)
+        }
         dismissMobileDataDownloadInterruptionRequest()
         if (!clearToken.ownsClear) {
             return scope.launch {

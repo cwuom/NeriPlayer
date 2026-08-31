@@ -45,11 +45,13 @@ internal fun shouldPreserveMigrationUiAfterWorkInfo(
     workInfoState: WorkInfo.State?,
     requestAutoResume: Boolean,
     journalPhase: ManagedMigrationReplacementJournalPhase?,
+    hasPersistedRequest: Boolean,
     checkpointReadFailed: Boolean = false
 ): Boolean {
     if (checkpointReadFailed) return true
     if (workInfoState != null && !workInfoState.isFinished) return true
     return requestAutoResume || (
+        !hasPersistedRequest &&
         journalPhase != null &&
             journalPhase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
         )
@@ -59,11 +61,13 @@ internal fun shouldResumePersistedMigrationAfterWorkInfo(
     workInfoState: WorkInfo.State?,
     requestAutoResume: Boolean,
     journalPhase: ManagedMigrationReplacementJournalPhase?,
+    hasPersistedRequest: Boolean,
     checkpointReadFailed: Boolean = false
 ): Boolean {
     if (workInfoState != null && !workInfoState.isFinished) return false
     if (checkpointReadFailed && !requestAutoResume && journalPhase == null) return false
     return requestAutoResume || (
+        !hasPersistedRequest &&
         journalPhase != null &&
             journalPhase != ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
         )

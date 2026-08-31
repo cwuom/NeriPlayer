@@ -1425,7 +1425,7 @@ internal object DownloadExecutionRoomStore {
             dao.deleteExpiredHostAdmissions(
                 processToken = HOST_ADMISSION_PROCESS_TOKEN,
                 cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),
-                states = HOST_ADMISSION_HANDOFF_STATES
+                states = HOST_ADMISSION_EXPIRABLE_STATES
             )
             val operation = dao.find(operationId) ?: return@withTransaction false
             if (operation.hostProcessToken == HOST_ADMISSION_PROCESS_TOKEN) {
@@ -1483,7 +1483,7 @@ internal object DownloadExecutionRoomStore {
             dao.deleteExpiredHostAdmissions(
                 processToken = HOST_ADMISSION_PROCESS_TOKEN,
                 cutoffMs = (nowMs - HOST_ADMISSION_HANDOFF_LEASE_MS).coerceAtLeast(0L),
-                states = HOST_ADMISSION_HANDOFF_STATES
+                states = HOST_ADMISSION_EXPIRABLE_STATES
             )
             dao.countHostAdmissions(HOST_ADMISSION_PROCESS_TOKEN)
         }
@@ -2031,6 +2031,8 @@ internal object DownloadExecutionRoomStore {
     /** 旧宿主消失后可交给新进程接管的状态，进程死亡可能让持久日志领先于内存调度器 */
     internal val HOST_ADMISSION_HANDOFF_STATES = REUSABLE_OPERATION_STATES +
         IN_FLIGHT_OPERATION_STATES
+    /** 只有尚未进入执行的任务允许依靠时间租约回收，避免长下载被误释放 */
+    internal val HOST_ADMISSION_EXPIRABLE_STATES = REUSABLE_OPERATION_STATES
     internal val PROGRESS_CHECKPOINT_OPERATION_STATES = listOf(
         "PENDING_QUEUE",
         "QUEUED",

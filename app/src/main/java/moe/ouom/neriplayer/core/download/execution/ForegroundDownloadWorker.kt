@@ -44,12 +44,13 @@ class ForegroundDownloadWorker(
             setForeground(createForegroundInfo(applicationContext, executionId))
             enteredHostExecution = true
             if (operationId == null) {
-                try {
-                    return@withContext DownloadExecutionHosts.pump(applicationContext)
-                        .toWorkerResult()
-                } finally {
-                    markPumpFinished()
-                }
+                val pumpResult = DownloadExecutionHosts.pump(applicationContext)
+                val workerResult = pumpResult.toWorkerResult()
+                markPumpFinished(
+                    context = applicationContext,
+                    workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry
+                )
+                return@withContext workerResult
             }
             DownloadExecutionHosts.default.execute(applicationContext, operationId)
         } catch (cancellation: CancellationException) {
@@ -61,7 +62,10 @@ class ForegroundDownloadWorker(
                 )
             }
             if (operationId == null) {
-                markPumpFinished()
+                markPumpFinished(
+                    context = applicationContext,
+                    workWillRetry = true
+                )
             }
             throw cancellation
         } catch (error: Throwable) {
@@ -77,7 +81,10 @@ class ForegroundDownloadWorker(
                 error
             )
             if (operationId == null) {
-                markPumpFinished()
+                markPumpFinished(
+                    context = applicationContext,
+                    workWillRetry = true
+                )
             }
             return@withContext Result.retry()
         }.toWorkerResult()
@@ -89,12 +96,15 @@ class ForegroundDownloadWorker(
         internal const val PUMP_OPERATION_ID = "download-pump"
         private const val PUMP_WORK_TAG = "download_execution_pump"
         private const val PUMP_RETRY_BACKOFF_MS = 10_000L
+        private val PUMP_SUCCESSOR_WORK_POLICY = ExistingWorkPolicy.APPEND_OR_REPLACE
         private const val WORK_NAME_PREFIX = "download_execution_"
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
         private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
         private const val CHANNEL_ID = "download_execution"
         internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
+        internal val pumpExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE
         private val pumpScheduleRequested = AtomicBoolean(false)
+        private val pumpSuccessorRequested = AtomicBoolean(false)
 
         fun schedule(
             context: Context,
@@ -109,11 +119,23 @@ class ForegroundDownloadWorker(
             context: Context,
             operationId: String
         ): Boolean {
-            normalizeDownloadOperationId(operationId) ?: return false
-            return schedulePump(
-                context = context,
-                initialDelayMs = UIDT_START_GRACE_MS
-            )
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            return runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .enqueueUniqueWork(
+                        fallbackWorkName(normalizedId),
+                        fallbackExistingWorkPolicy,
+                        buildFallbackRequest(normalizedId)
+                    )
+                true
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-DownloadWorker",
+                    "UIDT fallback 调度失败，保留 Room operation 等待恢复: " +
+                        "operationId=$normalizedId, error=${error.message}",
+                    error
+                )
+            }.getOrDefault(false)
         }
 
         /** 所有新下载共用一个持久泵，operation 载荷始终保存在 Room */
@@ -122,6 +144,7 @@ class ForegroundDownloadWorker(
             initialDelayMs: Long = 0L
         ): Boolean {
             if (!pumpScheduleRequested.compareAndSet(false, true)) {
+                pumpSuccessorRequested.set(true)
                 return true
             }
             val delayMs = initialDelayMs.coerceAtLeast(0L)
@@ -129,7 +152,7 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
                         PUMP_WORK_NAME,
-                        ExistingWorkPolicy.KEEP,
+                        pumpExistingWorkPolicy,
                         buildPumpRequest(delayMs)
                     )
                 true
@@ -140,11 +163,41 @@ class ForegroundDownloadWorker(
                     error
                 )
                 pumpScheduleRequested.set(false)
+                pumpSuccessorRequested.set(false)
             }.getOrDefault(false)
         }
 
-        private fun markPumpFinished() {
+        private fun markPumpFinished(
+            context: Context,
+            workWillRetry: Boolean
+        ) {
             pumpScheduleRequested.set(false)
+            val successorRequested = pumpSuccessorRequested.getAndSet(false)
+            if (successorRequested && !workWillRetry) {
+                schedulePumpSuccessor(context)
+            }
+        }
+
+        private fun schedulePumpSuccessor(context: Context): Boolean {
+            if (!pumpScheduleRequested.compareAndSet(false, true)) {
+                return true
+            }
+            return runCatching {
+                WorkManager.getInstance(context.applicationContext)
+                    .enqueueUniqueWork(
+                        PUMP_WORK_NAME,
+                        PUMP_SUCCESSOR_WORK_POLICY,
+                        buildPumpRequest()
+                    )
+                true
+            }.onFailure { error ->
+                pumpScheduleRequested.set(false)
+                NPLogger.w(
+                    "NERI-DownloadWorker",
+                    "下载泵 successor 调度失败，保留 Room operation: ${error.message}",
+                    error
+                )
+            }.getOrDefault(false)
         }
 
         fun cancel(
@@ -180,6 +233,7 @@ class ForegroundDownloadWorker(
                     .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
             }
             pumpScheduleRequested.set(false)
+            pumpSuccessorRequested.set(false)
         }
 
         internal fun cancelFallback(

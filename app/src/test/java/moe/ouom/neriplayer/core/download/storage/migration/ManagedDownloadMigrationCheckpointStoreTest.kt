@@ -729,6 +729,48 @@ class ManagedDownloadMigrationCheckpointStoreTest {
     }
 
     @Test
+    fun `conditional request write refuses a stale terminal transition`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val workId = "terminal-work"
+        val terminalPayload = JSONObject().apply {
+            put(
+                "version",
+                ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION
+            )
+            put("workId", workId)
+            put("toDirectoryUri", "content://target")
+            put("targetLabel", "target")
+            put("releasePreviousPermission", false)
+            put("minimumSourceEntryCount", 1)
+            put("autoResume", false)
+        }.toString()
+        `when`(preferences.getString(key, null)).thenReturn(terminalPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+
+        assertFalse(
+            store.recordRequestIfCurrent(
+                expectedWorkId = workId,
+                expectedAutoResume = true,
+                request = ManagedMigrationRequest(
+                    workId = workId,
+                    fromDirectoryUri = null,
+                    toDirectoryUri = "content://target",
+                    targetLabel = "target",
+                    releasePreviousPermission = false,
+                    minimumSourceEntryCount = 1,
+                    autoResume = true
+                )
+            )
+        )
+        verify(editor, never()).putString(eq(key), anyString())
+    }
+
+    @Test
     fun `conditional request write accepts equivalent work id casing and whitespace`() {
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java)
@@ -790,7 +832,7 @@ class ManagedDownloadMigrationCheckpointStoreTest {
     }
 
     @Test
-    fun `retryable update restores auto resume while retaining request`() {
+    fun `retryable update retains an already retryable request`() {
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java)
         val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
@@ -802,7 +844,7 @@ class ManagedDownloadMigrationCheckpointStoreTest {
             put("targetLabel", "target")
             put("releasePreviousPermission", false)
             put("minimumSourceEntryCount", 3)
-            put("autoResume", false)
+            put("autoResume", true)
         }.toString()
         `when`(preferences.getString(key, null)).thenReturn(requestPayload)
         `when`(preferences.edit()).thenReturn(editor)
@@ -816,6 +858,31 @@ class ManagedDownloadMigrationCheckpointStoreTest {
         verify(editor).putString(eq(key), payloadCaptor.capture())
         assertTrue(JSONObject(payloadCaptor.value).getBoolean("autoResume"))
         assertEquals(3, JSONObject(payloadCaptor.value).getInt("minimumSourceEntryCount"))
+    }
+
+    @Test
+    fun `retryable update cannot reopen a terminal request`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val workId = "terminal-work"
+        val requestPayload = JSONObject().apply {
+            put("version", ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION)
+            put("workId", workId)
+            put("toDirectoryUri", "content://target")
+            put("targetLabel", "target")
+            put("releasePreviousPermission", false)
+            put("minimumSourceEntryCount", 3)
+            put("autoResume", false)
+        }.toString()
+        `when`(preferences.getString(key, null)).thenReturn(requestPayload)
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+
+        assertFalse(store.markRequestRetryable(workId))
+        verify(editor, never()).putString(eq(key), anyString())
     }
 
     @Test

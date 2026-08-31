@@ -133,41 +133,46 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
             shouldPreserveMigrationUiAfterWorkInfo(
                 workInfoState = null,
                 requestAutoResume = true,
-                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+                hasPersistedRequest = true
             )
         )
         assertTrue(
             shouldPreserveMigrationUiAfterWorkInfo(
                 workInfoState = androidx.work.WorkInfo.State.SUCCEEDED,
                 requestAutoResume = false,
-                journalPhase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED
+                journalPhase = ManagedMigrationReplacementJournalPhase.TARGETS_VERIFIED,
+                hasPersistedRequest = false
             )
         )
         assertFalse(
             shouldPreserveMigrationUiAfterWorkInfo(
                 workInfoState = androidx.work.WorkInfo.State.FAILED,
                 requestAutoResume = false,
-                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED
+                journalPhase = ManagedMigrationReplacementJournalPhase.DIRECTORY_COMMITTED,
+                hasPersistedRequest = true
             )
         )
         assertTrue(
             shouldResumePersistedMigrationAfterWorkInfo(
                 workInfoState = androidx.work.WorkInfo.State.FAILED,
                 requestAutoResume = false,
-                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED
+                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED,
+                hasPersistedRequest = false
             )
         )
         assertFalse(
             shouldResumePersistedMigrationAfterWorkInfo(
                 workInfoState = androidx.work.WorkInfo.State.RUNNING,
                 requestAutoResume = true,
-                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED
+                journalPhase = ManagedMigrationReplacementJournalPhase.PLANNED,
+                hasPersistedRequest = true
             )
         )
     }
 
     @Test
-    fun `terminal request with incomplete journal remains recoverable`() {
+    fun `terminal request with incomplete journal does not block startup`() {
         val request = ManagedMigrationRequest(
             workId = "terminal-work",
             fromDirectoryUri = "content://source",
@@ -196,7 +201,15 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
             )
         )
 
-        assertTrue(shouldBlockStartupForMigrationRecovery(request, journal))
+        assertFalse(shouldBlockStartupForMigrationRecovery(request, journal))
+        assertFalse(
+            shouldResumePersistedMigrationAfterWorkInfo(
+                workInfoState = androidx.work.WorkInfo.State.FAILED,
+                requestAutoResume = request.autoResume,
+                journalPhase = journal.phase,
+                hasPersistedRequest = true
+            )
+        )
     }
 
     @Test
@@ -349,6 +362,30 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(27, merged.minimumSourceEntryCount)
         assertEquals("old-work", merged.checkpointWorkId)
         assertEquals("new-work", merged.workId)
+        assertTrue(merged.autoResume)
+    }
+
+    @Test
+    fun `worker input cannot reopen a terminal durable request`() {
+        val persisted = ManagedMigrationRequest(
+            workId = "old-work",
+            fromDirectoryUri = "content://source/root",
+            toDirectoryUri = "content://target/root",
+            targetLabel = "target-label",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1,
+            autoResume = false
+        )
+        val input = persisted.copy(workId = "new-work")
+
+        val merged = mergeMigrationRequestForWorker(
+            persisted = persisted,
+            input = input,
+            inputKeys = emptySet()
+        )
+
+        assertFalse(merged.autoResume)
+        assertEquals("new-work", merged.workId)
     }
 
     @Test
@@ -500,7 +537,7 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `pending preflight remains retryable after the normal budget`() {
+    fun `pending preflight obeys the bounded retry budget`() {
         val error = ManagedDownloadMigrationException.transient(
             "[$MIGRATION_PENDING_ARTIFACT_BLOCKED_ERROR_CODE] pending remains"
         )
@@ -720,9 +757,12 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertTrue(cancellationCatch > deferredCatch)
         val deferredBody = body.substring(deferredCatch, cancellationCatch)
         assertTrue(deferredBody.contains("pendingArtifactPreflightBlocked = true"))
+        assertTrue(deferredBody.contains("val retry = shouldRetryMigrationAttempt("))
         assertTrue(deferredBody.contains("withContext(NonCancellable)"))
         assertTrue(deferredBody.contains("markRequestRetryable"))
+        assertTrue(deferredBody.contains("markRequestTerminal"))
         assertTrue(deferredBody.contains("Result.retry()"))
+        assertTrue(deferredBody.contains("Result.failure("))
     }
 
     @Test
@@ -741,13 +781,34 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         val genericBody = body.substring(genericCatch, finallyBlock)
         val nonCancellable = genericBody.indexOf("withContext(NonCancellable)")
         val transition = genericBody.indexOf("transitionProcessingState(")
+        val terminalPersistence = genericBody.indexOf(
+            "checkpointStore.markRequestTerminal(migrationWorkId)"
+        )
         val retryPersistence = genericBody.indexOf(
             "checkpointStore.markRequestRetryable(migrationWorkId)"
         )
 
         assertTrue(nonCancellable >= 0)
         assertTrue(transition > nonCancellable)
-        assertTrue(retryPersistence > nonCancellable)
+        assertTrue(terminalPersistence > nonCancellable)
+        assertTrue(retryPersistence < 0)
+    }
+
+    @Test
+    fun `all terminal migration failure exits disable automatic recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("private suspend fun runMigration(): Result")
+            .substringBefore("private fun isPendingArtifactPreflightFailure")
+
+        assertEquals(
+            6,
+            Regex("checkpointStore\\.markRequestTerminal\\(migrationWorkId\\)")
+                .findAll(body)
+                .count()
+        )
     }
 
     @Test

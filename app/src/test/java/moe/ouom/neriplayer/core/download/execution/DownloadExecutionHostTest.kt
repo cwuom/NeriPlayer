@@ -242,6 +242,68 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `host admission uses the configured download parallelism`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-configured-capacity",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 3 }
+        )
+
+        assertEquals(
+            DownloadExecutionResult.Accepted,
+            host.execute(context, request.operationId)
+        )
+        assertEquals(3, journal.lastHostAdmissionCapacity)
+    }
+
+    @Test
+    fun `pump continues with later operations when an earlier operation fails`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val failed = DownloadExecutionRequest(
+            operationId = "operation-pump-failed",
+            song = sampleSong().copy(id = 101L)
+        )
+        val later = DownloadExecutionRequest(
+            operationId = "operation-pump-later",
+            song = sampleSong().copy(id = 102L)
+        )
+        store.save(context, failed)
+        store.save(context, later)
+        val executed = mutableListOf<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                executed += request.operationId
+                if (request.operationId == failed.operationId) {
+                    DownloadExecutionResult.Failed(IllegalStateException("transient"))
+                } else {
+                    DownloadExecutionResult.Accepted
+                }
+            },
+            sdkInt = 28,
+            downloadParallelismProvider = { 1 }
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals(setOf(failed.operationId, later.operationId), executed.toSet())
+        assertEquals("RETRYABLE", store.currentState(context, failed.operationId))
+        assertEquals("COMPLETED", store.currentState(context, later.operationId))
+    }
+
+    @Test
     fun `download notification ids are stable and partitioned per backend`() {
         val firstOperation = "operation-notification-01"
         val secondOperation = "operation-notification-02"

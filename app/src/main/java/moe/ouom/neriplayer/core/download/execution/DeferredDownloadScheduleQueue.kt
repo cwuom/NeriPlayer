@@ -34,14 +34,17 @@ internal class DeferredDownloadScheduleQueue {
 
     fun remove(operationId: String) {
         requests.remove(operationId)
+        queuedOperationIds.remove(operationId)
     }
 
     fun remove(request: DownloadExecutionRequest) {
-        requests.remove(request.operationId, request)
+        if (requests.remove(request.operationId, request)) {
+            queuedOperationIds.remove(request.operationId)
+        }
     }
 
     fun removeAll(operationIds: Collection<String>) {
-        operationIds.forEach(requests::remove)
+        operationIds.forEach(::remove)
     }
 
     fun operationIds(): Set<String> = requests.keys.toSet()
@@ -52,6 +55,8 @@ internal class DeferredDownloadScheduleQueue {
 
     fun clear() {
         requests.clear()
+        readyOperationIds.clear()
+        queuedOperationIds.clear()
     }
 
     private fun offerIfAbsent(operationId: String) {

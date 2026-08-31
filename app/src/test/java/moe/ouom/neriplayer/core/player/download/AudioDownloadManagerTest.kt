@@ -32,6 +32,115 @@ import org.json.JSONObject
 class AudioDownloadManagerTest {
 
     @Test
+    fun `unknown total publishes forward progress after the time window`() {
+        val previous = AudioDownloadManager.PublishedProgressState(
+            attemptId = 7L,
+            bytesRead = 1_000L,
+            totalBytes = 0L,
+            percentage = -1,
+            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            emittedAtNs = 10L
+        )
+        val next = AudioDownloadManager.DownloadProgress(
+            songKey = "unknown-total",
+            songId = 1L,
+            fileName = "unknown-total.mp3",
+            bytesRead = 1_001L,
+            totalBytes = 0L,
+            speedBytesPerSec = 1L,
+            attemptId = 7L
+        )
+
+        assertFalse(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = next,
+                nowNs = previous.emittedAtNs + 1L
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = next,
+                nowNs = previous.emittedAtNs + 180_000_000L
+            )
+        )
+        assertFalse(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = next.copy(bytesRead = previous.bytesRead),
+                nowNs = previous.emittedAtNs + 180_000_000L
+            )
+        )
+        assertTrue(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = next.copy(totalBytes = 2_000L),
+                nowNs = previous.emittedAtNs + 180_000_000L
+            )
+        )
+    }
+
+    @Test
+    fun `new attempt is not throttled by a previous attempt`() {
+        val previous = AudioDownloadManager.PublishedProgressState(
+            attemptId = 11L,
+            bytesRead = 8L * 1024L * 1024L,
+            totalBytes = 16L * 1024L * 1024L,
+            percentage = 50,
+            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            emittedAtNs = 20L
+        )
+        val nextAttempt = AudioDownloadManager.DownloadProgress(
+            songKey = "retry-song",
+            songId = 2L,
+            fileName = "retry-song.mp3",
+            bytesRead = 0L,
+            totalBytes = previous.totalBytes,
+            speedBytesPerSec = 0L,
+            attemptId = 12L
+        )
+
+        assertTrue(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = nextAttempt,
+                nowNs = previous.emittedAtNs
+            )
+        )
+    }
+
+    @Test
+    fun `finalizing progress is always published even when bytes are below the transfer high water mark`() {
+        val previous = AudioDownloadManager.PublishedProgressState(
+            attemptId = 15L,
+            bytesRead = 900L,
+            totalBytes = 1_000L,
+            percentage = 90,
+            stage = AudioDownloadManager.DownloadStage.TRANSFERRING,
+            emittedAtNs = 30L
+        )
+        val finalizing = AudioDownloadManager.DownloadProgress(
+            songKey = "finalizing-song",
+            songId = 3L,
+            fileName = "finalizing-song.mp3",
+            bytesRead = 100L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 0L,
+            stage = AudioDownloadManager.DownloadStage.FINALIZING,
+            attemptId = 15L
+        )
+
+        assertTrue(
+            AudioDownloadManager.shouldPublishAudioDownloadProgress(
+                previous = previous,
+                progress = finalizing,
+                nowNs = previous.emittedAtNs
+            )
+        )
+    }
+
+    @Test
     fun `network recovery wakes only on an unconfirmed to confirmed edge`() {
         assertTrue(shouldTriggerNetworkRecovery(wasConfirmed = false, isConfirmed = true))
         assertFalse(shouldTriggerNetworkRecovery(wasConfirmed = true, isConfirmed = true))

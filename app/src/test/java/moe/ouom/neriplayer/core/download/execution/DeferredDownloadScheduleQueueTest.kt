@@ -49,6 +49,20 @@ class DeferredDownloadScheduleQueueTest {
         assertNull(queue.poll())
     }
 
+    @Test
+    fun `clearing queue allows an operation to be enqueued again`() {
+        val queue = DeferredDownloadScheduleQueue()
+        val request = request("operation-cleared", 3L)
+
+        queue.enqueue(request)
+        queue.poll()
+        queue.clear()
+        queue.enqueue(request)
+
+        assertEquals(request, queue.poll())
+        assertNull(queue.poll())
+    }
+
     private fun request(
         operationId: String,
         songId: Long,

@@ -308,6 +308,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     var afterStateUpdate: ((String, String) -> Unit)? = null
     var hostAdmissionAllowed: Boolean = true
     var hostAdmissionAcquireCount: Int = 0
+    var lastHostAdmissionCapacity: Int? = null
     var hostAdmissionReleaseCount: Int = 0
 
     override fun save(context: Context, request: DownloadExecutionRequest) {
@@ -428,6 +429,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
         capacity: Int
     ): Boolean {
         hostAdmissionAcquireCount++
+        lastHostAdmissionCapacity = capacity
         return hostAdmissionAllowed && capacity > 0
     }
 

@@ -110,6 +110,22 @@ class SettingsDownloadDirectoryFlowContractTest {
     }
 
     @Test
+    fun `terminal migration snapshot clears stale progress before restoring ui`() {
+        val source = settingsSource()
+        val apply = source.substringAfter("suspend fun applyPersistedMigrationSnapshot(")
+            .substringBefore("LaunchedEffect(downloadDirectoryUri)")
+        val preserveCheck = apply.indexOf("if (!shouldPreserveUi)")
+        val clearProgress = apply.indexOf("persistedMigrationProgress = null")
+        val restoreProgress = apply.indexOf("val restoredProgress = snapshot.progress")
+
+        assertTrue(preserveCheck >= 0)
+        assertTrue(clearProgress > preserveCheck)
+        assertTrue(restoreProgress > clearProgress)
+        assertTrue(apply.contains("isMigrating = false"))
+        assertTrue(apply.contains("activeMigrationWorkId = null"))
+    }
+
+    @Test
     fun `reset probes readable source and bypasses migration only when unavailable`() {
         val resetFlow = resetFlow(settingsSource())
 

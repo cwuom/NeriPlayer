@@ -26,6 +26,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
+import moe.ouom.neriplayer.core.player.download.MAX_DOWNLOAD_PARALLELISM
+import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -217,7 +219,7 @@ class UidtDownloadJobService : JobService() {
          * 缓存保留所有已占用 ID，包括附加数据损坏的任务，真正调度前仍会做最后碰撞检查
          */
         private const val PENDING_JOB_INDEX_TTL_MS = 500L
-        private const val UIDT_PENDING_JOB_LIMIT = 6
+        private const val UIDT_PENDING_JOB_LIMIT = MAX_DOWNLOAD_PARALLELISM
         private data class PendingJobIndex(
             val jobIdsByOperation: Map<String, Set<Int>> = emptyMap(),
             val occupiedJobIds: Set<Int> = emptySet(),
@@ -345,11 +347,13 @@ class UidtDownloadJobService : JobService() {
 
         fun schedule(
             context: Context,
-            operationId: String
+            operationId: String,
+            pendingJobLimit: Int = currentDownloadParallelism(context)
         ): Boolean {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
             val component = ComponentName(context, UidtDownloadJobService::class.java)
+            val boundedPendingJobLimit = pendingJobLimit.coerceIn(1, UIDT_PENDING_JOB_LIMIT)
             return scheduleUidtKeepingFallback(
                 scheduleFallback = {
                     ForegroundDownloadWorker.scheduleFallback(context, normalizedId)
@@ -397,14 +401,13 @@ class UidtDownloadJobService : JobService() {
                             }
                         }
                         if (
-                            pendingIndex.ownedJobCount >=
-                                UIDT_PENDING_JOB_LIMIT
+                            pendingIndex.ownedJobCount >= boundedPendingJobLimit
                         ) {
                             NPLogger.w(
                                 TAG,
                                 "UIDT pending 数量达到上限，交给全局下载泵: " +
                                     "operationId=$normalizedId, " +
-                                    "limit=$UIDT_PENDING_JOB_LIMIT"
+                                    "limit=$boundedPendingJobLimit"
                             )
                             return@synchronized false
                         }
@@ -470,9 +473,11 @@ class UidtDownloadJobService : JobService() {
                 }
                 .filter { job -> job.service == component }
                 .sortedBy { job -> job.id }
-            if (pendingJobs.size <= UIDT_PENDING_JOB_LIMIT) return 0
+            val pendingJobLimit = currentDownloadParallelism(context)
+                .coerceIn(1, UIDT_PENDING_JOB_LIMIT)
+            if (pendingJobs.size <= pendingJobLimit) return 0
             var cancelled = 0
-            pendingJobs.drop(UIDT_PENDING_JOB_LIMIT).forEach { job ->
+            pendingJobs.drop(pendingJobLimit).forEach { job ->
                 val operationId = job.extras.getString(OPERATION_ID_KEY)
                     ?.let(::normalizeDownloadOperationId)
                 val cancelledNow = runCatching {
@@ -497,7 +502,7 @@ class UidtDownloadJobService : JobService() {
                 NPLogger.w(
                     TAG,
                     "启动清理过量 UIDT 任务: cancelled=$cancelled, " +
-                        "pending=${pendingJobs.size}, limit=$UIDT_PENDING_JOB_LIMIT"
+                    "pending=${pendingJobs.size}, limit=$pendingJobLimit"
                 )
                 ForegroundDownloadWorker.schedulePump(context)
             }

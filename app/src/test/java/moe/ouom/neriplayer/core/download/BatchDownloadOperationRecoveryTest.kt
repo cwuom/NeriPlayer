@@ -368,6 +368,25 @@ class BatchDownloadOperationRecoveryTest {
         assertTrue(schedulingBody.contains("session.artifactClaims.remove(songKey)"))
     }
 
+    @Test
+    fun `batch scheduling stops after the first admission expires`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchBody = methodBody(source, "schedulePendingBatchDownloads")
+        val callIndex = batchBody.indexOf("val admitted = schedulePendingBatchDownload(")
+        val breakIndex = batchBody.indexOf("break", callIndex)
+        val signatureIndex = source.indexOf(
+            "private suspend fun schedulePendingBatchDownload("
+        )
+        val returnTypeIndex = source.indexOf("): Boolean {", signatureIndex)
+
+        assertTrue(callIndex >= 0)
+        assertTrue(breakIndex > callIndex)
+        assertTrue(signatureIndex >= 0)
+        assertTrue(returnTypeIndex > signatureIndex)
+    }
+
     private fun methodBody(source: String, methodName: String): String {
         val signatureStart = listOf(
             "private fun $methodName(",

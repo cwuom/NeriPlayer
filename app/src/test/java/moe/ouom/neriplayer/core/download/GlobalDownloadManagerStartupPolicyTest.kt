@@ -1114,6 +1114,12 @@ class GlobalDownloadManagerStartupPolicyTest {
         val presentationClearedIndex = clearAllBody.indexOf(
             "downloadClearVisibility.markFencePersisted(clearToken)"
         )
+        val firstRunClearIndex = clearAllBody.indexOf(
+            "downloadAdmissionGate.runClear(clearToken)"
+        )
+        val firstPersistedProgressIndex = clearAllBody.indexOf(
+            "persistDownloadClearProgress(appContext, clearToken)"
+        )
         val immediateStopIndex = clearAllBody.indexOf("stopDownloadExecutionImmediately(")
         val firstTaskClearIndex = clearAllBody.indexOf("taskStore.clearAllTasks()")
         val journalIndex = clearAllBody.indexOf(
@@ -1131,6 +1137,9 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(clearVisibilityIndex > durableActivateIndex)
         assertTrue(activateIndex > clearVisibilityIndex)
         assertTrue(presentationClearedIndex > durableActivateIndex)
+        assertTrue(firstRunClearIndex > durableActivateIndex)
+        assertTrue(presentationClearedIndex < firstRunClearIndex)
+        assertTrue(firstPersistedProgressIndex < firstRunClearIndex)
         assertTrue(firstTaskClearIndex > durableActivateIndex)
         assertTrue(clearAllBody.indexOf("taskStore.currentTasks()") > durableActivateIndex)
         assertTrue(clearAllBody.indexOf("clearBatchDownloadPresentation()") > durableActivateIndex)
@@ -1157,6 +1166,37 @@ class GlobalDownloadManagerStartupPolicyTest {
             clearAllBody.lastIndexOf("retrying failed download clear") <
                 clearAllBody.indexOf("clearDownloadClearFence(")
         )
+    }
+
+    @Test
+    fun `activated clear publishes progress before waiting for admission mutex`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val immediateActivationBody = clearBody.substringAfter(
+            "val fenceActivatedImmediately ="
+        ).substringBefore("val startFastClearUndispatched")
+        val firstRunClearIndex = clearBody.indexOf(
+            "downloadAdmissionGate.runClear(clearToken)"
+        )
+        val markIndex = clearBody.indexOf(
+            "downloadClearVisibility.markFencePersisted(clearToken)"
+        )
+        val persistIndex = clearBody.indexOf(
+            "persistDownloadClearProgress(appContext, clearToken)"
+        )
+
+        assertTrue(immediateActivationBody.contains("if (fenceActivatedImmediately)"))
+        assertTrue(
+            immediateActivationBody.contains(
+                "if (fenceActivatedImmediately && !hadPersistedClearFence)"
+            )
+        )
+        assertTrue(markIndex in 0 until firstRunClearIndex)
+        assertTrue(persistIndex in 0 until firstRunClearIndex)
     }
 
     @Test
