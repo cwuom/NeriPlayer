@@ -28,9 +28,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -282,10 +282,7 @@ private fun LibraryReorderAutoScrollEffect(
                     }
                     if (delta != 0f) {
                         val scrollArgument = if (layoutInfo.reverseLayout) -delta else delta
-                        var consumed = 0f
-                        listState.scroll(MutatePriority.UserInput) {
-                            consumed = scrollBy(scrollArgument)
-                        }
+                        val consumed = listState.scrollBy(scrollArgument)
                         if (
                             consumed == 0f ||
                                 kotlin.math.abs(consumed) + 0.5f <

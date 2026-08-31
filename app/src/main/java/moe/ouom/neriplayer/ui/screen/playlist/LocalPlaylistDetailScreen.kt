@@ -46,10 +46,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1368,10 +1368,7 @@ fun LocalPlaylistDetailScreen(
                             }
                             if (delta != 0f) {
                                 val scrollArgument = if (layoutInfo.reverseLayout) -delta else delta
-                                var consumed = 0f
-                                listState.scroll(MutatePriority.UserInput) {
-                                    consumed = scrollBy(scrollArgument)
-                                }
+                                val consumed = listState.scrollBy(scrollArgument)
                                 if (
                                     consumed == 0f ||
                                         kotlin.math.abs(consumed) + 0.5f <
@@ -1700,10 +1697,12 @@ fun LocalPlaylistDetailScreen(
 
             fun openInsertAtDialog() {
                 if (!canReorderCurrentSongs || selectedSongsForAction.isEmpty()) return
-                val snapshot = tabSongs.toList()
-                val selectedIndices = snapshot.mapIndexedNotNull { index, song ->
-                    index.takeIf { song.stableKey() in selectedKeysState.value }
-                }.toSet()
+                val snapshot = baseQueue.toList()
+                val selectedIndices = selectedIndicesForPlaylistInsert(
+                    items = snapshot,
+                    selectedKeys = selectedKeysState.value,
+                    keyOf = SongItem::stableKey
+                )
                 if (selectedIndices.isEmpty()) return
                 insertAtSongs = snapshot
                 insertAtSelectedIndices = selectedIndices
@@ -1713,7 +1712,7 @@ fun LocalPlaylistDetailScreen(
             fun applyInsertAtPosition(position: Int) {
                 val source = insertAtSongs
                 val selectedIndices = insertAtSelectedIndices
-                val currentSource = tabSongs
+                val currentSource = baseQueue
                 if (
                     pendingOrderIdentities != null ||
                         source.map { it.identity() } != currentSource.map { it.identity() } ||

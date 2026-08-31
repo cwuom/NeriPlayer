@@ -47,6 +47,17 @@ internal fun insertionPositionRange(
     return 1..(itemCount - selectedCount + 1)
 }
 
+internal fun <T> selectedIndicesForPlaylistInsert(
+    items: List<T>,
+    selectedKeys: Set<String>,
+    keyOf: (T) -> String
+): Set<Int> {
+    if (items.isEmpty() || selectedKeys.isEmpty()) return emptySet()
+    return items.mapIndexedNotNull { index, item ->
+        index.takeIf { keyOf(item) in selectedKeys }
+    }.toSet()
+}
+
 internal fun parseOneBasedInsertionPosition(
     raw: String,
     itemCount: Int,

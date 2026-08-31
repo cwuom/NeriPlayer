@@ -32,6 +32,30 @@ class PlaylistReorderActionsTest {
     }
 
     @Test
+    fun `insert selection uses the complete source when the visible list is filtered`() {
+        val completeSource = listOf("hidden", "selected", "visible", "selected-again")
+        val visibleSource = completeSource.filter { it != "hidden" && it != "selected-again" }
+        val selectedKeys = setOf("selected", "selected-again")
+
+        assertEquals(
+            setOf(1, 3),
+            selectedIndicesForPlaylistInsert(
+                items = completeSource,
+                selectedKeys = selectedKeys,
+                keyOf = { it }
+            )
+        )
+        assertEquals(
+            setOf(0),
+            selectedIndicesForPlaylistInsert(
+                items = visibleSource,
+                selectedKeys = selectedKeys,
+                keyOf = { it }
+            )
+        )
+    }
+
+    @Test
     fun `invalid and duplicate indices do not lose rows`() {
         val result = moveSelectedItemsToOneBasedPosition(
             items = listOf("a", "b", "c"),
