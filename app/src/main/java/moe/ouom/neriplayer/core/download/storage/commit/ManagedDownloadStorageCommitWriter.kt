@@ -1383,6 +1383,19 @@ internal fun sameMigrationReplacementBackupIdentity(
 ): Boolean {
     if (expectedTarget.isDirectory || actualBackup.isDirectory) return false
     if (expectedBackupName != null && actualBackup.name != expectedBackupName) return false
+    val expectedSafIdentity = sequenceOf(expectedTarget.reference, expectedTarget.mediaUri)
+        .mapNotNull(::managedMigrationSafIdentity)
+        .toSet()
+    val actualSafIdentity = sequenceOf(actualBackup.reference, actualBackup.mediaUri)
+        .mapNotNull(::managedMigrationSafIdentity)
+        .toSet()
+    if (
+        expectedSafIdentity.isNotEmpty() &&
+            actualSafIdentity.isNotEmpty() &&
+            expectedSafIdentity.none(actualSafIdentity::contains)
+    ) {
+        return false
+    }
     if (sameManagedMigrationStoredEntryIdentity(expectedTarget, actualBackup)) return true
     val hasSafReference = sequenceOf(
         expectedTarget.reference,

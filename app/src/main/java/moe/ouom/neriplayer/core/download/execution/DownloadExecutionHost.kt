@@ -10,6 +10,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +83,11 @@ interface DownloadExecutionHost {
         context: Context,
         operationId: String
     ): DownloadExecutionResult
+
+    /** 从持久 operation 表接管一小批任务，供唯一 WorkManager 泵使用 */
+    suspend fun pump(
+        context: Context
+    ): DownloadExecutionPumpResult = DownloadExecutionPumpResult.Completed
 }
 
 data class DownloadExecutionRequest(
@@ -129,6 +137,11 @@ sealed interface DownloadExecutionResult {
     data object UserStopped : DownloadExecutionResult
     data object UserActionRequired : DownloadExecutionResult
     data class Failed(val error: Throwable) : DownloadExecutionResult
+}
+
+enum class DownloadExecutionPumpResult {
+    Completed,
+    Retry
 }
 
 fun interface DownloadOperationEntryPoint {
@@ -260,6 +273,8 @@ class DefaultDownloadExecutionHost(
 
     private companion object {
         private const val HOST_ADMISSION_CAPACITY = 6
+        private const val PUMP_QUERY_LIMIT = 64
+        private const val PUMP_MAX_BATCHES_PER_RUN = 256
         private val SCHEDULABLE_OPERATION_STATES = setOf(
             "PENDING_QUEUE",
             "QUEUED",
@@ -803,6 +818,58 @@ class DefaultDownloadExecutionHost(
         }
     }
 
+    override suspend fun pump(
+        context: Context
+    ): DownloadExecutionPumpResult = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        var completedBatches = 0
+        while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
+            val requests = operationStore.listSchedulableForPump(
+                context = appContext,
+                limit = PUMP_QUERY_LIMIT
+            )
+            if (requests.isEmpty()) {
+                return@withContext DownloadExecutionPumpResult.Completed
+            }
+            val candidates = requests
+                .asSequence()
+                .distinctBy(DownloadExecutionRequest::operationId)
+                .filterNot { request -> shouldLeaveForPendingUidt(appContext, request) }
+                .take(HOST_ADMISSION_CAPACITY)
+                .toList()
+            if (candidates.isEmpty()) {
+                // UIDT 仍在系统队列时先让系统执行，延迟重试可覆盖任务意外丢失
+                return@withContext DownloadExecutionPumpResult.Retry
+            }
+            val results = coroutineScope {
+                candidates.map { request ->
+                    async(Dispatchers.IO) {
+                        execute(appContext, request.operationId)
+                    }
+                }.awaitAll()
+            }
+            completedBatches++
+            if (results.any(::requiresPumpRetry)) {
+                return@withContext DownloadExecutionPumpResult.Retry
+            }
+        }
+        DownloadExecutionPumpResult.Retry
+    }
+
+    private fun shouldLeaveForPendingUidt(
+        context: Context,
+        request: DownloadExecutionRequest
+    ): Boolean {
+        if (
+            sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                !request.userInitiated
+        ) {
+            return false
+        }
+        return UidtDownloadJobService.hasPendingJob(context, request.operationId)
+    }
+
     private fun tryAcquireHostAdmission(context: Context, operationId: String): Boolean {
         return operationStore.tryAcquireHostAdmission(
             context = context,
@@ -904,6 +971,10 @@ internal fun shouldHandleHostStop(operationState: String?): Boolean {
         operationState in INTERRUPTED_DOWNLOAD_OPERATION_STATES
 }
 
+internal fun requiresPumpRetry(result: DownloadExecutionResult): Boolean {
+    return result == DownloadExecutionResult.Retry || result is DownloadExecutionResult.Failed
+}
+
 /** 宿主被系统回收后重新排入同一个持久 operation */
 internal fun canScheduleDownloadOperation(currentState: String?): Boolean {
     return currentState == null ||
@@ -973,6 +1044,10 @@ private const val PROCESS_EXIT_TIMESTAMP_KEY = "last_user_requested_exit_timesta
 
 object DownloadExecutionHosts {
     val default: DownloadExecutionHost = DefaultDownloadExecutionHost()
+
+    internal suspend fun pump(context: Context): DownloadExecutionPumpResult {
+        return default.pump(context)
+    }
 
     fun cancelAllOwned(context: Context) {
         (default as? DefaultDownloadExecutionHost)?.cancelAllOwned(context)

@@ -335,6 +335,20 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
             .map { it.request.song.stableKey() }
             .toSet()
 
+    override fun listSchedulableForPump(
+        context: Context,
+        limit: Int
+    ): List<DownloadExecutionRequest> {
+        return entries.values
+            .filter { entry ->
+                !entry.userStopped &&
+                    entry.state in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
+            }
+            .sortedWith(compareBy({ it.updatedAtMs }, { it.request.operationId }))
+            .take(limit.coerceAtLeast(0))
+            .map { entry -> entry.request }
+    }
+
     override fun findOperationIdForSong(context: Context, songKey: String): String? =
         entries.values.firstOrNull { it.request.song.stableKey() == songKey }
             ?.request?.operationId

@@ -19,7 +19,9 @@ internal data class ManagedMigrationTargetIndex(
     val rootEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val coverEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
     val lyricEntriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
-    val metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap()
+    val metadataByAudioName: Map<String, ManagedDownloadStorage.DownloadedAudioMetadata> = emptyMap(),
+    /** 同名目标无法安全绑定到某一个文档时，迁移只能分配新名称 */
+    val ambiguousNamesBySubdirectory: Map<String?, Set<String>> = emptyMap()
 ) {
     private val rootEntriesByCanonicalName:
         Map<String, List<ManagedDownloadStorage.StoredEntry>> by lazy {
@@ -53,16 +55,58 @@ internal data class ManagedMigrationTargetIndex(
             }
         }
 
+    private val ambiguousRootCanonicalNames: Set<String> by lazy {
+        buildAmbiguousCanonicalNames(
+            entriesByName = rootEntriesByName,
+            exactAmbiguousNames = ambiguousNamesBySubdirectory[null].orEmpty()
+        )
+    }
+    private val ambiguousCoverCanonicalNames: Set<String> by lazy {
+        buildAmbiguousCanonicalNames(
+            entriesByName = coverEntriesByName,
+            exactAmbiguousNames = ambiguousNamesBySubdirectory[COVER_SUBDIRECTORY].orEmpty()
+        )
+    }
+    private val ambiguousLyricCanonicalNames: Set<String> by lazy {
+        buildAmbiguousCanonicalNames(
+            entriesByName = lyricEntriesByName,
+            exactAmbiguousNames = ambiguousNamesBySubdirectory[LYRIC_SUBDIRECTORY].orEmpty()
+        )
+    }
+    private val rootNames: Set<String> by lazy {
+        mergeNames(rootEntriesByName.keys, ambiguousNamesBySubdirectory[null].orEmpty())
+    }
+    private val coverNames: Set<String> by lazy {
+        mergeNames(
+            coverEntriesByName.keys,
+            ambiguousNamesBySubdirectory[COVER_SUBDIRECTORY].orEmpty()
+        )
+    }
+    private val lyricNames: Set<String> by lazy {
+        mergeNames(
+            lyricEntriesByName.keys,
+            ambiguousNamesBySubdirectory[LYRIC_SUBDIRECTORY].orEmpty()
+        )
+    }
+
     fun namesFor(subdirectory: String?): Set<String> {
         return when (subdirectory) {
-            null -> rootEntriesByName.keys
-            COVER_SUBDIRECTORY -> coverEntriesByName.keys
-            LYRIC_SUBDIRECTORY -> lyricEntriesByName.keys
+            null -> rootNames
+            COVER_SUBDIRECTORY -> coverNames
+            LYRIC_SUBDIRECTORY -> lyricNames
             else -> emptySet()
         }
     }
 
     fun entryFor(subdirectory: String?, name: String): ManagedDownloadStorage.StoredEntry? {
+        val canonicalName = ManagedDownloadStorageNaming.canonicalNameKey(name)
+        val ambiguousCanonicalNames = when (subdirectory) {
+            null -> ambiguousRootCanonicalNames
+            COVER_SUBDIRECTORY -> ambiguousCoverCanonicalNames
+            LYRIC_SUBDIRECTORY -> ambiguousLyricCanonicalNames
+            else -> emptySet()
+        }
+        if (canonicalName in ambiguousCanonicalNames) return null
         return when (subdirectory) {
             null -> rootEntriesByName[name]
             COVER_SUBDIRECTORY -> coverEntriesByName[name]
@@ -76,6 +120,9 @@ internal data class ManagedMigrationTargetIndex(
         name: String
     ): ManagedDownloadStorage.StoredEntry? {
         val canonicalName = ManagedDownloadStorageNaming.canonicalNameKey(name)
+        if (subdirectory == null && canonicalName in ambiguousRootCanonicalNames) {
+            return null
+        }
         return when (subdirectory) {
             null -> rootEntriesByCanonicalName[canonicalName]
             else -> null
@@ -88,9 +135,13 @@ internal data class ManagedMigrationTargetIndex(
     }
 
     fun metadataEntryForAudioName(audioName: String): ManagedDownloadStorage.StoredEntry? {
-        return metadataEntriesByCanonicalAudioName[
+        val entry = metadataEntriesByCanonicalAudioName[
             ManagedDownloadStorageNaming.canonicalNameKey(audioName)
         ]
+        return entry?.takeUnless { candidate ->
+            ManagedDownloadStorageNaming.canonicalNameKey(candidate.name) in
+                ambiguousRootCanonicalNames
+        }
     }
 
     private fun compareMetadataEntries(
@@ -105,6 +156,30 @@ internal data class ManagedMigrationTargetIndex(
             ?: Int.MAX_VALUE
         val ordinalComparison = firstOrdinal.compareTo(secondOrdinal)
         return if (ordinalComparison != 0) ordinalComparison else first.name.compareTo(second.name)
+    }
+
+    private fun buildAmbiguousCanonicalNames(
+        entriesByName: Map<String, ManagedDownloadStorage.StoredEntry>,
+        exactAmbiguousNames: Set<String>
+    ): Set<String> {
+        return buildSet {
+            exactAmbiguousNames.forEach { name ->
+                add(ManagedDownloadStorageNaming.canonicalNameKey(name))
+            }
+            entriesByName.keys
+                .groupingBy { name -> ManagedDownloadStorageNaming.canonicalNameKey(name) }
+                .eachCount()
+                .filterValues { count -> count > 1 }
+                .keys
+                .forEach(::add)
+        }
+    }
+
+    private fun mergeNames(
+        names: Set<String>,
+        ambiguousNames: Set<String>
+    ): Set<String> {
+        return if (ambiguousNames.isEmpty()) names else names + ambiguousNames
     }
 }
 

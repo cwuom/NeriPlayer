@@ -66,6 +66,19 @@ class UidtStopCoordinatorTest {
     }
 
     @Test
+    fun `startup trims excess UIDT jobs and rearms the durable pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "UidtDownloadJobService.kt"
+        ).readText()
+        val trim = methodBody(source, "internal fun trimPendingJobs(")
+
+        assertTrue(trim.contains("UIDT_PENDING_JOB_LIMIT"))
+        assertTrue(trim.contains("scheduler.cancel("))
+        assertTrue(trim.contains("ForegroundDownloadWorker.schedulePump(context)"))
+    }
+
+    @Test
     fun `service destruction seals every completion gate before cancellation`() {
         val firstGate = UidtJobCompletionGate()
         val secondGate = UidtJobCompletionGate()

@@ -409,6 +409,13 @@ internal object ManagedDownloadStorage {
             )
         },
         rewriteMetadataReferences = ::rewriteManagedMetadataReferences,
+        rewriteMetadataReferencesPrepared = { rawJson, referenceMap, sortedReplacements ->
+            ManagedDownloadMetadataCodec.rewriteManagedMetadataReferences(
+                rawJson = rawJson,
+                referenceMap = referenceMap,
+                sortedReplacements = sortedReplacements
+            )
+        },
         restoreReplacement = { context, root, copied ->
             commitWriter.restoreMigrationReplacement(
                 context = context,

@@ -141,6 +141,17 @@ internal interface DownloadOperationDao {
         offset: Int
     ): List<DownloadOperationEntity>
 
+    @Query(
+        "SELECT * FROM download_operation " +
+            "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
+            "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
+            "LIMIT :limit"
+    )
+    suspend fun findSchedulableForPump(
+        states: List<String>,
+        limit: Int
+    ): List<DownloadOperationEntity>
+
     /** 跨目录恢复也必须使用稳定游标，不能依赖会变化的更新时间排序 */
     @Query(
         "SELECT * FROM download_operation " +

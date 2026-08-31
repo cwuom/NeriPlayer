@@ -276,6 +276,26 @@ class ManagedDownloadStorageCommitWriterTest {
     }
 
     @Test
+    fun `SAF replacement backup rejects a non intersecting document identity`() {
+        val expectedTarget = safEntry(
+            name = "song.mp3",
+            documentId = "target"
+        )
+        val unrelatedBackup = safEntry(
+            name = ".np-migration-backup-song",
+            documentId = "other"
+        )
+
+        assertFalse(
+            sameMigrationReplacementBackupIdentity(
+                expectedTarget = expectedTarget,
+                actualBackup = unrelatedBackup,
+                expectedBackupName = unrelatedBackup.name
+            )
+        )
+    }
+
+    @Test
     fun `file replacement retry accepts an existing backup after target was replaced`() {
         val root = tempFolder.newFolder("target")
         val targetFile = File(root, "song.mp3").apply {

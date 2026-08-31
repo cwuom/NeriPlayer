@@ -33,6 +33,12 @@ internal interface DownloadExecutionOperationJournal {
 
     fun stoppedSongKeys(context: Context): Set<String>
 
+    /** 读取全局下载泵的一小批可调度 operation，默认 journal 不暴露记录 */
+    fun listSchedulableForPump(
+        context: Context,
+        limit: Int
+    ): List<DownloadExecutionRequest> = emptyList()
+
     fun findOperationIdForSong(context: Context, songKey: String): String?
 
     fun findOperationIdsForSong(context: Context, songKey: String): List<String> {
@@ -149,6 +155,18 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
     override fun stoppedSongKeys(context: Context): Set<String> {
         return runBlocking(Dispatchers.IO) {
             DownloadExecutionRoomStore.stoppedSongKeys(context)
+        }
+    }
+
+    override fun listSchedulableForPump(
+        context: Context,
+        limit: Int
+    ): List<DownloadExecutionRequest> {
+        return runBlocking(Dispatchers.IO) {
+            DownloadExecutionRoomStore.listSchedulableForPump(
+                context = context,
+                limit = limit
+            ).map { entry -> entry.request }
         }
     }
 
@@ -310,6 +328,18 @@ class DownloadExecutionOperationStore internal constructor(
     fun stoppedSongKeys(context: Context): Set<String> {
         val appContext = context.applicationContext
         return journalProvider(appContext).stoppedSongKeys(appContext)
+    }
+
+    fun listSchedulableForPump(
+        context: Context,
+        limit: Int
+    ): List<DownloadExecutionRequest> {
+        if (limit <= 0) return emptyList()
+        val appContext = context.applicationContext
+        return journalProvider(appContext).listSchedulableForPump(
+            appContext,
+            limit
+        )
     }
 
     fun findOperationIdForSong(context: Context, songKey: String): String? {

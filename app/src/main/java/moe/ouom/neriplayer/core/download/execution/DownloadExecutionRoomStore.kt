@@ -17,6 +17,7 @@ internal const val WAITING_STORAGE_MUTATION_OPERATION_STATE = "WAITING_STORAGE_M
 internal object DownloadExecutionRoomStore {
     private const val OPERATION_QUERY_PAGE_SIZE = 64
     private const val CANCELLATION_QUERY_PAGE_SIZE = 256
+    private const val PUMP_QUERY_MAX_ITEMS = 64
 
     internal data class StateEntry(
         val request: DownloadExecutionRequest,
@@ -246,6 +247,37 @@ internal object DownloadExecutionRoomStore {
             states = listOf(state),
             database = database
         )
+    }
+
+    /** 给全局下载泵提供有界快照，避免每次唤醒都把整张 operation 表装入内存 */
+    suspend fun listSchedulableForPump(
+        context: Context,
+        limit: Int,
+        database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
+    ): List<StateEntry> {
+        val boundedLimit = limit.coerceIn(1, PUMP_QUERY_MAX_ITEMS)
+        val entities = database.downloadOperationDao().findSchedulableForPump(
+            states = REUSABLE_OPERATION_STATES,
+            limit = boundedLimit
+        )
+        val malformedEntities = mutableListOf<DownloadOperationEntity>()
+        val entries = entities.mapNotNull { entity ->
+            val request = requestFromEntity(entity)
+            if (request == null) {
+                malformedEntities += entity
+                null
+            } else {
+                StateEntry(
+                    request = request,
+                    queueOrder = entity.queueOrder,
+                    createdAtMs = entity.createdAtMs,
+                    state = entity.state,
+                    updatedAtMs = entity.updatedAtMs
+                )
+            }
+        }
+        malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
+        return entries
     }
 
     suspend fun listByStates(

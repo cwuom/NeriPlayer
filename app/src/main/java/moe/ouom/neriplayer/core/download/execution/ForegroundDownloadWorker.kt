@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -24,6 +25,7 @@ import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** translates WorkManager events to the shared download host */
 class ForegroundDownloadWorker(
@@ -31,23 +33,39 @@ class ForegroundDownloadWorker(
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        val operationId = inputData.getString(OPERATION_ID_KEY)
-            ?.let(::normalizeDownloadOperationId)
-            ?: return@withContext Result.failure()
+        val rawOperationId = inputData.getString(OPERATION_ID_KEY)
+        val operationId = rawOperationId?.let(::normalizeDownloadOperationId)
+        if (rawOperationId != null && operationId == null) {
+            return@withContext Result.failure()
+        }
+        val executionId = operationId ?: PUMP_OPERATION_ID
         var enteredHostExecution = false
         try {
-            setForeground(createForegroundInfo(applicationContext, operationId))
+            setForeground(createForegroundInfo(applicationContext, executionId))
             enteredHostExecution = true
+            if (operationId == null) {
+                try {
+                    return@withContext DownloadExecutionHosts.pump(applicationContext)
+                        .toWorkerResult()
+                } finally {
+                    markPumpFinished()
+                }
+            }
             DownloadExecutionHosts.default.execute(applicationContext, operationId)
         } catch (cancellation: CancellationException) {
-            DownloadExecutionHosts.default.stop(
-                context = applicationContext,
-                operationId = operationId,
-                preventReschedule = false
-            )
+            operationId?.let { normalizedId ->
+                DownloadExecutionHosts.default.stop(
+                    context = applicationContext,
+                    operationId = normalizedId,
+                    preventReschedule = false
+                )
+            }
+            if (operationId == null) {
+                markPumpFinished()
+            }
             throw cancellation
         } catch (error: Throwable) {
-            if (!enteredHostExecution) {
+            if (!enteredHostExecution && operationId != null) {
                 DownloadExecutionHosts.releaseHandoffAdmissionIfIdle(
                     context = applicationContext,
                     operationId = operationId
@@ -55,35 +73,35 @@ class ForegroundDownloadWorker(
             }
             NPLogger.w(
                 "NERI-DownloadWorker",
-                "下载 Worker 执行异常: operationId=$operationId, error=${error.message}",
+                "下载 Worker 执行异常: operationId=$executionId, error=${error.message}",
                 error
             )
+            if (operationId == null) {
+                markPumpFinished()
+            }
             return@withContext Result.retry()
         }.toWorkerResult()
     }
 
     companion object {
         internal const val OPERATION_ID_KEY = "operation_id"
+        internal const val PUMP_WORK_NAME = "download_execution_pump"
+        internal const val PUMP_OPERATION_ID = "download-pump"
+        private const val PUMP_WORK_TAG = "download_execution_pump"
+        private const val PUMP_RETRY_BACKOFF_MS = 10_000L
         private const val WORK_NAME_PREFIX = "download_execution_"
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
         private const val ALL_DOWNLOAD_WORK_TAG = "download_execution_all"
         private const val CHANNEL_ID = "download_execution"
         internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
+        private val pumpScheduleRequested = AtomicBoolean(false)
 
         fun schedule(
             context: Context,
             operationId: String
         ): Boolean {
-            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
-            return runCatching {
-                WorkManager.getInstance(context.applicationContext)
-                    .enqueueUniqueWork(
-                        uniqueWorkName(normalizedId),
-                        ExistingWorkPolicy.KEEP,
-                        buildRequest(normalizedId)
-                    )
-                true
-            }.getOrDefault(false)
+            normalizeDownloadOperationId(operationId) ?: return false
+            return schedulePump(context)
         }
 
         /** gives a UIDT job a short head start while keeping a durable fallback */
@@ -91,16 +109,42 @@ class ForegroundDownloadWorker(
             context: Context,
             operationId: String
         ): Boolean {
-            val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            normalizeDownloadOperationId(operationId) ?: return false
+            return schedulePump(
+                context = context,
+                initialDelayMs = UIDT_START_GRACE_MS
+            )
+        }
+
+        /** 所有新下载共用一个持久泵，operation 载荷始终保存在 Room */
+        internal fun schedulePump(
+            context: Context,
+            initialDelayMs: Long = 0L
+        ): Boolean {
+            if (!pumpScheduleRequested.compareAndSet(false, true)) {
+                return true
+            }
+            val delayMs = initialDelayMs.coerceAtLeast(0L)
             return runCatching {
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
-                        fallbackWorkName(normalizedId),
-                        fallbackExistingWorkPolicy,
-                        buildFallbackRequest(normalizedId)
+                        PUMP_WORK_NAME,
+                        ExistingWorkPolicy.KEEP,
+                        buildPumpRequest(delayMs)
                     )
                 true
+            }.onFailure { error ->
+                NPLogger.w(
+                    "NERI-DownloadWorker",
+                    "全局下载泵调度失败，保留 Room operation 等待恢复: ${error.message}",
+                    error
+                )
+                pumpScheduleRequested.set(false)
             }.getOrDefault(false)
+        }
+
+        private fun markPumpFinished() {
+            pumpScheduleRequested.set(false)
         }
 
         fun cancel(
@@ -135,6 +179,7 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
             }
+            pumpScheduleRequested.set(false)
         }
 
         internal fun cancelFallback(
@@ -146,6 +191,8 @@ class ForegroundDownloadWorker(
                 WorkManager.getInstance(context.applicationContext)
                     .cancelUniqueWork(fallbackWorkName(normalizedId))
             }
+            // 旧 fallback 只属于当前 operation，结束后唤醒共享泵处理其他任务
+            schedulePump(context)
         }
 
         internal fun buildRequest(operationId: String): OneTimeWorkRequest {
@@ -173,6 +220,26 @@ class ForegroundDownloadWorker(
                 .addTag(WORK_TAG_PREFIX + "fallback_" + operationId)
                 .addTag(ALL_DOWNLOAD_WORK_TAG)
                 .build()
+        }
+
+        internal fun buildPumpRequest(initialDelayMs: Long = 0L): OneTimeWorkRequest {
+            val builder = OneTimeWorkRequestBuilder<ForegroundDownloadWorker>()
+                .setBackoffCriteria(
+                    BackoffPolicy.EXPONENTIAL,
+                    PUMP_RETRY_BACKOFF_MS,
+                    TimeUnit.MILLISECONDS
+                )
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .addTag(PUMP_WORK_TAG)
+                .addTag(ALL_DOWNLOAD_WORK_TAG)
+            if (initialDelayMs > 0L) {
+                builder.setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+            }
+            return builder.build()
         }
 
         internal fun uniqueWorkName(operationId: String): String {
@@ -261,5 +328,12 @@ internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
         DownloadExecutionResult.MissingOperation -> ListenableWorker.Result.success()
         DownloadExecutionResult.Retry -> ListenableWorker.Result.retry()
         is DownloadExecutionResult.Failed -> ListenableWorker.Result.retry()
+    }
+}
+
+internal fun DownloadExecutionPumpResult.toWorkerResult(): ListenableWorker.Result {
+    return when (this) {
+        DownloadExecutionPumpResult.Completed -> ListenableWorker.Result.success()
+        DownloadExecutionPumpResult.Retry -> ListenableWorker.Result.retry()
     }
 }

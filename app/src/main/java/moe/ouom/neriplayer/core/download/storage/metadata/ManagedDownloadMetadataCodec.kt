@@ -7,12 +7,46 @@ import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.logging.NPLogger
 import org.json.JSONObject
 
+internal data class ManagedMetadataReferenceReplacement(
+    val from: String,
+    val to: String
+)
+
+internal fun prepareManagedMetadataReferenceReplacements(
+    referenceMap: Map<String, String>
+): List<ManagedMetadataReferenceReplacement> {
+    return referenceMap.entries
+        .filter { (from, to) -> from.isNotBlank() && from != to }
+        .sortedWith(
+            compareByDescending<Map.Entry<String, String>> { entry -> entry.key.length }
+                .thenBy { entry -> entry.key }
+        )
+        .map { entry ->
+            ManagedMetadataReferenceReplacement(
+                from = entry.key,
+                to = entry.value
+            )
+        }
+}
+
 internal object ManagedDownloadMetadataCodec {
     private const val TAG = "ManagedDownloadStorage"
 
     fun rewriteManagedMetadataReferences(
         rawJson: String,
         referenceMap: Map<String, String>
+    ): String {
+        return rewriteManagedMetadataReferences(
+            rawJson = rawJson,
+            referenceMap = referenceMap,
+            sortedReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
+        )
+    }
+
+    internal fun rewriteManagedMetadataReferences(
+        rawJson: String,
+        referenceMap: Map<String, String>,
+        sortedReplacements: List<ManagedMetadataReferenceReplacement>
     ): String {
         if (referenceMap.isEmpty()) return rawJson
         val root = JSONObject(rawJson)
@@ -24,7 +58,7 @@ internal object ManagedDownloadMetadataCodec {
         rewriteMetadataReferenceField(root, "originalCoverUrl", referenceMap)
         rewriteMetadataReferenceField(root, "mediaUri", referenceMap)
         rewriteMetadataReferenceField(root, "localFilePath", referenceMap)
-        rewriteMetadataEmbeddedReferenceField(root, "stableKey", referenceMap)
+        rewriteMetadataEmbeddedReferenceField(root, "stableKey", sortedReplacements)
         root.optJSONObject("restorableMetadata")?.let { restorable ->
             rewriteMetadataReferenceField(restorable, "coverReference", referenceMap)
             restorable.optJSONObject("baseline")?.let { baseline ->
@@ -87,28 +121,22 @@ internal object ManagedDownloadMetadataCodec {
     private fun rewriteMetadataEmbeddedReferenceField(
         root: JSONObject,
         fieldName: String,
-        referenceMap: Map<String, String>
+        replacements: List<ManagedMetadataReferenceReplacement>
     ) {
         val current = root.optString(fieldName).takeIf(String::isNotBlank) ?: return
-        val replacements = referenceMap.entries
-            .filter { (from, to) -> from.isNotBlank() && from != to }
-            .sortedWith(
-                compareByDescending<Map.Entry<String, String>> { entry -> entry.key.length }
-                    .thenBy { entry -> entry.key }
-            )
         if (replacements.isEmpty()) return
         val updated = buildString(current.length) {
             var index = 0
             while (index < current.length) {
                 val replacement = replacements.firstOrNull { entry ->
-                    current.startsWith(entry.key, startIndex = index)
+                    current.startsWith(entry.from, startIndex = index)
                 }
                 if (replacement == null) {
                     append(current[index])
                     index++
                 } else {
-                    append(replacement.value)
-                    index += replacement.key.length
+                    append(replacement.to)
+                    index += replacement.from.length
                 }
             }
         }

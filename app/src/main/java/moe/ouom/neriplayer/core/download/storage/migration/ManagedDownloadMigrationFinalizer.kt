@@ -26,6 +26,8 @@ import moe.ouom.neriplayer.core.download.storage.backend.StorageTarget
 import moe.ouom.neriplayer.core.download.storage.backend.TrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.backend.asTrustedManagedRef
 import moe.ouom.neriplayer.core.download.storage.commit.ManagedDownloadCommitVerifier
+import moe.ouom.neriplayer.core.download.storage.metadata.ManagedMetadataReferenceReplacement
+import moe.ouom.neriplayer.core.download.storage.metadata.prepareManagedMetadataReferenceReplacements
 import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNaming
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootHandle
 import moe.ouom.neriplayer.core.download.storage.root.ManagedDownloadRootProviderException
@@ -40,6 +42,8 @@ import java.math.BigDecimal
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
+
+private const val SLOW_METADATA_REWRITE_IO_LOG_MS = 1_000L
 
 internal data class ManagedMigrationTargetLayoutEntry(
     val subdirectory: String?,
@@ -169,6 +173,13 @@ internal class ManagedDownloadMigrationFinalizer(
         ManagedDownloadRootHandle
     ) -> StorageMutationResult,
     private val rewriteMetadataReferences: (String, Map<String, String>) -> String,
+    private val rewriteMetadataReferencesPrepared: (
+        String,
+        Map<String, String>,
+        List<ManagedMetadataReferenceReplacement>
+    ) -> String = { rawJson, referenceMap, _ ->
+        rewriteMetadataReferences(rawJson, referenceMap)
+    },
     private val deleteReferences: suspend (
         Context,
         Collection<TrustedManagedRef>,
@@ -209,32 +220,23 @@ internal class ManagedDownloadMigrationFinalizer(
             )
         }
         val referenceMap = copiedEntries.migrationReferenceMap()
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
         val rewriteLimiter = Semaphore(rewriteParallelism(targetRoot))
         val outcomesByIndex = copiedEntries
             .mapIndexedNotNull { index, copied ->
                 if (!ManagedDownloadTreeNaming.isMetadataName(copied.original.entry.name)) {
                     return@mapIndexedNotNull null
                 }
-                if (copied.verifiedTargetDigest?.isNotBlank() == true) {
-                    async(Dispatchers.IO) {
-                        progressTracker?.startRewrite(copied.copiedEntry.name)
-                        progressTracker?.finishRewrite(copied.copiedEntry.name)
-                        index to MetadataRewriteOutcome(
-                            copied = copied,
-                            failed = false
+                async(Dispatchers.IO) {
+                    index to rewriteLimiter.withPermit {
+                        rewriteMetadataEntry(
+                            context,
+                            targetRoot,
+                            copied,
+                            referenceMap,
+                            sortedReferenceReplacements,
+                            progressTracker
                         )
-                    }
-                } else {
-                    async(Dispatchers.IO) {
-                        index to rewriteLimiter.withPermit {
-                            rewriteMetadataEntry(
-                                context,
-                                targetRoot,
-                                copied,
-                                referenceMap,
-                                progressTracker
-                            )
-                        }
                     }
                 }
             }
@@ -280,6 +282,7 @@ internal class ManagedDownloadMigrationFinalizer(
         }
         progressTracker?.startVerification(copiedEntries)
         val referenceMap = copiedEntries.migrationReferenceMap()
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
         val verificationLimiter = Semaphore(rewriteParallelism(targetRoot))
         val outcomes = copiedEntries.map { migrationEntry ->
             async(Dispatchers.IO) {
@@ -291,6 +294,7 @@ internal class ManagedDownloadMigrationFinalizer(
                             context = context,
                             migrationEntry = migrationEntry,
                             referenceMap = referenceMap,
+                            sortedReferenceReplacements = sortedReferenceReplacements,
                             onProgress = { verifiedBytes ->
                                 progressTracker?.onVerificationProgress(
                                     migrationEntry,
@@ -580,13 +584,15 @@ internal class ManagedDownloadMigrationFinalizer(
         } else {
             copiedEntries.migrationReferenceMap()
         }
+        val sortedReferenceReplacements = prepareManagedMetadataReferenceReplacements(referenceMap)
         val verifiedIndices = mutableSetOf<Int>()
         for (index in copiedEntries.indices) {
             val migrationEntry = copiedEntries[index]
             val verified = targetsAlreadyVerified || isMigrationTargetVerified(
                 context = context,
                 migrationEntry = migrationEntry,
-                referenceMap = referenceMap
+                referenceMap = referenceMap,
+                sortedReferenceReplacements = sortedReferenceReplacements
             )
             if (!verified) {
                 NPLogger.w(
@@ -714,20 +720,35 @@ internal class ManagedDownloadMigrationFinalizer(
         targetRoot: ManagedDownloadRootHandle,
         copied: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
         progressTracker: ManagedMigrationProgressReporter?
     ): MetadataRewriteOutcome {
         progressTracker?.startRewrite(copied.copiedEntry.name)
         try {
             val rewriteInput = try {
-                val sourceMetadata = readText(context, copied.original.entry.reference)
+                val sourceMetadata = measureMetadataRewriteIo(
+                    stage = "read_source",
+                    copied = copied
+                ) {
+                    readText(context, copied.original.entry.reference)
+                }
                     ?: throw IllegalStateException("无法读取源 metadata: ${copied.original.entry.name}")
-                val targetMetadata = readText(context, copied.copiedEntry.reference)
+                val targetMetadata = measureMetadataRewriteIo(
+                    stage = "read_target",
+                    copied = copied
+                ) {
+                    readText(context, copied.copiedEntry.reference)
+                }
                     ?: throw IllegalStateException("无法读取已迁移 metadata: ${copied.copiedEntry.name}")
                 MetadataRewriteInput(
                     sourceMetadata = sourceMetadata,
                     targetMetadata = targetMetadata,
                     rewrittenMetadata = enrichMigratedMetadataTemporalFields(
-                        metadata = rewriteMetadataReferences(sourceMetadata, referenceMap),
+                        metadata = rewriteMetadataReferencesPrepared(
+                            sourceMetadata,
+                            referenceMap,
+                            sortedReferenceReplacements
+                        ),
                         sourceEntry = copied.original
                     )
                 )
@@ -752,35 +773,28 @@ internal class ManagedDownloadMigrationFinalizer(
                 return MetadataRewriteOutcome(copied = copied, failed = false)
             }
             if (
-                copied.reusedFromReceipt &&
+                (
+                    copied.reusedFromReceipt ||
+                        !copied.createdNew && !copied.sourceAuthoritative
+                    ) &&
                 rewriteInput.targetMetadata != rewriteInput.sourceMetadata
             ) {
-                NPLogger.w(
+                NPLogger.d(
                     tag,
-                    "拒绝覆盖已恢复但内容发生变化的迁移 metadata: " +
-                        copied.copiedEntry.reference
+                    "迁移 metadata 冲突以源文件为准: " +
+                        "${copied.copiedEntry.reference}, reused=${copied.reusedFromReceipt}"
                 )
-                return MetadataRewriteOutcome(copied = copied, failed = true)
-            }
-            if (
-                !copied.createdNew &&
-                !copied.sourceAuthoritative &&
-                rewriteInput.targetMetadata != rewriteInput.sourceMetadata
-            ) {
-                NPLogger.w(
-                    tag,
-                    "拒绝覆盖无法确认来源的迁移 metadata: ${copied.copiedEntry.reference}"
-                )
-                return MetadataRewriteOutcome(copied = copied, failed = true)
             }
             val rewrittenEntry = try {
-                writeRootTextWithKnownEntry(
-                    context,
-                    targetRoot,
-                    copied.copiedEntry.name,
-                    rewriteInput.rewrittenMetadata,
-                    copied.copiedEntry
-                ) ?: throw IllegalStateException(
+                measureMetadataRewriteIo(stage = "write_target", copied = copied) {
+                    writeRootTextWithKnownEntry(
+                        context,
+                        targetRoot,
+                        copied.copiedEntry.name,
+                        rewriteInput.rewrittenMetadata,
+                        copied.copiedEntry
+                    )
+                } ?: throw IllegalStateException(
                     "无法读取回写后的 metadata: ${copied.copiedEntry.name}"
                 )
             } catch (error: CancellationException) {
@@ -802,11 +816,13 @@ internal class ManagedDownloadMigrationFinalizer(
             }
             val rewrittenCopied = copied.copy(copiedEntry = rewrittenEntry)
             val restoreError = runCatching {
-                restoreLastModified(
-                    context,
-                    rewrittenEntry,
-                    copied.original.entry.lastModifiedMs
-                )
+                measureMetadataRewriteIo(stage = "restore_timestamp", copied = copied) {
+                    restoreLastModified(
+                        context,
+                        rewrittenEntry,
+                        copied.original.entry.lastModifiedMs
+                    )
+                }
             }.onFailure {
                 NPLogger.w(
                     tag,
@@ -834,6 +850,27 @@ internal class ManagedDownloadMigrationFinalizer(
         val rewrittenMetadata: String
     )
 
+    private fun <T> measureMetadataRewriteIo(
+        stage: String,
+        copied: CopiedMigrationEntry,
+        block: () -> T
+    ): T {
+        val startedAtNs = System.nanoTime()
+        return try {
+            block()
+        } finally {
+            val elapsedMs = ((System.nanoTime() - startedAtNs) / 1_000_000L)
+                .coerceAtLeast(0L)
+            if (elapsedMs >= SLOW_METADATA_REWRITE_IO_LOG_MS) {
+                NPLogger.w(
+                    tag,
+                    "迁移 metadata 单项 I/O 较慢: " +
+                        "stage=$stage, name=${copied.copiedEntry.name}, elapsedMs=$elapsedMs"
+                )
+            }
+        }
+    }
+
     private data class MetadataRewriteOutcome(
         val copied: CopiedMigrationEntry,
         val failed: Boolean,
@@ -855,11 +892,13 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
         onProgress: (Long) -> Unit = {}
     ): Boolean = verifyMigrationTarget(
         context = context,
         migrationEntry = migrationEntry,
         referenceMap = referenceMap,
+        sortedReferenceReplacements = sortedReferenceReplacements,
         onProgress = onProgress
     ).verified
 
@@ -867,6 +906,7 @@ internal class ManagedDownloadMigrationFinalizer(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
         referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>,
         onProgress: (Long) -> Unit = {}
     ): MigrationVerificationEvidence {
         val sourceEntry = migrationEntry.original.entry
@@ -874,7 +914,8 @@ internal class ManagedDownloadMigrationFinalizer(
             val metadata = readEquivalentMigratedMetadata(
                 context = context,
                 migrationEntry = migrationEntry,
-                referenceMap = referenceMap
+                referenceMap = referenceMap,
+                sortedReferenceReplacements = sortedReferenceReplacements
             ) ?: return MigrationVerificationEvidence(verified = false)
             return MigrationVerificationEvidence(
                 verified = true,
@@ -912,15 +953,30 @@ internal class ManagedDownloadMigrationFinalizer(
     private fun readEquivalentMigratedMetadata(
         context: Context,
         migrationEntry: CopiedMigrationEntry,
-        referenceMap: Map<String, String>
+        referenceMap: Map<String, String>,
+        sortedReferenceReplacements: List<ManagedMetadataReferenceReplacement>
     ): EquivalentMigratedMetadata? {
         return try {
-            val sourceMetadata = readText(context, migrationEntry.original.entry.reference)
+            val sourceMetadata = measureMetadataRewriteIo(
+                stage = "verify_read_source",
+                copied = migrationEntry
+            ) {
+                readText(context, migrationEntry.original.entry.reference)
+            }
                 ?: return null
-            val targetMetadata = readText(context, migrationEntry.copiedEntry.reference)
+            val targetMetadata = measureMetadataRewriteIo(
+                stage = "verify_read_target",
+                copied = migrationEntry
+            ) {
+                readText(context, migrationEntry.copiedEntry.reference)
+            }
                 ?: return null
             val expectedTargetMetadata = enrichMigratedMetadataTemporalFields(
-                metadata = rewriteMetadataReferences(sourceMetadata, referenceMap),
+                metadata = rewriteMetadataReferencesPrepared(
+                    sourceMetadata,
+                    referenceMap,
+                    sortedReferenceReplacements
+                ),
                 sourceEntry = migrationEntry.original
             )
             if (!areEquivalentJsonValues(

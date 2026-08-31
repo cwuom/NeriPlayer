@@ -25,6 +25,7 @@ package moe.ouom.neriplayer
 
 import android.app.Application
 import android.content.res.Configuration
+import android.os.Build
 import android.webkit.WebView
 import androidx.work.Configuration as WorkConfiguration
 import kotlinx.coroutines.flow.collect
@@ -32,7 +33,9 @@ import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
+import moe.ouom.neriplayer.core.download.execution.UidtDownloadJobService
 import moe.ouom.neriplayer.core.lyricon.LyriconManager
+import moe.ouom.neriplayer.core.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
 import moe.ouom.neriplayer.core.startup.AppStartupWorkGate
@@ -61,6 +64,15 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
                 WORK_MANAGER_JOB_ID_MIN,
                 WORK_MANAGER_JOB_ID_MAX
             )
+            // 系统可能在重启恢复旧任务时拒绝调度，不能让库异常穿透到进程
+            .setSchedulingExceptionHandler { error ->
+                NPLogger.e(
+                    "NERI-WorkManager",
+                    "系统暂时拒绝后台任务调度，保留持久下载队列等待恢复: " +
+                        error.message,
+                    error
+                )
+            }
             .build()
 
     override fun onCreate() {
@@ -73,6 +85,9 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             configuredMainProcessName = applicationInfo.processName,
             packageName = packageName
         )
+        if (shouldTrimUidtPendingJobs(runningInMainProcess, Build.VERSION.SDK_INT)) {
+            UidtDownloadJobService.trimPendingJobs(this)
+        }
         configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置
@@ -177,3 +192,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
 private const val WORK_MANAGER_JOB_ID_MIN = 1_000
 private const val WORK_MANAGER_JOB_ID_MAX = 99_999
+
+internal fun shouldTrimUidtPendingJobs(runningInMainProcess: Boolean, sdkInt: Int): Boolean {
+    return runningInMainProcess && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+}

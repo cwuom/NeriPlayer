@@ -177,6 +177,71 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `new operation schedules share one durable pump work name`() {
+        val pumpNames = (1..1_000)
+            .map { ForegroundDownloadWorker.PUMP_WORK_NAME }
+            .toSet()
+
+        assertEquals(setOf(ForegroundDownloadWorker.PUMP_WORK_NAME), pumpNames)
+        val request = ForegroundDownloadWorker.buildPumpRequest()
+        assertTrue(request.tags.contains("download_execution_pump"))
+        assertTrue(request.tags.contains("download_execution_all"))
+        assertFalse(
+            request.workSpec.input.keyValueMap.containsKey(
+                ForegroundDownloadWorker.OPERATION_ID_KEY
+            )
+        )
+    }
+
+    @Test
+    fun `fresh host pumps a durable queued operation after restart`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-pump-recovery",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        var executions = 0
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, restoredRequest ->
+                assertEquals(request.operationId, restoredRequest.operationId)
+                executions++
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = 28
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Completed, host.pump(context))
+        assertEquals(1, executions)
+        assertEquals("COMPLETED", store.currentState(context, request.operationId))
+    }
+
+    @Test
+    fun `pump reports retry without dropping a transient operation`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-pump-retry",
+            song = sampleSong()
+        )
+        store.save(context, request)
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, _ ->
+                DownloadExecutionResult.Retry
+            },
+            sdkInt = 28
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals("RETRYABLE", store.currentState(context, request.operationId))
+    }
+
+    @Test
     fun `download notification ids are stable and partitioned per backend`() {
         val firstOperation = "operation-notification-01"
         val secondOperation = "operation-notification-02"
