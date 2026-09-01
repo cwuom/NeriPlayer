@@ -378,7 +378,13 @@ class BatchDownloadOperationRecoveryTest {
                 "admitDownloadMutation(context, admissionTicket)"
             )
         )
-        assertTrue(startupBody.contains("admissionTicket: Long?"))
+        assertTrue(
+            source.contains(
+                "private suspend fun recoverPendingDownloadsForStartup(\n" +
+                    "        context: Context,\n" +
+                    "        admissionTicket: Long?\n"
+            )
+        )
         assertTrue(
             source.contains(
                 "recoverPendingDownloadsForStartup(\n                    context = appContext,\n                    admissionTicket = startupAdmissionTicket"
