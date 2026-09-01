@@ -78,6 +78,10 @@ internal class ManagedDownloadMigrationCheckpointStore internal constructor(
             if (expectedRequest != null && !migrationRequestsEqual(current, expectedRequest)) {
                 return@synchronized false
             }
+            val normalizedRequest = request.normalized()
+            if (current != null && !current.autoResume && normalizedRequest.autoResume) {
+                return@synchronized false
+            }
             writeRequestLocked(request)
             true
         }

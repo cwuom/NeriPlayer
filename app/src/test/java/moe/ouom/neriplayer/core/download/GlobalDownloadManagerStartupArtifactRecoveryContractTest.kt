@@ -59,8 +59,8 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         val legacySchedule = initializeBody.indexOf(
             "LegacyJsonCleanupScheduler.schedule(appContext, \"download-startup\")"
         )
-        val pendingRecovery = initializeBody.indexOf("recoverPendingDownloadsForStartup(appContext)")
-        val coverRepair = initializeBody.indexOf("repairFinalizedDownloadedCoversFromRoot(appContext)")
+        val pendingRecovery = initializeBody.indexOf("recoverPendingDownloadsForStartup(")
+        val coverRepair = initializeBody.indexOf("repairFinalizedDownloadedCoversFromRoot(")
         val initialScan = initializeBody.indexOf("scanLocalFilesAwait(")
 
         assertTrue(migrationProbe >= 0)
@@ -115,10 +115,44 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
         assertTrue(schedulerBody.contains("startupArtifactRecoveryActive.compareAndSet(false, true)"))
         assertTrue(schedulerBody.contains("scope.launch"))
         assertTrue(schedulerBody.contains("startupRecoveryMutex.withLock"))
-        assertTrue(schedulerBody.contains("isDownloadClearFenceActive(appContext)"))
+        assertTrue(schedulerBody.contains("isDownloadAdmissionTicketCurrent(appContext, admissionTicket)"))
         assertTrue(schedulerBody.contains("catch (error: CancellationException)"))
         assertTrue(schedulerBody.contains("catch (error: Throwable)"))
         assertTrue(schedulerBody.contains("startupArtifactRecoveryActive.set(false)"))
+    }
+
+    @Test
+    fun `startup and cover recovery hold the directory lease across root writes`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val schedulerBody = methodBody(source, "scheduleStartupArtifactRecovery")
+        val schedulerLeaseIndex = schedulerBody.indexOf("acquireRecoveryLeaseOrNull(")
+        val pendingIndex = schedulerBody.indexOf("recoverPendingAudioWritesFromRoot(")
+        val publishedIndex = schedulerBody.indexOf(
+            "recoverUnfinalizedPublishedAudioFromRoot(",
+            startIndex = pendingIndex
+        )
+        val schedulerCloseIndex = schedulerBody.lastIndexOf("directoryMutationLease.close()")
+
+        assertTrue(schedulerLeaseIndex >= 0)
+        assertTrue(pendingIndex > schedulerLeaseIndex)
+        assertTrue(publishedIndex > pendingIndex)
+        assertTrue(schedulerCloseIndex > publishedIndex)
+
+        val coverBody = methodBody(source, "repairFinalizedDownloadedCoversFromRoot")
+        val coverLeaseIndex = coverBody.indexOf("acquireRecoveryLeaseOrNull(")
+        val snapshotIndex = coverBody.indexOf("buildDownloadLibrarySnapshot(")
+        val readIndex = coverBody.indexOf("readDownloadedMetadata(")
+        val writeIndex = coverBody.indexOf("publishOptimisticDownloadedSongs(")
+        val coverCloseIndex = coverBody.lastIndexOf("directoryMutationLease?.close()")
+
+        assertTrue(coverLeaseIndex >= 0)
+        assertTrue(snapshotIndex > coverLeaseIndex)
+        assertTrue(readIndex > coverLeaseIndex)
+        assertTrue(writeIndex > readIndex)
+        assertTrue(coverCloseIndex > writeIndex)
+        assertTrue(coverBody.contains("目录迁移占用封面恢复入口"))
     }
 
     @Test
@@ -140,15 +174,50 @@ class GlobalDownloadManagerStartupArtifactRecoveryContractTest {
     }
 
     @Test
+    fun `artifact recovery keeps the captured admission ticket through core commit`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val pendingBody = methodBody(source, "recoverPendingAudioWritesFromRoot")
+        val publishedBody = methodBody(source, "recoverUnfinalizedPublishedAudioFromRoot")
+        val coreBody = methodBody(source, "completeCoreDownloadAndEnqueueEnrichment")
+        val coreDeclarationStart = source.indexOf(
+            "private suspend fun completeCoreDownloadAndEnqueueEnrichment("
+        )
+        val coreDeclarationEnd = source.indexOf('{', startIndex = coreDeclarationStart)
+        assertTrue(coreDeclarationStart >= 0)
+        assertTrue(coreDeclarationEnd > coreDeclarationStart)
+        val coreSignature = source.substring(
+            coreDeclarationStart,
+            coreDeclarationEnd
+        )
+
+        assertTrue(pendingBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(publishedBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(coreSignature.contains("admissionTicket: Long?"))
+        assertTrue(coreBody.contains("isDownloadAdmissionTicketCurrent(context, admissionTicket)"))
+    }
+
+    @Test
     fun `migration worker keeps durable credentials across interruption and clears them only after publish`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
                 "ManagedDownloadMigrationWorker.kt"
         ).readText()
         val workerBody = methodBody(source, "runMigration")
+        val cancellationIndex = workerBody.indexOf("catch (error: CancellationException)")
+        val terminalHelperBody = methodBody(source, "markTerminalRequestAndCompleteProcessing")
+
         assertTrue(workerBody.indexOf("checkpointStore.recordRequestIfCurrent(") >= 0)
-        assertTrue(workerBody.lastIndexOf("waitForRetry = true") >
-            workerBody.indexOf("catch (error: CancellationException)"))
+        assertTrue(cancellationIndex >= 0)
+        val cancellationBody = workerBody.substring(cancellationIndex)
+        assertTrue(cancellationBody.contains("checkpointStore.markRequestRetryable("))
+        assertTrue(cancellationBody.contains("markTerminalRequestAndCompleteProcessing("))
+        assertTrue(terminalHelperBody.contains("checkpointStore.markRequestTerminal("))
+        assertTrue(
+            terminalHelperBody.indexOf("checkpointStore.markRequestTerminal(") <
+                terminalHelperBody.indexOf("waitForRetry = false")
+        )
         assertTrue(workerBody.contains("checkpointStore.clearCompletedAndRunIfCurrent("))
         assertTrue(
             workerBody.indexOf("checkpointStore.clearCompletedAndRunIfCurrent(") >

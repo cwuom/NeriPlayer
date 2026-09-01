@@ -8,6 +8,17 @@ internal const val METADATA_ACTION_REQUIRED_OPERATION_STATE = "METADATA_ACTION_R
 internal const val METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR =
     "METADATA_EMBEDDING_UNSUPPORTED_CONTAINER"
 
+internal data class DownloadExecutionPumpCursor(
+    val queueOrder: Int,
+    val updatedAtMs: Long,
+    val operationId: String
+)
+
+internal data class DownloadExecutionPumpPage(
+    val requests: List<DownloadExecutionRequest> = emptyList(),
+    val nextCursor: DownloadExecutionPumpCursor? = null
+)
+
 internal val INTERRUPTED_DOWNLOAD_OPERATION_STATES = setOf(
     "RUNNING",
     "COMMITTING",
@@ -33,11 +44,12 @@ internal interface DownloadExecutionOperationJournal {
 
     fun stoppedSongKeys(context: Context): Set<String>
 
-    /** 读取全局下载泵的一小批可调度 operation，默认 journal 不暴露记录 */
-    fun listSchedulableForPump(
+    /** 读取全局下载泵的一页可调度 operation，默认 journal 不暴露记录 */
+    fun listSchedulableForPumpPage(
         context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
-    ): List<DownloadExecutionRequest> = emptyList()
+    ): DownloadExecutionPumpPage = DownloadExecutionPumpPage()
 
     fun findOperationIdForSong(context: Context, songKey: String): String?
 
@@ -158,15 +170,17 @@ private object RoomDownloadExecutionOperationJournal : DownloadExecutionOperatio
         }
     }
 
-    override fun listSchedulableForPump(
+    override fun listSchedulableForPumpPage(
         context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
-    ): List<DownloadExecutionRequest> {
+    ): DownloadExecutionPumpPage {
         return runBlocking(Dispatchers.IO) {
-            DownloadExecutionRoomStore.listSchedulableForPump(
+            DownloadExecutionRoomStore.listSchedulableForPumpPage(
                 context = context,
+                afterCursor = afterCursor,
                 limit = limit
-            ).map { entry -> entry.request }
+            )
         }
     }
 
@@ -330,14 +344,16 @@ class DownloadExecutionOperationStore internal constructor(
         return journalProvider(appContext).stoppedSongKeys(appContext)
     }
 
-    fun listSchedulableForPump(
+    internal fun listSchedulableForPumpPage(
         context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
-    ): List<DownloadExecutionRequest> {
-        if (limit <= 0) return emptyList()
+    ): DownloadExecutionPumpPage {
+        if (limit <= 0) return DownloadExecutionPumpPage()
         val appContext = context.applicationContext
-        return journalProvider(appContext).listSchedulableForPump(
+        return journalProvider(appContext).listSchedulableForPumpPage(
             appContext,
+            afterCursor,
             limit
         )
     }

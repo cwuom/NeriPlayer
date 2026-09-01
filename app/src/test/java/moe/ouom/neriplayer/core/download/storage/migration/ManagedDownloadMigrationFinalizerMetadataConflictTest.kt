@@ -16,6 +16,17 @@ class ManagedDownloadMigrationFinalizerMetadataConflictTest {
 
     @Test
     fun `existing metadata target is rewritten from source after receipt reuse`() = runBlocking {
+        assertConflictingMetadataIsRewritten(reusedFromReceipt = true)
+    }
+
+    @Test
+    fun `non authoritative existing metadata target is rewritten from source`() = runBlocking {
+        assertConflictingMetadataIsRewritten(reusedFromReceipt = false)
+    }
+
+    private suspend fun assertConflictingMetadataIsRewritten(
+        reusedFromReceipt: Boolean
+    ) {
         val directory = Files.createTempDirectory("migration-metadata-conflict").toFile()
         try {
             val sourceAudio = entry(directory, "source", "track.mp3")
@@ -42,7 +53,7 @@ class ManagedDownloadMigrationFinalizerMetadataConflictTest {
                     createdNew = false,
                     sourceAuthoritative = false,
                     verifiedTargetDigest = "a".repeat(64),
-                    reusedFromReceipt = true
+                    reusedFromReceipt = reusedFromReceipt
                 )
             )
             val finalizer = ManagedDownloadMigrationFinalizer(

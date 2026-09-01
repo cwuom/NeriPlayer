@@ -60,6 +60,29 @@ class DownloadAdmissionGateTest {
     }
 
     @Test
+    fun `await idle waits for work admitted before clear`() = runTest {
+        val gate = DownloadAdmissionGate()
+        val ticket = gate.ticket()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val request = async {
+            gate.admit(ticket) {
+                entered.complete(Unit)
+                release.await()
+            }
+        }
+        entered.await()
+
+        gate.beginClear()
+        val idle = async { gate.awaitIdle() }
+        assertFalse(idle.isCompleted)
+
+        release.complete(Unit)
+        request.await()
+        idle.await()
+    }
+
+    @Test
     fun `request created during clear waits and starts after cleanup`() = runTest {
         val gate = DownloadAdmissionGate()
         val clearToken = gate.beginClear()
@@ -393,6 +416,62 @@ class DownloadAdmissionGateTest {
                 }
             )
             assertTrue(taskStore.currentTasks().isNotEmpty())
+        } finally {
+            taskScope.cancel()
+        }
+    }
+
+    @Test
+    fun `recovery captured before clear cannot recreate a task after one clear`() = runTest {
+        val taskScope = CoroutineScope(SupervisorJob())
+        try {
+            val gate = DownloadAdmissionGate()
+            val taskStore = DownloadTaskStore(
+                scope = taskScope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val song = SongItem(
+                id = 2L,
+                name = "Recovery song",
+                artist = "Artist",
+                album = "Album",
+                albumId = 2L,
+                durationMs = 1_000L,
+                coverUrl = null,
+                mediaUri = "https://example.com/recovery"
+            )
+            taskStore.ensureDownloadTasks(listOf(song))
+
+            // 模拟恢复先读取候选，再在真正写回前等待后台调度
+            val capturedTicket = requireNotNull(gate.openTicketOrNull())
+            val planRead = CompletableDeferred<Unit>()
+            val continueRecovery = CompletableDeferred<Unit>()
+            val recovery = async {
+                planRead.complete(Unit)
+                continueRecovery.await()
+                gate.admit(capturedTicket) {
+                    taskStore.ensureDownloadTasks(listOf(song))
+                }
+            }
+            planRead.await()
+
+            val clearToken = gate.beginClear()
+            gate.runClear(clearToken) {
+                taskStore.clearAllTasks()
+            }
+            continueRecovery.complete(Unit)
+
+            assertFalse(recovery.await())
+            assertTrue(taskStore.currentTasks().isEmpty())
+
+            // 清空完成后，新请求仍应取得新票据并正常建卡
+            val freshTicket = requireNotNull(gate.openTicketOrNull())
+            assertTrue(
+                gate.admit(freshTicket) {
+                    taskStore.ensureDownloadTasks(listOf(song))
+                }
+            )
+            assertEquals(1, taskStore.currentTasks().size)
         } finally {
             taskScope.cancel()
         }

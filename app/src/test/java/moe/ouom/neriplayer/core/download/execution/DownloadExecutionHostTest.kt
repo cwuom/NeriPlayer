@@ -6,23 +6,25 @@ import android.os.Build
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.ListenableWorker
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import moe.ouom.neriplayer.data.traffic.TrafficNetworkType
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
+import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.mock
+import org.mockito.Answers
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyString
-import org.junit.Test
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 
 class DownloadExecutionHostTest {
     @Test
@@ -304,6 +306,49 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `pump scans past a UIDT grace blocked first page`() = runTest {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal()
+        val store = DownloadExecutionOperationStore { journal }
+        val graceRequests = (1..64).map { index ->
+            DownloadExecutionRequest(
+                operationId = "operation-pump-grace-$index",
+                song = sampleSong().copy(id = 10_000L + index)
+            )
+        }
+        val runnableRequest = DownloadExecutionRequest(
+            operationId = "operation-pump-page-two",
+            song = sampleSong().copy(id = 20_000L)
+        )
+        (graceRequests + runnableRequest).forEach { request ->
+            store.save(context, request)
+        }
+        val graceOperationIds = graceRequests.mapTo(mutableSetOf()) { request ->
+            request.operationId
+        }
+        val executedOperationIds = mutableListOf<String>()
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            entryPoint = DownloadOperationEntryPoint { _, request ->
+                executedOperationIds += request.operationId
+                DownloadExecutionResult.Accepted
+            },
+            sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
+            downloadParallelismProvider = { 1 },
+            pendingUidtGraceDelayProvider = { _, request ->
+                if (request.operationId in graceOperationIds) 1L else 0L
+            }
+        )
+
+        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals(listOf(runnableRequest.operationId), executedOperationIds)
+        assertEquals(
+            "COMPLETED",
+            store.currentState(context, runnableRequest.operationId)
+        )
+    }
+
+    @Test
     fun `download notification ids are stable and partitioned per backend`() {
         val firstOperation = "operation-notification-01"
         val secondOperation = "operation-notification-02"
@@ -490,54 +535,93 @@ class DownloadExecutionHostTest {
     }
 
     @Test
-    fun `successful UIDT keeps its unique fallback until the job starts`() {
+    fun `API 34 retires every legacy per operation work`() {
+        assertTrue(
+            shouldRetireLegacyPerOperationWork(
+                hasOperationId = true,
+                sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            )
+        )
+        assertFalse(
+            shouldRetireLegacyPerOperationWork(
+                hasOperationId = false,
+                sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            )
+        )
+        assertFalse(
+            shouldRetireLegacyPerOperationWork(
+                hasOperationId = true,
+                sdkInt = Build.VERSION_CODES.TIRAMISU
+            )
+        )
+    }
+
+    @Test
+    fun `API 34 routes new fallback requests to the shared pump`() {
+        assertTrue(
+            shouldRouteFallbackToSharedPump(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        )
+        assertTrue(
+            shouldRouteFallbackToSharedPump(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+        )
+        assertFalse(shouldRouteFallbackToSharedPump(Build.VERSION_CODES.TIRAMISU))
+    }
+
+    @Test
+    fun `successful UIDT arms one shared pump after the UIDT request`() {
         val actions = mutableListOf<String>()
 
-        val scheduled = scheduleUidtKeepingFallback(
-            scheduleFallback = { actions += "fallback" },
+        val scheduled = scheduleUidtWithSharedPump(
             scheduleUidt = {
                 actions += "uidt"
                 true
             },
-            cancelFallback = { actions += "cancel" }
+            scheduleSharedPump = {
+                actions += "pump"
+                true
+            }
         )
 
         assertTrue(scheduled)
-        assertEquals(listOf("fallback", "uidt"), actions)
+        assertEquals(listOf("uidt", "pump"), actions)
     }
 
     @Test
-    fun `rejected UIDT removes its armed fallback`() {
+    fun `rejected UIDT does not create a per operation fallback`() {
         val actions = mutableListOf<String>()
 
-        val scheduled = scheduleUidtKeepingFallback(
-            scheduleFallback = { actions += "fallback" },
+        val scheduled = scheduleUidtWithSharedPump(
             scheduleUidt = {
                 actions += "uidt"
                 false
             },
-            cancelFallback = { actions += "cancel" }
+            scheduleSharedPump = {
+                actions += "pump"
+                true
+            }
         )
 
         assertFalse(scheduled)
-        assertEquals(listOf("fallback", "uidt", "cancel"), actions)
+        assertEquals(listOf("uidt"), actions)
     }
 
     @Test
-    fun `temporary UIDT scheduling failure keeps fallback armed`() {
+    fun `temporary UIDT scheduling failure does not create a per operation fallback`() {
         val actions = mutableListOf<String>()
 
-        val scheduled = scheduleUidtKeepingFallback(
-            scheduleFallback = { actions += "fallback" },
+        val scheduled = scheduleUidtWithSharedPump(
             scheduleUidt = {
                 actions += "uidt"
                 error("binder unavailable")
             },
-            cancelFallback = { actions += "cancel" }
+            scheduleSharedPump = {
+                actions += "pump"
+                true
+            }
         )
 
         assertFalse(scheduled)
-        assertEquals(listOf("fallback", "uidt"), actions)
+        assertEquals(listOf("uidt"), actions)
     }
 
     @Test
@@ -1025,6 +1109,30 @@ class DownloadExecutionHostTest {
     }
 
     @Test
+    fun `host stop holds the scheduling permit through retry queue persistence`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionHost.kt"
+        ).readText()
+        val stopBody = source.substringAfter("private fun stopInternal(")
+            .substringBefore("private fun cancelExecutionBackends")
+
+        val permitIndex = stopBody.indexOf(
+            "PersistentDownloadClearFenceStore.withSchedulingPermit("
+        )
+        val fenceCancellationIndex = stopBody.indexOf("cancel(appContext, normalizedId)")
+        val stateIndex = stopBody.indexOf("operationStore.updateState(")
+        val queueStopIndex = stopBody.indexOf(
+            "GlobalDownloadManager.stopDownloadOperation("
+        )
+
+        assertTrue(permitIndex >= 0)
+        assertTrue(fenceCancellationIndex > permitIndex)
+        assertTrue(stateIndex > permitIndex)
+        assertTrue(queueStopIndex > stateIndex)
+    }
+
+    @Test
     fun `fallback retries while a system stopped UIDT execution is unwinding`() {
         assertEquals(
             DownloadExecutionResult.Retry,
@@ -1147,8 +1255,10 @@ class DownloadExecutionHostTest {
         return mock(Context::class.java).also { context ->
             `when`(context.applicationContext).thenReturn(context)
             val preferences = mock(SharedPreferences::class.java)
+            val editor = mock(SharedPreferences.Editor::class.java, Answers.RETURNS_SELF)
             `when`(context.getSharedPreferences(anyString(), anyInt())).thenReturn(preferences)
             `when`(preferences.getBoolean(anyString(), anyBoolean())).thenReturn(activeClearFence)
+            `when`(preferences.edit()).thenReturn(editor)
         }
     }
 
@@ -1162,6 +1272,16 @@ class DownloadExecutionHostTest {
             durationMs = 1234L,
             coverUrl = null
         )
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        repeat(6) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: return@repeat
+        }
+        error("project source file not found: $path")
     }
 
 }

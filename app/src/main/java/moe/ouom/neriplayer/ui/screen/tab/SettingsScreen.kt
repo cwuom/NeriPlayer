@@ -270,6 +270,7 @@ import kotlin.math.roundToInt
 
 internal const val DOWNLOAD_DIRECTORY_PREFLIGHT_TIMEOUT_MS = 3_000L
 private const val MIGRATION_CHECKPOINT_RETRY_DELAY_MS = 1_000L
+private const val MIGRATION_SNAPSHOT_READ_RETRY_LIMIT = 3
 
 private val downloadDirectoryPreflightScope =
     CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -395,6 +396,28 @@ private data class PersistedMigrationUiSnapshot(
             checkpointReadFailed = checkpointReadFailed
         )
 }
+
+private data class PersistedMigrationSnapshotApplyResult(
+    val preservedUi: Boolean,
+    val attemptedAutoResume: Boolean
+)
+
+internal fun shouldRetryMigrationSnapshotRead(
+    consecutiveFailures: Int,
+    retryLimit: Int = MIGRATION_SNAPSHOT_READ_RETRY_LIMIT
+): Boolean = consecutiveFailures < retryLimit
+
+internal fun shouldAttemptMigrationAutoResume(
+    shouldResume: Boolean,
+    autoResumeAttempted: Boolean
+): Boolean = shouldResume && !autoResumeAttempted
+
+internal fun shouldStopMigrationRecoveryAfterNoProgress(
+    shouldPreserveUi: Boolean,
+    needsRecovery: Boolean,
+    snapshotChanged: Boolean,
+    autoResumeAttempted: Boolean
+): Boolean = shouldPreserveUi && needsRecovery && autoResumeAttempted && !snapshotChanged
 
 /** 同时读取 WorkManager 和持久检查点，避免缺少任务行时抹掉界面状态 */
 private fun readPersistedMigrationUiSnapshot(context: Context): PersistedMigrationUiSnapshot {
@@ -2905,6 +2928,7 @@ private fun rememberDownloadDirectorySettingsController(
     val persistedMigrationProgressState = remember {
         mutableStateOf<ManagedDownloadStorage.MigrationProgress?>(null)
     }
+    val migrationAutoResumeAttemptedState = rememberSaveable { mutableStateOf(false) }
     val migrationProgressState = ManagedDownloadStorage.migrationProgressFlow.collectAsState()
     val libraryProcessingState = ManagedLibraryProcessingCoordinator.state.collectAsState()
     val hasActiveDownloadOperationsState =
@@ -2943,19 +2967,30 @@ private fun rememberDownloadDirectorySettingsController(
     var permissionLost by permissionLostState
     var activeMigrationWorkId by activeMigrationWorkIdState
     var persistedMigrationProgress by persistedMigrationProgressState
+    var migrationAutoResumeAttempted by migrationAutoResumeAttemptedState
     var currentSummary by currentSummaryState
+
+    fun clearPersistedMigrationUi() {
+        // 这里只清理设置页状态，保留 checkpoint 和 journal 供后台恢复
+        persistedMigrationProgress = null
+        isMigrating = false
+        activeMigrationWorkId = null
+        migrationAutoResumeAttempted = false
+    }
 
     suspend fun applyPersistedMigrationSnapshot(
         snapshot: PersistedMigrationUiSnapshot,
-        fallbackProgress: ManagedDownloadStorage.MigrationProgress? = null
-    ): Boolean {
+        fallbackProgress: ManagedDownloadStorage.MigrationProgress? = null,
+        autoResumeAttempted: Boolean
+    ): PersistedMigrationSnapshotApplyResult {
         val shouldPreserveUi = snapshot.shouldPreserveUi
         if (!shouldPreserveUi) {
             // 终态请求不再保留旧进度，避免冷启动残留迁移弹窗
-            persistedMigrationProgress = null
-            isMigrating = false
-            activeMigrationWorkId = null
-            return false
+            clearPersistedMigrationUi()
+            return PersistedMigrationSnapshotApplyResult(
+                preservedUi = false,
+                attemptedAutoResume = false
+            )
         }
         val restoredProgress = snapshot.progress
             ?: fallbackProgress
@@ -2966,7 +3001,10 @@ private fun rememberDownloadDirectorySettingsController(
         if (activeWorkId != null && activeWorkState != null && !activeWorkState.isFinished) {
             activeMigrationWorkId = activeWorkId
             isMigrating = true
-            return true
+            return PersistedMigrationSnapshotApplyResult(
+                preservedUi = true,
+                attemptedAutoResume = false
+            )
         }
         if (
             isMigrating ||
@@ -2982,7 +3020,20 @@ private fun rememberDownloadDirectorySettingsController(
                 "ManagedDownloadMigrationSettings",
                 "迁移 checkpoint 读取暂不可恢复，保留进度等待下次检查"
             )
-            return true
+            return PersistedMigrationSnapshotApplyResult(
+                preservedUi = true,
+                attemptedAutoResume = false
+            )
+        }
+        if (!shouldAttemptMigrationAutoResume(snapshot.shouldResume, autoResumeAttempted)) {
+            NPLogger.w(
+                "ManagedDownloadMigrationSettings",
+                "迁移持久请求自动恢复预算已用尽，停止设置页轮询"
+            )
+            return PersistedMigrationSnapshotApplyResult(
+                preservedUi = true,
+                attemptedAutoResume = false
+            )
         }
         val resumedWorkId = runCatching {
             ManagedDownloadMigrationWorker.resumePersistedRequestIfNeeded(context)
@@ -2996,7 +3047,10 @@ private fun rememberDownloadDirectorySettingsController(
         if (resumedWorkId != null) {
             activeMigrationWorkId = resumedWorkId
         }
-        return true
+        return PersistedMigrationSnapshotApplyResult(
+            preservedUi = true,
+            attemptedAutoResume = true
+        )
     }
 
     LaunchedEffect(downloadDirectoryUri) {
@@ -3007,6 +3061,8 @@ private fun rememberDownloadDirectorySettingsController(
     }
 
     LaunchedEffect(Unit) {
+        var consecutiveSnapshotReadFailures = 0
+        var previousSnapshot: PersistedMigrationUiSnapshot? = null
         while (true) {
             val snapshot = withContext(Dispatchers.IO) {
                 runCatching { readPersistedMigrationUiSnapshot(context) }
@@ -3021,15 +3077,48 @@ private fun rememberDownloadDirectorySettingsController(
                     .getOrNull()
             }
             if (snapshot == null) {
+                consecutiveSnapshotReadFailures++
+                if (!shouldRetryMigrationSnapshotRead(consecutiveSnapshotReadFailures)) {
+                    clearPersistedMigrationUi()
+                    break
+                }
                 delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
                 continue
             }
-            applyPersistedMigrationSnapshot(snapshot)
+            consecutiveSnapshotReadFailures = if (snapshot.checkpointReadFailed) {
+                consecutiveSnapshotReadFailures + 1
+            } else {
+                0
+            }
+            if (!shouldRetryMigrationSnapshotRead(consecutiveSnapshotReadFailures)) {
+                clearPersistedMigrationUi()
+                break
+            }
+            val snapshotChanged = previousSnapshot == null || previousSnapshot != snapshot
+            val applyResult = applyPersistedMigrationSnapshot(
+                snapshot = snapshot,
+                autoResumeAttempted = migrationAutoResumeAttempted
+            )
+            migrationAutoResumeAttempted =
+                migrationAutoResumeAttempted || applyResult.attemptedAutoResume
+            if (!applyResult.preservedUi) break
             if (
                 snapshot.activeWorkId == null &&
                     activeMigrationWorkId == null &&
                     (snapshot.shouldResume || snapshot.checkpointReadFailed)
             ) {
+                if (
+                    shouldStopMigrationRecoveryAfterNoProgress(
+                        shouldPreserveUi = snapshot.shouldPreserveUi,
+                        needsRecovery = snapshot.shouldResume || snapshot.checkpointReadFailed,
+                        snapshotChanged = snapshotChanged,
+                        autoResumeAttempted = migrationAutoResumeAttempted
+                    )
+                ) {
+                    clearPersistedMigrationUi()
+                    break
+                }
+                previousSnapshot = snapshot
                 delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
                 continue
             }
@@ -3039,6 +3128,8 @@ private fun rememberDownloadDirectorySettingsController(
 
     LaunchedEffect(activeMigrationWorkId) {
         val workId = activeMigrationWorkId ?: return@LaunchedEffect
+        var consecutiveSnapshotReadFailures = 0
+        var previousSnapshot: PersistedMigrationUiSnapshot? = null
         while (true) {
             val workInfo = withContext(Dispatchers.IO) {
                 runCatching {
@@ -3060,23 +3151,56 @@ private fun rememberDownloadDirectorySettingsController(
                         .getOrNull()
                 }
                 if (durableSnapshot == null) {
+                    consecutiveSnapshotReadFailures++
+                    if (!shouldRetryMigrationSnapshotRead(consecutiveSnapshotReadFailures)) {
+                        clearPersistedMigrationUi()
+                        break
+                    }
                     delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
                     continue
                 }
+                consecutiveSnapshotReadFailures = if (durableSnapshot.checkpointReadFailed) {
+                    consecutiveSnapshotReadFailures + 1
+                } else {
+                    0
+                }
+                if (!shouldRetryMigrationSnapshotRead(consecutiveSnapshotReadFailures)) {
+                    clearPersistedMigrationUi()
+                    break
+                }
                 if (durableSnapshot.shouldPreserveUi) {
                     val previousWorkId = activeMigrationWorkId
-                    applyPersistedMigrationSnapshot(
+                    val snapshotChanged =
+                        previousSnapshot == null || previousSnapshot != durableSnapshot
+                    val applyResult = applyPersistedMigrationSnapshot(
                         snapshot = durableSnapshot,
                         fallbackProgress = workInfo?.let {
                             migrationProgressFromWorkData(it.progress)
-                        }
+                        },
+                        autoResumeAttempted = migrationAutoResumeAttempted
                     )
+                    migrationAutoResumeAttempted =
+                        migrationAutoResumeAttempted || applyResult.attemptedAutoResume
+                    if (!applyResult.preservedUi) break
                     if (
                         durableSnapshot.activeWorkId == null &&
                             activeMigrationWorkId == previousWorkId &&
                             (durableSnapshot.shouldResume ||
                                 durableSnapshot.checkpointReadFailed)
                     ) {
+                        if (
+                            shouldStopMigrationRecoveryAfterNoProgress(
+                                shouldPreserveUi = durableSnapshot.shouldPreserveUi,
+                                needsRecovery = durableSnapshot.shouldResume ||
+                                    durableSnapshot.checkpointReadFailed,
+                                snapshotChanged = snapshotChanged,
+                                autoResumeAttempted = migrationAutoResumeAttempted
+                            )
+                        ) {
+                            clearPersistedMigrationUi()
+                            break
+                        }
+                        previousSnapshot = durableSnapshot
                         delay(MIGRATION_CHECKPOINT_RETRY_DELAY_MS)
                         continue
                     }
@@ -3084,9 +3208,7 @@ private fun rememberDownloadDirectorySettingsController(
                 }
             }
             if (workInfo == null) {
-                persistedMigrationProgress = null
-                isMigrating = false
-                activeMigrationWorkId = null
+                clearPersistedMigrationUi()
                 onInlineMessageChange(
                     resources.getQuantityString(
                         R.plurals.settings_download_directory_migrate_failed,
@@ -3138,6 +3260,7 @@ private fun rememberDownloadDirectorySettingsController(
             }
             persistedMigrationProgress = null
             activeMigrationWorkId = null
+            migrationAutoResumeAttempted = false
             break
         }
     }
@@ -3619,6 +3742,7 @@ private fun rememberDownloadDirectorySettingsController(
                 pendingChange = null
             } else {
                 pendingChange = null
+                migrationAutoResumeAttempted = false
                 isMigrating = true
                 scope.launch {
                     runCatching {

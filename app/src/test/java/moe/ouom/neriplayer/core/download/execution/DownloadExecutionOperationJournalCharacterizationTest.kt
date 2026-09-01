@@ -305,6 +305,7 @@ class DownloadExecutionOperationJournalCharacterizationTest {
 
 internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOperationJournal {
     private val entries = linkedMapOf<String, DownloadExecutionJournalEntry>()
+    private var nextQueueOrder = 0
     var afterStateUpdate: ((String, String) -> Unit)? = null
     var hostAdmissionAllowed: Boolean = true
     var hostAdmissionAcquireCount: Int = 0
@@ -312,7 +313,12 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     var hostAdmissionReleaseCount: Int = 0
 
     override fun save(context: Context, request: DownloadExecutionRequest) {
-        entries[request.operationId] = DownloadExecutionJournalEntry(request, "QUEUED")
+        val queueOrder = entries[request.operationId]?.queueOrder ?: nextQueueOrder++
+        entries[request.operationId] = DownloadExecutionJournalEntry(
+            request = request,
+            state = "QUEUED",
+            queueOrder = queueOrder
+        )
     }
 
     override fun read(context: Context, operationId: String): DownloadExecutionRequest? =
@@ -336,18 +342,37 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
             .map { it.request.song.stableKey() }
             .toSet()
 
-    override fun listSchedulableForPump(
+    override fun listSchedulableForPumpPage(
         context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
         limit: Int
-    ): List<DownloadExecutionRequest> {
-        return entries.values
+    ): DownloadExecutionPumpPage {
+        val boundedLimit = limit.coerceAtLeast(0)
+        val page = entries.values
             .filter { entry ->
                 !entry.userStopped &&
                     entry.state in DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
             }
-            .sortedWith(compareBy({ it.updatedAtMs }, { it.request.operationId }))
-            .take(limit.coerceAtLeast(0))
-            .map { entry -> entry.request }
+            .filter { entry -> entry.isAfter(afterCursor) }
+            .sortedWith(
+                compareBy<DownloadExecutionJournalEntry> { it.queueOrder }
+                    .thenBy { it.updatedAtMs }
+                    .thenBy { it.request.operationId }
+            )
+            .take(boundedLimit)
+        val nextCursor = page.lastOrNull()
+            ?.takeIf { page.size == boundedLimit }
+            ?.let { entry ->
+                DownloadExecutionPumpCursor(
+                    queueOrder = entry.queueOrder,
+                    updatedAtMs = entry.updatedAtMs,
+                    operationId = entry.request.operationId
+                )
+            }
+        return DownloadExecutionPumpPage(
+            requests = page.map(DownloadExecutionJournalEntry::request),
+            nextCursor = nextCursor
+        )
     }
 
     override fun findOperationIdForSong(context: Context, songKey: String): String? =
@@ -454,8 +479,18 @@ private data class DownloadExecutionJournalEntry(
     val request: DownloadExecutionRequest,
     val state: String,
     val userStopped: Boolean = false,
-    val updatedAtMs: Long = 0L
-)
+    val updatedAtMs: Long = 0L,
+    val queueOrder: Int = 0
+) {
+    fun isAfter(cursor: DownloadExecutionPumpCursor?): Boolean {
+        if (cursor == null) return true
+        return when {
+            queueOrder != cursor.queueOrder -> queueOrder > cursor.queueOrder
+            updatedAtMs != cursor.updatedAtMs -> updatedAtMs > cursor.updatedAtMs
+            else -> request.operationId > cursor.operationId
+        }
+    }
+}
 
 internal object SongItemFixtures {
     fun sampleSong() = SongItem(

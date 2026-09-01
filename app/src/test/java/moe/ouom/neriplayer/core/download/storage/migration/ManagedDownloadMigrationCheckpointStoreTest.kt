@@ -771,6 +771,74 @@ class ManagedDownloadMigrationCheckpointStoreTest {
     }
 
     @Test
+    fun `conditional request write refuses a stale full request snapshot`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val current = ManagedMigrationRequest(
+            workId = "current-work",
+            fromDirectoryUri = "content://source",
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 2,
+            retryAttemptOffset = 1
+        )
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        store.recordRequest(current)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        clearInvocations(editor)
+        `when`(preferences.getString(key, null)).thenReturn(payloadCaptor.value)
+
+        assertFalse(
+            store.recordRequestIfCurrent(
+                expectedWorkId = current.workId,
+                expectedRequest = current.copy(retryAttemptOffset = 0),
+                request = current.copy(workId = "replacement-work")
+            )
+        )
+        verify(editor, never()).putString(eq(key), anyString())
+    }
+
+    @Test
+    fun `conditional request write never reopens a terminal snapshot`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val terminal = ManagedMigrationRequest(
+            workId = "terminal-work",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 1,
+            autoResume = false
+        )
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        store.recordRequest(terminal)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        clearInvocations(editor)
+        `when`(preferences.getString(key, null)).thenReturn(payloadCaptor.value)
+
+        assertFalse(
+            store.recordRequestIfCurrent(
+                expectedWorkId = terminal.workId,
+                expectedRequest = terminal,
+                request = terminal.copy(autoResume = true)
+            )
+        )
+        verify(editor, never()).putString(eq(key), anyString())
+    }
+
+    @Test
     fun `conditional request write accepts equivalent work id casing and whitespace`() {
         val preferences = mock(SharedPreferences::class.java)
         val editor = mock(SharedPreferences.Editor::class.java)
@@ -858,6 +926,41 @@ class ManagedDownloadMigrationCheckpointStoreTest {
         verify(editor).putString(eq(key), payloadCaptor.capture())
         assertTrue(JSONObject(payloadCaptor.value).getBoolean("autoResume"))
         assertEquals(3, JSONObject(payloadCaptor.value).getInt("minimumSourceEntryCount"))
+    }
+
+    @Test
+    fun `retryable update keeps the greatest persistent retry offset`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val editor = mock(SharedPreferences.Editor::class.java)
+        val key = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val request = ManagedMigrationRequest(
+            workId = "retry-offset-work",
+            fromDirectoryUri = null,
+            toDirectoryUri = "content://target",
+            targetLabel = "target",
+            releasePreviousPermission = false,
+            minimumSourceEntryCount = 0,
+            retryAttemptOffset = 3
+        )
+        `when`(preferences.edit()).thenReturn(editor)
+        `when`(editor.putString(eq(key), anyString())).thenReturn(editor)
+        `when`(editor.commit()).thenReturn(true)
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+        store.recordRequest(request)
+        val payloadCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        clearInvocations(editor)
+        `when`(preferences.getString(key, null)).thenReturn(payloadCaptor.value)
+
+        assertTrue(
+            store.markRequestRetryable(
+                workId = request.workId,
+                retryAttemptOffset = 1
+            )
+        )
+
+        verify(editor).putString(eq(key), payloadCaptor.capture())
+        assertEquals(3, JSONObject(payloadCaptor.allValues.last()).getInt("retryAttemptOffset"))
     }
 
     @Test

@@ -90,6 +90,24 @@ class ManagedDownloadDirectoryMutationFenceTest {
     }
 
     @Test
+    fun `migration waits for startup recovery lease before draining`() = runTest {
+        val gate = ManagedDownloadDirectoryMutationGate()
+        val recovery = requireNotNull(gate.tryAcquireDownloadLease())
+
+        val mutation = async { gate.closeAndDrain() }
+        runCurrent()
+
+        assertTrue(gate.isClosed())
+        assertFalse(mutation.isCompleted)
+
+        recovery.close()
+        val mutationLease = mutation.await()
+        mutationLease.close()
+
+        assertFalse(gate.isClosed())
+    }
+
+    @Test
     fun `cancelled migration drain reopens admission without leaking the mutex`() = runTest {
         val gate = ManagedDownloadDirectoryMutationGate()
         val oldCommit = requireNotNull(gate.tryAcquireDownloadLease())

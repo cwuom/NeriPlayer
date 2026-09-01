@@ -144,11 +144,23 @@ internal interface DownloadOperationDao {
     @Query(
         "SELECT * FROM download_operation " +
             "WHERE state IN (:states) AND stop_requested_by_user = 0 " +
+            "AND (" +
+            ":afterQueueOrder IS NULL " +
+            "OR queue_order > :afterQueueOrder " +
+            "OR (queue_order = :afterQueueOrder " +
+            "AND updated_at_ms > :afterUpdatedAtMs) " +
+            "OR (queue_order = :afterQueueOrder " +
+            "AND updated_at_ms = :afterUpdatedAtMs " +
+            "AND operation_id > :afterOperationId)" +
+            ") " +
             "ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC " +
             "LIMIT :limit"
     )
-    suspend fun findSchedulableForPump(
+    suspend fun findSchedulableForPumpAfterCursor(
         states: List<String>,
+        afterQueueOrder: Int?,
+        afterUpdatedAtMs: Long?,
+        afterOperationId: String?,
         limit: Int
     ): List<DownloadOperationEntity>
 
@@ -355,8 +367,12 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
-        "UPDATE download_operation SET bytes_written = :bytesWritten, " +
-            "total_bytes = :totalBytes WHERE operation_id = :operationId " +
+        "UPDATE download_operation SET bytes_written = MAX(bytes_written, :bytesWritten), " +
+            "total_bytes = CASE " +
+            "WHEN :totalBytes IS NULL OR :totalBytes <= 0 THEN total_bytes " +
+            "WHEN total_bytes IS NULL OR total_bytes <= 0 THEN :totalBytes " +
+            "WHEN :totalBytes > total_bytes THEN :totalBytes ELSE total_bytes END " +
+            "WHERE operation_id = :operationId " +
             "AND library_id = :libraryId AND stable_key = :stableKey " +
             "AND state IN (:expectedStates) AND stop_requested_by_user = 0"
     )
@@ -370,8 +386,12 @@ internal interface DownloadOperationDao {
     ): Int
 
     @Query(
-        "UPDATE download_operation SET bytes_written = :bytesWritten, " +
-            "total_bytes = :totalBytes WHERE operation_id = :operationId " +
+        "UPDATE download_operation SET bytes_written = MAX(bytes_written, :bytesWritten), " +
+            "total_bytes = CASE " +
+            "WHEN :totalBytes IS NULL OR :totalBytes <= 0 THEN total_bytes " +
+            "WHEN total_bytes IS NULL OR total_bytes <= 0 THEN :totalBytes " +
+            "WHEN :totalBytes > total_bytes THEN :totalBytes ELSE total_bytes END " +
+            "WHERE operation_id = :operationId " +
             "AND stable_key = :stableKey AND state IN (:expectedStates) " +
             "AND stop_requested_by_user = 0"
     )

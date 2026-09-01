@@ -619,8 +619,8 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
     }
 
     @Test
-    fun `startup force recovery bypasses stale backoff without changing normal policy`() {
-        assertTrue(
+    fun `startup force recovery still respects an exhausted retry budget`() {
+        assertFalse(
             shouldRearmMigrationWorkOnStartup(
                 state = androidx.work.WorkInfo.State.ENQUEUED,
                 runAttemptCount = 0,
@@ -646,6 +646,51 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertEquals(2, migrationRetryAttemptCount(1, 1))
         assertTrue(shouldRetryMigrationAttempt(runAttemptCount = 1, maxRetryAttempts = 2))
         assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 2, maxRetryAttempts = 2))
+    }
+
+    @Test
+    fun `startup rearm refuses an exhausted persisted budget even when forced`() {
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 0,
+                retryAttemptOffset = 2,
+                maxRetryAttempts = 2,
+                forceRecovery = true
+            )
+        )
+    }
+
+    @Test
+    fun `replacement attempts accumulate the active work run count`() {
+        assertEquals(4, migrationRetryAttemptCount(2, 2))
+        assertFalse(shouldRetryMigrationAttempt(runAttemptCount = 4, maxRetryAttempts = 2))
+    }
+
+    @Test
+    fun `startup replacement consumes one budget even before work starts`() {
+        assertEquals(1, migrationRetryAttemptCountAfterReplacement(0, 0))
+        assertEquals(2, migrationRetryAttemptCountAfterReplacement(1, 0))
+        assertEquals(1, migrationRetryAttemptCountAfterReplacement(0, 1))
+        assertEquals(2, migrationRetryAttemptCountAfterReplacement(1, 1))
+    }
+
+    @Test
+    fun `repeated startup replacements stop after the persisted budget`() {
+        val firstReplacement = migrationRetryAttemptCountAfterReplacement(0, 0)
+        val secondReplacement = migrationRetryAttemptCountAfterReplacement(firstReplacement, 0)
+
+        assertEquals(1, firstReplacement)
+        assertEquals(2, secondReplacement)
+        assertFalse(
+            shouldRearmMigrationWorkOnStartup(
+                state = androidx.work.WorkInfo.State.ENQUEUED,
+                runAttemptCount = 0,
+                retryAttemptOffset = secondReplacement,
+                maxRetryAttempts = 2,
+                forceRecovery = true
+            )
+        )
     }
 
     @Test
@@ -760,9 +805,23 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         assertTrue(deferredBody.contains("val retry = shouldRetryMigrationAttempt("))
         assertTrue(deferredBody.contains("withContext(NonCancellable)"))
         assertTrue(deferredBody.contains("markRequestRetryable"))
-        assertTrue(deferredBody.contains("markRequestTerminal"))
+        assertTrue(deferredBody.contains("markTerminalRequestAndCompleteProcessing("))
         assertTrue(deferredBody.contains("Result.retry()"))
         assertTrue(deferredBody.contains("Result.failure("))
+    }
+
+    @Test
+    fun `all early retry exits use the bounded helper`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val body = source.substringAfter("class ManagedDownloadMigrationWorker(")
+        assertTrue(body.contains("retryOrTerminateMigrationWork("))
+        assertTrue(body.contains("迁移进度会话持续被占用"))
+        assertTrue(body.contains("下载清空仍在进行"))
+        assertTrue(body.contains("媒体库正在处理其他任务"))
+        assertTrue(body.contains("下载清空持续进行"))
     }
 
     @Test
@@ -781,8 +840,8 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
         val genericBody = body.substring(genericCatch, finallyBlock)
         val nonCancellable = genericBody.indexOf("withContext(NonCancellable)")
         val transition = genericBody.indexOf("transitionProcessingState(")
-        val terminalPersistence = genericBody.indexOf(
-            "checkpointStore.markRequestTerminal(migrationWorkId)"
+        val terminalHandling = genericBody.indexOf(
+            "markTerminalRequestAndCompleteProcessing("
         )
         val retryPersistence = genericBody.indexOf(
             "checkpointStore.markRequestRetryable(migrationWorkId)"
@@ -790,12 +849,12 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
 
         assertTrue(nonCancellable >= 0)
         assertTrue(transition > nonCancellable)
-        assertTrue(terminalPersistence > nonCancellable)
+        assertTrue(terminalHandling > nonCancellable)
         assertTrue(retryPersistence < 0)
     }
 
     @Test
-    fun `all terminal migration failure exits disable automatic recovery`() {
+    fun `all terminal migration failure exits use the ordered terminal helper`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
                 "ManagedDownloadMigrationWorker.kt"
@@ -804,8 +863,8 @@ class ManagedDownloadMigrationWorkerProgressPolicyTest {
             .substringBefore("private fun isPendingArtifactPreflightFailure")
 
         assertEquals(
-            6,
-            Regex("checkpointStore\\.markRequestTerminal\\(migrationWorkId\\)")
+            9,
+            Regex("markTerminalRequestAndCompleteProcessing\\(")
                 .findAll(body)
                 .count()
         )

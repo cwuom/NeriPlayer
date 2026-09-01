@@ -289,6 +289,23 @@ internal fun restoreManagedLibraryProcessingState(
     }
 }
 
+/**
+ * 终态迁移的请求和界面状态分开提交时，进程终止可能只留下旧的等待横幅
+ */
+internal fun shouldCompleteOrphanedTerminalDirectoryChange(
+    current: ManagedLibraryProcessingState,
+    expectedOperationId: String?,
+    requestAutoResume: Boolean,
+    activeMigrationWorkPresent: Boolean?
+): Boolean {
+    val expectedId = expectedOperationId?.trim()?.takeIf(String::isNotBlank) ?: return false
+    return !requestAutoResume &&
+        activeMigrationWorkPresent == false &&
+        current is ManagedLibraryProcessingState.WaitingForRetry &&
+        current.reason == ManagedLibraryProcessingReason.DIRECTORY_CHANGE &&
+        current.operationId == expectedId
+}
+
 internal fun describeManagedLibraryProcessingBusy(
     state: ManagedLibraryProcessingState,
     requestedReason: ManagedLibraryProcessingReason? = null
@@ -527,6 +544,33 @@ object ManagedLibraryProcessingCoordinator {
             lastProgressPersistedAtMs = 0L
             lastProgressPersisted = null
         }
+    }
+
+    /**
+     * 只清理由已终态迁移留下且没有活动 Worker 的目录等待状态
+     */
+    suspend fun completeOrphanedTerminalDirectoryChange(
+        context: Context,
+        expectedOperationId: String?,
+        requestAutoResume: Boolean,
+        activeMigrationWorkPresent: Boolean?
+    ): Boolean = mutex.withLock {
+        persistenceContext = context.applicationContext
+        val current = mutableState.value
+        if (!shouldCompleteOrphanedTerminalDirectoryChange(
+                current = current,
+                expectedOperationId = expectedOperationId,
+                requestAutoResume = requestAutoResume,
+                activeMigrationWorkPresent = activeMigrationWorkPresent
+            )
+        ) {
+            return@withLock false
+        }
+        val next = ManagedLibraryProcessingState.Idle
+        persist(context.applicationContext, next)
+        mutableState.value = next
+        resetProgressPersistence(next)
+        true
     }
 
     @SuppressLint("UseKtx", "ApplySharedPref")

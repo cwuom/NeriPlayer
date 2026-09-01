@@ -11,6 +11,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.anyString
 import org.mockito.Mockito.eq
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import java.io.File
 
@@ -126,6 +127,7 @@ class ManagedDownloadMigrationTerminalRecoveryContractTest {
                 .count() == 3
         )
         assertTrue(body.contains("expectedAutoResume = persisted?.autoResume"))
+        assertTrue(body.contains("expectedRequest = persisted"))
     }
 
     @Test
@@ -138,6 +140,7 @@ class ManagedDownloadMigrationTerminalRecoveryContractTest {
             .substringBefore("private fun isPendingArtifactPreflightFailure")
 
         assertTrue(body.contains("expectedAutoResume = persistedRequestAtStart?.autoResume"))
+        assertTrue(body.contains("expectedRequest = persistedRequestAtStart"))
         assertTrue(body.contains("shouldAbortTerminalMigrationWorker"))
     }
 
@@ -163,6 +166,118 @@ class ManagedDownloadMigrationTerminalRecoveryContractTest {
             .substringBefore("@SuppressLint(\"UseKtx\")\n    fun clearRequest")
 
         assertTrue(body.contains("if (!current.autoResume) return@synchronized false"))
+    }
+
+    @Test
+    fun `stale terminal marker cannot update a replacement request`() {
+        val preferences = mock(SharedPreferences::class.java)
+        val requestKey = ManagedDownloadMigrationCheckpointStore.ACTIVE_REQUEST_KEY
+        val replacement = terminalRequest().copy(
+            workId = "replacement-work",
+            autoResume = true
+        )
+        `when`(preferences.getString(requestKey, null)).thenReturn(
+            JSONObject().apply {
+                put(
+                    "version",
+                    ManagedDownloadMigrationCheckpointStore.CURRENT_MIGRATION_REQUEST_VERSION
+                )
+                put("workId", replacement.workId)
+                put("fromDirectoryUri", replacement.fromDirectoryUri)
+                put("toDirectoryUri", replacement.toDirectoryUri)
+                put("targetLabel", replacement.targetLabel)
+                put("releasePreviousPermission", replacement.releasePreviousPermission)
+                put("minimumSourceEntryCount", replacement.minimumSourceEntryCount)
+                put("autoResume", replacement.autoResume)
+            }.toString()
+        )
+
+        val store = ManagedDownloadMigrationCheckpointStore(preferences)
+
+        assertFalse(store.markRequestTerminal("old-work"))
+        verify(preferences, never()).edit()
+    }
+
+    @Test
+    fun `terminal checkpoint is persisted before processing completion`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val helperBody = source.substringAfter(
+            "private suspend fun markTerminalRequestAndCompleteProcessing"
+        ).substringBefore("private suspend fun transitionProcessingState")
+        val terminalWrite = helperBody.indexOf("checkpointStore.markRequestTerminal(migrationWorkId)")
+        val rejectedWrite = helperBody.indexOf("if (!terminalMarked)")
+        val stateCompletion = helperBody.indexOf("transitionProcessingState(")
+
+        assertTrue(terminalWrite >= 0)
+        assertTrue(rejectedWrite > terminalWrite)
+        assertTrue(stateCompletion > rejectedWrite)
+        assertTrue(helperBody.contains("return false"))
+    }
+
+    @Test
+    fun `successful migration completes processing before clearing checkpoints`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val successBody = source.substringAfter(
+            "val verifiedMinimumAudioCount = checkpointStore.readMinimumAudioCount(migrationWorkId)"
+        ).substringBefore("} catch (error: DownloadStorageMutationDeferredException)")
+        val processingCompletion = successBody.indexOf(
+            "ManagedLibraryProcessingCoordinator.complete(applicationContext, operationId)"
+        )
+        val checkpointCleanup = successBody.indexOf("checkpointStore.clearCompletedAndRunIfCurrent(")
+
+        assertTrue(processingCompletion >= 0)
+        assertTrue(checkpointCleanup > processingCompletion)
+        assertFalse(successBody.contains("markTerminalRequestAndCompleteProcessing("))
+    }
+
+    @Test
+    fun `operationless terminal cleanup verifies request state and sole worker`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val helperBody = source.substringAfter(
+            "private suspend fun completeTerminalWaitingProcessingIfCurrentRequest"
+        ).substringBefore("private suspend fun transitionProcessingState")
+
+        assertTrue(helperBody.contains("isTerminalRequestCurrent(checkpointStore, migrationWorkId)"))
+        assertTrue(helperBody.contains("ManagedLibraryProcessingState.WaitingForRetry"))
+        assertTrue(
+            helperBody.contains(
+                "waiting.reason != ManagedLibraryProcessingReason.DIRECTORY_CHANGE"
+            )
+        )
+        assertTrue(helperBody.contains("isOnlyActiveMigrationWork(migrationWorkId)"))
+        assertFalse(helperBody.contains("activeMigrationWorkPresent = false"))
+    }
+
+    @Test
+    fun `terminal startup recovery reconciles only an orphaned directory wait`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/migration/" +
+                "ManagedDownloadMigrationWorker.kt"
+        ).readText()
+        val resumeBody = source.substringAfter("suspend fun resumePersistedRequestIfNeeded")
+            .substringBefore("suspend fun hasPersistedMigrationRecovery")
+        val terminalBranch = resumeBody.substringAfter(
+            "if (persisted != null && !persisted.autoResume)"
+        ).substringBefore("val processingNeedsRecovery")
+
+        assertTrue(
+            resumeBody.indexOf("ManagedLibraryProcessingCoordinator.restoreImmediately") <
+                resumeBody.indexOf("if (persisted != null && !persisted.autoResume)")
+        )
+        assertTrue(terminalBranch.contains("completeOrphanedTerminalDirectoryChange("))
+        assertTrue(terminalBranch.contains("requestAutoResume = persisted.autoResume"))
+        assertTrue(terminalBranch.contains("activeMigrationWorkPresent = active != null"))
+        assertFalse(terminalBranch.contains("enqueueDurableRequestLocked("))
+        assertFalse(terminalBranch.contains("checkpointStore.clearRequest("))
     }
 
     private fun locateProjectFile(relativePath: String): File {

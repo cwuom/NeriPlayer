@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.local.database.store
 
+import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
@@ -101,5 +102,72 @@ class LegacyDownloadUpgradePlanTest {
 
         assertTrue("netease - artist - song.mp3" in hints.names)
         assertFalse("42" in hints.names)
+    }
+
+    @Test
+    fun `user-cleared queue payload is settled without making its source removable`() {
+        val result = LegacyDownloadUpgradeResult(
+            tableFound = true,
+            rowsSeen = 2,
+            rowsCompleted = 0,
+            rowsPending = 2,
+            rowResults = emptyList(),
+            temporaryTableCleaned = false,
+            legacyProjectionTablesCleaned = false,
+            rowsSuppressedByUserClear = 2
+        )
+
+        assertFalse(result.isComplete)
+        assertTrue(result.isUserClearSuppressed)
+        assertTrue(result.isSettled)
+    }
+
+    @Test
+    fun `retryable legacy rows prevent a user-clear suppression from settling`() {
+        val result = LegacyDownloadUpgradeResult(
+            tableFound = true,
+            rowsSeen = 3,
+            rowsCompleted = 0,
+            rowsPending = 3,
+            rowResults = emptyList(),
+            temporaryTableCleaned = false,
+            legacyProjectionTablesCleaned = false,
+            rowsSuppressedByUserClear = 2
+        )
+
+        assertFalse(result.isUserClearSuppressed)
+        assertFalse(result.isSettled)
+    }
+
+    @Test
+    fun `user-clear marker is checked before QUEUED upsert and suppression stays out of cleanup`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/store/" +
+                "LegacyDownloadUpgradeCoordinator.kt"
+        ).readText()
+        val operationBody = source.substringAfter("private suspend fun persistLegacyOperation")
+            .substringBefore("private data class LegacyCoverMaterializationResult")
+        val cleanupInput = source.substringAfter("stableKeys = settledResults.asSequence()")
+            .substringBefore("rowsSeen += rows.size")
+        val suppressionCheckIndex = operationBody.indexOf("isLegacyQueueImportSuppressed()")
+        val upsertIndex = operationBody.indexOf("DownloadExecutionRoomStore.upsert(")
+
+        assertTrue(operationBody.contains("database.withTransaction"))
+        assertTrue(suppressionCheckIndex >= 0)
+        assertTrue(upsertIndex > suppressionCheckIndex)
+        assertTrue(cleanupInput.contains("LegacyDownloadUpgradeRowStatus.COMPLETED"))
+        assertTrue(cleanupInput.contains("LegacyDownloadUpgradeRowStatus.QUARANTINED"))
+        assertFalse(cleanupInput.contains("QUEUE_IMPORT_SUPPRESSED"))
+    }
+
+    private fun locateProjectFile(path: String): File {
+        var directory = File(System.getProperty("user.dir") ?: ".")
+        var attempts = 0
+        while (attempts++ < 5) {
+            val candidate = File(directory, path)
+            if (candidate.isFile) return candidate
+            directory = directory.parentFile ?: break
+        }
+        error("source file not found: $path")
     }
 }

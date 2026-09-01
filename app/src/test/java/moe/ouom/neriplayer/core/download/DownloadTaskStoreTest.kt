@@ -88,6 +88,36 @@ class DownloadTaskStoreTest {
     }
 
     @Test
+    fun `progress received before transfer registration is retained`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(2L)
+            val attemptId = store.prepareDownloadTask(
+                downloadSong,
+                status = DownloadStatus.QUEUED
+            ) ?: error("download task was not prepared")
+            val queuedProgress = progress(
+                song = downloadSong,
+                attemptId = attemptId,
+                bytesRead = 256L
+            )
+
+            assertTrue(store.updateProgress(queuedProgress))
+            store.registerActiveDownloadTask(downloadSong, attemptId)
+
+            val task = requireNotNull(store.findTask(downloadSong.stableKey()))
+            assertEquals(DownloadStatus.DOWNLOADING, task.status)
+            assertEquals(queuedProgress, task.progress)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun `network pause retains verified partial progress for recovery`() {
         val scope = CoroutineScope(SupervisorJob())
         try {
@@ -607,7 +637,11 @@ class DownloadTaskStoreTest {
             val attemptId = store.prepareDownloadTask(downloadSong)
                 ?: error("download task was not prepared")
 
-            assertTrue(store.updateProgress(progress(downloadSong, attemptId, bytesRead = 800L)))
+            assertTrue(
+                store.updateProgress(
+                    progress(downloadSong, attemptId, bytesRead = 800L).copy(totalBytes = 0L)
+                )
+            )
             assertTrue(
                 store.updateProgress(
                     progress(
@@ -615,11 +649,13 @@ class DownloadTaskStoreTest {
                         attemptId = attemptId,
                         bytesRead = 200L,
                         stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
-                    )
+                    ).copy(speedBytesPerSec = 0L)
                 )
             )
             val waitingProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
             assertEquals(800L, waitingProgress.bytesRead)
+            assertEquals(1_000L, waitingProgress.totalBytes)
+            assertEquals(0L, waitingProgress.speedBytesPerSec)
             assertEquals(AudioDownloadManager.DownloadStage.WAITING_RETRY, waitingProgress.stage)
 
             store.registerActiveDownloadTask(downloadSong, attemptId)
@@ -635,7 +671,48 @@ class DownloadTaskStoreTest {
             )
             val restartedProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
             assertEquals(800L, restartedProgress.bytesRead)
+            assertEquals(1_000L, restartedProgress.totalBytes)
             assertEquals(AudioDownloadManager.DownloadStage.TRANSFERRING, restartedProgress.stage)
+
+            assertFalse(
+                store.updateProgress(
+                    progress(downloadSong, attemptId, bytesRead = 900L).copy(attemptId = null)
+                )
+            )
+            assertEquals(800L, store.findTask(downloadSong.stableKey())?.progress?.bytesRead)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `new attempt may restart from zero after a previous high water mark`() {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val store = DownloadTaskStore(
+                scope = scope,
+                progressEmitIntervalNs = Long.MAX_VALUE
+            )
+            val downloadSong = song(2L)
+            val firstAttemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("download task was not prepared")
+            assertTrue(store.updateProgress(progress(downloadSong, firstAttemptId, bytesRead = 800L)))
+            assertTrue(
+                store.updateTaskStatus(
+                    songKey = downloadSong.stableKey(),
+                    status = DownloadStatus.CANCELLED,
+                    expectedAttemptId = firstAttemptId
+                )
+            )
+
+            val secondAttemptId = store.prepareDownloadTask(downloadSong)
+                ?: error("retry task was not prepared")
+            assertNotEquals(firstAttemptId, secondAttemptId)
+            assertTrue(store.updateProgress(progress(downloadSong, secondAttemptId, bytesRead = 0L)))
+
+            val restartedProgress = requireNotNull(store.findTask(downloadSong.stableKey())?.progress)
+            assertEquals(secondAttemptId, restartedProgress.attemptId)
+            assertEquals(0L, restartedProgress.bytesRead)
         } finally {
             scope.cancel()
         }

@@ -331,21 +331,59 @@ class BatchDownloadOperationRecoveryTest {
         ).readText()
         val prepareTasksBody = methodBody(source, "prepareBatchDownloadTasks")
         val artifactBody = methodBody(source, "claimAndPrepareBatchArtifact")
+        val startBatchBody = methodBody(source, "startBatchDownload")
+        val recoveryBody = methodBody(source, "recoverPendingResumableDownloadsLocked")
 
-        assertTrue(source.contains("val admissionTicket = downloadAdmissionGate.ticket()"))
-        assertTrue(source.contains("admissionTicket = admissionTicket"))
+        assertTrue(startBatchBody.contains("val capturedAdmissionTicket = requestedAdmissionTicket"))
+        assertTrue(recoveryBody.contains("requestedAdmissionTicket = admissionTicket"))
+        assertTrue(recoveryBody.contains("awaitAdmissionWhenUnavailable = false"))
         assertTrue(source.contains("val admissionTicket: Long,"))
         assertTrue(
             prepareTasksBody.contains(
-                "downloadAdmissionGate.admit(session.admissionTicket)"
+                "admitDownloadMutation(\n            context = session.context,\n            admissionTicket = session.admissionTicket"
             )
         )
         assertTrue(
-            prepareTasksBody.indexOf("downloadAdmissionGate.admit(session.admissionTicket)") <
+            prepareTasksBody.indexOf("admitDownloadMutation(") <
                 prepareTasksBody.indexOf("taskStore.ensureDownloadTasks(")
         )
         assertTrue(artifactBody.contains("session.artifactClaims.remove(songKey)"))
         assertTrue(artifactBody.contains("releaseDownloadArtifactAfterExecutionOwnershipLoss("))
+    }
+
+    @Test
+    fun `recovery planning keeps mutations behind the captured admission ticket`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val recoveryBody = methodBody(source, "recoverPendingResumableDownloadsLocked")
+        val planBody = methodBody(source, "resolvePendingDownloadRecoveryPlan")
+        val networkPolicyBody = methodBody(
+            source,
+            "deferPendingDownloadRecoveryForNetworkPolicyIfNeeded"
+        )
+        val startupBody = methodBody(source, "recoverPendingDownloadsForStartup")
+
+        assertFalse(planBody.contains("rehomeActiveOperationsToCurrentLibrary"))
+        assertFalse(planBody.contains("deleteWorkingDownloadArtifacts"))
+        assertTrue(planBody.contains("workingFilesToDelete"))
+        assertTrue(recoveryBody.contains("recoveryPlan.workingFilesToDelete"))
+        assertTrue(networkPolicyBody.contains("recoveryPlan.workingFilesToDelete"))
+        assertTrue(
+            recoveryBody.contains("admitDownloadMutation(context, admissionTicket)")
+        )
+        assertTrue(networkPolicyBody.contains("admissionTicket"))
+        assertTrue(
+            networkPolicyBody.contains(
+                "admitDownloadMutation(context, admissionTicket)"
+            )
+        )
+        assertTrue(startupBody.contains("admissionTicket: Long?"))
+        assertTrue(
+            source.contains(
+                "recoverPendingDownloadsForStartup(\n                    context = appContext,\n                    admissionTicket = startupAdmissionTicket"
+            )
+        )
     }
 
     @Test
@@ -356,7 +394,7 @@ class BatchDownloadOperationRecoveryTest {
         val schedulingBody = methodBody(source, "schedulePendingBatchDownload")
 
         val admissionIndex = schedulingBody.indexOf(
-            "downloadAdmissionGate.admit(session.admissionTicket)"
+            "admitDownloadMutation(\n                context = session.context,\n                admissionTicket = session.admissionTicket"
         )
         val hostScheduleIndex = schedulingBody.indexOf(
             "DownloadExecutionHosts.default.schedule("

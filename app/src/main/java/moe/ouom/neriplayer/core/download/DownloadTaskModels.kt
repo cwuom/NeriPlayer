@@ -279,32 +279,53 @@ internal fun formatDownloadTransferProgress(
         .joinToString(" · ")
 }
 
+internal fun mergeDownloadProgress(
+    current: AudioDownloadManager.DownloadProgress?,
+    incoming: AudioDownloadManager.DownloadProgress
+): AudioDownloadManager.DownloadProgress {
+    if (current == null || current.attemptId != incoming.attemptId) {
+        return incoming
+    }
+    val finalizedBytesFloor = if (
+        current.stage == AudioDownloadManager.DownloadStage.FINALIZING &&
+            current.totalBytes > 0L
+    ) {
+        current.totalBytes
+    } else {
+        0L
+    }
+    return incoming.copy(
+        bytesRead = maxOf(
+            current.bytesRead.coerceAtLeast(0L),
+            incoming.bytesRead.coerceAtLeast(0L),
+            finalizedBytesFloor
+        ),
+        totalBytes = mergeKnownDownloadTotalBytes(
+            current.totalBytes,
+            incoming.totalBytes
+        )
+    )
+}
+
 internal fun mergeDownloadTaskProgress(
     current: AudioDownloadManager.DownloadProgress?,
     incoming: AudioDownloadManager.DownloadProgress
 ): AudioDownloadManager.DownloadProgress {
-    val currentAttemptId = current?.attemptId
-    if (current == null || currentAttemptId == null || currentAttemptId != incoming.attemptId) {
-        return incoming
+    return mergeDownloadProgress(current, incoming)
+}
+
+internal fun mergeKnownDownloadTotalBytes(
+    currentTotalBytes: Long,
+    incomingTotalBytes: Long
+): Long {
+    return when {
+        currentTotalBytes > 0L && incomingTotalBytes > 0L -> {
+            maxOf(currentTotalBytes, incomingTotalBytes)
+        }
+        currentTotalBytes > 0L -> currentTotalBytes
+        incomingTotalBytes > 0L -> incomingTotalBytes
+        else -> 0L
     }
-    if (downloadProgressFraction(incoming) >= downloadProgressFraction(current)) {
-        return incoming
-    }
-    val retained = if (
-        current.stage == AudioDownloadManager.DownloadStage.FINALIZING &&
-            current.totalBytes > 0L &&
-            current.bytesRead < current.totalBytes
-    ) {
-        current.copy(bytesRead = current.totalBytes)
-    } else {
-        current
-    }
-    return retained.copy(
-        songId = incoming.songId,
-        fileName = incoming.fileName,
-        speedBytesPerSec = incoming.speedBytesPerSec,
-        stage = incoming.stage
-    )
 }
 
 internal fun resumeBatchDownloadPresentationForRetry(
@@ -566,6 +587,13 @@ internal fun shouldApplyTaskMutation(
         return false
     }
     return expectedAttemptId == null || task.attemptId == expectedAttemptId
+}
+
+internal fun shouldApplyTaskProgressMutation(
+    task: DownloadTask?,
+    attemptId: Long?
+): Boolean {
+    return task != null && attemptId != null && task.attemptId == attemptId
 }
 
 internal fun isActiveDownloadAttempt(

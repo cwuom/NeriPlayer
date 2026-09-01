@@ -9,6 +9,7 @@ import androidx.core.content.edit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -175,7 +176,8 @@ class DefaultDownloadExecutionHost(
         ExistingDownloadOperationEntryPoint,
     private val sdkInt: Int = Build.VERSION.SDK_INT,
     private val downloadParallelismProvider: (Context) -> Int =
-        ::currentDownloadParallelism
+        ::currentDownloadParallelism,
+    private val pendingUidtGraceDelayProvider: ((Context, DownloadExecutionRequest) -> Long)? = null
 ) : DownloadExecutionHost {
     private val operationIdsBySongKey = ConcurrentHashMap<String, String>()
     private val executingOperationIds = ConcurrentHashMap.newKeySet<String>()
@@ -185,6 +187,12 @@ class DefaultDownloadExecutionHost(
     private val deferredRequests = DeferredDownloadScheduleQueue()
     private val deferredSchedulingScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val deferredSchedulingRunning = AtomicBoolean(false)
+
+    private data class PumpCandidateSelection(
+        val requests: List<DownloadExecutionRequest>,
+        val hasSchedulableRequest: Boolean,
+        val shortestPendingUidtGraceDelayMs: Long?
+    )
 
     override fun schedule(
         context: Context,
@@ -446,54 +454,58 @@ class DefaultDownloadExecutionHost(
         val normalizedId = normalizeDownloadOperationId(operationId) ?: return
         val appContext = context.applicationContext
         val request = operationStore.read(appContext, normalizedId) ?: return
-        if (PersistentDownloadClearFenceStore.isActive(appContext)) {
-            cancel(appContext, normalizedId)
-            return
-        }
-        val currentState = operationStore.currentState(appContext, normalizedId)
-        if (!shouldHandleHostStop(currentState)) {
-            if (preventReschedule) {
+        PersistentDownloadClearFenceStore.withSchedulingPermit(
+            context = appContext,
+            onFenceActive = {
+                cancel(appContext, normalizedId)
+            }
+        ) {
+            val currentState = operationStore.currentState(appContext, normalizedId)
+            if (!shouldHandleHostStop(currentState)) {
+                if (preventReschedule) {
+                    WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
+                }
+                if (cancelExecutionBackends) {
+                    cancelExecutionBackends(appContext, normalizedId)
+                }
+                operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                releaseHostAdmissionIfIdle(appContext, normalizedId)
+                return@withSchedulingPermit
+            }
+            operationIdsBySongKey[request.song.stableKey()] = normalizedId
+            val rescheduleBlocked = shouldBlockHostReschedule(
+                preventReschedule = preventReschedule,
+                alreadyStoppedByUser = operationStore.isStopped(appContext, normalizedId)
+            )
+            if (rescheduleBlocked) {
                 WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
+            }
+            val retryPrepared = if (rescheduleBlocked) {
+                operationStore.markStopped(appContext, normalizedId)
+                false
+            } else {
+                // 让暂停的 operation 成为队列刷新时唯一可恢复的任务
+                operationStore.updateState(
+                    context = appContext,
+                    operationId = normalizedId,
+                    state = "RETRYABLE",
+                    errorCode = "HOST_STOPPED"
+                )
             }
             if (cancelExecutionBackends) {
                 cancelExecutionBackends(appContext, normalizedId)
             }
-            operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-            releaseHostAdmissionIfIdle(appContext, normalizedId)
-            return
-        }
-        operationIdsBySongKey[request.song.stableKey()] = normalizedId
-        val rescheduleBlocked = shouldBlockHostReschedule(
-            preventReschedule = preventReschedule,
-            alreadyStoppedByUser = operationStore.isStopped(appContext, normalizedId)
-        )
-        if (rescheduleBlocked) {
-            WifiBoundDownloadWakeWorker.cancel(appContext, normalizedId)
-        }
-        val retryPrepared = if (rescheduleBlocked) {
-            operationStore.markStopped(appContext, normalizedId)
-            false
-        } else {
-            // 让暂停的 operation 成为队列刷新时唯一可恢复的任务
-            operationStore.updateState(
+            GlobalDownloadManager.stopDownloadOperation(
                 context = appContext,
-                operationId = normalizedId,
-                state = "RETRYABLE",
-                errorCode = "HOST_STOPPED"
+                songKey = request.song.stableKey(),
+                expectedAttemptId = request.attemptId,
+                rememberForRetry = retryPrepared
             )
+            if (rescheduleBlocked || !retryPrepared) {
+                operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+            }
+            releaseHostAdmissionIfIdle(appContext, normalizedId)
         }
-        if (cancelExecutionBackends) {
-            cancelExecutionBackends(appContext, normalizedId)
-        }
-        GlobalDownloadManager.stopDownloadOperation(
-            context = appContext,
-            songKey = request.song.stableKey(),
-            rememberForRetry = retryPrepared
-        )
-        if (rescheduleBlocked || !retryPrepared) {
-            operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-        }
-        releaseHostAdmissionIfIdle(appContext, normalizedId)
     }
 
     private fun cancelExecutionBackends(context: Context, operationId: String) {
@@ -705,86 +717,110 @@ class DefaultDownloadExecutionHost(
                 request = request
             )
             var returnedResult = result
-            when (result) {
-                DownloadExecutionResult.Accepted -> {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "COMPLETED"
-                    )
-                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-                    operationStore.pruneTerminalOperations(
-                        context = context.applicationContext,
-                        cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
-                        limit = TERMINAL_OPERATION_PRUNE_LIMIT
-                    )
-                }
-                DownloadExecutionResult.AlreadyHandled -> Unit
-                DownloadExecutionResult.Cancelled -> {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "CANCELLED",
-                        errorCode = "USER_CANCELLED"
-                    )
-                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-                    operationStore.pruneTerminalOperations(
-                        context = context.applicationContext,
-                        cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
-                        limit = TERMINAL_OPERATION_PRUNE_LIMIT
-                    )
-                }
-                DownloadExecutionResult.UserStopped -> {
-                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-                }
-                DownloadExecutionResult.UserActionRequired -> {
-                    val persisted = operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = METADATA_ACTION_REQUIRED_OPERATION_STATE,
-                        errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
-                    )
-                    if (!persisted) {
-                        return@withContext DownloadExecutionResult.Retry
+            var clearBlockedResult = false
+            PersistentDownloadClearFenceStore.withSchedulingPermit(
+                context = appContext,
+                onFenceActive = {
+                    clearBlockedResult = true
+                    runCatching {
+                        operationStore.requestCancel(appContext, normalizedId)
                     }
-                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
                 }
-                is DownloadExecutionResult.Failed -> {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "RETRYABLE",
-                        errorCode = result.error.javaClass.simpleName
-                    )
-                }
-                DownloadExecutionResult.Retry -> {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "RETRYABLE"
-                    )
-                }
-                DownloadExecutionResult.NetworkPolicyWaiting -> {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "RETRYABLE",
-                        errorCode = "NETWORK_POLICY_WAITING"
-                    )
-                    val wakeRearmed = !request.requiresWifiNetwork ||
-                        WifiBoundDownloadWakeWorker.rearmAfterNetworkPolicyWait(
+            ) {
+                when (result) {
+                    DownloadExecutionResult.Accepted -> {
+                        operationStore.updateState(
                             context = context.applicationContext,
-                            operationId = normalizedId
+                            operationId = normalizedId,
+                            state = "COMPLETED"
                         )
-                    operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
-                    if (!wakeRearmed) {
-                        returnedResult = DownloadExecutionResult.Retry
+                        operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                        operationStore.pruneTerminalOperations(
+                            context = context.applicationContext,
+                            cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
+                            limit = TERMINAL_OPERATION_PRUNE_LIMIT
+                        )
+                    }
+                    DownloadExecutionResult.AlreadyHandled -> Unit
+                    DownloadExecutionResult.Cancelled -> {
+                        operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = "CANCELLED",
+                            errorCode = "USER_CANCELLED"
+                        )
+                        operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                        operationStore.pruneTerminalOperations(
+                            context = context.applicationContext,
+                            cutoffMs = System.currentTimeMillis() - TERMINAL_OPERATION_RETENTION_MS,
+                            limit = TERMINAL_OPERATION_PRUNE_LIMIT
+                        )
+                    }
+                    DownloadExecutionResult.UserStopped -> {
+                        operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                    }
+                    DownloadExecutionResult.UserActionRequired -> {
+                        val persisted = operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = METADATA_ACTION_REQUIRED_OPERATION_STATE,
+                            errorCode = METADATA_EMBEDDING_UNSUPPORTED_CONTAINER_ERROR
+                        )
+                        if (!persisted) {
+                            returnedResult = DownloadExecutionResult.Retry
+                        } else {
+                            operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                        }
+                    }
+                    is DownloadExecutionResult.Failed -> {
+                        operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = "RETRYABLE",
+                            errorCode = result.error.javaClass.simpleName
+                        )
+                    }
+                    DownloadExecutionResult.Retry -> {
+                        operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = "RETRYABLE"
+                        )
+                    }
+                    DownloadExecutionResult.NetworkPolicyWaiting -> {
+                        operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = "RETRYABLE",
+                            errorCode = "NETWORK_POLICY_WAITING"
+                        )
+                        val wakeRearmed = !request.requiresWifiNetwork ||
+                            WifiBoundDownloadWakeWorker.rearmAfterNetworkPolicyWait(
+                                context = context.applicationContext,
+                                operationId = normalizedId
+                            )
+                        operationIdsBySongKey.remove(request.song.stableKey(), normalizedId)
+                        if (!wakeRearmed) {
+                            returnedResult = DownloadExecutionResult.Retry
+                        }
+                    }
+                    DownloadExecutionResult.MissingOperation -> Unit
+                }
+            }
+            if (clearBlockedResult) {
+                DownloadExecutionResult.Cancelled
+            } else {
+                returnedResult
+            }
+        } catch (cancellation: CancellationException) {
+            if (PersistentDownloadClearFenceStore.isActive(appContext)) {
+                withContext(NonCancellable) {
+                    runCatching {
+                        operationStore.requestCancel(appContext, normalizedId)
                     }
                 }
-                DownloadExecutionResult.MissingOperation -> Unit
+                throw cancellation
             }
-            returnedResult
-        } catch (cancellation: CancellationException) {
             if (systemRetryStopOperationIds.contains(normalizedId)) {
                 throw cancellation
             }
@@ -800,30 +836,59 @@ class DefaultDownloadExecutionHost(
                             normalizedId
                         )
                 val retryPrepared = if (!explicitlyStopped) {
-                    operationStore.updateState(
-                        context = context.applicationContext,
-                        operationId = normalizedId,
-                        state = "RETRYABLE",
-                        errorCode = "HOST_CANCELLED"
-                    )
+                    var clearBlockedStop = false
+                    val persisted: Boolean = PersistentDownloadClearFenceStore.withSchedulingPermit(
+                        context = appContext,
+                        onFenceActive = {
+                            clearBlockedStop = true
+                            runCatching {
+                                operationStore.requestCancel(appContext, normalizedId)
+                            }
+                            false
+                        }
+                    ) {
+                        operationStore.updateState(
+                            context = context.applicationContext,
+                            operationId = normalizedId,
+                            state = "RETRYABLE",
+                            errorCode = "HOST_CANCELLED"
+                        )
+                    }
+                    !clearBlockedStop && persisted == true
                 } else {
                     false
                 }
                 GlobalDownloadManager.stopDownloadOperation(
                     context = context.applicationContext,
                     songKey = initialRequest.song.stableKey(),
+                    expectedAttemptId = initialRequest.attemptId,
                     rememberForRetry = retryPrepared
                 )
             }
             throw cancellation
         } catch (error: Throwable) {
-            operationStore.updateState(
-                context = context.applicationContext,
-                operationId = normalizedId,
-                state = "RETRYABLE",
-                errorCode = error.javaClass.simpleName
-            )
-            DownloadExecutionResult.Failed(error)
+            var clearBlockedFailure = false
+            PersistentDownloadClearFenceStore.withSchedulingPermit(
+                context = appContext,
+                onFenceActive = {
+                    clearBlockedFailure = true
+                    runCatching {
+                        operationStore.requestCancel(appContext, normalizedId)
+                    }
+                }
+            ) {
+                operationStore.updateState(
+                    context = context.applicationContext,
+                    operationId = normalizedId,
+                    state = "RETRYABLE",
+                    errorCode = error.javaClass.simpleName
+                )
+            }
+            if (clearBlockedFailure) {
+                DownloadExecutionResult.Cancelled
+            } else {
+                DownloadExecutionResult.Failed(error)
+            }
         } finally {
             synchronized(executionAdmissionLock) {
                 executingOperationIds.remove(normalizedId)
@@ -840,31 +905,34 @@ class DefaultDownloadExecutionHost(
         val appContext = context.applicationContext
         var completedBatches = 0
         var sawRetry = false
+        var waitedForPendingUidtGrace = false
         val attemptedOperationIds = mutableSetOf<String>()
         while (completedBatches < PUMP_MAX_BATCHES_PER_RUN) {
             val configuredParallelism = configuredDownloadParallelism(appContext)
-            val requests = operationStore.listSchedulableForPump(
+            val selection = collectPumpCandidates(
                 context = appContext,
-                limit = PUMP_QUERY_LIMIT
+                capacity = configuredParallelism,
+                attemptedOperationIds = attemptedOperationIds
             )
-            if (requests.isEmpty()) {
+            val candidates = selection.requests
+            if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
                 return@withContext if (sawRetry) {
                     DownloadExecutionPumpResult.Retry
                 } else {
                     DownloadExecutionPumpResult.Completed
                 }
             }
-            val candidates = requests
-                .asSequence()
-                .distinctBy(DownloadExecutionRequest::operationId)
-                .filterNot { request -> request.operationId in attemptedOperationIds }
-                .filterNot { request -> shouldLeaveForPendingUidt(appContext, request) }
-                .take(configuredParallelism)
-                .toList()
             if (candidates.isEmpty()) {
+                val graceDelayMs = selection.shortestPendingUidtGraceDelayMs
+                if (graceDelayMs != null && !waitedForPendingUidtGrace) {
+                    waitedForPendingUidtGrace = true
+                    delay(graceDelayMs)
+                    continue
+                }
                 // 已尝试的 operation 或仍在 UIDT 队列的 operation 需要下一轮重新评估
                 return@withContext DownloadExecutionPumpResult.Retry
             }
+            waitedForPendingUidtGrace = false
             attemptedOperationIds += candidates.map(DownloadExecutionRequest::operationId)
             val results = coroutineScope {
                 candidates.map { request ->
@@ -879,18 +947,72 @@ class DefaultDownloadExecutionHost(
         DownloadExecutionPumpResult.Retry
     }
 
-    private fun shouldLeaveForPendingUidt(
+    private fun collectPumpCandidates(
+        context: Context,
+        capacity: Int,
+        attemptedOperationIds: Set<String>
+    ): PumpCandidateSelection {
+        val candidates = mutableListOf<DownloadExecutionRequest>()
+        val observedOperationIds = mutableSetOf<String>()
+        var hasSchedulableRequest = false
+        var shortestPendingUidtGraceDelayMs: Long? = null
+        var cursor: DownloadExecutionPumpCursor? = null
+        while (candidates.size < capacity) {
+            val page = operationStore.listSchedulableForPumpPage(
+                context = context,
+                afterCursor = cursor,
+                limit = PUMP_QUERY_LIMIT
+            )
+            page.requests.forEach { request ->
+                hasSchedulableRequest = true
+                if (
+                    request.operationId in attemptedOperationIds ||
+                        !observedOperationIds.add(request.operationId)
+                ) {
+                    return@forEach
+                }
+                val graceDelayMs = pendingUidtGraceDelayMs(context, request)
+                if (graceDelayMs > 0L) {
+                    shortestPendingUidtGraceDelayMs =
+                        shortestPendingUidtGraceDelayMs?.coerceAtMost(graceDelayMs) ?: graceDelayMs
+                } else if (candidates.size < capacity) {
+                    candidates += request
+                }
+            }
+            if (candidates.size >= capacity) {
+                break
+            }
+            val nextCursor = page.nextCursor ?: break
+            if (nextCursor == cursor) {
+                break
+            }
+            cursor = nextCursor
+        }
+        return PumpCandidateSelection(
+            requests = candidates,
+            hasSchedulableRequest = hasSchedulableRequest,
+            shortestPendingUidtGraceDelayMs = shortestPendingUidtGraceDelayMs
+        )
+    }
+
+    private fun pendingUidtGraceDelayMs(
         context: Context,
         request: DownloadExecutionRequest
-    ): Boolean {
+    ): Long {
+        pendingUidtGraceDelayProvider?.invoke(context, request)?.let { delayMs ->
+            return delayMs.coerceAtLeast(0L)
+        }
         if (
             sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
                 !request.userInitiated
         ) {
-            return false
+            return 0L
         }
-        return UidtDownloadJobService.hasPendingJob(context, request.operationId)
+        return UidtDownloadJobService.pendingJobGraceRemainingMs(
+            context = context,
+            operationId = request.operationId
+        )
     }
 
     private fun tryAcquireHostAdmission(

@@ -531,7 +531,7 @@ private fun DownloadParallelismSettingItem(
                         val nextValue = normalizeDownloadParallelism(sliderValue.roundToInt())
                         sliderValue = nextValue.toFloat()
                         scope.launch {
-                            repository.set(setting, nextValue)
+                            repository.setDownloadParallelism(nextValue)
                         }
                     },
                     valueRange = 1f..MAX_DOWNLOAD_PARALLELISM.toFloat(),

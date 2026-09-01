@@ -132,6 +132,16 @@ class UidtDownloadJobPolicyTest {
     }
 
     @Test
+    fun `UIDT scheduling failure is reported when the shared pump is unavailable`() {
+        assertFalse(
+            scheduleUidtWithSharedPump(
+                scheduleUidt = { true },
+                scheduleSharedPump = { false }
+            )
+        )
+    }
+
+    @Test
     fun `terminal UIDT results retire a pending fallback`() {
         val terminalResults = listOf(
             DownloadExecutionResult.Accepted,
@@ -176,6 +186,63 @@ class UidtDownloadJobPolicyTest {
             shouldCancelUidtFallback(
                 result = DownloadExecutionResult.Failed(IllegalStateException("retry")),
                 fallbackExecuting = false
+            )
+        )
+    }
+
+    @Test
+    fun `pending UIDT yields to its shared pump only during the grace window`() {
+        val scheduledAtElapsedMs = 10_000L
+
+        assertTrue(
+            shouldYieldToPendingUidt(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs + UIDT_SHARED_PUMP_GRACE_MS - 1L
+            )
+        )
+        assertFalse(
+            shouldYieldToPendingUidt(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs + UIDT_SHARED_PUMP_GRACE_MS
+            )
+        )
+        assertFalse(
+            shouldYieldToPendingUidt(
+                scheduledAtElapsedMs = 0L,
+                nowElapsedMs = scheduledAtElapsedMs
+            )
+        )
+        assertFalse(
+            shouldYieldToPendingUidt(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs - 1L
+            )
+        )
+    }
+
+    @Test
+    fun `pending UIDT grace delay is bounded by the remaining window`() {
+        val scheduledAtElapsedMs = 10_000L
+
+        assertEquals(
+            1L,
+            pendingUidtGraceRemainingMs(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs + UIDT_SHARED_PUMP_GRACE_MS - 1L
+            )
+        )
+        assertEquals(
+            0L,
+            pendingUidtGraceRemainingMs(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs + UIDT_SHARED_PUMP_GRACE_MS
+            )
+        )
+        assertEquals(
+            0L,
+            pendingUidtGraceRemainingMs(
+                scheduledAtElapsedMs = scheduledAtElapsedMs,
+                nowElapsedMs = scheduledAtElapsedMs - 1L
             )
         )
     }

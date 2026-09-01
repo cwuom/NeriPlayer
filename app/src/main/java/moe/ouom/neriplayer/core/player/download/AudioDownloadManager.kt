@@ -65,6 +65,7 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager.clearSongCancelle
 import moe.ouom.neriplayer.core.download.ManagedDownloadSizePolicy
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.boundManagedDownloadFileName
+import moe.ouom.neriplayer.core.download.mergeDownloadProgress
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_DIR_NAME
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_PREFIX
 import moe.ouom.neriplayer.core.download.storage.DOWNLOAD_STAGING_FILE_SUFFIX
@@ -275,6 +276,8 @@ object AudioDownloadManager {
     private var activeDownloadPermitCount = 0
     private val progressPublishLock = Any()
     private val lastPublishedProgressBySongKey = mutableMapOf<String, PublishedProgressState>()
+    /** 保留节流或事件缓冲丢弃前的最新值，供恢复绑定时补偿 */
+    private val latestProgressBySongKey = mutableMapOf<String, DownloadProgress>()
     private val completedAudioReferencesBySongKey =
         ConcurrentHashMap<String, CompletedAudioReference>()
     private val completedAudioReferencesByReference =
@@ -723,6 +726,40 @@ object AudioDownloadManager {
         val absoluteBytesDelta = if (bytesDelta >= 0L) bytesDelta else -bytesDelta
         return progress.percentage != previous.percentage ||
             absoluteBytesDelta >= PROGRESS_EMIT_MIN_BYTES_DELTA
+    }
+
+    internal fun shouldReplaceLatestProgress(
+        previous: DownloadProgress?,
+        incoming: DownloadProgress
+    ): Boolean {
+        return previous != mergeLatestProgress(previous, incoming)
+    }
+
+    internal fun mergeLatestProgress(
+        previous: DownloadProgress?,
+        incoming: DownloadProgress
+    ): DownloadProgress {
+        if (previous == null) {
+            return incoming
+        }
+        val previousAttemptId = previous.attemptId
+        val incomingAttemptId = incoming.attemptId
+        if (previousAttemptId != null && incomingAttemptId != null) {
+            return if (incomingAttemptId > previousAttemptId) {
+                incoming
+            } else if (incomingAttemptId < previousAttemptId) {
+                previous
+            } else {
+                mergeDownloadProgress(previous, incoming)
+            }
+        }
+        if (previousAttemptId != null) {
+            return previous
+        }
+        if (incomingAttemptId != null) {
+            return incoming
+        }
+        return mergeDownloadProgress(previous, incoming)
     }
 
     internal data class DownloadedSidecarReferences(
@@ -1589,22 +1626,36 @@ object AudioDownloadManager {
         force: Boolean = false
     ) {
         val nowNs = System.nanoTime()
+        var effectiveProgress = progress
         val shouldEmit = synchronized(progressPublishLock) {
+            val previousLatest = latestProgressBySongKey[progress.songKey]
+            val accepted = shouldReplaceLatestProgress(previousLatest, progress)
+            effectiveProgress = mergeLatestProgress(previousLatest, progress)
+            if (accepted) {
+                latestProgressBySongKey[progress.songKey] = effectiveProgress
+            }
+            if (
+                previousLatest != null &&
+                    !accepted &&
+                    previousLatest.attemptId != progress.attemptId
+            ) {
+                return@synchronized false
+            }
             val previous = lastPublishedProgressBySongKey[progress.songKey]
             val shouldPublishNow = shouldPublishAudioDownloadProgress(
                 previous = previous,
-                progress = progress,
+                progress = effectiveProgress,
                 nowNs = nowNs,
                 force = force
             )
 
             if (shouldPublishNow) {
                 lastPublishedProgressBySongKey[progress.songKey] = PublishedProgressState(
-                    attemptId = progress.attemptId,
-                    bytesRead = progress.bytesRead,
-                    totalBytes = progress.totalBytes,
-                    percentage = progress.percentage,
-                    stage = progress.stage,
+                    attemptId = effectiveProgress.attemptId,
+                    bytesRead = effectiveProgress.bytesRead,
+                    totalBytes = effectiveProgress.totalBytes,
+                    percentage = effectiveProgress.percentage,
+                    stage = effectiveProgress.stage,
                     emittedAtNs = nowNs
                 )
             }
@@ -1612,14 +1663,31 @@ object AudioDownloadManager {
         }
 
         if (shouldEmit) {
-            _progressFlow.value = progress
-            progressEventStream.publish(progress)
+            _progressFlow.value = effectiveProgress
+            progressEventStream.publish(effectiveProgress)
         }
     }
 
     private fun clearPublishedProgress(songKey: String) {
         synchronized(progressPublishLock) {
             lastPublishedProgressBySongKey.remove(songKey)
+            latestProgressBySongKey.remove(songKey)
+        }
+    }
+
+    internal fun latestProgressForSong(
+        songKey: String,
+        attemptId: Long? = null
+    ): DownloadProgress? {
+        synchronized(progressPublishLock) {
+            val progress = latestProgressBySongKey[songKey] ?: return null
+            return progress.takeIf { attemptId == null || it.attemptId == attemptId }
+        }
+    }
+
+    internal fun latestProgressSnapshot(): List<DownloadProgress> {
+        synchronized(progressPublishLock) {
+            return latestProgressBySongKey.values.toList()
         }
     }
 
@@ -1632,6 +1700,7 @@ object AudioDownloadManager {
     private fun clearAllPublishedProgress() {
         synchronized(progressPublishLock) {
             lastPublishedProgressBySongKey.clear()
+            latestProgressBySongKey.clear()
         }
     }
 

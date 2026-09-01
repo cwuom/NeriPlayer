@@ -1001,9 +1001,14 @@ class GlobalDownloadManagerStartupPolicyTest {
 
         assertTrue(singleBody.contains("val capturedAdmissionTicket = requestedAdmissionTicket"))
         assertTrue(singleBody.contains("?: downloadAdmissionGate.openTicketOrNull()"))
-        assertTrue(batchBody.contains("val requestedAdmissionTicket = downloadAdmissionGate.openTicketOrNull()"))
+        assertTrue(batchBody.contains("val capturedAdmissionTicket = requestedAdmissionTicket"))
         assertTrue(singleBody.contains("capturedAdmissionTicket\n                ?: awaitDownloadAdmissionTicket"))
-        assertTrue(batchBody.contains("requestedAdmissionTicket\n                ?: awaitDownloadAdmissionTicket"))
+        assertTrue(
+            batchBody.contains(
+                "capturedAdmissionTicket\n                ?: if (awaitAdmissionWhenUnavailable)"
+            )
+        )
+        assertTrue(batchBody.contains("清空期间跳过无票据批量下载请求"))
         assertFalse(singleBody.contains("val admissionTicket = awaitDownloadAdmissionTicket(appContext)"))
         assertFalse(batchBody.contains("val admissionTicket = awaitDownloadAdmissionTicket(appContext)"))
     }
@@ -1060,10 +1065,10 @@ class GlobalDownloadManagerStartupPolicyTest {
             "val restoredCatalog = restorePersistedDownloadedSongs(appContext)"
         )
         val pendingRecoveryIndex = initializeBody.indexOf(
-            "recoverPendingDownloadsForStartup(appContext)"
+            "recoverPendingDownloadsForStartup("
         )
         val coverRepairIndex = initializeBody.indexOf(
-            "repairFinalizedDownloadedCoversFromRoot(appContext)"
+            "repairFinalizedDownloadedCoversFromRoot("
         )
         val scheduleIndex = initializeBody.indexOf(
             "LegacyJsonCleanupScheduler.schedule(appContext, \"download-startup\")"
@@ -1091,8 +1096,27 @@ class GlobalDownloadManagerStartupPolicyTest {
                 "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
             )
             .substringBefore("\n    private fun")
-        assertTrue(reconcileBody.contains("recoverPendingDownloadsForStartup(appContext)"))
-        assertTrue(reconcileBody.contains("repairFinalizedDownloadedCoversFromRoot(appContext)"))
+        assertTrue(reconcileBody.contains("recoverPendingDownloadsForStartup("))
+        assertTrue(reconcileBody.contains("repairFinalizedDownloadedCoversFromRoot("))
+    }
+
+    @Test
+    fun `startup recovery avoids fixed multi second waits`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        assertTrue(source.contains("STARTUP_PROGRESS_RESTORE_WAIT_TIMEOUT_MS = 500L"))
+
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        assertTrue(initializeBody.contains("yield()"))
+        assertFalse(initializeBody.contains("INITIAL_SCAN_DELAY_MS"))
+
+        val startupRecoveryBody = source
+            .substringAfter("private suspend fun recoverPendingDownloadsForStartup")
+            .substringBefore("private fun loadPendingWorkingProgressSnapshotOnce")
+        assertTrue(startupRecoveryBody.contains("yield()"))
+        assertFalse(startupRecoveryBody.contains("delay(1_500L)"))
     }
 
     @Test
@@ -1151,7 +1175,7 @@ class GlobalDownloadManagerStartupPolicyTest {
         )
         assertTrue(
             initializeBody.indexOf("PersistentDownloadClearFenceStore.isActive(appContext)") <
-                initializeBody.indexOf("recoverPendingAudioWritesFromRoot(appContext)")
+                initializeBody.indexOf("recoverPendingAudioWritesFromRoot(")
         )
         assertTrue(source.contains("private suspend fun activateDownloadClearFence"))
         assertTrue(source.contains("private fun stopDownloadExecutionImmediately"))
@@ -1189,7 +1213,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "persistDownloadClearProgress(appContext, clearToken)"
         )
 
-        assertTrue(immediateActivationBody.contains("if (fenceActivatedImmediately)"))
+        assertFalse(immediateActivationBody.contains("if (fenceActivatedImmediately)"))
         assertTrue(
             immediateActivationBody.contains(
                 "if (fenceActivatedImmediately && !hadPersistedClearFence)"
@@ -1307,13 +1331,13 @@ class GlobalDownloadManagerStartupPolicyTest {
         ).readText()
         val initializeBody = source.substringAfter("fun initialize(context: Context)")
             .substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
-        val progressIndex = initializeBody.indexOf("restorePersistedDownloadProgress(appContext)")
+        val progressIndex = initializeBody.indexOf("restorePersistedDownloadProgress(")
         val gateIndex = initializeBody.indexOf("AppStartupWorkGate.awaitInteractiveContentOrTimeout()")
 
         assertTrue(progressIndex >= 0)
         assertTrue(gateIndex >= 0)
         assertTrue(progressIndex < gateIndex)
-        assertEquals(1, initializeBody.split("restorePersistedDownloadProgress(appContext)").size - 1)
+        assertEquals(1, initializeBody.split("restorePersistedDownloadProgress(").size - 1)
     }
 
     @Test
@@ -1324,8 +1348,12 @@ class GlobalDownloadManagerStartupPolicyTest {
         val restoreBody = source.substringAfter(
             "private suspend fun restorePersistedDownloadProgress(context: Context)"
         ).substringBefore("private suspend fun reconcilePendingDownloadArtifacts")
-        val ticketIndex = restoreBody.indexOf("val admissionTicket = downloadAdmissionGate.ticket()")
-        val admissionIndex = restoreBody.indexOf("downloadAdmissionGate.admit(admissionTicket)")
+        val ticketIndex = restoreBody.indexOf(
+            "val capturedAdmissionTicket = admissionTicket"
+        )
+        val admissionIndex = restoreBody.indexOf(
+            "downloadAdmissionGate.admit(capturedAdmissionTicket)"
+        )
         val fenceIndex = restoreBody.indexOf("if (isDownloadClearFenceActive(context))")
         val taskBackfillIndex = restoreBody.indexOf("taskStore.ensureDownloadTasks(")
         val progressBackfillIndex = restoreBody.indexOf("taskStore.restoreProgressBatch(")
@@ -1341,6 +1369,43 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `startup recovery keeps the outer admission ticket`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val initializeBody = source.substringAfter("fun initialize(context: Context)")
+            .substringBefore("internal suspend fun reconcileMaterializedLegacyDownloads")
+        val recoveryBody = source.substringAfter(
+            "private suspend fun recoverPendingDownloadsForStartup("
+        ).substringBefore("/**\n     * 启动时先从 Room 恢复任务卡片")
+
+        val captureIndex = initializeBody.indexOf(
+            "val startupAdmissionTicket = downloadAdmissionGate.openTicketOrNull()"
+        )
+        val progressCallIndex = initializeBody.indexOf(
+            "restorePersistedDownloadProgress(\n                    context = appContext"
+        )
+        val recoveryCallIndex = initializeBody.indexOf(
+            "recoverPendingDownloadsForStartup(\n                    context = appContext"
+        )
+
+        assertTrue(captureIndex >= 0)
+        assertTrue(progressCallIndex > captureIndex)
+        assertTrue(recoveryCallIndex > captureIndex)
+        assertTrue(
+            initializeBody.substring(progressCallIndex, recoveryCallIndex)
+                .contains("admissionTicket = startupAdmissionTicket")
+        )
+        assertTrue(
+            initializeBody.substring(recoveryCallIndex)
+                .contains("admissionTicket = startupAdmissionTicket")
+        )
+        assertTrue(recoveryBody.contains("admissionTicket: Long?"))
+        assertTrue(recoveryBody.contains("capturedAdmissionTicket"))
+        assertFalse(recoveryBody.contains("openTicketOrNull()"))
+    }
+
+    @Test
     fun `late progress callbacks update existing attempts without recreating tasks`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
@@ -1348,11 +1413,78 @@ class GlobalDownloadManagerStartupPolicyTest {
         val progressBody = source.substringAfter(
             "private suspend fun updateDownloadProgress(progress: AudioDownloadManager.DownloadProgress)"
         ).substringBefore("private suspend fun restoreTaskProgressCheckpoint")
+        val ticketIndex = progressBody.indexOf(
+            "val admissionTicket = openDownloadAdmissionTicketOrNull(appContext)"
+        )
+        val admissionIndex = progressBody.indexOf(
+            "admitDownloadMutation(appContext, admissionTicket)"
+        )
+        val taskUpdateIndex = progressBody.indexOf("taskStore.updateProgress(progress)")
+        val presentationIndex = progressBody.indexOf(
+            "updateBatchDownloadPresentationProgress(effectiveProgress)"
+        )
+        val checkpointIndex = progressBody.indexOf(
+            "DownloadExecutionRoomStore.checkpointProgress("
+        )
 
-        assertTrue(progressBody.contains("if (!taskStore.updateProgress(progress))"))
+        assertTrue(ticketIndex >= 0)
+        assertTrue(admissionIndex > ticketIndex)
+        assertTrue(taskUpdateIndex > admissionIndex)
+        assertTrue(presentationIndex > taskUpdateIndex)
+        assertTrue(checkpointIndex > presentationIndex)
         assertTrue(progressBody.contains("progress.attemptId"))
         assertFalse(progressBody.contains("ensureDownloadTasks("))
         assertFalse(progressBody.contains("registerActiveDownloadTask("))
+    }
+
+    @Test
+    fun `completed task retention and pending queue persistence keep the clear admission`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val completedRemovalBody = source.substringAfter(
+            "private fun scheduleCompletedTaskRemoval("
+        ).substringBefore("private fun scheduleCatalogReconcile")
+        val pendingQueueBody = source.substringAfter(
+            "private fun rememberPendingDownloadQueue("
+        ).substringBefore("private fun beginDownloadRequestGeneration")
+
+        val delayIndex = completedRemovalBody.indexOf(
+            "delay(DOWNLOAD_TASK_COMPLETED_RETENTION_MS)"
+        )
+        val admissionIndex = completedRemovalBody.indexOf(
+            "admitDownloadMutation(appContext, capturedAdmissionTicket)"
+        )
+        val taskLookupIndex = completedRemovalBody.indexOf("taskStore.findTask(songKey)")
+        val removeIndex = completedRemovalBody.indexOf("removeDownloadTask(songKey")
+
+        assertTrue(completedRemovalBody.contains("admissionTicket: Long? = null"))
+        assertTrue(
+            completedRemovalBody.contains(
+                "val capturedAdmissionTicket = admissionTicket"
+            )
+        )
+        assertTrue(
+            completedRemovalBody.contains(
+                "openDownloadAdmissionTicketOrNull(appContext)"
+            )
+        )
+        assertTrue(delayIndex >= 0)
+        assertTrue(admissionIndex > delayIndex)
+        assertTrue(taskLookupIndex > admissionIndex)
+        assertTrue(removeIndex > taskLookupIndex)
+
+        val permitIndex = pendingQueueBody.indexOf(
+            "PersistentDownloadClearFenceStore.withSchedulingPermit("
+        )
+        val rejectIndex = pendingQueueBody.indexOf("onFenceActive = { emptyList() }")
+        val upsertIndex = pendingQueueBody.indexOf(
+            "ManagedDownloadStorage.upsertPendingDownloadQueue("
+        )
+
+        assertTrue(permitIndex >= 0)
+        assertTrue(rejectIndex > permitIndex)
+        assertTrue(upsertIndex > rejectIndex)
     }
 
     @Test
@@ -1416,7 +1548,7 @@ class GlobalDownloadManagerStartupPolicyTest {
             "internal suspend fun executeDownloadOperation"
         ).substringBefore("private suspend fun executionResultForOperation")
         val admissionIndex = executionBody.indexOf(
-            "admitDownloadMutation(appContext, admissionTicket)"
+            "admitDownloadMutation(appContext, capturedAdmissionTicket)"
         )
         val ensureIndex = executionBody.indexOf("taskStore.ensureDownloadTasks(")
         val upsertIndex = executionBody.indexOf("DownloadExecutionRoomStore.upsert(")
@@ -1424,7 +1556,11 @@ class GlobalDownloadManagerStartupPolicyTest {
             "admittedRequestGeneration = reuseOrBeginDownloadRequestGeneration"
         )
 
-        assertTrue(executionBody.indexOf("val admissionTicket = downloadAdmissionGate.ticket()") >= 0)
+        assertTrue(
+            executionBody.indexOf(
+                "val capturedAdmissionTicket = admissionTicket"
+            ) >= 0
+        )
         assertTrue(admissionIndex >= 0)
         assertFalse(executionBody.contains("downloadAdmissionGate.admit(admissionTicket)"))
         assertTrue(ensureIndex > admissionIndex)
@@ -1440,6 +1576,60 @@ class GlobalDownloadManagerStartupPolicyTest {
         ).substringBefore("/** 队列持久化完成前")
         assertTrue(admissionHelperBody.contains("isDownloadClearFenceActive(appContext)"))
         assertTrue(admissionHelperBody.contains("ranBlock = true"))
+    }
+
+    @Test
+    fun `artifact recovery never bypasses clear admission`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val helperBody = source.substringAfter(
+            "private suspend fun admitArtifactRecoveryMutation("
+        ).substringBefore("/** 队列持久化完成前")
+        val legacyBody = source.substringAfter(
+            "internal suspend fun reconcileMaterializedLegacyDownloads(context: Context)"
+        ).substringBefore("    /**")
+        val migrationBody = source.substringAfter(
+            "internal suspend fun reconcilePendingDownloadsBeforeMigrationDetailed("
+        ).substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+        val recoveryBody = source.substringAfter(
+            "private suspend fun recoverPendingAudioWritesFromRoot("
+        ).substringBefore("private suspend fun recoverUnfinalizedPublishedAudioFromRoot")
+        val sourceRootBody = recoveryBody.substringAfter("if (sourceRootRecovery) {")
+            .substringBefore("val metadataPostProcessingEnabled")
+        val networkBody = source.substringAfter(
+            "fun recoverPendingDownloadsForNetworkRestored(context: Context, reason: String)"
+        ).substringBefore("internal fun scheduleWifiRecoveryProbe")
+
+        assertTrue(helperBody.contains("if (admissionTicket == null)"))
+        assertTrue(helperBody.contains("return false"))
+        assertFalse(helperBody.contains("block()\n            return true"))
+        assertTrue(legacyBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(
+            migrationBody.contains("val admissionTicket = downloadAdmissionGate.openTicketOrNull()")
+        )
+        assertTrue(migrationBody.contains("admissionTicket = admissionTicket"))
+        assertTrue(sourceRootBody.contains("admitArtifactRecoveryMutation("))
+        assertTrue(
+            sourceRootBody.indexOf("admitArtifactRecoveryMutation(") <
+                sourceRootBody.indexOf("cleanupCancelledPendingDownloadArtifacts(")
+        )
+        assertTrue(
+            networkBody.contains(
+                "recoverPendingAudioWritesFromRoot(\n                    context = appContext,\n                    admissionTicket = admissionTicket"
+            )
+        )
+        assertTrue(
+            networkBody.contains(
+                "recoverUnfinalizedPublishedAudioFromRoot(\n                    context = appContext,\n                    admissionTicket = admissionTicket"
+            )
+        )
+        assertFalse(
+            networkBody.contains(
+                "admitArtifactRecoveryMutation(appContext, admissionTicket) {\n" +
+                    "                        recoverPendingAudioWritesFromRoot"
+            )
+        )
     }
 
     @Test
@@ -1485,8 +1675,58 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(
             source.substringAfter("internal suspend fun executeDownloadOperation(")
                 .substringBefore("private suspend fun executionResultForOperation(")
-                .contains("admissionTicket = admissionTicket")
+                .contains("admissionTicket = capturedAdmissionTicket")
         )
+    }
+
+    @Test
+    fun `batch preparation and post core recovery honor the admission ticket`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val batchPreparationBody = source
+            .substringAfter("private suspend fun prepareBatchDownloadSong(")
+            .substringBefore("private suspend fun prepareBatchDownloadSongAdmitted")
+        val settlementBody = source
+            .substringAfter("private suspend fun settlePostCoreEnrichmentFailure(")
+            .substringBefore("private suspend fun schedulePostCoreEnrichmentRetry")
+        val retryBody = source
+            .substringAfter("private suspend fun schedulePostCoreEnrichmentRetry(")
+            .substringBefore("private suspend fun enrichCoreCommittedDownload")
+
+        val preparationAdmissionIndex = batchPreparationBody.indexOf(
+            "admitDownloadMutation("
+        )
+        val preparationCallIndex = batchPreparationBody.indexOf(
+            "prepareBatchDownloadSongAdmitted("
+        )
+        assertTrue(preparationAdmissionIndex >= 0)
+        assertTrue(preparationCallIndex > preparationAdmissionIndex)
+        assertTrue(batchPreparationBody.contains("session.admissionTicket"))
+
+        val taskUpdateIndex = settlementBody.indexOf("updateTaskStatus(")
+        val settlementTicketCheckIndex = settlementBody.lastIndexOf(
+            "isDownloadAdmissionTicketCurrent(appContext, admissionTicket)",
+            startIndex = taskUpdateIndex
+        )
+        assertTrue(taskUpdateIndex >= 0)
+        assertTrue(settlementTicketCheckIndex >= 0)
+        assertTrue(settlementTicketCheckIndex < taskUpdateIndex)
+
+        val permitIndex = retryBody.indexOf(
+            "PersistentDownloadClearFenceStore.withSchedulingPermit("
+        )
+        val permitTicketCheckIndex = retryBody.indexOf(
+            "isDownloadAdmissionTicketCurrent(appContext, admissionTicket)",
+            startIndex = permitIndex
+        )
+        val hostScheduleIndex = retryBody.indexOf(
+            "DownloadExecutionHosts.default.schedule(",
+            startIndex = permitIndex
+        )
+        assertTrue(permitIndex >= 0)
+        assertTrue(permitTicketCheckIndex > permitIndex)
+        assertTrue(hostScheduleIndex > permitTicketCheckIndex)
     }
 
     @Test
@@ -3701,15 +3941,15 @@ class GlobalDownloadManagerStartupPolicyTest {
         assertTrue(coreCommitBody.contains("allowMissingTask = allowMissingTask"))
         assertTrue(enrichmentBody.contains("allowMissingTask = allowMissingTask"))
         assertTrue(
-            networkRecoveryBody.indexOf("recoverPendingAudioWritesFromRoot(appContext)") <
+            networkRecoveryBody.indexOf("recoverPendingAudioWritesFromRoot(") <
                 networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
         )
         assertTrue(
-            networkRecoveryBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(appContext)") <
+            networkRecoveryBody.indexOf("recoverUnfinalizedPublishedAudioFromRoot(") <
                 networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
         )
         assertTrue(
-            networkRecoveryBody.indexOf("repairFinalizedDownloadedCoversFromRoot(appContext)") <
+            networkRecoveryBody.indexOf("repairFinalizedDownloadedCoversFromRoot(") <
                 networkRecoveryBody.indexOf("if (!hasPendingRecoveryCandidates(appContext))")
         )
     }

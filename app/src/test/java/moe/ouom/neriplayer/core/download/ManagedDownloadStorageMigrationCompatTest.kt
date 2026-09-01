@@ -99,6 +99,45 @@ class ManagedDownloadStorageMigrationCompatTest {
         assertFalse(ManagedDownloadMigrationEntryCollector.isPendingArtifact(ordinary))
     }
 
+    @Test
+    fun `migration blocks a pending pair but preserves metadata only evidence`() {
+        fun entry(name: String) = ManagedDownloadStorage.StoredEntry(
+            name = name,
+            reference = "/downloads/$name",
+            mediaUri = "file:///downloads/$name",
+            localFilePath = "/downloads/$name",
+            sizeBytes = 1L,
+            lastModifiedMs = 1L
+        )
+
+        val pendingAudio = entry("paired.mp3.npdl_pending.operation.pending")
+        val pairedMetadata = entry("paired.mp3.npmeta.pending.json")
+        val metadataOnly = entry("orphan.mp3.npmeta.pending.json")
+
+        val classification = ManagedDownloadMigrationEntryCollector.classifyPendingArtifacts(
+            rootEntries = listOf(pairedMetadata, metadataOnly),
+            temporaryEntries = listOf(pendingAudio)
+        )
+
+        assertEquals(
+            listOf(pairedMetadata.name, pendingAudio.name).sorted(),
+            classification.blockingNames
+        )
+        assertEquals(listOf(metadataOnly.name), classification.metadataOnlyNames)
+        assertTrue(
+            ManagedDownloadMigrationEntryCollector.hasBlockingPendingArtifacts(
+                rootEntries = listOf(pairedMetadata, metadataOnly),
+                temporaryEntries = listOf(pendingAudio)
+            )
+        )
+        assertFalse(
+            ManagedDownloadMigrationEntryCollector.hasBlockingPendingArtifacts(
+                rootEntries = listOf(metadataOnly),
+                temporaryEntries = emptyList()
+            )
+        )
+    }
+
     private fun deleteFile(reference: TrustedManagedRef): StorageMutationResult {
         val fileReference = reference.reference as? StorageReference.FileRef
             ?: return StorageMutationResult.Unsupported("file reference required")

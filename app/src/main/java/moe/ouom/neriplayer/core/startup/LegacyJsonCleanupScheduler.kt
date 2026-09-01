@@ -92,7 +92,7 @@ internal object LegacyJsonCleanupScheduler {
                     }
                     val plan = coordinator.buildPlan()
                     if (plan.targets.none { it.exists }) {
-                        if (lastUpgradeResult?.isComplete == true) {
+                        if (lastUpgradeResult?.isSettled == true) {
                             return@launchBackgroundIo
                         }
                         continue
@@ -101,7 +101,7 @@ internal object LegacyJsonCleanupScheduler {
                     lastResult = coordinator.execute(plan, confirmed = true)
                     if (
                         lastResult.status == LegacyJsonCleanupStatus.COMPLETED &&
-                        lastUpgradeResult?.isComplete == true
+                        lastUpgradeResult?.isSettled == true
                     ) {
                         NPLogger.d(
                             TAG,
@@ -110,9 +110,16 @@ internal object LegacyJsonCleanupScheduler {
                         )
                         return@launchBackgroundIo
                     }
+                    if (
+                        lastResult.status != LegacyJsonCleanupStatus.PARTIAL_FAILURE &&
+                        lastUpgradeResult?.isUserClearSuppressed == true &&
+                        plan.isBlockedOnlyByUserClearedDownloadQueues
+                    ) {
+                        return@launchBackgroundIo
+                    }
                 }
 
-                lastUpgradeResult?.takeUnless(LegacyDownloadUpgradeResult::isComplete)?.let { result ->
+                lastUpgradeResult?.takeUnless(LegacyDownloadUpgradeResult::isSettled)?.let { result ->
                     NPLogger.d(
                         TAG,
                         "Legacy download upgrade pending: rows=${result.rowsPending}, " +
@@ -182,7 +189,7 @@ internal object LegacyJsonCleanupScheduler {
                         total = total
                     )
                 }.also { result ->
-                        if (result.isComplete) {
+                        if (result.isSettled) {
                             if (result.rowsCompleted > 0) {
                                 // database rows are durable now, but the visible
                                 // catalog still needs one complete SAF rebuild

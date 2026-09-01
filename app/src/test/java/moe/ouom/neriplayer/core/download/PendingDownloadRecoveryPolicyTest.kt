@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,6 +39,25 @@ class PendingDownloadRecoveryPolicyTest {
             failedAudioCount = 0
         )
 
+        assertTrue(summary.isConverged)
+    }
+
+    @Test
+    fun `metadata only pending evidence does not keep migration recovery open`() {
+        val scan = ManagedDownloadStorage.PendingArtifactScanResult(
+            count = 1,
+            isComplete = true,
+            migrationBlockingArtifactCount = 0,
+            migrationMetadataOnlyArtifactCount = 1
+        )
+        val summary = PendingDownloadRecoverySummary(
+            leaseAcquired = true,
+            initialScanComplete = true,
+            pendingScanComplete = scan.isComplete,
+            remainingArtifactCount = scan.migrationBlockingArtifactCount
+        )
+
+        assertEquals(1, scan.migrationMetadataOnlyArtifactCount)
         assertTrue(summary.isConverged)
     }
 
@@ -81,6 +101,19 @@ class PendingDownloadRecoveryPolicyTest {
 
         assertTrue(body.contains("WaitingForRetry"))
         assertFalse(body.contains("ManagedLibraryProcessingCoordinator.complete("))
+    }
+
+    @Test
+    fun `migration recovery uses only pending artifacts that require audio recovery`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = source.substringAfter(
+            "internal suspend fun reconcilePendingDownloadsBeforeMigrationDetailed("
+        ).substringBefore("private const val TERMINAL_OPERATION_RETENTION_MS")
+
+        assertTrue(body.contains("pendingScan.migrationBlockingArtifactCount"))
+        assertTrue(body.contains("pendingScan.migrationMetadataOnlyArtifactCount"))
     }
 
     @Test

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import android.content.Context
+import androidx.room.withTransaction
 import java.io.File
 import java.net.URLDecoder
 import java.text.Normalizer
@@ -22,7 +23,9 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
 import moe.ouom.neriplayer.core.download.storage.ManagedDownloadStorageJsonCodec
 import moe.ouom.neriplayer.core.download.storage.audioExtensions
 import moe.ouom.neriplayer.core.download.storage.metadata.ManagedDownloadCoverAssetStore
+import moe.ouom.neriplayer.core.download.storage.queue.DownloadRecoveryRoomStore
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
+import moe.ouom.neriplayer.data.local.database.entity.MigrationMetadataEntity
 import moe.ouom.neriplayer.data.model.SongItem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,7 +37,8 @@ internal enum class LegacyDownloadUpgradeRowStatus {
     STORAGE_UNAVAILABLE,
     PROVIDER_FAILURE,
     INVALID_PAYLOAD,
-    CONFLICT
+    CONFLICT,
+    QUEUE_IMPORT_SUPPRESSED
 }
 
 internal data class LegacyDownloadUpgradeRowResult(
@@ -51,10 +55,17 @@ internal data class LegacyDownloadUpgradeResult(
     val rowResults: List<LegacyDownloadUpgradeRowResult>,
     val temporaryTableCleaned: Boolean,
     val legacyProjectionTablesCleaned: Boolean,
-    val rowsQuarantined: Int = 0
+    val rowsQuarantined: Int = 0,
+    val rowsSuppressedByUserClear: Int = 0
 ) {
     val isComplete: Boolean
         get() = rowsPending == 0 && temporaryTableCleaned && legacyProjectionTablesCleaned
+
+    val isUserClearSuppressed: Boolean
+        get() = rowsSuppressedByUserClear > 0 && rowsPending == rowsSuppressedByUserClear
+
+    val isSettled: Boolean
+        get() = isComplete || isUserClearSuppressed
 }
 
 internal fun resolveLegacyManagedCoverEntry(
@@ -250,8 +261,31 @@ internal class LegacyDownloadUpgradeCoordinator(
             )
         }
 
+        var queueImportSuppressed = isLegacyQueueImportSuppressed()
+        val unsuppressedRows = countPayloadRows(
+            database = sqliteDatabase,
+            excludeUserClearSuppressedRows = queueImportSuppressed
+        )
+        if (queueImportSuppressed && unsuppressedRows == 0) {
+            val rowsSuppressedByUserClear = countUserClearSuppressedPayloadRows(sqliteDatabase)
+            if (rowsSuppressedByUserClear > 0) {
+                return@withContext LegacyDownloadUpgradeResult(
+                    tableFound = true,
+                    rowsSeen = 0,
+                    rowsCompleted = 0,
+                    rowsPending = rowsSuppressedByUserClear,
+                    rowResults = emptyList(),
+                    temporaryTableCleaned = false,
+                    legacyProjectionTablesCleaned = false,
+                    rowsSuppressedByUserClear = rowsSuppressedByUserClear
+                )
+            }
+        }
         var rowsQuarantined = quarantineUnresolvedPayloadRows(sqliteDatabase)
-        val totalRows = countPayloadRows(sqliteDatabase)
+        val totalRows = countPayloadRows(
+            database = sqliteDatabase,
+            excludeUserClearSuppressedRows = queueImportSuppressed
+        )
         var rowsSeen = 0
         val rowResults = mutableListOf<LegacyDownloadUpgradeRowResult>()
         var afterStableKey: String? = null
@@ -259,7 +293,11 @@ internal class LegacyDownloadUpgradeCoordinator(
         var managedLookup: LegacyManagedRootLookup? = null
         var snapshotFailure: Throwable? = null
         while (true) {
-            val rows = readRowBatch(sqliteDatabase, afterStableKey)
+            val rows = readRowBatch(
+                database = sqliteDatabase,
+                afterStableKey = afterStableKey,
+                excludeUserClearSuppressedRows = queueImportSuppressed
+            )
             if (rows.isEmpty()) break
             val preparedRows = rows.map { row ->
                 val parsed = runCatching { JSONObject(row.payloadJson) }
@@ -332,13 +370,37 @@ internal class LegacyDownloadUpgradeCoordinator(
                 }
                     .also { laneJobs.awaitAll() }
             }
+            val suppressedKeys = persistUserClearSuppressedPayloadRows(
+                batchResults.asSequence()
+                    .filter { result ->
+                        result.status == LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+                    }
+                    .map(LegacyDownloadUpgradeRowResult::stableKey)
+                    .toSet()
+            )
+            if (suppressedKeys.isNotEmpty()) {
+                queueImportSuppressed = true
+            }
+            val persistedResults = batchResults.map { result ->
+                if (
+                    result.status == LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED &&
+                        result.stableKey !in suppressedKeys
+                ) {
+                    result.copy(
+                        status = LegacyDownloadUpgradeRowStatus.PROVIDER_FAILURE,
+                        detail = "user clear suppression marker was not persisted"
+                    )
+                } else {
+                    result
+                }
+            }
             val quarantinedKeys = quarantineTerminalPayloadRows(
                 database = sqliteDatabase,
                 rows = rows,
-                results = batchResults
+                results = persistedResults
             )
             rowsQuarantined += quarantinedKeys.size
-            val settledResults = batchResults.map { result ->
+            val settledResults = persistedResults.map { result ->
                 if (result.stableKey in quarantinedKeys) {
                     result.copy(status = LegacyDownloadUpgradeRowStatus.QUARANTINED)
                 } else {
@@ -360,6 +422,24 @@ internal class LegacyDownloadUpgradeCoordinator(
             afterStableKey = rows.last().stableKey
         }
         if (rowsSeen == 0) {
+            val rowsSuppressedByUserClear = if (queueImportSuppressed) {
+                countUserClearSuppressedPayloadRows(sqliteDatabase)
+            } else {
+                0
+            }
+            if (rowsSuppressedByUserClear > 0) {
+                return@withContext LegacyDownloadUpgradeResult(
+                    tableFound = true,
+                    rowsSeen = 0,
+                    rowsCompleted = 0,
+                    rowsPending = rowsSuppressedByUserClear,
+                    rowResults = emptyList(),
+                    temporaryTableCleaned = false,
+                    legacyProjectionTablesCleaned = false,
+                    rowsQuarantined = rowsQuarantined,
+                    rowsSuppressedByUserClear = rowsSuppressedByUserClear
+                )
+            }
             val temporaryTableCleaned = cleanTemporaryTable(sqliteDatabase)
             return@withContext LegacyDownloadUpgradeResult(
                 tableFound = true,
@@ -377,7 +457,8 @@ internal class LegacyDownloadUpgradeCoordinator(
             database = sqliteDatabase,
             rowsSeen = rowsSeen,
             rowResults = rowResults,
-            rowsQuarantined = rowsQuarantined
+            rowsQuarantined = rowsQuarantined,
+            queueImportSuppressed = queueImportSuppressed
         )
     }
 
@@ -504,12 +585,20 @@ internal class LegacyDownloadUpgradeCoordinator(
         database: androidx.sqlite.db.SupportSQLiteDatabase,
         rowsSeen: Int,
         rowResults: List<LegacyDownloadUpgradeRowResult>,
-        rowsQuarantined: Int
+        rowsQuarantined: Int,
+        queueImportSuppressed: Boolean
     ): LegacyDownloadUpgradeResult {
-        val pending = rowResults.count { result ->
+        val retryableRows = rowResults.count { result ->
             result.status != LegacyDownloadUpgradeRowStatus.COMPLETED &&
-                result.status != LegacyDownloadUpgradeRowStatus.QUARANTINED
+                result.status != LegacyDownloadUpgradeRowStatus.QUARANTINED &&
+                result.status != LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
         }
+        val rowsSuppressedByUserClear = if (queueImportSuppressed) {
+            countUserClearSuppressedPayloadRows(database)
+        } else {
+            0
+        }
+        val pending = retryableRows + rowsSuppressedByUserClear
         val temporaryTableCleaned = if (pending == 0) {
             cleanTemporaryTable(database)
         } else {
@@ -530,7 +619,8 @@ internal class LegacyDownloadUpgradeCoordinator(
             rowResults = rowResults,
             temporaryTableCleaned = temporaryTableCleaned,
             legacyProjectionTablesCleaned = legacyProjectionTablesCleaned,
-            rowsQuarantined = rowsQuarantined
+            rowsQuarantined = rowsQuarantined,
+            rowsSuppressedByUserClear = rowsSuppressedByUserClear
         )
     }
 
@@ -590,6 +680,7 @@ internal class LegacyDownloadUpgradeCoordinator(
                 detail = "orphan legacy cancellation marker ignored"
             )
         }
+        var queueImportSuppressed = false
         if (pendingRow != null) {
             val hasMetadata = legacyPayloadNeedsManagedRootSnapshot(row.payloadJson)
             val operationResult = persistLegacyOperation(
@@ -597,7 +688,14 @@ internal class LegacyDownloadUpgradeCoordinator(
                 pendingRow = pendingRow,
                 cancelled = cancelledRow != null
             )
-            if (operationResult.status != LegacyDownloadUpgradeRowStatus.COMPLETED || !hasMetadata) {
+            queueImportSuppressed = operationResult.status ==
+                LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+            if (
+                (
+                    operationResult.status != LegacyDownloadUpgradeRowStatus.COMPLETED &&
+                        !queueImportSuppressed
+                    ) || !hasMetadata
+            ) {
                 return operationResult
             }
         }
@@ -654,7 +752,11 @@ internal class LegacyDownloadUpgradeCoordinator(
                 ) {
                     return LegacyDownloadUpgradeRowResult(
                         stableKey = effectiveStableKey,
-                        status = LegacyDownloadUpgradeRowStatus.COMPLETED
+                        status = if (queueImportSuppressed) {
+                            LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+                        } else {
+                            LegacyDownloadUpgradeRowStatus.COMPLETED
+                        }
                     )
                 }
             }
@@ -695,7 +797,11 @@ internal class LegacyDownloadUpgradeCoordinator(
             }
             LegacyDownloadUpgradeRowResult(
                 stableKey = effectiveStableKey,
-                status = LegacyDownloadUpgradeRowStatus.COMPLETED
+                status = if (queueImportSuppressed) {
+                    LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+                } else {
+                    LegacyDownloadUpgradeRowStatus.COMPLETED
+                }
             )
         } catch (error: CancellationException) {
             throw error
@@ -752,34 +858,42 @@ internal class LegacyDownloadUpgradeCoordinator(
                 sourceStableKey = stableKey
             )
         return try {
-            val operationId = UUID.nameUUIDFromBytes(
-                "legacy-download:$stableKey".toByteArray(Charsets.UTF_8)
-            ).toString()
-            val request = DownloadExecutionRequest(
-                operationId = operationId,
-                song = song,
-                userInitiated = false
-            )
-            DownloadExecutionRoomStore.upsert(
-                context = context,
-                request = request,
-                state = if (cancelled) "CANCELLED" else "QUEUED",
-                queueOrder = pendingRow?.optInt("queue_order", 0) ?: 0,
-                database = database
-            )
-            if (cancelled) {
-                DownloadExecutionRoomStore.updateState(
-                    context = context,
+            database.withTransaction {
+                if (isLegacyQueueImportSuppressed()) {
+                    return@withTransaction LegacyDownloadUpgradeRowResult(
+                        stableKey = stableKey,
+                        status = LegacyDownloadUpgradeRowStatus.QUEUE_IMPORT_SUPPRESSED
+                    )
+                }
+                val operationId = UUID.nameUUIDFromBytes(
+                    "legacy-download:$stableKey".toByteArray(Charsets.UTF_8)
+                ).toString()
+                val request = DownloadExecutionRequest(
                     operationId = operationId,
-                    state = "CANCELLED",
-                    errorCode = "LEGACY_CANCELLED",
+                    song = song,
+                    userInitiated = false
+                )
+                DownloadExecutionRoomStore.upsert(
+                    context = context,
+                    request = request,
+                    state = if (cancelled) "CANCELLED" else "QUEUED",
+                    queueOrder = pendingRow?.optInt("queue_order", 0) ?: 0,
                     database = database
                 )
+                if (cancelled) {
+                    DownloadExecutionRoomStore.updateState(
+                        context = context,
+                        operationId = operationId,
+                        state = "CANCELLED",
+                        errorCode = "LEGACY_CANCELLED",
+                        database = database
+                    )
+                }
+                LegacyDownloadUpgradeRowResult(
+                    stableKey = stableKey,
+                    status = LegacyDownloadUpgradeRowStatus.COMPLETED
+                )
             }
-            LegacyDownloadUpgradeRowResult(
-                stableKey = stableKey,
-                status = LegacyDownloadUpgradeRowStatus.COMPLETED
-            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
@@ -1107,19 +1221,32 @@ internal class LegacyDownloadUpgradeCoordinator(
 
     private fun readRowBatch(
         database: androidx.sqlite.db.SupportSQLiteDatabase,
-        afterStableKey: String?
+        afterStableKey: String?,
+        excludeUserClearSuppressedRows: Boolean
     ): List<PayloadRow> {
-        val query = if (afterStableKey == null) {
-            "SELECT stable_key, payload_json FROM $PAYLOAD_TABLE " +
-                "ORDER BY stable_key ASC LIMIT $ROW_BATCH_SIZE"
-        } else {
-            "SELECT stable_key, payload_json FROM $PAYLOAD_TABLE " +
-                "WHERE stable_key > ? ORDER BY stable_key ASC LIMIT $ROW_BATCH_SIZE"
+        val conditions = mutableListOf<String>()
+        val bindArgs = mutableListOf<Any>()
+        afterStableKey?.let { stableKey ->
+            conditions += "payload.stable_key > ?"
+            bindArgs += stableKey
         }
-        val cursor = if (afterStableKey == null) {
+        if (excludeUserClearSuppressedRows) {
+            conditions +=
+                "NOT EXISTS (SELECT 1 FROM migration_metadata marker " +
+                    "WHERE marker.key = ? || payload.stable_key AND marker.value = ?)"
+            bindArgs += USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX
+            bindArgs += DownloadRecoveryRoomStore.USER_CLEARED_STATE
+        }
+        val whereClause = conditions.takeIf { it.isNotEmpty() }
+            ?.joinToString(prefix = " WHERE ", separator = " AND ")
+            .orEmpty()
+        val query = "SELECT stable_key, payload_json FROM $PAYLOAD_TABLE payload" +
+            whereClause +
+            " ORDER BY payload.stable_key ASC LIMIT $ROW_BATCH_SIZE"
+        val cursor = if (bindArgs.isEmpty()) {
             database.query(query)
         } else {
-            database.query(query, arrayOf(afterStableKey))
+            database.query(query, bindArgs.toTypedArray())
         }
         return cursor.use {
             val stableKeyIndex = cursor.getColumnIndexOrThrow("stable_key")
@@ -1138,9 +1265,76 @@ internal class LegacyDownloadUpgradeCoordinator(
     }
 
     private fun countPayloadRows(
+        database: androidx.sqlite.db.SupportSQLiteDatabase,
+        excludeUserClearSuppressedRows: Boolean
+    ): Int {
+        val query = if (excludeUserClearSuppressedRows) {
+            "SELECT COUNT(*) FROM $PAYLOAD_TABLE payload " +
+                "WHERE NOT EXISTS (SELECT 1 FROM migration_metadata marker " +
+                "WHERE marker.key = ? || payload.stable_key AND marker.value = ?)"
+        } else {
+            "SELECT COUNT(*) FROM $PAYLOAD_TABLE"
+        }
+        val cursor = if (excludeUserClearSuppressedRows) {
+            database.query(
+                query,
+                arrayOf(
+                    USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX,
+                    DownloadRecoveryRoomStore.USER_CLEARED_STATE
+                )
+            )
+        } else {
+            database.query(query)
+        }
+        return cursor.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+    }
+
+    private suspend fun persistUserClearSuppressedPayloadRows(
+        stableKeys: Set<String>
+    ): Set<String> {
+        val normalizedKeys = stableKeys.map(String::trim).filter(String::isNotBlank).toSet()
+        if (normalizedKeys.isEmpty()) return emptySet()
+        return try {
+            database.withTransaction {
+                val nowMs = System.currentTimeMillis()
+                normalizedKeys.forEach { stableKey ->
+                    database.syncMetadataDao().upsertMigrationMetadata(
+                        MigrationMetadataEntity(
+                            key = USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX + stableKey,
+                            value = DownloadRecoveryRoomStore.USER_CLEARED_STATE,
+                            updatedAt = nowMs
+                        )
+                    )
+                }
+                normalizedKeys
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            emptySet()
+        }
+    }
+
+    private suspend fun isLegacyQueueImportSuppressed(): Boolean {
+        return database.syncMetadataDao()
+            .getMigrationMetadata(DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY)
+            ?.value == DownloadRecoveryRoomStore.USER_CLEARED_STATE
+    }
+
+    private fun countUserClearSuppressedPayloadRows(
         database: androidx.sqlite.db.SupportSQLiteDatabase
     ): Int {
-        return database.query("SELECT COUNT(*) FROM $PAYLOAD_TABLE").use { cursor ->
+        return database.query(
+            "SELECT COUNT(*) FROM $PAYLOAD_TABLE payload " +
+                "WHERE EXISTS (SELECT 1 FROM migration_metadata marker " +
+                "WHERE marker.key = ? || payload.stable_key AND marker.value = ?)",
+            arrayOf(
+                USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX,
+                DownloadRecoveryRoomStore.USER_CLEARED_STATE
+            )
+        ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0
         }
     }
@@ -1330,6 +1524,8 @@ internal class LegacyDownloadUpgradeCoordinator(
     companion object {
         internal const val PAYLOAD_TABLE = "legacy_download_upgrade_payload"
         internal const val QUARANTINE_TABLE = "legacy_download_upgrade_quarantine"
+        private const val USER_CLEAR_SUPPRESSION_METADATA_KEY_PREFIX =
+            "legacy_download_upgrade_queue_suppressed:"
         private const val ROW_BATCH_SIZE = 64
         private const val ROW_PROCESS_PARALLELISM = 8
         private const val PROGRESS_UPDATE_INTERVAL = 16

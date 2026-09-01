@@ -3695,7 +3695,11 @@ internal object ManagedDownloadStorage {
         val count: Int,
         val isComplete: Boolean,
         /** 已确认属于核心音频的 pending 项，不应阻塞清空收敛 */
-        val protectedCount: Int = 0
+        val protectedCount: Int = 0,
+        /** 迁移时会阻断复制的 pending 音频及其 metadata 配对 */
+        val migrationBlockingArtifactCount: Int = count,
+        /** 没有同名 pending 音频的 metadata 凭据，迁移会保留但不反复重试 */
+        val migrationMetadataOnlyArtifactCount: Int = 0
     ) {
         val blockingCount: Int
             get() = (count - protectedCount.coerceAtLeast(0)).coerceAtLeast(0)
@@ -3743,6 +3747,11 @@ internal object ManagedDownloadStorage {
                     entry.name.contains(PENDING_METADATA_SUFFIX, ignoreCase = true)
             }
             .toList()
+        val migrationPendingArtifacts =
+            ManagedDownloadMigrationEntryCollector.classifyPendingArtifacts(
+                rootEntries = refresh.entries,
+                temporaryEntries = temporary.entries
+            )
         val count = pendingEntries.size
         val cachedDurableAudioNames = if (
             directoryUri?.trim()?.isNotBlank() == true ||
@@ -3771,7 +3780,9 @@ internal object ManagedDownloadStorage {
         PendingArtifactScanResult(
             count = count,
             isComplete = true,
-            protectedCount = protectedCount
+            protectedCount = protectedCount,
+            migrationBlockingArtifactCount = migrationPendingArtifacts.blockingNames.size,
+            migrationMetadataOnlyArtifactCount = migrationPendingArtifacts.metadataOnlyNames.size
         )
     }
 
@@ -10292,11 +10303,19 @@ internal object ManagedDownloadStorage {
                 "迁移前源目录 .tmp 枚举不完整，暂缓处理临时文件"
             )
         }
-        val pendingNames = ManagedDownloadMigrationEntryCollector.pendingArtifactNames(
+        val pendingArtifacts = ManagedDownloadMigrationEntryCollector.classifyPendingArtifacts(
             rootEntries = rootRefresh.entries,
             temporaryEntries = temporary.entries
         )
+        val pendingNames = pendingArtifacts.blockingNames
         if (pendingNames.isEmpty()) {
+            if (pendingArtifacts.metadataOnlyNames.isNotEmpty()) {
+                NPLogger.i(
+                    TAG,
+                    "迁移前保留无同名 pending 音频的 metadata 凭据: " +
+                        "count=${pendingArtifacts.metadataOnlyNames.size}"
+                )
+            }
             return
         }
         val sample = pendingNames.take(MIGRATION_PENDING_ARTIFACT_LOG_SAMPLE_SIZE)

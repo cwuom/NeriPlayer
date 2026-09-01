@@ -249,35 +249,45 @@ internal object DownloadExecutionRoomStore {
         )
     }
 
-    /** 给全局下载泵提供有界快照，避免每次唤醒都把整张 operation 表装入内存 */
-    suspend fun listSchedulableForPump(
+    /** 给全局下载泵提供有界 keyset 页面，避免 grace 过滤把后续可运行任务饿死 */
+    suspend fun listSchedulableForPumpPage(
         context: Context,
+        afterCursor: DownloadExecutionPumpCursor?,
         limit: Int,
         database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
-    ): List<StateEntry> {
+    ): DownloadExecutionPumpPage {
         val boundedLimit = limit.coerceIn(1, PUMP_QUERY_MAX_ITEMS)
-        val entities = database.downloadOperationDao().findSchedulableForPump(
+        val entities = database.downloadOperationDao().findSchedulableForPumpAfterCursor(
             states = REUSABLE_OPERATION_STATES,
+            afterQueueOrder = afterCursor?.queueOrder,
+            afterUpdatedAtMs = afterCursor?.updatedAtMs,
+            afterOperationId = afterCursor?.operationId,
             limit = boundedLimit
         )
+        val nextCursor = entities.lastOrNull()
+            ?.takeIf { entities.size == boundedLimit }
+            ?.let { entity ->
+                DownloadExecutionPumpCursor(
+                    queueOrder = entity.queueOrder,
+                    updatedAtMs = entity.updatedAtMs,
+                    operationId = entity.operationId
+                )
+            }
         val malformedEntities = mutableListOf<DownloadOperationEntity>()
-        val entries = entities.mapNotNull { entity ->
+        val requests = entities.mapNotNull { entity ->
             val request = requestFromEntity(entity)
             if (request == null) {
                 malformedEntities += entity
                 null
             } else {
-                StateEntry(
-                    request = request,
-                    queueOrder = entity.queueOrder,
-                    createdAtMs = entity.createdAtMs,
-                    state = entity.state,
-                    updatedAtMs = entity.updatedAtMs
-                )
+                request
             }
         }
         malformedEntities.forEach { entity -> invalidateMalformedPayload(database, entity) }
-        return entries
+        return DownloadExecutionPumpPage(
+            requests = requests,
+            nextCursor = nextCursor
+        )
     }
 
     suspend fun listByStates(

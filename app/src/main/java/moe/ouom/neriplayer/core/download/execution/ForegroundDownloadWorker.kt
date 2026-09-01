@@ -15,17 +15,22 @@ import androidx.work.ListenableWorker
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.core.logging.NPLogger
 import java.security.MessageDigest
+import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** translates WorkManager events to the shared download host */
 class ForegroundDownloadWorker(
@@ -38,7 +43,26 @@ class ForegroundDownloadWorker(
         if (rawOperationId != null && operationId == null) {
             return@withContext Result.failure()
         }
+        if (
+            shouldRetireLegacyPerOperationWork(
+                hasOperationId = operationId != null,
+                sdkInt = Build.VERSION.SDK_INT
+            )
+        ) {
+            // API 34+ 已由 UIDT 和共享泵接管，旧版 per-operation Work 只能退出
+            return@withContext Result.success()
+        }
         val executionId = operationId ?: PUMP_OPERATION_ID
+        val pumpGeneration = inputData.getLong(
+            PUMP_GENERATION_KEY,
+            LEGACY_PUMP_GENERATION
+        )
+        if (
+            operationId == null &&
+                !pumpScheduleCoordinator.claimWorker(pumpGeneration)
+        ) {
+            return@withContext Result.success()
+        }
         var enteredHostExecution = false
         try {
             setForeground(createForegroundInfo(applicationContext, executionId))
@@ -48,6 +72,7 @@ class ForegroundDownloadWorker(
                 val workerResult = pumpResult.toWorkerResult()
                 markPumpFinished(
                     context = applicationContext,
+                    generation = pumpGeneration,
                     workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry
                 )
                 return@withContext workerResult
@@ -64,6 +89,7 @@ class ForegroundDownloadWorker(
             if (operationId == null) {
                 markPumpFinished(
                     context = applicationContext,
+                    generation = pumpGeneration,
                     workWillRetry = true
                 )
             }
@@ -83,6 +109,7 @@ class ForegroundDownloadWorker(
             if (operationId == null) {
                 markPumpFinished(
                     context = applicationContext,
+                    generation = pumpGeneration,
                     workWillRetry = true
                 )
             }
@@ -94,8 +121,11 @@ class ForegroundDownloadWorker(
         internal const val OPERATION_ID_KEY = "operation_id"
         internal const val PUMP_WORK_NAME = "download_execution_pump"
         internal const val PUMP_OPERATION_ID = "download-pump"
+        internal const val PUMP_GENERATION_KEY = "pump_generation"
         private const val PUMP_WORK_TAG = "download_execution_pump"
         private const val PUMP_RETRY_BACKOFF_MS = 10_000L
+        private const val PUMP_ENQUEUE_RETRY_DELAY_MS = 10_000L
+        private const val LEGACY_PUMP_GENERATION = 0L
         private val PUMP_SUCCESSOR_WORK_POLICY = ExistingWorkPolicy.APPEND_OR_REPLACE
         private const val WORK_NAME_PREFIX = "download_execution_"
         private const val WORK_TAG_PREFIX = "download_execution_operation_"
@@ -103,8 +133,9 @@ class ForegroundDownloadWorker(
         private const val CHANNEL_ID = "download_execution"
         internal val fallbackExistingWorkPolicy = ExistingWorkPolicy.KEEP
         internal val pumpExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE
-        private val pumpScheduleRequested = AtomicBoolean(false)
-        private val pumpSuccessorRequested = AtomicBoolean(false)
+        private val pumpScheduleCoordinator = DownloadPumpScheduleCoordinator()
+        private val pumpRetryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        private val pumpCallbackExecutor = Executor { runnable -> runnable.run() }
 
         fun schedule(
             context: Context,
@@ -114,12 +145,18 @@ class ForegroundDownloadWorker(
             return schedulePump(context)
         }
 
-        /** gives a UIDT job a short head start while keeping a durable fallback */
+        /** keeps compatibility with per-operation fallback work queued by older versions */
         fun scheduleFallback(
             context: Context,
             operationId: String
         ): Boolean {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return false
+            if (shouldRouteFallbackToSharedPump(Build.VERSION.SDK_INT)) {
+                return schedulePump(
+                    context = context,
+                    initialDelayMs = UIDT_START_GRACE_MS
+                )
+            }
             return runCatching {
                 WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
@@ -143,61 +180,106 @@ class ForegroundDownloadWorker(
             context: Context,
             initialDelayMs: Long = 0L
         ): Boolean {
-            if (!pumpScheduleRequested.compareAndSet(false, true)) {
-                pumpSuccessorRequested.set(true)
-                return true
-            }
+            return schedulePumpWithPolicy(
+                context = context,
+                existingWorkPolicy = pumpExistingWorkPolicy,
+                initialDelayMs = initialDelayMs
+            )
+        }
+
+        private fun schedulePumpWithPolicy(
+            context: Context,
+            existingWorkPolicy: ExistingWorkPolicy,
+            initialDelayMs: Long
+        ): Boolean {
+            val generation = pumpScheduleCoordinator.request() ?: return true
             val delayMs = initialDelayMs.coerceAtLeast(0L)
             return runCatching {
-                WorkManager.getInstance(context.applicationContext)
+                val operation = WorkManager.getInstance(context.applicationContext)
                     .enqueueUniqueWork(
                         PUMP_WORK_NAME,
-                        pumpExistingWorkPolicy,
-                        buildPumpRequest(delayMs)
+                        existingWorkPolicy,
+                        buildPumpRequest(
+                            initialDelayMs = delayMs,
+                            generation = generation
+                        )
                     )
+                observePumpEnqueue(
+                    context = context.applicationContext,
+                    generation = generation,
+                    operation = operation
+                )
                 true
             }.onFailure { error ->
-                NPLogger.w(
-                    "NERI-DownloadWorker",
-                    "全局下载泵调度失败，保留 Room operation 等待恢复: ${error.message}",
-                    error
+                handlePumpEnqueueFailure(
+                    context = context.applicationContext,
+                    generation = generation,
+                    error = error
                 )
-                pumpScheduleRequested.set(false)
-                pumpSuccessorRequested.set(false)
             }.getOrDefault(false)
         }
 
         private fun markPumpFinished(
             context: Context,
+            generation: Long,
             workWillRetry: Boolean
         ) {
-            pumpScheduleRequested.set(false)
-            val successorRequested = pumpSuccessorRequested.getAndSet(false)
-            if (successorRequested && !workWillRetry) {
+            if (
+                pumpScheduleCoordinator.complete(
+                    generation = generation,
+                    workWillRetry = workWillRetry
+                ) == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+            ) {
                 schedulePumpSuccessor(context)
             }
         }
 
         private fun schedulePumpSuccessor(context: Context): Boolean {
-            if (!pumpScheduleRequested.compareAndSet(false, true)) {
-                return true
-            }
-            return runCatching {
-                WorkManager.getInstance(context.applicationContext)
-                    .enqueueUniqueWork(
-                        PUMP_WORK_NAME,
-                        PUMP_SUCCESSOR_WORK_POLICY,
-                        buildPumpRequest()
+            return schedulePumpWithPolicy(
+                context = context,
+                existingWorkPolicy = PUMP_SUCCESSOR_WORK_POLICY,
+                initialDelayMs = 0L
+            )
+        }
+
+        private fun observePumpEnqueue(
+            context: Context,
+            generation: Long,
+            operation: Operation
+        ) {
+            operation.result.addListener(
+                Runnable {
+                    val error = runCatching { operation.result.get() }.exceptionOrNull()
+                        ?: return@Runnable
+                    handlePumpEnqueueFailure(
+                        context = context,
+                        generation = generation,
+                        error = error
                     )
-                true
-            }.onFailure { error ->
-                pumpScheduleRequested.set(false)
-                NPLogger.w(
-                    "NERI-DownloadWorker",
-                    "下载泵 successor 调度失败，保留 Room operation: ${error.message}",
-                    error
-                )
-            }.getOrDefault(false)
+                },
+                pumpCallbackExecutor
+            )
+        }
+
+        private fun handlePumpEnqueueFailure(
+            context: Context,
+            generation: Long,
+            error: Throwable
+        ) {
+            if (!pumpScheduleCoordinator.failEnqueue(generation)) {
+                return
+            }
+            NPLogger.w(
+                "NERI-DownloadWorker",
+                "全局下载泵调度失败，保留 Room operation 等待恢复: ${error.message}",
+                error
+            )
+            pumpRetryScope.launch {
+                delay(PUMP_ENQUEUE_RETRY_DELAY_MS)
+                if (pumpScheduleCoordinator.canRetry(generation)) {
+                    schedulePump(context)
+                }
+            }
         }
 
         fun cancel(
@@ -228,12 +310,11 @@ class ForegroundDownloadWorker(
         }
 
         fun cancelAllOwned(context: Context) {
+            pumpScheduleCoordinator.invalidate()
             runCatching {
                 WorkManager.getInstance(context.applicationContext)
                     .cancelAllWorkByTag(ALL_DOWNLOAD_WORK_TAG)
             }
-            pumpScheduleRequested.set(false)
-            pumpSuccessorRequested.set(false)
         }
 
         internal fun cancelFallback(
@@ -242,11 +323,10 @@ class ForegroundDownloadWorker(
         ) {
             val normalizedId = normalizeDownloadOperationId(operationId) ?: return
             runCatching {
-                WorkManager.getInstance(context.applicationContext)
-                    .cancelUniqueWork(fallbackWorkName(normalizedId))
+                val workManager = WorkManager.getInstance(context.applicationContext)
+                workManager.cancelUniqueWork(uniqueWorkName(normalizedId))
+                workManager.cancelUniqueWork(fallbackWorkName(normalizedId))
             }
-            // 旧 fallback 只属于当前 operation，结束后唤醒共享泵处理其他任务
-            schedulePump(context)
         }
 
         internal fun buildRequest(operationId: String): OneTimeWorkRequest {
@@ -276,13 +356,17 @@ class ForegroundDownloadWorker(
                 .build()
         }
 
-        internal fun buildPumpRequest(initialDelayMs: Long = 0L): OneTimeWorkRequest {
+        internal fun buildPumpRequest(
+            initialDelayMs: Long = 0L,
+            generation: Long = LEGACY_PUMP_GENERATION
+        ): OneTimeWorkRequest {
             val builder = OneTimeWorkRequestBuilder<ForegroundDownloadWorker>()
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,
                     PUMP_RETRY_BACKOFF_MS,
                     TimeUnit.MILLISECONDS
                 )
+                .setInputData(workDataOf(PUMP_GENERATION_KEY to generation))
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -305,6 +389,95 @@ class ForegroundDownloadWorker(
         }
 
         private const val UIDT_START_GRACE_MS = 3_000L
+    }
+}
+
+internal fun shouldRetireLegacyPerOperationWork(
+    hasOperationId: Boolean,
+    sdkInt: Int
+): Boolean {
+    return hasOperationId && sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+}
+
+internal fun shouldRouteFallbackToSharedPump(sdkInt: Int): Boolean {
+    return sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+}
+
+internal enum class DownloadPumpCompletion {
+    IGNORED,
+    RETRYING,
+    COMPLETED,
+    COMPLETED_WITH_SUCCESSOR
+}
+
+/** keeps stale WorkManager callbacks from changing a newer pump request */
+internal class DownloadPumpScheduleCoordinator {
+    private val lock = Any()
+    private var latestGeneration = 0L
+    private var activeGeneration: Long? = null
+    private var successorRequested = false
+
+    fun request(): Long? = synchronized(lock) {
+        if (activeGeneration != null) {
+            successorRequested = true
+            return@synchronized null
+        }
+        latestGeneration += 1L
+        latestGeneration.also { generation -> activeGeneration = generation }
+    }
+
+    fun claimWorker(generation: Long): Boolean = synchronized(lock) {
+        if (generation < latestGeneration) {
+            return@synchronized false
+        }
+        when (activeGeneration) {
+            generation -> true
+            null -> {
+                latestGeneration = generation
+                activeGeneration = generation
+                true
+            }
+
+            else -> false
+        }
+    }
+
+    fun complete(
+        generation: Long,
+        workWillRetry: Boolean
+    ): DownloadPumpCompletion = synchronized(lock) {
+        if (activeGeneration != generation) {
+            return@synchronized DownloadPumpCompletion.IGNORED
+        }
+        if (workWillRetry) {
+            return@synchronized DownloadPumpCompletion.RETRYING
+        }
+        activeGeneration = null
+        if (successorRequested) {
+            successorRequested = false
+            DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR
+        } else {
+            DownloadPumpCompletion.COMPLETED
+        }
+    }
+
+    fun failEnqueue(generation: Long): Boolean = synchronized(lock) {
+        if (activeGeneration != generation) {
+            return@synchronized false
+        }
+        activeGeneration = null
+        successorRequested = false
+        true
+    }
+
+    fun canRetry(generation: Long): Boolean = synchronized(lock) {
+        activeGeneration == null && latestGeneration == generation
+    }
+
+    fun invalidate() = synchronized(lock) {
+        latestGeneration += 1L
+        activeGeneration = null
+        successorRequested = false
     }
 }
 

@@ -59,6 +59,11 @@ internal class DownloadAdmissionGate {
         token.completion.await()
     }
 
+    /** 清空快速阶段落盘前先等已经进入的 mutation 完成，避免漏掉尾部写入 */
+    suspend fun awaitIdle() {
+        admissionMutex.withLock { }
+    }
+
     suspend fun admit(
         ticket: Long,
         block: suspend () -> Unit

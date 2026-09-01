@@ -115,14 +115,81 @@ class SettingsDownloadDirectoryFlowContractTest {
         val apply = source.substringAfter("suspend fun applyPersistedMigrationSnapshot(")
             .substringBefore("LaunchedEffect(downloadDirectoryUri)")
         val preserveCheck = apply.indexOf("if (!shouldPreserveUi)")
-        val clearProgress = apply.indexOf("persistedMigrationProgress = null")
+        val clearUi = apply.indexOf("clearPersistedMigrationUi()")
         val restoreProgress = apply.indexOf("val restoredProgress = snapshot.progress")
 
         assertTrue(preserveCheck >= 0)
-        assertTrue(clearProgress > preserveCheck)
-        assertTrue(restoreProgress > clearProgress)
-        assertTrue(apply.contains("isMigrating = false"))
-        assertTrue(apply.contains("activeMigrationWorkId = null"))
+        assertTrue(clearUi > preserveCheck)
+        assertTrue(restoreProgress > clearUi)
+        assertTrue(source.contains("persistedMigrationProgress = null"))
+        assertTrue(source.contains("isMigrating = false"))
+        assertTrue(source.contains("activeMigrationWorkId = null"))
+    }
+
+    @Test
+    fun `migration snapshot recovery has bounded reads and one auto resume attempt`() {
+        assertTrue(shouldRetryMigrationSnapshotRead(consecutiveFailures = 0))
+        assertTrue(shouldRetryMigrationSnapshotRead(consecutiveFailures = 2))
+        assertFalse(shouldRetryMigrationSnapshotRead(consecutiveFailures = 3))
+
+        assertTrue(
+            shouldAttemptMigrationAutoResume(
+                shouldResume = true,
+                autoResumeAttempted = false
+            )
+        )
+        assertFalse(
+            shouldAttemptMigrationAutoResume(
+                shouldResume = true,
+                autoResumeAttempted = true
+            )
+        )
+        assertFalse(
+            shouldAttemptMigrationAutoResume(
+                shouldResume = false,
+                autoResumeAttempted = false
+            )
+        )
+
+        assertTrue(
+            shouldStopMigrationRecoveryAfterNoProgress(
+                shouldPreserveUi = true,
+                needsRecovery = true,
+                snapshotChanged = false,
+                autoResumeAttempted = true
+            )
+        )
+        assertFalse(
+            shouldStopMigrationRecoveryAfterNoProgress(
+                shouldPreserveUi = true,
+                needsRecovery = true,
+                snapshotChanged = true,
+                autoResumeAttempted = true
+            )
+        )
+        assertFalse(
+            shouldStopMigrationRecoveryAfterNoProgress(
+                shouldPreserveUi = true,
+                needsRecovery = true,
+                snapshotChanged = false,
+                autoResumeAttempted = false
+            )
+        )
+    }
+
+    @Test
+    fun `settings migration effects clear only local ui after recovery budget is exhausted`() {
+        val source = settingsSource()
+        val controller = controllerFlow(source)
+
+        assertTrue(source.contains("MIGRATION_SNAPSHOT_READ_RETRY_LIMIT = 3"))
+        assertTrue(controller.contains("var consecutiveSnapshotReadFailures = 0"))
+        assertTrue(controller.contains("migrationAutoResumeAttemptedState"))
+        assertTrue(controller.contains("clearPersistedMigrationUi()"))
+        assertTrue(controller.contains("保留 checkpoint 和 journal"))
+        assertTrue(controller.contains("shouldStopMigrationRecoveryAfterNoProgress("))
+        assertTrue(controller.contains("migrationAutoResumeAttempted ||"))
+        assertTrue(controller.contains("autoResumeAttempted = migrationAutoResumeAttempted"))
     }
 
     @Test

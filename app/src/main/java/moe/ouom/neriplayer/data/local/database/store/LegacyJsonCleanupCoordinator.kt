@@ -20,7 +20,8 @@ internal data class LegacyJsonCleanupTarget(
     val cutoverStateKey: String,
     val exists: Boolean,
     val eligible: Boolean,
-    val reason: String?
+    val reason: String?,
+    val cutoverState: String? = null
 )
 
 internal data class LegacyJsonCleanupPlan(
@@ -31,6 +32,19 @@ internal data class LegacyJsonCleanupPlan(
 
     val existingEligibleTargets: List<LegacyJsonCleanupTarget>
         get() = targets.filter { it.exists && it.eligible }
+
+    val isBlockedOnlyByUserClearedDownloadQueues: Boolean
+        get() = blockedTargets.isNotEmpty() && blockedTargets.all { target ->
+            target.cutoverState == DownloadRecoveryRoomStore.USER_CLEARED_STATE &&
+                target.cutoverStateKey in USER_CLEAR_SUPPRESSED_QUEUE_STATE_KEYS
+        }
+
+    private companion object {
+        val USER_CLEAR_SUPPRESSED_QUEUE_STATE_KEYS = setOf(
+            DownloadRecoveryRoomStore.PENDING_QUEUE_CUTOVER_STATE_KEY,
+            DownloadRecoveryRoomStore.CANCELLED_KEYS_CUTOVER_STATE_KEY
+        )
+    }
 }
 
 internal data class LegacyJsonCleanupResult(
@@ -62,7 +76,8 @@ internal class LegacyJsonCleanupCoordinator(
                     state == ROOM_PRIMARY_STATE -> null
                     state == null -> "Room primary marker is missing"
                     else -> "Room primary marker is $state"
-                }
+                },
+                cutoverState = state
             )
         }
         return LegacyJsonCleanupPlan(targets)

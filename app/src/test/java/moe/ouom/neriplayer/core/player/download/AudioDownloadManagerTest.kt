@@ -32,6 +32,86 @@ import org.json.JSONObject
 class AudioDownloadManagerTest {
 
     @Test
+    fun `latest progress snapshot rejects an older attempt`() {
+        val previous = AudioDownloadManager.DownloadProgress(
+            songKey = "snapshot-song",
+            songId = 1L,
+            fileName = "snapshot-song.mp3",
+            bytesRead = 300L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 10L,
+            attemptId = 9L
+        )
+        val older = previous.copy(
+            bytesRead = 500L,
+            attemptId = 8L
+        )
+        val newer = previous.copy(
+            bytesRead = 100L,
+            attemptId = 10L
+        )
+
+        assertFalse(AudioDownloadManager.shouldReplaceLatestProgress(previous, older))
+        assertTrue(AudioDownloadManager.shouldReplaceLatestProgress(previous, newer))
+        assertEquals(newer, AudioDownloadManager.mergeLatestProgress(previous, newer))
+        assertTrue(
+            AudioDownloadManager.shouldReplaceLatestProgress(
+                previous.copy(attemptId = null),
+                newer.copy(bytesRead = 1L)
+            )
+        )
+    }
+
+    @Test
+    fun `latest progress snapshot retains same attempt byte high water`() {
+        val previous = AudioDownloadManager.DownloadProgress(
+            songKey = "snapshot-song",
+            songId = 1L,
+            fileName = "snapshot-song.mp3",
+            bytesRead = 800L,
+            totalBytes = 0L,
+            speedBytesPerSec = 10L,
+            attemptId = 9L
+        )
+        val retryProgress = previous.copy(
+            bytesRead = 200L,
+            totalBytes = 1_000L,
+            speedBytesPerSec = 0L,
+            stage = AudioDownloadManager.DownloadStage.WAITING_RETRY
+        )
+        val mergedRetryProgress = AudioDownloadManager.mergeLatestProgress(
+            previous,
+            retryProgress
+        )
+
+        assertEquals(800L, mergedRetryProgress.bytesRead)
+        assertEquals(1_000L, mergedRetryProgress.totalBytes)
+        assertEquals(0L, mergedRetryProgress.speedBytesPerSec)
+        assertEquals(AudioDownloadManager.DownloadStage.WAITING_RETRY, mergedRetryProgress.stage)
+        assertTrue(AudioDownloadManager.shouldReplaceLatestProgress(previous, retryProgress))
+
+        val resumedProgress = AudioDownloadManager.mergeLatestProgress(
+            mergedRetryProgress,
+            retryProgress.copy(
+                bytesRead = 300L,
+                totalBytes = 500L,
+                speedBytesPerSec = 20L,
+                stage = AudioDownloadManager.DownloadStage.TRANSFERRING
+            )
+        )
+        assertEquals(800L, resumedProgress.bytesRead)
+        assertEquals(1_000L, resumedProgress.totalBytes)
+        assertEquals(20L, resumedProgress.speedBytesPerSec)
+        assertEquals(AudioDownloadManager.DownloadStage.TRANSFERRING, resumedProgress.stage)
+        assertFalse(
+            AudioDownloadManager.shouldReplaceLatestProgress(
+                previous,
+                previous.copy(bytesRead = 799L)
+            )
+        )
+    }
+
+    @Test
     fun `unknown total publishes forward progress after the time window`() {
         val previous = AudioDownloadManager.PublishedProgressState(
             attemptId = 7L,
@@ -952,6 +1032,21 @@ class AudioDownloadManagerTest {
         assertEquals(0, AudioDownloadManager.resolveBatchDownloadWorkerCount(0, 6))
         assertEquals(2, AudioDownloadManager.resolveBatchDownloadWorkerCount(2, 6))
         assertEquals(8, AudioDownloadManager.resolveBatchDownloadWorkerCount(20, 9))
+    }
+
+    @Test
+    fun `parallelism cache uses a conservative fallback until the persisted setting is readable`() {
+        assertEquals(1, INITIAL_SAFE_DOWNLOAD_PARALLELISM)
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/player/download/DownloadParallelism.kt"
+        ).readText()
+
+        assertFalse(source.contains("runBlocking"))
+        assertFalse(source.contains("resolveDownloadParallelismBlocking"))
+        assertTrue(source.contains("AtomicInteger(INITIAL_SAFE_DOWNLOAD_PARALLELISM)"))
+        assertTrue(source.contains("readBootstrapDownloadParallelism("))
+        assertTrue(source.contains("warmBootstrapSettingsSnapshot("))
+        assertTrue(source.contains("scope.launch"))
     }
 
     @Test

@@ -17,8 +17,9 @@ import moe.ouom.neriplayer.core.download.DownloadTaskSummary
 import moe.ouom.neriplayer.core.download.applyWaitingNetworkStatus
 import moe.ouom.neriplayer.core.download.buildDownloadTaskSummary
 import moe.ouom.neriplayer.core.download.hasActiveDownloadOperations
-import moe.ouom.neriplayer.core.download.mergeDownloadTaskProgress
+import moe.ouom.neriplayer.core.download.mergeDownloadProgress
 import moe.ouom.neriplayer.core.download.shouldApplyTaskMutation
+import moe.ouom.neriplayer.core.download.shouldApplyTaskProgressMutation
 import moe.ouom.neriplayer.core.download.stabilizeDownloadTaskSummary
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.stableKey
@@ -193,12 +194,13 @@ internal class DownloadTaskStore(
             val taskIndex = songKeyIndex[progress.songKey] ?: -1
             if (taskIndex < 0) return@synchronized false
             val currentTask = tasks[taskIndex]
-            if (currentTask.status != DownloadStatus.DOWNLOADING ||
-                !shouldApplyTaskMutation(currentTask, progress.attemptId)
+            if (currentTask.status != DownloadStatus.QUEUED &&
+                currentTask.status != DownloadStatus.DOWNLOADING ||
+                !shouldApplyTaskProgressMutation(currentTask, progress.attemptId)
             ) {
                 return@synchronized false
             }
-            val effectiveProgress = mergeDownloadTaskProgress(
+            val effectiveProgress = mergeDownloadProgress(
                 current = currentTask.progress,
                 incoming = progress
             )
@@ -232,11 +234,11 @@ internal class DownloadTaskStore(
             val currentTask = _downloadTasks.value[taskIndex]
             if (
                 currentTask.status !in RESTORABLE_PROGRESS_STATUSES ||
-                !shouldApplyTaskMutation(currentTask, progress.attemptId)
+                !shouldApplyTaskProgressMutation(currentTask, progress.attemptId)
             ) {
                 return@synchronized false
             }
-            val effectiveProgress = mergeDownloadTaskProgress(
+            val effectiveProgress = mergeDownloadProgress(
                 current = currentTask.progress,
                 incoming = progress
             )
@@ -275,12 +277,12 @@ internal class DownloadTaskStore(
                 val currentTask = updatedTasks[taskIndex]
                 if (
                     currentTask.status !in RESTORABLE_PROGRESS_STATUSES ||
-                    !shouldApplyTaskMutation(currentTask, progress.attemptId)
+                    !shouldApplyTaskProgressMutation(currentTask, progress.attemptId)
                 ) {
                     return@forEach
                 }
                 acceptedCount++
-                val effectiveProgress = mergeDownloadTaskProgress(
+                val effectiveProgress = mergeDownloadProgress(
                     current = currentTask.progress,
                     incoming = progress
                 )

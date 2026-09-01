@@ -51,6 +51,86 @@ class ManagedLibraryProcessingStateTest {
     }
 
     @Test
+    fun `orphaned terminal directory retry is eligible only when no worker is active`() {
+        val waiting = ManagedLibraryProcessingState.WaitingForRetry(
+            operationId = "terminal-directory",
+            reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+            phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+        )
+
+        assertTrue(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = false,
+                activeMigrationWorkPresent = false
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = true,
+                activeMigrationWorkPresent = false
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = false,
+                activeMigrationWorkPresent = true
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = false,
+                activeMigrationWorkPresent = null
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting.copy(
+                    reason = ManagedLibraryProcessingReason.LEGACY_DATABASE_UPGRADE
+                ),
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = false,
+                activeMigrationWorkPresent = false
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = ManagedLibraryProcessingState.Running(
+                    operationId = waiting.operationId,
+                    reason = ManagedLibraryProcessingReason.DIRECTORY_CHANGE,
+                    phase = ManagedLibraryProcessingPhase.REBUILDING_INDEX
+                ),
+                expectedOperationId = waiting.operationId,
+                requestAutoResume = false,
+                activeMigrationWorkPresent = false
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = "different-operation",
+                requestAutoResume = false,
+                activeMigrationWorkPresent = false
+            )
+        )
+        assertFalse(
+            shouldCompleteOrphanedTerminalDirectoryChange(
+                current = waiting,
+                expectedOperationId = " ",
+                requestAutoResume = false,
+                activeMigrationWorkPresent = false
+            )
+        )
+    }
+
+    @Test
     fun `legacy upgrade progress ignores stale operation updates`() {
         val running = ManagedLibraryProcessingStateMachine.begin(
             operationId = "upgrade",

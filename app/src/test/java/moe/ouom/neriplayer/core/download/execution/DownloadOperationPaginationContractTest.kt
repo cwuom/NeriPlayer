@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,6 +55,76 @@ class DownloadOperationPaginationContractTest {
 
         assertTrue(keysetBody.contains("ORDER BY operation_id ASC"))
         assertFalse(keysetBody.contains("updated_at_ms"))
+    }
+
+    @Test
+    fun `pump paging uses the full queue ordering and advances past malformed rows`() {
+        val daoSource = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/" +
+                "DownloadOperationDao.kt"
+        )
+        val functionIndex = daoSource.indexOf(
+            "suspend fun findSchedulableForPumpAfterCursor"
+        )
+        val queryIndex = daoSource.lastIndexOf("@Query(", functionIndex)
+        val query = daoSource.substring(queryIndex, functionIndex)
+
+        assertTrue(query.contains("queue_order > :afterQueueOrder"))
+        assertTrue(query.contains("updated_at_ms > :afterUpdatedAtMs"))
+        assertTrue(query.contains("operation_id > :afterOperationId"))
+        assertTrue(query.contains("ORDER BY queue_order ASC, updated_at_ms ASC, operation_id ASC"))
+        assertFalse(query.contains("OFFSET"))
+
+        val roomStoreSource = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "DownloadExecutionRoomStore.kt"
+        )
+        val pumpReader = roomStoreSource.substringAfter(
+            "suspend fun listSchedulableForPumpPage("
+        ).substringBefore("suspend fun listByStates(")
+        val nextCursorIndex = pumpReader.indexOf("val nextCursor = entities.lastOrNull()")
+        val requestMappingIndex = pumpReader.indexOf("val requests = entities.mapNotNull")
+
+        assertTrue(nextCursorIndex >= 0)
+        assertTrue(requestMappingIndex > nextCursorIndex)
+        assertTrue(pumpReader.contains("entities.size == boundedLimit"))
+        assertTrue(pumpReader.contains("malformedEntities.forEach"))
+    }
+
+    @Test
+    fun `progress checkpoint SQL keeps byte and known total watermarks`() {
+        val source = readSource(
+            "app/src/main/java/moe/ouom/neriplayer/data/local/database/dao/" +
+                "DownloadOperationDao.kt"
+        )
+        val checkpointQueries = source.substringAfter(
+            "suspend fun replaceMalformedReusablePayload"
+        ).substringBefore("suspend fun requestUserStop")
+
+        assertEquals(
+            2,
+            Regex("MAX\\(bytes_written, :bytesWritten\\)")
+                .findAll(checkpointQueries)
+                .count()
+        )
+        assertEquals(
+            2,
+            Regex("WHEN :totalBytes IS NULL OR :totalBytes <= 0 THEN total_bytes")
+                .findAll(checkpointQueries)
+                .count()
+        )
+        assertEquals(
+            2,
+            Regex("WHEN total_bytes IS NULL OR total_bytes <= 0 THEN :totalBytes")
+                .findAll(checkpointQueries)
+                .count()
+        )
+        assertEquals(
+            2,
+            Regex("WHEN :totalBytes > total_bytes THEN :totalBytes ELSE total_bytes END")
+                .findAll(checkpointQueries)
+                .count()
+        )
     }
 
     private fun readSource(relativePath: String): String {

@@ -66,6 +66,20 @@ class UidtStopCoordinatorTest {
     }
 
     @Test
+    fun `cancelling a legacy fallback removes both historical per operation works`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +
+                "ForegroundDownloadWorker.kt"
+        ).readText()
+        val cancelBody = methodBody(source, "internal fun cancelFallback(")
+
+        assertTrue(cancelBody.contains("cancelUniqueWork(uniqueWorkName(normalizedId))"))
+        assertTrue(cancelBody.contains("cancelUniqueWork(fallbackWorkName(normalizedId))"))
+        assertFalse(cancelBody.contains("schedulePump("))
+        assertFalse(cancelBody.contains("PUMP_WORK_NAME"))
+    }
+
+    @Test
     fun `startup trims excess UIDT jobs and rearms the durable pump`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/execution/" +

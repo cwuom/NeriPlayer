@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.download.storage.queue
 
 import java.io.File
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
@@ -67,6 +68,37 @@ class DownloadRecoveryRoomStoreRuntimeCharacterizationTest {
                     source.contains("clearCancelledDownloadKeysFile")
             )
         }
+    }
+
+    @Test
+    fun `clear records the legacy queue suppression before deleting Room rows`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/storage/queue/" +
+                "DownloadRecoveryRoomStore.kt"
+        ).readText()
+        val clearBody = methodBody(source, "clearPendingDownloadQueue")
+        val suppressionIndex = clearBody.indexOf("markLegacyQueueImportSuppressed()")
+        val deleteIndex = clearBody.indexOf("DownloadExecutionRoomStore.deleteByState(")
+        val queueBootstrapBody = methodBody(source, "bootstrapLegacyQueueFile")
+        val cancelledBootstrapBody = methodBody(source, "bootstrapLegacyCancelledFile")
+
+        assertTrue(clearBody.contains("database.withTransaction"))
+        assertTrue(suppressionIndex >= 0)
+        assertTrue(deleteIndex > suppressionIndex)
+        assertTrue(queueBootstrapBody.contains("database.withTransaction"))
+        assertTrue(queueBootstrapBody.contains("isLegacyQueueFileImportBlocked()"))
+        assertTrue(cancelledBootstrapBody.contains("isLegacyQueueImportSuppressed()"))
+    }
+
+    @Test
+    fun `only an explicit user clear suppresses a legacy queue import`() {
+        assertTrue(
+            isLegacyQueueImportSuppressed(DownloadRecoveryRoomStore.USER_CLEARED_STATE)
+        )
+        assertFalse(
+            isLegacyQueueImportSuppressed(DownloadRecoveryRoomStore.ROOM_PRIMARY_STATE)
+        )
+        assertFalse(isLegacyQueueImportSuppressed(null))
     }
 
     private fun methodBody(source: String, methodName: String): String {

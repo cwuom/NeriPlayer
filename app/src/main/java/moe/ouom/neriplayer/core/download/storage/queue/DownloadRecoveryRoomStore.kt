@@ -16,6 +16,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.settings.DownloadAudioQualitySelection
 
+internal fun isLegacyQueueImportSuppressed(cutoverState: String?): Boolean {
+    return cutoverState == DownloadRecoveryRoomStore.USER_CLEARED_STATE
+}
+
 /** compatibility facade for v15 queue files; operation journal owns new work */
 internal class DownloadRecoveryRoomStore(
     private val context: Context,
@@ -361,12 +365,15 @@ internal class DownloadRecoveryRoomStore(
     }
 
     suspend fun clearPendingDownloadQueue() {
-        CLEARABLE_PENDING_QUEUE_STATES.forEach { state ->
-            DownloadExecutionRoomStore.deleteByState(
-                context = appContext,
-                state = state,
-                database = database
-            )
+        database.withTransaction {
+            markLegacyQueueImportSuppressed()
+            CLEARABLE_PENDING_QUEUE_STATES.forEach { state ->
+                DownloadExecutionRoomStore.deleteByState(
+                    context = appContext,
+                    state = state,
+                    database = database
+                )
+            }
         }
     }
 
@@ -381,67 +388,117 @@ internal class DownloadRecoveryRoomStore(
 
     private suspend fun bootstrapLegacyQueueFile() {
         val queueFile = File(appContext.filesDir, PENDING_DOWNLOAD_QUEUE_FILE_NAME)
-        if (isRoomPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)) return
         if (!queueFile.isFile) {
-            markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
+            database.withTransaction {
+                if (!isLegacyQueueFileImportBlocked() && !queueFile.isFile) {
+                    markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
+                }
+            }
             return
         }
         val parsed = ManagedDownloadQueueStore.readPendingDownloadQueueFile(queueFile) ?: return
-        parsed.sortedBy { it.order }.forEach { entry ->
-            DownloadExecutionRoomStore.upsert(
-                context = appContext,
-                request = DownloadExecutionRequest(
-                    operationId = entry.operationId ?: pendingOperationId(entry.stableKey),
-                    song = entry.song,
-                    userInitiated = false
-                ),
-                state = PENDING_QUEUE_STATE,
-                queueOrder = entry.order,
-                createdAtMs = entry.queuedAtMs,
-                database = database
-            )
+        database.withTransaction {
+            if (isLegacyQueueFileImportBlocked()) return@withTransaction
+            parsed.sortedBy { it.order }.forEach { entry ->
+                DownloadExecutionRoomStore.upsert(
+                    context = appContext,
+                    request = DownloadExecutionRequest(
+                        operationId = entry.operationId ?: pendingOperationId(entry.stableKey),
+                        song = entry.song,
+                        userInitiated = false
+                    ),
+                    state = PENDING_QUEUE_STATE,
+                    queueOrder = entry.order,
+                    createdAtMs = entry.queuedAtMs,
+                    database = database
+                )
+            }
+            markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
         }
-        markPrimary(PENDING_QUEUE_CUTOVER_STATE_KEY)
     }
 
     private suspend fun bootstrapLegacyCancelledFile() {
         val cancelledFile = File(appContext.filesDir, CANCELLED_DOWNLOAD_KEYS_FILE_NAME)
+        if (isLegacyQueueImportSuppressed()) return
         if (isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)) return
         if (!cancelledFile.isFile) {
-            markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
+            database.withTransaction {
+                if (
+                    !isLegacyQueueImportSuppressed() &&
+                        !isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY) &&
+                        !cancelledFile.isFile
+                ) {
+                    markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
+                }
+            }
             return
         }
         val parsed = ManagedDownloadQueueStore.readCancelledDownloadKeysFile(cancelledFile) ?: return
-        bootstrapLegacyQueueFile()
-        parsed.filter(String::isNotBlank).distinct().forEach { stableKey ->
-            val existing = DownloadExecutionRoomStore.listByStates(
-                context = appContext,
-                states = PENDING_QUEUE_VISIBLE_STATES + listOf(
-                    "QUEUED", WAITING_STORAGE_MUTATION_OPERATION_STATE, "RUNNING", "STOPPED",
-                    "RETRYABLE", "CANCEL_REQUESTED", "CANCELLED"
-                ),
-                database = database
-            ).filter { it.request.song.stableKey() == stableKey }
-            if (existing.isEmpty()) {
-                // legacy cancellation markers without a durable operation have no owner
-                // and must not become synthetic runtime operations
-            } else {
-                existing.forEach { entry ->
-                    if (entry.request.operationId.isNotBlank()) {
-                        DownloadExecutionRoomStore.requestCancel(
-                            context = appContext,
-                            operationId = entry.request.operationId,
-                            database = database
-                        )
+        database.withTransaction {
+            if (
+                isLegacyQueueImportSuppressed() ||
+                    isRoomPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
+            ) {
+                return@withTransaction
+            }
+            bootstrapLegacyQueueFile()
+            parsed.filter(String::isNotBlank).distinct().forEach { stableKey ->
+                val existing = DownloadExecutionRoomStore.listByStates(
+                    context = appContext,
+                    states = PENDING_QUEUE_VISIBLE_STATES + listOf(
+                        "QUEUED", WAITING_STORAGE_MUTATION_OPERATION_STATE, "RUNNING", "STOPPED",
+                        "RETRYABLE", "CANCEL_REQUESTED", "CANCELLED"
+                    ),
+                    database = database
+                ).filter { it.request.song.stableKey() == stableKey }
+                if (existing.isEmpty()) {
+                    // legacy cancellation markers without a durable operation have no owner
+                    // and must not become synthetic runtime operations
+                } else {
+                    existing.forEach { entry ->
+                        if (entry.request.operationId.isNotBlank()) {
+                            DownloadExecutionRoomStore.requestCancel(
+                                context = appContext,
+                                operationId = entry.request.operationId,
+                                database = database
+                            )
+                        }
                     }
                 }
             }
+            markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
         }
-        markPrimary(CANCELLED_KEYS_CUTOVER_STATE_KEY)
     }
 
     private suspend fun isRoomPrimary(key: String): Boolean {
         return database.syncMetadataDao().getMigrationMetadata(key)?.value == ROOM_PRIMARY_STATE
+    }
+
+    private suspend fun isLegacyQueueFileImportBlocked(): Boolean {
+        val state = database.syncMetadataDao()
+            .getMigrationMetadata(PENDING_QUEUE_CUTOVER_STATE_KEY)
+            ?.value
+        return state == ROOM_PRIMARY_STATE || isLegacyQueueImportSuppressed(state)
+    }
+
+    private suspend fun isLegacyQueueImportSuppressed(): Boolean {
+        val state = database.syncMetadataDao()
+            .getMigrationMetadata(PENDING_QUEUE_CUTOVER_STATE_KEY)
+            ?.value
+        return isLegacyQueueImportSuppressed(state)
+    }
+
+    private suspend fun markLegacyQueueImportSuppressed() {
+        val nowMs = System.currentTimeMillis()
+        listOf(PENDING_QUEUE_CUTOVER_STATE_KEY, CANCELLED_KEYS_CUTOVER_STATE_KEY).forEach { key ->
+            database.syncMetadataDao().upsertMigrationMetadata(
+                MigrationMetadataEntity(
+                    key = key,
+                    value = USER_CLEARED_STATE,
+                    updatedAt = nowMs
+                )
+            )
+        }
     }
 
     private suspend fun markPrimary(key: String) {
@@ -458,6 +515,7 @@ internal class DownloadRecoveryRoomStore(
         const val PENDING_QUEUE_CUTOVER_STATE_KEY = "download_pending_queue_cutover_state"
         const val CANCELLED_KEYS_CUTOVER_STATE_KEY = "download_cancelled_keys_cutover_state"
         const val ROOM_PRIMARY_STATE = "room_primary"
+        const val USER_CLEARED_STATE = "user_cleared"
         private const val PENDING_QUEUE_STATE = "QUEUED"
         private const val DOWNLOAD_OPERATION_QUERY_CHUNK_SIZE = 900
         private val PENDING_QUEUE_STATES = listOf(
@@ -465,6 +523,7 @@ internal class DownloadRecoveryRoomStore(
             "PENDING_QUEUE"
         )
         private val CLEARABLE_PENDING_QUEUE_STATES = PENDING_QUEUE_STATES +
+            "RETRYABLE" +
             WAITING_STORAGE_MUTATION_OPERATION_STATE
         private val WAITING_STORAGE_MUTATION_BLOCKING_STATES = listOf(
             "CANCEL_REQUESTED",

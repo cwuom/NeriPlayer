@@ -10,6 +10,14 @@ import moe.ouom.neriplayer.core.download.storage.naming.ManagedDownloadStorageNa
 import moe.ouom.neriplayer.core.download.storage.tree.ManagedDownloadTreeNaming
 
 internal object ManagedDownloadMigrationEntryCollector {
+    internal data class PendingArtifactClassification(
+        val blockingNames: List<String>,
+        val metadataOnlyNames: List<String>
+    ) {
+        val allNames: List<String>
+            get() = (blockingNames + metadataOnlyNames).distinct().sorted()
+    }
+
     /**
      * 判断目录中是否存在尚未完成提交的下载产物
      *
@@ -29,27 +37,79 @@ internal object ManagedDownloadMigrationEntryCollector {
     }
 
     /**
+     * pending metadata 只有与同名 pending 音频配对时才会阻断迁移
+     *
+     * 没有 pending 音频的 metadata 是一次中断留下的恢复证据。它会被迁移
+     * 收集器保留，但不能要求仅处理音频的恢复器反复重试
+     */
+    fun classifyPendingArtifacts(
+        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ): PendingArtifactClassification {
+        val pendingEntries = (rootEntries.asSequence() + temporaryEntries.asSequence())
+            .filter(::isPendingArtifact)
+            .toList()
+        val pendingAudioNames = pendingEntries
+            .asSequence()
+            .filter(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+            .map(ManagedDownloadStorage.StoredEntry::logicalName)
+            .filter(String::isNotBlank)
+            .toSet()
+        val blockingNames = pendingEntries
+            .asSequence()
+            .filter { entry ->
+                entry.isPendingAudioWrite ||
+                    ManagedDownloadTreeNaming.metadataAudioName(entry.name) in pendingAudioNames
+            }
+            .map(ManagedDownloadStorage.StoredEntry::name)
+            .distinct()
+            .sorted()
+            .toList()
+        val metadataOnlyNames = pendingEntries
+            .asSequence()
+            .filterNot(ManagedDownloadStorage.StoredEntry::isPendingAudioWrite)
+            .filter { entry ->
+                ManagedDownloadTreeNaming.metadataAudioName(entry.name) !in pendingAudioNames
+            }
+            .map(ManagedDownloadStorage.StoredEntry::name)
+            .distinct()
+            .sorted()
+            .toList()
+        return PendingArtifactClassification(
+            blockingNames = blockingNames,
+            metadataOnlyNames = metadataOnlyNames
+        )
+    }
+
+    /**
      * 返回根目录和 .tmp 中的 pending 名称，名称只用于诊断和有界重试日志
      */
     fun pendingArtifactNames(
         rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
         temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
     ): List<String> {
-        return (rootEntries.asSequence() + temporaryEntries.asSequence())
-            .filter(::isPendingArtifact)
-            .map(ManagedDownloadStorage.StoredEntry::name)
-            .distinct()
-            .sorted()
-            .toList()
+        return classifyPendingArtifacts(rootEntries, temporaryEntries).allNames
+    }
+
+    fun blockingPendingArtifactNames(
+        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ): List<String> {
+        return classifyPendingArtifacts(rootEntries, temporaryEntries).blockingNames
     }
 
     fun hasPendingArtifacts(
         rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
         temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
     ): Boolean {
-        return rootEntries.asSequence()
-            .plus(temporaryEntries.asSequence())
-            .any(::isPendingArtifact)
+        return classifyPendingArtifacts(rootEntries, temporaryEntries).allNames.isNotEmpty()
+    }
+
+    fun hasBlockingPendingArtifacts(
+        rootEntries: Collection<ManagedDownloadStorage.StoredEntry>,
+        temporaryEntries: Collection<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ): Boolean {
+        return classifyPendingArtifacts(rootEntries, temporaryEntries).blockingNames.isNotEmpty()
     }
 
     fun requiresSidecarEvidence(

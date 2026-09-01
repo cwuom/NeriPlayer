@@ -237,6 +237,33 @@ internal object ManagedDownloadDirectoryMutationFence {
         }
     }
 
+    /**
+     * 启动恢复没有可持久化的 operation，仍要用同一目录租约保护根目录写入
+     */
+    suspend fun acquireRecoveryLeaseOrNull(context: Context): AutoCloseable? {
+        val appContext = context.applicationContext
+        if (isActive(appContext)) {
+            NPLogger.d(TAG, "目录迁移进行中，跳过根目录恢复并保留凭据")
+            return null
+        }
+        val lease = gate.tryAcquireDownloadLease() ?: run {
+            NPLogger.d(TAG, "目录变更已关闭恢复入口，保留根目录恢复凭据")
+            return null
+        }
+        return try {
+            if (isActive(appContext)) {
+                lease.close()
+                NPLogger.d(TAG, "目录迁移在恢复取租约后启动，放弃本次根目录恢复")
+                null
+            } else {
+                lease
+            }
+        } catch (error: Throwable) {
+            lease.close()
+            throw error
+        }
+    }
+
     suspend fun closeAndDrain(): AutoCloseable = gate.closeAndDrain()
 
     /**

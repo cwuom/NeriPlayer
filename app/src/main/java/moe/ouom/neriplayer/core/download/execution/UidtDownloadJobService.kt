@@ -31,6 +31,8 @@ import moe.ouom.neriplayer.core.player.download.currentDownloadParallelism
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
+internal const val UIDT_SHARED_PUMP_GRACE_MS = 3_000L
+
  /** 把 API 34 的用户发起任务接入共享下载宿主 */
  // 任务编号保留在宿主专用范围，WorkManager 使用另一段编号
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -214,6 +216,7 @@ class UidtDownloadJobService : JobService() {
         private const val CHANNEL_ID = "download_execution"
         internal const val UIDT_JOB_ID_MIN = 100_000
         internal const val UIDT_JOB_ID_MAX = 900_099_999
+        internal const val UIDT_SCHEDULED_AT_ELAPSED_MS_KEY = "scheduled_at_elapsed_ms"
         private val scheduleLock = Any()
         /** JobScheduler.allPendingJobs 需要 Binder 往返，短期进程缓存可避免大批歌曲重复列举
          * 缓存保留所有已占用 ID，包括附加数据损坏的任务，真正调度前仍会做最后碰撞检查
@@ -289,13 +292,69 @@ class UidtDownloadJobService : JobService() {
             jobId: Int,
             operationId: String
         ): Boolean {
+            return pendingJobForOperation(
+                scheduler = scheduler,
+                component = component,
+                jobId = jobId,
+                operationId = operationId
+            ) != null
+        }
+
+        private fun pendingJobForOperation(
+            scheduler: JobScheduler,
+            component: ComponentName,
+            jobId: Int,
+            operationId: String
+        ): JobInfo? {
             return runCatching { scheduler.getPendingJob(jobId) }
                 .getOrNull()
-                ?.let { job ->
+                ?.takeIf { job ->
                     job.service == component &&
                         job.extras.getString(OPERATION_ID_KEY)
                             ?.let(::normalizeDownloadOperationId) == operationId
-                } == true
+                }
+        }
+
+        private fun pendingJobForOperation(
+            scheduler: JobScheduler,
+            component: ComponentName,
+            operationId: String
+        ): JobInfo? {
+            val reservedIds = reservedJobIdsByOperation[operationId].orEmpty()
+            reservedIds.forEach { jobId ->
+                pendingJobForOperation(
+                    scheduler = scheduler,
+                    component = component,
+                    jobId = jobId,
+                    operationId = operationId
+                )?.let { return it }
+            }
+            if (reservedIds.isNotEmpty()) {
+                forgetScheduledJob(operationId)
+            }
+            var indexed = pendingJobIndex(scheduler, component)
+            fun indexedPendingJob(): JobInfo? {
+                return indexed.jobIdsByOperation[operationId]
+                    .orEmpty()
+                    .firstNotNullOfOrNull { jobId ->
+                        pendingJobForOperation(
+                            scheduler = scheduler,
+                            component = component,
+                            jobId = jobId,
+                            operationId = operationId
+                        )
+                    }
+            }
+            indexedPendingJob()?.let { return it }
+            if (indexed.jobIdsByOperation[operationId].orEmpty().isNotEmpty()) {
+                indexed = pendingJobIndex(
+                    scheduler = scheduler,
+                    component = component,
+                    forceRefresh = true
+                )
+                return indexedPendingJob()
+            }
+            return null
         }
 
         private fun rememberScheduledJob(operationId: String, jobId: Int) {
@@ -354,10 +413,7 @@ class UidtDownloadJobService : JobService() {
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
             val component = ComponentName(context, UidtDownloadJobService::class.java)
             val boundedPendingJobLimit = pendingJobLimit.coerceIn(1, UIDT_PENDING_JOB_LIMIT)
-            return scheduleUidtKeepingFallback(
-                scheduleFallback = {
-                    ForegroundDownloadWorker.scheduleFallback(context, normalizedId)
-                },
+            return scheduleUidtWithSharedPump(
                 scheduleUidt = {
                     synchronized(scheduleLock) {
                         if (reservedJobIdsByOperation[normalizedId].orEmpty().isNotEmpty()) {
@@ -455,8 +511,11 @@ class UidtDownloadJobService : JobService() {
                         false
                     }
                 },
-                cancelFallback = {
-                    ForegroundDownloadWorker.cancelFallback(context, normalizedId)
+                scheduleSharedPump = {
+                    ForegroundDownloadWorker.schedulePump(
+                        context = context,
+                        initialDelayMs = UIDT_SHARED_PUMP_GRACE_MS
+                    )
                 }
             )
         }
@@ -466,56 +525,61 @@ class UidtDownloadJobService : JobService() {
         internal fun trimPendingJobs(context: Context): Int {
             val scheduler = context.getSystemService(JobScheduler::class.java) ?: return 0
             val component = ComponentName(context, UidtDownloadJobService::class.java)
-            val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
-                .getOrElse { error ->
-                    NPLogger.w(TAG, "启动清理 UIDT 任务读取失败: ${error.message}", error)
-                    return 0
-                }
-                .filter { job -> job.service == component }
-                .sortedBy { job -> job.id }
-            val pendingJobLimit = currentDownloadParallelism(context)
-                .coerceIn(1, UIDT_PENDING_JOB_LIMIT)
-            if (pendingJobs.size <= pendingJobLimit) return 0
-            var cancelled = 0
-            pendingJobs.drop(pendingJobLimit).forEach { job ->
-                val operationId = job.extras.getString(OPERATION_ID_KEY)
-                    ?.let(::normalizeDownloadOperationId)
-                val cancelledNow = runCatching {
-                    scheduler.cancel(job.id)
-                    true
-                }.onFailure { error ->
-                    NPLogger.w(
-                        TAG,
-                        "启动清理 UIDT 任务失败: jobId=${job.id}, " +
-                            "error=${error.message}",
-                        error
-                    )
-                }.getOrDefault(false)
-                if (cancelledNow) {
-                    cancelled++
-                    synchronized(scheduleLock) {
+            return synchronized(scheduleLock) {
+                val pendingJobs = runCatching { scheduler.allPendingJobs.orEmpty() }
+                    .getOrElse { error ->
+                        NPLogger.w(TAG, "启动清理 UIDT 任务读取失败: ${error.message}", error)
+                        return@synchronized 0
+                    }
+                    .filter { job -> job.service == component }
+                    .sortedBy { job -> job.id }
+                val pendingJobLimit = currentDownloadParallelism(context)
+                    .coerceIn(1, UIDT_PENDING_JOB_LIMIT)
+                if (pendingJobs.size <= pendingJobLimit) return@synchronized 0
+                var cancelled = 0
+                pendingJobs.drop(pendingJobLimit).forEach { job ->
+                    val operationId = job.extras.getString(OPERATION_ID_KEY)
+                        ?.let(::normalizeDownloadOperationId)
+                    val cancelledNow = runCatching {
+                        scheduler.cancel(job.id)
+                        true
+                    }.onFailure { error ->
+                        NPLogger.w(
+                            TAG,
+                            "启动清理 UIDT 任务失败: jobId=${job.id}, " +
+                                "error=${error.message}",
+                            error
+                        )
+                    }.getOrDefault(false)
+                    if (cancelledNow) {
+                        cancelled++
                         operationId?.let { forgetScheduledJob(it, job.id) }
                     }
                 }
+                if (cancelled > 0) {
+                    NPLogger.w(
+                        TAG,
+                        "启动清理过量 UIDT 任务: cancelled=$cancelled, " +
+                            "pending=${pendingJobs.size}, limit=$pendingJobLimit"
+                    )
+                    ForegroundDownloadWorker.schedulePump(context)
+                }
+                cancelled
             }
-            if (cancelled > 0) {
-                NPLogger.w(
-                    TAG,
-                    "启动清理过量 UIDT 任务: cancelled=$cancelled, " +
-                    "pending=${pendingJobs.size}, limit=$pendingJobLimit"
-                )
-                ForegroundDownloadWorker.schedulePump(context)
-            }
-            return cancelled
         }
 
         internal fun buildJobInfo(
             jobId: Int,
             component: ComponentName,
-            operationId: String
+            operationId: String,
+            scheduledAtElapsedMs: Long = SystemClock.elapsedRealtime()
         ): JobInfo {
             val extras = PersistableBundle().apply {
                 putString(OPERATION_ID_KEY, operationId)
+                putLong(
+                    UIDT_SCHEDULED_AT_ELAPSED_MS_KEY,
+                    scheduledAtElapsedMs.coerceAtLeast(0L)
+                )
             }
             return JobInfo.Builder(jobId, component)
                 .setUserInitiated(true)
@@ -660,47 +724,11 @@ class UidtDownloadJobService : JobService() {
             val component = ComponentName(context, UidtDownloadJobService::class.java)
             return runCatching {
                 synchronized(scheduleLock) {
-                    val reservedIds = reservedJobIdsByOperation[normalizedId].orEmpty()
-                    if (reservedIds.any { jobId ->
-                            matchesPendingJob(
-                                scheduler = scheduler,
-                                component = component,
-                                jobId = jobId,
-                                operationId = normalizedId
-                            )
-                        }) {
-                        return@synchronized true
-                    }
-                    if (reservedIds.isNotEmpty()) {
-                        forgetScheduledJob(normalizedId)
-                    }
-                    var indexed = pendingJobIndex(scheduler, component)
-                    fun hasIndexedJob(): Boolean {
-                        return indexed.jobIdsByOperation[normalizedId]
-                            .orEmpty()
-                            .any { jobId ->
-                                matchesPendingJob(
-                                    scheduler = scheduler,
-                                    component = component,
-                                    jobId = jobId,
-                                    operationId = normalizedId
-                                )
-                            }
-                    }
-                    if (hasIndexedJob()) {
-                        return@synchronized true
-                    }
-                    if (indexed.jobIdsByOperation[normalizedId].orEmpty().isNotEmpty()) {
-                        indexed = pendingJobIndex(
-                            scheduler = scheduler,
-                            component = component,
-                            forceRefresh = true
-                        )
-                        if (hasIndexedJob()) {
-                            return@synchronized true
-                        }
-                    }
-                    false
+                    pendingJobForOperation(
+                        scheduler = scheduler,
+                        component = component,
+                        operationId = normalizedId
+                    ) != null
                 }
             }.onFailure { error ->
                 NPLogger.w(
@@ -710,6 +738,42 @@ class UidtDownloadJobService : JobService() {
                     error
                 )
             }.getOrDefault(false)
+        }
+
+        fun shouldYieldToPendingJob(
+            context: Context,
+            operationId: String
+        ): Boolean {
+            return pendingJobGraceRemainingMs(context, operationId) > 0L
+        }
+
+        fun pendingJobGraceRemainingMs(
+            context: Context,
+            operationId: String
+        ): Long {
+            val normalizedId = normalizeDownloadOperationId(operationId) ?: return 0L
+            val scheduler = context.getSystemService(JobScheduler::class.java) ?: return 0L
+            val component = ComponentName(context, UidtDownloadJobService::class.java)
+            return runCatching {
+                synchronized(scheduleLock) {
+                    val scheduledAtElapsedMs = pendingJobForOperation(
+                        scheduler = scheduler,
+                        component = component,
+                        operationId = normalizedId
+                    )?.extras?.getLong(UIDT_SCHEDULED_AT_ELAPSED_MS_KEY, 0L) ?: 0L
+                    pendingUidtGraceRemainingMs(
+                        scheduledAtElapsedMs = scheduledAtElapsedMs,
+                        nowElapsedMs = SystemClock.elapsedRealtime()
+                    )
+                }
+            }.onFailure { error ->
+                NPLogger.w(
+                    TAG,
+                    "读取 UIDT 接管窗口失败，交给持久化下载泵: " +
+                        "operationId=$normalizedId, error=${error.message}",
+                    error
+                )
+            }.getOrDefault(0L)
         }
 
         internal fun jobIdFor(operationId: String): Int {
@@ -740,12 +804,10 @@ class UidtDownloadJobService : JobService() {
     }
 }
 
-internal fun scheduleUidtKeepingFallback(
-    scheduleFallback: () -> Unit,
+internal fun scheduleUidtWithSharedPump(
     scheduleUidt: () -> Boolean,
-    cancelFallback: () -> Unit
+    scheduleSharedPump: () -> Boolean
 ): Boolean {
-    scheduleFallback()
     val scheduled = try {
         scheduleUidt()
     } catch (error: Throwable) {
@@ -758,9 +820,39 @@ internal fun scheduleUidtKeepingFallback(
         return false
     }
     if (!scheduled) {
-        cancelFallback()
+        return false
     }
-    return scheduled
+    if (!scheduleSharedPump()) {
+        NPLogger.w(
+            "NERI-DownloadUidt",
+            "UIDT 已调度，但共享下载泵接管未提交，保留 UIDT 等待系统启动"
+        )
+        // 让上层走 deferred/fallback 重试，避免只剩一个可能长期 pending 的 UIDT
+        return false
+    }
+    return true
+}
+
+internal fun shouldYieldToPendingUidt(
+    scheduledAtElapsedMs: Long,
+    nowElapsedMs: Long,
+    graceMs: Long = UIDT_SHARED_PUMP_GRACE_MS
+): Boolean {
+    return pendingUidtGraceRemainingMs(
+        scheduledAtElapsedMs = scheduledAtElapsedMs,
+        nowElapsedMs = nowElapsedMs,
+        graceMs = graceMs
+    ) > 0L
+}
+
+internal fun pendingUidtGraceRemainingMs(
+    scheduledAtElapsedMs: Long,
+    nowElapsedMs: Long,
+    graceMs: Long = UIDT_SHARED_PUMP_GRACE_MS
+): Long {
+    if (scheduledAtElapsedMs <= 0L || graceMs <= 0L) return 0L
+    if (nowElapsedMs < scheduledAtElapsedMs) return 0L
+    return (graceMs - (nowElapsedMs - scheduledAtElapsedMs)).coerceAtLeast(0L)
 }
 
 internal fun shouldRescheduleUidtExecution(result: DownloadExecutionResult): Boolean {

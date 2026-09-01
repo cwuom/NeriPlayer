@@ -85,9 +85,6 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             configuredMainProcessName = applicationInfo.processName,
             packageName = packageName
         )
-        if (shouldTrimUidtPendingJobs(runningInMainProcess, Build.VERSION.SDK_INT)) {
-            UidtDownloadJobService.trimPendingJobs(this)
-        }
         configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置
@@ -108,6 +105,11 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             return
         }
         initializeNormalComponents()
+        if (shouldTrimUidtPendingJobs(runningInMainProcess, Build.VERSION.SDK_INT)) {
+            AppContainer.launchBackgroundIo {
+                UidtDownloadJobService.trimPendingJobs(this@NeriPlayerApplication)
+            }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
