@@ -15,6 +15,56 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 
 internal class ManagedDownloadArtifactCoordinator {
+    /** 只为不存在的条目批量预创建租约，已有条目仍走完整 claim 校验 */
+    suspend fun precreateMissingArtifacts(
+        context: Context,
+        songs: Collection<SongItem>,
+        leaseOwnerIds: Map<String, String> = emptyMap()
+    ): Map<String, ManagedDownloadArtifactClaim.Acquired> {
+        val songsByStableKey = linkedMapOf<String, SongItem>()
+        songs.forEach { song ->
+            song.stableKey().trim().takeIf(String::isNotBlank)?.let { stableKey ->
+                songsByStableKey.putIfAbsent(stableKey, song)
+            }
+        }
+        if (songsByStableKey.isEmpty()) return emptyMap()
+
+        val appContext = context.applicationContext
+        val rootKey = ManagedDownloadStorage.currentSnapshotRootKey(appContext)
+        val database = database(appContext)
+        val nowMs = System.currentTimeMillis()
+        return database.withTransaction {
+            val dao = database.managedDownloadArtifactDao()
+            val existingKeys = linkedSetOf<String>()
+            songsByStableKey.keys.chunked(BATCH_ARTIFACT_QUERY_CHUNK_SIZE).forEach { chunk ->
+                dao.findAllByRootKeyAndStableKeys(rootKey, chunk)
+                    .forEach { artifact -> existingKeys += artifact.stableKey }
+            }
+            val missing = songsByStableKey
+                .filterKeys { stableKey -> stableKey !in existingKeys }
+                .map { (stableKey, _) ->
+                    newLeaseArtifact(
+                        rootKey = rootKey,
+                        stableKey = stableKey,
+                        artifactId = artifactId(rootKey, stableKey),
+                        previous = null,
+                        nowMs = nowMs,
+                        leaseOwnerId = leaseOwnerIds[stableKey]
+                    )
+                }
+            if (missing.isEmpty()) return@withTransaction emptyMap()
+            val insertResults = missing.chunked(BATCH_ARTIFACT_INSERT_CHUNK_SIZE)
+                .flatMap { chunk -> dao.insertIfAbsentAll(chunk) }
+            missing.mapIndexedNotNull { index, artifact ->
+                if (insertResults.getOrNull(index)?.let { result -> result >= 0L } == true) {
+                    artifact.stableKey to ManagedDownloadArtifactClaim.Acquired(artifact)
+                } else {
+                    null
+                }
+            }.toMap()
+        }
+    }
+
     suspend fun claim(
         context: Context,
         song: SongItem,
@@ -1201,6 +1251,11 @@ internal class ManagedDownloadArtifactCoordinator {
 
     private fun artifactId(rootKey: String, stableKey: String): String {
         return "managed:$rootKey:$stableKey"
+    }
+
+    private companion object {
+        private const val BATCH_ARTIFACT_QUERY_CHUNK_SIZE = 900
+        private const val BATCH_ARTIFACT_INSERT_CHUNK_SIZE = 128
     }
 
     private fun database(context: Context): NeriUserDataDatabase {

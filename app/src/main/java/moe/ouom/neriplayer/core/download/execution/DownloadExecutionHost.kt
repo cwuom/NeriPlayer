@@ -1634,6 +1634,9 @@ class DefaultDownloadExecutionHost(
                     delay(graceDelayMs)
                     continue
                 }
+                if (sawRetry) {
+                    return@withContext DownloadExecutionPumpResult.ContinueAfterRetry
+                }
                 // 已尝试的 operation 或仍在 UIDT 队列的 operation 只需要短间隔继续泵，
                 // 不能走 WorkManager retry，否则会被最小 10 秒 backoff 放大成启动停顿
                 return@withContext DownloadExecutionPumpResult.ContinueSoon

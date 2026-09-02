@@ -26,6 +26,11 @@ internal class DownloadRecoveryRoomStore(
     private val context: Context,
     private val database: NeriUserDataDatabase = NeriUserDataDatabase.getInstance(context)
 ) {
+    internal data class WaitingStorageMutationBatchResult(
+        val operationIds: List<String>,
+        val requestsByOperationId: Map<String, DownloadExecutionRequest>
+    )
+
     private val appContext = context.applicationContext
 
     suspend fun upsertPendingDownloadQueue(
@@ -132,11 +137,37 @@ internal class DownloadRecoveryRoomStore(
         requiresWifiNetwork: Boolean = true,
         downloadAudioQuality: DownloadAudioQualitySelection? = null
     ): List<String> {
-        if (songs.isEmpty()) return emptyList()
+        return upsertWaitingStorageMutationWithRequests(
+            songs = songs,
+            nowMs = nowMs,
+            userInitiated = userInitiated,
+            requiresWifiNetwork = requiresWifiNetwork,
+            downloadAudioQuality = downloadAudioQuality
+        ).operationIds
+    }
+
+    suspend fun upsertWaitingStorageMutationWithRequests(
+        songs: List<SongItem>,
+        nowMs: Long = System.currentTimeMillis(),
+        userInitiated: Boolean = false,
+        requiresWifiNetwork: Boolean = true,
+        downloadAudioQuality: DownloadAudioQualitySelection? = null
+    ): WaitingStorageMutationBatchResult {
+        if (songs.isEmpty()) {
+            return WaitingStorageMutationBatchResult(
+                operationIds = emptyList(),
+                requestsByOperationId = emptyMap()
+            )
+        }
         return database.withTransaction {
             val dao = database.downloadOperationDao()
             val distinctSongs = songs.distinctBy(SongItem::stableKey)
-            if (distinctSongs.isEmpty()) return@withTransaction emptyList()
+            if (distinctSongs.isEmpty()) {
+                return@withTransaction WaitingStorageMutationBatchResult(
+                    operationIds = emptyList(),
+                    requestsByOperationId = emptyMap()
+                )
+            }
             val songKeys = distinctSongs.map(SongItem::stableKey)
             val libraryId = ManagedDownloadStorage.currentSnapshotCacheKey(appContext)
             val waitingWinners = readLatestOperationCandidates(
@@ -209,7 +240,8 @@ internal class DownloadRecoveryRoomStore(
                 states = DownloadExecutionRoomStore.REUSABLE_OPERATION_STATES
             ) ?: -1
             var nextOrder = maxOf(maxWaitingOrder, maxReusableOrder) + 1
-            distinctSongs.mapNotNull { song ->
+            val requestsByOperationId = linkedMapOf<String, DownloadExecutionRequest>()
+            val operationIds = distinctSongs.mapNotNull { song ->
                 val key = song.stableKey()
                 if (
                     inFlightOperationIds[key] != null ||
@@ -239,27 +271,33 @@ internal class DownloadRecoveryRoomStore(
                 } else {
                     existing?.metadata?.requiresWifiNetwork ?: requiresWifiNetwork
                 }
+                val request = DownloadExecutionRequest(
+                    operationId = operationId,
+                    song = song,
+                    preserveStaging = existing?.metadata?.preserveStaging ?: false,
+                    requiresWifiNetwork = effectiveRequiresWifiNetwork,
+                    attemptId = existing?.metadata?.attemptId,
+                    artifactLeaseId = existing?.metadata?.artifactLeaseId
+                        ?: UUID.randomUUID().toString(),
+                    userInitiated = existing?.metadata?.userInitiated == true || userInitiated,
+                    downloadAudioQuality = existing?.metadata?.downloadAudioQuality
+                        ?: downloadAudioQuality
+                )
                 DownloadExecutionRoomStore.upsert(
                     context = appContext,
-                    request = DownloadExecutionRequest(
-                        operationId = operationId,
-                        song = song,
-                        preserveStaging = existing?.metadata?.preserveStaging ?: false,
-                        requiresWifiNetwork = effectiveRequiresWifiNetwork,
-                        attemptId = existing?.metadata?.attemptId,
-                        artifactLeaseId = existing?.metadata?.artifactLeaseId
-                            ?: UUID.randomUUID().toString(),
-                        userInitiated = existing?.metadata?.userInitiated == true || userInitiated,
-                        downloadAudioQuality = existing?.metadata?.downloadAudioQuality
-                            ?: downloadAudioQuality
-                    ),
+                    request = request,
                     state = WAITING_STORAGE_MUTATION_OPERATION_STATE,
                     queueOrder = existing?.header?.queueOrder ?: nextOrder++,
                     createdAtMs = existing?.header?.createdAtMs ?: nowMs,
                     database = database
                 )
+                requestsByOperationId[operationId] = request
                 operationId
             }
+            WaitingStorageMutationBatchResult(
+                operationIds = operationIds,
+                requestsByOperationId = requestsByOperationId
+            )
         }
     }
 

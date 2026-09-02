@@ -22,6 +22,15 @@ internal interface ManagedDownloadArtifactDao {
 
     @Query(
         "SELECT * FROM managed_library_item " +
+            "WHERE library_id = :rootKey AND stable_key IN (:stableKeys)"
+    )
+    suspend fun findAllByRootKeyAndStableKeys(
+        rootKey: String,
+        stableKeys: List<String>
+    ): List<ManagedLibraryItemEntity>
+
+    @Query(
+        "SELECT * FROM managed_library_item " +
             "WHERE library_id = :rootKey AND state = :state " +
             "ORDER BY updated_at_ms ASC"
     )

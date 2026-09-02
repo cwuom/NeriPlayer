@@ -246,7 +246,7 @@ class BatchDownloadOperationRecoveryTest {
         )
         assertTrue(preparationBody.contains("readyRequests"))
         assertFalse(preparationBody.contains("BATCH_DOWNLOAD_EARLY_HANDOFF_LIMIT"))
-        val earlyHandoffIndex = preparationBody.indexOf("readyRequests.forEach")
+        val earlyHandoffIndex = preparationBody.indexOf("for (request in readyRequests)")
         val batchSchedulingIndex = preparationBody.indexOf("schedulePendingBatchDownloads(")
         assertTrue(earlyHandoffIndex >= 0)
         assertTrue(batchSchedulingIndex >= 0)
