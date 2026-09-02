@@ -307,6 +307,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
     private val entries = linkedMapOf<String, DownloadExecutionJournalEntry>()
     private var nextQueueOrder = 0
     var afterStateUpdate: ((String, String) -> Unit)? = null
+    var afterSave: ((DownloadExecutionRequest) -> Unit)? = null
     var hostAdmissionAllowed: Boolean = true
     var hostAdmissionAcquireCount: Int = 0
     var lastHostAdmissionCapacity: Int? = null
@@ -319,6 +320,7 @@ internal class InMemoryDownloadExecutionOperationJournal : DownloadExecutionOper
             state = "QUEUED",
             queueOrder = queueOrder
         )
+        afterSave?.invoke(request)
     }
 
     override fun read(context: Context, operationId: String): DownloadExecutionRequest? =

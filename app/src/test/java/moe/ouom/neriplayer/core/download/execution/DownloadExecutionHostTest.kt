@@ -240,7 +240,7 @@ class DownloadExecutionHostTest {
             sdkInt = 28
         )
 
-        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals(DownloadExecutionPumpResult.ContinueAfterRetry, host.pump(context))
         assertEquals("RETRYABLE", store.currentState(context, request.operationId))
     }
 
@@ -300,7 +300,7 @@ class DownloadExecutionHostTest {
             downloadParallelismProvider = { 1 }
         )
 
-        assertEquals(DownloadExecutionPumpResult.Retry, host.pump(context))
+        assertEquals(DownloadExecutionPumpResult.ContinueAfterRetry, host.pump(context))
         assertEquals(setOf(failed.operationId, later.operationId), executed.toSet())
         assertEquals("RETRYABLE", store.currentState(context, failed.operationId))
         assertEquals("COMPLETED", store.currentState(context, later.operationId))
@@ -416,6 +416,14 @@ class DownloadExecutionHostTest {
         assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.MOBILE))
         assertFalse(shouldHandoffWifiBoundDownloadWake(TrafficNetworkType.ROAMING))
         assertFalse(shouldHandoffWifiBoundDownloadWake(null))
+    }
+
+    @Test
+    fun `transient pump operation retry uses a successor instead of WorkManager backoff`() {
+        assertEquals(
+            ListenableWorker.Result.success()::class,
+            DownloadExecutionPumpResult.ContinueAfterRetry.toWorkerResult()::class
+        )
     }
 
     @Test
@@ -1175,6 +1183,37 @@ class DownloadExecutionHostTest {
         )
         assertEquals(0, executions)
         assertEquals(0, journal.hostAdmissionAcquireCount)
+    }
+
+    @Test
+    fun `attempt refresh during scheduling is deferred instead of misclassified as clear`() {
+        val context = mockContext()
+        val journal = InMemoryDownloadExecutionOperationJournal().apply {
+            hostAdmissionAllowed = false
+        }
+        val store = DownloadExecutionOperationStore { journal }
+        val request = DownloadExecutionRequest(
+            operationId = "operation-attempt-race",
+            song = sampleSong(),
+            attemptId = 31L
+        )
+        journal.afterSave = { saved ->
+            if (saved.operationId == request.operationId && saved.attemptId == 31L) {
+                journal.forceRequest(saved.copy(attemptId = 32L))
+                journal.afterSave = null
+            }
+        }
+        val host = DefaultDownloadExecutionHost(
+            operationStore = store,
+            sdkInt = 28
+        )
+
+        val result = host.schedule(context, request)
+
+        assertTrue(result is DownloadExecutionSchedule.Deferred)
+        assertEquals(32L, store.read(context, request.operationId)?.attemptId)
+        assertFalse(store.currentState(context, request.operationId) == "CANCEL_REQUESTED")
+        host.cancel(context, request.operationId)
     }
 
     @Test

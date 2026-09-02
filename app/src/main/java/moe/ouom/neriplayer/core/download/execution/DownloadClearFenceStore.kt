@@ -139,6 +139,14 @@ internal object PersistentDownloadClearFenceStore : DownloadClearFenceStore {
         }
     }
 
+    /** 只判断任务清空自身的内存/持久栅栏，不把全库删除 intent 混入 UI 生命周期 */
+    internal fun isTaskClearActive(context: Context): Boolean {
+        return synchronized(schedulingLock) {
+            hydratePersistedEpochLocked(context)
+            isClearRequested() || isPersistedFenceActive(context)
+        }
+    }
+
     /** 返回本轮持久清空开始时间，用于排除清空后的新 generation */
     internal fun requestedAtMs(context: Context): Long? {
         return synchronized(schedulingLock) {

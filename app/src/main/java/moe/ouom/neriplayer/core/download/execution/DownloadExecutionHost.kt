@@ -146,6 +146,7 @@ sealed interface DownloadExecutionResult {
 enum class DownloadExecutionPumpResult {
     Completed,
     ContinueSoon,
+    ContinueAfterRetry,
     Retry
 }
 
@@ -297,8 +298,14 @@ class DefaultDownloadExecutionHost(
                 )
             }
             operationStore.save(context, request)
-            // save 可能跨越清空代次，先把持久 attempt 绑定到本次 ticket
-            val boundTicket = bindPersistedScheduleTicket(context, ticket)
+            // 同一 operation 可能已经被共享泵或 UIDT 并发刷新 attempt。
+            // 这里允许在 clear epoch 不变时绑定最新 attempt，避免把普通 handoff 竞态
+            // 错判成“被清空覆盖”。真正的 clear 仍由 isScheduleTicketCurrent 拦截。
+            val boundTicket = bindPersistedScheduleTicket(
+                context = context,
+                ticket = ticket,
+                allowAttemptRebind = true
+            )
                 ?: return rejectStaleSchedule(
                     context = context,
                     request = request,
@@ -578,7 +585,28 @@ class DefaultDownloadExecutionHost(
         request: DownloadExecutionRequest,
         hostAdmissionAcquired: Boolean,
         ticket: ScheduleTicket? = null
-    ): DownloadExecutionSchedule.Rejected {
+    ): DownloadExecutionSchedule {
+        val supersededByClear = ticket?.let { currentTicket ->
+            PersistentDownloadClearFenceStore.isBlocked(
+                context = context,
+                stableKey = currentTicket.stableKey,
+                operationId = currentTicket.operationId
+            ) || PersistentDownloadClearFenceStore.currentEpoch(context) != currentTicket.clearEpoch
+        } ?: PersistentDownloadClearFenceStore.isBlocked(
+            context = context,
+            stableKey = request.song.stableKey(),
+            operationId = request.operationId
+        )
+
+        if (!supersededByClear) {
+            return deferStaleScheduleRace(
+                context = context,
+                request = request,
+                hostAdmissionAcquired = hostAdmissionAcquired,
+                ticket = ticket
+            )
+        }
+
         if (hostAdmissionAcquired) {
             releaseHostAdmissionIfIdle(
                 context = context,
@@ -607,6 +635,125 @@ class DefaultDownloadExecutionHost(
             reason = "download schedule superseded by clear",
             retryable = false
         )
+    }
+
+    /**
+     * clear epoch 没变化时，ticket 失效只是并发 handoff 的身份刷新。
+     * 这种情况不能把 durable operation 标记为失败，更不能请求取消；绑定最新 attempt
+     * 后交给已有 backend 或 deferred queue 继续执行。
+     */
+    private fun deferStaleScheduleRace(
+        context: Context,
+        request: DownloadExecutionRequest,
+        hostAdmissionAcquired: Boolean,
+        ticket: ScheduleTicket?
+    ): DownloadExecutionSchedule {
+        val operationId = request.operationId
+        val stableKey = request.song.stableKey()
+        val latestRequest = operationStore.read(context, operationId)
+            ?.takeIf { latest ->
+                latest.operationId == operationId && latest.song.stableKey() == stableKey
+            }
+            ?: return DownloadExecutionSchedule.Rejected(
+                reason = "download operation identity was replaced during handoff",
+                retryable = false
+            )
+        val latestTicket = captureScheduleTicket(context, latestRequest)
+            ?.let { captured ->
+                bindPersistedScheduleTicket(
+                    context = context,
+                    ticket = captured,
+                    allowAttemptRebind = true
+                )
+            }
+            ?: return DownloadExecutionSchedule.Rejected(
+                reason = "download operation is no longer schedulable",
+                retryable = false
+            )
+
+        if (hostAdmissionAcquired) {
+            releaseHostAdmissionIfIdle(
+                context = context,
+                operationId = operationId,
+                ticket = ticket
+            )
+        }
+
+        val scheduleOwner = scheduleOwners[operationId]
+        if (scheduleOwner == null || sameScheduleGeneration(scheduleOwner, latestTicket)) {
+            if (scheduleOwner != null) {
+                scheduleOwners.replace(operationId, scheduleOwner, latestTicket)
+            }
+        } else {
+            ticket?.let { staleTicket ->
+                scheduleOwners.remove(operationId, staleTicket)
+            }
+        }
+
+        synchronized(executionAdmissionLock) {
+            val admissionOwner = hostAdmissionOwners[operationId]
+            if (admissionOwner != null && sameScheduleGeneration(admissionOwner, latestTicket)) {
+                hostAdmissionOwners[operationId] = latestTicket
+            }
+        }
+
+        val backendAlreadyScheduled = synchronized(backendOwnershipLock) {
+            val backendOwner = backendOwners[operationId]
+            when {
+                backendOwner == null -> false
+                sameScheduleGeneration(backendOwner.ticket, latestTicket) -> {
+                    backendOwners[operationId] = backendOwner.copy(ticket = latestTicket)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        deferredRequests.remove(request)
+        if (!backendAlreadyScheduled) {
+            enqueueDeferredSchedule(
+                context = context,
+                request = latestRequest,
+                ticket = latestTicket
+            )
+        }
+        return DownloadExecutionSchedule.Deferred(
+            "download schedule identity changed during host handoff"
+        )
+    }
+
+    private fun sameScheduleGeneration(
+        first: ScheduleTicket,
+        second: ScheduleTicket
+    ): Boolean {
+        return first.operationId == second.operationId &&
+            first.stableKey == second.stableKey &&
+            first.clearEpoch == second.clearEpoch
+    }
+
+    private fun rebindCompatibleScheduleOwners(
+        operationId: String,
+        next: ScheduleTicket
+    ) {
+        scheduleOwners[operationId]?.let { owner ->
+            if (sameScheduleGeneration(owner, next)) {
+                scheduleOwners.replace(operationId, owner, next)
+            }
+        }
+        synchronized(executionAdmissionLock) {
+            hostAdmissionOwners[operationId]?.let { owner ->
+                if (sameScheduleGeneration(owner, next)) {
+                    hostAdmissionOwners[operationId] = next
+                }
+            }
+        }
+        synchronized(backendOwnershipLock) {
+            backendOwners[operationId]?.let { owner ->
+                if (sameScheduleGeneration(owner.ticket, next)) {
+                    backendOwners[operationId] = owner.copy(ticket = next)
+                }
+            }
+        }
     }
 
     /**
@@ -1125,11 +1272,16 @@ class DefaultDownloadExecutionHost(
             }
         var executionTicket = bindPersistedScheduleTicket(
             context = appContext,
-            ticket = initialTicket
+            ticket = initialTicket,
+            allowAttemptRebind = true
         ) ?: run {
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext DownloadExecutionResult.Retry
         }
+        // 调度线程和实际 OS 宿主启动之间允许同一 clear epoch 内刷新 attempt。
+        // 把仍属于同一 operation generation 的 owner 一并前移，避免 worker 因为
+        // 只差 attemptId 就把有效下载判成并发取消。
+        rebindCompatibleScheduleOwners(normalizedId, executionTicket)
         if (operationStore.isStopped(appContext, normalizedId)) {
             releaseHostAdmissionIfIdle(appContext, normalizedId)
             return@withContext DownloadExecutionResult.UserStopped
@@ -1468,7 +1620,9 @@ class DefaultDownloadExecutionHost(
             val candidates = selection.requests
             if (candidates.isEmpty() && !selection.hasSchedulableRequest) {
                 return@withContext if (sawRetry) {
-                    DownloadExecutionPumpResult.Retry
+                    // 单个 operation 的可恢复失败已经写回 RETRYABLE。共享泵本身没有失败，
+                    // 不应返回 WorkManager Result.retry() 触发至少 10 秒的系统 backoff。
+                    DownloadExecutionPumpResult.ContinueAfterRetry
                 } else {
                     DownloadExecutionPumpResult.Completed
                 }

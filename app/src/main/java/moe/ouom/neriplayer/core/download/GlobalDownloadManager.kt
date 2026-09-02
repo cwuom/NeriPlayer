@@ -79,6 +79,7 @@ import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRequest
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionResult
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionSchedule
 import moe.ouom.neriplayer.core.download.execution.DownloadExecutionRoomStore
+import moe.ouom.neriplayer.core.download.execution.ForegroundDownloadWorker
 import moe.ouom.neriplayer.core.download.execution.DownloadClearFenceReleaseResult
 import moe.ouom.neriplayer.core.download.execution.DownloadClearOwnership
 import moe.ouom.neriplayer.core.download.execution.DownloadClearPurpose
@@ -9023,9 +9024,9 @@ object GlobalDownloadManager {
                         _downloadedSongs.value
                     }
                 )
-                if (catalogPersisted &&
-                    !PersistentDownloadedSongDeleteIntentStore.clear(appContext)
-                ) {
+                val deleteIntentCleared = catalogPersisted &&
+                    PersistentDownloadedSongDeleteIntentStore.clear(appContext)
+                if (catalogPersisted && !deleteIntentCleared) {
                     NPLogger.w(
                         TAG,
                         "全选删除已完成但恢复意图未清理，后续启动将进行幂等复查"
@@ -9035,6 +9036,11 @@ object GlobalDownloadManager {
                         TAG,
                         "全选删除 catalog 未确认落盘，保留恢复意图等待重试"
                     )
+                } else {
+                    // 文件和 catalog 都已经确认删除。清掉任务清空的残留展示状态，
+                    // 不要求重启应用才能退出阶段 4/4。
+                    clearPersistedDownloadClearProgress(appContext)
+                    finishReleasedTaskClearState(appContext)
                 }
             } else if (deletesEntireCatalog && fullLibrarySnapshotIncomplete) {
                 NPLogger.w(
@@ -12669,7 +12675,28 @@ object GlobalDownloadManager {
         }.onFailure { error ->
             NPLogger.w(TAG, "写入批量 operation 重试状态失败: ${error.message}")
         }.getOrDefault(false)
-        if (!retryMarked) {
+        if (retryMarked) {
+            // durable operation 已经成功回到 RETRYABLE，就不能把 UI/task terminal 同时标成 FAILED。
+            // 立即唤醒共享泵，让批量成员继续保持 handed-off，避免形成“18/19 + 1 个残留任务”。
+            val pumpScheduled = ForegroundDownloadWorker.schedule(
+                context = context,
+                operationId = request.operationId
+            )
+            if (pumpScheduled) {
+                updateTaskStatus(
+                    songKey,
+                    DownloadStatus.QUEUED,
+                    expectedAttemptId = request.attemptId
+                )
+                publishDownloadStage(
+                    song = request.song,
+                    stage = AudioDownloadManager.DownloadStage.WAITING_HOST,
+                    operationId = request.operationId,
+                    attemptId = request.attemptId
+                )
+                return true
+            }
+        } else {
             val latestState = runCatching {
                 DownloadExecutionRoomStore.state(context, request.operationId)
             }.getOrNull()
@@ -14767,23 +14794,26 @@ object GlobalDownloadManager {
                 // 栅栏释放后只登记一次后台对账，清空交互路径不等待目录扫描
                 scheduleCatalogReconcile(appContext, forceRefresh = true)
             } finally {
-                // 有界重试耗尽时以持久栅栏和进度为准，不能只清掉内存横幅造成假空闲
-                val durableFenceActive = PersistentDownloadClearFenceStore.isActive(appContext)
-                if (detachedFastTaskClear && durableFenceActive) {
-                    // 后台清理还未确认完成，保留横幅阻止旧任务快照重新出现
+                // 任务清空横幅只归 TASK/FULL_LIBRARY 的持久 task fence 所有。
+                // 全库删除的 delete intent 还在时可以继续阻断新下载，但不能让已经完成的
+                // “清空下载任务 4/4”横幅永久挂住。
+                val durableTaskClearFenceActive =
+                    PersistentDownloadClearFenceStore.isTaskClearActive(appContext)
+                if (detachedFastTaskClear && durableTaskClearFenceActive) {
+                    // 后台任务清空还未确认完成，保留横幅阻止旧任务快照重新出现
                     persistDownloadClearProgress(appContext, clearToken)
                 } else if (shouldRetainDownloadClearVisibility(
                         retainInMemoryState = retainClearVisibility,
-                        durableFenceActive = durableFenceActive
+                        durableFenceActive = durableTaskClearFenceActive
                     )
                 ) {
                     persistDownloadClearProgress(appContext, clearToken)
                 } else {
                     downloadClearVisibility.finish(clearToken)
                 }
-                if (!durableFenceActive) {
+                if (!durableTaskClearFenceActive) {
                     taskStore.finishClearPresentation(taskPresentationToken) {
-                        !isDownloadClearFenceActive(appContext) &&
+                        !PersistentDownloadClearFenceStore.isTaskClearActive(appContext) &&
                             downloadAdmissionGate.openTicketOrNull() == clearToken.generation
                     }
                 }
@@ -14986,14 +15016,16 @@ object GlobalDownloadManager {
     }
 
     private fun finishReleasedTaskClearState(context: Context): Boolean {
-        if (PersistentDownloadClearFenceStore.isActive(context)) {
+        // delete intent 属于下载文件/catalog 删除事务，不属于任务清空横幅。
+        // task fence 一旦释放，4/4 就必须结束，否则全选删除会一直显示“整理记录中”。
+        if (PersistentDownloadClearFenceStore.isTaskClearActive(context)) {
             return false
         }
         val openGeneration = downloadAdmissionGate.openTicketOrNull() ?: return false
         downloadClearVisibility.finishGeneration(openGeneration)
         taskStore.currentClearPresentationToken()?.let { token ->
             taskStore.finishClearPresentation(token) {
-                !PersistentDownloadClearFenceStore.isActive(context) &&
+                !PersistentDownloadClearFenceStore.isTaskClearActive(context) &&
                     downloadAdmissionGate.openTicketOrNull() == openGeneration
             }
         }
@@ -15217,6 +15249,7 @@ object GlobalDownloadManager {
             return false
         }
         clearPersistedDownloadClearProgress(appContext)
+        finishReleasedTaskClearState(appContext)
         return true
     }
 

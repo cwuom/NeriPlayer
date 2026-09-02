@@ -74,7 +74,9 @@ class ForegroundDownloadWorker(
                     context = applicationContext,
                     generation = pumpGeneration,
                     workWillRetry = pumpResult == DownloadExecutionPumpResult.Retry,
-                    continueSoon = pumpResult == DownloadExecutionPumpResult.ContinueSoon
+                    continueSoon = pumpResult == DownloadExecutionPumpResult.ContinueSoon,
+                    continueAfterRetry =
+                        pumpResult == DownloadExecutionPumpResult.ContinueAfterRetry
                 )
                 return@withContext workerResult
             }
@@ -126,6 +128,7 @@ class ForegroundDownloadWorker(
         private const val PUMP_WORK_TAG = "download_execution_pump"
         private const val PUMP_RETRY_BACKOFF_MS = 10_000L
         private const val PUMP_ENQUEUE_RETRY_DELAY_MS = 10_000L
+        private const val PUMP_OPERATION_RETRY_DELAY_MS = 1_000L
         private const val LEGACY_PUMP_GENERATION = 0L
         private val PUMP_SUCCESSOR_WORK_POLICY = ExistingWorkPolicy.APPEND_OR_REPLACE
         private const val WORK_NAME_PREFIX = "download_execution_"
@@ -224,9 +227,11 @@ class ForegroundDownloadWorker(
             context: Context,
             generation: Long,
             workWillRetry: Boolean,
-            continueSoon: Boolean = false
+            continueSoon: Boolean = false,
+            continueAfterRetry: Boolean = false
         ) {
-            val completion = if (continueSoon) {
+            val shouldScheduleSuccessor = continueSoon || continueAfterRetry
+            val completion = if (shouldScheduleSuccessor) {
                 pumpScheduleCoordinator.completeWithSuccessor(generation)
             } else {
                 pumpScheduleCoordinator.complete(
@@ -235,9 +240,14 @@ class ForegroundDownloadWorker(
                 )
             }
             if (completion == DownloadPumpCompletion.COMPLETED_WITH_SUCCESSOR) {
+                val successorDelayMs = when {
+                    continueAfterRetry -> PUMP_OPERATION_RETRY_DELAY_MS
+                    continueSoon -> UIDT_SHARED_PUMP_GRACE_MS
+                    else -> 0L
+                }
                 schedulePumpSuccessor(
                     context = context,
-                    initialDelayMs = if (continueSoon) UIDT_SHARED_PUMP_GRACE_MS else 0L
+                    initialDelayMs = successorDelayMs
                 )
             }
         }
@@ -583,7 +593,8 @@ internal fun DownloadExecutionResult.toWorkerResult(): ListenableWorker.Result {
 internal fun DownloadExecutionPumpResult.toWorkerResult(): ListenableWorker.Result {
     return when (this) {
         DownloadExecutionPumpResult.Completed,
-        DownloadExecutionPumpResult.ContinueSoon -> ListenableWorker.Result.success()
+        DownloadExecutionPumpResult.ContinueSoon,
+        DownloadExecutionPumpResult.ContinueAfterRetry -> ListenableWorker.Result.success()
         DownloadExecutionPumpResult.Retry -> ListenableWorker.Result.retry()
     }
 }

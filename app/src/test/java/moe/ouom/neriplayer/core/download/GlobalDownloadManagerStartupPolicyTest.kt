@@ -1335,6 +1335,43 @@ class GlobalDownloadManagerStartupPolicyTest {
     }
 
     @Test
+    fun `retryable batch schedule rejection stays queued and wakes the shared pump`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val body = source.substringAfter(
+            "private suspend fun handleBatchDownloadScheduleFailure"
+        ).substringBefore("fun confirmTrafficRiskDownload")
+        val retryIndex = body.indexOf("if (retryMarked)")
+        val pumpIndex = body.indexOf("ForegroundDownloadWorker.schedule(")
+        val queuedIndex = body.indexOf("DownloadStatus.QUEUED")
+        val failedIndex = body.indexOf("DownloadStatus.FAILED")
+
+        assertTrue(retryIndex >= 0)
+        assertTrue(pumpIndex > retryIndex)
+        assertTrue(queuedIndex > pumpIndex)
+        assertTrue(failedIndex > queuedIndex)
+    }
+
+    @Test
+    fun `task clear presentation does not stay pinned by full library delete intent`() {
+        val source = locateProjectFile(
+            "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
+        ).readText()
+        val clearBody = source.substringAfter(
+            "private fun requestAllDownloadTaskCancellation"
+        ).substringBefore("private suspend fun cancelAllDownloadTasksAndWait")
+        val finishBody = source.substringAfter(
+            "private fun finishReleasedTaskClearState"
+        ).substringBefore("private suspend fun awaitDownloadClearFenceRelease")
+
+        assertTrue(clearBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(appContext)"))
+        assertFalse(clearBody.contains("val durableFenceActive = PersistentDownloadClearFenceStore.isActive(appContext)"))
+        assertTrue(finishBody.contains("PersistentDownloadClearFenceStore.isTaskClearActive(context)"))
+        assertFalse(finishBody.contains("PersistentDownloadClearFenceStore.isActive(context)"))
+    }
+
+    @Test
     fun `clear completion schedules coalesced reconcile instead of a forced scan`() {
         val source = locateProjectFile(
             "app/src/main/java/moe/ouom/neriplayer/core/download/GlobalDownloadManager.kt"
